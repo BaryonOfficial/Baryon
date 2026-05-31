@@ -17,6 +17,8 @@ const ORDER_DAMPING_REFERENCE = 42;
 const MIN_MODAL_QUALITY_FACTOR = 0.5;
 const MAX_MODAL_QUALITY_FACTOR = 50000;
 const DEFAULT_STORED_ENERGY_TAU_MS = 320;
+const MODAL_SPECTRAL_RESPONSE_CACHE = new Map();
+const MODAL_SPECTRAL_RESPONSE_CACHE_MAX_SIZE = 512;
 
 function clamp01(value) {
   if (!Number.isFinite(value)) {
@@ -239,6 +241,7 @@ function buildSpectralDriveContext(fftMagnitudes, sampleRate) {
     const binEnergy = amplitude * amplitude;
     inputEnergy += binEnergy;
     bins.push({
+      index,
       binEnergy,
       frequencyHz: binIndexToFrequencyHz(
         index,
@@ -277,6 +280,37 @@ export function computeModalFrequencyResponse({
   return clamp01(1 / (1 + q * q * detuning * detuning));
 }
 
+function getModalSpectralResponseWeights({
+  binCount,
+  sampleRate,
+  modeFrequencyHz,
+  qualityFactor,
+}) {
+  const key = [binCount, sampleRate, modeFrequencyHz, qualityFactor].join(":");
+  const cached = MODAL_SPECTRAL_RESPONSE_CACHE.get(key);
+  if (cached) {
+    return cached;
+  }
+
+  const weights = new Float64Array(Math.max(0, binCount ?? 0));
+  for (let index = 1; index < weights.length; index += 1) {
+    weights[index] = computeModalFrequencyResponse({
+      binFrequencyHz: binIndexToFrequencyHz(index, weights.length, sampleRate),
+      modeFrequencyHz,
+      qualityFactor,
+    });
+  }
+
+  MODAL_SPECTRAL_RESPONSE_CACHE.set(key, weights);
+  if (
+    MODAL_SPECTRAL_RESPONSE_CACHE.size > MODAL_SPECTRAL_RESPONSE_CACHE_MAX_SIZE
+  ) {
+    const oldestKey = MODAL_SPECTRAL_RESPONSE_CACHE.keys().next().value;
+    MODAL_SPECTRAL_RESPONSE_CACHE.delete(oldestKey);
+  }
+  return weights;
+}
+
 export function computeModalSpectralDrive({
   fftMagnitudes,
   sampleRate,
@@ -295,17 +329,27 @@ export function computeModalSpectralDrive({
   if (bins.length === 0) {
     return 0;
   }
+  const responseWeights = getModalSpectralResponseWeights({
+    binCount: fftMagnitudes?.length ?? 0,
+    sampleRate,
+    modeFrequencyHz,
+    qualityFactor,
+  });
 
   let weightedEnergy = 0;
   let peakWeightedEnergy = 0;
   for (const bin of bins) {
-    const weightedBinEnergy =
-      bin.binEnergy *
-      computeModalFrequencyResponse({
-        binFrequencyHz: bin.frequencyHz,
-        modeFrequencyHz,
-        qualityFactor,
-      });
+    const responseWeight =
+      Number.isInteger(bin?.index) &&
+      bin.index >= 0 &&
+      bin.index < responseWeights.length
+        ? responseWeights[bin.index]
+        : computeModalFrequencyResponse({
+            binFrequencyHz: bin.frequencyHz,
+            modeFrequencyHz,
+            qualityFactor,
+          });
+    const weightedBinEnergy = bin.binEnergy * responseWeight;
     weightedEnergy += weightedBinEnergy;
     peakWeightedEnergy = Math.max(peakWeightedEnergy, weightedBinEnergy);
   }

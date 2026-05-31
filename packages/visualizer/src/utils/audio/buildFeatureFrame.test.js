@@ -16,7 +16,7 @@ import {
   runHeavyAudioFeatureAnalysis,
   updateAudioFeatureFastSignalState,
 } from "./buildFeatureFrame.js";
-import { frequencyToBinIndex } from "./binFrequency.js";
+import { binIndexToFrequencyHz, frequencyToBinIndex } from "./binFrequency.js";
 import { deriveHighQSparseResonatorAuthority } from "./highQSparseResonatorAuthority.js";
 import { DEFAULT_RENDER_ENERGY_EPSILON } from "./modalEnergyLedger.js";
 
@@ -120,6 +120,52 @@ it("patches current fast audio signals without replacing structural modal fields
   );
   expect(patchedAnalysis.candidateResponseSlots).toBe(
     previousAnalysis.candidateResponseSlots,
+  );
+});
+
+it("reuses exact FFT summaries for file-source evidence", () => {
+  const featureState = createAudioFeatureState();
+  const status = makeActiveStatus({
+    playbackSessionId: "summary-regression",
+  });
+  const peaks = [
+    [220, 0.75],
+    [440, 0.25],
+    [1760, 0.08],
+  ];
+  const preparedInputs = prepareAudioFeatureFrameInputs({
+    analysisSnapshot: createSnapshot({
+      avgAmplitude: 32,
+      rms: 0.12,
+      fftMagnitudes: makeFft(peaks),
+    }),
+    featureState,
+    radius: 3,
+    status,
+    frameTimeMs: 1000,
+  });
+  const expectedCentroid =
+    peaks.reduce((weighted, [frequency, amplitude]) => {
+      const bin = freqToBin(frequency);
+      const resolvedFrequency = binIndexToFrequencyHz(
+        bin,
+        BIN_COUNT,
+        SAMPLE_RATE,
+      );
+      return weighted + resolvedFrequency * amplitude;
+    }, 0) /
+    peaks.reduce((total, [, amplitude]) => total + amplitude, 0) /
+    (SAMPLE_RATE * 0.5);
+
+  expect(preparedInputs.preModalFftPeak).toBeCloseTo(0.75, 6);
+  expect(preparedInputs.spectralCentroidHint).toBeCloseTo(expectedCentroid, 6);
+  expect(preparedInputs.nonZeroFftBinCount).toBe(peaks.length);
+  expect(preparedInputs.sourceEvidence.metrics.preModalFftPeak).toBeCloseTo(
+    0.75,
+    6,
+  );
+  expect(preparedInputs.sourceEvidence.metrics.nonZeroFftBinCount).toBe(
+    peaks.length,
   );
 });
 

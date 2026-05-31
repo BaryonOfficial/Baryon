@@ -829,6 +829,46 @@ function countNonZeroFFTBinCount(fftMagnitudes) {
   return countNonZeroFftBins(fftMagnitudes);
 }
 
+function computeBasicFftSummary(fftMagnitudes, sampleRate) {
+  const summary = {
+    peakMagnitude: 0,
+    nonZeroBinCount: 0,
+    spectralCentroid: 0,
+  };
+  if (!fftMagnitudes?.length) return summary;
+
+  const nyquist = sampleRate ? sampleRate * 0.5 : 0;
+  let weightedFrequency = 0;
+  let amplitudeTotal = 0;
+  for (let i = 0; i < fftMagnitudes.length; i += 1) {
+    const amplitude = fftMagnitudes[i] ?? 0;
+    if (amplitude > summary.peakMagnitude) {
+      summary.peakMagnitude = amplitude;
+    }
+    if (amplitude > 0.001) {
+      summary.nonZeroBinCount += 1;
+    }
+    if (amplitude > 0 && sampleRate) {
+      const frequency = binIndexToFrequencyHz(
+        i,
+        fftMagnitudes.length,
+        sampleRate,
+      );
+      weightedFrequency += frequency * amplitude;
+      amplitudeTotal += amplitude;
+    }
+  }
+
+  if (amplitudeTotal > 1e-6) {
+    summary.spectralCentroid = Math.min(
+      1,
+      weightedFrequency / amplitudeTotal / Math.max(1, nyquist),
+    );
+  }
+
+  return summary;
+}
+
 function findPeakFftMagnitude(fftMagnitudes) {
   if (!fftMagnitudes?.length) return 0;
 
@@ -1704,6 +1744,8 @@ function computeLiveInputMetrics({
   fftMagnitudes,
   sampleRate,
   fftSize,
+  peakAmplitude: providedPeakAmplitude = null,
+  spectralCentroid: providedSpectralCentroid = null,
 }) {
   const spectrum = fftMagnitudes ?? new Float32Array(0);
   const peaks = findSpectralPeakFrequencies(
@@ -1712,9 +1754,13 @@ function computeLiveInputMetrics({
     fftSize,
     LIVE_INPUT_RESONANCE_PEAK_COUNT,
   );
-  let peakAmplitude = 0;
-  for (let i = 0; i < spectrum.length; i++) {
-    peakAmplitude = Math.max(peakAmplitude, spectrum[i] ?? 0);
+  let peakAmplitude = Number.isFinite(providedPeakAmplitude)
+    ? Math.max(0, providedPeakAmplitude)
+    : 0;
+  if (!Number.isFinite(providedPeakAmplitude)) {
+    for (let i = 0; i < spectrum.length; i++) {
+      peakAmplitude = Math.max(peakAmplitude, spectrum[i] ?? 0);
+    }
   }
   const totalPeakAmplitude = peaks.reduce(
     (sum, peak) => sum + (peak?.amplitude ?? 0),
@@ -1734,7 +1780,9 @@ function computeLiveInputMetrics({
     rms,
     peakAmplitude,
     peakClarity,
-    spectralCentroid: computeSpectralCentroid(spectrum, sampleRate),
+    spectralCentroid: Number.isFinite(providedSpectralCentroid)
+      ? clamp01(providedSpectralCentroid)
+      : computeSpectralCentroid(spectrum, sampleRate),
     lowBandEnergy,
   };
 }
@@ -1932,6 +1980,8 @@ function resolveLiveInputNoiseGate({
   fftMagnitudes,
   sampleRate,
   fftSize,
+  preModalFftPeak = null,
+  spectralCentroidHint = null,
   currentFrameAtMs,
   calibrationVersion = 0,
   micAnalysisSettings,
@@ -1971,6 +2021,8 @@ function resolveLiveInputNoiseGate({
     fftMagnitudes,
     sampleRate,
     fftSize,
+    peakAmplitude: preModalFftPeak,
+    spectralCentroid: spectralCentroidHint,
   });
   const deltaMs = getFrameDeltaMs(
     bandState.liveInputPreviousFrameAtMs,
@@ -2038,16 +2090,15 @@ function resolveLiveInputNoiseGate({
     };
   }
 
-  const hardGateActive = detectLiveInputNoiseGate({
-    injectTestTone,
-    inputMode,
-    avgAmplitude,
-    rms,
-    fftMagnitudes,
-    sampleRate,
-    fftSize,
-    micAnalysisSettings: { acousticIntent },
-  });
+  const hardGateActive =
+    !injectTestTone &&
+    inputMode === "live" &&
+    detectLiveInputHardSilence(metrics, {
+      hardSilenceAvg: acousticIntentConfig.absoluteAvgAmplitude,
+      hardSilenceRms: acousticIntentConfig.absoluteRmsFloor,
+      hardSilencePeak: acousticIntentConfig.absolutePeakFloor,
+    }) &&
+    metrics.spectralCentroid < acousticIntentConfig.absoluteCentroidFloor;
   const thresholds = deriveLiveInputThresholds(bandState, acousticIntentConfig);
   const hardSilence = detectLiveInputHardSilence(metrics, thresholds);
 
@@ -2177,74 +2228,6 @@ function computeBandEnergies(fftMagnitudes, sampleRate, fftSize) {
   return bands;
 }
 
-function computeSpectralBandOutputs(fftMagnitudes, sampleRate) {
-  const spectralBandEnergies = new Float32Array(SPECTRAL_BAND_6_COUNT);
-  if (!fftMagnitudes?.length || !sampleRate) {
-    return {
-      spectralBandEnergies,
-      trebleBroadbandEnergy: 0,
-      trebleTonalEnergy: 0,
-    };
-  }
-
-  const sums = new Float32Array(SPECTRAL_BAND_6_COUNT);
-  const counts = new Float32Array(SPECTRAL_BAND_6_COUNT);
-  let trebleSum = 0;
-  let trebleLogSum = 0;
-  let trebleCount = 0;
-  let treblePeakEnergy = 0;
-
-  for (let i = 0; i < fftMagnitudes.length; i++) {
-    const frequency = binIndexToFrequencyHz(
-      i,
-      fftMagnitudes.length,
-      sampleRate,
-    );
-    const amplitude = fftMagnitudes[i] ?? 0;
-
-    let bandIndex = SPECTRAL_BAND_6_COUNT - 1;
-    for (let j = 0; j < SPECTRAL_BAND_6_LIMITS_HZ.length; j++) {
-      if (frequency <= SPECTRAL_BAND_6_LIMITS_HZ[j]) {
-        bandIndex = j;
-        break;
-      }
-    }
-    sums[bandIndex] += amplitude;
-    counts[bandIndex] += 1;
-
-    if (
-      frequency >= TREBLE_FLATNESS_MIN_HZ &&
-      frequency <= TREBLE_FLATNESS_MAX_HZ
-    ) {
-      trebleSum += amplitude;
-      trebleLogSum += Math.log(Math.max(amplitude, 1e-8));
-      trebleCount += 1;
-      if (amplitude > treblePeakEnergy) treblePeakEnergy = amplitude;
-    }
-  }
-
-  for (let i = 0; i < SPECTRAL_BAND_6_COUNT; i++) {
-    spectralBandEnergies[i] =
-      counts[i] > 0 ? Math.min(1, sums[i] / counts[i]) : 0;
-  }
-
-  let trebleFlatness = 0;
-  let trebleMean = 0;
-  if (trebleCount > 0) {
-    trebleMean = trebleSum / trebleCount;
-    const trebleGeometricMean = Math.exp(trebleLogSum / trebleCount);
-    trebleFlatness =
-      trebleMean > 1e-8 ? Math.min(1, trebleGeometricMean / trebleMean) : 0;
-  }
-
-  const trebleBroadbandEnergy = clamp01(trebleMean * trebleFlatness * 6);
-  const trebleTonalEnergy = clamp01(
-    treblePeakEnergy * (1 - trebleFlatness) * 4,
-  );
-
-  return { spectralBandEnergies, trebleBroadbandEnergy, trebleTonalEnergy };
-}
-
 function computeSpectralCentroid(fftMagnitudes, sampleRate) {
   if (!fftMagnitudes?.length || !sampleRate) return 0;
 
@@ -2267,17 +2250,165 @@ function computeSpectralCentroid(fftMagnitudes, sampleRate) {
   return Math.min(1, weightedFrequency / amplitudeTotal / Math.max(1, nyquist));
 }
 
-function computeSpectralFlux(fftMagnitudes, previousSpectrum) {
-  if (!fftMagnitudes?.length || !previousSpectrum?.length) return 0;
-
-  const limit = Math.min(fftMagnitudes.length, previousSpectrum.length);
-  let positiveDelta = 0;
-  for (let i = 0; i < limit; i++) {
-    const delta = (fftMagnitudes[i] ?? 0) - (previousSpectrum[i] ?? 0);
-    if (delta > 0) positiveDelta += delta;
+function computeSignalSpectrumMetrics({
+  fftMagnitudes,
+  previousSpectrum,
+  sampleRate,
+  fftSize,
+}) {
+  const bandEnergies = new Float32Array(BAND_BUCKET_COUNT);
+  const spectralBandEnergies = new Float32Array(SPECTRAL_BAND_6_COUNT);
+  const empty = {
+    bandEnergies,
+    spectralBandEnergies,
+    trebleBroadbandEnergy: 0,
+    trebleTonalEnergy: 0,
+    spectralCentroid: 0,
+    spectralFlux: 0,
+  };
+  if (!fftMagnitudes?.length) {
+    return empty;
   }
 
-  return Math.min(1, positiveDelta / Math.max(1, limit));
+  const hasFrequencyDomain = Boolean(sampleRate);
+  const hasBandEnergyDomain = hasFrequencyDomain && Boolean(fftSize);
+  const bandSums = hasBandEnergyDomain
+    ? new Float32Array(BAND_BUCKET_COUNT)
+    : null;
+  const bandSquareSums = hasBandEnergyDomain
+    ? new Float32Array(BAND_BUCKET_COUNT)
+    : null;
+  const bandPeaks = hasBandEnergyDomain
+    ? new Float32Array(BAND_BUCKET_COUNT)
+    : null;
+  const bandCounts = hasBandEnergyDomain
+    ? new Float32Array(BAND_BUCKET_COUNT)
+    : null;
+  const spectralSums = hasFrequencyDomain
+    ? new Float32Array(SPECTRAL_BAND_6_COUNT)
+    : null;
+  const spectralCounts = hasFrequencyDomain
+    ? new Float32Array(SPECTRAL_BAND_6_COUNT)
+    : null;
+  const fluxLimit = previousSpectrum?.length
+    ? Math.min(fftMagnitudes.length, previousSpectrum.length)
+    : 0;
+  const nyquist = hasFrequencyDomain ? sampleRate * 0.5 : 0;
+  let weightedFrequency = 0;
+  let amplitudeTotal = 0;
+  let positiveDelta = 0;
+  let trebleSum = 0;
+  let trebleLogSum = 0;
+  let trebleCount = 0;
+  let treblePeakEnergy = 0;
+
+  for (let i = 0; i < fftMagnitudes.length; i += 1) {
+    const amplitude = fftMagnitudes[i] ?? 0;
+
+    if (i < fluxLimit) {
+      const delta = amplitude - (previousSpectrum[i] ?? 0);
+      if (delta > 0) positiveDelta += delta;
+    }
+
+    if (!hasFrequencyDomain) {
+      continue;
+    }
+
+    const frequency = binIndexToFrequencyHz(
+      i,
+      fftMagnitudes.length,
+      sampleRate,
+    );
+    if (amplitude > 0) {
+      weightedFrequency += frequency * amplitude;
+      amplitudeTotal += amplitude;
+    }
+
+    if (hasBandEnergyDomain) {
+      let bandIndex = BAND_BUCKET_COUNT - 1;
+      for (let j = 0; j < BAND_LIMITS_HZ.length; j += 1) {
+        if (frequency <= BAND_LIMITS_HZ[j]) {
+          bandIndex = j;
+          break;
+        }
+      }
+      bandSums[bandIndex] += amplitude;
+      bandSquareSums[bandIndex] += amplitude * amplitude;
+      bandPeaks[bandIndex] = Math.max(bandPeaks[bandIndex], amplitude);
+      bandCounts[bandIndex] += 1;
+    }
+
+    let spectralBandIndex = SPECTRAL_BAND_6_COUNT - 1;
+    for (let j = 0; j < SPECTRAL_BAND_6_LIMITS_HZ.length; j += 1) {
+      if (frequency <= SPECTRAL_BAND_6_LIMITS_HZ[j]) {
+        spectralBandIndex = j;
+        break;
+      }
+    }
+    spectralSums[spectralBandIndex] += amplitude;
+    spectralCounts[spectralBandIndex] += 1;
+
+    if (
+      frequency >= TREBLE_FLATNESS_MIN_HZ &&
+      frequency <= TREBLE_FLATNESS_MAX_HZ
+    ) {
+      trebleSum += amplitude;
+      trebleLogSum += Math.log(Math.max(amplitude, 1e-8));
+      trebleCount += 1;
+      if (amplitude > treblePeakEnergy) treblePeakEnergy = amplitude;
+    }
+  }
+
+  if (fluxLimit > 0) {
+    empty.spectralFlux = Math.min(1, positiveDelta / Math.max(1, fluxLimit));
+  }
+
+  if (hasBandEnergyDomain) {
+    for (let i = 0; i < BAND_BUCKET_COUNT; i += 1) {
+      if (bandCounts[i] <= 0) {
+        bandEnergies[i] = 0;
+        continue;
+      }
+
+      const mean = bandSums[i] / bandCounts[i];
+      const rms = Math.sqrt(bandSquareSums[i] / bandCounts[i]);
+      bandEnergies[i] = Math.min(
+        1,
+        Math.max(mean, rms * 0.55, bandPeaks[i] * 0.18),
+      );
+    }
+  }
+
+  if (hasFrequencyDomain) {
+    for (let i = 0; i < SPECTRAL_BAND_6_COUNT; i += 1) {
+      spectralBandEnergies[i] =
+        spectralCounts[i] > 0
+          ? Math.min(1, spectralSums[i] / spectralCounts[i])
+          : 0;
+    }
+
+    if (amplitudeTotal > 1e-6) {
+      empty.spectralCentroid = Math.min(
+        1,
+        weightedFrequency / amplitudeTotal / Math.max(1, nyquist),
+      );
+    }
+
+    let trebleFlatness = 0;
+    let trebleMean = 0;
+    if (trebleCount > 0) {
+      trebleMean = trebleSum / trebleCount;
+      const trebleGeometricMean = Math.exp(trebleLogSum / trebleCount);
+      trebleFlatness =
+        trebleMean > 1e-8 ? Math.min(1, trebleGeometricMean / trebleMean) : 0;
+    }
+    empty.trebleBroadbandEnergy = clamp01(trebleMean * trebleFlatness * 6);
+    empty.trebleTonalEnergy = clamp01(
+      treblePeakEnergy * (1 - trebleFlatness) * 4,
+    );
+  }
+
+  return empty;
 }
 
 function deriveModeDeltaMetrics(modeSlots, referenceModeSlots, capacity) {
@@ -3310,11 +3441,19 @@ function updateBandSignalState({
   ) {
     resetBeatTrackingState(analysisMemory);
   }
-  const bandEnergies = computeBandEnergies(fftMagnitudes, sampleRate, fftSize);
-  const { spectralBandEnergies, trebleBroadbandEnergy, trebleTonalEnergy } =
-    computeSpectralBandOutputs(fftMagnitudes, sampleRate);
-  const spectralCentroid = computeSpectralCentroid(fftMagnitudes, sampleRate);
-  const spectralFlux = computeSpectralFlux(fftMagnitudes, previousSpectrum);
+  const {
+    bandEnergies,
+    spectralBandEnergies,
+    trebleBroadbandEnergy,
+    trebleTonalEnergy,
+    spectralCentroid,
+    spectralFlux,
+  } = computeSignalSpectrumMetrics({
+    fftMagnitudes,
+    previousSpectrum,
+    sampleRate,
+    fftSize,
+  });
   const rmsDelta = Math.max(0, rms - (bandState.previousRms ?? 0));
   const transientEnergy = Math.min(1, spectralFlux * 0.75 + rmsDelta * 0.25);
   const resolvedBeatSettings = {
@@ -4085,11 +4224,9 @@ export function prepareAudioFeatureFrameInputs({
   const analyserRms = snapshot?.rms ?? 0;
   const fftMagnitudesSource =
     snapshot?.fftMagnitudes ?? new Float32Array(fftSize / 2);
-  const preModalFftPeak = findPeakFftMagnitude(fftMagnitudesSource);
-  const spectralCentroidHint = computeSpectralCentroid(
-    fftMagnitudesSource,
-    sampleRate,
-  );
+  const fftSummary = computeBasicFftSummary(fftMagnitudesSource, sampleRate);
+  const preModalFftPeak = fftSummary.peakMagnitude;
+  const spectralCentroidHint = fftSummary.spectralCentroid;
   const {
     active: liveInputNoiseGateActive,
     hardSilence: liveInputHardSilenceActive,
@@ -4105,6 +4242,8 @@ export function prepareAudioFeatureFrameInputs({
         fftMagnitudes: fftMagnitudesSource,
         sampleRate,
         fftSize,
+        preModalFftPeak,
+        spectralCentroidHint,
         currentFrameAtMs,
         calibrationVersion,
         micAnalysisSettings: resolvedMicAnalysisSettings,
@@ -4127,18 +4266,21 @@ export function prepareAudioFeatureFrameInputs({
     status,
     inputMode,
   );
-  const lineFeedMetrics = {
-    ...computeLiveInputMetrics({
-      avgAmplitude,
-      rms: analyserRms,
-      fftMagnitudes: fftMagnitudesSource,
-      sampleRate,
-      fftSize,
-    }),
-    transportSpectrumSilent:
-      countNonZeroFftBins(fftMagnitudesSource) === 0 &&
-      preModalFftPeak <= 0.003,
-  };
+  const lineFeedMetrics = isLineFeedLiveInput
+    ? {
+        ...computeLiveInputMetrics({
+          avgAmplitude,
+          rms: analyserRms,
+          fftMagnitudes: fftMagnitudesSource,
+          sampleRate,
+          fftSize,
+          peakAmplitude: preModalFftPeak,
+          spectralCentroid: spectralCentroidHint,
+        }),
+        transportSpectrumSilent:
+          fftSummary.nonZeroBinCount === 0 && preModalFftPeak <= 0.003,
+      }
+    : null;
   const lineFeedProgramActivity = isLineFeedLiveInput
     ? resolveLineFeedProgramActivity({
         bandState: analysisMemory.bandState,
@@ -4181,7 +4323,7 @@ export function prepareAudioFeatureFrameInputs({
         avgAmplitude,
         analyserRms,
         preModalFftPeak,
-        nonZeroFftBinCount: countNonZeroFftBins(fftMagnitudesSource),
+        nonZeroFftBinCount: fftSummary.nonZeroBinCount,
       },
     }),
   );
@@ -4250,6 +4392,7 @@ export function prepareAudioFeatureFrameInputs({
     fftMagnitudesSource,
     preModalFftPeak,
     spectralCentroidHint,
+    nonZeroFftBinCount: fftSummary.nonZeroBinCount,
     liveInputNoiseGateActive,
     liveInputHardSilenceActive,
     liveInputCalibrationInvalid,
@@ -4288,6 +4431,7 @@ function resolveEffectiveFftState(preparedInputs) {
     fftMagnitudesSource,
     snapshot,
     preModalFftPeak,
+    nonZeroFftBinCount,
   } = preparedInputs;
 
   let micFftNormGain = 1;
@@ -4328,7 +4472,15 @@ function resolveEffectiveFftState(preparedInputs) {
     micFftNormGain,
     effectiveFftMagnitudes,
     effectiveSnapshot,
-    postNormalizationFftPeak: findPeakFftMagnitude(effectiveFftMagnitudes),
+    postNormalizationFftPeak:
+      effectiveFftMagnitudes === fftMagnitudesSource
+        ? preModalFftPeak
+        : findPeakFftMagnitude(effectiveFftMagnitudes),
+    nonZeroFFTBinCount:
+      effectiveFftMagnitudes === fftMagnitudesSource &&
+      Number.isFinite(nonZeroFftBinCount)
+        ? nonZeroFftBinCount
+        : countNonZeroFFTBinCount(effectiveFftMagnitudes),
   };
 }
 
@@ -5031,7 +5183,9 @@ export function buildCurrentAudioFeatureAnalysisResult({
     soundActive: preparedInputs.soundActive,
     micActive: preparedInputs.micActive,
     fftMagnitudes: fastSignalState.fftMagnitudes,
-    nonZeroFFTBinCount: countNonZeroFFTBinCount(fastSignalState.fftMagnitudes),
+    nonZeroFFTBinCount:
+      fastSignalState.nonZeroFFTBinCount ??
+      countNonZeroFFTBinCount(fastSignalState.fftMagnitudes),
     candidateForcingSlots: resolvedStructural.candidateForcingSlots,
     candidateResponseSlots: resolvedStructural.candidateResponseSlots,
     sourceCoupledPhaseSlots: resolvedStructural.sourceCoupledPhaseSlots,
@@ -5119,7 +5273,9 @@ export function buildFastSignalPatchedAudioFeatureAnalysisResult({
     soundActive: preparedInputs.soundActive,
     micActive: preparedInputs.micActive,
     fftMagnitudes: fastSignalState.fftMagnitudes,
-    nonZeroFFTBinCount: countNonZeroFFTBinCount(fastSignalState.fftMagnitudes),
+    nonZeroFFTBinCount:
+      fastSignalState.nonZeroFFTBinCount ??
+      countNonZeroFFTBinCount(fastSignalState.fftMagnitudes),
     bandEnergies: fastSignalState.bandEnergies,
     spectralBandEnergies: fastSignalState.spectralBandEnergies,
     trebleBroadbandEnergy: fastSignalState.trebleBroadbandEnergy,
@@ -5200,9 +5356,9 @@ export function buildAudioFeatureAnalysisSnapshot({
       .sort((left, right) => (right.weight ?? 0) - (left.weight ?? 0))
       .slice(0, 8),
   );
-  const nonZeroFFTBinCount = countNonZeroFFTBinCount(
-    analysisResult.fftMagnitudes,
-  );
+  const nonZeroFFTBinCount =
+    analysisResult.nonZeroFFTBinCount ??
+    countNonZeroFFTBinCount(analysisResult.fftMagnitudes);
   const referencePitchBinAmplitude = analysisResult.dominantFrequency
     ? sampleFFTAmplitudeForFrequency(
         analysisResult.dominantFrequency,

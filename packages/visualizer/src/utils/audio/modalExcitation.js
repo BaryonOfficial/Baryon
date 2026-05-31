@@ -1719,6 +1719,7 @@ function updateObservedModalModes({
     !preparedInputs.bandState?.liveInputCalibrationActive;
   const sourceAnalysisClass =
     getPreparedInputsSourceEvidence(preparedInputs).analysisClass ?? "none";
+  const observationByMode = new Map();
 
   for (const atlasEntry of atlas) {
     const profile = getModalObserverProfile(atlasEntry.layer);
@@ -1756,6 +1757,10 @@ function updateObservedModalModes({
       driveSource,
       analysisClass: sourceAnalysisClass,
       profile,
+    });
+    observationByMode.set(atlasEntry.modeKey, {
+      response,
+      spectralSupport,
     });
     const previous = state.observedModes?.get(atlasEntry.modeKey) ?? null;
     const observed = hasObservedModalDrive(observation, profile);
@@ -1831,7 +1836,10 @@ function updateObservedModalModes({
       );
 
   const summary = summarizeObservedModes(state.observedModes);
-  return summary;
+  return {
+    summary,
+    observationByMode,
+  };
 }
 
 function mergeExcitedObservedModes({
@@ -3164,7 +3172,7 @@ export function buildModalExcitationStructuralState({
   state.lastFrameAtMs = preparedInputs.currentFrameAtMs;
   const sourceCoupledCapacity = state.sourceCoupledProposal.slots.length / 4;
   const resonantCapacity = state.resonantProposal.slots.length / 4;
-  let modalObserverMetrics = updateObservedModalModes({
+  const observedModalResult = updateObservedModalModes({
     state,
     atlas,
     driveBuffer,
@@ -3184,6 +3192,8 @@ export function buildModalExcitationStructuralState({
       resonant: resonantCapacity,
     },
   });
+  let modalObserverMetrics = observedModalResult.summary;
+  const observationByMode = observedModalResult.observationByMode;
   modalObserverMetrics = appendHighQSparseAuthority({
     modalObserverMetrics,
     distributedExcitation,
@@ -3341,6 +3351,7 @@ export function buildModalExcitationStructuralState({
     : dominantDriveFrequencyHz || previousSourceCoupledCouplingFrequencyHz;
 
   for (const atlasEntry of atlas) {
+    const observedMeasurement = observationByMode?.get(atlasEntry.modeKey);
     const modalResponseEntry = modalResponseByMode.get(atlasEntry.modeKey);
     const modalResponseEnergy = clamp01(
       modalResponseEntry?.modalResponseEnergy ?? 0,
@@ -3351,17 +3362,21 @@ export function buildModalExcitationStructuralState({
     const modalResponseDisplayAmplitude = clamp01(
       modalResponseEntry?.displayAmplitude ?? 0,
     );
-    const response = computeModeResponse(
-      driveBuffer,
-      preparedInputs.sampleRate,
-      atlasEntry.naturalFrequencyHz,
-    );
-    const spectralSupport = sampleFFTAmplitudeForFrequency(
-      atlasEntry.naturalFrequencyHz,
-      fastSignalState.fftMagnitudes,
-      preparedInputs.sampleRate,
-      preparedInputs.fftSize,
-    );
+    const response =
+      observedMeasurement?.response ??
+      computeModeResponse(
+        driveBuffer,
+        preparedInputs.sampleRate,
+        atlasEntry.naturalFrequencyHz,
+      );
+    const spectralSupport =
+      observedMeasurement?.spectralSupport ??
+      sampleFFTAmplitudeForFrequency(
+        atlasEntry.naturalFrequencyHz,
+        fastSignalState.fftMagnitudes,
+        preparedInputs.sampleRate,
+        preparedInputs.fftSize,
+      );
     const rawTimeDomainModalDrive =
       drivePeak < 0.005
         ? 0
