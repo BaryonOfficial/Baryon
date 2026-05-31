@@ -1498,6 +1498,8 @@ test.describe("Baryon control smoke", () => {
         fieldState: expect.not.stringMatching(/^idle$/),
         modeSlotCount: expect.any(Number),
       });
+    await expect(page.getByTestId("camera-controls")).toBeVisible();
+    await expect(page.getByTestId("camera-controls")).toContainText("Camera");
 
     await page.locator(".am-slider").evaluate((input) => {
       input.value = "0";

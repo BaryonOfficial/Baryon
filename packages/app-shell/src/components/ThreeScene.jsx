@@ -78,6 +78,20 @@ function resolveEffectiveCameraViewPreset({
     : cameraViewPreset;
 }
 
+function formatCameraCoordinate(value) {
+  const number = Number.isFinite(value) ? Number(value) : 0;
+  const normalized = Object.is(number, -0) ? 0 : number;
+  return normalized.toFixed(2);
+}
+
+function createCameraPoseDisplayKey(cameraPose) {
+  return [
+    formatCameraCoordinate(cameraPose?.position?.x),
+    formatCameraCoordinate(cameraPose?.position?.y),
+    formatCameraCoordinate(cameraPose?.position?.z),
+  ].join(":");
+}
+
 /**
  * @param {{
  *   controlsOverlay?: import("react").ReactNode,
@@ -152,6 +166,7 @@ const ThreeScene = ({
     CAMERA_VIEW_PRESETS.topDown,
   );
   const [cameraPoseOverride, setCameraPoseOverride] = useState(null);
+  const [latestFrameCameraPose, setLatestFrameCameraPose] = useState(null);
   const [cameraResetNonce, setCameraResetNonce] = useState(0);
   const [frameFieldState, setFrameFieldState] = useState("idle");
   const [viewportWidth, setViewportWidth] = useState(() =>
@@ -208,6 +223,7 @@ const ThreeScene = ({
       cameraPoseOverride ?? resolvePresetCameraPose(effectiveCameraViewPreset),
     [cameraPoseOverride, effectiveCameraViewPreset],
   );
+  const displayedCameraPose = latestFrameCameraPose ?? effectiveCameraPose;
   const cameraConfig = /** @type {{
     position: [number, number, number],
     up: [number, number, number],
@@ -247,9 +263,11 @@ const ThreeScene = ({
   });
   const showOverlayUi = isSupportReady && !isFullscreen;
   const previewOverlayState = resolvePreviewOverlayState(previewState);
+  const cameraControlsAvailable =
+    liveInputUiState === "active" || resolvedFrameFieldState !== "idle";
   const cameraControlState = deriveCameraControlState({
-    available: liveInputUiState === "active",
-    appliedCameraPose: effectiveCameraPose,
+    available: cameraControlsAvailable,
+    appliedCameraPose: displayedCameraPose,
     fallbackPreset: effectiveCameraViewPreset,
   });
   const useAuthoritativePerformanceHud = shouldUseAuthoritativePerformanceHud({
@@ -310,6 +328,7 @@ const ThreeScene = ({
 
   const applyCameraPreset = (preset) => {
     const command = createCameraPresetCommand(preset);
+    setLatestFrameCameraPose(null);
     setCameraPoseOverride(null);
     setAppliedCameraViewPreset(preset);
     setCameraResetNonce((current) => current + 1);
@@ -321,6 +340,7 @@ const ThreeScene = ({
       effectiveCameraPose,
       cameraControlState.activePreset ?? effectiveCameraViewPreset,
     );
+    setLatestFrameCameraPose(null);
     setCameraPoseOverride(null);
     setCameraResetNonce((current) => current + 1);
     dispatchCameraControlCommand(command);
@@ -336,6 +356,7 @@ const ThreeScene = ({
         applyCameraPreset(preset);
       },
       setPose(cameraPose) {
+        setLatestFrameCameraPose(null);
         setCameraPoseOverride(cameraPose);
         setCameraResetNonce((current) => current + 1);
       },
@@ -352,6 +373,14 @@ const ThreeScene = ({
       setFrameFieldState((current) =>
         current === nextFieldState ? current : nextFieldState,
       );
+      if (state?.cameraPose) {
+        setLatestFrameCameraPose((current) =>
+          createCameraPoseDisplayKey(current) ===
+          createCameraPoseDisplayKey(state.cameraPose)
+            ? current
+            : state.cameraPose,
+        );
+      }
       onFrameState?.(state);
     },
     [onFrameState],
@@ -510,6 +539,7 @@ const ThreeScene = ({
       {showCameraControls ? (
         <FloatingCameraControls
           activePreset={cameraControlState.activePreset}
+          cameraPose={displayedCameraPose}
           onPresetSelect={applyCameraPreset}
           onPresetReset={resetCameraPreset}
           cameraLocked={controlsState.cameraLocked === true}

@@ -1,6 +1,6 @@
 import {
   CAMERA_VIEW_PRESETS,
-  resolveCameraPresetFromPose,
+  resolveCameraPresetMatchFromPose,
   resolvePresetCameraPose,
 } from "./cameraPosePresets.js";
 
@@ -66,9 +66,8 @@ export function deriveCameraControlState({
 
   return {
     visible: true,
-    activePreset: resolveCameraPresetFromPose(
-      appliedCameraPose,
-      normalizeCameraControlPreset(fallbackPreset),
-    ),
+    activePreset:
+      resolveCameraPresetMatchFromPose(appliedCameraPose) ??
+      (appliedCameraPose ? null : normalizeCameraControlPreset(fallbackPreset)),
   };
 }

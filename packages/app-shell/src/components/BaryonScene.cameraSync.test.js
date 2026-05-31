@@ -95,8 +95,8 @@ test("camera pose preset helper still produces canonical side and top-down poses
   expect(resolvePresetCameraPose("top-down")).toMatchObject({
     position: {
       x: 0,
-      y: expect.closeTo(9, 6),
-      z: expect.closeTo(0.001, 6),
+      y: 9,
+      z: 0,
     },
     target: { x: 0, y: 0, z: 0 },
     up: { x: 0, y: 0, z: -1 },
