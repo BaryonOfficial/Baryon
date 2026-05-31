@@ -92,6 +92,7 @@ function createModalFreshnessDiagnostics() {
   return {
     frameTimeMs: 0,
     sourceMode: null,
+    sourceEvidence: null,
     fieldState: "idle",
     frameSemanticSource: null,
     frameSemanticFresh: false,
@@ -152,6 +153,50 @@ function createModalFreshnessDiagnostics() {
   };
 }
 
+function readFiniteDiagnosticNumber(value, fallback = 0) {
+  return Number.isFinite(value) ? Number(value) : fallback;
+}
+
+function readDiagnosticString(value, fallback = null) {
+  return typeof value === "string" && value.length > 0 ? value : fallback;
+}
+
+export function snapshotSourceEvidenceDiagnostics(sourceEvidence) {
+  if (!sourceEvidence) {
+    return null;
+  }
+
+  const metrics = sourceEvidence.metrics ?? {};
+  const transport = sourceEvidence.transport ?? {};
+  return {
+    ownerVersion: readDiagnosticString(sourceEvidence.ownerVersion),
+    sourceKind: readDiagnosticString(sourceEvidence.sourceKind, "none"),
+    analysisClass: readDiagnosticString(sourceEvidence.analysisClass, "none"),
+    sourceBoundaryState: readDiagnosticString(
+      sourceEvidence.sourceBoundaryState,
+      "absent",
+    ),
+    currentSourceEvidence: sourceEvidence.currentSourceEvidence === true,
+    sourceEnergy: readFiniteDiagnosticNumber(sourceEvidence.sourceEnergy),
+    metrics: {
+      avgAmplitude: readFiniteDiagnosticNumber(metrics.avgAmplitude),
+      analyserRms: readFiniteDiagnosticNumber(metrics.analyserRms),
+      preModalFftPeak: readFiniteDiagnosticNumber(metrics.preModalFftPeak),
+      nonZeroFftBinCount: Math.max(
+        0,
+        Math.floor(readFiniteDiagnosticNumber(metrics.nonZeroFftBinCount)),
+      ),
+    },
+    transport: {
+      playing: transport.playing === true,
+      liveInputActive: transport.liveInputActive === true,
+      fileMuted: transport.fileMuted === true,
+      lineFeedProgramActive: transport.lineFeedProgramActive === true,
+      micHardSilence: transport.micHardSilence === true,
+    },
+  };
+}
+
 function copyRecentLongFrames(recentLongFramesMs) {
   return Array.isArray(recentLongFramesMs) ? [...recentLongFramesMs] : [];
 }
@@ -164,6 +209,9 @@ export function snapshotModalFreshnessDiagnostics(modalFreshness) {
   return {
     frameTimeMs: modalFreshness.frameTimeMs ?? 0,
     sourceMode: modalFreshness.sourceMode ?? null,
+    sourceEvidence: snapshotSourceEvidenceDiagnostics(
+      modalFreshness.sourceEvidence,
+    ),
     fieldState: modalFreshness.fieldState ?? "idle",
     frameSemanticSource: modalFreshness.frameSemanticSource ?? null,
     frameSemanticFresh: modalFreshness.frameSemanticFresh ?? false,

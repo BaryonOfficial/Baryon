@@ -63,6 +63,7 @@ function createLiveRenderFrameEvidence({
     sourceEvidence: {
       sourceBoundaryState: "live",
       currentSourceEvidence: true,
+      sourceEnergy: projectedRenderEnergy,
     },
   };
 }
@@ -748,6 +749,27 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
     {
       frameTimeMs: 1016,
       sourceMode: "live",
+      sourceEvidence: {
+        ownerVersion: "audio-source-evidence:v1",
+        sourceKind: "system",
+        analysisClass: "line-feed",
+        sourceBoundaryState: "live",
+        currentSourceEvidence: true,
+        sourceEnergy: 0.44,
+        metrics: {
+          avgAmplitude: 13.25,
+          analyserRms: 0.044,
+          preModalFftPeak: 0.31,
+          nonZeroFftBinCount: 128,
+        },
+        transport: {
+          playing: false,
+          liveInputActive: true,
+          fileMuted: false,
+          lineFeedProgramActive: true,
+          micHardSilence: false,
+        },
+      },
       structureSignal: 0.28,
       energySignal: 0.4,
       changeSignal: 0.52,
@@ -797,6 +819,27 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
   expect(runtimeDiagnostics.modalFreshness).toMatchObject({
     frameTimeMs: 1016,
     sourceMode: "live",
+    sourceEvidence: {
+      ownerVersion: "audio-source-evidence:v1",
+      sourceKind: "system",
+      analysisClass: "line-feed",
+      sourceBoundaryState: "live",
+      currentSourceEvidence: true,
+      sourceEnergy: 0.44,
+      metrics: {
+        avgAmplitude: 13.25,
+        analyserRms: 0.044,
+        preModalFftPeak: 0.31,
+        nonZeroFftBinCount: 128,
+      },
+      transport: {
+        playing: false,
+        liveInputActive: true,
+        fileMuted: false,
+        lineFeedProgramActive: true,
+        micHardSilence: false,
+      },
+    },
     structuralSnapshotAgeMs: 41,
     featureFrameAgeAtRenderMs: 234,
     renderSubmittedAtMs: 1250,
@@ -1694,18 +1737,23 @@ test("clearing adaptive resume state forces the next authoritative session to re
   expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.67);
 });
 
-test("auto raymarch does not recover during decay frames", () => {
+test("auto raymarch ignores field-state labels when ledger authority is present", () => {
   const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness({
     effectiveFrame: {
       fieldState: "decay",
-      energySignal: 0.22,
+      energySignal: 0,
     },
   });
   primeAdaptiveRecoveryAttempt(runtimeDiagnostics);
 
   updateAdaptiveRaymarchStepBudget(args);
 
-  assertAdaptiveRecoveryBlocked(runtimeDiagnostics, "inactive-field");
+  expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(4);
+  expect(runtimeDiagnostics.adaptiveRaymarch.stepUpCount).toBe(1);
+  expect(runtimeDiagnostics.adaptiveRaymarch.recoveryEligible).toBe(true);
+  expect(runtimeDiagnostics.adaptiveRaymarch.recoveryBlockedReason).toBe(
+    "none",
+  );
 });
 
 test("auto raymarch does not recover during silent playback gaps", () => {
@@ -1738,14 +1786,15 @@ test("auto raymarch does not recover during silent playback gaps", () => {
 test("auto raymarch does not recover on weak active audio", () => {
   const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness({
     effectiveFrame: {
-      energySignal: 0.04,
+      energySignal: 0.4,
+      ...createLiveRenderFrameEvidence({ projectedRenderEnergy: 0.04 }),
     },
   });
   primeAdaptiveRecoveryAttempt(runtimeDiagnostics);
 
   updateAdaptiveRaymarchStepBudget(args);
 
-  assertAdaptiveRecoveryBlocked(runtimeDiagnostics, "low-energy");
+  assertAdaptiveRecoveryBlocked(runtimeDiagnostics, "low-render-energy");
 });
 
 test("auto raymarch resumes recovery on sustained active audio", () => {

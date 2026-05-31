@@ -1,8 +1,6 @@
 import { Buffer } from "node:buffer";
 import { expect, test } from "@playwright/test";
 
-const ACTIVE_LIVE_INPUT_AUDIT_MODES = new Set(["live", "system"]);
-
 function createMonoWavBuffer({
   sampleRate = 44100,
   durationSeconds = 1,
@@ -263,15 +261,25 @@ async function setControl(page, key, value) {
   );
 }
 
-function isLiveInputAuditModeActive(audioInputMode) {
-  return ACTIVE_LIVE_INPUT_AUDIT_MODES.has(audioInputMode);
+function isLiveInputSourceEvidenceActive(sourceEvidence) {
+  return (
+    sourceEvidence?.transport?.liveInputActive === true ||
+    (sourceEvidence?.currentSourceEvidence === true &&
+      sourceEvidence?.sourceBoundaryState === "live" &&
+      (sourceEvidence?.sourceKind === "mic" ||
+        sourceEvidence?.sourceKind === "system"))
+  );
 }
 
 async function readLiveInputAuditState(page) {
   const auditState = await page.evaluate(() => {
     const snapshot = window.__baryonAuditSnapshot ?? {};
+    const sourceEvidence =
+      snapshot.audioDiagnostics?.runtime?.modalFreshness?.sourceEvidence ??
+      null;
     return {
       audioInputMode: snapshot.audioInputMode ?? "idle",
+      sourceEvidence,
       analysisSourceUsed: snapshot.analysisSourceUsed ?? null,
       liveInputCalibrationActive: snapshot.liveInputCalibrationActive ?? false,
       liveInputHardSilenceActive: snapshot.liveInputHardSilenceActive ?? false,
@@ -283,19 +291,26 @@ async function readLiveInputAuditState(page) {
 
   return {
     ...auditState,
-    liveInputActive: isLiveInputAuditModeActive(auditState.audioInputMode),
+    liveInputActive: isLiveInputSourceEvidenceActive(auditState.sourceEvidence),
   };
 }
 
 async function readRestoredLocalFileState(page) {
   return page.evaluate(() => {
-    const audioInputMode =
-      window.__baryonAuditSnapshot?.audioInputMode ?? "idle";
+    const snapshot = window.__baryonAuditSnapshot ?? {};
+    const sourceEvidence =
+      snapshot.audioDiagnostics?.runtime?.modalFreshness?.sourceEvidence ??
+      null;
     return {
       fileLabel:
         document.querySelector(".am-filename")?.textContent?.trim() ?? "",
       playDisabled: document.querySelector(".am-btn--play")?.disabled ?? true,
-      liveInputActive: ["live", "system"].includes(audioInputMode),
+      liveInputActive:
+        sourceEvidence?.transport?.liveInputActive === true ||
+        (sourceEvidence?.currentSourceEvidence === true &&
+          sourceEvidence?.sourceBoundaryState === "live" &&
+          (sourceEvidence?.sourceKind === "mic" ||
+            sourceEvidence?.sourceKind === "system")),
     };
   });
 }
@@ -955,10 +970,16 @@ test.describe("Baryon control smoke", () => {
       const startedAt = performance.now();
       while (performance.now() - startedAt < 900) {
         const snapshot = window.__baryonAuditSnapshot ?? {};
-        const audioInputMode = snapshot.audioInputMode ?? "idle";
+        const sourceEvidence =
+          snapshot.audioDiagnostics?.runtime?.modalFreshness?.sourceEvidence ??
+          null;
         collected.push({
           liveInputActive:
-            audioInputMode === "live" || audioInputMode === "system",
+            sourceEvidence?.transport?.liveInputActive === true ||
+            (sourceEvidence?.currentSourceEvidence === true &&
+              sourceEvidence?.sourceBoundaryState === "live" &&
+              (sourceEvidence?.sourceKind === "mic" ||
+                sourceEvidence?.sourceKind === "system")),
           driverFrequency: snapshot.driverFrequency ?? 0,
           candidateFrequency: snapshot.candidateFrequency ?? 0,
           highCandidateRejected: snapshot.highCandidateRejected ?? false,

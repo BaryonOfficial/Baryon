@@ -6,10 +6,20 @@ import {
   recordTailDiagnosticsSample,
 } from "./tailDiagnostics.js";
 
+function createLiveSourceEvidence(overrides = {}) {
+  return {
+    sourceBoundaryState: "live",
+    currentSourceEvidence: true,
+    sourceEnergy: 0.4,
+    ...overrides,
+  };
+}
+
 function createRuntimeDiagnostics(overrides = {}) {
   return {
     modalFreshness: {
       sourceMode: "system",
+      sourceEvidence: createLiveSourceEvidence(),
       fieldState: "active",
       avgAmplitude: 0.4,
       analyserRms: 0.004,
@@ -80,6 +90,7 @@ test("tail diagnostics records compact samples on the configured interval", () =
         volumeVisible: true,
         idleOverlayVisible: false,
         raymarchDebug: {
+          renderAuthority: true,
           observationReferenceDensityFloor: 0.04,
           observationReferenceContourSupport: 0.03,
           observationSampledDensityFloor: 0.025,
@@ -110,6 +121,7 @@ test("tail diagnostics records compact samples on the configured interval", () =
   expect(dump.samples[0]).toMatchObject({
     tMs: 0,
     input: {
+      sourceEvidence: createLiveSourceEvidence(),
       avgAmplitude: 0.4,
       analyserRms: 0.004,
       sourceMode: "system",
@@ -121,6 +133,7 @@ test("tail diagnostics records compact samples on the configured interval", () =
     },
     frame: {
       fieldState: "active",
+      renderAuthority: true,
       activeModeCount: 16,
       observationEnergy: 0.32,
     },
@@ -150,6 +163,11 @@ test("tail diagnostics classifies black-tail failure seams", () => {
   expect(
     classifyTailDiagnosticSample({
       input: {
+        sourceEvidence: createLiveSourceEvidence({
+          sourceBoundaryState: "muted",
+          currentSourceEvidence: false,
+          sourceEnergy: 0,
+        }),
         avgAmplitude: 0,
         analyserRms: 0,
         hardSilence: true,
@@ -164,19 +182,30 @@ test("tail diagnostics classifies black-tail failure seams", () => {
 
   expect(
     classifyTailDiagnosticSample({
-      input: { avgAmplitude: 0.3, analyserRms: 0.004, sourceMode: "system" },
+      input: {
+        sourceEvidence: createLiveSourceEvidence(),
+        avgAmplitude: 0.3,
+        analyserRms: 0.004,
+        sourceMode: "system",
+      },
       observer: { observedResonanceModeCount: 0, observedResonanceEnergy: 0 },
-      frame: { fieldState: "active" },
+      frame: { fieldState: "active", renderAuthority: true },
       render: { volumeVisible: true },
     }),
   ).toBe("observer-drop");
 
   expect(
     classifyTailDiagnosticSample({
-      input: { avgAmplitude: 0.3, analyserRms: 0.004, sourceMode: "system" },
+      input: {
+        sourceEvidence: createLiveSourceEvidence(),
+        avgAmplitude: 0.3,
+        analyserRms: 0.004,
+        sourceMode: "system",
+      },
       observer: { observedResonanceModeCount: 8, observedResonanceEnergy: 1 },
       frame: {
         fieldState: "active",
+        renderAuthority: true,
         observationEnergy: 0,
       },
       render: { volumeVisible: true },
@@ -185,10 +214,16 @@ test("tail diagnostics classifies black-tail failure seams", () => {
 
   expect(
     classifyTailDiagnosticSample({
-      input: { avgAmplitude: 0.3, analyserRms: 0.004, sourceMode: "system" },
+      input: {
+        sourceEvidence: createLiveSourceEvidence(),
+        avgAmplitude: 0.3,
+        analyserRms: 0.004,
+        sourceMode: "system",
+      },
       observer: { observedResonanceModeCount: 8, observedResonanceEnergy: 1 },
       frame: {
         fieldState: "active",
+        renderAuthority: true,
         observationEnergy: 0.3,
       },
       render: {
@@ -203,10 +238,16 @@ test("tail diagnostics classifies black-tail failure seams", () => {
 
   expect(
     classifyTailDiagnosticSample({
-      input: { avgAmplitude: 0.3, analyserRms: 0.004, sourceMode: "system" },
+      input: {
+        sourceEvidence: createLiveSourceEvidence(),
+        avgAmplitude: 0.3,
+        analyserRms: 0.004,
+        sourceMode: "system",
+      },
       observer: { observedResonanceModeCount: 8, observedResonanceEnergy: 1 },
       frame: {
         fieldState: "active",
+        renderAuthority: true,
         observationEnergy: 0.3,
       },
       render: {
@@ -238,7 +279,12 @@ test("tail diagnostics window api dumps and copies pasteable JSON", async () => 
   targetWindow.__baryonTailDiagnostics.start();
   recordTailDiagnosticsSample(recorder, {
     runtimeDiagnostics: createRuntimeDiagnostics(),
-    runtimeState: { debugSnapshot: { volumeVisible: true } },
+    runtimeState: {
+      debugSnapshot: {
+        volumeVisible: true,
+        raymarchDebug: { renderAuthority: true },
+      },
+    },
     nowMs: 500,
   });
 
@@ -274,7 +320,12 @@ test("tail diagnostics copy returns the capture when clipboard permission fails"
   targetWindow.__baryonTailDiagnostics.start();
   recordTailDiagnosticsSample(recorder, {
     runtimeDiagnostics: createRuntimeDiagnostics(),
-    runtimeState: { debugSnapshot: { volumeVisible: true } },
+    runtimeState: {
+      debugSnapshot: {
+        volumeVisible: true,
+        raymarchDebug: { renderAuthority: true },
+      },
+    },
     nowMs: 500,
   });
 

@@ -1,7 +1,7 @@
+import { hasRenderAuthority } from "@baryon/visualizer/core/renderAuthorityContract";
+
 const DEFAULT_SAMPLE_INTERVAL_MS = 250;
 const DEFAULT_MAX_DURATION_MS = 60_000;
-const INPUT_MIN_AVG_AMPLITUDE = 1e-4;
-const INPUT_MIN_RMS = 1e-5;
 const OBSERVER_MIN_RESONANCE_ENERGY = 1e-4;
 const FRAME_MIN_VISIBILITY_ENERGY = 0.02;
 const OBSERVATION_SAMPLED_MIN_DENSITY = 0.005;
@@ -38,14 +38,16 @@ function readString(value, fallback = null) {
   return typeof value === "string" ? value : fallback;
 }
 
-function hasCurrentInput(input = {}) {
+function hasLiveSourceEvidence(sourceEvidence = null) {
   return (
-    input.sourceMode !== "silent" &&
-    input.hardSilence !== true &&
-    input.noiseGate !== true &&
-    (readFiniteNumber(input.avgAmplitude) > INPUT_MIN_AVG_AMPLITUDE ||
-      readFiniteNumber(input.analyserRms) > INPUT_MIN_RMS)
+    sourceEvidence?.currentSourceEvidence === true &&
+    sourceEvidence?.sourceBoundaryState === "live" &&
+    readFiniteNumber(sourceEvidence?.sourceEnergy) > 0
   );
+}
+
+function hasCurrentInput(input = {}) {
+  return hasLiveSourceEvidence(input.sourceEvidence);
 }
 
 function hasObservedModalResponse(observer = {}, frame = {}) {
@@ -61,7 +63,7 @@ function hasObservedModalResponse(observer = {}, frame = {}) {
 
 function hasFrameVisibility(frame = {}) {
   return (
-    frame.fieldState !== "idle" &&
+    frame.renderAuthority === true &&
     readFiniteNumber(frame.observationEnergy) >= FRAME_MIN_VISIBILITY_ENERGY
   );
 }
@@ -113,10 +115,17 @@ function buildTailDiagnosticSample({
   const render = runtimeDiagnostics?.render ?? {};
   const debugSnapshot = runtimeState?.debugSnapshot ?? {};
   const raymarchDebug = debugSnapshot.raymarchDebug ?? {};
+  const sourceEvidence =
+    modalFreshness.sourceEvidence ?? featureFrame?.sourceEvidence ?? null;
+  const renderAuthority =
+    featureFrame != null
+      ? hasRenderAuthority(featureFrame)
+      : readBoolean(raymarchDebug.renderAuthority);
 
   const sample = {
     tMs: readFiniteNumber(tMs),
     input: {
+      sourceEvidence,
       avgAmplitude: readFiniteNumber(modalFreshness.avgAmplitude),
       analyserRms: readFiniteNumber(modalFreshness.analyserRms),
       periodicity: readFiniteNumber(modalFreshness.periodicity),
@@ -138,6 +147,11 @@ function buildTailDiagnosticSample({
     frame: {
       fieldState:
         modalFreshness.fieldState ?? featureFrame?.fieldState ?? "idle",
+      renderAuthority,
+      projectedRenderEnergy: readFiniteNumber(
+        featureFrame?.energyLedger?.projectedRenderEnergy ??
+          raymarchDebug.projectedRenderEnergy,
+      ),
       activeModeCount: readFiniteNumber(
         modalFreshness.uploadedModeCount ??
           render.activeModeCount ??

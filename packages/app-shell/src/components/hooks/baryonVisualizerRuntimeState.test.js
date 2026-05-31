@@ -49,6 +49,27 @@ test("publishes sanitized modal freshness diagnostics in runtime perf snapshots"
     runtimeDiagnostics.modalFreshness.resonantSignalAuthoritativeHighQ = true;
     runtimeDiagnostics.modalFreshness.resonantShiftReleaseOverrideCount = 2;
     runtimeDiagnostics.modalFreshness.resonantShiftTrackingOverrideCount = 3;
+    runtimeDiagnostics.modalFreshness.sourceEvidence = {
+      ownerVersion: "audio-source-evidence:v1",
+      sourceKind: "system",
+      analysisClass: "line-feed",
+      sourceBoundaryState: "live",
+      currentSourceEvidence: true,
+      sourceEnergy: 0.42,
+      metrics: {
+        avgAmplitude: 16,
+        analyserRms: 0.04,
+        preModalFftPeak: 0.36,
+        nonZeroFftBinCount: 192,
+      },
+      transport: {
+        playing: false,
+        liveInputActive: true,
+        fileMuted: false,
+        lineFeedProgramActive: true,
+        micHardSilence: false,
+      },
+    };
     runtimeDiagnostics.modalFreshness.fieldState = "active";
     runtimeDiagnostics.modalFreshness.avgAmplitude = 14.5;
     runtimeDiagnostics.modalFreshness.analyserRms = 0.048;
@@ -80,6 +101,27 @@ test("publishes sanitized modal freshness diagnostics in runtime perf snapshots"
       resonantSignalAuthoritativeHighQ: true,
       resonantShiftReleaseOverrideCount: 2,
       resonantShiftTrackingOverrideCount: 3,
+      sourceEvidence: {
+        ownerVersion: "audio-source-evidence:v1",
+        sourceKind: "system",
+        analysisClass: "line-feed",
+        sourceBoundaryState: "live",
+        currentSourceEvidence: true,
+        sourceEnergy: 0.42,
+        metrics: {
+          avgAmplitude: 16,
+          analyserRms: 0.04,
+          preModalFftPeak: 0.36,
+          nonZeroFftBinCount: 192,
+        },
+        transport: {
+          playing: false,
+          liveInputActive: true,
+          fileMuted: false,
+          lineFeedProgramActive: true,
+          micHardSilence: false,
+        },
+      },
       fieldState: "active",
       avgAmplitude: 14.5,
       analyserRms: 0.048,

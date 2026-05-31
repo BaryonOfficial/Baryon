@@ -42,6 +42,7 @@ import {
   snapshotModalFreshnessDiagnostics,
   snapshotRuntimePerfBreakdown,
   snapshotRuntimeDiagnostics,
+  snapshotSourceEvidenceDiagnostics,
   snapshotWorkerPerfCounters,
 } from "./baryonVisualizerRuntimeState.js";
 export { syncLiveInputRuntimeStatus } from "./liveInputRuntimeSync.js";
@@ -68,7 +69,7 @@ const AUTO_RAYMARCH_PRESSURE_FRAME_TIME_RATIO = 1.08;
 const AUTO_RAYMARCH_SCALE_PRESSURE_FRAME_TIME_RATIO = 1.015;
 const AUTO_RAYMARCH_STABLE_FRAME_TIME_RATIO = 0.93;
 const AUTO_RAYMARCH_LONG_FRAME_TIME_RATIO = 1.5;
-const AUTO_RAYMARCH_RECOVERY_MIN_ENERGY_SIGNAL = 0.08;
+const AUTO_RAYMARCH_RECOVERY_MIN_RENDER_ENERGY = 0.08;
 const RAYMARCH_USER_TUNABLE_STEP_MIN = 16;
 const COHERENT_MODAL_RAYMARCH_STEP_FLOOR = RAYMARCH_USER_TUNABLE_STEP_MIN;
 const AUTO_RAYMARCH_STEP_LADDER = Object.freeze([
@@ -279,6 +280,9 @@ export function updateModalFreshnessDiagnostics(
   const frameTimeMs = readFiniteNumber(featureFrame.frameTimeMs);
   modalFreshness.frameTimeMs = frameTimeMs;
   modalFreshness.sourceMode = featureFrame.sourceMode ?? null;
+  modalFreshness.sourceEvidence = snapshotSourceEvidenceDiagnostics(
+    featureFrame.sourceEvidence,
+  );
   modalFreshness.fieldState =
     featureFrame.debug?.fieldState ?? featureFrame.fieldState ?? "idle";
   modalFreshness.structuralSnapshotAgeMs = readFiniteNumber(
@@ -618,8 +622,8 @@ function getAnalysisSchedulerState(analysisSchedulerRef) {
   return analysisSchedulerRef?.current ?? createEmptyAnalysisSchedulerState();
 }
 
-function isNonIdleFeatureFrame(featureFrame) {
-  return (featureFrame?.fieldState ?? "idle") !== "idle";
+function isRenderAuthorizedFeatureFrame(featureFrame) {
+  return hasRenderAuthority(featureFrame);
 }
 
 function shouldSeedLiveInputWarmupFrame({
@@ -629,7 +633,7 @@ function shouldSeedLiveInputWarmupFrame({
 }) {
   return (
     status?.isLiveInputActive === true &&
-    !isNonIdleFeatureFrame(lastLiveFrame) &&
+    !isRenderAuthorizedFeatureFrame(lastLiveFrame) &&
     !lastActiveFrame
   );
 }
@@ -643,8 +647,8 @@ function shouldBootstrapActiveFeatureFrame({
   const audioActive = hasAudioSourceRenderIntent({ status, controls });
   return (
     audioActive &&
-    !isNonIdleFeatureFrame(lastLiveFrame) &&
-    !isNonIdleFeatureFrame(lastActiveFrame)
+    !isRenderAuthorizedFeatureFrame(lastLiveFrame) &&
+    !isRenderAuthorizedFeatureFrame(lastActiveFrame)
   );
 }
 
@@ -665,16 +669,8 @@ function shouldComposeInactiveSourceFeatureFrame({
   );
 }
 
-function shouldCaptureLastLiveFrame({ status, featureFrame }) {
-  if (!allowsCurrentLiveRenderFrame(featureFrame)) {
-    return false;
-  }
-
-  return (
-    status?.isPlaying === true ||
-    status?.isLiveInputActive !== true ||
-    isNonIdleFeatureFrame(featureFrame)
-  );
+function shouldCaptureLastLiveFrame({ featureFrame }) {
+  return allowsCurrentLiveRenderFrame(featureFrame);
 }
 
 function resolveCachedLiveFeatureFrame(lastLiveFrame, silentFeatureFrame) {
@@ -1421,17 +1417,19 @@ function deriveAdaptiveRecoveryState({
       effectiveFrame?.sourceEvidence?.currentSourceEvidence === true;
     const sourceBoundaryState =
       effectiveFrame?.sourceEvidence?.sourceBoundaryState ?? "absent";
-    const fieldState = effectiveFrame?.fieldState ?? "idle";
-    const energySignal = effectiveFrame?.energySignal ?? 0;
+    const projectedRenderEnergy =
+      effectiveFrame?.energyLedger?.projectedRenderEnergy ?? 0;
 
     if (sessionTransition) {
       recoveryBlockedReason = "session-transition";
     } else if (!currentSourceEvidence || sourceBoundaryState !== "live") {
       recoveryBlockedReason = "closed-source";
-    } else if (fieldState !== "active") {
-      recoveryBlockedReason = "inactive-field";
-    } else if (!(energySignal >= AUTO_RAYMARCH_RECOVERY_MIN_ENERGY_SIGNAL)) {
-      recoveryBlockedReason = "low-energy";
+    } else if (!hasRenderAuthority(effectiveFrame)) {
+      recoveryBlockedReason = "render-not-authorized";
+    } else if (
+      !(projectedRenderEnergy >= AUTO_RAYMARCH_RECOVERY_MIN_RENDER_ENERGY)
+    ) {
+      recoveryBlockedReason = "low-render-energy";
     }
   }
 
@@ -2254,7 +2252,7 @@ export function resolveFeatureFrame(
   recordFrameSemanticSource(runtimeDiagnostics, frameSemanticSource);
 
   if (status.isPlaying || status.isLiveInputActive) {
-    if (shouldCaptureLastLiveFrame({ status, featureFrame })) {
+    if (shouldCaptureLastLiveFrame({ featureFrame })) {
       lastLiveFrameRef.current = featureFrame;
     } else if (!allowsCurrentLiveRenderFrame(featureFrame)) {
       lastLiveFrameRef.current = null;
