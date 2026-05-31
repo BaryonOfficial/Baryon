@@ -980,7 +980,7 @@ describe("control runtime sync", () => {
     expect(Math.abs(snapshot.angularVelocity)).toBeLessThan(0.2);
   });
 
-  it("stops audio rotation on render-authority cut", () => {
+  it("stops audio rotation without projected render authority", () => {
     const controls = createControlState();
     controls.rotationMode = "audio";
     controls.motionAmount = 1;
@@ -996,7 +996,6 @@ describe("control runtime sync", () => {
       1 / 60,
       {
         fieldState: "decay",
-        renderAuthorityCut: true,
         renderAuthority: false,
         structureSignal: 0.42,
         energySignal: 0.18,

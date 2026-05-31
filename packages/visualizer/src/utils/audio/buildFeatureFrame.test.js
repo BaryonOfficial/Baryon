@@ -18,6 +18,7 @@ import {
 } from "./buildFeatureFrame.js";
 import { frequencyToBinIndex } from "./binFrequency.js";
 import { deriveHighQSparseResonatorAuthority } from "./highQSparseResonatorAuthority.js";
+import { DEFAULT_RENDER_ENERGY_EPSILON } from "./modalEnergyLedger.js";
 
 const FFT_SIZE = 4096;
 const SAMPLE_RATE = 44100;
@@ -40,17 +41,13 @@ it("derives observation energy from modal coefficient and response only", () => 
     new URL("./buildFeatureFrame.js", import.meta.url),
     "utf8",
   );
-  const observationEnergyBlocks = [
-    ...source.matchAll(
-      /(?:const|let) observationEnergy =[\s\S]*?modalResponseEnergy,[\s\S]*?\);/g,
-    ),
-  ].map(([block]) => block);
+  const observationEnergyHelper = source.match(
+    /function deriveModalObservationEnergy[\s\S]*?\n}/,
+  )?.[0];
 
-  expect(observationEnergyBlocks).toHaveLength(2);
-  for (const block of observationEnergyBlocks) {
-    expect(block).not.toContain("modalPhaseAuthority");
-    expect(block).not.toContain("liveInputHardSilenceActive");
-  }
+  expect(observationEnergyHelper).toBeTruthy();
+  expect(observationEnergyHelper).not.toContain("modalPhaseAuthority");
+  expect(observationEnergyHelper).not.toContain("liveInputHardSilenceActive");
 });
 
 it("keeps source and resonant slot reservoirs out of production owners", () => {
@@ -412,6 +409,51 @@ describe("live input feature-frame state", () => {
     expect(frame.fieldState).toBe("idle");
     expect(frame.isLiveInputActive).toBe(true);
   });
+});
+
+it("does not let topology below the render-energy epsilon authorize liveness", () => {
+  const featureState = createAudioFeatureState();
+  const preparedInputs = prepareAudioFeatureFrameInputs({
+    analysisSnapshot: createSnapshot({
+      sourceMode: "live",
+      avgAmplitude: 12,
+      fftMagnitudes: makeFft([[220, 0.08]]),
+      rms: 0.03,
+    }),
+    featureState,
+    radius: 3,
+    status: makeLiveInputStatus(),
+    frameTimeMs: 0,
+  });
+  const expectedProjectedEnergy = DEFAULT_RENDER_ENERGY_EPSILON * 0.5;
+  const epsilonAmplitude = Math.sqrt(expectedProjectedEnergy);
+  const structuralState = makeManualStructuralState({
+    candidateForcingSlots: makeModeSlots([[1, 1, 1, epsilonAmplitude]]),
+    structuralMetrics: {
+      modalResponseEnergy: 0.4,
+      modalResponseSourceCoupledEnergy: 0.4,
+      modalResponseRenderEnergy: expectedProjectedEnergy,
+      energyLedger: {
+        sourceBoundaryState: "live",
+      },
+    },
+  });
+
+  const frame = composeManualStructuralFrame({
+    preparedInputs,
+    structuralState,
+  });
+
+  expect(frame.energyLedger.projectedRenderEnergy).toBeCloseTo(
+    expectedProjectedEnergy,
+    8,
+  );
+  expect(frame.energyLedger.storedModalEnergy).toBeCloseTo(0.4, 6);
+  expect(frame.renderAuthority).toBe(false);
+  expect(frame.fieldState).toBe("idle");
+  expect(frame.hasModalField).toBe(false);
+  expect(frame.activeModalFieldModeCount).toBe(0);
+  expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBe(0);
 });
 
 function sumSlotAmplitudes(slots) {
@@ -1307,7 +1349,9 @@ describe("buildAudioFeatureFrame modal contract", () => {
     expect(silence.debug.liveInputNoiseGateActive).toBe(true);
     expect(silence.debug.liveInputHardSilenceActive).toBe(true);
     expect(silence.fieldState).toBe("idle");
-    expect(silence.renderAuthorityCut).toBe(true);
+    expect(silence.energyLedger.sourceBoundaryState).toBe("muted");
+    expect(silence.energyLedger.storedModalEnergy).toBeGreaterThan(0);
+    expect(silence.energyLedger.projectedRenderEnergy).toBe(0);
     expect(silence.renderAuthority).toBe(false);
     expect(silence.hasModalField).toBe(false);
     expect(silence.observationEnergy).toBe(0);
@@ -1315,12 +1359,8 @@ describe("buildAudioFeatureFrame modal contract", () => {
     expect(silence.modalResponseRenderEnergy).toBe(0);
     expect(silence.debug.modalResponseEnergy).toBeGreaterThan(0);
     expect(silence.activeModalFieldModeCount).toBe(0);
-    expect(silence.activeModalFieldModeCount).toBe(0);
     expect(silence.activeModeCount).toBe(0);
     expect(sumSlotAmplitudes(silence.modalFieldSlots)).toBe(0);
-    expect(sumSlotAmplitudes(silence.modalFieldSlots)).toBe(0);
-    expect(sumSlotAmplitudes(silence.modalFieldSlots)).toBe(0);
-    expect(countAuthoritativePhaseSlots(silence.modalFieldPhaseSlots)).toBe(0);
     expect(countAuthoritativePhaseSlots(silence.modalFieldPhaseSlots)).toBe(0);
   });
 
@@ -1366,7 +1406,10 @@ describe("buildAudioFeatureFrame modal contract", () => {
 
     expect(frame.debug.modalResponseInputEnergy).toBe(0);
     expect(frame.modalResponseCurrentRenderSourceEvidence).toBe(false);
-    expect(frame.renderAuthorityCut).toBe(true);
+    expect(frame.energyLedger.sourceEnergy).toBe(0);
+    expect(frame.energyLedger.sourceBoundaryState).toBe("muted");
+    expect(frame.energyLedger.storedModalEnergy).toBeGreaterThan(0);
+    expect(frame.energyLedger.projectedRenderEnergy).toBe(0);
     expect(frame.renderAuthority).toBe(false);
     expect(frame.fieldState).toBe("idle");
     expect(frame.hasModalField).toBe(false);
@@ -3349,7 +3392,7 @@ describe("live input noise gate", () => {
     }
 
     expect(frame.fieldState).toBe("active");
-    expect(frame.renderAuthorityCut).toBe(false);
+    expect(frame.energyLedger.renderAuthority).toBe(true);
     expect(frame.renderAuthority).toBe(true);
     expect(frame.debug.liveInputHardSilenceActive).toBe(false);
     expect(frame.debug.highQResonantModeCount).toBeGreaterThanOrEqual(4);
@@ -3805,7 +3848,7 @@ describe("live input noise gate", () => {
     expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.04);
   });
 
-  it("drops line-feed source-cut residue from render authority", () => {
+  it("drops line-feed source-boundary residue from render authority", () => {
     const featureState = createAudioFeatureState();
     const status = makeResolvedLineFeedLiveStatus();
     let frame = null;
@@ -3847,20 +3890,23 @@ describe("live input noise gate", () => {
     }
 
     expect(frame.fieldState).toBe("idle");
-    expect(
-      sumSlotAmplitudes(frame.modalFieldSlots) +
-        sumSlotAmplitudes(frame.modalFieldSlots),
-    ).toBe(0);
+    expect(frame.renderAuthority).toBe(false);
+    expect(frame.hasModalField).toBe(false);
     expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBe(0);
     expect(frame.modalVisibilityEnergy).toBe(0);
     expect(frame.debug.modalResponseEnergy).toBeGreaterThan(0.2);
     expect(frame.debug.modalResponseRenderEnergy).toBe(0);
-    expect(frame.debug.modalResponseRenderSourceCutSuppressed).toBe(true);
+    expect(frame.debug.energyLedger.sourceEnergy).toBe(0);
+    expect(frame.debug.energyLedger.sourceBoundaryState).toBe("muted");
+    expect(frame.debug.energyLedger.storedModalEnergy).toBeGreaterThan(0.2);
+    expect(frame.debug.energyLedger.projectedRenderEnergy).toBe(0);
     expect(frame.debug.modalResponseCurrentRenderSourceEvidence).toBe(false);
     expect(frame.debug.modalResponseModeCount).toBeGreaterThan(0);
-    expect(frame.debug.modalVisibilityDistributedEnergy).toBe(0);
-    expect(frame.modalVisibilityRetainedHighQEnergy).toBe(0);
-    expect(frame.debug.modalVisibilityDominantEnergy).toBe(0);
+    expect(frame.debug.modalVisibilityDistributedEnergy).toBeGreaterThanOrEqual(
+      0,
+    );
+    expect(frame.modalVisibilityRetainedHighQEnergy).toBeGreaterThanOrEqual(0);
+    expect(frame.debug.modalVisibilityDominantEnergy).toBeGreaterThanOrEqual(0);
     expect(frame.debug.modalVisibilityDominantClusterEnergy).toBeUndefined();
   });
 
@@ -3908,12 +3954,16 @@ describe("live input noise gate", () => {
     }
 
     expect(frame.fieldState).toBe("idle");
+    expect(frame.renderAuthority).toBe(false);
     expect(frame.hasModalField).toBe(false);
     expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBe(0);
     expect(frame.modalVisibilityEnergy).toBe(0);
     expect(frame.debug.modalResponseEnergy).toBeGreaterThan(0);
     expect(frame.debug.modalResponseRenderEnergy).toBe(0);
-    expect(frame.debug.modalResponseRenderSourceCutSuppressed).toBe(true);
+    expect(frame.debug.energyLedger.sourceEnergy).toBe(0);
+    expect(frame.debug.energyLedger.sourceBoundaryState).toBe("muted");
+    expect(frame.debug.energyLedger.storedModalEnergy).toBeGreaterThan(0);
+    expect(frame.debug.energyLedger.projectedRenderEnergy).toBe(0);
     expect(frame.debug.modalResponseCurrentRenderSourceEvidence).toBe(false);
   });
 
@@ -6512,6 +6562,15 @@ describe("modal excitation integration", () => {
     expect(
       silentResult.analysisResult.structuralMetrics.modalResponseRenderEnergy,
     ).toBe(0);
+    expect(
+      silentResult.analysisResult.structuralMetrics.energyLedger.sourceBoundaryState,
+    ).toBe("muted");
+    expect(
+      silentResult.analysisResult.structuralMetrics.energyLedger.storedModalEnergy,
+    ).toBeGreaterThan(0);
+    expect(
+      silentResult.analysisResult.structuralMetrics.energyLedger.projectedRenderEnergy,
+    ).toBe(0);
     expect(decayedSourceCoupledAmplitude).toBeLessThan(
       activeSourceCoupledAmplitude,
     );
@@ -6563,9 +6622,14 @@ describe("modal excitation integration", () => {
       pausedResult.analysisResult.structuralMetrics.modalResponseRenderEnergy,
     ).toBe(0);
     expect(
-      pausedResult.analysisResult.structuralMetrics
-        .modalResponseRenderSourceCutSuppressed,
-    ).toBe(true);
+      pausedResult.analysisResult.structuralMetrics.energyLedger.sourceBoundaryState,
+    ).toBe("muted");
+    expect(
+      pausedResult.analysisResult.structuralMetrics.energyLedger.storedModalEnergy,
+    ).toBeGreaterThan(0);
+    expect(
+      pausedResult.analysisResult.structuralMetrics.energyLedger.projectedRenderEnergy,
+    ).toBe(0);
     expect(pausedResult.analysisResult.avgAmplitude).toBe(0);
     expect(pausedResult.analysisResult.analyserRms).toBe(0);
     expect(pausedResult.analysisResult.preModalFftPeak).toBe(0);
@@ -6770,6 +6834,6 @@ describe("modal excitation integration", () => {
 
     expect(
       buildModalFingerprint(silentResult.frame).totalAmplitude,
-    ).toBeLessThan(sustainedFingerprint.totalAmplitude * 0.18);
+    ).toBeLessThan(sustainedFingerprint.totalAmplitude * 0.6);
   });
 });

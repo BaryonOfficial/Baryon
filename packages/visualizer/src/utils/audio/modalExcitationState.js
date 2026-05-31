@@ -39,7 +39,6 @@ export function createModalExcitationState(capacity = 16) {
     resonantCouplingFrequencyHz: 0,
     resonantDisplayContinuityPresence: 0,
     observedModes: new Map(),
-    renderAuthorityCutSilenceMs: 0,
     diagnostics: {
       excitedModeCount: 0,
       distributedExcitation: 0,

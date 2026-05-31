@@ -10,10 +10,7 @@ import {
   MODAL_BASIS_CACHE_RESOLUTION,
 } from "../modalBudgets.js";
 import { getBoundaryModeFromValue } from "../modeFamily.js";
-import {
-  hasRenderAuthority,
-  isRenderAuthorityCut,
-} from "../renderAuthorityContract.js";
+import { hasRenderAuthority } from "../renderAuthorityContract.js";
 import {
   buildModalBasisAuditDiagnostics,
   buildRaymarchModalBasisCacheDescriptor,
@@ -725,9 +722,17 @@ function buildRaymarchDebugSnapshot(
   const modalPhaseAuthority = renderAuthority
     ? (featureFrame?.modalPhaseAuthority ?? 0)
     : 0;
+  const projectedRenderEnergy = readFiniteNumber(
+    featureFrame?.energyLedger?.projectedRenderEnergy ??
+      featureFrame?.projectedRenderEnergy,
+    0,
+  );
+  const renderEnergyEpsilon = readFiniteNumber(
+    featureFrame?.energyLedger?.renderEnergyEpsilon,
+    1e-6,
+  );
   const observationHardSilence =
-    isRenderAuthorityCut(featureFrame) ||
-    (!renderAuthority && totalSlotAmplitude <= 0 && avgAmplitude <= 0);
+    !renderAuthority && projectedRenderEnergy <= renderEnergyEpsilon;
   const observationParameters =
     runtimeState.observationTransferParameters ??
     deriveRuntimeObservationTransferParameters(runtimeState);
@@ -1002,6 +1007,9 @@ function buildRaymarchDebugSnapshot(
   return {
     fieldState,
     renderAuthority,
+    projectedRenderEnergy,
+    renderEnergyEpsilon,
+    sourceBoundaryState: featureFrame?.energyLedger?.sourceBoundaryState ?? null,
     modeSlotCount: activeModeCount,
     originalModeSlotCount:
       performanceGovernor?.originalModeCount ?? activeModeCount,

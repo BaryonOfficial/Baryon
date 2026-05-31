@@ -1,12 +1,36 @@
 import { FIELD_STATES } from "./fieldState.js";
 
-export function isRenderAuthorityCut(featureFrame) {
-  return featureFrame?.renderAuthorityCut === true;
+function hasLedgerData(featureFrame) {
+  return (
+    featureFrame?.energyLedger != null ||
+    Number.isFinite(featureFrame?.projectedRenderEnergy)
+  );
+}
+
+function hasLedgerAuthority(featureFrame) {
+  if (featureFrame?.energyLedger?.injectTestTone === true) {
+    return true;
+  }
+
+  const projectedRenderEnergy =
+    featureFrame?.energyLedger?.projectedRenderEnergy ??
+    featureFrame?.projectedRenderEnergy;
+  const renderEnergyEpsilon =
+    featureFrame?.energyLedger?.renderEnergyEpsilon ?? 1e-6;
+
+  return (
+    Number.isFinite(projectedRenderEnergy) &&
+    projectedRenderEnergy > renderEnergyEpsilon
+  );
 }
 
 export function hasRenderAuthority(featureFrame) {
-  if (!featureFrame || isRenderAuthorityCut(featureFrame)) {
+  if (!featureFrame) {
     return false;
+  }
+
+  if (hasLedgerData(featureFrame)) {
+    return hasLedgerAuthority(featureFrame);
   }
 
   if (featureFrame.renderAuthority === false) {

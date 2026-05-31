@@ -25,10 +25,7 @@ import {
   getBoundaryModeValue,
   normalizeBoundaryMode,
 } from "../core/modeFamily.js";
-import {
-  allowsAudioMotion,
-  isRenderAuthorityCut,
-} from "../core/renderAuthorityContract.js";
+import { allowsAudioMotion } from "../core/renderAuthorityContract.js";
 import {
   setRaymarchCavityGeometry,
   setRaymarchBoundaryMode,
@@ -586,7 +583,6 @@ export function applySceneControls(target, controls, deltaTime, featureFrame) {
   const rotationMode = normalizeRotationMode(controls.rotationMode);
   const manualVelocity = getManualVelocity(controls);
   const userScale = getMotionAmount(controls, runtimeState);
-  const renderAuthorityCut = isRenderAuthorityCut(featureFrame);
   const audioMotionDriven = allowsAudioMotion(featureFrame);
   const signals = deriveSceneSignals(
     featureFrame,
@@ -630,7 +626,7 @@ export function applySceneControls(target, controls, deltaTime, featureFrame) {
       beatDetected: featureFrame?.beatDetected,
       deltaTime,
     });
-  } else if (rotationMode === "audio" && renderAuthorityCut) {
+  } else if (rotationMode === "audio" && featureFrame && !audioMotionDriven) {
     stopAudioSceneMotion(sceneMotion);
   } else {
     stepSettlingSceneMotion(sceneMotion, deltaTime);
