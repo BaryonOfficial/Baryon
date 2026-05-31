@@ -19,11 +19,11 @@ import {
 import FloatingCameraControls from "./FloatingCameraControls.jsx";
 import {
   CAMERA_VIEW_PRESETS,
+  DEFAULT_ACTIVE_CAMERA_POSE,
   resolvePresetCameraPose,
 } from "./cameraPosePresets.js";
 import {
   createCameraPresetCommand,
-  createCameraResetCommand,
   deriveCameraControlState,
 } from "./cameraControlModel.js";
 import { dispatchCameraControlCommand } from "./cameraControlEvents.js";
@@ -218,10 +218,16 @@ const ThreeScene = ({
     defaultCameraViewPreset,
     cameraViewPreset: appliedCameraViewPreset,
   });
-  const effectiveCameraPose = useMemo(
+  const defaultCameraPose = useMemo(
     () =>
-      cameraPoseOverride ?? resolvePresetCameraPose(effectiveCameraViewPreset),
-    [cameraPoseOverride, effectiveCameraViewPreset],
+      shouldUseIdleCameraDefault
+        ? resolvePresetCameraPose(effectiveCameraViewPreset)
+        : DEFAULT_ACTIVE_CAMERA_POSE,
+    [effectiveCameraViewPreset, shouldUseIdleCameraDefault],
+  );
+  const effectiveCameraPose = useMemo(
+    () => cameraPoseOverride ?? defaultCameraPose,
+    [cameraPoseOverride, defaultCameraPose],
   );
   const displayedCameraPose = latestFrameCameraPose ?? effectiveCameraPose;
   const cameraConfig = /** @type {{
@@ -329,17 +335,14 @@ const ThreeScene = ({
   const applyCameraPreset = (preset) => {
     const command = createCameraPresetCommand(preset);
     setLatestFrameCameraPose(null);
-    setCameraPoseOverride(null);
+    setCameraPoseOverride(command.cameraPose);
     setAppliedCameraViewPreset(preset);
     setCameraResetNonce((current) => current + 1);
     dispatchCameraControlCommand(command);
   };
 
   const resetCameraPreset = () => {
-    const command = createCameraResetCommand(
-      effectiveCameraPose,
-      cameraControlState.activePreset ?? effectiveCameraViewPreset,
-    );
+    const command = { cameraPose: defaultCameraPose };
     setLatestFrameCameraPose(null);
     setCameraPoseOverride(null);
     setCameraResetNonce((current) => current + 1);

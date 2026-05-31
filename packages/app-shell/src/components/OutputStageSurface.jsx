@@ -2,7 +2,7 @@ import { Suspense, useEffect, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { BaryonScene, CAMERA_CONTROL_MODES } from "./BaryonScene.jsx";
 import { RendererErrorBoundary } from "./RendererErrorBoundary.jsx";
-import { resolvePresetCameraPose } from "./cameraPosePresets.js";
+import { DEFAULT_ACTIVE_CAMERA_POSE } from "./cameraPosePresets.js";
 import {
   createBaryonRenderer,
   WEBGPU_RENDERER_INIT_ERROR,
@@ -38,7 +38,7 @@ function StageInvalidateBridge({ registerRenderRequester }) {
  */
 
 const defaultStageCameraConfig = (() => {
-  const cameraPose = resolvePresetCameraPose("top-down");
+  const cameraPose = DEFAULT_ACTIVE_CAMERA_POSE;
   return /** @type {StageCameraConfig} */ ({
     position: /** @type {[number, number, number]} */ ([
       cameraPose.position.x,

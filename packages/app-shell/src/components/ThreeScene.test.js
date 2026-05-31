@@ -125,7 +125,10 @@ import {
   resolvePreviewOverlayState,
   shouldUseAuthoritativePerformanceHud,
 } from "./threeSceneState.js";
-import { resolvePresetCameraPose } from "./cameraPosePresets.js";
+import {
+  DEFAULT_ACTIVE_CAMERA_POSE,
+  resolvePresetCameraPose,
+} from "./cameraPosePresets.js";
 import { ControlsProvider } from "../controls/ControlsProvider.jsx";
 import { createControlsStore } from "../controls/controlsStore.js";
 import ThreeScene from "./ThreeScene.jsx";
@@ -297,7 +300,7 @@ describe("camera reset control", () => {
     container = null;
   });
 
-  it("reapplies the active preset when the reset button is pressed", async () => {
+  it("resets an active preset back to the default camera view", async () => {
     const controlsStore = createControlsStore();
 
     await act(async () => {
@@ -330,12 +333,12 @@ describe("camera reset control", () => {
 
     expect(dispatchCameraControlCommandSpy.mock.calls).toStrictEqual([
       [{ cameraPose: resolvePresetCameraPose("side") }],
-      [{ cameraPose: resolvePresetCameraPose("side") }],
+      [{ cameraPose: DEFAULT_ACTIVE_CAMERA_POSE }],
     ]);
-    expect(sideButton.getAttribute("aria-pressed")).toBe("true");
+    expect(sideButton.getAttribute("aria-pressed")).toBe("false");
   });
 
-  it("keeps live input preview camera top-down when the frame falls back to idle", async () => {
+  it("uses the diagonal default camera view for active preview", async () => {
     const controlsStore = createControlsStore();
 
     await act(async () => {
@@ -357,7 +360,10 @@ describe("camera reset control", () => {
 
     expect(topButton).toBeInstanceOf(HTMLButtonElement);
     expect(sideButton).toBeInstanceOf(HTMLButtonElement);
-    expect(topButton.getAttribute("aria-pressed")).toBe("true");
+    expect(baryonSceneSpy.mock.calls.at(-1)?.[0]?.cameraPose).toStrictEqual(
+      DEFAULT_ACTIVE_CAMERA_POSE,
+    );
+    expect(topButton.getAttribute("aria-pressed")).toBe("false");
     expect(sideButton.getAttribute("aria-pressed")).toBe("false");
   });
 

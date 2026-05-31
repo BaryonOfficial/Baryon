@@ -28,6 +28,25 @@ const CAMERA_PRESET_DEFINITIONS = Object.freeze({
   },
 });
 
+export const DEFAULT_ACTIVE_CAMERA_POSE = Object.freeze({
+  position: Object.freeze({
+    x: 5,
+    y: 5,
+    z: 5,
+  }),
+  target: Object.freeze({
+    x: 0,
+    y: 0,
+    z: 0,
+  }),
+  up: Object.freeze({
+    x: 0,
+    y: 1,
+    z: 0,
+  }),
+  fov: 65,
+});
+
 function getCameraPresetDefinition(preset) {
   return (
     CAMERA_PRESET_DEFINITIONS[preset] ??

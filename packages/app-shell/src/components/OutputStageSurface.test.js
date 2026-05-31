@@ -6,9 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 const baryonSceneSpy = vi.fn(() => null);
+const canvasSpy = vi.fn();
 
 vi.mock("@react-three/fiber", () => ({
-  Canvas: ({ children }) => React.createElement("div", null, children),
+  Canvas: (props) => {
+    canvasSpy(props);
+    return React.createElement("div", null, props.children);
+  },
   useThree: () => ({
     invalidate: () => {},
   }),
@@ -33,6 +37,7 @@ vi.mock("./rendererDiagnostics.js", () => ({
   createBaryonRenderer: () => ({}),
 }));
 
+import { DEFAULT_ACTIVE_CAMERA_POSE } from "./cameraPosePresets.js";
 import { OutputStageSurface } from "./OutputStageSurface.jsx";
 
 describe("OutputStageSurface", () => {
@@ -43,6 +48,7 @@ describe("OutputStageSurface", () => {
 
   beforeEach(() => {
     baryonSceneSpy.mockClear();
+    canvasSpy.mockClear();
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -89,6 +95,32 @@ describe("OutputStageSurface", () => {
 
     expect(baryonSceneSpy).toHaveBeenCalledTimes(1);
     expect(baryonSceneSpy.mock.calls[0][0].enableControlEventSync).toBe(true);
+  });
+
+  it("uses the diagonal default camera config for external output", () => {
+    baryonSceneSpy.mockClear();
+
+    renderToStaticMarkup(
+      React.createElement(OutputStageSurface, {
+        controlsRef: { current: { backgroundColor: "#000000" } },
+        visualizationMethod: "raymarch",
+      }),
+    );
+
+    expect(canvasSpy).toHaveBeenCalledTimes(1);
+    expect(canvasSpy.mock.calls[0][0].camera).toMatchObject({
+      position: [
+        DEFAULT_ACTIVE_CAMERA_POSE.position.x,
+        DEFAULT_ACTIVE_CAMERA_POSE.position.y,
+        DEFAULT_ACTIVE_CAMERA_POSE.position.z,
+      ],
+      up: [
+        DEFAULT_ACTIVE_CAMERA_POSE.up.x,
+        DEFAULT_ACTIVE_CAMERA_POSE.up.y,
+        DEFAULT_ACTIVE_CAMERA_POSE.up.z,
+      ],
+      fov: DEFAULT_ACTIVE_CAMERA_POSE.fov,
+    });
   });
 
   it("uses cameraPose directly for external output", async () => {

@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 
 import {
   CAMERA_VIEW_PRESETS,
+  DEFAULT_ACTIVE_CAMERA_POSE,
   DEFAULT_IDLE_PERFORMER_CAMERA_POSE,
   DEFAULT_LIVE_PERFORMER_CAMERA_POSE,
   resolveCameraPresetMatchFromPose,
@@ -35,6 +36,12 @@ test("resolvePresetCameraPose returns canonical top-down and side poses", () => 
 });
 
 test("performer default poses stay aligned with idle and live presets", () => {
+  expect(DEFAULT_ACTIVE_CAMERA_POSE).toStrictEqual({
+    position: { x: 5, y: 5, z: 5 },
+    target: { x: 0, y: 0, z: 0 },
+    up: { x: 0, y: 1, z: 0 },
+    fov: 65,
+  });
   expect(DEFAULT_IDLE_PERFORMER_CAMERA_POSE).toStrictEqual(
     resolvePresetCameraPose(CAMERA_VIEW_PRESETS.side),
   );
