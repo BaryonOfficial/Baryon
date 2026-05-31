@@ -186,10 +186,42 @@ describe("audio source evidence", () => {
       resolveAudioRenderBoundary({
         sourceEvidence: evidence,
         modalResponse: { modalResponseInputEnergy: 0.4 },
-        observerContinuity: true,
       }),
     ).toMatchObject({
       sourceBoundaryState: "muted",
+      currentSourceEvidence: false,
+      sourceEnergy: 0,
+    });
+  });
+
+  it("does not let modal response energy create current source evidence", () => {
+    expect(
+      resolveAudioRenderBoundary({
+        sourceEvidence: {
+          ownerVersion: AUDIO_SOURCE_EVIDENCE_VERSION,
+          sourceKind: "system",
+          analysisClass: "line-feed",
+          sourceBoundaryState: "live",
+          currentSourceEvidence: false,
+          sourceEnergy: 0,
+          metrics: {
+            avgAmplitude: 0,
+            analyserRms: 0,
+            preModalFftPeak: 0,
+            nonZeroFftBinCount: 0,
+          },
+          transport: {
+            playing: false,
+            liveInputActive: true,
+            fileMuted: false,
+            lineFeedProgramActive: true,
+            micHardSilence: false,
+          },
+        },
+        modalResponse: { modalResponseInputEnergy: 0.4 },
+      }),
+    ).toMatchObject({
+      sourceBoundaryState: "zero",
       currentSourceEvidence: false,
       sourceEnergy: 0,
     });
@@ -240,7 +272,6 @@ describe("audio source evidence", () => {
           modalResponseEnergy: 0.4,
           modalResponseInputEnergy: 0,
         },
-        observerContinuity: true,
       }),
     ).toMatchObject({
       sourceBoundaryState: "muted",

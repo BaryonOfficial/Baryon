@@ -1,5 +1,4 @@
 export const AUDIO_SOURCE_EVIDENCE_VERSION = "audio-source-evidence:v1";
-const DEFAULT_SOURCE_EVIDENCE_INPUT_FLOOR = 0.00008;
 
 function clamp01(value) {
   if (!Number.isFinite(value)) {
@@ -244,8 +243,6 @@ export function buildAudioSourceEvidenceFrame({
 export function resolveAudioRenderBoundary({
   sourceEvidence = null,
   modalResponse = null,
-  observerContinuity = false,
-  inputEnergyFloor = DEFAULT_SOURCE_EVIDENCE_INPUT_FLOOR,
 } = {}) {
   const evidence =
     sourceEvidence ??
@@ -276,21 +273,9 @@ export function resolveAudioRenderBoundary({
     return closeSourceEvidence(evidence, resolvedSourceBoundaryState);
   }
 
-  const modalInputEnergy = clamp01(
-    modalResponse?.modalResponseInputEnergy ?? 0,
-  );
-  const currentSourceEvidence =
-    evidence.currentSourceEvidence === true ||
-    modalInputEnergy >= inputEnergyFloor ||
-    observerContinuity === true;
-  const resolvedSourceBoundaryState = currentSourceEvidence ? "live" : "zero";
-
-  if (!currentSourceEvidence) {
-    return closeSourceEvidence(evidence, resolvedSourceBoundaryState);
+  if (evidence.currentSourceEvidence !== true) {
+    return closeSourceEvidence(evidence, "zero");
   }
 
-  return liveSourceEvidence(
-    evidence,
-    Math.max(clamp01(evidence.sourceEnergy ?? 0), modalInputEnergy),
-  );
+  return liveSourceEvidence(evidence, clamp01(evidence.sourceEnergy ?? 0));
 }

@@ -451,30 +451,6 @@ function hasObserverContinuityEvidence({
   );
 }
 
-function hasCurrentRenderSourceEvidence({
-  drivePeak,
-  driveSource,
-  periodicity,
-  tonalness,
-  distributedExcitation,
-  modalResponseInputEnergy,
-}) {
-  const freshCouplingEvidence = hasFreshModalCouplingEvidence({
-    modalResponseInputEnergy,
-  });
-
-  return (
-    freshCouplingEvidence ||
-    hasObserverContinuityEvidence({
-      drivePeak,
-      driveSource,
-      periodicity,
-      tonalness,
-      distributedExcitation,
-    })
-  );
-}
-
 function classifyModeLayer(naturalFrequencyHz, mode) {
   if (naturalFrequencyHz <= SOURCE_COUPLED_MAX_HZ && computeOrder(mode) <= 24) {
     return "source-coupled";
@@ -1741,6 +1717,8 @@ function updateObservedModalModes({
     drivePeak >= HIGH_Q_OBSERVER_DRIVE_PEAK_START;
   const allowBassHarmonicDriver =
     !preparedInputs.bandState?.liveInputCalibrationActive;
+  const sourceAnalysisClass =
+    getPreparedInputsSourceEvidence(preparedInputs).analysisClass ?? "none";
 
   for (const atlasEntry of atlas) {
     const profile = getModalObserverProfile(atlasEntry.layer);
@@ -1776,7 +1754,7 @@ function updateObservedModalModes({
       avgAmplitude: preparedInputs.avgAmplitude,
       analyserRms: preparedInputs.analyserRms,
       driveSource,
-      sourceMode: preparedInputs.sourceMode,
+      analysisClass: sourceAnalysisClass,
       profile,
     });
     const previous = state.observedModes?.get(atlasEntry.modeKey) ?? null;
@@ -3295,19 +3273,9 @@ export function buildModalExcitationStructuralState({
   const freshCouplingEvidence = hasFreshModalCouplingEvidence({
     modalResponseInputEnergy: modalResponse.modalResponseInputEnergy,
   });
-  const modalObserverRenderSourceEvidence = hasCurrentRenderSourceEvidence({
-    drivePeak,
-    driveSource,
-    periodicity,
-    tonalness,
-    distributedExcitation,
-    modalResponseInputEnergy: modalResponse.modalResponseInputEnergy,
-  });
   const resolvedSourceEvidence = resolveAudioRenderBoundary({
     sourceEvidence: getPreparedInputsSourceEvidence(preparedInputs),
     modalResponse,
-    observerContinuity: modalObserverRenderSourceEvidence,
-    inputEnergyFloor: CURRENT_INPUT_ENERGY_FLOOR,
   });
   const currentRenderSourceEvidence =
     resolvedSourceEvidence.currentSourceEvidence === true;
@@ -3413,13 +3381,13 @@ export function buildModalExcitationStructuralState({
       modalResponseDrive * (atlasEntry.layer === "source-coupled" ? 0.82 : 1),
     );
     const weakFileSpectralFallbackNoise =
-      preparedInputs.sourceMode === "file" &&
+      resolvedSourceEvidence.analysisClass === "file" &&
       driveSource === "spectral-fallback" &&
       preparedInputs.avgAmplitude < 10 &&
       preparedInputs.analyserRms < 0.02;
     const weakFileResonantNoise =
       atlasEntry.layer === "resonant" &&
-      preparedInputs.sourceMode === "file" &&
+      resolvedSourceEvidence.analysisClass === "file" &&
       preparedInputs.avgAmplitude >= 5 &&
       preparedInputs.avgAmplitude < 10 &&
       preparedInputs.analyserRms < 0.03 &&

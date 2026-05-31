@@ -1,10 +1,5 @@
-import { FIELD_STATES } from "./fieldState.js";
-
 function hasLedgerData(featureFrame) {
-  return (
-    featureFrame?.energyLedger != null ||
-    Number.isFinite(featureFrame?.projectedRenderEnergy)
-  );
+  return featureFrame?.energyLedger != null;
 }
 
 function hasLedgerAuthority(featureFrame) {
@@ -13,14 +8,13 @@ function hasLedgerAuthority(featureFrame) {
   }
 
   const projectedRenderEnergy =
-    featureFrame?.energyLedger?.projectedRenderEnergy ??
-    featureFrame?.projectedRenderEnergy;
-  const renderEnergyEpsilon =
-    featureFrame?.energyLedger?.renderEnergyEpsilon ?? 1e-6;
+    featureFrame?.energyLedger?.projectedRenderEnergy;
+  const renderEnergyEpsilon = featureFrame?.energyLedger?.renderEnergyEpsilon;
 
   return (
     Number.isFinite(projectedRenderEnergy) &&
-    projectedRenderEnergy > renderEnergyEpsilon
+    projectedRenderEnergy >
+      (Number.isFinite(renderEnergyEpsilon) ? renderEnergyEpsilon : 1e-6)
   );
 }
 
@@ -36,23 +30,7 @@ export function hasRenderAuthority(featureFrame) {
     return false;
   }
 
-  if (hasLedgerData(featureFrame)) {
-    return hasLedgerAuthority(featureFrame);
-  }
-
-  if (featureFrame.renderAuthority === false) {
-    return false;
-  }
-
-  if (featureFrame.renderAuthority === true) {
-    return true;
-  }
-
-  if (featureFrame.fieldState === FIELD_STATES.test) {
-    return true;
-  }
-
-  return false;
+  return hasLedgerData(featureFrame) && hasLedgerAuthority(featureFrame);
 }
 
 export function allowsAudioMotion(featureFrame) {

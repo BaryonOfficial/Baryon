@@ -145,12 +145,12 @@ export function computeModalObservation({
   avgAmplitude,
   analyserRms,
   driveSource,
-  sourceMode,
+  analysisClass,
   profile,
 }) {
   if (
     atlasEntry?.layer === "source-coupled" &&
-    sourceMode !== "live" &&
+    analysisClass !== "acoustic-mic" &&
     driveSource === "spectral-fallback" &&
     avgAmplitude < 10 &&
     analyserRms < 0.025

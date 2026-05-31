@@ -723,8 +723,7 @@ function buildRaymarchDebugSnapshot(
     ? (featureFrame?.modalPhaseAuthority ?? 0)
     : 0;
   const projectedRenderEnergy = readFiniteNumber(
-    featureFrame?.energyLedger?.projectedRenderEnergy ??
-      featureFrame?.projectedRenderEnergy,
+    featureFrame?.energyLedger?.projectedRenderEnergy,
     0,
   );
   const renderEnergyEpsilon = readFiniteNumber(
@@ -1009,7 +1008,8 @@ function buildRaymarchDebugSnapshot(
     renderAuthority,
     projectedRenderEnergy,
     renderEnergyEpsilon,
-    sourceBoundaryState: featureFrame?.energyLedger?.sourceBoundaryState ?? null,
+    sourceBoundaryState:
+      featureFrame?.energyLedger?.sourceBoundaryState ?? null,
     modeSlotCount: activeModeCount,
     originalModeSlotCount:
       performanceGovernor?.originalModeCount ?? activeModeCount,

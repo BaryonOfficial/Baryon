@@ -392,7 +392,13 @@ test("shouldBypassTemporalHistoryForRaymarchFrame is method-aware", () => {
     expect(
       shouldBypassTemporalHistoryForRaymarchFrame({
         runtimeMethod: "raymarch",
-        featureFrame: { fieldState: drivenState, energySignal: 0.6 },
+        featureFrame: {
+          ...createLiveRenderFrameEvidence({
+            injectTestTone: drivenState === "test",
+          }),
+          fieldState: drivenState,
+          energySignal: 0.6,
+        },
         sceneSnapshot: { angularVelocity: 0.25 },
       }),
     ).toBe(false);
@@ -417,7 +423,11 @@ test("shouldBypassTemporalHistoryForRaymarchFrame requires reprojectable raymarc
   expect(
     shouldBypassTemporalHistoryForRaymarchFrame({
       runtimeMethod: "raymarch",
-      featureFrame: { fieldState: "active", energySignal: 0.8 },
+      featureFrame: {
+        ...createLiveRenderFrameEvidence(),
+        fieldState: "active",
+        energySignal: 0.8,
+      },
       sceneSnapshot: { angularVelocity: 0, pitchVelocity: 0, rollVelocity: 0 },
     }),
   ).toBe(true);
@@ -425,7 +435,11 @@ test("shouldBypassTemporalHistoryForRaymarchFrame requires reprojectable raymarc
   expect(
     shouldBypassTemporalHistoryForRaymarchFrame({
       runtimeMethod: "raymarch",
-      featureFrame: { fieldState: "active", energySignal: 0.8 },
+      featureFrame: {
+        ...createLiveRenderFrameEvidence(),
+        fieldState: "active",
+        energySignal: 0.8,
+      },
       sceneSnapshot: {
         angularVelocity: 0,
         pitchVelocity: 0.02,
@@ -442,7 +456,11 @@ test("shouldBypassTemporalHistoryForRaymarchFrame ignores audio energy", () => {
     expect(
       shouldBypassTemporalHistoryForRaymarchFrame({
         runtimeMethod: "raymarch",
-        featureFrame: { fieldState: "active", energySignal },
+        featureFrame: {
+          ...createLiveRenderFrameEvidence(),
+          fieldState: "active",
+          energySignal,
+        },
         sceneSnapshot: { angularVelocity: 0.25 },
       }),
     ).toBe(false);
@@ -471,8 +489,10 @@ test("finalizeTerminalVisualIdleState cuts bloom and marks temporal history only
 
   const decayResult = finalizeTerminalVisualIdleState({
     featureFrame: {
+      ...createLiveRenderFrameEvidence({
+        projectedRenderEnergy: 0.04,
+      }),
       fieldState: "decay",
-      renderAuthority: true,
       modalResponseEnergy: 0.04,
     },
     runtimeState,
@@ -521,8 +541,8 @@ test("finalizeTerminalVisualIdleState reports resumed active frames without clea
 
   const result = finalizeTerminalVisualIdleState({
     featureFrame: {
+      ...createLiveRenderFrameEvidence(),
       fieldState: "active",
-      renderAuthority: true,
       modalVisibilityEnergy: 0.4,
     },
     runtimeState,

@@ -25,7 +25,7 @@ describe("render authority contract", () => {
     expect(allowsAudioMotion(ledgerDecayTail)).toBe(true);
   });
 
-  it("allows active and test frames with render authority", () => {
+  it("does not allow legacy render-shaped fields without the ledger", () => {
     expect(
       hasRenderAuthority({
         fieldState: "active",
@@ -33,9 +33,9 @@ describe("render authority contract", () => {
         hasModalField: true,
         activeModeCount: 1,
       }),
-    ).toBe(true);
-    expect(hasRenderAuthority({ fieldState: "test" })).toBe(true);
-    expect(allowsAudioMotion({ renderAuthority: true })).toBe(true);
+    ).toBe(false);
+    expect(hasRenderAuthority({ fieldState: "test" })).toBe(false);
+    expect(allowsAudioMotion({ renderAuthority: true })).toBe(false);
   });
 
   it("does not treat decay as authority by itself", () => {
@@ -60,6 +60,15 @@ describe("render authority contract", () => {
           projectedRenderEnergy: 1e-6,
           renderEnergyEpsilon: 1e-6,
         },
+      }),
+    ).toBe(false);
+  });
+
+  it("does not derive authority from the projected energy mirror", () => {
+    expect(
+      hasRenderAuthority({
+        fieldState: "active",
+        projectedRenderEnergy: 0.004,
       }),
     ).toBe(false);
   });

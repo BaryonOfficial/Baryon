@@ -317,6 +317,16 @@ function appendMetadataSlots({
 
 function withUnifiedModalFields(frame) {
   if (!frame) return frame;
+  if (frame.renderAuthority === true && !frame.energyLedger) {
+    frame.energyLedger = {
+      projectedRenderEnergy: Math.max(
+        frame.modalResponseRenderEnergy ?? 0,
+        frame.modalResponseEnergy ?? 0,
+        0.2,
+      ),
+      renderEnergyEpsilon: 1e-6,
+    };
+  }
   if (frame.modalFieldSlots && !frame.backboneSlots && !frame.detailSlots) {
     return frame;
   }

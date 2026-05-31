@@ -5490,9 +5490,6 @@ export function composeAudioFeatureFrame({
   const resolvedSourceEvidence = resolveAudioRenderBoundary({
     sourceEvidence: preparedInputs.sourceEvidence,
     modalResponse: analysisResult.structuralMetrics,
-    observerContinuity:
-      analysisResult.structuralMetrics
-        ?.modalResponseCurrentRenderSourceEvidence,
   });
   analysisResult.sourceEvidence = resolvedSourceEvidence;
   const energyLedger = buildModalEnergyLedger({

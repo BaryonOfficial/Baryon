@@ -1,4 +1,4 @@
-import { isFieldDrivenState } from "../core/fieldState.js";
+import { hasRenderAuthority } from "../core/renderAuthorityContract.js";
 import { usesRaymarchVolumePipeline } from "../visualization/types.js";
 
 const REPROJECTABLE_RAYMARCH_MOTION_EPSILON = 1e-4;
@@ -54,14 +54,12 @@ export function resolveTemporalReprojectionPolicy({
     };
   }
 
-  const fieldState =
-    featureFrame?.fieldState ?? featureFrame?.debug?.fieldState;
-  if (!isFieldDrivenState(fieldState)) {
+  if (!hasRenderAuthority(featureFrame)) {
     return {
       traaEnabled: true,
       accumulateHistory: false,
       shouldBypassHistory: true,
-      reason: "field-not-driven",
+      reason: "render-not-authorized",
     };
   }
 
