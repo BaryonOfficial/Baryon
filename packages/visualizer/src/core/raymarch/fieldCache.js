@@ -10,9 +10,12 @@ import {
   int,
   instancedArray,
   textureStore,
+  texture3D,
   uniform,
   uvec3,
   uint,
+  max,
+  vec3,
   vec4,
 } from "three/tsl";
 import { BOUNDARY_MODES, normalizeBoundaryMode } from "../modeFamily.js";
@@ -1343,6 +1346,27 @@ export function createRaymarchModalBasisCache({
   };
 }
 
+export function createRaymarchLiveFieldProjectionCache({
+  resolution = RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
+} = {}) {
+  const normalizedResolution = normalizeModalBasisCacheResolution(resolution);
+  const fieldTexture = createCacheTexture(normalizedResolution);
+  const supportTexture = createCacheTexture(normalizedResolution);
+
+  return {
+    ...createCacheState({
+      resolution: normalizedResolution,
+      texture: fieldTexture,
+      mode: "live-field-projection",
+    }),
+    semantic: "frame-current-modal-field-projection",
+    fieldTexture,
+    supportTexture,
+    lastComputedAtSec: null,
+    lastComputeReason: "uninitialized",
+  };
+}
+
 export function createRaymarchSpectralLightCache({
   resolution = RAYMARCH_FIELD_CACHE_RESOLUTION,
 } = {}) {
@@ -1377,6 +1401,13 @@ export function disposeRaymarchFieldCache(fieldCache) {
 
 export function disposeRaymarchModalBasisCache(modalBasisCache) {
   disposeRaymarchFieldCache(modalBasisCache);
+}
+
+export function disposeRaymarchLiveFieldProjectionCache(
+  liveFieldProjectionCache,
+) {
+  disposeRaymarchFieldCache(liveFieldProjectionCache);
+  liveFieldProjectionCache?.supportTexture?.dispose?.();
 }
 
 export function disposeRaymarchSpectralLightCache(spectralLightCache) {
@@ -2494,6 +2525,92 @@ function createModalBasisCacheComputeKernel({
   );
 }
 
+function createLiveFieldProjectionComputeKernel({
+  liveFieldProjectionCache,
+  modalBasisAtlasTexture,
+  modalFieldCoefficientBuffer,
+  modalFieldCapacity,
+  uniforms,
+}) {
+  const { resolution, fieldTexture, supportTexture } =
+    liveFieldProjectionCache;
+  const modalFieldActiveCount = int(uniforms.uModalFieldModeCount);
+  const resolutionUint = uint(resolution);
+  const resolutionFloat = float(resolution);
+  const normalizedCapacity = Math.max(1, Math.round(modalFieldCapacity || 0));
+  const half = float(0.5);
+  const zero = float(0.0);
+  const one = float(1.0);
+
+  return Fn(() => {
+    const voxelCoord = uvec3(globalId);
+    const inBounds = voxelCoord.x
+      .lessThan(resolutionUint)
+      .and(voxelCoord.y.lessThan(resolutionUint))
+      .and(voxelCoord.z.lessThan(resolutionUint));
+
+    If(inBounds, () => {
+      const basisUv = vec3(
+        float(voxelCoord.x).add(half).div(resolutionFloat),
+        float(voxelCoord.y).add(half).div(resolutionFloat),
+        float(voxelCoord.z).add(half).div(resolutionFloat),
+      );
+      const fieldSum = zero.toVar();
+      const gradXSum = zero.toVar();
+      const gradYSum = zero.toVar();
+      const gradZSum = zero.toVar();
+      const supportSum = zero.toVar();
+
+      Loop(
+        {
+          start: int(0),
+          end: int(normalizedCapacity),
+          type: "int",
+          condition: "<",
+        },
+        ({ i }) => {
+          If(i.greaterThanEqual(modalFieldActiveCount), () => {}).Else(() => {
+            const coefficient = modalFieldCoefficientBuffer.element(i).x;
+            const atlasUv = vec3(
+              basisUv.x,
+              basisUv.y,
+              float(i).add(basisUv.z).div(float(normalizedCapacity)),
+            );
+            const basisSample = texture3D(modalBasisAtlasTexture).sample(
+              atlasUv,
+            );
+            fieldSum.addAssign(coefficient.mul(basisSample.x));
+            gradXSum.addAssign(coefficient.mul(basisSample.y));
+            gradYSum.addAssign(coefficient.mul(basisSample.z));
+            gradZSum.addAssign(coefficient.mul(basisSample.w));
+            supportSum.addAssign(abs(coefficient).mul(abs(basisSample.x)));
+          });
+        },
+      );
+
+      const amplitudeNorm = max(uniforms.uTotalSlotAmplitude, float(0.01));
+      textureStore(
+        fieldTexture,
+        voxelCoord,
+        vec4(
+          fieldSum.div(amplitudeNorm),
+          gradXSum.div(amplitudeNorm),
+          gradYSum.div(amplitudeNorm),
+          gradZSum.div(amplitudeNorm),
+        ),
+      ).toWriteOnly();
+      textureStore(
+        supportTexture,
+        voxelCoord,
+        vec4(supportSum.div(amplitudeNorm), zero, zero, one),
+      ).toWriteOnly();
+    });
+  })().compute(
+    liveFieldProjectionCache.dispatchSize,
+    Array.from(FIELD_CACHE_COMPUTE_WORKGROUP_SIZE),
+  );
+}
+
 function getOrCreateRaymarchSpectralLightCacheComputeNode(
   spectralLightCache,
   {
@@ -2595,6 +2712,114 @@ function getOrCreateRaymarchModalBasisCacheComputeNode(
   });
   modalBasisCache.computeNodesByKey[nodeKey] = computeNode;
   return computeNode;
+}
+
+function getOrCreateRaymarchLiveFieldProjectionCacheComputeNode(
+  liveFieldProjectionCache,
+  {
+    modalBasisAtlasTexture,
+    modalFieldCoefficientBuffer,
+    modalFieldCapacity,
+    uniforms,
+  },
+) {
+  if (
+    !liveFieldProjectionCache ||
+    !modalBasisAtlasTexture ||
+    !modalFieldCoefficientBuffer
+  ) {
+    return null;
+  }
+
+  const normalizedModalFieldCapacity =
+    normalizeComputeNodeCapacity(modalFieldCapacity);
+  const nodeKey = [
+    "live-field-projection",
+    `capacity=${normalizedModalFieldCapacity}`,
+  ].join(":");
+  const cachedNode = liveFieldProjectionCache.computeNodesByKey?.[nodeKey];
+  if (cachedNode) {
+    return cachedNode;
+  }
+
+  const computeNode = createLiveFieldProjectionComputeKernel({
+    liveFieldProjectionCache,
+    modalBasisAtlasTexture,
+    modalFieldCoefficientBuffer,
+    modalFieldCapacity: normalizedModalFieldCapacity,
+    uniforms,
+  });
+  liveFieldProjectionCache.computeNodesByKey[nodeKey] = computeNode;
+  return computeNode;
+}
+
+export function computeRaymarchLiveFieldProjectionCache(
+  liveFieldProjectionCache,
+  renderer,
+  {
+    modalBasisAtlasTexture,
+    modalFieldCoefficientBuffer,
+    modalFieldCapacity,
+    uniforms,
+    schedulerTimeSec = null,
+  },
+) {
+  if (!liveFieldProjectionCache) {
+    return { computed: false, reason: "unavailable" };
+  }
+
+  if (liveFieldProjectionCache.backend === "unavailable") {
+    liveFieldProjectionCache.active = false;
+    return { computed: false, reason: "unavailable" };
+  }
+
+  if (!renderer || typeof renderer.compute !== "function") {
+    liveFieldProjectionCache.active = false;
+    liveFieldProjectionCache.ready = false;
+    liveFieldProjectionCache.lastError = "renderer-compute-unavailable";
+    liveFieldProjectionCache.lastComputeReason = "renderer-unavailable";
+    return { computed: false, reason: "renderer-unavailable" };
+  }
+
+  const computeNode = getOrCreateRaymarchLiveFieldProjectionCacheComputeNode(
+    liveFieldProjectionCache,
+    {
+      modalBasisAtlasTexture,
+      modalFieldCoefficientBuffer,
+      modalFieldCapacity,
+      uniforms,
+    },
+  );
+  if (!computeNode) {
+    liveFieldProjectionCache.active = false;
+    liveFieldProjectionCache.ready = false;
+    liveFieldProjectionCache.lastComputeReason = "compute-node-unavailable";
+    return { computed: false, reason: "compute-node-unavailable" };
+  }
+
+  try {
+    renderer.compute(computeNode);
+  } catch (error) {
+    liveFieldProjectionCache.active = false;
+    markCacheBackendUnavailable(
+      liveFieldProjectionCache,
+      error instanceof Error ? error.message : String(error),
+    );
+    liveFieldProjectionCache.lastComputeReason = "compute-failed";
+    return { computed: false, reason: "compute-failed" };
+  }
+
+  liveFieldProjectionCache.active = true;
+  liveFieldProjectionCache.ready = true;
+  liveFieldProjectionCache.backend = "compute";
+  liveFieldProjectionCache.lastError = null;
+  liveFieldProjectionCache.lastComputedAtSec = Number.isFinite(
+    schedulerTimeSec,
+  )
+    ? schedulerTimeSec
+    : getCacheSchedulerTimeSec({ uniforms });
+  liveFieldProjectionCache.lastComputeReason = "frame-current";
+  return { computed: true, reason: "frame-current" };
 }
 
 function dispatchQueuedRaymarchSpectralLightCacheRebuild(spectralLightCache) {

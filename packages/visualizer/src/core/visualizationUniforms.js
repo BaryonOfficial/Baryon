@@ -69,6 +69,7 @@ export function createVisualizationUniforms(parameters) {
     uModeCoherence: uniform(0.0),
     uTotalSlotAmplitude: uniform(0.0),
     uModalResponseEnergy: uniform(0.0),
+    uLiveFieldCacheActive: uniform(0.0),
     uObservationDensityFadeStart: uniform(
       observationParameters.densityFadeStart,
     ),

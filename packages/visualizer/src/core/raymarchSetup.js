@@ -15,6 +15,7 @@ import {
   createIdleOverlay,
 } from "./raymarch/material.js";
 import {
+  createRaymarchLiveFieldProjectionCache,
   createRaymarchSpectralLightCache,
   createRaymarchModalBasisCache,
 } from "./raymarch/fieldCache.js";
@@ -82,13 +83,20 @@ export function setupRaymarch(
   const modalFieldModeBuffer = createModeBuffer(modalFieldCapacity);
   const modalFieldColorBuffer = createModeBuffer(modalFieldCapacity);
   const modalFieldPhaseBuffer = createModeBuffer(modalFieldCapacity);
+  const modalFieldCoefficientBuffer = createModeBuffer(modalFieldCapacity);
   const modalBasisCache = createRaymarchModalBasisCache();
+  const liveFieldProjectionCache = createRaymarchLiveFieldProjectionCache({
+    resolution: modalBasisCache.resolution,
+  });
   const spectralLightCache = createRaymarchSpectralLightCache();
   const volumeMesh = createRaymarchVolumeMesh({
     radius: parameters.radius,
     modalBasisAtlasTexture: modalBasisCache.texture,
+    modalLiveFieldTexture: liveFieldProjectionCache.fieldTexture,
+    modalLiveSupportTexture: liveFieldProjectionCache.supportTexture,
     modalFieldModeBuffer,
     modalFieldPhaseBuffer,
+    modalFieldCoefficientBuffer,
     modalFieldCapacity: modalBasisCache.liveSynthesisModeCount,
     spectralLightCacheTexture: spectralLightCache.texture,
     uniforms,
@@ -120,7 +128,9 @@ export function setupRaymarch(
     modalFieldModeBuffer,
     modalFieldColorBuffer,
     modalFieldPhaseBuffer,
+    modalFieldCoefficientBuffer,
     modalBasisCache,
+    liveFieldProjectionCache,
     spectralLightCache,
     modalFieldCapacity,
     requestedCavityGeometry,

@@ -592,7 +592,7 @@ describe("raymarch volume material", () => {
     expect(cachedBranchBlock).not.toContain("accumulateCachedLiveResidual({");
     expect(cachedBranchBlock).not.toContain("evaluateFieldNode({");
     expect(source).toContain("function sampleBasisAtlasPageNode({");
-    expect(source).toContain("modalFieldPhaseBuffer.element(i)");
+    expect(source).toContain("modalFieldCoefficientBuffer?.element(i)");
     expect(source).toContain("end: int(normalizedLiveSynthesisModeCount)");
     expect(source).toContain("liveSynthesisModeCount: modalFieldCapacity");
   });
@@ -629,6 +629,7 @@ describe("raymarch volume material", () => {
     expect(source).toContain("modalFieldModeBuffer");
     expect(source).not.toContain("modalFieldColorBuffer");
     expect(source).toContain("modalFieldPhaseBuffer");
+    expect(source).toContain("modalFieldCoefficientBuffer");
     expect(source).toContain("modalFieldCapacity");
     expect(source).not.toContain("evaluateModeNode({");
     expect(source).toContain("cos(phase)");

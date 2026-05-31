@@ -9,6 +9,7 @@ import {
 } from "./runtime.js";
 import {
   buildRaymarchModalBasisCacheDescriptor,
+  createRaymarchLiveFieldProjectionCache,
   createRaymarchModalBasisCache,
   createRaymarchSpectralLightCache,
   resolveRaymarchModalBasisCacheDrawableAuthority,
@@ -31,6 +32,9 @@ function createRuntimeState({ withFieldCache = false } = {}) {
     : null;
   const spectralLightCache = withFieldCache
     ? createRaymarchSpectralLightCache({ resolution: 16 })
+    : null;
+  const liveFieldProjectionCache = withFieldCache
+    ? createRaymarchLiveFieldProjectionCache({ resolution: 16 })
     : null;
   const materialCache = withFieldCache
     ? {
@@ -58,6 +62,12 @@ function createRuntimeState({ withFieldCache = false } = {}) {
       },
     },
     modalFieldPhaseBuffer: {
+      value: {
+        array: new Float32Array(64),
+        needsUpdate: false,
+      },
+    },
+    modalFieldCoefficientBuffer: {
       value: {
         array: new Float32Array(64),
         needsUpdate: false,
@@ -141,6 +151,7 @@ function createRuntimeState({ withFieldCache = false } = {}) {
       uModeCoherence: { value: 0 },
       uTotalSlotAmplitude: { value: 0 },
       uModalResponseEnergy: { value: 0 },
+      uLiveFieldCacheActive: { value: 0 },
       uObservationDensityFadeStart: { value: 0 },
       uObservationDensityFadeEnd: { value: 0 },
       uObservationTransferGain: { value: 0 },
@@ -193,6 +204,11 @@ function createRuntimeState({ withFieldCache = false } = {}) {
             raymarchSpectralLightEvaluationMode:
               RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
             raymarchCavityGeometry: "rectangular",
+            raymarchModalBasisAtlasTexture: modalBasisCache.texture,
+            raymarchModalLiveFieldTexture:
+              liveFieldProjectionCache.fieldTexture,
+            raymarchModalLiveSupportTexture:
+              liveFieldProjectionCache.supportTexture,
           }
         : undefined,
     },
@@ -212,6 +228,7 @@ function createRuntimeState({ withFieldCache = false } = {}) {
     },
     auditEnabled: true,
     modalBasisCache,
+    liveFieldProjectionCache,
     spectralLightCache,
     requestedCavityGeometry: "rectangular",
     effectiveCavityGeometry: "rectangular",
@@ -1206,6 +1223,7 @@ describe("tickRaymarchRuntime", () => {
       id: "effective",
     };
     const renderer = {
+      compute: vi.fn(),
       computeAsync: vi.fn(async () => undefined),
     };
     const baseFrame = createActiveFeatureFrame({
@@ -1274,6 +1292,7 @@ describe("tickRaymarchRuntime", () => {
       id: "effective",
     };
     const renderer = {
+      compute: vi.fn(),
       computeAsync: vi.fn(async () => undefined),
     };
     const frame = createActiveFeatureFrame({
@@ -1294,7 +1313,11 @@ describe("tickRaymarchRuntime", () => {
     await flushMicrotasks();
     const rebuildCount = runtimeState.modalBasisCache.rebuildCount;
     const activeDescriptor = runtimeState.modalBasisCache.activeDescriptor;
+    const initialPhaseCurrentCoefficients = Array.from(
+      runtimeState.modalFieldCoefficientBuffer.value.array.slice(0, 8),
+    );
     expect(renderer.computeAsync).toHaveBeenCalledTimes(1);
+    runtimeState.modalFieldCoefficientBuffer.value.needsUpdate = false;
 
     tickRaymarchRuntime(runtimeState, frame, 3.5, 1 / 60, renderer);
     await flushMicrotasks();
@@ -1311,7 +1334,19 @@ describe("tickRaymarchRuntime", () => {
       runtimeState.currentModalBasisCacheDescriptor.liveModalPhaseHash,
     ).not.toBe(activeDescriptor.liveModalPhaseHash);
     expect(runtimeState.uniforms.uTime.value).toBe(3.5);
+    expect(runtimeState.modalFieldCoefficientBuffer.value.needsUpdate).toBe(
+      true,
+    );
+    expect(renderer.compute).toHaveBeenCalledTimes(1);
+    expect(runtimeState.uniforms.uLiveFieldCacheActive.value).toBe(1);
+    expect(runtimeState.liveFieldProjectionCache.active).toBe(true);
+    expect(
+      Array.from(
+        runtimeState.modalFieldCoefficientBuffer.value.array.slice(0, 8),
+      ),
+    ).not.toEqual(initialPhaseCurrentCoefficients);
     tickRaymarchRuntime(runtimeState, frame, 3.5, 1 / 60, renderer);
+    expect(renderer.compute).toHaveBeenCalledTimes(2);
     expect(runtimeState.debugSnapshot.modalBasisCacheDescriptorFresh).toBe(
       true,
     );

@@ -17,6 +17,8 @@ import {
   buildRaymarchSpectralLightCacheDescriptor,
   advanceRaymarchCacheGeneration,
   clearQueuedRaymarchCacheRebuild,
+  computeRaymarchLiveFieldProjectionCache,
+  disposeRaymarchLiveFieldProjectionCache,
   disposeRaymarchModalBasisCache,
   disposeRaymarchSpectralLightCache,
   enqueueRaymarchModalBasisCacheRebuild,
@@ -34,6 +36,7 @@ import {
 } from "./fieldCache.js";
 import {
   buildRaymarchPhaseSlotSignature,
+  copyCanonicalRaymarchPhaseCurrentCoefficients,
   copyCanonicalRaymarchPhaseSlots,
 } from "./phaseSlotSemantics.js";
 import {
@@ -308,10 +311,20 @@ function blockModalBasisCacheForDescriptor(modalBasisCache, reason) {
   modalBasisCache.lastRebuildReason = reason ?? "blocked";
 }
 
+function deactivateLiveFieldProjectionCache(runtimeState, reason = "inactive") {
+  const liveFieldProjectionCache = runtimeState?.liveFieldProjectionCache;
+  if (liveFieldProjectionCache) {
+    liveFieldProjectionCache.active = false;
+    liveFieldProjectionCache.lastComputeReason = reason;
+  }
+  setIfChanged(runtimeState?.uniforms?.uLiveFieldCacheActive, 0);
+}
+
 function resetRenderAuthorityState(runtimeState) {
   clearBufferNode(runtimeState.modalFieldModeBuffer);
   clearBufferNode(runtimeState.modalFieldColorBuffer);
   clearBufferNode(runtimeState.modalFieldPhaseBuffer);
+  clearBufferNode(runtimeState.modalFieldCoefficientBuffer);
   runtimeState.performanceGovernor = null;
   runtimeState.effectiveRenderScale = 1;
   runtimeState.raymarchBloomAdaptationActive = false;
@@ -328,8 +341,10 @@ function resetRenderAuthorityState(runtimeState) {
   runtimeState.modalSlotByModeKey = new Map();
   resetRaymarchUploadState(runtimeState);
   resetCacheActivity(runtimeState.modalBasisCache);
+  resetCacheActivity(runtimeState.liveFieldProjectionCache);
   resetCacheActivity(runtimeState.spectralLightCache);
   resetModalBasisCacheRuntimeDiagnostics(runtimeState.modalBasisCache);
+  deactivateLiveFieldProjectionCache(runtimeState, "render-authority-reset");
   runtimeState.renderAuthorityResetApplied = true;
 }
 
@@ -561,6 +576,7 @@ function blockOverflowedModalDescriptor(
   clearBufferNode(runtimeState.modalFieldModeBuffer);
   clearBufferNode(runtimeState.modalFieldColorBuffer);
   clearBufferNode(runtimeState.modalFieldPhaseBuffer);
+  clearBufferNode(runtimeState.modalFieldCoefficientBuffer);
   runtimeState.performanceGovernor = null;
   runtimeState.effectiveRenderScale = 1;
   runtimeState.raymarchBloomAdaptationActive = false;
@@ -574,8 +590,10 @@ function blockOverflowedModalDescriptor(
   runtimeState.currentSpectralLightDescriptor = null;
   resetRaymarchUploadState(runtimeState);
   resetCacheActivity(runtimeState.modalBasisCache);
+  resetCacheActivity(runtimeState.liveFieldProjectionCache);
   resetCacheActivity(runtimeState.spectralLightCache);
   resetModalBasisCacheRuntimeDiagnostics(runtimeState.modalBasisCache);
+  deactivateLiveFieldProjectionCache(runtimeState, "descriptor-overflow");
   setIfChanged(runtimeState.uniforms.uModalFieldModeCount, 0);
   runtimeState.volumeMesh.visible = false;
   runtimeState.idleOverlay.visible = resolveIdleOverlayVisible(
@@ -777,6 +795,8 @@ function buildRaymarchDebugSnapshot(
   const effectiveCavityGeometry =
     getRuntimeEffectiveCavityGeometry(runtimeState);
   const modalBasisCache = runtimeState.modalBasisCache ?? null;
+  const liveFieldProjectionCache =
+    runtimeState.liveFieldProjectionCache ?? null;
   const spectralLightCache = runtimeState.spectralLightCache ?? null;
   const modalBasisCacheDescriptor =
     runtimeState.currentModalBasisCacheDescriptor ?? null;
@@ -1183,6 +1203,18 @@ function buildRaymarchDebugSnapshot(
     modalBasisAtlasDepth: basisIdentity.basisAtlasDepth,
     liveSynthesisModeCount: basisIdentity.liveSynthesisModeCount,
     liveModalFrameAgeMs: null,
+    liveFieldProjectionCacheActive: liveFieldProjectionCache?.active ?? false,
+    liveFieldProjectionCacheReady: liveFieldProjectionCache?.ready ?? false,
+    liveFieldProjectionCacheBackend:
+      liveFieldProjectionCache?.backend ?? "compute",
+    liveFieldProjectionCacheResolution:
+      liveFieldProjectionCache?.resolution ?? null,
+    liveFieldProjectionCacheLastError:
+      liveFieldProjectionCache?.lastError ?? null,
+    liveFieldProjectionCacheLastComputeReason:
+      liveFieldProjectionCache?.lastComputeReason ?? "uninitialized",
+    liveFieldProjectionCacheComputedAtSec:
+      liveFieldProjectionCache?.lastComputedAtSec ?? null,
     modalBasisCacheDescriptorFresh,
     modalBasisCacheDescriptorStaleReason,
     modalBasisCacheQueuedDescriptorPending: Boolean(
@@ -1465,6 +1497,7 @@ function getRaymarchUploadState(runtimeState) {
     runtimeState.raymarchUploadState = {
       modalField: null,
       modalFieldPhase: null,
+      modalFieldCoefficient: null,
       modalFieldRole: null,
     };
   }
@@ -1675,6 +1708,33 @@ function copyLayerPhaseUpload({
   });
 }
 
+function applyLayerCoefficientUpload({
+  modeSlots,
+  phaseSlots,
+  targetCoefficientSlots,
+  coefficientBufferNode,
+  layer,
+  capacity,
+  time,
+}) {
+  if (!targetCoefficientSlots || !layer) {
+    return 0;
+  }
+
+  const activeCount = copyCanonicalRaymarchPhaseCurrentCoefficients({
+    modeSlots,
+    phaseSlots,
+    targetSlots: targetCoefficientSlots,
+    capacity,
+    activeCount: layer.uploadedActiveCount,
+    time,
+  });
+  if (coefficientBufferNode?.value) {
+    coefficientBufferNode.value.needsUpdate = activeCount > 0;
+  }
+  return activeCount;
+}
+
 function resolveRequestedRaymarchStepBudget(runtimeState, volumeMesh) {
   return (
     runtimeState.effectiveRaymarchSteps ??
@@ -1864,6 +1924,48 @@ function updateRaymarchEvaluationModes(
   );
 }
 
+function updateLiveFieldProjectionCache(
+  runtimeState,
+  renderer,
+  { modalFieldCapacity, time },
+) {
+  const liveFieldProjectionCache = runtimeState.liveFieldProjectionCache;
+  const modalBasisCache = runtimeState.modalBasisCache;
+  const modalBasisCacheDrawable =
+    runtimeState.modalBasisCacheDrawableAuthority?.drawable === true;
+  if (
+    !liveFieldProjectionCache ||
+    !modalBasisCacheDrawable ||
+    modalBasisCache?.ready !== true ||
+    !runtimeState.volumeMesh?.userData?.raymarchModalBasisAtlasTexture ||
+    !runtimeState.modalFieldCoefficientBuffer
+  ) {
+    deactivateLiveFieldProjectionCache(
+      runtimeState,
+      modalBasisCacheDrawable ? "modal-basis-cache-not-ready" : "not-drawable",
+    );
+    return { computed: false, reason: "not-ready" };
+  }
+
+  const result = computeRaymarchLiveFieldProjectionCache(
+    liveFieldProjectionCache,
+    renderer,
+    {
+      modalBasisAtlasTexture:
+        runtimeState.volumeMesh.userData.raymarchModalBasisAtlasTexture,
+      modalFieldCoefficientBuffer: runtimeState.modalFieldCoefficientBuffer,
+      modalFieldCapacity,
+      uniforms: runtimeState.uniforms,
+      schedulerTimeSec: time,
+    },
+  );
+  setIfChanged(
+    runtimeState.uniforms.uLiveFieldCacheActive,
+    result.computed ? 1 : 0,
+  );
+  return result;
+}
+
 function applyRaymarchRuntimeUploadAuthority({
   runtimeState,
   featureFrame,
@@ -1877,6 +1979,7 @@ function applyRaymarchRuntimeUploadAuthority({
   modalFieldModeBuffer,
   modalFieldColorBuffer,
   modalFieldPhaseBuffer,
+  modalFieldCoefficientBuffer,
   spectralLightEnabled,
   effectiveCavityGeometry,
 }) {
@@ -1938,6 +2041,15 @@ function applyRaymarchRuntimeUploadAuthority({
   });
   runtimeState.modalBasisPhaseAuthorityModeCount =
     modalFieldPhaseAuthorityModeCount;
+  applyLayerCoefficientUpload({
+    modeSlots: modalFieldModeBuffer?.value?.array,
+    phaseSlots: modalFieldPhaseBuffer?.value?.array,
+    targetCoefficientSlots: modalFieldCoefficientBuffer?.value?.array ?? null,
+    coefficientBufferNode: modalFieldCoefficientBuffer,
+    layer: modalFieldLayer,
+    capacity: productUploadCapacity,
+    time,
+  });
 
   const modalFieldModeCount = modalFieldLayer.uploadedActiveCount;
   setIfChanged(uniforms.uModalFieldModeCount, modalFieldModeCount);
@@ -2033,6 +2145,10 @@ function applyRaymarchRuntimeUploadAuthority({
       spectralLightDescriptor,
     },
   );
+  updateLiveFieldProjectionCache(runtimeState, renderer, {
+    modalFieldCapacity: productUploadCapacity,
+    time,
+  });
 }
 
 export function tickRaymarchRuntime(
@@ -2046,6 +2162,7 @@ export function tickRaymarchRuntime(
   const modalFieldModeBuffer = runtimeState.modalFieldModeBuffer;
   const modalFieldColorBuffer = runtimeState.modalFieldColorBuffer;
   const modalFieldPhaseBuffer = runtimeState.modalFieldPhaseBuffer;
+  const modalFieldCoefficientBuffer = runtimeState.modalFieldCoefficientBuffer;
   const modalFieldCapacity = inferModalFieldCapacity(
     runtimeState.modalFieldCapacity,
     modalFieldModeBuffer.value.array,
@@ -2167,6 +2284,7 @@ export function tickRaymarchRuntime(
     modalFieldModeBuffer,
     modalFieldColorBuffer,
     modalFieldPhaseBuffer,
+    modalFieldCoefficientBuffer,
     spectralLightEnabled,
     effectiveCavityGeometry,
   });
@@ -2301,6 +2419,9 @@ export function tickRaymarchRuntime(
 
 export function disposeRaymarchRuntime(runtimeState) {
   disposeRaymarchModalBasisCache(runtimeState?.modalBasisCache);
+  disposeRaymarchLiveFieldProjectionCache(
+    runtimeState?.liveFieldProjectionCache,
+  );
   disposeRaymarchSpectralLightCache(runtimeState?.spectralLightCache);
   runtimeState?.points?.traverse?.((child) => {
     child.geometry?.dispose?.();

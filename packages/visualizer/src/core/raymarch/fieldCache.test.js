@@ -429,7 +429,7 @@ describe("fieldCache", () => {
       "function createModalBasisCacheComputeKernel",
     );
     const computeEnd = source.indexOf(
-      "function getOrCreateRaymarchSpectralLightCacheComputeNode",
+      "function createLiveFieldProjectionComputeKernel",
       computeStart,
     );
     const computeSource = source.slice(computeStart, computeEnd);
@@ -449,6 +449,36 @@ describe("fieldCache", () => {
     expect(computeSource).not.toContain("modalFieldPhaseBuffer");
     expect(computeSource).not.toContain("phaseCurrentContribution");
     expect(computeSource).not.toContain("totalAmplitude");
+  });
+
+  it("builds live field projection as a frame-current cache from cached basis pages", () => {
+    const source = readFileSync(
+      new URL("./fieldCache.js", import.meta.url),
+      "utf8",
+    );
+    const computeStart = source.indexOf(
+      "function createLiveFieldProjectionComputeKernel",
+    );
+    const computeEnd = source.indexOf(
+      "function getOrCreateRaymarchSpectralLightCacheComputeNode",
+      computeStart,
+    );
+    const computeSource = source.slice(computeStart, computeEnd);
+
+    expect(computeStart).toBeGreaterThan(-1);
+    expect(computeEnd).toBeGreaterThan(computeStart);
+    expect(computeSource).toContain(
+      "const coefficient = modalFieldCoefficientBuffer.element(i).x;",
+    );
+    expect(computeSource).toContain(
+      "texture3D(modalBasisAtlasTexture).sample",
+    );
+    expect(computeSource).toContain("fieldSum.addAssign");
+    expect(computeSource).toContain("supportSum.addAssign");
+    expect(computeSource).toContain("textureStore(");
+    expect(computeSource).toContain("supportTexture");
+    expect(computeSource).not.toContain("evaluateModeNode({");
+    expect(computeSource).not.toContain("modalFieldPhaseBuffer");
   });
 
   it("keeps Spectral Light cache compute as raw color metadata", () => {

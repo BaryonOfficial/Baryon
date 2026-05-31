@@ -114,7 +114,11 @@ function getModalBasisPhaseWeight(modalFieldSlots, offset) {
   return Math.max(0, modalFieldSlots?.[offset + 3] ?? 0);
 }
 
-function getModalBasisPhaseCurrentCoefficient(phaseSlots, offset, time = 0) {
+export function getModalBasisPhaseCurrentCoefficient(
+  phaseSlots,
+  offset,
+  time = 0,
+) {
   if (!hasPhaseSlotAuthority(phaseSlots, offset)) {
     return 1;
   }
@@ -130,6 +134,38 @@ function getModalBasisPhaseCurrentCoefficient(phaseSlots, offset, time = 0) {
     getOwnedPhaseOffsetRad(phaseSlots, offset) +
     (phaseSlots?.[offset + 1] ?? 0) * (Number.isFinite(time) ? time : 0);
   return 1 - beta + beta * Math.cos(phase);
+}
+
+export function copyCanonicalRaymarchPhaseCurrentCoefficients({
+  modeSlots,
+  phaseSlots,
+  targetSlots,
+  capacity,
+  activeCount,
+  time = 0,
+}) {
+  if (!targetSlots) {
+    return 0;
+  }
+
+  targetSlots.fill(0);
+  const resolvedCapacity = Math.max(0, Math.floor(capacity ?? 0));
+  const sourceSlotCount = Math.floor((modeSlots?.length ?? 0) / 4);
+  const uploadLimit = Math.min(
+    resolvedCapacity,
+    sourceSlotCount,
+    Math.max(0, Math.floor(activeCount ?? resolvedCapacity)),
+  );
+
+  for (let slotIndex = 0; slotIndex < uploadLimit; slotIndex += 1) {
+    const offset = slotIndex * 4;
+    const amplitude = modeSlots?.[offset + 3] ?? 0;
+    targetSlots[offset] =
+      amplitude *
+      getModalBasisPhaseCurrentCoefficient(phaseSlots, offset, time);
+  }
+
+  return uploadLimit;
 }
 
 function getAggregatePhaseContributionHashKey(entry, totalContributionWeight) {
