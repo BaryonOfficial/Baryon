@@ -199,6 +199,43 @@ describe("raymarch volume material", () => {
     expect(causticFocusBlock).not.toContain("shellFocus.mul(contourCore)");
   });
 
+  it("reuses raymarch sample basis and normalized view direction for optical convergence", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("function offsetBasisUvNode");
+    expect(source).toContain("basisUv.add(tangent.mul(sampleUvStep))");
+    expect(source).toContain("const convergenceSampleUvStep =");
+    expect(source).toContain("const viewDirection = viewDirLocal.toVar();");
+    expect(source).toContain("const viewNormalGrazing =");
+    expect(source).toContain("const hotCoreCrowdingBase =");
+    expect(source).toContain(
+      "const tangent2 = cross(viewDirection, tangent1);",
+    );
+    const convergenceSampleStepStart = expectSourceIndex(
+      source,
+      "const convergenceSampleStep =",
+    );
+    const scatteringFnStart = expectSourceIndex(source, "return Fn(");
+    expect(convergenceSampleStepStart).toBeLessThan(scatteringFnStart);
+    expect(
+      source.match(/abs\(dot\(gradientNormal, negViewDirLocal\)\)/g) ?? [],
+    ).toHaveLength(1);
+    expect(source).not.toContain("viewDirLocal.normalize().toVar()");
+    expect(source).not.toContain(
+      "const tangent2 = cross(viewDirection, tangent1).normalize();",
+    );
+    expect(source).not.toContain("const activityAccent = smoothstep");
+    expect(source).not.toContain(
+      "localPosition: localPosition.add(tangent1.mul(sampleStep))",
+    );
+    expect(source).not.toContain(
+      "localPosition: localPosition.add(tangent2.mul(sampleStep))",
+    );
+  });
+
   it("gates broad body fill by signed field mass authority before observation", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
@@ -684,9 +721,9 @@ describe("raymarch volume material", () => {
       source,
       "const spectralLightBaseRadiance = uColor.mul(",
     );
-    const volumeAssignStart = expectSourceIndex(
+    const volumeColorStart = expectSourceIndex(
       source,
-      "volumeColor.assign(\n            spectralLightTintedRadiance.add(spectralLightBaseRadiance),",
+      "volumeColor = spectralLightTintedRadiance.add(",
     );
     const finalDensityStart = expectSourceIndex(
       source,
@@ -695,22 +732,23 @@ describe("raymarch volume material", () => {
 
     expect(tintedRadianceStart).toBeGreaterThan(spectralVolumeStart);
     expect(baseRadianceStart).toBeGreaterThan(tintedRadianceStart);
-    expect(volumeAssignStart).toBeGreaterThan(baseRadianceStart);
-    expect(finalDensityStart).toBeGreaterThan(volumeAssignStart);
+    expect(volumeColorStart).toBeGreaterThan(baseRadianceStart);
+    expect(finalDensityStart).toBeGreaterThan(volumeColorStart);
 
     const tintedRadianceBlock = source.slice(
       tintedRadianceStart,
       baseRadianceStart,
     );
-    const baseRadianceBlock = source.slice(
-      baseRadianceStart,
-      volumeAssignStart,
-    );
+    const baseRadianceBlock = source.slice(baseRadianceStart, volumeColorStart);
 
     expect(tintedRadianceBlock).toContain("spectralLightWeight");
     expect(tintedRadianceBlock).toContain("spectralLightVolumeColor");
     expect(baseRadianceBlock).toContain("uColor.mul");
     expect(baseRadianceBlock).toContain("baseRadianceLift");
+    expect(source.slice(volumeColorStart, finalDensityStart)).toContain(
+      "spectralLightBaseRadiance",
+    );
+    expect(source).not.toContain("spectralLightEnabled.greaterThan");
   });
 
   it("projects cached Spectral Light color before visibility gates attenuate density", () => {
@@ -768,7 +806,7 @@ describe("raymarch volume material", () => {
     expect(contourBlock).toContain("spectralColor,");
     expect(contourBlock).not.toContain("spectralLightWeight");
     expect(source).toContain(
-      "const spectralLightTintedRadiance = mix(\n            spectralLightUncoloredColor,\n            spectralLightVolumeColor,\n            spectralLightWeight,",
+      "const spectralLightTintedRadiance = mix(\n          spectralLightUncoloredColor,\n          spectralLightVolumeColor,\n          spectralLightWeight,",
     );
   });
 
@@ -816,16 +854,16 @@ describe("raymarch volume material", () => {
     expect(source).toContain("staticWhiteEmissionMix");
     expect(source).toContain("spectralLightWhiteEmissionMix");
     expect(source).toContain(`deriveHighlightTargetNode(
-        staticHolographicColor,
-        uSurfaceColor,
-        staticWhiteEmissionMix,
-        float(STATIC_HIGHLIGHT_SURFACE_PULL_SCALE),
-      )`);
+          staticHolographicColor,
+          uSurfaceColor,
+          staticWhiteEmissionMix,
+          float(STATIC_HIGHLIGHT_SURFACE_PULL_SCALE),
+        )`);
     expect(source).toContain(`deriveHighlightTargetNode(
-            spectralLightHolographicColor,
-            uSurfaceColor,
-            spectralLightWhiteEmissionMix,
-          )`);
+          spectralLightHolographicColor,
+          uSurfaceColor,
+          spectralLightWhiteEmissionMix,
+        )`);
     expect(source).not.toContain(`const staticHolographicLaserColor = mix(
         staticHolographicColor,
         vec3(1.0),`);
@@ -953,18 +991,28 @@ describe("raymarch volume material", () => {
       source,
       "const opticalSlopeAuthority =",
     );
+    const viewNormalGrazingStart = expectSourceIndex(
+      source,
+      "const viewNormalGrazing =",
+    );
     const opticalFocusStart = expectSourceIndex(
       source,
       "const opticalFocusAuthority =",
+    );
+    const viewNormalGrazingBlock = source.slice(
+      viewNormalGrazingStart,
+      opticalSlopeStart,
     );
     const opticalSlopeBlock = source.slice(
       opticalSlopeStart,
       opticalFocusStart,
     );
 
+    expect(viewNormalGrazingStart).toBeLessThan(opticalSlopeStart);
+    expect(viewNormalGrazingBlock).toContain("dot(gradientNormal");
     expect(opticalSlopeBlock).toContain(".mul(localGradientEvidence)");
     expect(opticalSlopeBlock).toContain("OPTICAL_SLOPE_POWER");
-    expect(opticalSlopeBlock).toContain("dot(gradientNormal");
+    expect(opticalSlopeBlock).toContain("viewNormalGrazing");
   });
 
   it("uses normal convergence as the optical focus owner", () => {
@@ -988,6 +1036,10 @@ describe("raymarch volume material", () => {
       source,
       "If(shouldMeasureOpticalConvergence",
     );
+    const convergenceSampleUvStepStart = expectSourceIndex(
+      source,
+      "const convergenceSampleUvStep =",
+    );
     const opticalMeasurementHelperStart = expectSourceIndex(
       source,
       "const measuredOpticalConvergenceAuthority =",
@@ -1007,6 +1059,7 @@ describe("raymarch volume material", () => {
 
     expect(opticalConvergenceStart).toBeGreaterThan(convergenceHelperStart);
     expect(opticalGateStart).toBeGreaterThan(opticalConvergenceStart);
+    expect(convergenceSampleUvStepStart).toBeLessThan(opticalMeasurementStart);
     expect(opticalMeasurementStart).toBeGreaterThan(opticalGateStart);
     expect(opticalMeasurementHelperStart).toBeGreaterThan(
       opticalMeasurementStart,
@@ -1016,7 +1069,9 @@ describe("raymarch volume material", () => {
       opticalFocusStart,
     );
     expect(opticalMeasurementBlock).toContain("const tangent1 = cross");
-    expect(opticalMeasurementBlock).toContain("convergenceSampleStep");
+    expect(opticalMeasurementBlock).toContain(
+      "sampleUvStep: convergenceSampleUvStep",
+    );
     expect(opticalFocusStart).toBeGreaterThan(opticalMeasurementHelperStart);
     expect(source).toContain("function computeLiveModalCoefficientNodes");
     expect(source).toContain("deriveOpticalConvergenceNormalsNode");

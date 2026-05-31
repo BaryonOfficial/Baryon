@@ -279,9 +279,7 @@ function sampleLiveFieldProjectionCacheNode({
     .greaterThan(cancellationSupportEpsilon)
     .select(
       clamp(
-        float(1.0).sub(
-          abs(normalizedField).div(normalizedUnsignedSupport),
-        ),
+        float(1.0).sub(abs(normalizedField).div(normalizedUnsignedSupport)),
         float(0.0),
         float(1.0),
       ),
@@ -408,37 +406,41 @@ function normalizeModalGradientNormalNode(gradient, amplitudeNorm) {
   return gradient.div(max(length(gradient), amplitudeNorm.mul(float(1e-4))));
 }
 
+function offsetBasisUvNode({ basisUv, tangent, sampleUvStep }) {
+  return clamp(basisUv.add(tangent.mul(sampleUvStep)), vec3(0.0), vec3(1.0));
+}
+
 function sampleLiveFieldProjectionNormalNode({
-  localPosition,
-  uRadius,
+  basisUv,
   modalLiveFieldTexture,
 }) {
-  const basisUv = getBasisLocalUvNode({
-    localPosition,
-    uRadius,
-  });
   const fieldSample = texture3D(modalLiveFieldTexture).sample(basisUv);
   const gradient = vec3(fieldSample.y, fieldSample.z, fieldSample.w);
   return gradient.div(max(length(gradient), float(1e-4)));
 }
 
 function deriveLiveFieldProjectionConvergenceAuthorityNode({
-  localPosition,
+  basisUv,
   tangent1,
   tangent2,
-  sampleStep,
-  uRadius,
+  sampleUvStep,
   centerGradientNormal,
   modalLiveFieldTexture,
 }) {
   const normalPositiveT1 = sampleLiveFieldProjectionNormalNode({
-    localPosition: localPosition.add(tangent1.mul(sampleStep)),
-    uRadius,
+    basisUv: offsetBasisUvNode({
+      basisUv,
+      tangent: tangent1,
+      sampleUvStep,
+    }),
     modalLiveFieldTexture,
   });
   const normalPositiveT2 = sampleLiveFieldProjectionNormalNode({
-    localPosition: localPosition.add(tangent2.mul(sampleStep)),
-    uRadius,
+    basisUv: offsetBasisUvNode({
+      basisUv,
+      tangent: tangent2,
+      sampleUvStep,
+    }),
     modalLiveFieldTexture,
   });
   const viewPlaneNormalConvergence = dot(
@@ -456,11 +458,10 @@ function deriveLiveFieldProjectionConvergenceAuthorityNode({
 }
 
 function deriveOpticalConvergenceNormalsNode({
-  localPosition,
+  basisUv,
   tangent1,
   tangent2,
-  sampleStep,
-  uRadius,
+  sampleUvStep,
   uTime,
   uModalFieldModeCount,
   amplitudeNorm,
@@ -482,15 +483,15 @@ function deriveOpticalConvergenceNormalsNode({
     };
   }
 
-  const offsetPosT1 = localPosition.add(tangent1.mul(sampleStep));
-  const offsetPosT2 = localPosition.add(tangent2.mul(sampleStep));
-  const basisUvPosT1 = getBasisLocalUvNode({
-    localPosition: offsetPosT1,
-    uRadius,
+  const basisUvPosT1 = offsetBasisUvNode({
+    basisUv,
+    tangent: tangent1,
+    sampleUvStep,
   });
-  const basisUvPosT2 = getBasisLocalUvNode({
-    localPosition: offsetPosT2,
-    uRadius,
+  const basisUvPosT2 = offsetBasisUvNode({
+    basisUv,
+    tangent: tangent2,
+    sampleUvStep,
   });
   const gradientPosT1 = vec3(0.0).toVar();
   const gradientPosT2 = vec3(0.0).toVar();
@@ -554,11 +555,10 @@ function deriveOpticalConvergenceNormalsNode({
 }
 
 function deriveOpticalConvergenceAuthorityNode({
-  localPosition,
+  basisUv,
   tangent1,
   tangent2,
-  sampleStep,
-  uRadius,
+  sampleUvStep,
   uTime,
   uModalFieldModeCount,
   amplitudeNorm,
@@ -571,11 +571,10 @@ function deriveOpticalConvergenceAuthorityNode({
 }) {
   const { normalPositiveT1, normalPositiveT2 } =
     deriveOpticalConvergenceNormalsNode({
-      localPosition,
+      basisUv,
       tangent1,
       tangent2,
-      sampleStep,
-      uRadius,
+      sampleUvStep,
       uTime,
       uModalFieldModeCount,
       amplitudeNorm,
@@ -781,10 +780,11 @@ function createScatteringNode({
   const amplitudeNorm = max(uTotalSlotAmplitude, float(0.01));
   const modalFieldCount = float(uModalFieldModeCount);
   const activeMask = smoothstep(float(0.0), float(1.0), modalFieldCount);
-  const spectralLightEnabled = smoothstep(
-    float(0.0),
-    float(1e-4),
-    uSpectralMix,
+  const convergenceSampleStep = modalBasisAtlasTexture
+    ? uRadius.mul(float(2.0)).div(float(liveFieldSampleResolution))
+    : uRadius.mul(float(2.0)).div(max(uRaymarchSteps, float(1.0)));
+  const convergenceSampleUvStep = convergenceSampleStep.div(
+    max(uRadius.mul(float(2.0)), float(1e-4)),
   );
   const densityMod = float(1.0)
     .add(uTransientEnergy.mul(0.3))
@@ -1104,9 +1104,11 @@ function createScatteringNode({
         .mul(float(CAUSTIC_BODY_MIX_MAX))
         .mul(accumulationCompression);
       const negViewDirLocal = viewDirLocal.negate();
+      const viewNormalGrazing = float(1.0).sub(
+        abs(dot(gradientNormal, negViewDirLocal)),
+      );
       const opticalSlopeAuthority = clamp(
-        float(1.0)
-          .sub(abs(dot(gradientNormal, negViewDirLocal)))
+        viewNormalGrazing
           .pow(float(OPTICAL_SLOPE_POWER))
           .mul(localGradientEvidence),
         float(0.0),
@@ -1126,7 +1128,7 @@ function createScatteringNode({
           ),
         );
       If(shouldMeasureOpticalConvergence, () => {
-        const viewDirection = viewDirLocal.normalize().toVar();
+        const viewDirection = viewDirLocal.toVar();
         const tangentSeed = vec3(0.0, 1.0, 0.0).toVar();
         If(
           abs(viewDirection.y).greaterThan(
@@ -1137,18 +1139,14 @@ function createScatteringNode({
           },
         );
         const tangent1 = cross(viewDirection, tangentSeed).normalize();
-        const tangent2 = cross(viewDirection, tangent1).normalize();
-        const convergenceSampleStep = modalBasisAtlasTexture
-          ? uRadius.mul(float(2.0)).div(float(liveFieldSampleResolution))
-          : uRadius.mul(float(2.0)).div(max(uRaymarchSteps, float(1.0)));
+        const tangent2 = cross(viewDirection, tangent1);
         const assignAtlasOpticalConvergenceAuthority = () => {
           const measuredOpticalConvergenceAuthority =
             deriveOpticalConvergenceAuthorityNode({
-              localPosition,
+              basisUv,
               tangent1,
               tangent2,
-              sampleStep: convergenceSampleStep,
-              uRadius,
+              sampleUvStep: convergenceSampleUvStep,
               uTime,
               uModalFieldModeCount,
               amplitudeNorm,
@@ -1159,17 +1157,18 @@ function createScatteringNode({
               modalFieldCoefficientBuffer,
               liveSynthesisModeCount,
             });
-          opticalConvergenceAuthority.assign(measuredOpticalConvergenceAuthority);
+          opticalConvergenceAuthority.assign(
+            measuredOpticalConvergenceAuthority,
+          );
         };
         if (modalLiveFieldTexture && modalLiveSupportTexture) {
           If(uLiveFieldCacheActive.greaterThan(float(0.5)), () => {
             opticalConvergenceAuthority.assign(
               deriveLiveFieldProjectionConvergenceAuthorityNode({
-                localPosition,
+                basisUv,
                 tangent1,
                 tangent2,
-                sampleStep: convergenceSampleStep,
-                uRadius,
+                sampleUvStep: convergenceSampleUvStep,
                 centerGradientNormal: gradientNormal,
                 modalLiveFieldTexture,
               }),
@@ -1333,12 +1332,13 @@ function createScatteringNode({
       const whiteEmissionTransientRelief = float(1.0).sub(
         uTransientEnergy.mul(float(WHITE_EMISSION_CROWDING_TRANSIENT_RELIEF)),
       );
-      const hotCoreCrowding = hotCoreBodyCrowdingGate
-        .mul(float(0.35).add(hotCoreRidgeRelief.mul(float(0.65))))
-        .mul(hotCoreTransientRelief);
-      const whiteEmissionCrowding = hotCoreBodyCrowdingGate
-        .mul(float(0.35).add(hotCoreRidgeRelief.mul(float(0.65))))
-        .mul(whiteEmissionTransientRelief);
+      const hotCoreCrowdingBase = hotCoreBodyCrowdingGate.mul(
+        float(0.35).add(hotCoreRidgeRelief.mul(float(0.65))),
+      );
+      const hotCoreCrowding = hotCoreCrowdingBase.mul(hotCoreTransientRelief);
+      const whiteEmissionCrowding = hotCoreCrowdingBase.mul(
+        whiteEmissionTransientRelief,
+      );
       const localHotCoreStart = hotCoreStartDynamic.add(
         hotCoreCrowding.mul(float(HOT_CORE_CROWDING_THRESHOLD_LIFT)),
       );
@@ -1436,23 +1436,6 @@ function createScatteringNode({
           ),
         ),
       );
-      // Modal coherence warms color; rapid change cools it.
-      // spectralColorBiasHintOffset is pre-computed above the Fn.
-      const spectralColorBias = clamp(
-        contourMix
-          .add(uSpectralCentroid.mul(0.25))
-          .add(uTransientEnergy.mul(0.1))
-          .add(spectralColorBiasHintOffset)
-          .mul(float(COLOR_BIAS_SCALE)),
-        float(0.0),
-        float(1.0),
-      );
-      const staticBaseColor = mix(
-        uColor,
-        uSurfaceColor,
-        spectralColorBias.mul(float(STATIC_SURFACE_TINT_SCALE)),
-      );
-      const spectralColor = colorSum.div(colorWeight.max(float(1e-4)));
       const contourAccent = clamp(
         contourMix
           .mul(float(0.18))
@@ -1485,9 +1468,7 @@ function createScatteringNode({
         ),
       );
       const fresnelBase = clamp(
-        float(1.0)
-          .sub(abs(dot(gradientNormal, negViewDirLocal)))
-          .pow(max(uHolographicFresnelPower, float(0.01))),
+        viewNormalGrazing.pow(max(uHolographicFresnelPower, float(0.01))),
         float(0.0),
         float(1.0),
       );
@@ -1529,118 +1510,129 @@ function createScatteringNode({
           whiteEmissionCrowding.mul(float(WHITE_EMISSION_CROWDING_REDUCTION)),
         ),
       );
-      const staticContourColor = mix(
-        staticBaseColor,
-        uSurfaceColor,
-        /** @type {any} */ (
-          contourAccent.mul(float(STATIC_SURFACE_TINT_SCALE))
-        ),
-      );
-      const staticLaserColor = mix(
-        staticContourColor,
-        uSurfaceColor,
-        crowdedHotCoreMix
-          .mul(float(0.72))
-          .mul(boundarySurfacePull.mul(float(STATIC_SURFACE_TINT_SCALE))),
-      );
-      const staticHolographicColor = mix(
-        staticLaserColor,
-        holographicAccentColor,
-        /** @type {any} */ (
-          holographicColorMix.mul(float(STATIC_SURFACE_TINT_SCALE))
-        ),
-      );
-      const staticWhiteEmissionMix = crowdedWhiteEmissionMix
-        .mul(float(0.45))
-        .mul(boundaryWhiteEmission);
-      const staticHolographicLaserColor = deriveHighlightTargetNode(
-        staticHolographicColor,
-        uSurfaceColor,
-        staticWhiteEmissionMix,
-        float(STATIC_HIGHLIGHT_SURFACE_PULL_SCALE),
-      );
-      const activityAccent = smoothstep(
-        float(0.0),
-        float(1.0),
-        modalFieldCount,
-      );
-      const staticVolumeColor = mix(
-        staticHolographicLaserColor.mul(float(0.9)),
-        staticHolographicLaserColor,
-        activityAccent,
-      );
-      const volumeColor = staticVolumeColor.toVar();
+      let volumeColor;
       if (cachedSpectralLightEnabled) {
-        If(spectralLightEnabled.greaterThan(0.5), () => {
-          const spectralLightPresenceEnd = float(
-            RAYMARCH_SPECTRAL_LIGHT_TUNING.cachedPresenceEnd,
-          );
-          const spectralLightPresence = smoothstep(
-            float(0.0),
-            spectralLightPresenceEnd,
-            colorWeight,
-          );
-          const spectralLightWeight = clamp(
-            uSpectralMix.mul(spectralLightPresence),
-            float(0.0),
-            float(1.0),
-          );
-          const spectralLightUncoloredColor = vec3(
-            float(RAYMARCH_SPECTRAL_LIGHT_TUNING.uncoloredNeutralLift),
-          );
-          const spectralLightContourColor = mix(
-            spectralColor.mul(
-              float(RAYMARCH_SPECTRAL_LIGHT_TUNING.contourShadow),
-            ),
-            spectralColor,
-            /** @type {any} */ (contourAccent),
-          );
-          const spectralLightLaserColor = mix(
-            spectralLightContourColor,
-            spectralColor,
-            crowdedHotCoreMix
-              .mul(float(RAYMARCH_SPECTRAL_LIGHT_TUNING.hotCoreSurfacePull))
-              .mul(boundarySurfacePull),
-          );
-          const spectralLightHolographicAccentColor = mix(
-            spectralColor,
-            holographicAccentColor,
-            float(RAYMARCH_SPECTRAL_LIGHT_TUNING.holographicAccentColorPull),
-          );
-          const spectralLightHolographicColor = mix(
-            spectralLightLaserColor,
-            spectralLightHolographicAccentColor,
-            /** @type {any} */ (
-              holographicColorMix.mul(
-                float(RAYMARCH_SPECTRAL_LIGHT_TUNING.holographicAccentMix),
-              )
-            ),
-          );
-          const spectralLightWhiteEmissionMix = crowdedWhiteEmissionMix
-            .mul(float(RAYMARCH_SPECTRAL_LIGHT_TUNING.whiteEmissionLift))
-            .mul(boundaryWhiteEmission);
-          const spectralLightHolographicLaserColor = deriveHighlightTargetNode(
-            spectralLightHolographicColor,
-            uSurfaceColor,
-            spectralLightWhiteEmissionMix,
-          );
-          const spectralLightVolumeColor = mix(
-            spectralLightHolographicLaserColor.mul(float(0.9)),
-            spectralLightHolographicLaserColor,
-            activityAccent,
-          );
-          const spectralLightTintedRadiance = mix(
-            spectralLightUncoloredColor,
-            spectralLightVolumeColor,
-            spectralLightWeight,
-          );
-          const spectralLightBaseRadiance = uColor.mul(
-            float(RAYMARCH_SPECTRAL_LIGHT_TUNING.baseRadianceLift),
-          );
-          volumeColor.assign(
-            spectralLightTintedRadiance.add(spectralLightBaseRadiance),
-          );
-        });
+        const spectralColor = colorSum.div(colorWeight.max(float(1e-4)));
+        const spectralLightPresenceEnd = float(
+          RAYMARCH_SPECTRAL_LIGHT_TUNING.cachedPresenceEnd,
+        );
+        const spectralLightPresence = smoothstep(
+          float(0.0),
+          spectralLightPresenceEnd,
+          colorWeight,
+        );
+        const spectralLightWeight = clamp(
+          uSpectralMix.mul(spectralLightPresence),
+          float(0.0),
+          float(1.0),
+        );
+        const spectralLightUncoloredColor = vec3(
+          float(RAYMARCH_SPECTRAL_LIGHT_TUNING.uncoloredNeutralLift),
+        );
+        const spectralLightContourColor = mix(
+          spectralColor.mul(
+            float(RAYMARCH_SPECTRAL_LIGHT_TUNING.contourShadow),
+          ),
+          spectralColor,
+          /** @type {any} */ (contourAccent),
+        );
+        const spectralLightLaserColor = mix(
+          spectralLightContourColor,
+          spectralColor,
+          crowdedHotCoreMix
+            .mul(float(RAYMARCH_SPECTRAL_LIGHT_TUNING.hotCoreSurfacePull))
+            .mul(boundarySurfacePull),
+        );
+        const spectralLightHolographicAccentColor = mix(
+          spectralColor,
+          holographicAccentColor,
+          float(RAYMARCH_SPECTRAL_LIGHT_TUNING.holographicAccentColorPull),
+        );
+        const spectralLightHolographicColor = mix(
+          spectralLightLaserColor,
+          spectralLightHolographicAccentColor,
+          /** @type {any} */ (
+            holographicColorMix.mul(
+              float(RAYMARCH_SPECTRAL_LIGHT_TUNING.holographicAccentMix),
+            )
+          ),
+        );
+        const spectralLightWhiteEmissionMix = crowdedWhiteEmissionMix
+          .mul(float(RAYMARCH_SPECTRAL_LIGHT_TUNING.whiteEmissionLift))
+          .mul(boundaryWhiteEmission);
+        const spectralLightHolographicLaserColor = deriveHighlightTargetNode(
+          spectralLightHolographicColor,
+          uSurfaceColor,
+          spectralLightWhiteEmissionMix,
+        );
+        const spectralLightVolumeColor = mix(
+          spectralLightHolographicLaserColor.mul(float(0.9)),
+          spectralLightHolographicLaserColor,
+          activeMask,
+        );
+        const spectralLightTintedRadiance = mix(
+          spectralLightUncoloredColor,
+          spectralLightVolumeColor,
+          spectralLightWeight,
+        );
+        const spectralLightBaseRadiance = uColor.mul(
+          float(RAYMARCH_SPECTRAL_LIGHT_TUNING.baseRadianceLift),
+        );
+        volumeColor = spectralLightTintedRadiance.add(
+          spectralLightBaseRadiance,
+        );
+      } else {
+        // Modal coherence warms color; rapid change cools it.
+        // spectralColorBiasHintOffset is pre-computed above the Fn.
+        const spectralColorBias = clamp(
+          contourMix
+            .add(uSpectralCentroid.mul(0.25))
+            .add(uTransientEnergy.mul(0.1))
+            .add(spectralColorBiasHintOffset)
+            .mul(float(COLOR_BIAS_SCALE)),
+          float(0.0),
+          float(1.0),
+        );
+        const staticBaseColor = mix(
+          uColor,
+          uSurfaceColor,
+          spectralColorBias.mul(float(STATIC_SURFACE_TINT_SCALE)),
+        );
+        const staticContourColor = mix(
+          staticBaseColor,
+          uSurfaceColor,
+          /** @type {any} */ (
+            contourAccent.mul(float(STATIC_SURFACE_TINT_SCALE))
+          ),
+        );
+        const staticLaserColor = mix(
+          staticContourColor,
+          uSurfaceColor,
+          crowdedHotCoreMix
+            .mul(float(0.72))
+            .mul(boundarySurfacePull.mul(float(STATIC_SURFACE_TINT_SCALE))),
+        );
+        const staticHolographicColor = mix(
+          staticLaserColor,
+          holographicAccentColor,
+          /** @type {any} */ (
+            holographicColorMix.mul(float(STATIC_SURFACE_TINT_SCALE))
+          ),
+        );
+        const staticWhiteEmissionMix = crowdedWhiteEmissionMix
+          .mul(float(0.45))
+          .mul(boundaryWhiteEmission);
+        const staticHolographicLaserColor = deriveHighlightTargetNode(
+          staticHolographicColor,
+          uSurfaceColor,
+          staticWhiteEmissionMix,
+          float(STATIC_HIGHLIGHT_SURFACE_PULL_SCALE),
+        );
+        volumeColor = mix(
+          staticHolographicLaserColor.mul(float(0.9)),
+          staticHolographicLaserColor,
+          activeMask,
+        );
       }
 
       return volumeColor.mul(stabilizedDensity).mul(structureAwareEmissionGain);
