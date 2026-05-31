@@ -5940,9 +5940,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
     expect(first.modalVisibilityEnergy).toBeGreaterThan(0.05);
     expect(reused.renderAuthority).toBe(false);
     expect(reused.sourceEvidence.currentSourceEvidence).toBe(false);
-    expect(
-      reused.energyLedger.projectedRenderEnergy,
-    ).toBe(0);
+    expect(reused.energyLedger.projectedRenderEnergy).toBe(0);
     expect(sumSlotAmplitudes(reused.modalFieldSlots)).toBe(0);
     expect(reused.structureSignal).toBeLessThan(first.structureSignal * 0.5);
     expect(reused.energySignal).toBeLessThan(first.energySignal * 0.5);
@@ -6114,6 +6112,58 @@ describe("full-range music handling", () => {
     expect(frame.trebleBroadbandEnergy).toBeGreaterThan(0.05);
     expect(frame.structureSignal).toBeLessThanOrEqual(1);
     expect(frame.modeCoherence).toBeGreaterThan(0);
+  });
+
+  it("projects current resonant treble energy over a low-end backbone", () => {
+    const mixedPartials = [
+      [92, 0.68],
+      [184, 0.4],
+      [368, 0.22],
+      [6200, 0.16],
+      [6975, 0.1],
+    ];
+    const cases = [
+      {
+        label: "file",
+        status: makeActiveStatus(),
+        sourceMode: "file",
+        avgAmplitude: 12,
+        rms: 0.04,
+      },
+      {
+        label: "system",
+        status: makeSystemStatus(),
+        sourceMode: "live",
+        avgAmplitude: 5.5,
+        rms: 0.018,
+      },
+    ];
+
+    for (const { label, status, sourceMode, avgAmplitude, rms } of cases) {
+      const featureState = createAudioFeatureState();
+      const frame = buildAudioFeatureFrame({
+        analysisSnapshot: createSnapshot({
+          sourceMode,
+          avgAmplitude,
+          fftMagnitudes: makeFft(mixedPartials),
+          rms,
+        }),
+        featureState,
+        radius: 3,
+        status,
+        frameTimeMs: 0,
+      });
+      const { energyLedger } = frame;
+
+      expect(frame.sourceEvidence.currentSourceEvidence, label).toBe(true);
+      expect(energyLedger.sourceBoundaryState, label).toBe("live");
+      expect(energyLedger.storedModalResonantEnergy, label).toBeGreaterThan(
+        0.08,
+      );
+      expect(energyLedger.projectedResonantEnergy, label).toBeGreaterThan(
+        energyLedger.storedModalResonantEnergy * 0.02,
+      );
+    }
   });
 });
 
@@ -6581,13 +6631,16 @@ describe("modal excitation integration", () => {
       silentResult.analysisResult.structuralMetrics.modalResponseRenderEnergy,
     ).toBe(0);
     expect(
-      silentResult.analysisResult.structuralMetrics.energyLedger.sourceBoundaryState,
+      silentResult.analysisResult.structuralMetrics.energyLedger
+        .sourceBoundaryState,
     ).toBe("muted");
     expect(
-      silentResult.analysisResult.structuralMetrics.energyLedger.storedModalEnergy,
+      silentResult.analysisResult.structuralMetrics.energyLedger
+        .storedModalEnergy,
     ).toBeGreaterThan(0);
     expect(
-      silentResult.analysisResult.structuralMetrics.energyLedger.projectedRenderEnergy,
+      silentResult.analysisResult.structuralMetrics.energyLedger
+        .projectedRenderEnergy,
     ).toBe(0);
     expect(decayedSourceCoupledAmplitude).toBeLessThan(
       activeSourceCoupledAmplitude,
@@ -6640,13 +6693,16 @@ describe("modal excitation integration", () => {
       pausedResult.analysisResult.structuralMetrics.modalResponseRenderEnergy,
     ).toBe(0);
     expect(
-      pausedResult.analysisResult.structuralMetrics.energyLedger.sourceBoundaryState,
+      pausedResult.analysisResult.structuralMetrics.energyLedger
+        .sourceBoundaryState,
     ).toBe("muted");
     expect(
-      pausedResult.analysisResult.structuralMetrics.energyLedger.storedModalEnergy,
+      pausedResult.analysisResult.structuralMetrics.energyLedger
+        .storedModalEnergy,
     ).toBeGreaterThan(0);
     expect(
-      pausedResult.analysisResult.structuralMetrics.energyLedger.projectedRenderEnergy,
+      pausedResult.analysisResult.structuralMetrics.energyLedger
+        .projectedRenderEnergy,
     ).toBe(0);
     expectClosedSourceRenderFrame(pausedResult.frame);
     expect(pausedResult.analysisResult.avgAmplitude).toBe(0);

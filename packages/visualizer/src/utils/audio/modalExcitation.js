@@ -2092,6 +2092,53 @@ function getNextResonantMaturity({
   return clamp01(previousMaturity + (targetMaturity - previousMaturity) * rate);
 }
 
+function getLayerSignalDriveThreshold(layer) {
+  return layer === "source-coupled"
+    ? SOURCE_COUPLED_SIGNAL_MIN_DRIVE_ENERGY
+    : RESONANT_SIGNAL_MIN_DRIVE_ENERGY;
+}
+
+function getModalResponseProjectionEnergyFloor(layer) {
+  return layer === "source-coupled"
+    ? LOW_Q_OBSERVER_MIN_RETAINED_ENERGY
+    : HIGH_Q_RESONANT_MIN_RETAINED_ENERGY;
+}
+
+function getModalResponseProjectionDriveFloor(layer) {
+  return layer === "source-coupled"
+    ? SOURCE_COUPLED_DISPLAY_CONTINUITY_MIN_DRIVE_ENERGY
+    : RESONANT_DISPLAY_CONTINUITY_MIN_DRIVE_ENERGY;
+}
+
+function hasModalResponseProjectionEvidence(entry, layer) {
+  // Modal response is already the damped physical oscillator state for this frame.
+  // Projection should only require retained modal energy plus current modal drive.
+  if (layer === "resonant" && entry?.weakResonantNoise === true) {
+    return false;
+  }
+
+  const modalResponseAmplitude = clamp01(
+    entry?.modalResponseDisplayAmplitude ?? 0,
+  );
+  if (modalResponseAmplitude <= 0) {
+    return false;
+  }
+
+  const currentDriveEnergy = clamp01(
+    entry?.currentDriveEnergy ?? entry?.driveEnergy ?? 0,
+  );
+  if (currentDriveEnergy >= getLayerSignalDriveThreshold(layer)) {
+    return true;
+  }
+
+  const modalResponseEnergy = clamp01(entry?.modalResponseEnergy ?? 0);
+  const modalResponseDrive = clamp01(entry?.modalResponseDrive ?? 0);
+  return (
+    modalResponseEnergy >= getModalResponseProjectionEnergyFloor(layer) &&
+    modalResponseDrive >= getModalResponseProjectionDriveFloor(layer)
+  );
+}
+
 function getCoherentResonantCoupling({
   tonalness,
   periodicity,
@@ -2140,13 +2187,12 @@ function getSignalScore(entry, layer) {
   const currentDriveEnergy = entry?.currentDriveEnergy ?? 0;
   const driveEnergy = currentDriveEnergy || (entry?.driveEnergy ?? 0);
   const amplitude = entry?.amplitude ?? 0;
-  const modalResponseAmplitude =
-    currentDriveEnergy >=
-    (layer === "source-coupled"
-      ? SOURCE_COUPLED_SIGNAL_MIN_DRIVE_ENERGY
-      : RESONANT_SIGNAL_MIN_DRIVE_ENERGY)
-      ? clamp01(entry?.modalResponseDisplayAmplitude ?? 0)
-      : 0;
+  const modalResponseAmplitude = hasModalResponseProjectionEvidence(
+    entry,
+    layer,
+  )
+    ? clamp01(entry?.modalResponseDisplayAmplitude ?? 0)
+    : 0;
   const freshness = getFreshness(entry);
 
   if (layer === "resonant") {
@@ -2215,6 +2261,9 @@ function buildSignalShortlist(entries, layer, currentFrameAtMs, capacity) {
       if (
         (entry.currentDriveEnergy ?? entry.driveEnergy ?? 0) >= driveThreshold
       ) {
+        return true;
+      }
+      if (hasModalResponseProjectionEvidence(entry, layer)) {
         return true;
       }
       if (
@@ -2802,9 +2851,11 @@ function buildModalProjection({
       EXCITATION_RESONANT_FAST_SHIFT_MIN_VISIBLE_AMPLITUDE;
   const highQResonantSignalAuthoritative = false;
   const modalResponseResonantSignalAuthoritative =
-    (modalResponseMetrics?.modalResponseEnergy ?? 0) > 0.08 &&
+    (modalResponseMetrics?.modalResponseResonantEnergy ?? 0) > 0.08 &&
     rawDisplayResonantEntries.length > 0 &&
-    resonantStalePressure > 0;
+    (resonantStalePressure > 0 ||
+      resonantVisibleAmplitude <
+        EXCITATION_RESONANT_SIGNAL_AUTHORITY_MIN_VISIBLE_AMPLITUDE);
   const resonantSignalAuthoritative =
     resonantTargetShifted ||
     resonantFreshSignalShifted ||
