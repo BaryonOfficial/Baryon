@@ -6165,6 +6165,83 @@ describe("full-range music handling", () => {
       );
     }
   });
+
+  it("keeps resonant projection alive through intense changing music", () => {
+    function makeIntenseChangingMusicFft(frameIndex) {
+      const fftMagnitudes = new Float32Array(BIN_COUNT);
+      const roots = [74, 82, 92, 103];
+      const root = roots[frameIndex % roots.length];
+      for (const [frequency, amplitude] of [
+        [root, 0.75 + 0.15 * Math.sin(frameIndex * 0.7)],
+        [root * 2, 0.54],
+        [root * 3, 0.35],
+        [root * 4, 0.24],
+      ]) {
+        fftMagnitudes[freqToBin(frequency)] = amplitude;
+      }
+
+      const highs = [4200, 5100, 6200, 7600, 8800, 9800, 10800];
+      for (let index = 0; index < highs.length; index += 1) {
+        const frequency =
+          highs[(index + frameIndex) % highs.length] *
+          (1 + 0.015 * Math.sin(frameIndex + index));
+        fftMagnitudes[freqToBin(frequency)] =
+          0.11 + ((index + frameIndex) % 3 === 0 ? 0.12 : 0);
+      }
+
+      for (
+        let bin = freqToBin(2600);
+        bin < freqToBin(11500) && bin < BIN_COUNT;
+        bin += 3
+      ) {
+        fftMagnitudes[bin] = Math.max(
+          fftMagnitudes[bin],
+          0.035 + ((bin + frameIndex) % 11) / 300,
+        );
+      }
+      return fftMagnitudes;
+    }
+    const cases = [
+      {
+        label: "file",
+        status: makeActiveStatus(),
+        sourceMode: "file",
+      },
+      {
+        label: "system",
+        status: makeSystemStatus(),
+        sourceMode: "live",
+      },
+    ];
+
+    for (const { label, status, sourceMode } of cases) {
+      const featureState = createAudioFeatureState();
+      let frame = null;
+
+      for (let frameIndex = 0; frameIndex <= 3; frameIndex += 1) {
+        frame = buildAudioFeatureFrame({
+          analysisSnapshot: createSnapshot({
+            sourceMode,
+            avgAmplitude: 120,
+            fftMagnitudes: makeIntenseChangingMusicFft(frameIndex),
+            rms: 0.55,
+          }),
+          featureState,
+          radius: 3,
+          status,
+          frameTimeMs: frameIndex * 33,
+        });
+      }
+
+      expect(frame.sourceEvidence.currentSourceEvidence, label).toBe(true);
+      expect(frame.renderAuthority, label).toBe(true);
+      expect(frame.energyLedger.sourceBoundaryState, label).toBe("live");
+      expect(frame.energyLedger.projectedResonantEnergy, label).toBeGreaterThan(
+        0.003,
+      );
+      expect(frame.debug.resonantModeCount, label).toBeGreaterThan(0);
+    }
+  });
 });
 
 describe("modal excitation integration", () => {

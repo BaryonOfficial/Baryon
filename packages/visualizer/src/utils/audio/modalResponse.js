@@ -472,16 +472,24 @@ function retainSignificantPhysicalEntries(entries) {
     return entries;
   }
 
-  const peakEnergy = entries.reduce(
-    (peak, entry) => Math.max(peak, entry.modalResponseEnergy),
-    0,
-  );
-  const relativeFloor = MIN_RELATIVE_PHYSICAL_MODAL_ENERGY * peakEnergy;
-  if (relativeFloor <= 0) {
-    return entries;
+  const peakEnergyByLayer = new Map();
+  for (const entry of entries) {
+    const layer = entry.layer ?? "source-coupled";
+    peakEnergyByLayer.set(
+      layer,
+      Math.max(
+        peakEnergyByLayer.get(layer) ?? 0,
+        entry.modalResponseEnergy ?? 0,
+      ),
+    );
   }
 
-  return entries.filter((entry) => entry.modalResponseEnergy >= relativeFloor);
+  return entries.filter((entry) => {
+    const layerPeakEnergy =
+      peakEnergyByLayer.get(entry.layer ?? "source-coupled") ?? 0;
+    const relativeFloor = MIN_RELATIVE_PHYSICAL_MODAL_ENERGY * layerPeakEnergy;
+    return relativeFloor <= 0 || entry.modalResponseEnergy >= relativeFloor;
+  });
 }
 
 function averageEntryMetric(entries, key) {
