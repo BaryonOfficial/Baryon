@@ -805,7 +805,6 @@ describe("audio session", () => {
     expect(baseline.fftMagnitudes).toEqual(muted.fftMagnitudes);
     expect(baseline.avgAmplitude).toBe(mutedByVolume.avgAmplitude);
     expect(baseline.avgAmplitude).toBe(muted.avgAmplitude);
-    expect(lastAudioContext.destination).toBeTruthy();
   });
 
   it("preserves playback offset across pause and resume", async () => {

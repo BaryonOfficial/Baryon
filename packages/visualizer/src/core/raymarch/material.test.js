@@ -1256,8 +1256,8 @@ describe("raymarch volume material", () => {
 
     expect(mesh.geometry).toBeInstanceOf(THREE.SphereGeometry);
     expect(mesh.material.transparent).toBe(true);
-    expect(mesh.material.outputNode).toBeTruthy();
-    expect(mesh.material.offsetNode).toBeTruthy();
+    expect(["function", "object"]).toContain(typeof mesh.material.outputNode);
+    expect(["function", "object"]).toContain(typeof mesh.material.offsetNode);
     expect(raymarchOpacityNode.isPropertyNode).toBe(true);
   });
 
@@ -1335,8 +1335,8 @@ describe("raymarch volume material", () => {
     expect(materialCache.dirichlet.direct).toBeUndefined();
     expect(materialCache.neumann["modal-basis-cached"]).toBeUndefined();
     expect(materialCache.dirichlet["modal-basis-cached"]).toBeUndefined();
-    expect(materialCache.neumann.off).toBeTruthy();
-    expect(materialCache.dirichlet.off).toBeTruthy();
+    expect(materialCache.neumann.off).toHaveProperty("transparent", true);
+    expect(materialCache.dirichlet.off).toHaveProperty("transparent", true);
     expect(materialCache.neumann.cached).toBeUndefined();
     expect(mesh.material).toBe(materialCache.neumann.off);
     expect(mesh.userData).not.toHaveProperty("raymarchFieldEvaluationMode");
@@ -1350,13 +1350,19 @@ describe("raymarch volume material", () => {
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
     );
     expect(mesh.material).toBe(materialCache.neumann.cached);
-    expect(materialCache.neumann.cached).toBeTruthy();
+    expect(materialCache.neumann.cached).toHaveProperty(
+      "spectralLightEvaluationMode",
+      RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
+    );
     expect(materialCache.neumann.direct).toBeUndefined();
     expect(mesh.userData).not.toHaveProperty("raymarchFieldEvaluationMode");
 
     setRaymarchBoundaryMode(mesh, "dirichlet");
     expect(mesh.material).toBe(materialCache.dirichlet.cached);
-    expect(materialCache.dirichlet.cached).toBeTruthy();
+    expect(materialCache.dirichlet.cached).toHaveProperty(
+      "spectralLightEvaluationMode",
+      RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
+    );
     expect(materialCache.dirichlet.direct).toBeUndefined();
     expect(mesh.userData.raymarchBoundaryMode).toBe("dirichlet");
   });

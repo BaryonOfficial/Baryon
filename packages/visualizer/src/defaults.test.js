@@ -77,8 +77,14 @@ describe("defaults compatibility surface", () => {
       (preset) => preset.name === "baryon-7",
     );
 
-    expect(baryon7Preset).toBeTruthy();
-    for (const [key, value] of Object.entries(baryon7Preset?.controls ?? {})) {
+    expect(baryon7Preset).toEqual(
+      expect.objectContaining({
+        name: "baryon-7",
+        builtIn: true,
+        controls: expect.any(Object),
+      }),
+    );
+    for (const [key, value] of Object.entries(baryon7Preset.controls)) {
       expect(DEFAULTS[key]).toBe(value);
     }
     expect(RENDER_DEFAULTS.performanceHudEnabled).toBe(false);

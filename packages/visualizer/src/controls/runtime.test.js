@@ -27,28 +27,6 @@ import {
   RENDER_DEFAULTS,
 } from "../defaults.js";
 
-function withRenderLedger(featureFrame) {
-  if (
-    !featureFrame ||
-    featureFrame.energyLedger ||
-    !featureFrame.renderAuthority
-  ) {
-    return featureFrame;
-  }
-
-  return {
-    ...featureFrame,
-    energyLedger: {
-      projectedRenderEnergy: Math.max(
-        featureFrame.modalResponseRenderEnergy ?? 0,
-        featureFrame.modalResponseEnergy ?? 0,
-        0.2,
-      ),
-      renderEnergyEpsilon: 1e-6,
-    },
-  };
-}
-
 function createRaymarchHarness(method = DEFAULT_VISUALIZATION_METHOD) {
   const dirichletMaterial = { steps: 0 };
   const neumannMaterial = { steps: 0 };
@@ -843,7 +821,7 @@ describe("control runtime sync", () => {
     const beatRuntimeState = createRaymarchHarness();
     beatRuntimeState.responseEnvelope = 0.5;
 
-    const baseFrame = withRenderLedger({
+    const baseFrame = {
       fieldState: "active",
       renderAuthority: true,
       structureSignal: 0.55,
@@ -851,7 +829,7 @@ describe("control runtime sync", () => {
       changeSignal: 0.64,
       transientEnergy: 0.74,
       pulseSignal: 0.3,
-    });
+    };
     const status = {
       isPlaying: true,
       isLiveInputActive: false,
@@ -903,7 +881,7 @@ describe("control runtime sync", () => {
     consumedBeatRuntimeState.responseEnvelope = 0.42;
     consumedBeatRuntimeState.sceneMotion.lastBeatPulseId = 17;
 
-    const featureFrame = withRenderLedger({
+    const featureFrame = {
       fieldState: "active",
       renderAuthority: true,
       structureSignal: 0.48,
@@ -914,7 +892,7 @@ describe("control runtime sync", () => {
       beatPulseId: 17,
       beatStrength: 0.74,
       beatConfidence: 0.69,
-    });
+    };
     const status = {
       isPlaying: true,
       isLiveInputActive: false,
@@ -953,14 +931,14 @@ describe("control runtime sync", () => {
       runtimeState,
       controls,
       1 / 60,
-      withRenderLedger({
+      {
         fieldState: "active",
         renderAuthority: true,
         structureSignal: 0.78,
         energySignal: 0.84,
         changeSignal: 0.22,
         pulseSignal: 0.05,
-      }),
+      },
       {
         isPlaying: true,
         isLiveInputActive: false,
@@ -1002,7 +980,7 @@ describe("control runtime sync", () => {
     expect(Math.abs(snapshot.angularVelocity)).toBeLessThan(0.2);
   });
 
-  it("stops audio rotation without projected render authority", () => {
+  it("stops audio rotation on render-authority cut", () => {
     const controls = createControlState();
     controls.rotationMode = "audio";
     controls.motionAmount = 1;
@@ -1018,6 +996,7 @@ describe("control runtime sync", () => {
       1 / 60,
       {
         fieldState: "decay",
+        renderAuthorityCut: true,
         renderAuthority: false,
         structureSignal: 0.42,
         energySignal: 0.18,
@@ -1077,7 +1056,7 @@ describe("control runtime sync", () => {
       runtimeState,
       controls,
       1 / 60,
-      withRenderLedger({
+      {
         fieldState: "active",
         renderAuthority: true,
         structureSignal: 0.55,
@@ -1089,7 +1068,7 @@ describe("control runtime sync", () => {
         beatPulseId: 9,
         beatStrength: 0.78,
         beatConfidence: 0.72,
-      }),
+      },
       {
         isPlaying: true,
         isLiveInputActive: false,
@@ -1162,8 +1141,8 @@ describe("control runtime sync", () => {
     });
 
     expect(runtimeState.method).toBe(DEFAULT_VISUALIZATION_METHOD);
-    expect(runtimeState.volumeMesh).toBeTruthy();
-    expect(runtimeState.idleOverlay).toBeTruthy();
+    expect(runtimeState.volumeMesh).toBeInstanceOf(THREE.Mesh);
+    expect(runtimeState.idleOverlay).toBeInstanceOf(THREE.LineSegments);
     expect(runtimeState.visualRoot.children).toContain(runtimeState.volumeMesh);
     expect(runtimeState.visualRoot.children).toContain(
       runtimeState.idleOverlay,
@@ -1199,7 +1178,7 @@ describe("control runtime sync", () => {
       runtimeState.modalFieldCapacity * 4,
     );
 
-    expect(() => runtime.dispose(runtimeState)).not.toThrow();
+    runtime.dispose(runtimeState);
   });
 
   it("keeps the live raymarch step budget in sync with controls after setup", () => {
@@ -1227,15 +1206,27 @@ describe("control runtime sync", () => {
 
   it("does not throw when applyBloomControls is called before the pipeline is ready", () => {
     const controls = createControlState();
-    expect(() =>
-      applyBloomControls(
-        {
-          ensurePipeline: () => null,
-          postNodesRef: { current: null },
-        },
-        controls,
-      ),
-    ).not.toThrow();
+    controls.bloomEnabled = true;
+    controls.bloomResponseBias = 0;
+    controls.bloomStrength = 0.75;
+    controls.bloomRadius = 0.22;
+    controls.bloomThreshold = 0.18;
+    controls.raymarchSteps = STEP_REFERENCE;
+    const ensurePipeline = vi.fn(() => null);
+
+    const snapshot = applyBloomControls(
+      {
+        ensurePipeline,
+        postNodesRef: { current: null },
+      },
+      controls,
+    );
+
+    expect(ensurePipeline).toHaveBeenCalledTimes(1);
+    expect(snapshot.enabled).toBe(true);
+    expect(snapshot.strength).toBeCloseTo(0.75);
+    expect(snapshot.radius).toBeCloseTo(0.22);
+    expect(snapshot.threshold).toBeCloseTo(0.18);
   });
 
   it("covers every control handler bucket used by the schema", () => {

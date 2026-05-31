@@ -2207,14 +2207,22 @@ describe("fieldCache", () => {
 
     const inputSnapshot = modalBasisCache.computeInputsByKey?.[computeNodeKey];
     expect(result.enqueued).toBe(true);
-    expect(inputSnapshot).toBeTruthy();
+    expect(inputSnapshot).toMatchObject({
+      modalFieldModeBuffer: {
+        value: {
+          array: expect.any(Float32Array),
+        },
+      },
+      modalFieldPhaseBuffer: null,
+      uniforms: {
+        uTime: { value: 1 },
+        uRadius: { value: 3 },
+        uModalFieldModeCount: { value: 1 },
+      },
+    });
     expect(
       Array.from(inputSnapshot.modalFieldModeBuffer.value.array.slice(0, 4)),
     ).toEqual([1, 2, 3, 0.5]);
-    expect(inputSnapshot.modalFieldPhaseBuffer).toBeNull();
-    expect(inputSnapshot.uniforms.uTime.value).toBe(1);
-    expect(inputSnapshot.uniforms.uRadius.value).toBe(3);
-    expect(inputSnapshot.uniforms.uModalFieldModeCount.value).toBe(1);
 
     resolveCompute();
     await flushCacheMicrotasks();

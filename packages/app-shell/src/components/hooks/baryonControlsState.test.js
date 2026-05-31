@@ -31,7 +31,10 @@ test("builds the advanced controls presentation layout", () => {
   ]);
 
   const modeGroup = groupByTitle.get("Mode");
-  expect(modeGroup).toBeTruthy();
+  expect(modeGroup).toMatchObject({
+    title: "Mode",
+    controls: expect.any(Array),
+  });
   expect(
     modeGroup.controls.map((control) => control.key).slice(0, 3),
   ).toStrictEqual(["boundaryMode", "colorMode", "rotationMode"]);
@@ -44,7 +47,10 @@ test("builds the advanced controls presentation layout", () => {
   ).toBe(true);
 
   const diagnosticsGroup = groupByTitle.get("Diagnostics");
-  expect(diagnosticsGroup).toBeTruthy();
+  expect(diagnosticsGroup).toMatchObject({
+    title: "Diagnostics",
+    controls: expect.any(Array),
+  });
   expect(diagnosticsGroup.controls.map((control) => control.key)).toStrictEqual(
     [
       "traaEnabled",
@@ -61,7 +67,10 @@ test("builds the advanced controls presentation layout", () => {
   );
 
   const displayGroup = groupByTitle.get("Display");
-  expect(displayGroup).toBeTruthy();
+  expect(displayGroup).toMatchObject({
+    title: "Display",
+    controls: expect.any(Array),
+  });
   expect(displayGroup.controls.map((control) => control.key)).toStrictEqual([
     "bloomEnabled",
     "bloomStrength",

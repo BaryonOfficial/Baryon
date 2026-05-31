@@ -7,14 +7,19 @@ describe("built-in visual presets", () => {
       (entry) => entry.name === "baryon-4",
     );
 
-    expect(preset).toBeTruthy();
-    expect(preset?.builtIn).toBe(true);
-    expect(preset?.controls).toMatchObject({
+    expect(preset).toEqual(
+      expect.objectContaining({
+        name: "baryon-4",
+        builtIn: true,
+        controls: expect.any(Object),
+      }),
+    );
+    expect(preset.controls).toMatchObject({
       colorMode: "spectral",
       bloomEnabled: true,
     });
-    expect(preset?.controls.zeroPointPrecision).toBeLessThanOrEqual(0.02);
-    expect(preset?.controls.raymarchSteps).toBeGreaterThanOrEqual(96);
+    expect(preset.controls.zeroPointPrecision).toBeLessThanOrEqual(0.02);
+    expect(preset.controls.raymarchSteps).toBeGreaterThanOrEqual(96);
   });
 
   it("publishes the selectable built-in visual presets in order", () => {

@@ -118,16 +118,19 @@ describe("annotatePeakSalience", () => {
 
   it("does not throw on empty peaks array", () => {
     const fft = makeFFT([[200, 0.8]]);
-    expect(() =>
-      annotatePeakSalience([], fft, SAMPLE_RATE, FFT_SIZE),
-    ).not.toThrow();
+    const peaks = [];
+
+    expect(annotatePeakSalience(peaks, fft, SAMPLE_RATE, FFT_SIZE)).toBe(
+      undefined,
+    );
+    expect(peaks).toEqual([]);
   });
 
   it("does not throw when peaks is null", () => {
     const fft = makeFFT([[200, 0.8]]);
-    expect(() =>
-      annotatePeakSalience(null, fft, SAMPLE_RATE, FFT_SIZE),
-    ).not.toThrow();
+    expect(annotatePeakSalience(null, fft, SAMPLE_RATE, FFT_SIZE)).toBe(
+      undefined,
+    );
   });
 
   it("salienceScore is in [0, 1] for all peaks", () => {

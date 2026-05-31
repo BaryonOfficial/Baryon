@@ -218,7 +218,8 @@ describe("control schema", () => {
           Object.values(VISUALIZATION_METHODS).includes(method),
         ),
       ).toBe(true);
-      expect(definition.runtimePath).toBeTruthy();
+      expect(definition.runtimePath).toEqual(expect.any(String));
+      expect(definition.runtimePath).not.toBe("");
     }
   });
 
