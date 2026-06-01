@@ -70,6 +70,94 @@ describe("lineFeedProgramActivity", () => {
     }
   });
 
+  it("closes silent-transport meter residue instead of holding program active", () => {
+    const bandState = {};
+    resetLineFeedProgramActivityState(bandState, "system");
+
+    const playing = resolveLineFeedProgramActivity({
+      bandState,
+      metrics: { avgAmplitude: 38, rms: 0.28, peakAmplitude: 0.95 },
+      deltaMs: 33,
+      analysisSessionKey: "system",
+    });
+    expect(playing.programActive).toBe(true);
+
+    const residue = resolveLineFeedProgramActivity({
+      bandState,
+      metrics: {
+        avgAmplitude: 0.34,
+        rms: 0.0017,
+        peakAmplitude: 0,
+        transportSpectrumSilent: true,
+        timeDomainPeakAmplitude: 0,
+      },
+      deltaMs: 33,
+      analysisSessionKey: "system",
+    });
+
+    expect(residue.programActive).toBe(false);
+    expect(residue.programExcitation).toBeLessThan(0.08);
+  });
+
+  it("closes sustained zero-meter dropouts after the bridge window", () => {
+    const bandState = {};
+    resetLineFeedProgramActivityState(bandState, "system");
+
+    resolveLineFeedProgramActivity({
+      bandState,
+      metrics: { avgAmplitude: 38, rms: 0.28, peakAmplitude: 0.95 },
+      deltaMs: 33,
+      analysisSessionKey: "system",
+    });
+
+    let residue = null;
+    for (let frame = 0; frame < 37; frame += 1) {
+      residue = resolveLineFeedProgramActivity({
+        bandState,
+        metrics: {
+          avgAmplitude: 0,
+          rms: 0.000015,
+          peakAmplitude: 0,
+          transportSpectrumSilent: true,
+          timeDomainPeakAmplitude: 0,
+        },
+        deltaMs: 33,
+        analysisSessionKey: "system",
+      });
+    }
+
+    expect(residue.programActive).toBe(false);
+    expect(residue.programExcitation).toBeLessThan(0.08);
+  });
+
+  it("keeps spectrum-silent periodic waveform tails active", () => {
+    const bandState = {};
+    resetLineFeedProgramActivityState(bandState, "system");
+
+    resolveLineFeedProgramActivity({
+      bandState,
+      metrics: { avgAmplitude: 38, rms: 0.28, peakAmplitude: 0.95 },
+      deltaMs: 33,
+      analysisSessionKey: "system",
+    });
+
+    const periodicTail = resolveLineFeedProgramActivity({
+      bandState,
+      metrics: {
+        avgAmplitude: 0.18,
+        rms: 0.0008,
+        peakAmplitude: 0,
+        transportSpectrumSilent: true,
+        timeDomainPeakAmplitude: 0.006,
+      },
+      deltaMs: 33,
+      analysisSessionKey: "system",
+    });
+
+    expect(periodicTail.programActive).toBe(true);
+    expect(periodicTail.programExcitation).toBeLessThan(0.08);
+  });
+
   it("derives higher excitation above calibrated device floor", () => {
     const low = deriveLineFeedProgramExcitation(
       { avgAmplitude: 1.2, rms: 0.0068, peakAmplitude: 0.01 },

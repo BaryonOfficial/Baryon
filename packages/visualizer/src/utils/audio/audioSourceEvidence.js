@@ -1,5 +1,10 @@
 export const AUDIO_SOURCE_EVIDENCE_VERSION = "audio-source-evidence:v1";
 
+const CURRENT_SOURCE_AVG_FLOOR = 0.02;
+const CURRENT_SOURCE_TIME_DOMAIN_PEAK_FLOOR = 1e-4;
+const SPECTRAL_SIGNAL_PEAK_FLOOR = 0.003;
+const SPECTRAL_SIGNAL_RMS_FLOOR = 0.0005;
+
 function clamp01(value) {
   if (!Number.isFinite(value)) {
     return 0;
@@ -12,19 +17,33 @@ function readFinite(value, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
 }
 
-function hasMetricEvidence(metrics) {
+function hasMetricEvidence(metrics, analysisClass = "none") {
+  const timeDomainEvidence =
+    readFinite(metrics?.timeDomainPeakAmplitude) >
+    CURRENT_SOURCE_TIME_DOMAIN_PEAK_FLOOR;
+
+  return (
+    hasSpectralSignalEvidence(metrics) ||
+    readFinite(metrics?.avgAmplitude) > CURRENT_SOURCE_AVG_FLOOR ||
+    ((analysisClass === "line-feed" || analysisClass === "acoustic-mic") &&
+      timeDomainEvidence)
+  );
+}
+
+function hasResidualMetricEvidence(metrics) {
   return (
     readFinite(metrics?.avgAmplitude) > 0 ||
     readFinite(metrics?.analyserRms) > 0 ||
-    readFinite(metrics?.preModalFftPeak) > 0
+    readFinite(metrics?.preModalFftPeak) > 0 ||
+    readFinite(metrics?.timeDomainPeakAmplitude) > 0
   );
 }
 
 function hasSpectralSignalEvidence(metrics) {
   return (
-    readFinite(metrics?.preModalFftPeak) > 0.003 ||
+    readFinite(metrics?.preModalFftPeak) > SPECTRAL_SIGNAL_PEAK_FLOOR ||
     (readFinite(metrics?.nonZeroFftBinCount) > 0 &&
-      readFinite(metrics?.analyserRms) > 0.0005)
+      readFinite(metrics?.analyserRms) > SPECTRAL_SIGNAL_RMS_FLOOR)
   );
 }
 
@@ -43,6 +62,7 @@ function normalizeMetrics(metrics = {}) {
     avgAmplitude: readFinite(metrics.avgAmplitude),
     analyserRms: readFinite(metrics.analyserRms),
     preModalFftPeak: readFinite(metrics.preModalFftPeak),
+    timeDomainPeakAmplitude: readFinite(metrics.timeDomainPeakAmplitude),
     nonZeroFftBinCount: Math.max(
       0,
       Math.floor(readFinite(metrics.nonZeroFftBinCount)),
@@ -196,6 +216,10 @@ export function buildAudioSourceEvidenceFrame({
     hasSpectralSignalEvidence(normalizedMetrics);
   const lineFeedTransportMuted =
     analysisClass === "line-feed" && !lineFeedFreshSignal;
+  const lineFeedProgramBridgeEvidence =
+    analysisClass === "line-feed" &&
+    lineFeedProgramActive === true &&
+    hasResidualMetricEvidence(normalizedMetrics);
   const micHardSilence =
     sourceKind === "mic" &&
     liveInputHardSilenceActive === true &&
@@ -206,7 +230,7 @@ export function buildAudioSourceEvidenceFrame({
     playing,
     liveInputActive,
   });
-  const metricEvidence = hasMetricEvidence(normalizedMetrics);
+  const metricEvidence = hasMetricEvidence(normalizedMetrics, analysisClass);
   const evidence = {
     ownerVersion: AUDIO_SOURCE_EVIDENCE_VERSION,
     sourceKind,
@@ -233,7 +257,10 @@ export function buildAudioSourceEvidenceFrame({
     return closeSourceEvidence(evidence, "muted");
   }
 
-  if (!hasAnalysisSource || !metricEvidence) {
+  if (
+    !hasAnalysisSource ||
+    (!metricEvidence && !lineFeedProgramBridgeEvidence)
+  ) {
     return closeSourceEvidence(evidence, "zero");
   }
 

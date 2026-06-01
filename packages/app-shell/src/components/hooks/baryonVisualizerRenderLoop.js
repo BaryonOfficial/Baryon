@@ -705,6 +705,18 @@ function hasAudioSourceRenderIntent({ status, controls }) {
   );
 }
 
+function hasClosedPreparedSourceEvidence(preparedInputs) {
+  const sourceEvidence = preparedInputs?.sourceEvidence;
+  if (!sourceEvidence) {
+    return false;
+  }
+
+  return (
+    sourceEvidence.currentSourceEvidence !== true ||
+    sourceEvidence.sourceBoundaryState !== "live"
+  );
+}
+
 function shouldComposeInactiveSourceFeatureFrame({
   status,
   controls,
@@ -712,7 +724,8 @@ function shouldComposeInactiveSourceFeatureFrame({
 }) {
   return (
     preparedInputs?.snapshot != null &&
-    !hasAudioSourceRenderIntent({ status, controls })
+    (!hasAudioSourceRenderIntent({ status, controls }) ||
+      hasClosedPreparedSourceEvidence(preparedInputs))
   );
 }
 
@@ -735,9 +748,14 @@ function cloneFrameValue(value, seen = new WeakMap()) {
 
   if (ArrayBuffer.isView(value)) {
     const cloned =
-      typeof value.slice === "function"
-        ? value.slice()
-        : new value.constructor(value.buffer.slice(0));
+      value instanceof DataView
+        ? new DataView(
+            value.buffer.slice(
+              value.byteOffset,
+              value.byteOffset + value.byteLength,
+            ),
+          )
+        : Reflect.construct(value.constructor, [value]);
     seen.set(value, cloned);
     return cloned;
   }
@@ -800,6 +818,25 @@ function getPlaybackSessionId(status) {
   return status?.playbackSessionId ?? null;
 }
 
+const TERMINAL_PLAYBACK_END_REASONS = new Set([
+  "natural",
+  "premature",
+  "interrupted",
+  "stopped",
+]);
+
+function hasCurrentPlaybackSessionEnded(status) {
+  const playbackSessionId = getPlaybackSessionId(status);
+  if (playbackSessionId == null) {
+    return false;
+  }
+
+  return (
+    TERMINAL_PLAYBACK_END_REASONS.has(status?.lastPlaybackEndReason) &&
+    status?.lastPlaybackDiagnostics?.playbackSessionId === playbackSessionId
+  );
+}
+
 function isActiveFilePlayback(status) {
   return (
     status?.isPlaying === true &&
@@ -812,7 +849,8 @@ function readPausedFileHoldFrame({ frameCacheRefs, status, clockMode }) {
   if (
     clockMode !== "paused-playback" ||
     status?.isPlaying === true ||
-    status?.isLiveInputActive === true
+    status?.isLiveInputActive === true ||
+    hasCurrentPlaybackSessionEnded(status)
   ) {
     return null;
   }

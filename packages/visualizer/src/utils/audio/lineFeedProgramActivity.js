@@ -18,6 +18,7 @@ const LINE_FEED_PROGRAM_MIN_FLOOR_RMS = 0.0008;
 const LINE_FEED_PROGRAM_EXCESS_AVG_SCALE = 18;
 const LINE_FEED_PROGRAM_EXCESS_RMS_SCALE = 0.14;
 const LINE_FEED_PROGRAM_PEAK_SCALE = 0.22;
+const LINE_FEED_PROGRAM_TIME_DOMAIN_SIGNAL_PEAK = 1e-5;
 
 function clamp01(value) {
   if (!Number.isFinite(value)) {
@@ -69,6 +70,7 @@ export function resetLineFeedProgramActivityState(
  *   rms?: number,
  *   peakAmplitude?: number,
  *   transportSpectrumSilent?: boolean,
+ *   timeDomainPeakAmplitude?: number,
  * }} metrics
  * @param {{
  *   deviceFloorAvg?: number,
@@ -115,13 +117,24 @@ export function isLineFeedMeterIdlePauseSignature(metrics, floors = {}) {
   const peak = metrics?.peakAmplitude ?? 0;
   const transportSilent =
     metrics?.transportSpectrumSilent === true || peak <= 0.004;
+  const timeDomainSilent =
+    (metrics?.timeDomainPeakAmplitude ?? 0) <=
+    LINE_FEED_PROGRAM_TIME_DOMAIN_SIGNAL_PEAK;
 
   return (
     avg >= LINE_FEED_PROGRAM_METER_IDLE_MIN_AVG &&
     avg <= LINE_FEED_PROGRAM_METER_IDLE_MAX_AVG &&
     rms <= LINE_FEED_PROGRAM_METER_IDLE_MAX_RMS &&
     Math.abs(avg - floorAvg) <= 0.22 &&
-    transportSilent
+    transportSilent &&
+    timeDomainSilent
+  );
+}
+
+function hasLineFeedTimeDomainSignalEvidence(metrics) {
+  return (
+    (metrics?.timeDomainPeakAmplitude ?? 0) >
+    LINE_FEED_PROGRAM_TIME_DOMAIN_SIGNAL_PEAK
   );
 }
 
@@ -195,6 +208,7 @@ function updateLineFeedDeviceFloor(
  *     rms?: number,
  *     peakAmplitude?: number,
  *     transportSpectrumSilent?: boolean,
+ *     timeDomainPeakAmplitude?: number,
  *   },
  *   deltaMs?: number,
  *   currentFrameAtMs?: number,
@@ -267,6 +281,13 @@ export function resolveLineFeedProgramActivity({
         quietHoldMs + Math.max(0, deltaMs),
       );
       programActive = quietHoldMs < LINE_FEED_PROGRAM_BRIDGE_HOLD_MS;
+    } else if (
+      metrics?.transportSpectrumSilent === true &&
+      !hasLineFeedTimeDomainSignalEvidence(metrics)
+    ) {
+      quietHoldMs = 0;
+      pauseIdleHoldMs = LINE_FEED_PROGRAM_PAUSE_CLOSE_MS;
+      programActive = false;
     } else {
       quietHoldMs = 0;
       pauseIdleHoldMs = 0;

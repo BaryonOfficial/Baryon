@@ -4105,6 +4105,56 @@ describe("live input noise gate", () => {
     expect(frame.debug.modalResponseCurrentRenderSourceEvidence).toBe(false);
   });
 
+  it("does not render the first silent-transport system residue frame as live source", () => {
+    const featureState = createAudioFeatureState();
+    const status = makeSystemStatus();
+    let frame = null;
+
+    for (let frameIndex = 0; frameIndex < 12; frameIndex += 1) {
+      frame = buildAudioFeatureFrame({
+        analysisSnapshot: createSnapshot({
+          sourceMode: "system",
+          avgAmplitude: 42,
+          fftMagnitudes: makeFft(RESONANT_STRIKE_PARTIALS),
+          timeData: makeMixedTimeData({
+            partials: RESONANT_STRIKE_PARTIALS,
+            amplitudeScale: 1,
+          }),
+          rms: 0.28,
+        }),
+        featureState,
+        radius: 3,
+        status,
+        frameTimeMs: frameIndex * 33,
+      });
+    }
+
+    expect(frame.fieldState).toBe("active");
+    expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBeGreaterThan(0);
+
+    frame = buildAudioFeatureFrame({
+      analysisSnapshot: createSnapshot({
+        sourceMode: "system",
+        avgAmplitude: 0.34,
+        fftMagnitudes: new Float32Array(BIN_COUNT),
+        timeData: new Float32Array(FFT_SIZE),
+        rms: 0.0017,
+      }),
+      featureState,
+      radius: 3,
+      status,
+      frameTimeMs: 12 * 33,
+    });
+
+    expect(frame.sourceEvidence.currentSourceEvidence).toBe(false);
+    expect(frame.energyLedger.sourceBoundaryState).toBe("muted");
+    expect(frame.renderAuthority).toBe(false);
+    expect(frame.fieldState).toBe("idle");
+    expect(frame.hasModalField).toBe(false);
+    expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBe(0);
+    expect(frame.energyLedger.projectedRenderEnergy).toBe(0);
+  });
+
   it("keeps retained high-Q topology visible through ring-support dropouts", () => {
     const featureState = createAudioFeatureState();
     const preparedInputs = prepareAudioFeatureFrameInputs({
@@ -6916,6 +6966,127 @@ describe("modal excitation integration", () => {
     expect(pausedResult.frame.hasModalField).toBe(false);
     expect(pausedResult.frame.observationEnergy).toBe(0);
     expect(pausedResult.frame.modalVisibilityEnergy).toBe(0);
+  });
+
+  it("cuts playing file analyser residue with no meter or spectrum", () => {
+    const featureState = createAudioFeatureState();
+    const activeFft = makeFft([
+      [550, 0.95],
+      [1100, 0.52],
+      [6600, 0.38],
+    ]);
+    const activeTimeData = makeTimeData({
+      frequency: 550,
+      amplitude: 0.45,
+      harmonics: [[2, 0.08]],
+    });
+    let previousFrame = null;
+
+    for (let frameIndex = 0; frameIndex < 10; frameIndex += 1) {
+      const result = buildModalExcitationAnalysisFrame({
+        featureState,
+        fftMagnitudes: activeFft,
+        timeData: activeTimeData,
+        avgAmplitude: 120,
+        rms: 0.52,
+        frameTimeMs: frameIndex * 33,
+        previousFrame,
+      });
+      previousFrame = result.frame;
+    }
+
+    const residueResult = buildModalExcitationAnalysisFrame({
+      featureState,
+      fftMagnitudes: new Float32Array(BIN_COUNT),
+      timeData: makeTimeData({
+        frequency: 550,
+        amplitude: 0.003,
+      }),
+      avgAmplitude: 0,
+      rms: 0.002138553954931318,
+      frameTimeMs: 10 * 33,
+      previousFrame,
+      status: makeActiveStatus(),
+    });
+
+    expect(
+      residueResult.analysisResult.structuralMetrics.modalResponseEnergy,
+    ).toBeGreaterThan(0);
+    expect(
+      residueResult.analysisResult.structuralMetrics.energyLedger
+        .sourceBoundaryState,
+    ).toBe("muted");
+    expect(
+      residueResult.analysisResult.structuralMetrics.energyLedger.sourceEnergy,
+    ).toBe(0);
+    expect(
+      residueResult.analysisResult.structuralMetrics.energyLedger
+        .projectedRenderEnergy,
+    ).toBe(0);
+    expectClosedSourceRenderFrame(residueResult.frame);
+    expect(residueResult.frame.fieldState).toBe("idle");
+    expect(residueResult.frame.hasModalField).toBe(false);
+    expect(residueResult.frame.observationEnergy).toBe(0);
+    expect(residueResult.frame.modalVisibilityEnergy).toBe(0);
+  });
+
+  it("bounds weak file residual projection breadth instead of filling the volume", () => {
+    const featureState = createAudioFeatureState();
+    const activePartials = [
+      [196, 0.9],
+      [293, 0.76],
+      [432, 0.7],
+      [611, 0.58],
+      [832, 0.5],
+      [1180, 0.44],
+      [1860, 0.36],
+      [3100, 0.28],
+    ];
+    let previousFrame = null;
+
+    for (let frameIndex = 0; frameIndex < 40; frameIndex += 1) {
+      const result = buildModalExcitationAnalysisFrame({
+        featureState,
+        fftMagnitudes: makeFft(activePartials),
+        timeData: makeMixedTimeData({
+          partials: activePartials,
+          amplitudeScale: 0.82,
+        }),
+        avgAmplitude: 24,
+        rms: 0.2,
+        frameTimeMs: frameIndex * 33,
+        previousFrame,
+      });
+      previousFrame = result.frame;
+    }
+
+    const residueResult = buildModalExcitationAnalysisFrame({
+      featureState,
+      fftMagnitudes: makeDenseFft({
+        count: 92,
+        amplitude: 0.004,
+        peakFrequency: 427,
+        peakAmplitude: 0.235,
+      }),
+      timeData: makeMixedTimeData({
+        partials: activePartials,
+        amplitudeScale: 0.02,
+      }),
+      avgAmplitude: 0.6605,
+      rms: 0.010756,
+      frameTimeMs: 40 * 33,
+      previousFrame,
+      status: makeActiveStatus(),
+    });
+
+    expect(residueResult.frame.sourceEvidence.currentSourceEvidence).toBe(
+      true,
+    );
+    expect(residueResult.frame.energyLedger.sourceEnergy).toBeGreaterThan(0.2);
+    expect(residueResult.frame.activeModalFieldModeCount).toBeGreaterThan(0);
+    expect(residueResult.frame.activeModalFieldModeCount).toBeLessThanOrEqual(
+      16,
+    );
   });
 
   it("keeps dense low-change modal input visually pruned without collapsing reactivity", () => {

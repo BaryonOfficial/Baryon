@@ -115,6 +115,11 @@ const EXCITATION_RESONANT_SHIFT_STALE_TRACKING = 0.86;
 const EXCITATION_RESONANT_SHIFT_STALE_RELEASE = 0.3;
 const EXCITATION_RESONANT_CONTINUITY_PRESENCE_RELEASE = 0.92;
 const EXCITATION_RESONANT_FRESH_CAP = 2;
+const PROJECTION_SOURCE_ENERGY_FULL_BREADTH = 0.35;
+const PROJECTION_RESIDUAL_SOURCE_COUPLED_MIN_CAP = 1;
+const PROJECTION_RESIDUAL_SOURCE_COUPLED_MAX_CAP = 3;
+const PROJECTION_RESIDUAL_RESONANT_MIN_CAP = 4;
+const PROJECTION_RESIDUAL_RESONANT_MAX_CAP = 16;
 const SOURCE_COUPLED_SIGNAL_MIN_DRIVE_ENERGY = 0.045;
 const RESONANT_SIGNAL_MIN_DRIVE_ENERGY = 0.05;
 const SOURCE_COUPLED_SIGNAL_STALE_WINDOW_MS = 66;
@@ -2649,6 +2654,84 @@ function buildDisplayShortlist(entries, layer, capacity = entries.length) {
   return survivors;
 }
 
+function resolveSourceEnergyProjectionCapacity({
+  capacity,
+  layer,
+  sourceEnergy,
+}) {
+  const safeCapacity = Math.max(0, Math.floor(capacity ?? 0));
+  if (safeCapacity === 0) {
+    return 0;
+  }
+
+  const normalizedSourceEnergy = clamp01(sourceEnergy);
+  if (normalizedSourceEnergy >= PROJECTION_SOURCE_ENERGY_FULL_BREADTH) {
+    return safeCapacity;
+  }
+
+  const minCap =
+    layer === "source-coupled"
+      ? PROJECTION_RESIDUAL_SOURCE_COUPLED_MIN_CAP
+      : PROJECTION_RESIDUAL_RESONANT_MIN_CAP;
+  const maxCap =
+    layer === "source-coupled"
+      ? PROJECTION_RESIDUAL_SOURCE_COUPLED_MAX_CAP
+      : PROJECTION_RESIDUAL_RESONANT_MAX_CAP;
+  const breadth = smoothstep(
+    0,
+    PROJECTION_SOURCE_ENERGY_FULL_BREADTH,
+    normalizedSourceEnergy,
+  );
+  const residualCap = Math.ceil(minCap + (maxCap - minCap) * breadth);
+
+  return Math.min(safeCapacity, Math.max(Math.min(minCap, safeCapacity), residualCap));
+}
+
+function shouldApplyResidualProjectionBreadthCap({
+  sourceEvidence,
+}) {
+  const sourceEnergy = clamp01(sourceEvidence?.sourceEnergy ?? 0);
+  const avgAmplitude = Math.max(
+    0,
+    sourceEvidence?.metrics?.avgAmplitude ?? 0,
+  );
+
+  return (
+    sourceEvidence?.sourceKind === "file" &&
+    sourceEvidence?.currentSourceEvidence === true &&
+    sourceEnergy > 0 &&
+    sourceEnergy < PROJECTION_SOURCE_ENERGY_FULL_BREADTH &&
+    avgAmplitude < 1
+  );
+}
+
+function clearLayerSlot(layerBuffer, offset) {
+  layerBuffer.slots.fill(0, offset, offset + 4);
+  layerBuffer.referenceSlots.fill(0, offset, offset + 4);
+  layerBuffer.colorSlots.fill(0, offset, offset + 4);
+  layerBuffer.phaseSlots?.fill(0, offset, offset + 4);
+}
+
+function pruneLayerBufferActiveSlots(layerBuffer, capacity, maxActiveCount) {
+  const slotCount = Math.min(
+    Math.floor((layerBuffer?.slots?.length ?? 0) / 4),
+    Math.max(0, Math.floor(capacity ?? 0)),
+  );
+  const activeLimit = Math.max(0, Math.floor(maxActiveCount ?? 0));
+  let seen = 0;
+
+  for (let index = 0; index < slotCount; index += 1) {
+    const offset = index * 4;
+    if (!((layerBuffer.slots[offset + 3] ?? 0) > 0)) {
+      continue;
+    }
+    seen += 1;
+    if (seen > activeLimit) {
+      clearLayerSlot(layerBuffer, offset);
+    }
+  }
+}
+
 function getEntryModeKey(entry) {
   return buildModeKey(entry?.u, entry?.v, entry?.w);
 }
@@ -3892,6 +3975,31 @@ export function buildModalExcitationStructuralState({
   state.previousShouldBuildSpectralLight = Boolean(
     preparedInputs.shouldBuildSpectralLight,
   );
+
+  if (
+    shouldApplyResidualProjectionBreadthCap({
+      sourceEvidence: resolvedSourceEvidence,
+    })
+  ) {
+    pruneLayerBufferActiveSlots(
+      state.blendSourceCoupled,
+      sourceCoupledCapacity,
+      resolveSourceEnergyProjectionCapacity({
+        capacity: sourceCoupledCapacity,
+        layer: "source-coupled",
+        sourceEnergy: resolvedSourceEvidence.sourceEnergy,
+      }),
+    );
+    pruneLayerBufferActiveSlots(
+      state.blendResonant,
+      resonantCapacity,
+      resolveSourceEnergyProjectionCapacity({
+        capacity: resonantCapacity,
+        layer: "resonant",
+        sourceEnergy: resolvedSourceEvidence.sourceEnergy,
+      }),
+    );
+  }
 
   remapReferenceToBlendedOrder(
     state.blendSourceCoupled.slots,

@@ -233,7 +233,7 @@ describe("audio source evidence", () => {
       hasAnalysisSource: true,
       isPlaying: true,
       metrics: {
-        avgAmplitude: 0.01,
+        avgAmplitude: 0.04,
         analyserRms: 0,
         preModalFftPeak: 0,
         nonZeroFftBinCount: 0,
@@ -246,6 +246,51 @@ describe("audio source evidence", () => {
         modalResponse: { modalResponseInputEnergy: 0.2 },
       }),
     ).toMatchObject({
+      sourceBoundaryState: "live",
+      currentSourceEvidence: true,
+    });
+  });
+
+  it("treats file analyser residue without meter or spectrum as zero source evidence", () => {
+    const residualEvidence = buildAudioSourceEvidenceFrame({
+      inputMode: "file",
+      hasAnalysisSource: true,
+      isPlaying: true,
+      metrics: {
+        avgAmplitude: 0,
+        analyserRms: 0.002138553954931318,
+        preModalFftPeak: 0,
+        timeDomainPeakAmplitude: 0.003,
+        nonZeroFftBinCount: 0,
+      },
+    });
+
+    expect(residualEvidence).toMatchObject({
+      sourceBoundaryState: "zero",
+      currentSourceEvidence: false,
+      sourceEnergy: 0,
+    });
+  });
+
+  it("lets the line-feed activity owner bridge brief zero-valued frames", () => {
+    const evidence = buildAudioSourceEvidenceFrame({
+      inputMode: "system",
+      hasAnalysisSource: true,
+      isLiveInputActive: true,
+      isLineFeedLiveInput: true,
+      lineFeedProgramActive: true,
+      metrics: {
+        avgAmplitude: 0,
+        analyserRms: 0.00001,
+        preModalFftPeak: 0,
+        timeDomainPeakAmplitude: 0,
+        nonZeroFftBinCount: 0,
+      },
+    });
+
+    expect(evidence).toMatchObject({
+      sourceKind: "system",
+      analysisClass: "line-feed",
       sourceBoundaryState: "live",
       currentSourceEvidence: true,
     });

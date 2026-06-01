@@ -88,6 +88,14 @@ export function advanceRenderOutputTemporalHistoryBypass(postNodes) {
     return false;
   }
 
+  if (postNodes?.visualIdleFinalized === true) {
+    const previousValue = temporalHistoryBlendUniform.value;
+    const previousRemaining = postNodes.temporalHistoryCutFramesRemaining ?? 0;
+    temporalHistoryBlendUniform.value = 0;
+    postNodes.temporalHistoryCutFramesRemaining = Math.max(1, previousRemaining);
+    return previousValue !== 0 || previousRemaining <= 0;
+  }
+
   const remaining = postNodes.temporalHistoryCutFramesRemaining ?? 0;
   if (remaining <= 0) {
     if (temporalHistoryBlendUniform.value !== 1) {

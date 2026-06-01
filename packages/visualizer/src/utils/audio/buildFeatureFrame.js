@@ -848,6 +848,18 @@ function computeBasicFftSummary(fftMagnitudes, sampleRate) {
   return summary;
 }
 
+function computeTimeDataPeakAmplitude(timeData) {
+  if (!(timeData instanceof Float32Array) || timeData.length === 0) {
+    return 0;
+  }
+
+  let peak = 0;
+  for (let index = 0; index < timeData.length; index += 1) {
+    peak = Math.max(peak, Math.abs(timeData[index] ?? 0));
+  }
+  return peak;
+}
+
 function findPeakFftMagnitude(fftMagnitudes) {
   if (!fftMagnitudes?.length) return 0;
 
@@ -4253,6 +4265,9 @@ export function prepareAudioFeatureFrameInputs({
           peakAmplitude: preModalFftPeak,
           spectralCentroid: spectralCentroidHint,
         }),
+        timeDomainPeakAmplitude: computeTimeDataPeakAmplitude(
+          snapshot?.timeData,
+        ),
         transportSpectrumSilent:
           fftSummary.nonZeroBinCount === 0 && preModalFftPeak <= 0.003,
       }
@@ -4299,6 +4314,9 @@ export function prepareAudioFeatureFrameInputs({
         avgAmplitude,
         analyserRms,
         preModalFftPeak,
+        timeDomainPeakAmplitude: computeTimeDataPeakAmplitude(
+          snapshot?.timeData,
+        ),
         nonZeroFftBinCount: fftSummary.nonZeroBinCount,
       },
     }),
