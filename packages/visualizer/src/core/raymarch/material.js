@@ -410,53 +410,6 @@ function offsetBasisUvNode({ basisUv, tangent, sampleUvStep }) {
   return clamp(basisUv.add(tangent.mul(sampleUvStep)), vec3(0.0), vec3(1.0));
 }
 
-function sampleLiveFieldProjectionNormalNode({
-  basisUv,
-  modalLiveFieldTexture,
-}) {
-  const fieldSample = texture3D(modalLiveFieldTexture).sample(basisUv);
-  const gradient = vec3(fieldSample.y, fieldSample.z, fieldSample.w);
-  return gradient.div(max(length(gradient), float(1e-4)));
-}
-
-function deriveLiveFieldProjectionConvergenceAuthorityNode({
-  basisUv,
-  tangent1,
-  tangent2,
-  sampleUvStep,
-  centerGradientNormal,
-  modalLiveFieldTexture,
-}) {
-  const normalPositiveT1 = sampleLiveFieldProjectionNormalNode({
-    basisUv: offsetBasisUvNode({
-      basisUv,
-      tangent: tangent1,
-      sampleUvStep,
-    }),
-    modalLiveFieldTexture,
-  });
-  const normalPositiveT2 = sampleLiveFieldProjectionNormalNode({
-    basisUv: offsetBasisUvNode({
-      basisUv,
-      tangent: tangent2,
-      sampleUvStep,
-    }),
-    modalLiveFieldTexture,
-  });
-  const viewPlaneNormalConvergence = dot(
-    normalPositiveT1.sub(centerGradientNormal),
-    tangent1,
-  )
-    .add(dot(normalPositiveT2.sub(centerGradientNormal), tangent2))
-    .mul(float(-1.0));
-
-  return clamp(
-    max(float(0.0), viewPlaneNormalConvergence),
-    float(0.0),
-    float(1.0),
-  );
-}
-
 function deriveOpticalConvergenceNormalsNode({
   basisUv,
   tangent1,
@@ -1161,22 +1114,7 @@ function createScatteringNode({
             measuredOpticalConvergenceAuthority,
           );
         };
-        if (modalLiveFieldTexture && modalLiveSupportTexture) {
-          If(uLiveFieldCacheActive.greaterThan(float(0.5)), () => {
-            opticalConvergenceAuthority.assign(
-              deriveLiveFieldProjectionConvergenceAuthorityNode({
-                basisUv,
-                tangent1,
-                tangent2,
-                sampleUvStep: convergenceSampleUvStep,
-                centerGradientNormal: gradientNormal,
-                modalLiveFieldTexture,
-              }),
-            );
-          }).Else(assignAtlasOpticalConvergenceAuthority);
-        } else {
-          assignAtlasOpticalConvergenceAuthority();
-        }
+        assignAtlasOpticalConvergenceAuthority();
       });
       const opticalFocusAuthority = clamp(
         causticRidgeAuthority

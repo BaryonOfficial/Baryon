@@ -1122,6 +1122,40 @@ describe("raymarch volume material", () => {
     );
   });
 
+  it("does not let the frame-current projection cache own optical convergence", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const opticalMeasurementStart = expectSourceIndex(
+      source,
+      "If(shouldMeasureOpticalConvergence",
+    );
+    const opticalFocusStart = expectSourceIndex(
+      source,
+      "const opticalFocusAuthority =",
+    );
+    const opticalMeasurementBlock = source.slice(
+      opticalMeasurementStart,
+      opticalFocusStart,
+    );
+
+    expect(source).toContain("function sampleLiveFieldProjectionCacheNode");
+    expect(opticalMeasurementBlock).toContain(
+      "assignAtlasOpticalConvergenceAuthority();",
+    );
+    expect(source).not.toContain("function sampleLiveFieldProjectionNormalNode");
+    expect(source).not.toContain(
+      "function deriveLiveFieldProjectionConvergenceAuthorityNode",
+    );
+    expect(opticalMeasurementBlock).not.toContain(
+      "uLiveFieldCacheActive.greaterThan",
+    );
+    expect(opticalMeasurementBlock).not.toContain(
+      "deriveLiveFieldProjectionConvergenceAuthorityNode",
+    );
+  });
+
   it("keeps the optical measurement pass off the spherical startup path", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
