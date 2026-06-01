@@ -122,6 +122,28 @@ function liveSourceEvidence(evidence, sourceEnergy) {
   };
 }
 
+function closeRenderBoundary(evidence, renderBoundaryState) {
+  return {
+    ...evidence,
+    rawSourceBoundaryState: evidence.sourceBoundaryState ?? "absent",
+    renderBoundaryState,
+    sourceBoundaryState: renderBoundaryState,
+    currentSourceEvidence: false,
+    sourceEnergy: 0,
+  };
+}
+
+function liveRenderBoundary(evidence, sourceEnergy) {
+  return {
+    ...evidence,
+    rawSourceBoundaryState: evidence.sourceBoundaryState ?? "live",
+    renderBoundaryState: "live",
+    sourceBoundaryState: "live",
+    currentSourceEvidence: true,
+    sourceEnergy: clamp01(sourceEnergy),
+  };
+}
+
 function resolveSourceKind({
   inputMode = "idle",
   injectTestTone = false,
@@ -280,11 +302,11 @@ export function resolveAudioRenderBoundary({
   const sourceBoundaryState = evidence.sourceBoundaryState ?? "absent";
 
   if (sourceBoundaryState === "absent" || sourceBoundaryState === "muted") {
-    return closeSourceEvidence(evidence, sourceBoundaryState);
+    return closeRenderBoundary(evidence, sourceBoundaryState);
   }
 
   if (evidence.sourceKind === "test" || evidence.analysisClass === "test") {
-    return liveSourceEvidence(
+    return liveRenderBoundary(
       evidence,
       Math.max(1, evidence.sourceEnergy ?? 0),
     );
@@ -294,15 +316,15 @@ export function resolveAudioRenderBoundary({
     const retainedModalEnergy = clamp01(
       modalResponse?.modalResponseEnergy ?? 0,
     );
-    const resolvedSourceBoundaryState =
+    const resolvedRenderBoundaryState =
       retainedModalEnergy > 0 ? "muted" : "zero";
 
-    return closeSourceEvidence(evidence, resolvedSourceBoundaryState);
+    return closeRenderBoundary(evidence, resolvedRenderBoundaryState);
   }
 
   if (evidence.currentSourceEvidence !== true) {
-    return closeSourceEvidence(evidence, "zero");
+    return closeRenderBoundary(evidence, "zero");
   }
 
-  return liveSourceEvidence(evidence, clamp01(evidence.sourceEnergy ?? 0));
+  return liveRenderBoundary(evidence, clamp01(evidence.sourceEnergy ?? 0));
 }

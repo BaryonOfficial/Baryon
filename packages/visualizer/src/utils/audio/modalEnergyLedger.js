@@ -1,12 +1,12 @@
 export const DEFAULT_RENDER_ENERGY_EPSILON = 1e-6;
 export const ENERGY_OWNER_VERSION = "av-energy-ledger:v1";
 
-function shouldBoundarySuppressProjection(sourceBoundaryState) {
-  return sourceBoundaryState === "absent" || sourceBoundaryState === "muted";
+function shouldBoundarySuppressProjection(renderBoundaryState) {
+  return renderBoundaryState === "absent" || renderBoundaryState === "muted";
 }
 
-function shouldBoundaryCapProjection(sourceBoundaryState) {
-  return sourceBoundaryState === "zero";
+function shouldBoundaryCapProjection(renderBoundaryState) {
+  return renderBoundaryState === "zero";
 }
 
 function shouldSignalCapProjection({
@@ -61,7 +61,8 @@ export function hasProjectedRenderAuthority(
 
 export function buildModalEnergyLedger({
   sourceEnergy = 0,
-  sourceBoundaryState = "live",
+  sourceBoundaryState = undefined,
+  renderBoundaryState = sourceBoundaryState ?? "live",
   modalResponse = null,
   candidateForcingSlots = null,
   candidateResponseSlots = null,
@@ -86,15 +87,16 @@ export function buildModalEnergyLedger({
     rawProjectedSourceCoupledEnergy + rawProjectedResonantEnergy;
   const rawProjectedRenderEnergy = clamp01(rawProjectedLayerEnergyTotal);
   const normalizedSourceEnergy = clamp01(sourceEnergy);
+  const resolvedRenderBoundaryState = renderBoundaryState ?? "live";
   const storedModalEnergy = clamp01(modalResponse?.modalResponseEnergy ?? 0);
   const normalizedCurrentSignalEnergy = Number.isFinite(currentSignalEnergy)
     ? clamp01(currentSignalEnergy)
     : rawProjectedRenderEnergy;
   const projectedRenderEnergy = shouldBoundarySuppressProjection(
-    sourceBoundaryState,
+    resolvedRenderBoundaryState,
   )
     ? 0
-    : shouldBoundaryCapProjection(sourceBoundaryState) ||
+    : shouldBoundaryCapProjection(resolvedRenderBoundaryState) ||
         shouldSignalCapProjection({
           currentSignalAmplitude,
           renderEnergyEpsilon,
@@ -116,7 +118,8 @@ export function buildModalEnergyLedger({
   );
   const ledger = {
     energyOwnerVersion: ENERGY_OWNER_VERSION,
-    sourceBoundaryState,
+    sourceBoundaryState: resolvedRenderBoundaryState,
+    renderBoundaryState: resolvedRenderBoundaryState,
     sourceEnergy: normalizedSourceEnergy,
     storedModalEnergy,
     storedModalSourceCoupledEnergy: clamp01(

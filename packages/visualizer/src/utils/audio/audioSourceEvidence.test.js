@@ -188,6 +188,8 @@ describe("audio source evidence", () => {
         modalResponse: { modalResponseInputEnergy: 0.4 },
       }),
     ).toMatchObject({
+      rawSourceBoundaryState: "muted",
+      renderBoundaryState: "muted",
       sourceBoundaryState: "muted",
       currentSourceEvidence: false,
       sourceEnergy: 0,
@@ -221,6 +223,8 @@ describe("audio source evidence", () => {
         modalResponse: { modalResponseInputEnergy: 0.4 },
       }),
     ).toMatchObject({
+      rawSourceBoundaryState: "live",
+      renderBoundaryState: "zero",
       sourceBoundaryState: "zero",
       currentSourceEvidence: false,
       sourceEnergy: 0,
@@ -246,6 +250,8 @@ describe("audio source evidence", () => {
         modalResponse: { modalResponseInputEnergy: 0.2 },
       }),
     ).toMatchObject({
+      rawSourceBoundaryState: "live",
+      renderBoundaryState: "live",
       sourceBoundaryState: "live",
       currentSourceEvidence: true,
     });
@@ -319,6 +325,8 @@ describe("audio source evidence", () => {
         },
       }),
     ).toMatchObject({
+      rawSourceBoundaryState: "zero",
+      renderBoundaryState: "muted",
       sourceBoundaryState: "muted",
       currentSourceEvidence: false,
       sourceEnergy: 0,

@@ -43,6 +43,8 @@ describe("modal energy ledger", () => {
     });
 
     expect(ledger.sourceEnergy).toBe(0);
+    expect(ledger.renderBoundaryState).toBe("zero");
+    expect(ledger.sourceBoundaryState).toBe("zero");
     expect(ledger.storedModalEnergy).toBeCloseTo(0.4, 6);
     expect(ledger.projectedRenderEnergy).toBe(0);
     expect(ledger.renderEnergyEpsilon).toBe(DEFAULT_RENDER_ENERGY_EPSILON);

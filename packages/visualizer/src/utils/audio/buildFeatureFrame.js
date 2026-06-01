@@ -1527,7 +1527,8 @@ function buildSilentFeatureFrame({
   });
   const energyLedger = buildModalEnergyLedger({
     sourceEnergy: sourceEvidence?.sourceEnergy ?? 0,
-    sourceBoundaryState:
+    renderBoundaryState:
+      sourceEvidence?.renderBoundaryState ??
       sourceEvidence?.sourceBoundaryState ??
       (soundActive || micActive || isLiveInputActive ? "zero" : "absent"),
     modalResponse: null,
@@ -4649,22 +4650,22 @@ function resolveStructuralProjectionSources(preparedInputs, structuralState) {
   };
 }
 
-function resolveStructuralSignalSources(preparedInputs, structuralState) {
+function resolveStructuralProposalSources(preparedInputs, structuralState) {
   return {
-    signalSourceCoupledSlotsSource:
-      structuralState?.signalSourceCoupledSlotsSource ??
+    proposalSourceCoupledSlotsSource:
+      structuralState?.proposalSourceCoupledSlotsSource ??
       structuralState?.candidateForcingSlotsSource ??
       preparedInputs.sourceCoupledState.slots,
-    signalResonantSlotsSource:
-      structuralState?.signalResonantSlotsSource ??
+    proposalResonantSlotsSource:
+      structuralState?.proposalResonantSlotsSource ??
       structuralState?.candidateResponseSlotsSource ??
       preparedInputs.resonantState.slots,
-    signalReferenceSourceCoupledSlotsSource:
-      structuralState?.signalReferenceSourceCoupledSlotsSource ??
+    proposalReferenceSourceCoupledSlotsSource:
+      structuralState?.proposalReferenceSourceCoupledSlotsSource ??
       structuralState?.referenceSourceCoupledSlotsSource ??
       preparedInputs.sourceCoupledState.referenceSlots,
-    signalReferenceResonantSlotsSource:
-      structuralState?.signalReferenceResonantSlotsSource ??
+    proposalReferenceResonantSlotsSource:
+      structuralState?.proposalReferenceResonantSlotsSource ??
       structuralState?.referenceResonantSlotsSource ??
       preparedInputs.resonantState.referenceSlots,
   };
@@ -4868,13 +4869,13 @@ function materializeAudioFeatureStructuralSnapshot(
   };
 }
 
-function materializeAudioFeatureSignalSnapshot(
+function materializeAudioFeatureProposalSnapshot(
   preparedInputs,
   structuralState,
 ) {
   const { capacity, signalModeSlots, signalReferenceModeSlots } =
     preparedInputs;
-  const signalSources = resolveStructuralSignalSources(
+  const proposalSources = resolveStructuralProposalSources(
     preparedInputs,
     structuralState,
   );
@@ -4882,11 +4883,11 @@ function materializeAudioFeatureSignalSnapshot(
     signalModeSlots,
     [
       {
-        slots: signalSources.signalSourceCoupledSlotsSource,
+        slots: proposalSources.proposalSourceCoupledSlotsSource,
         weight: 1,
       },
       {
-        slots: signalSources.signalResonantSlotsSource,
+        slots: proposalSources.proposalResonantSlotsSource,
         weight: 1,
       },
     ],
@@ -4896,11 +4897,11 @@ function materializeAudioFeatureSignalSnapshot(
     signalReferenceModeSlots,
     [
       {
-        slots: signalSources.signalReferenceSourceCoupledSlotsSource,
+        slots: proposalSources.proposalReferenceSourceCoupledSlotsSource,
         weight: 1,
       },
       {
-        slots: signalSources.signalReferenceResonantSlotsSource,
+        slots: proposalSources.proposalReferenceResonantSlotsSource,
         weight: 1,
       },
     ],
@@ -5124,7 +5125,7 @@ export function buildCurrentAudioFeatureAnalysisResult({
   const shouldMaterializeSignalProjection =
     materializeStructuralProjection || materializeSignalProjection;
   const signalStructural = shouldMaterializeSignalProjection
-    ? materializeAudioFeatureSignalSnapshot(preparedInputs, currentStructural)
+    ? materializeAudioFeatureProposalSnapshot(preparedInputs, currentStructural)
     : null;
 
   if (materializeStructuralProjection) {
@@ -5657,7 +5658,9 @@ export function composeAudioFeatureFrame({
   analysisResult.sourceEvidence = resolvedSourceEvidence;
   const energyLedger = buildModalEnergyLedger({
     sourceEnergy: resolvedSourceEvidence.sourceEnergy,
-    sourceBoundaryState: resolvedSourceEvidence.sourceBoundaryState,
+    renderBoundaryState:
+      resolvedSourceEvidence.renderBoundaryState ??
+      resolvedSourceEvidence.sourceBoundaryState,
     modalResponse: analysisResult.structuralMetrics,
     candidateForcingSlots: analysisResult.candidateForcingSlots,
     candidateResponseSlots: analysisResult.candidateResponseSlots,

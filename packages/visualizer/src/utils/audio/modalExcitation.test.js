@@ -843,17 +843,21 @@ describe("modal excitation structural state", () => {
       performanceNow: () => 1,
     });
 
-    expect(structural.structuralMetrics.energyLedger.storedModalEnergy).toBeGreaterThan(
-      0,
-    );
     expect(
-      structural.structuralMetrics.energyLedger.sourceBoundaryState,
+      structural.structuralMetrics.modalResponseRenderPreviewLedger
+        .storedModalEnergy,
+    ).toBeGreaterThan(0);
+    expect(
+      structural.structuralMetrics.modalResponseRenderPreviewLedger
+        .renderBoundaryState,
     ).toBe("muted");
     expect(
-      structural.structuralMetrics.energyLedger.projectedRenderEnergy,
+      structural.structuralMetrics.modalResponseRenderPreviewLedger
+        .projectedRenderEnergy,
     ).toBe(0);
     expect(structural.structuralMetrics.modalResponseRenderEnergy).toBe(
-      structural.structuralMetrics.energyLedger.projectedRenderEnergy,
+      structural.structuralMetrics.modalResponseRenderPreviewLedger
+        .projectedRenderEnergy,
     );
     expect(sumAmplitudes(structural.candidateForcingSlotsSource)).toBe(0);
   });
@@ -1114,7 +1118,7 @@ describe("modal excitation structural state", () => {
     });
 
     expect(
-      countActiveSlotsLocal(structuralState.signalResonantSlotsSource),
+      countActiveSlotsLocal(structuralState.proposalResonantSlotsSource),
     ).toBeGreaterThan(0);
     expect(structuralState.dominantFrequency).toBeGreaterThan(3200);
     expect(
@@ -1147,7 +1151,7 @@ describe("modal excitation structural state", () => {
     );
   });
 
-  it("enforces slot capacity in slot units across signal and display layers", () => {
+  it("enforces slot capacity in slot units across proposal and display layers", () => {
     const state = createModalExcitationState(16);
     const preparedInputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
@@ -1182,10 +1186,10 @@ describe("modal excitation structural state", () => {
       resonantCapacity,
     );
     expect(
-      countActiveSlotsLocal(structuralState.signalSourceCoupledSlotsSource),
+      countActiveSlotsLocal(structuralState.proposalSourceCoupledSlotsSource),
     ).toBeLessThanOrEqual(sourceCoupledCapacity);
     expect(
-      countActiveSlotsLocal(structuralState.signalResonantSlotsSource),
+      countActiveSlotsLocal(structuralState.proposalResonantSlotsSource),
     ).toBeLessThanOrEqual(resonantCapacity);
   });
 
@@ -1413,7 +1417,7 @@ describe("modal excitation structural state", () => {
         performanceNow: () => frame,
       });
       silenceFrames.push({
-        signal: sumAmplitudes(structural.signalSourceCoupledSlotsSource),
+        proposal: sumAmplitudes(structural.proposalSourceCoupledSlotsSource),
         blended: sumAmplitudes(structural.candidateForcingSlotsSource),
       });
     }
@@ -1421,10 +1425,10 @@ describe("modal excitation structural state", () => {
     expect(
       silenceFrames
         .slice(4)
-        .some(({ signal, blended }) => blended > signal + 1e-4),
+        .some(({ proposal, blended }) => blended > proposal + 1e-4),
     ).toBe(true);
     expect(silenceFrames.at(-1).blended).toBeGreaterThan(
-      silenceFrames.at(-1).signal,
+      silenceFrames.at(-1).proposal,
     );
   });
 
@@ -1477,7 +1481,7 @@ describe("modal excitation structural state", () => {
     }
 
     expect(
-      sumAmplitudes(hardSilentStructural.signalSourceCoupledSlotsSource),
+      sumAmplitudes(hardSilentStructural.proposalSourceCoupledSlotsSource),
     ).toBe(0);
     expect(
       sumAmplitudes(hardSilentStructural.candidateForcingSlotsSource),
@@ -1547,20 +1551,25 @@ describe("modal excitation structural state", () => {
     expect(
       structural.structuralMetrics.modalResponseCurrentRenderSourceEvidence,
     ).toBe(false);
-    expect(structural.structuralMetrics.energyLedger.sourceEnergy).toBe(0);
     expect(
-      structural.structuralMetrics.energyLedger.sourceBoundaryState,
-    ).toBe("muted");
-    expect(
-      structural.structuralMetrics.energyLedger.storedModalEnergy,
-    ).toBeGreaterThan(0);
-    expect(
-      structural.structuralMetrics.energyLedger.projectedRenderEnergy,
+      structural.structuralMetrics.modalResponseRenderPreviewLedger
+        .sourceEnergy,
     ).toBe(0);
     expect(
-      structural.structuralMetrics.modalResponseRenderEnergy,
-    ).toBeCloseTo(
-      structural.structuralMetrics.energyLedger.projectedRenderEnergy,
+      structural.structuralMetrics.modalResponseRenderPreviewLedger
+        .renderBoundaryState,
+    ).toBe("muted");
+    expect(
+      structural.structuralMetrics.modalResponseRenderPreviewLedger
+        .storedModalEnergy,
+    ).toBeGreaterThan(0);
+    expect(
+      structural.structuralMetrics.modalResponseRenderPreviewLedger
+        .projectedRenderEnergy,
+    ).toBe(0);
+    expect(structural.structuralMetrics.modalResponseRenderEnergy).toBeCloseTo(
+      structural.structuralMetrics.modalResponseRenderPreviewLedger
+        .projectedRenderEnergy,
       6,
     );
     expect(sumAmplitudes(structural.candidateForcingSlotsSource)).toBe(0);
@@ -1622,7 +1631,8 @@ describe("modal excitation structural state", () => {
       });
       if (
         firstSilentLedgerFrame == null &&
-        structural.structuralMetrics.energyLedger.sourceEnergy === 0
+        structural.structuralMetrics.modalResponseRenderPreviewLedger
+          .sourceEnergy === 0
       ) {
         firstSilentLedgerFrame = frame;
       }
@@ -1630,22 +1640,26 @@ describe("modal excitation structural state", () => {
 
     expect(firstSilentLedgerFrame).not.toBeNull();
     expect(firstSilentLedgerFrame).toBeLessThan(18);
-    expect(structural.structuralMetrics.energyLedger.sourceEnergy).toBe(0);
+    expect(
+      structural.structuralMetrics.modalResponseRenderPreviewLedger
+        .sourceEnergy,
+    ).toBe(0);
     expect(
       structural.structuralMetrics.modalResponseCurrentRenderSourceEvidence,
     ).toBe(false);
     expect(
-      structural.structuralMetrics.energyLedger.sourceBoundaryState,
+      structural.structuralMetrics.modalResponseRenderPreviewLedger
+        .renderBoundaryState,
     ).toBe("muted");
     expect(
-      structural.structuralMetrics.energyLedger.storedModalEnergy,
+      structural.structuralMetrics.modalResponseRenderPreviewLedger
+        .storedModalEnergy,
     ).toBeGreaterThan(0);
     expect(
-      structural.structuralMetrics.energyLedger.projectedRenderEnergy,
+      structural.structuralMetrics.modalResponseRenderPreviewLedger
+        .projectedRenderEnergy,
     ).toBe(0);
-    expect(
-      structural.structuralMetrics.modalResponseRenderEnergy,
-    ).toBe(0);
+    expect(structural.structuralMetrics.modalResponseRenderEnergy).toBe(0);
   });
 
   it("reduces noisy-input jitter after the post-resonator blend", () => {
@@ -1679,7 +1693,7 @@ describe("modal excitation structural state", () => {
         existingState: state,
         performanceNow: () => frame,
       });
-      const rawSlots = cloneSlots(structural.signalSourceCoupledSlotsSource);
+      const rawSlots = cloneSlots(structural.proposalSourceCoupledSlotsSource);
       const blendedSlots = cloneSlots(structural.candidateForcingSlotsSource);
 
       if (previousRawSlots && previousBlendedSlots) {
@@ -1749,7 +1763,7 @@ describe("modal excitation structural state", () => {
     expect(structural.structuralMetrics.modeCoherence).toBeGreaterThan(0.5);
     expect(structural.structuralMetrics.modalPersistence).toBeGreaterThan(0.45);
     expect(
-      countActiveSlotsLocal(structural.signalResonantSlotsSource),
+      countActiveSlotsLocal(structural.proposalResonantSlotsSource),
     ).toBeGreaterThan(0);
     expect(
       sumAmplitudes(structural.candidateResponseSlotsSource),
@@ -2680,10 +2694,10 @@ describe("modal excitation structural state", () => {
     expect(
       structural.structuralMetrics.highQResonantEnergy,
     ).toBeLessThanOrEqual(preSilenceHighQEnergy);
-    expect(
-      structural.structuralMetrics.modalResponseRenderEnergy,
-    ).toBeLessThan(preSilenceResonantAmplitude);
-    expect(sumAmplitudes(structural.signalResonantSlotsSource)).toBe(0);
+    expect(structural.structuralMetrics.modalResponseRenderEnergy).toBeLessThan(
+      preSilenceResonantAmplitude,
+    );
+    expect(sumAmplitudes(structural.proposalResonantSlotsSource)).toBe(0);
     expectLegacyModalObserverAuthoritiesRemoved(state);
   });
 
@@ -2742,14 +2756,14 @@ describe("modal excitation structural state", () => {
     expect(
       structural.structuralMetrics.modalResponseResonantEnergy,
     ).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.modalResponseRenderEnergy).toBe(0);
     expect(
-      structural.structuralMetrics.modalResponseRenderEnergy,
-    ).toBe(0);
-    expect(
-      structural.structuralMetrics.energyLedger.sourceBoundaryState,
+      structural.structuralMetrics.modalResponseRenderPreviewLedger
+        .renderBoundaryState,
     ).toBe("muted");
     expect(
-      structural.structuralMetrics.energyLedger.projectedRenderEnergy,
+      structural.structuralMetrics.modalResponseRenderPreviewLedger
+        .projectedRenderEnergy,
     ).toBe(0);
     expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBe(0);
     expectLegacyModalObserverAuthoritiesRemoved(structural.structuralMetrics);
@@ -2815,17 +2829,16 @@ describe("modal excitation structural state", () => {
     expect(
       structural.structuralMetrics.modalResponseResonantEnergy,
     ).toBeGreaterThan(0);
-    expect(
-      structural.structuralMetrics.modalResponseRenderEnergy,
-    ).toBe(0);
+    expect(structural.structuralMetrics.modalResponseRenderEnergy).toBe(0);
     expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBe(0);
     expect(
-      structural.structuralMetrics.energyLedger.sourceBoundaryState,
+      structural.structuralMetrics.modalResponseRenderPreviewLedger
+        .renderBoundaryState,
     ).toBe("muted");
     expect(structural.structuralMetrics.modalPhaseAuthority).toBe(0);
-    expect(
-      structural.structuralMetrics.modalPhaseCoherentFieldModeCount,
-    ).toBe(0);
+    expect(structural.structuralMetrics.modalPhaseCoherentFieldModeCount).toBe(
+      0,
+    );
     expect(
       countAuthoritativePhaseSlots(structural.resonantPhaseSlotsSource),
     ).toBe(0);
@@ -2939,7 +2952,7 @@ describe("modal excitation structural state", () => {
       0,
     );
     expect(
-      countActiveSlotsLocal(structural.signalResonantSlotsSource),
+      countActiveSlotsLocal(structural.proposalResonantSlotsSource),
     ).toBeGreaterThan(0);
     expect(
       countActiveSlotsLocal(structural.candidateResponseSlotsSource),
@@ -2967,7 +2980,9 @@ describe("modal excitation structural state", () => {
       if ([20, 30, 44].includes(frame)) {
         snapshots.push({
           frame,
-          signalResonant: sumAmplitudes(structural.signalResonantSlotsSource),
+          proposalResonant: sumAmplitudes(
+            structural.proposalResonantSlotsSource,
+          ),
           visibleResonant: sumAmplitudes(
             structural.candidateResponseSlotsSource,
           ),
@@ -2978,11 +2993,13 @@ describe("modal excitation structural state", () => {
     }
 
     const [earlyTail, midTail, lateTail] = snapshots;
-    expect(earlyTail.signalResonant).toBeGreaterThan(0);
-    expect(midTail.signalResonant).toBeGreaterThan(0);
-    expect(lateTail.signalResonant).toBeGreaterThan(0);
-    expect(midTail.signalResonant).toBeLessThan(earlyTail.signalResonant);
-    expect(lateTail.signalResonant).toBeLessThan(midTail.signalResonant * 0.9);
+    expect(earlyTail.proposalResonant).toBeGreaterThan(0);
+    expect(midTail.proposalResonant).toBeGreaterThan(0);
+    expect(lateTail.proposalResonant).toBeGreaterThan(0);
+    expect(midTail.proposalResonant).toBeLessThan(earlyTail.proposalResonant);
+    expect(lateTail.proposalResonant).toBeLessThan(
+      midTail.proposalResonant * 0.9,
+    );
     expect(lateTail.visibleResonant).toBeLessThan(earlyTail.visibleResonant);
     expect(lateTail.highOrderModalEnergy).toBeGreaterThan(0);
   });
@@ -3097,10 +3114,10 @@ describe("modal excitation structural state", () => {
     }
 
     expect(structural.structuralMetrics.modalResponseInputEnergy).toBe(0);
-    expect(sumAmplitudes(structural.signalResonantSlotsSource)).toBe(0);
-    expect(
-      structural.structuralMetrics.modalResponseRenderEnergy,
-    ).toBeLessThan(preSilenceResonantAmplitude);
+    expect(sumAmplitudes(structural.proposalResonantSlotsSource)).toBe(0);
+    expect(structural.structuralMetrics.modalResponseRenderEnergy).toBeLessThan(
+      preSilenceResonantAmplitude,
+    );
   });
 
   it("retains coherent quiet-ring detail modes above hard silence", () => {
@@ -3128,7 +3145,7 @@ describe("modal excitation structural state", () => {
       0,
     );
     expect(
-      countActiveSlotsLocal(structural.signalResonantSlotsSource),
+      countActiveSlotsLocal(structural.proposalResonantSlotsSource),
     ).toBeGreaterThan(0);
     expect(
       countActiveSlotsLocal(structural.candidateResponseSlotsSource),
@@ -3410,7 +3427,9 @@ describe("modal excitation structural state", () => {
     expect(structural.structuralMetrics.highQResonantEnergy ?? 0).toBe(0);
     expect(structural.structuralMetrics.highQRingSupport ?? 0).toBe(0);
     expect(structural.structuralMetrics.highQPhaseAuthority ?? 0).toBe(0);
-    expect(countActiveSlotsLocal(structural.signalResonantSlotsSource)).toBe(0);
+    expect(countActiveSlotsLocal(structural.proposalResonantSlotsSource)).toBe(
+      0,
+    );
     expect(countActiveSlotsLocal(structural.candidateResponseSlotsSource)).toBe(
       0,
     );
@@ -3518,7 +3537,9 @@ describe("modal excitation structural state", () => {
     ).toBeLessThanOrEqual(16);
     expect(
       sumAmplitudes(structural.candidateResponseSlotsSource),
-    ).toBeLessThanOrEqual(sumAmplitudes(structural.signalResonantSlotsSource));
+    ).toBeLessThanOrEqual(
+      sumAmplitudes(structural.proposalResonantSlotsSource),
+    );
     expect(
       hasNewModeKey(
         readModeKeys(structural.candidateResponseSlotsSource),
@@ -3612,8 +3633,8 @@ describe("modal excitation structural state", () => {
         amplitudeScale: 0.42,
       });
     }
-    const sustainedSignalAmplitudes = readModeAmplitudeMap(
-      structural.signalResonantSlotsSource,
+    const sustainedProposalAmplitudes = readModeAmplitudeMap(
+      structural.proposalResonantSlotsSource,
     );
     const sustainedDisplayAmplitudes = readModeAmplitudeMap(
       structural.candidateResponseSlotsSource,
@@ -3630,24 +3651,24 @@ describe("modal excitation structural state", () => {
       });
     }
 
-    const switchedSignalAmplitudes = readModeAmplitudeMap(
-      structural.signalResonantSlotsSource,
+    const switchedProposalAmplitudes = readModeAmplitudeMap(
+      structural.proposalResonantSlotsSource,
     );
     const switchedDisplayAmplitudes = readModeAmplitudeMap(
       structural.candidateResponseSlotsSource,
     );
-    const staleSignalRatio = measureSharedAmplitudeRatio(
-      sustainedSignalAmplitudes,
-      switchedSignalAmplitudes,
+    const staleProposalRatio = measureSharedAmplitudeRatio(
+      sustainedProposalAmplitudes,
+      switchedProposalAmplitudes,
     );
     const staleDisplayRatio = measureSharedAmplitudeRatio(
       sustainedDisplayAmplitudes,
       switchedDisplayAmplitudes,
     );
 
-    expect(staleSignalRatio).toBeLessThan(0.69);
+    expect(staleProposalRatio).toBeLessThan(0.69);
     expect(staleDisplayRatio).toBeLessThan(0.72);
-    expect(staleDisplayRatio).toBeLessThanOrEqual(staleSignalRatio + 0.18);
+    expect(staleDisplayRatio).toBeLessThanOrEqual(staleProposalRatio + 0.18);
   });
 
   it("uses signal identity when visible detail under-covers the shifted signal", () => {
@@ -3734,17 +3755,17 @@ describe("modal excitation structural state", () => {
     });
     const retainedOffset = 0;
     const retainedAmplitude =
-      probeStructural.signalResonantSlotsSource[retainedOffset + 3];
+      probeStructural.proposalResonantSlotsSource[retainedOffset + 3];
 
     expect(retainedAmplitude).toBeGreaterThan(0.2);
 
     const state = createModalExcitationState(16);
     state.blendResonant.slots[0] =
-      probeStructural.signalResonantSlotsSource[retainedOffset];
+      probeStructural.proposalResonantSlotsSource[retainedOffset];
     state.blendResonant.slots[1] =
-      probeStructural.signalResonantSlotsSource[retainedOffset + 1];
+      probeStructural.proposalResonantSlotsSource[retainedOffset + 1];
     state.blendResonant.slots[2] =
-      probeStructural.signalResonantSlotsSource[retainedOffset + 2];
+      probeStructural.proposalResonantSlotsSource[retainedOffset + 2];
     state.blendResonant.slots[3] = retainedAmplitude;
 
     const inputs = createLineFeedPreparedInputs({
@@ -3813,7 +3834,7 @@ describe("modal excitation structural state", () => {
     expect(
       countActiveSlotsLocal(structural.candidateResponseSlotsSource),
     ).toBeLessThanOrEqual(
-      countActiveSlotsLocal(structural.signalResonantSlotsSource),
+      countActiveSlotsLocal(structural.proposalResonantSlotsSource),
     );
   });
 
@@ -4007,7 +4028,7 @@ describe("modal excitation structural state", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("keeps visible detail keys as a subset of the raw signal shortlist", () => {
+  it("keeps visible detail keys as a subset of the raw proposal shortlist", () => {
     const state = createModalExcitationState(16);
     const inputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
@@ -4026,11 +4047,11 @@ describe("modal excitation structural state", () => {
       existingState: state,
       performanceNow: () => 0,
     });
-    const signalKeys = readModeKeys(structural.signalResonantSlotsSource);
+    const proposalKeys = readModeKeys(structural.proposalResonantSlotsSource);
 
     expect(
       readModeKeys(structural.candidateResponseSlotsSource).every((key) =>
-        signalKeys.includes(key),
+        proposalKeys.includes(key),
       ),
     ).toBe(true);
   });
@@ -4133,13 +4154,13 @@ describe("modal excitation structural state", () => {
     expect(newVisibleKeys.length).toBeLessThanOrEqual(3);
     expect(newVisibleKeys.length).toBeGreaterThan(0);
     expect(
-      readModeKeys(freshStructural.signalResonantSlotsSource).includes(
+      readModeKeys(freshStructural.proposalResonantSlotsSource).includes(
         newVisibleKeys[0],
       ),
     ).toBe(true);
   });
 
-  it("collapses signal slots before the display blend releases to zero", () => {
+  it("collapses proposal slots before the display blend releases to zero", () => {
     const state = createModalExcitationState(16);
     const activeFft = makeFft([
       [550, 0.95],
@@ -4182,14 +4203,14 @@ describe("modal excitation structural state", () => {
     }
 
     expect(
-      sumAmplitudes(lastStructural.signalSourceCoupledSlotsSource),
+      sumAmplitudes(lastStructural.proposalSourceCoupledSlotsSource),
     ).toBeLessThan(sumAmplitudes(lastStructural.candidateForcingSlotsSource));
     expect(
-      sumAmplitudes(lastStructural.signalReferenceSourceCoupledSlotsSource),
+      sumAmplitudes(lastStructural.proposalReferenceSourceCoupledSlotsSource),
     ).toBeGreaterThan(0);
   });
 
-  it("keeps weak residual tails visible before the signal layer fully clears", () => {
+  it("keeps weak residual tails visible before the proposal layer fully clears", () => {
     const state = createModalExcitationState(16);
     const activeFft = makeFft([
       [550, 0.95],
@@ -4232,11 +4253,13 @@ describe("modal excitation structural state", () => {
     }
 
     expect(
-      sumAmplitudes(structural.signalSourceCoupledSlotsSource),
+      sumAmplitudes(structural.proposalSourceCoupledSlotsSource),
     ).toBeGreaterThan(0);
     expect(
       sumAmplitudes(structural.candidateForcingSlotsSource),
-    ).toBeGreaterThan(sumAmplitudes(structural.signalSourceCoupledSlotsSource));
+    ).toBeGreaterThan(
+      sumAmplitudes(structural.proposalSourceCoupledSlotsSource),
+    );
   });
 
   it("keeps retained projection visible after fresh source-coupled authority clears", () => {
@@ -4283,15 +4306,16 @@ describe("modal excitation structural state", () => {
 
     expect(structural.structuralMetrics.currentSignalAmplitude).toBe(0);
     expect(structural.structuralMetrics.currentSignalEnergy).toBe(0);
-    expect(sumAmplitudes(structural.candidateForcingSlotsSource)).toBeGreaterThan(
-      0,
-    );
     expect(
-      structural.structuralMetrics.energyLedger.projectedRenderEnergy,
+      sumAmplitudes(structural.candidateForcingSlotsSource),
+    ).toBeGreaterThan(0);
+    expect(
+      structural.structuralMetrics.modalResponseRenderPreviewLedger
+        .projectedRenderEnergy,
     ).toBeGreaterThan(0);
   });
 
-  it("keeps display slots sparser than signal slots under dense sustained input", () => {
+  it("keeps display slots sparser than proposal slots under dense sustained input", () => {
     const state = createModalExcitationState(16);
     let structural = null;
 
@@ -4322,16 +4346,18 @@ describe("modal excitation structural state", () => {
     }
 
     expect(
-      countActiveSlotsLocal(structural.signalSourceCoupledSlotsSource),
+      countActiveSlotsLocal(structural.proposalSourceCoupledSlotsSource),
     ).toBeGreaterThanOrEqual(
       countActiveSlotsLocal(structural.candidateForcingSlotsSource),
     );
     expect(sumAmplitudes(structural.candidateForcingSlotsSource)).toBeLessThan(
-      sumAmplitudes(structural.signalSourceCoupledSlotsSource),
+      sumAmplitudes(structural.proposalSourceCoupledSlotsSource),
     );
     expect(
       sumAmplitudes(structural.candidateResponseSlotsSource),
-    ).toBeLessThanOrEqual(sumAmplitudes(structural.signalResonantSlotsSource));
+    ).toBeLessThanOrEqual(
+      sumAmplitudes(structural.proposalResonantSlotsSource),
+    );
   });
 
   it("does not fill visible detail with same-frequency families", () => {
@@ -4390,7 +4416,7 @@ describe("modal excitation structural state", () => {
     }
   });
 
-  it("drops stale low-signal entries from display while keeping them in signal slots", () => {
+  it("drops stale low-signal entries from display while keeping them in proposal slots", () => {
     const state = createModalExcitationState(16);
     const activeFft = makeFft([
       [550, 0.95],
@@ -4435,7 +4461,7 @@ describe("modal excitation structural state", () => {
     }
 
     expect(
-      countActiveSlotsLocal(structural.signalSourceCoupledSlotsSource),
+      countActiveSlotsLocal(structural.proposalSourceCoupledSlotsSource),
     ).toBeGreaterThan(
       countActiveSlotsLocal(structural.candidateForcingSlotsSource),
     );
@@ -4448,7 +4474,9 @@ describe("modal excitation structural state", () => {
       countActiveSlotsLocal(structural.referenceSourceCoupledSlotsSource),
     ).toBeLessThanOrEqual(1);
     expect(
-      countActiveSlotsLocal(structural.signalReferenceSourceCoupledSlotsSource),
+      countActiveSlotsLocal(
+        structural.proposalReferenceSourceCoupledSlotsSource,
+      ),
     ).toBeGreaterThan(0);
   });
 });

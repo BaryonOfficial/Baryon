@@ -984,19 +984,19 @@ function scaleSlotAmplitudes(slots, scale) {
   }
 }
 
-function deriveModalResponseRenderEnergy({
+function deriveModalResponseRenderPreview({
   modalResponse,
   candidateForcingSlots,
   candidateResponseSlots,
   capacity,
   sourceEnergy,
-  sourceBoundaryState,
+  renderBoundaryState,
   currentSignalEnergy,
   currentSignalAmplitude,
 }) {
   const energyLedger = buildModalEnergyLedger({
     sourceEnergy,
-    sourceBoundaryState,
+    renderBoundaryState,
     modalResponse,
     candidateForcingSlots,
     candidateResponseSlots,
@@ -1006,11 +1006,17 @@ function deriveModalResponseRenderEnergy({
   });
 
   return {
-    energyLedger,
+    modalResponseRenderPreviewLedger: energyLedger,
+    modalResponseRenderPreviewEnergy: energyLedger.projectedRenderEnergy,
     modalResponseRenderEnergy: energyLedger.projectedRenderEnergy,
+    modalResponseRenderPreviewSourceCoupledEnergy:
+      energyLedger.projectedSourceCoupledEnergy,
+    modalResponseRenderPreviewResonantEnergy:
+      energyLedger.projectedResonantEnergy,
     modalResponseRenderSourceCoupledEnergy:
       energyLedger.projectedSourceCoupledEnergy,
     modalResponseRenderResonantEnergy: energyLedger.projectedResonantEnergy,
+    modalResponseRenderPreviewRawEnergy: energyLedger.projectedRenderEnergy,
     modalResponseRenderRawEnergy: energyLedger.projectedRenderEnergy,
   };
 }
@@ -4046,21 +4052,25 @@ export function buildModalExcitationStructuralState({
         : 0,
     ),
   );
-  const sourceBoundaryState = resolvedSourceEvidence.sourceBoundaryState;
-  const modalResponseRenderEnergy = deriveModalResponseRenderEnergy({
+  const renderBoundaryState =
+    resolvedSourceEvidence.renderBoundaryState ??
+    resolvedSourceEvidence.sourceBoundaryState;
+  const modalResponseRenderPreview = deriveModalResponseRenderPreview({
     modalResponse,
     candidateForcingSlots: state.blendSourceCoupled.slots,
     candidateResponseSlots: state.blendResonant.slots,
     capacity: sourceCoupledCapacity + resonantCapacity,
     sourceEnergy: resolvedSourceEvidence.sourceEnergy,
-    sourceBoundaryState,
+    renderBoundaryState,
     currentSignalEnergy,
     currentSignalAmplitude,
   });
   const renderSuppressedByEnergy =
-    modalResponseRenderEnergy.energyLedger.renderAuthority !== true;
+    modalResponseRenderPreview.modalResponseRenderPreviewLedger
+      .renderAuthority !== true;
   const projectedEnergyScale =
-    modalResponseRenderEnergy.energyLedger.projectedEnergyScale;
+    modalResponseRenderPreview.modalResponseRenderPreviewLedger
+      .projectedEnergyScale;
   if (projectedEnergyScale < 1) {
     scaleSlotAmplitudes(state.blendSourceCoupled.slots, projectedEnergyScale);
     scaleSlotAmplitudes(state.blendResonant.slots, projectedEnergyScale);
@@ -4177,7 +4187,7 @@ export function buildModalExcitationStructuralState({
     modalResponseCurrentRenderSourceEvidence: currentRenderSourceEvidence,
     modalResponseFreshCouplingEvidence: freshCouplingEvidence,
     sourceEvidence: resolvedSourceEvidence,
-    ...modalResponseRenderEnergy,
+    ...modalResponseRenderPreview,
     modalResponseSourceCoupledEnergy:
       modalResponse.modalResponseSourceCoupledEnergy,
     modalResponseResonantEnergy: modalResponse.modalResponseResonantEnergy,
@@ -4251,11 +4261,11 @@ export function buildModalExcitationStructuralState({
     resonantPhaseSlotsSource: renderResonantPhaseSlotsSource,
     referenceSourceCoupledSlotsSource: renderSourceCoupledReferenceSlotsSource,
     referenceResonantSlotsSource: renderResonantReferenceSlotsSource,
-    signalSourceCoupledSlotsSource: state.sourceCoupledProposal.slots,
-    signalResonantSlotsSource: state.resonantProposal.slots,
-    signalReferenceSourceCoupledSlotsSource:
+    proposalSourceCoupledSlotsSource: state.sourceCoupledProposal.slots,
+    proposalResonantSlotsSource: state.resonantProposal.slots,
+    proposalReferenceSourceCoupledSlotsSource:
       state.remappedSignalSourceCoupledRef,
-    signalReferenceResonantSlotsSource: state.remappedSignalResonantRef,
+    proposalReferenceResonantSlotsSource: state.remappedSignalResonantRef,
     sourceCoupledColorSlotsSource: preparedInputs.shouldBuildSpectralLight
       ? renderSourceCoupledColorSlotsSource
       : null,
