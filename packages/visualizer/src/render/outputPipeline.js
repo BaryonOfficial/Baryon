@@ -31,6 +31,97 @@ export * from "./outputProfilePolicy.js";
 
 const DEFAULT_CAMERA_CUT_TEMPORAL_BYPASS_FRAMES = 2;
 const DEFAULT_CONTENT_CHANGE_TEMPORAL_BYPASS_FRAMES = 2;
+const OUTPUT_TOPOLOGY_KEY_FIELD = "__baryonOutputTopologyKey";
+const OUTPUT_TOPOLOGY_TEMPORAL_FIELD = "__baryonOutputTopologyTemporalEnabled";
+
+function resolveOutputTopologyKey({
+  bloomEnabled,
+  outputMode,
+  temporalHistoryEnabled,
+}) {
+  return `${bloomEnabled ? 1 : 0}:${outputMode}:${
+    temporalHistoryEnabled ? 1 : 0
+  }`;
+}
+
+function resolveOutputTemporalHistoryEnabled(
+  postNodes,
+  temporalHistoryEnabled,
+) {
+  if (!postNodes?.traaNode) {
+    return false;
+  }
+  if (typeof temporalHistoryEnabled === "boolean") {
+    return temporalHistoryEnabled;
+  }
+  if (typeof postNodes[OUTPUT_TOPOLOGY_TEMPORAL_FIELD] === "boolean") {
+    return postNodes[OUTPUT_TOPOLOGY_TEMPORAL_FIELD];
+  }
+  return true;
+}
+
+export function getRenderOutputTemporalHistoryGraphEnabled(postNodes) {
+  if (!postNodes?.traaNode) {
+    return false;
+  }
+  return postNodes[OUTPUT_TOPOLOGY_TEMPORAL_FIELD] ?? null;
+}
+
+export function getRenderOutputBloomPasses(postNodes) {
+  if (Array.isArray(postNodes?.bloomPasses) && postNodes.bloomPasses.length) {
+    return [...new Set(postNodes.bloomPasses.filter(Boolean))];
+  }
+  return postNodes?.bloomPass ? [postNodes.bloomPass] : [];
+}
+
+export function syncRenderOutputBloomPassUniforms(
+  postNodes,
+  { strength, radius, threshold },
+) {
+  for (const pass of getRenderOutputBloomPasses(postNodes)) {
+    pass.strength.value = strength;
+    pass.radius.value = radius;
+    pass.threshold.value = threshold;
+  }
+}
+
+export function syncRenderOutputNodeTopology(
+  pipeline,
+  postNodes,
+  { bloomEnabled, outputMode, bloomActive, temporalHistoryEnabled = undefined },
+) {
+  if (!pipeline || !postNodes) {
+    return false;
+  }
+
+  const resolvedTemporalHistoryEnabled = resolveOutputTemporalHistoryEnabled(
+    postNodes,
+    temporalHistoryEnabled,
+  );
+  const nextTopologyKey = resolveOutputTopologyKey({
+    bloomEnabled,
+    outputMode,
+    temporalHistoryEnabled: resolvedTemporalHistoryEnabled,
+  });
+  if (postNodes?.[OUTPUT_TOPOLOGY_KEY_FIELD] === nextTopologyKey) {
+    return false;
+  }
+
+  const { sceneColor, bloomPass, composeOutputNode } = postNodes ?? {};
+  pipeline.outputNode = composeOutputNode
+    ? composeOutputNode({
+        bloomEnabled,
+        outputMode,
+        temporalHistoryEnabled: resolvedTemporalHistoryEnabled,
+      })
+    : bloomActive && bloomPass
+      ? sceneColor.add(bloomPass)
+      : sceneColor;
+  pipeline.needsUpdate = true;
+  postNodes[OUTPUT_TOPOLOGY_KEY_FIELD] = nextTopologyKey;
+  postNodes[OUTPUT_TOPOLOGY_TEMPORAL_FIELD] = resolvedTemporalHistoryEnabled;
+  return true;
+}
 
 function markRenderOutputTemporalHistoryBypass(postNodes, frames) {
   const temporalHistoryBlendUniform = postNodes?.temporalHistoryBlendUniform;
@@ -86,14 +177,6 @@ export function advanceRenderOutputTemporalHistoryBypass(postNodes) {
   const temporalHistoryBlendUniform = postNodes?.temporalHistoryBlendUniform;
   if (!temporalHistoryBlendUniform) {
     return false;
-  }
-
-  if (postNodes?.visualIdleFinalized === true) {
-    const previousValue = temporalHistoryBlendUniform.value;
-    const previousRemaining = postNodes.temporalHistoryCutFramesRemaining ?? 0;
-    temporalHistoryBlendUniform.value = 0;
-    postNodes.temporalHistoryCutFramesRemaining = Math.max(1, previousRemaining);
-    return previousValue !== 0 || previousRemaining <= 0;
   }
 
   const remaining = postNodes.temporalHistoryCutFramesRemaining ?? 0;
@@ -185,6 +268,7 @@ export function createRenderOutputPipeline(
   let traaColor = null;
   let outputSceneColor = null;
   let bloomPass = null;
+  let rawSceneBloomPass = null;
 
   if (resolvedRenderProfile.traaEnabled) {
     // Enable velocity MRT so TRAANode can reproject history across frames.
@@ -225,15 +309,28 @@ export function createRenderOutputPipeline(
       /** @type {any} */ (bloomUniforms.radius),
       /** @type {any} */ (bloomUniforms.threshold),
     );
+    rawSceneBloomPass = resolvedRenderProfile.traaEnabled
+      ? bloom(
+          sceneColor,
+          /** @type {any} */ (bloomUniforms.strength),
+          /** @type {any} */ (bloomUniforms.radius),
+          /** @type {any} */ (bloomUniforms.threshold),
+        )
+      : bloomPass;
   }
   const pipeline = new RenderPipeline(gl);
   const composeOutputNode = ({
     bloomEnabled = RENDER_DEFAULTS.bloomEnabled,
     outputMode = RENDER_DEFAULTS.outputMode,
+    temporalHistoryEnabled = true,
   } = {}) =>
     composeRenderOutputNode({
-      sceneColor: outputSceneColor,
-      bloomPass,
+      sceneColor:
+        temporalHistoryEnabled && traaNode ? outputSceneColor : sceneColor,
+      bloomPass:
+        temporalHistoryEnabled && traaNode
+          ? bloomPass
+          : (rawSceneBloomPass ?? bloomPass),
       bloomEnabled: bloomEnabled && resolvedRenderProfile.bloomAllowed,
       outputMode,
       outputBackgroundNode: outputUniforms.backgroundColor,
@@ -250,6 +347,8 @@ export function createRenderOutputPipeline(
       traaColor,
       outputSceneColor,
       bloomPass,
+      rawSceneBloomPass,
+      bloomPasses: [...new Set([bloomPass, rawSceneBloomPass].filter(Boolean))],
       bloomUniforms,
       outputUniforms,
       temporalHistoryBlendUniform,

@@ -15,6 +15,7 @@
     "test:unit": "node --test tests/unit/**/*.test.js",
     "typecheck": "tsc -p tsconfig.json",
     "preview": "vite preview",
+    "perf:baseline": "node scripts/webPerfBaselineProbe.mjs",
     "acceptance:dev": "playwright test tests/controls.smoke.spec.js",
     "acceptance:prod": "playwright test -c playwright.prod.config.js tests/production.smoke.spec.js"
   },

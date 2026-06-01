@@ -470,9 +470,11 @@ describe("fieldCache", () => {
     expect(computeSource).toContain(
       "const coefficient = modalFieldCoefficientBuffer.element(i).x;",
     );
-    expect(computeSource).toContain(
-      "texture3D(modalBasisAtlasTexture).sample",
-    );
+    expect(computeSource).toContain("texture3D(modalBasisAtlasTexture).sample");
+    expect(computeSource).toContain("const invResolution =");
+    expect(computeSource).toContain("const invCapacity =");
+    expect(computeSource).toContain(".mul(invResolution)");
+    expect(computeSource).toContain(".mul(invCapacity)");
     expect(computeSource).toContain("fieldSum.addAssign");
     expect(computeSource).toContain("supportSum.addAssign");
     expect(computeSource).toContain("textureStore(");

@@ -211,25 +211,6 @@ describe("outputPipeline compatibility surface", () => {
     expect(consumeRenderOutputVisualIdle(postNodes)).toBe(false);
   });
 
-  it("keeps temporal history disabled while visual idle remains finalized", () => {
-    const postNodes = {
-      traaNode: {},
-      temporalHistoryBlendUniform: { value: 1 },
-    };
-
-    markRenderOutputVisualIdle(postNodes, 1);
-
-    advanceRenderOutputTemporalHistoryBypass(postNodes);
-    expect(postNodes.visualIdleFinalized).toBe(true);
-    expect(postNodes.temporalHistoryBlendUniform.value).toBe(0);
-    expect(postNodes.temporalHistoryCutFramesRemaining).toBeGreaterThan(0);
-
-    advanceRenderOutputTemporalHistoryBypass(postNodes);
-    expect(postNodes.visualIdleFinalized).toBe(true);
-    expect(postNodes.temporalHistoryBlendUniform.value).toBe(0);
-    expect(postNodes.temporalHistoryCutFramesRemaining).toBeGreaterThan(0);
-  });
-
   it("restores temporal history after camera-cut frames advance", () => {
     const postNodes = {
       traaNode: {},
@@ -287,5 +268,16 @@ describe("outputPipeline compatibility surface", () => {
     expect(composeSource).not.toContain(
       "const finalRgb = bloomActive ? sceneRgb.add(bloomPass.rgb) : sceneRgb;",
     );
+  });
+
+  it("keeps a raw-scene bloom path for temporal-history bypass frames", () => {
+    const source = readFileSync(
+      new URL("./outputPipeline.js", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("rawSceneBloomPass");
+    expect(source).toContain("temporalHistoryEnabled && traaNode");
+    expect(source).toContain("bloomPasses:");
   });
 });

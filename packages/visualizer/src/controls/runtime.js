@@ -16,6 +16,10 @@ import {
   normalizePerformanceProfile,
 } from "../render/outputProfilePolicy.js";
 import {
+  syncRenderOutputBloomPassUniforms,
+  syncRenderOutputNodeTopology,
+} from "../render/outputPipeline.js";
+import {
   deriveLowStepBloomGuard,
   deriveStepCompensation,
   normalizeStepBudget,
@@ -51,7 +55,6 @@ const IDLE_LOGO_ALPHA_RATIO =
     ? RENDER_DEFAULTS.idleLogoAlpha / RENDER_DEFAULTS.idleLogoIntensity
     : 1;
 const TRANSPARENT_CLEAR_COLOR = new THREE.Color(0x000000);
-const OUTPUT_TOPOLOGY_KEY_FIELD = "__baryonOutputTopologyKey";
 
 function deriveIdleLogoAlpha(intensity) {
   return Math.min(1, intensity * IDLE_LOGO_ALPHA_RATIO);
@@ -67,37 +70,6 @@ function clamp01(value) {
 
 function derivePerceptualSpectralMix(mix) {
   return Math.sqrt(clamp01(mix));
-}
-
-function resolveOutputTopologyKey({ bloomEnabled, outputMode }) {
-  return `${bloomEnabled ? 1 : 0}:${outputMode}`;
-}
-
-function rebuildOutputNodeTopologyIfNeeded(
-  pipeline,
-  postNodes,
-  { bloomEnabled, outputMode, bloomActive },
-) {
-  const nextTopologyKey = resolveOutputTopologyKey({
-    bloomEnabled,
-    outputMode,
-  });
-  if (postNodes?.[OUTPUT_TOPOLOGY_KEY_FIELD] === nextTopologyKey) {
-    return false;
-  }
-
-  const { sceneColor, bloomPass, composeOutputNode } = postNodes ?? {};
-  pipeline.outputNode = composeOutputNode
-    ? composeOutputNode({
-        bloomEnabled,
-        outputMode,
-      })
-    : bloomActive && bloomPass
-      ? sceneColor.add(bloomPass)
-      : sceneColor;
-  pipeline.needsUpdate = true;
-  postNodes[OUTPUT_TOPOLOGY_KEY_FIELD] = nextTopologyKey;
-  return true;
 }
 
 function deriveBloomResponse(controls, stepBudget) {
@@ -526,15 +498,14 @@ export function applyBloomControls(pipelineState, controls) {
 
   const { bloomPass } = postNodes;
   const bloomActive = effectiveBloomEnabled && effective.strength > 1e-4;
-  if (bloomPass) {
-    bloomPass.strength.value = effective.strength;
-    bloomPass.radius.value = effective.radius;
-    bloomPass.threshold.value = bloomActive ? effective.threshold : 999;
-  }
-  // Only rebuild the output node topology when bloomEnabled or outputMode
-  // actually changes. Rebuilding on every frame (e.g. during continuous slider
-  // drag) keeps the WebGPU pipeline in perpetual recompile, starving the OSR.
-  rebuildOutputNodeTopologyIfNeeded(pipeline, postNodes, {
+  syncRenderOutputBloomPassUniforms(postNodes, {
+    strength: effective.strength,
+    radius: effective.radius,
+    threshold: bloomActive ? effective.threshold : 999,
+  });
+  // Control changes request a topology sync; the output-pipeline owner preserves
+  // the current temporal-history graph state unless the render loop overrides it.
+  syncRenderOutputNodeTopology(pipeline, postNodes, {
     bloomEnabled: effectiveBloomEnabled,
     outputMode,
     bloomActive,

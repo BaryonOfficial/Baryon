@@ -235,25 +235,26 @@ function getBasisLocalUvNode({ localPosition, uRadius }) {
 function getBasisAtlasUvNode({
   basisUv,
   basisSlot,
-  liveSynthesisModeCount = RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
+  invLiveSynthesisModeCount,
 }) {
+  const atlasZ = float(basisSlot).add(basisUv.z);
   return vec3(
     basisUv.x,
     basisUv.y,
-    float(basisSlot).add(basisUv.z).div(float(liveSynthesisModeCount)),
+    atlasZ.mul(float(invLiveSynthesisModeCount)),
   );
 }
 
 function sampleBasisAtlasPageNode({
   basisUv,
   basisSlot,
-  liveSynthesisModeCount = RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
+  invLiveSynthesisModeCount,
   modalBasisAtlasTexture,
 }) {
   const atlasUv = getBasisAtlasUvNode({
     basisUv,
     basisSlot,
-    liveSynthesisModeCount,
+    invLiveSynthesisModeCount,
   });
   const basisSample = texture3D(modalBasisAtlasTexture).sample(atlasUv);
   const basisSupport = abs(basisSample.x);
@@ -334,6 +335,7 @@ function synthesizeLiveModalFieldNode({
     1,
     Math.round(liveSynthesisModeCount || RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT),
   );
+  const invLiveSynthesisModeCount = 1 / normalizedLiveSynthesisModeCount;
 
   if (
     modalBasisAtlasTexture &&
@@ -368,7 +370,7 @@ function synthesizeLiveModalFieldNode({
           const basisSample = sampleBasisAtlasPageNode({
             basisUv,
             basisSlot: i,
-            liveSynthesisModeCount: normalizedLiveSynthesisModeCount,
+            invLiveSynthesisModeCount,
             modalBasisAtlasTexture,
           });
           field.addAssign(coefficient.mul(basisSample.field));
@@ -408,6 +410,53 @@ function normalizeModalGradientNormalNode(gradient, amplitudeNorm) {
 
 function offsetBasisUvNode({ basisUv, tangent, sampleUvStep }) {
   return clamp(basisUv.add(tangent.mul(sampleUvStep)), vec3(0.0), vec3(1.0));
+}
+
+function sampleLiveFieldProjectionNormalNode({
+  basisUv,
+  modalLiveFieldTexture,
+}) {
+  const fieldSample = texture3D(modalLiveFieldTexture).sample(basisUv);
+  const gradient = vec3(fieldSample.y, fieldSample.z, fieldSample.w);
+  return gradient.div(max(length(gradient), float(1e-4)));
+}
+
+function deriveLiveFieldProjectionConvergenceAuthorityNode({
+  basisUv,
+  tangent1,
+  tangent2,
+  sampleUvStep,
+  centerGradientNormal,
+  modalLiveFieldTexture,
+}) {
+  const normalPositiveT1 = sampleLiveFieldProjectionNormalNode({
+    basisUv: offsetBasisUvNode({
+      basisUv,
+      tangent: tangent1,
+      sampleUvStep,
+    }),
+    modalLiveFieldTexture,
+  });
+  const normalPositiveT2 = sampleLiveFieldProjectionNormalNode({
+    basisUv: offsetBasisUvNode({
+      basisUv,
+      tangent: tangent2,
+      sampleUvStep,
+    }),
+    modalLiveFieldTexture,
+  });
+  const viewPlaneNormalConvergence = dot(
+    normalPositiveT1.sub(centerGradientNormal),
+    tangent1,
+  )
+    .add(dot(normalPositiveT2.sub(centerGradientNormal), tangent2))
+    .mul(float(-1.0));
+
+  return clamp(
+    max(float(0.0), viewPlaneNormalConvergence),
+    float(0.0),
+    float(1.0),
+  );
 }
 
 function deriveOpticalConvergenceNormalsNode({
@@ -452,6 +501,7 @@ function deriveOpticalConvergenceNormalsNode({
     1,
     Math.round(liveSynthesisModeCount || RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT),
   );
+  const invLiveSynthesisModeCount = 1 / normalizedLiveSynthesisModeCount;
   const activeModeCount = int(uModalFieldModeCount);
 
   Loop(
@@ -475,13 +525,13 @@ function deriveOpticalConvergenceNormalsNode({
         const basisSamplePosT1 = sampleBasisAtlasPageNode({
           basisUv: basisUvPosT1,
           basisSlot: i,
-          liveSynthesisModeCount: normalizedLiveSynthesisModeCount,
+          invLiveSynthesisModeCount,
           modalBasisAtlasTexture,
         });
         const basisSamplePosT2 = sampleBasisAtlasPageNode({
           basisUv: basisUvPosT2,
           basisSlot: i,
-          liveSynthesisModeCount: normalizedLiveSynthesisModeCount,
+          invLiveSynthesisModeCount,
           modalBasisAtlasTexture,
         });
         gradientPosT1.addAssign(basisSamplePosT1.gradient.mul(coefficient));
@@ -1114,7 +1164,22 @@ function createScatteringNode({
             measuredOpticalConvergenceAuthority,
           );
         };
-        assignAtlasOpticalConvergenceAuthority();
+        if (modalLiveFieldTexture && modalLiveSupportTexture) {
+          If(uLiveFieldCacheActive.greaterThan(float(0.5)), () => {
+            opticalConvergenceAuthority.assign(
+              deriveLiveFieldProjectionConvergenceAuthorityNode({
+                basisUv,
+                tangent1,
+                tangent2,
+                sampleUvStep: convergenceSampleUvStep,
+                centerGradientNormal: gradientNormal,
+                modalLiveFieldTexture,
+              }),
+            );
+          }).Else(assignAtlasOpticalConvergenceAuthority);
+        } else {
+          assignAtlasOpticalConvergenceAuthority();
+        }
       });
       const opticalFocusAuthority = clamp(
         causticRidgeAuthority

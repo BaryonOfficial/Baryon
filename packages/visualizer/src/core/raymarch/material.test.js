@@ -1122,38 +1122,18 @@ describe("raymarch volume material", () => {
     );
   });
 
-  it("does not let the frame-current projection cache own optical convergence", () => {
+  it("precomputes basis-atlas page reciprocals outside live modal loops", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
       "utf8",
     );
-    const opticalMeasurementStart = expectSourceIndex(
-      source,
-      "If(shouldMeasureOpticalConvergence",
-    );
-    const opticalFocusStart = expectSourceIndex(
-      source,
-      "const opticalFocusAuthority =",
-    );
-    const opticalMeasurementBlock = source.slice(
-      opticalMeasurementStart,
-      opticalFocusStart,
-    );
 
-    expect(source).toContain("function sampleLiveFieldProjectionCacheNode");
-    expect(opticalMeasurementBlock).toContain(
-      "assignAtlasOpticalConvergenceAuthority();",
+    expect(source).toContain("const atlasZ = float(basisSlot).add(basisUv.z)");
+    expect(source).toContain("atlasZ.mul(float(invLiveSynthesisModeCount))");
+    expect(source).toContain(
+      "const invLiveSynthesisModeCount = 1 / normalizedLiveSynthesisModeCount",
     );
-    expect(source).not.toContain("function sampleLiveFieldProjectionNormalNode");
-    expect(source).not.toContain(
-      "function deriveLiveFieldProjectionConvergenceAuthorityNode",
-    );
-    expect(opticalMeasurementBlock).not.toContain(
-      "uLiveFieldCacheActive.greaterThan",
-    );
-    expect(opticalMeasurementBlock).not.toContain(
-      "deriveLiveFieldProjectionConvergenceAuthorityNode",
-    );
+    expect(source).toContain("invLiveSynthesisModeCount,");
   });
 
   it("keeps the optical measurement pass off the spherical startup path", () => {

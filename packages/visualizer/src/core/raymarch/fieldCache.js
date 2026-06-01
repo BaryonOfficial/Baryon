@@ -2532,8 +2532,7 @@ function createLiveFieldProjectionComputeKernel({
   modalFieldCapacity,
   uniforms,
 }) {
-  const { resolution, fieldTexture, supportTexture } =
-    liveFieldProjectionCache;
+  const { resolution, fieldTexture, supportTexture } = liveFieldProjectionCache;
   const modalFieldActiveCount = int(uniforms.uModalFieldModeCount);
   const resolutionUint = uint(resolution);
   const resolutionFloat = float(resolution);
@@ -2541,6 +2540,8 @@ function createLiveFieldProjectionComputeKernel({
   const half = float(0.5);
   const zero = float(0.0);
   const one = float(1.0);
+  const invResolution = one.div(resolutionFloat);
+  const invCapacity = one.div(float(normalizedCapacity));
 
   return Fn(() => {
     const voxelCoord = uvec3(globalId);
@@ -2551,9 +2552,9 @@ function createLiveFieldProjectionComputeKernel({
 
     If(inBounds, () => {
       const basisUv = vec3(
-        float(voxelCoord.x).add(half).div(resolutionFloat),
-        float(voxelCoord.y).add(half).div(resolutionFloat),
-        float(voxelCoord.z).add(half).div(resolutionFloat),
+        float(voxelCoord.x).add(half).mul(invResolution),
+        float(voxelCoord.y).add(half).mul(invResolution),
+        float(voxelCoord.z).add(half).mul(invResolution),
       );
       const fieldSum = zero.toVar();
       const gradXSum = zero.toVar();
@@ -2574,7 +2575,7 @@ function createLiveFieldProjectionComputeKernel({
             const atlasUv = vec3(
               basisUv.x,
               basisUv.y,
-              float(i).add(basisUv.z).div(float(normalizedCapacity)),
+              float(i).add(basisUv.z).mul(invCapacity),
             );
             const basisSample = texture3D(modalBasisAtlasTexture).sample(
               atlasUv,
@@ -2813,9 +2814,7 @@ export function computeRaymarchLiveFieldProjectionCache(
   liveFieldProjectionCache.ready = true;
   liveFieldProjectionCache.backend = "compute";
   liveFieldProjectionCache.lastError = null;
-  liveFieldProjectionCache.lastComputedAtSec = Number.isFinite(
-    schedulerTimeSec,
-  )
+  liveFieldProjectionCache.lastComputedAtSec = Number.isFinite(schedulerTimeSec)
     ? schedulerTimeSec
     : getCacheSchedulerTimeSec({ uniforms });
   liveFieldProjectionCache.lastComputeReason = "frame-current";

@@ -32,6 +32,7 @@ import {
   RENDER_CONTEXTS,
   markRenderOutputVisualIdle,
   resolveCustomTargetFpsBand,
+  syncRenderOutputBloomPassUniforms,
   usesBalancedPerformanceBaseline,
 } from "@baryon/visualizer/render/outputPipeline";
 import {
@@ -107,6 +108,10 @@ const LIVE_RENDER_INTENT_UI_STATES = new Set(["starting", "active"]);
 function readPerfAverageMs(perfBreakdown, key) {
   const averageMs = perfBreakdown?.[key]?.averageMs;
   return Number.isFinite(averageMs) ? Number(averageMs) : 0;
+}
+
+function readFiniteNonNegativeNumber(value, fallback = 0) {
+  return Number.isFinite(value) ? Math.max(0, Number(value)) : fallback;
 }
 
 function sumPerfAverageMs(perfBreakdown, keys) {
@@ -186,6 +191,34 @@ function buildStageEngineCounters(runtimeDiagnostics) {
     chromaUpdateCount: runtimeDiagnostics?.engine?.chromaUpdateCount ?? 0,
     tempoUpdateCount: runtimeDiagnostics?.engine?.tempoUpdateCount ?? 0,
     ...snapshotWorkerPerfCounters(runtimeDiagnostics?.engine),
+  };
+}
+
+function snapshotRenderSurfaceDiagnostics(renderSurface) {
+  if (!renderSurface) {
+    return {
+      cssWidth: 0,
+      cssHeight: 0,
+      backingWidth: 0,
+      backingHeight: 0,
+      backingMegapixels: 0,
+      pixelRatio: 1,
+    };
+  }
+
+  return {
+    cssWidth: readFiniteNonNegativeNumber(renderSurface.cssWidth),
+    cssHeight: readFiniteNonNegativeNumber(renderSurface.cssHeight),
+    backingWidth: Math.round(
+      readFiniteNonNegativeNumber(renderSurface.backingWidth),
+    ),
+    backingHeight: Math.round(
+      readFiniteNonNegativeNumber(renderSurface.backingHeight),
+    ),
+    backingMegapixels: readFiniteNonNegativeNumber(
+      renderSurface.backingMegapixels,
+    ),
+    pixelRatio: readFiniteNonNegativeNumber(renderSurface.pixelRatio, 1),
   };
 }
 
@@ -540,52 +573,6 @@ function snapshotMatchesPreparedInputs(engineSnapshot, preparedInputs) {
   return hasMatchingAnalysisContext(engineSnapshot, preparedInputs);
 }
 
-function getSnapshotAgeMsForPreparedInputs(engineSnapshot, preparedInputs) {
-  if (!Number.isFinite(preparedInputs?.currentFrameAtMs)) {
-    return 0;
-  }
-
-  if (!Number.isFinite(engineSnapshot?.frameTimeMs)) {
-    return Number.POSITIVE_INFINITY;
-  }
-
-  return Math.max(
-    0,
-    preparedInputs.currentFrameAtMs - engineSnapshot.frameTimeMs,
-  );
-}
-
-function isLineFeedProgramInput({ preparedInputs, status }) {
-  const inputMode = preparedInputs?.inputMode ?? status?.audioInputMode;
-  return (
-    inputMode === "system" ||
-    (inputMode === "live" &&
-      (preparedInputs?.resolvedLiveInputAnalysisClass === "line-feed" ||
-        preparedInputs?.liveInputPolicy === "line-feed"))
-  );
-}
-
-function shouldRefreshStaleProgramSnapshot({
-  engineSnapshot,
-  preparedInputs,
-  status,
-}) {
-  const inputMode = preparedInputs?.inputMode ?? status?.audioInputMode;
-  const activeFileProgram =
-    inputMode === "file" &&
-    status?.isPlaying === true &&
-    status?.isLiveInputActive !== true;
-  const activeLineFeedProgram =
-    isLineFeedProgramInput({ preparedInputs, status }) &&
-    status?.isLiveInputActive === true;
-
-  if (!activeFileProgram && !activeLineFeedProgram) {
-    return false;
-  }
-
-  return getSnapshotAgeMsForPreparedInputs(engineSnapshot, preparedInputs) > 0;
-}
-
 function classifyFrameSemanticSource(source) {
   switch (source) {
     case "worker-snapshot":
@@ -598,7 +585,6 @@ function classifyFrameSemanticSource(source) {
     case "scheduled-reuse":
     case "last-live-cache":
     case "static-idle-cache":
-    case "paused-file-hold":
       return { fresh: false, reused: true };
     default:
       return { fresh: false, reused: false };
@@ -705,18 +691,6 @@ function hasAudioSourceRenderIntent({ status, controls }) {
   );
 }
 
-function hasClosedPreparedSourceEvidence(preparedInputs) {
-  const sourceEvidence = preparedInputs?.sourceEvidence;
-  if (!sourceEvidence) {
-    return false;
-  }
-
-  return (
-    sourceEvidence.currentSourceEvidence !== true ||
-    sourceEvidence.sourceBoundaryState !== "live"
-  );
-}
-
 function shouldComposeInactiveSourceFeatureFrame({
   status,
   controls,
@@ -724,171 +698,12 @@ function shouldComposeInactiveSourceFeatureFrame({
 }) {
   return (
     preparedInputs?.snapshot != null &&
-    (!hasAudioSourceRenderIntent({ status, controls }) ||
-      hasClosedPreparedSourceEvidence(preparedInputs))
+    !hasAudioSourceRenderIntent({ status, controls })
   );
 }
 
 function shouldCaptureLastLiveFrame({ featureFrame }) {
   return allowsCurrentLiveRenderFrame(featureFrame);
-}
-
-function cloneFrameValue(value, seen = new WeakMap()) {
-  if (value == null || typeof value !== "object") {
-    return value;
-  }
-
-  if (seen.has(value)) {
-    return seen.get(value);
-  }
-
-  if (value instanceof ArrayBuffer) {
-    return value.slice(0);
-  }
-
-  if (ArrayBuffer.isView(value)) {
-    const cloned =
-      value instanceof DataView
-        ? new DataView(
-            value.buffer.slice(
-              value.byteOffset,
-              value.byteOffset + value.byteLength,
-            ),
-          )
-        : Reflect.construct(value.constructor, [value]);
-    seen.set(value, cloned);
-    return cloned;
-  }
-
-  if (Array.isArray(value)) {
-    const cloned = [];
-    seen.set(value, cloned);
-    for (const entry of value) {
-      cloned.push(cloneFrameValue(entry, seen));
-    }
-    return cloned;
-  }
-
-  const cloned = {};
-  seen.set(value, cloned);
-  for (const [key, entry] of Object.entries(value)) {
-    cloned[key] = cloneFrameValue(entry, seen);
-  }
-  return cloned;
-}
-
-function closePausedFileSourceEvidence(sourceEvidence) {
-  return {
-    ...(sourceEvidence ?? {}),
-    sourceBoundaryState: "muted",
-    currentSourceEvidence: false,
-    sourceEnergy: 0,
-    transport: {
-      ...(sourceEvidence?.transport ?? {}),
-      playing: false,
-      fileMuted: true,
-    },
-  };
-}
-
-function closePausedFileEnergyLedger(energyLedger) {
-  return {
-    ...(energyLedger ?? {}),
-    sourceBoundaryState: "muted",
-    sourceEnergy: 0,
-  };
-}
-
-function createPausedFileHoldFrame(featureFrame) {
-  const frame = cloneFrameValue(featureFrame);
-  frame.audioMotionAuthority = false;
-  frame.sourceEvidence = closePausedFileSourceEvidence(frame.sourceEvidence);
-  frame.energyLedger = closePausedFileEnergyLedger(frame.energyLedger);
-  frame.modalResponseCurrentRenderSourceEvidence = false;
-  frame.debug = {
-    ...(frame.debug ?? {}),
-    pausedFileHold: true,
-    sourceBoundaryState: "muted",
-    currentSourceEvidence: false,
-  };
-  return frame;
-}
-
-function getPlaybackSessionId(status) {
-  return status?.playbackSessionId ?? null;
-}
-
-const TERMINAL_PLAYBACK_END_REASONS = new Set([
-  "natural",
-  "premature",
-  "interrupted",
-  "stopped",
-]);
-
-function hasCurrentPlaybackSessionEnded(status) {
-  const playbackSessionId = getPlaybackSessionId(status);
-  if (playbackSessionId == null) {
-    return false;
-  }
-
-  return (
-    TERMINAL_PLAYBACK_END_REASONS.has(status?.lastPlaybackEndReason) &&
-    status?.lastPlaybackDiagnostics?.playbackSessionId === playbackSessionId
-  );
-}
-
-function isActiveFilePlayback(status) {
-  return (
-    status?.isPlaying === true &&
-    status?.isLiveInputActive !== true &&
-    getPlaybackSessionId(status) != null
-  );
-}
-
-function readPausedFileHoldFrame({ frameCacheRefs, status, clockMode }) {
-  if (
-    clockMode !== "paused-playback" ||
-    status?.isPlaying === true ||
-    status?.isLiveInputActive === true ||
-    hasCurrentPlaybackSessionEnded(status)
-  ) {
-    return null;
-  }
-
-  const playbackSessionId = getPlaybackSessionId(status);
-  if (playbackSessionId == null) {
-    return null;
-  }
-
-  const heldFrame = frameCacheRefs.pausedFileFrameRef?.current;
-  return heldFrame?.playbackSessionId === playbackSessionId
-    ? (heldFrame.frame ?? null)
-    : null;
-}
-
-function clearPausedFileHoldFrame(frameCacheRefs) {
-  if (frameCacheRefs.pausedFileFrameRef) {
-    frameCacheRefs.pausedFileFrameRef.current = null;
-  }
-}
-
-function refreshPausedFileHoldFrame({ frameCacheRefs, status, featureFrame }) {
-  const playbackSessionId = getPlaybackSessionId(status);
-  if (!frameCacheRefs.pausedFileFrameRef || playbackSessionId == null) {
-    return;
-  }
-
-  const heldFrame = frameCacheRefs.pausedFileFrameRef.current;
-  if (heldFrame?.playbackSessionId !== playbackSessionId) {
-    frameCacheRefs.pausedFileFrameRef.current = null;
-  }
-
-  if (allowsCurrentLiveRenderFrame(featureFrame)) {
-    frameCacheRefs.pausedFileFrameRef.current = {
-      playbackSessionId,
-      frame: createPausedFileHoldFrame(featureFrame),
-    };
-  }
 }
 
 function resolveCachedLiveFeatureFrame(lastLiveFrame, silentFeatureFrame) {
@@ -1014,6 +829,9 @@ export function buildPerformanceHudSnapshot(runtimeDiagnostics) {
     perfBreakdown,
     stageAttribution: buildStageAttribution(runtimeDiagnostics, perfBreakdown),
     engineCounters: buildStageEngineCounters(runtimeDiagnostics),
+    renderSurface: snapshotRenderSurfaceDiagnostics(
+      runtimeDiagnostics?.renderSurface,
+    ),
     modalFreshness: snapshotModalFreshnessDiagnostics(
       runtimeDiagnostics?.modalFreshness,
     ),
@@ -1208,6 +1026,38 @@ export function publishPerformanceHudSnapshot(
   return snapshot;
 }
 
+function updateRenderSurfaceDiagnostics(
+  runtimeDiagnostics,
+  { cssWidth, cssHeight, targetPixelRatio, gl },
+) {
+  if (!runtimeDiagnostics?.renderSurface) {
+    return;
+  }
+
+  const normalizedCssWidth = readFiniteNonNegativeNumber(cssWidth);
+  const normalizedCssHeight = readFiniteNonNegativeNumber(cssHeight);
+  const normalizedPixelRatio = readFiniteNonNegativeNumber(targetPixelRatio, 1);
+  const canvas = gl?.domElement ?? null;
+  const backingWidth = readFiniteNonNegativeNumber(
+    canvas?.width,
+    normalizedCssWidth * normalizedPixelRatio,
+  );
+  const backingHeight = readFiniteNonNegativeNumber(
+    canvas?.height,
+    normalizedCssHeight * normalizedPixelRatio,
+  );
+
+  runtimeDiagnostics.renderSurface.cssWidth = normalizedCssWidth;
+  runtimeDiagnostics.renderSurface.cssHeight = normalizedCssHeight;
+  runtimeDiagnostics.renderSurface.pixelRatio = normalizedPixelRatio;
+  runtimeDiagnostics.renderSurface.backingWidth = Math.round(backingWidth);
+  runtimeDiagnostics.renderSurface.backingHeight = Math.round(backingHeight);
+  runtimeDiagnostics.renderSurface.backingMegapixels =
+    (runtimeDiagnostics.renderSurface.backingWidth *
+      runtimeDiagnostics.renderSurface.backingHeight) /
+    1_000_000;
+}
+
 export function updateRendererDiagnostics(
   { state, controls, status, time, deltaTime, rfDelta, gl, renderLoopRefs },
   { getTargetDpr = getPlaybackDiagnosticDpr, renderScale = 1 } = {},
@@ -1305,6 +1155,12 @@ export function updateRendererDiagnostics(
       height: nextRenderSurfaceHeight,
     };
   }
+  updateRenderSurfaceDiagnostics(runtimeDiagnostics, {
+    cssWidth: nextRenderSurfaceWidth,
+    cssHeight: nextRenderSurfaceHeight,
+    targetPixelRatio,
+    gl,
+  });
 
   if (status.isPlaying && frameTimeMs !== null) {
     runtimeDiagnostics.activeFrameCount += 1;
@@ -2126,26 +1982,15 @@ export function resolveFeatureFrame(
     lastIdleFrameRef,
     analysisSchedulerRef,
   } = renderLoopRefs.frameCacheRefs;
-  const pausedFileHoldFrame = readPausedFileHoldFrame({
-    frameCacheRefs: renderLoopRefs.frameCacheRefs,
-    status,
-    clockMode,
-  });
 
   const shouldReuseStaticIdleFrame =
-    !pausedFileHoldFrame &&
-    shouldReuseIdleFrame(status, controls) &&
-    lastIdleFrameRef.current;
+    shouldReuseIdleFrame(status, controls) && lastIdleFrameRef.current;
 
   let featureFrame = null;
-  let frameSemanticSource = pausedFileHoldFrame
-    ? "paused-file-hold"
-    : shouldReuseStaticIdleFrame
-      ? "static-idle-cache"
-      : null;
-  if (pausedFileHoldFrame) {
-    featureFrame = pausedFileHoldFrame;
-  } else if (!shouldReuseStaticIdleFrame) {
+  let frameSemanticSource = shouldReuseStaticIdleFrame
+    ? "static-idle-cache"
+    : null;
+  if (!shouldReuseStaticIdleFrame) {
     const buildFeatureFrameStartedAt = getRenderLoopWallTimeMs();
     const analysisSnapshotStartedAt = getRenderLoopWallTimeMs();
     const analysisSnapshot = audio.readAnalysisSnapshot();
@@ -2273,19 +2118,7 @@ export function resolveFeatureFrame(
             runtimeDiagnostics.engine.reason = engineStatus?.reason ?? null;
           }
 
-          const workerSnapshotMatches = snapshotMatchesPreparedInputs(
-            engineSnapshot,
-            preparedInputs,
-          );
-          const shouldRefreshProgramSnapshot =
-            workerSnapshotMatches &&
-            shouldRefreshStaleProgramSnapshot({
-              engineSnapshot,
-              preparedInputs,
-              status,
-            });
-
-          if (workerSnapshotMatches && !shouldRefreshProgramSnapshot) {
+          if (snapshotMatchesPreparedInputs(engineSnapshot, preparedInputs)) {
             const fastComposeStartedAt = getRenderLoopWallTimeMs();
             const snapshotFrameTimeMs = engineSnapshot?.frameTimeMs;
             const shouldPatchCurrentFastSignals =
@@ -2332,7 +2165,6 @@ export function resolveFeatureFrame(
             });
 
             if (
-              shouldRefreshProgramSnapshot ||
               shouldComposeInactiveSource ||
               shouldSeedLiveWarmup ||
               shouldBootstrapActive
@@ -2352,15 +2184,11 @@ export function resolveFeatureFrame(
                 previousFrame: schedulerState.lastComposedFeatureFrame,
                 reuseHeavyAnalysis: false,
               });
-              if (shouldRefreshProgramSnapshot) {
-                frameSemanticSource = "local-heavy-analysis";
-              } else if (shouldSeedLiveWarmup) {
-                frameSemanticSource = "live-warmup";
-              } else if (shouldBootstrapActive) {
-                frameSemanticSource = "bootstrap-fallback";
-              } else {
-                frameSemanticSource = "local-heavy-analysis";
-              }
+              frameSemanticSource = shouldSeedLiveWarmup
+                ? "live-warmup"
+                : shouldBootstrapActive
+                  ? "bootstrap-fallback"
+                  : "local-heavy-analysis";
               recordRuntimePerfSample(
                 runtimeDiagnostics,
                 "fastComposeMs",
@@ -2498,16 +2326,6 @@ export function resolveFeatureFrame(
   recordFrameSemanticSource(runtimeDiagnostics, frameSemanticSource);
 
   if (status.isPlaying || status.isLiveInputActive) {
-    if (isActiveFilePlayback(status)) {
-      refreshPausedFileHoldFrame({
-        frameCacheRefs: renderLoopRefs.frameCacheRefs,
-        status,
-        featureFrame,
-      });
-    } else {
-      clearPausedFileHoldFrame(renderLoopRefs.frameCacheRefs);
-    }
-
     if (shouldCaptureLastLiveFrame({ featureFrame })) {
       lastLiveFrameRef.current = featureFrame;
     } else if (!allowsCurrentLiveRenderFrame(featureFrame)) {
@@ -2523,9 +2341,6 @@ export function resolveFeatureFrame(
         featureEngine?.reset?.("live-input-interrupted");
       }
     } else {
-      if (frameSemanticSource !== "paused-file-hold") {
-        clearPausedFileHoldFrame(renderLoopRefs.frameCacheRefs);
-      }
       lastLiveFrameRef.current = null;
       lastActiveFrameRef.current = null;
       if (!controls.injectTestTone && clockMode !== "paused-playback") {
@@ -2551,8 +2366,7 @@ export function applyReactiveBloomState({
   postNodesRef,
   bloom,
 }) {
-  const bloomPass = postNodesRef.current?.bloomPass;
-  if (!bloomPass || !bloom) {
+  if (!bloom) {
     return bloom;
   }
 
@@ -2565,9 +2379,11 @@ export function applyReactiveBloomState({
     (bt?.bloomAllowed ?? true) && (performanceGovernor?.bloomAllowed ?? true);
 
   const bloomActive = controls.bloomEnabled && bloomAllowed && strength > 1e-4;
-  bloomPass.strength.value = strength;
-  bloomPass.radius.value = radius;
-  bloomPass.threshold.value = bloomActive ? threshold : 999;
+  syncRenderOutputBloomPassUniforms(postNodesRef.current, {
+    strength,
+    radius,
+    threshold: bloomActive ? threshold : 999,
+  });
 
   return bloom;
 }

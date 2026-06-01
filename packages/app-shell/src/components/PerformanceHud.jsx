@@ -1,6 +1,5 @@
 import { formatPerformanceProfileLabel } from "@baryon/visualizer/render/outputProfilePolicy";
 import { usesRaymarchVolumePipeline } from "@baryon/visualizer/visualization/types";
-import { TOP_RIGHT_OVERLAY_PANEL_WIDTH } from "./topRightOverlayLayout.js";
 
 function formatNumber(value, digits = 1) {
   if (
@@ -12,6 +11,29 @@ function formatNumber(value, digits = 1) {
   }
 
   return value.toFixed(digits);
+}
+
+function formatRenderSurfaceLabel(renderSurface) {
+  const backingWidth = renderSurface?.backingWidth;
+  const backingHeight = renderSurface?.backingHeight;
+  if (
+    typeof backingWidth !== "number" ||
+    typeof backingHeight !== "number" ||
+    !Number.isFinite(backingWidth) ||
+    !Number.isFinite(backingHeight) ||
+    backingWidth <= 0 ||
+    backingHeight <= 0
+  ) {
+    return null;
+  }
+
+  const backingMegapixels =
+    typeof renderSurface?.backingMegapixels === "number" &&
+    Number.isFinite(renderSurface.backingMegapixels)
+      ? renderSurface.backingMegapixels
+      : (backingWidth * backingHeight) / 1_000_000;
+
+  return `${Math.round(backingWidth)} x ${Math.round(backingHeight)} (${formatNumber(backingMegapixels, 2)} MP)`;
 }
 
 export default function PerformanceHud({
@@ -46,6 +68,7 @@ export default function PerformanceHud({
     typeof metrics.renderScale === "number"
       ? formatNumber(metrics.renderScale, 3)
       : null;
+  const renderSurfaceLabel = formatRenderSurfaceLabel(metrics.renderSurface);
   const temporalBlendLabel =
     typeof metrics.temporalHistoryBlend === "number"
       ? formatNumber(metrics.temporalHistoryBlend, 2)
@@ -65,14 +88,14 @@ export default function PerformanceHud({
         top: stacked ? "auto" : top,
         right: stacked ? "auto" : right,
         zIndex: 10000,
-        width: TOP_RIGHT_OVERLAY_PANEL_WIDTH,
-        boxSizing: "border-box",
+        minWidth: "9.25rem",
         padding: "0.7rem 0.78rem",
         borderRadius: "0.78rem",
         background: "var(--nd-surface)",
-        border: "none",
+        border: "1px solid var(--nd-border-visible)",
         color: "var(--nd-text-primary)",
-        fontFamily: "var(--baryon-type-mono-family)",
+        fontFamily:
+          '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
         fontSize: "10.5px",
         lineHeight: 1.45,
         pointerEvents: "none",
@@ -84,7 +107,7 @@ export default function PerformanceHud({
           fontWeight: 700,
           marginBottom: "0.32rem",
           textTransform: "uppercase",
-          letterSpacing: "var(--baryon-type-section-letter-spacing)",
+          letterSpacing: "0.14em",
           color: "var(--nd-text-secondary)",
         }}
       >
@@ -113,6 +136,7 @@ export default function PerformanceHud({
         DPR: {formatNumber(metrics.currentPixelRatio, 3)} /{" "}
         {formatNumber(metrics.basePixelRatio, 3)}
       </div>
+      {renderSurfaceLabel ? <div>Canvas: {renderSurfaceLabel}</div> : null}
       {renderScaleLabel ? <div>Render Scale: {renderScaleLabel}</div> : null}
       {metrics.qualityPreset ? (
         <div>

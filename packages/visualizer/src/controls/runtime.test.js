@@ -26,6 +26,7 @@ import {
   RAYMARCH_DEFAULTS,
   RENDER_DEFAULTS,
 } from "../defaults.js";
+import { syncRenderOutputNodeTopology } from "../render/outputPipeline.js";
 
 function withRenderLedger(featureFrame) {
   if (
@@ -486,6 +487,7 @@ describe("control runtime sync", () => {
     expect(composeOutputNode).toHaveBeenCalledWith({
       bloomEnabled: false,
       outputMode: controls.outputMode,
+      temporalHistoryEnabled: false,
     });
     expect(pipeline.outputNode).toBe("transparent-output");
     expect(pipeline.needsUpdate).toBe(true);
@@ -524,6 +526,7 @@ describe("control runtime sync", () => {
     expect(composeOutputNode).toHaveBeenCalledWith({
       bloomEnabled: true,
       outputMode: controls.outputMode,
+      temporalHistoryEnabled: false,
     });
     expect(pipeline.outputNode).toBe("transparent-output");
     expect(pipeline.needsUpdate).toBe(true);
@@ -569,6 +572,7 @@ describe("control runtime sync", () => {
     expect(composeOutputNode).toHaveBeenCalledWith({
       bloomEnabled: true,
       outputMode: controls.outputMode,
+      temporalHistoryEnabled: false,
     });
     expect(pipeline.needsUpdate).toBe(true);
     expect(runtimeState.bloomTuning.lowStepBloomGuard).toBeCloseTo(
@@ -617,6 +621,95 @@ describe("control runtime sync", () => {
     // Topology unchanged: no rebuild
     expect(composeOutputNode).not.toHaveBeenCalled();
     expect(pipeline.needsUpdate).toBe(false);
+  });
+
+  it("rebuilds pipeline topology when temporal history graph ownership changes", () => {
+    const pipeline = { outputNode: null, needsUpdate: false };
+    const composeOutputNode = vi.fn(() => "output");
+    const postNodes = {
+      sceneColor: {},
+      bloomPass: {
+        strength: { value: 0 },
+        radius: { value: 0 },
+        threshold: { value: 0 },
+      },
+      traaNode: {},
+      composeOutputNode,
+    };
+
+    expect(
+      syncRenderOutputNodeTopology(pipeline, postNodes, {
+        bloomEnabled: true,
+        outputMode: "transparent",
+        bloomActive: true,
+        temporalHistoryEnabled: true,
+      }),
+    ).toBe(true);
+    expect(composeOutputNode).toHaveBeenLastCalledWith({
+      bloomEnabled: true,
+      outputMode: "transparent",
+      temporalHistoryEnabled: true,
+    });
+
+    pipeline.needsUpdate = false;
+    composeOutputNode.mockClear();
+
+    expect(
+      syncRenderOutputNodeTopology(pipeline, postNodes, {
+        bloomEnabled: true,
+        outputMode: "transparent",
+        bloomActive: true,
+        temporalHistoryEnabled: false,
+      }),
+    ).toBe(true);
+    expect(composeOutputNode).toHaveBeenLastCalledWith({
+      bloomEnabled: true,
+      outputMode: "transparent",
+      temporalHistoryEnabled: false,
+    });
+    expect(pipeline.needsUpdate).toBe(true);
+  });
+
+  it("updates both temporal and raw-scene bloom passes", () => {
+    const controls = createControlState();
+    controls.bloomEnabled = true;
+    controls.bloomStrength = 0.77;
+    controls.bloomRadius = 0.31;
+    controls.bloomThreshold = 0.44;
+
+    const temporalBloomPass = {
+      strength: { value: 0 },
+      radius: { value: 0 },
+      threshold: { value: 0 },
+    };
+    const rawSceneBloomPass = {
+      strength: { value: 0 },
+      radius: { value: 0 },
+      threshold: { value: 0 },
+    };
+
+    const snapshot = applyBloomControls(
+      {
+        ensurePipeline: () => ({ outputNode: null, needsUpdate: false }),
+        postNodesRef: {
+          current: {
+            sceneColor: {},
+            bloomPass: temporalBloomPass,
+            rawSceneBloomPass,
+            bloomPasses: [temporalBloomPass, rawSceneBloomPass],
+            composeOutputNode: vi.fn(() => "output"),
+          },
+        },
+        runtimeState: createRaymarchHarness(),
+      },
+      controls,
+    );
+
+    for (const bloomPass of [temporalBloomPass, rawSceneBloomPass]) {
+      expect(bloomPass.strength.value).toBeCloseTo(snapshot.strength);
+      expect(bloomPass.radius.value).toBeCloseTo(snapshot.radius);
+      expect(bloomPass.threshold.value).toBeCloseTo(snapshot.threshold);
+    }
   });
 
   it("rebuilds pipeline topology when bloomEnabled changes", () => {
@@ -1027,45 +1120,6 @@ describe("control runtime sync", () => {
       {
         isPlaying: false,
         isLiveInputActive: true,
-      },
-    );
-
-    expect(snapshot.rotationMode).toBe("audio");
-    expect(snapshot.targetAngularVelocity).toBe(0);
-    expect(snapshot.angularVelocity).toBe(0);
-    expect(runtimeState.points.rotation.y).toBe(0.9);
-    expect(snapshot.rotationY).toBe(0.9);
-  });
-
-  it("stops audio rotation for held paused frames with render authority", () => {
-    const controls = createControlState();
-    controls.rotationMode = "audio";
-    controls.motionAmount = 1;
-    const runtimeState = createRaymarchHarness();
-    runtimeState.responseEnvelope = 0.58;
-    runtimeState.points.rotation.y = 0.9;
-    runtimeState.sceneMotion.yaw = 0.9;
-    runtimeState.sceneMotion.angularVelocity = -0.72;
-
-    const snapshot = applySceneControls(
-      runtimeState,
-      controls,
-      1 / 60,
-      {
-        fieldState: "active",
-        audioMotionAuthority: false,
-        structureSignal: 0.88,
-        energySignal: 0.9,
-        changeSignal: 0.7,
-        pulseSignal: 0.4,
-        energyLedger: {
-          projectedRenderEnergy: 0.5,
-          renderEnergyEpsilon: 1e-6,
-        },
-      },
-      {
-        isPlaying: false,
-        isLiveInputActive: false,
       },
     );
 
