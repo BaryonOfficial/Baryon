@@ -2100,12 +2100,13 @@ function getModalResponseProjectionDriveFloor(layer) {
     : RESONANT_DISPLAY_CONTINUITY_MIN_DRIVE_ENERGY;
 }
 
-function hasLayerSignalAuthority({
+function hasFreshSignalAuthority({
   layer,
   currentDriveEnergy,
-  modalResponseDisplayAmplitude,
-  modalResponseEnergy,
-  modalResponseDrive,
+  modalResponseDisplayAmplitude = 0,
+  modalResponseEnergy = 0,
+  modalResponseDrive = 0,
+  freshCouplingEvidence = false,
   weakResonantNoise = false,
 }) {
   if (layer === "resonant" && weakResonantNoise === true) {
@@ -2113,6 +2114,40 @@ function hasLayerSignalAuthority({
   }
 
   if (clamp01(currentDriveEnergy ?? 0) >= getLayerSignalDriveThreshold(layer)) {
+    return true;
+  }
+
+  if (freshCouplingEvidence !== true) {
+    return false;
+  }
+
+  if (clamp01(modalResponseDisplayAmplitude ?? 0) <= 0) {
+    return false;
+  }
+
+  return (
+    clamp01(modalResponseEnergy ?? 0) >=
+      getModalResponseProjectionEnergyFloor(layer) &&
+    clamp01(modalResponseDrive ?? 0) >=
+      getModalResponseProjectionDriveFloor(layer)
+  );
+}
+
+function hasLayerProjectionRetention({
+  layer,
+  currentDriveEnergy,
+  modalResponseDisplayAmplitude,
+  modalResponseEnergy,
+  modalResponseDrive,
+  weakResonantNoise = false,
+}) {
+  if (
+    hasFreshSignalAuthority({
+      layer,
+      currentDriveEnergy,
+      weakResonantNoise,
+    })
+  ) {
     return true;
   }
 
@@ -2131,7 +2166,7 @@ function hasLayerSignalAuthority({
 function hasModalResponseProjectionEvidence(entry, layer) {
   // Modal response is already the damped physical oscillator state for this frame.
   // Projection should only require retained modal energy plus current modal drive.
-  return hasLayerSignalAuthority({
+  return hasLayerProjectionRetention({
     layer,
     currentDriveEnergy: entry?.currentDriveEnergy ?? entry?.driveEnergy ?? 0,
     modalResponseDisplayAmplitude: entry?.modalResponseDisplayAmplitude ?? 0,
@@ -2241,7 +2276,7 @@ function getSignalScore(entry, layer) {
     : Math.max(sourceCoupledScore, responseScore);
 }
 
-function buildSignalShortlist(entries, layer, currentFrameAtMs, capacity) {
+function buildProjectionShortlist(entries, layer, currentFrameAtMs, capacity) {
   const coherenceThreshold = layer === "source-coupled" ? 0.08 : 0.05;
   const driveThreshold =
     layer === "source-coupled"
@@ -3631,12 +3666,14 @@ export function buildModalExcitationStructuralState({
       modalResponseEntry?.oscillatorPhaseCoherence ??
         Math.max(coherence, modalResponseDrive),
     );
-    const currentSignalAuthority = hasLayerSignalAuthority({
+    const currentSignalAuthority = hasFreshSignalAuthority({
       layer: atlasEntry.layer,
       currentDriveEnergy: driveEnergy,
       modalResponseDisplayAmplitude: effectiveModalResponseDisplayAmplitude,
       modalResponseEnergy,
       modalResponseDrive,
+      freshCouplingEvidence,
+      weakResonantNoise: weakFileResonantModalResponseNoise,
     });
     const entry = {
       ...atlasEntry,
@@ -3748,13 +3785,13 @@ export function buildModalExcitationStructuralState({
     observedHighQModesAged: observedResonantModesAged,
   });
 
-  const displaySourceCoupledEntries = buildSignalShortlist(
+  const projectionSourceCoupledEntries = buildProjectionShortlist(
     excitedEntries,
     "source-coupled",
     preparedInputs.currentFrameAtMs,
     sourceCoupledCapacity,
   );
-  const displayResonantEntries = buildSignalShortlist(
+  const projectionResonantEntries = buildProjectionShortlist(
     excitedEntries,
     "resonant",
     preparedInputs.currentFrameAtMs,
@@ -3762,10 +3799,10 @@ export function buildModalExcitationStructuralState({
   );
   const signalSourceCoupledEntries = strictHardSilentFrame
     ? []
-    : displaySourceCoupledEntries;
+    : projectionSourceCoupledEntries;
   const signalResonantEntries = strictHardSilentFrame
     ? []
-    : displayResonantEntries;
+    : projectionResonantEntries;
   const fastResonantAssist = selectFastResonantAssist(
     signalResonantEntries,
     preparedInputs.currentFrameAtMs,
@@ -3789,8 +3826,8 @@ export function buildModalExcitationStructuralState({
   );
   const projection = buildModalProjection({
     state,
-    sourceCoupledEntries: displaySourceCoupledEntries,
-    resonantEntries: displayResonantEntries,
+    sourceCoupledEntries: projectionSourceCoupledEntries,
+    resonantEntries: projectionResonantEntries,
     fastResonantAssist,
     hardSilentFrame,
     sourceCoupledProjectionSwitch: sourceCoupledCouplingFrequencySwitch,
@@ -3802,6 +3839,8 @@ export function buildModalExcitationStructuralState({
     modalResponseMetrics: modalResponse,
   });
   const {
+    displaySourceCoupledEntries,
+    displayResonantEntries,
     hasResonantDisplayContinuity,
     resonantAssistNeedsFreshAdmission,
     resonantSignalCoverage,
@@ -3994,13 +4033,15 @@ export function buildModalExcitationStructuralState({
   const currentSignalAmplitude = clamp01(
     Math.max(
       currentSignalAuthorityAmplitudeTotal,
-      resonantSignalAuthoritative ? signalAmplitudeTotal : 0,
+      freshCouplingEvidence && resonantSignalAuthoritative
+        ? signalAmplitudeTotal
+        : 0,
     ),
   );
   const currentSignalEnergy = clamp01(
     Math.max(
       currentSignalAuthorityEnergyTotal,
-      resonantSignalAuthoritative
+      freshCouplingEvidence && resonantSignalAuthoritative
         ? currentSignalAmplitude * currentSignalAmplitude
         : 0,
     ),

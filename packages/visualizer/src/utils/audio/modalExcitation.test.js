@@ -4239,6 +4239,58 @@ describe("modal excitation structural state", () => {
     ).toBeGreaterThan(sumAmplitudes(structural.signalSourceCoupledSlotsSource));
   });
 
+  it("keeps retained projection visible after fresh source-coupled authority clears", () => {
+    const state = createModalExcitationState(16);
+    const activeFft = makeFft([
+      [550, 0.95],
+      [1100, 0.52],
+    ]);
+    const silentFft = new Float32Array(BIN_COUNT);
+    const silentTimeData = new Float32Array(FFT_SIZE);
+    let structural = null;
+
+    for (let frame = 0; frame < 10; frame += 1) {
+      const inputs = createLineFeedPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: activeFft,
+        timeData: makeTimeData({ frequency: 550 }),
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    for (let frame = 10; frame < 16; frame += 1) {
+      const inputs = createLineFeedPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: silentFft,
+        timeData: silentTimeData,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    expect(structural.structuralMetrics.currentSignalAmplitude).toBe(0);
+    expect(structural.structuralMetrics.currentSignalEnergy).toBe(0);
+    expect(sumAmplitudes(structural.candidateForcingSlotsSource)).toBeGreaterThan(
+      0,
+    );
+    expect(
+      structural.structuralMetrics.energyLedger.projectedRenderEnergy,
+    ).toBeGreaterThan(0);
+  });
+
   it("keeps display slots sparser than signal slots under dense sustained input", () => {
     const state = createModalExcitationState(16);
     let structural = null;
