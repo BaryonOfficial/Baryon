@@ -8,6 +8,9 @@ const PROJECTION_EVIDENCE_DRIVE_WEIGHT = 0.22;
 const PROJECTION_EVIDENCE_PHASE_WEIGHT = 0.12;
 const PROJECTION_EVIDENCE_MIN = 0.12;
 const PROJECTION_RESONANT_LAYER_BUDGET = 0.34;
+const PROJECTION_RESONANT_HIGH_Q_PROTECTED_BUDGET = 0.78;
+const PROJECTION_HIGH_Q_PROTECTION_ENERGY_START = 0.00045;
+const PROJECTION_HIGH_Q_PROTECTION_ENERGY_FULL = 0.018;
 
 function clamp01(value) {
   if (!Number.isFinite(value)) {
@@ -15,6 +18,15 @@ function clamp01(value) {
   }
 
   return Math.min(1, Math.max(0, value));
+}
+
+function smoothstep(edge0, edge1, value) {
+  if (edge0 === edge1) {
+    return value >= edge1 ? 1 : 0;
+  }
+
+  const t = clamp01((value - edge0) / (edge1 - edge0));
+  return t * t * (3 - 2 * t);
 }
 
 export function createEmptyProjectionNormalizationMetrics() {
@@ -44,6 +56,30 @@ function getProjectionLayerBudget({ layer, modeCoherence }) {
   }
 
   return PROJECTION_RESONANT_LAYER_BUDGET;
+}
+
+function getProjectionHighQProtection({ layer, modalObserverMetrics }) {
+  if (layer !== "resonant") {
+    return 0;
+  }
+
+  const projectionLoad = clamp01(
+    modalObserverMetrics?.highQProjectionLoad ?? 0,
+  );
+  const highQAuthority = clamp01(
+    Math.max(
+      modalObserverMetrics?.highQSparseResonatorAuthority ?? 0,
+      modalObserverMetrics?.highQRingSupport ?? 0,
+    ),
+  );
+  const highQEnergy = clamp01(modalObserverMetrics?.highQResonantEnergy ?? 0);
+  const energySupport = smoothstep(
+    PROJECTION_HIGH_Q_PROTECTION_ENERGY_START,
+    PROJECTION_HIGH_Q_PROTECTION_ENERGY_FULL,
+    highQEnergy,
+  );
+
+  return clamp01(projectionLoad * highQAuthority * energySupport);
 }
 
 function computeProjectionProximity(left, right, layer) {
@@ -151,6 +187,19 @@ export function applyProjectionEnergyNormalization({
     layer,
     modeCoherence,
   });
+  const highQProtection = getProjectionHighQProtection({
+    layer,
+    modalObserverMetrics,
+  });
+  const protectedBudget =
+    layer === "resonant"
+      ? Math.max(
+          budget,
+          budget +
+            (PROJECTION_RESONANT_HIGH_Q_PROTECTED_BUDGET - budget) *
+              highQProtection,
+        )
+      : budget;
   const lambda =
     layer === "source-coupled"
       ? PROJECTION_COMPETITION_LAMBDA_SOURCE_COUPLED
@@ -214,8 +263,8 @@ export function applyProjectionEnergyNormalization({
     0,
   );
   const energyScale =
-    projectedEnergyTotal > budget
-      ? budget / Math.max(projectedEnergyTotal, 1e-9)
+    projectedEnergyTotal > protectedBudget
+      ? protectedBudget / Math.max(projectedEnergyTotal, 1e-9)
       : 1;
   const conservedEntries = competed.map((item) => ({
     ...item.entry,
@@ -227,7 +276,7 @@ export function applyProjectionEnergyNormalization({
     (total, item) => total + item.projectedEnergy * energyScale,
     0,
   );
-  const used = Math.min(allocatedEnergy, budget);
+  const used = Math.min(allocatedEnergy, protectedBudget);
   const maxOverlapPressure = competed.reduce(
     (maxPressure, item) => Math.max(maxPressure, item.competitorPressure),
     0,
@@ -240,7 +289,7 @@ export function applyProjectionEnergyNormalization({
   const metrics = {
     ...emptyMetrics,
     projectionLoad,
-    projectionHighQProtection: 0,
+    projectionHighQProtection: highQProtection,
     projectionCompetitionReduction: competitionReduction,
     projectionEnergyNormalizationApplied: normalizationApplied,
   };
@@ -252,7 +301,7 @@ export function applyProjectionEnergyNormalization({
     metrics.projectionEnergyScaleSourceCoupled = energyScale;
     metrics.projectionOverlapPressureSourceCoupled = maxOverlapPressure;
   } else {
-    metrics.projectionEnergyBudgetResonant = budget;
+    metrics.projectionEnergyBudgetResonant = protectedBudget;
     metrics.projectionEnergyUsedResonant = used;
     metrics.projectionRawEnergyResonant = rawEnergyTotal;
     metrics.projectionAllocatedEnergyResonant = used;

@@ -131,7 +131,7 @@ vi.mock("./baryonVisualizerRenderLoop.js", () => ({
     renderLoopSpies.applyCachedControlSnapshotsSpy(...args),
   applyReactiveBloomState: () => ({}),
   getPlaybackDiagnosticDpr: () => 1,
-  getEffectiveAdaptiveRenderScale: () => 1,
+  getEffectiveRenderScale: () => 1,
   publishPerformanceHudSnapshot: () => {},
   publishDevtoolsSnapshots: () => {},
   applyLiveInputRenderIntent: (frame) => frame,
@@ -148,7 +148,7 @@ vi.mock("./baryonVisualizerRenderLoop.js", () => ({
   updateModalFreshnessDiagnostics: () => {},
   updateAdaptiveRaymarchStepBudget: () => 0,
   syncUploadedRenderQuantities: () => {},
-  syncAdaptiveRenderSurfacePixelRatio: () => 1,
+  syncRenderSurfacePixelRatio: () => 1,
   updateRendererDiagnostics: () => ({
     lowLoadActive: false,
     runtimeDiagnostics: {},

@@ -1826,7 +1826,9 @@ describe("modal excitation structural state", () => {
       0.035,
     );
     expect(structural.structuralMetrics.highQRingSupport).toBeGreaterThan(0.5);
-    expect(structural.structuralMetrics.projectionHighQProtection).toBe(0);
+    expect(
+      structural.structuralMetrics.projectionHighQProtection,
+    ).toBeGreaterThan(0.1);
     expect(
       structural.structuralMetrics.resonantSignalAuthoritativeModalResponse,
     ).toBe(true);

@@ -4,10 +4,8 @@ import * as THREE from "three";
 import {
   advanceRenderOutputTemporalHistoryBypass,
   consumeRenderOutputVisualIdle,
-  getRenderOutputTemporalHistoryGraphEnabled,
   getRenderQualityProfileKey,
   markRenderOutputContentChange,
-  syncRenderOutputNodeTopology,
 } from "@baryon/visualizer/render/outputPipeline";
 import {
   applyAudioControls,
@@ -51,7 +49,7 @@ import {
   applyReactiveBloomState,
   getPlaybackDiagnosticDpr,
   getRenderTargetPixelRatio,
-  getEffectiveAdaptiveRenderScale,
+  getEffectiveRenderScale,
   publishPerformanceHudSnapshot,
   publishDevtoolsSnapshots,
   applyLiveInputRenderIntent,
@@ -63,7 +61,7 @@ import {
   updateModalFreshnessDiagnostics,
   updateAdaptiveRaymarchStepBudget,
   updateRendererDiagnostics,
-  syncAdaptiveRenderSurfacePixelRatio,
+  syncRenderSurfacePixelRatio,
   syncUploadedRenderQuantities,
 } from "./baryonVisualizerRenderLoop.js";
 import { useVisualizationRuntimeLifecycle } from "./useVisualizationRuntimeLifecycle.js";
@@ -531,7 +529,7 @@ export function useBaryonVisualizer({
       fallbackClockSnapshot,
     });
     const requestedRenderScale = renderProfileRef.current?.renderScale ?? 1;
-    const currentEffectiveRenderScale = getEffectiveAdaptiveRenderScale(
+    const currentEffectiveRenderScale = getEffectiveRenderScale(
       runtimeDiagnosticsRef.current,
       requestedRenderScale,
     );
@@ -666,7 +664,7 @@ export function useBaryonVisualizer({
       status,
       runtimeDiagnostics,
     });
-    syncAdaptiveRenderSurfacePixelRatio({
+    syncRenderSurfacePixelRatio({
       gl: renderLoopContext.gl,
       renderLoopRefs,
       runtimeDiagnostics,
@@ -685,7 +683,7 @@ export function useBaryonVisualizer({
       bloomGovernorAllowed,
     );
     if (runtimeDiagnostics?.render) {
-      const effectiveRenderScale = getEffectiveAdaptiveRenderScale(
+      const effectiveRenderScale = getEffectiveRenderScale(
         runtimeDiagnostics,
         requestedRenderScale,
       );
@@ -752,11 +750,9 @@ export function useBaryonVisualizer({
         renderLoopContext.postNodesRef.current?.bloomPass &&
         effectiveBloomEnabled,
       );
-      const postNodes = renderLoopContext.postNodesRef.current;
       runtimeDiagnostics.postProcess.temporalHistoryBlend =
-        postNodes?.temporalHistoryBlendUniform?.value ?? null;
-      runtimeDiagnostics.postProcess.temporalHistoryGraphEnabled =
-        getRenderOutputTemporalHistoryGraphEnabled(postNodes);
+        renderLoopContext.postNodesRef.current?.temporalHistoryBlendUniform
+          ?.value ?? null;
     }
 
     if (externalFrameState?.featureFrame) {
@@ -888,29 +884,14 @@ export function useBaryonVisualizer({
       outputCaptureInFlightRef.current = false;
     } else if (pipeline) {
       const pipelineRenderStartedAt = getWallTimeMs();
-      const temporalHistoryBypassRequested =
+      if (
         shouldBypassTemporalHistory ||
-        visualIdleFinalizer.resumedFromVisualIdle;
-      if (temporalHistoryBypassRequested) {
+        visualIdleFinalizer.resumedFromVisualIdle
+      ) {
         markRenderOutputContentChange(renderLoopContext.postNodesRef.current);
         if (visualIdleFinalizer.resumedFromVisualIdle) {
           consumeRenderOutputVisualIdle(renderLoopContext.postNodesRef.current);
         }
-      }
-      syncRenderOutputNodeTopology(
-        pipeline,
-        renderLoopContext.postNodesRef.current,
-        {
-          bloomEnabled: effectiveBloomEnabled,
-          outputMode: controls.outputMode,
-          bloomActive: effectiveBloomEnabled,
-          temporalHistoryEnabled: !temporalHistoryBypassRequested,
-        },
-      );
-      if (runtimeDiagnostics?.postProcess) {
-        const postNodes = renderLoopContext.postNodesRef.current;
-        runtimeDiagnostics.postProcess.temporalHistoryGraphEnabled =
-          getRenderOutputTemporalHistoryGraphEnabled(postNodes);
       }
       renderLoopContext.gl.setRenderTarget?.(null);
       renderLoopContext.gl.setMRT?.(null);

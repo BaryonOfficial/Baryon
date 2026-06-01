@@ -36,13 +36,50 @@ describe("projection energy normalization", () => {
     const dense = normalizeWithDenseLoad(1);
 
     expect(dense.metrics.projectionLoad).toBe(1);
-    expect(dense.metrics.projectionAllocatedEnergyResonant).toBeCloseTo(
-      sparse.metrics.projectionAllocatedEnergyResonant,
-      6,
-    );
-    expect(dense.entries[0].displayAmplitude).toBeCloseTo(
+    expect(
+      dense.metrics.projectionAllocatedEnergyResonant,
+    ).toBeGreaterThanOrEqual(sparse.metrics.projectionAllocatedEnergyResonant);
+    expect(dense.entries[0].displayAmplitude).toBeGreaterThanOrEqual(
       sparse.entries[0].displayAmplitude,
-      6,
+    );
+  });
+
+  it("protects supported high-Q detail from resonant projection budget collapse", () => {
+    const unprotected = applyProjectionEnergyNormalization({
+      entries: [makeSupportedEntry()],
+      layer: "resonant",
+      modalObserverMetrics: {
+        highQProjectionLoad: 0,
+        highQSparseResonatorAuthority: 0,
+        highQRingSupport: 0,
+        highQResonantEnergy: 0.4,
+        highQObservedCoherence: 0.92,
+      },
+      hardSilentFrame: false,
+      getModalObserverProfile: () => ({ snrFull: 1 }),
+    });
+    const protectedDetail = applyProjectionEnergyNormalization({
+      entries: [makeSupportedEntry()],
+      layer: "resonant",
+      modalObserverMetrics: {
+        highQProjectionLoad: 0.92,
+        highQSparseResonatorAuthority: 0.86,
+        highQRingSupport: 0.78,
+        highQResonantEnergy: 0.4,
+        highQObservedCoherence: 0.92,
+      },
+      hardSilentFrame: false,
+      getModalObserverProfile: () => ({ snrFull: 1 }),
+    });
+
+    expect(protectedDetail.metrics.projectionHighQProtection).toBeGreaterThan(
+      0,
+    );
+    expect(
+      protectedDetail.metrics.projectionAllocatedEnergyResonant,
+    ).toBeGreaterThan(unprotected.metrics.projectionAllocatedEnergyResonant);
+    expect(protectedDetail.entries[0].displayAmplitude).toBeGreaterThan(
+      unprotected.entries[0].displayAmplitude,
     );
   });
 });

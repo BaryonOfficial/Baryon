@@ -5202,6 +5202,8 @@ describe("live input noise gate", () => {
     );
     expect(frame.debug.lowQSourceCoupledVisibilityEnergy).toBeGreaterThan(0.12);
     expect(frame.debug.lowQSourceCoupledTopologyFloor).toBeGreaterThan(0.12);
+    expect(frame.modalResponseRenderSourceCoupledEnergy).toBeGreaterThan(0);
+    expect(frame.modalResponseRenderResonantEnergy).toBe(0);
   });
 
   it("keeps coherent system source-coupled modes active from low-Q visibility energy", () => {

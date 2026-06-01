@@ -6014,6 +6014,8 @@ export function composeAudioFeatureFrame({
     modalResponseAveragePersistence:
       analysisResult.structuralMetrics?.modalResponseAveragePersistence ?? 0,
     modalResponseRenderEnergy: energyLedger.projectedRenderEnergy,
+    modalResponseRenderSourceCoupledEnergy: modalResponseSourceCoupledEnergy,
+    modalResponseRenderResonantEnergy: modalResponseResonantEnergy,
     modalResponseRenderRawEnergy: renderAuthority
       ? (analysisResult.structuralMetrics?.modalResponseRenderRawEnergy ??
         projectedModalRenderEnergy)
