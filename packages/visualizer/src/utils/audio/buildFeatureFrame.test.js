@@ -7030,7 +7030,7 @@ describe("modal excitation integration", () => {
     expect(residueResult.frame.modalVisibilityEnergy).toBe(0);
   });
 
-  it("bounds weak file residual projection breadth instead of filling the volume", () => {
+  it("caps weak file residual display cache by modal energy instead of filling the volume", () => {
     const featureState = createAudioFeatureState();
     const activePartials = [
       [196, 0.9],
@@ -7079,14 +7079,24 @@ describe("modal excitation integration", () => {
       status: makeActiveStatus(),
     });
 
-    expect(residueResult.frame.sourceEvidence.currentSourceEvidence).toBe(
-      true,
-    );
+    expect(residueResult.frame.sourceEvidence.currentSourceEvidence).toBe(true);
     expect(residueResult.frame.energyLedger.sourceEnergy).toBeGreaterThan(0.2);
-    expect(residueResult.frame.activeModalFieldModeCount).toBeGreaterThan(0);
-    expect(residueResult.frame.activeModalFieldModeCount).toBeLessThanOrEqual(
-      16,
+    expect(residueResult.frame.energyLedger.currentSignalAmplitude).toBe(0);
+    expect(
+      residueResult.analysisResult.structuralMetrics.currentSignalAmplitude,
+    ).toBe(0);
+    expect(residueResult.frame.energyLedger.projectedRenderEnergy).toBeCloseTo(
+      residueResult.frame.energyLedger.storedModalEnergy,
+      6,
     );
+    expect(residueResult.frame.energyLedger.projectedRenderEnergy).toBeLessThan(
+      0.01,
+    );
+    expect(residueResult.frame.modalVisibilityEnergy).toBeLessThanOrEqual(
+      residueResult.frame.energyLedger.projectedRenderEnergy,
+    );
+    expect(residueResult.frame.activeModalFieldModeCount).toBeGreaterThan(0);
+    expect(residueResult.frame.fieldState).toBe("decay");
   });
 
   it("keeps dense low-change modal input visually pruned without collapsing reactivity", () => {

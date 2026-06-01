@@ -104,6 +104,55 @@ describe("modal energy ledger", () => {
     ).toBeCloseTo(0.25, 6);
   });
 
+  it("caps retained display cache by stored modal energy without current signal authority", () => {
+    const ledger = buildModalEnergyLedger({
+      sourceEnergy: 0.35,
+      sourceBoundaryState: "live",
+      currentSignalAmplitude: 0,
+      modalResponse: {
+        modalResponseEnergy: 0.02,
+        modalResponseSourceCoupledEnergy: 0.02,
+        modalResponseResonantEnergy: 0,
+      },
+      candidateForcingSlots: makeSlots([
+        [1, 1, 1, 0.8],
+        [2, 2, 2, 0.6],
+      ]),
+      candidateResponseSlots: makeSlots([[3, 3, 3, 0.5]]),
+    });
+
+    expect(ledger.rawProjectedRenderEnergy).toBeGreaterThan(0.02);
+    expect(ledger.projectedRenderEnergy).toBeCloseTo(0.02, 6);
+    expect(ledger.projectedEnergyScale).toBeLessThan(1);
+    expect(ledger.renderAuthority).toBe(true);
+  });
+
+  it("does not cap live projection when current signal authority is present", () => {
+    const ledger = buildModalEnergyLedger({
+      sourceEnergy: 0.35,
+      sourceBoundaryState: "live",
+      currentSignalAmplitude: 0.12,
+      modalResponse: {
+        modalResponseEnergy: 0.02,
+        modalResponseSourceCoupledEnergy: 0.02,
+        modalResponseResonantEnergy: 0,
+      },
+      candidateForcingSlots: makeSlots([
+        [1, 1, 1, 0.8],
+        [2, 2, 2, 0.6],
+      ]),
+      candidateResponseSlots: makeSlots([[3, 3, 3, 0.5]]),
+    });
+
+    expect(ledger.projectedRenderEnergy).toBeCloseTo(
+      ledger.rawProjectedRenderEnergy,
+      6,
+    );
+    expect(ledger.projectedRenderEnergy).toBeGreaterThan(
+      ledger.storedModalEnergy,
+    );
+  });
+
   it("projects decaying slot amplitude monotonically to zero", () => {
     const energies = [0.6, 0.3, 0.1, 0].map((amplitude) => {
       return buildModalEnergyLedger({

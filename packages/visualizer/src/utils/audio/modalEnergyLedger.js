@@ -2,13 +2,21 @@ export const DEFAULT_RENDER_ENERGY_EPSILON = 1e-6;
 export const ENERGY_OWNER_VERSION = "av-energy-ledger:v1";
 
 function shouldBoundarySuppressProjection(sourceBoundaryState) {
-  return (
-    sourceBoundaryState === "absent" || sourceBoundaryState === "muted"
-  );
+  return sourceBoundaryState === "absent" || sourceBoundaryState === "muted";
 }
 
 function shouldBoundaryCapProjection(sourceBoundaryState) {
   return sourceBoundaryState === "zero";
+}
+
+function shouldSignalCapProjection({
+  currentSignalAmplitude,
+  renderEnergyEpsilon,
+}) {
+  return (
+    Number.isFinite(currentSignalAmplitude) &&
+    currentSignalAmplitude <= renderEnergyEpsilon
+  );
 }
 
 function clamp01(value) {
@@ -58,6 +66,8 @@ export function buildModalEnergyLedger({
   candidateForcingSlots = null,
   candidateResponseSlots = null,
   capacity = undefined,
+  currentSignalEnergy = undefined,
+  currentSignalAmplitude = undefined,
   renderEnergyEpsilon = DEFAULT_RENDER_ENERGY_EPSILON,
   injectTestTone = false,
 } = {}) {
@@ -74,16 +84,21 @@ export function buildModalEnergyLedger({
   );
   const rawProjectedEnergyScaleDenominator =
     rawProjectedSourceCoupledEnergy + rawProjectedResonantEnergy;
-  const rawProjectedRenderEnergy = clamp01(
-    rawProjectedLayerEnergyTotal,
-  );
+  const rawProjectedRenderEnergy = clamp01(rawProjectedLayerEnergyTotal);
   const normalizedSourceEnergy = clamp01(sourceEnergy);
   const storedModalEnergy = clamp01(modalResponse?.modalResponseEnergy ?? 0);
+  const normalizedCurrentSignalEnergy = Number.isFinite(currentSignalEnergy)
+    ? clamp01(currentSignalEnergy)
+    : rawProjectedRenderEnergy;
   const projectedRenderEnergy = shouldBoundarySuppressProjection(
     sourceBoundaryState,
   )
     ? 0
-    : shouldBoundaryCapProjection(sourceBoundaryState)
+    : shouldBoundaryCapProjection(sourceBoundaryState) ||
+        shouldSignalCapProjection({
+          currentSignalAmplitude,
+          renderEnergyEpsilon,
+        })
       ? Math.min(rawProjectedRenderEnergy, storedModalEnergy)
       : rawProjectedRenderEnergy;
   const projectedEnergyScale =
@@ -91,7 +106,8 @@ export function buildModalEnergyLedger({
     projectedRenderEnergy < rawProjectedEnergyScaleDenominator
       ? Math.sqrt(projectedRenderEnergy / rawProjectedEnergyScaleDenominator)
       : 1;
-  const projectedEnergyScaleSquared = projectedEnergyScale * projectedEnergyScale;
+  const projectedEnergyScaleSquared =
+    projectedEnergyScale * projectedEnergyScale;
   const projectedSourceCoupledEnergy = clamp01(
     rawProjectedSourceCoupledEnergy * projectedEnergyScaleSquared,
   );
@@ -113,6 +129,10 @@ export function buildModalEnergyLedger({
     rawProjectedRenderEnergy,
     rawProjectedSourceCoupledEnergy,
     rawProjectedResonantEnergy,
+    currentSignalEnergy: normalizedCurrentSignalEnergy,
+    currentSignalAmplitude: Number.isFinite(currentSignalAmplitude)
+      ? Math.max(0, currentSignalAmplitude)
+      : rawProjectedRenderEnergy,
     projectedEnergyScale,
     projectedSourceCoupledEnergy,
     projectedResonantEnergy,

@@ -3027,6 +3027,13 @@ function deriveModalVisibilityComponents({
       ...slotSummary,
     };
   }
+  const retainedDisplayCacheOnly =
+    hasRenderAuthoritativeEnergy &&
+    Number.isFinite(structuralMetrics?.currentSignalAmplitude) &&
+    structuralMetrics.currentSignalAmplitude <= RENDER_ENERGY_EPSILON;
+  const visibilityEnergyCeiling = retainedDisplayCacheOnly
+    ? renderAuthoritativeEnergy
+    : 1;
 
   const observerVisibility = deriveModalObserverVisibilityComponents({
     structuralMetrics,
@@ -3141,12 +3148,15 @@ function deriveModalVisibilityComponents({
     retainedHighQObserverSupport *
     retainedHighQObserverQuality *
     highQSparseResonatorAuthority;
-  const retainedHighQModalVisibility = clamp01(
-    Math.max(
-      retainedHighQObserverAuthority * MODAL_VISIBILITY_HIGH_Q_RETAINED_MAX,
-      observerVisibility.highQObserverVisibilityEnergy *
-        MODAL_VISIBILITY_HIGH_Q_RETAINED_MAX *
-        0.68,
+  const retainedHighQModalVisibility = Math.min(
+    visibilityEnergyCeiling,
+    clamp01(
+      Math.max(
+        retainedHighQObserverAuthority * MODAL_VISIBILITY_HIGH_Q_RETAINED_MAX,
+        observerVisibility.highQObserverVisibilityEnergy *
+          MODAL_VISIBILITY_HIGH_Q_RETAINED_MAX *
+          0.68,
+      ),
     ),
   );
   const distributedEnergyAnchor = smoothstep(
@@ -3184,15 +3194,20 @@ function deriveModalVisibilityComponents({
     ...slotSummary,
     distributedModalVisibility,
     dominantModalVisibility,
-    modalVisibilityEnergy: clamp01(
-      Math.max(
-        distributedModalVisibility,
-        dominantModalVisibility,
-        highQVisibilityGate * MODAL_VISIBILITY_HIGH_Q_MAX,
+    modalVisibilityEnergy: Math.min(
+      visibilityEnergyCeiling,
+      clamp01(
+        Math.max(
+          distributedModalVisibility,
+          dominantModalVisibility,
+          highQVisibilityGate * MODAL_VISIBILITY_HIGH_Q_MAX,
+        ),
       ),
     ),
-    modalObserverVisibilityEnergy:
+    modalObserverVisibilityEnergy: Math.min(
+      visibilityEnergyCeiling,
       observerVisibility.modalObserverVisibilityEnergy,
+    ),
     highQObserverVisibilityEnergy:
       observerVisibility.highQObserverVisibilityEnergy,
     lowQObserverVisibilityEnergy:
@@ -3200,8 +3215,10 @@ function deriveModalVisibilityComponents({
     modalObserverTopologyFloor: observerVisibility.modalObserverTopologyFloor,
     lowQSourceCoupledVisibilityAuthority:
       observerVisibility.lowQSourceCoupledVisibilityAuthority,
-    lowQSourceCoupledVisibilityEnergy:
+    lowQSourceCoupledVisibilityEnergy: Math.min(
+      visibilityEnergyCeiling,
       observerVisibility.lowQSourceCoupledVisibilityEnergy,
+    ),
     lowQSourceCoupledTopologyFloor:
       observerVisibility.lowQSourceCoupledTopologyFloor,
     lowQSourceCoupledSourceSupport:
@@ -5645,6 +5662,9 @@ export function composeAudioFeatureFrame({
     candidateForcingSlots: analysisResult.candidateForcingSlots,
     candidateResponseSlots: analysisResult.candidateResponseSlots,
     capacity: preparedInputs.capacity,
+    currentSignalEnergy: analysisResult.structuralMetrics?.currentSignalEnergy,
+    currentSignalAmplitude:
+      analysisResult.structuralMetrics?.currentSignalAmplitude,
     renderEnergyEpsilon: analysisResult.structuralMetrics?.renderEnergyEpsilon,
     injectTestTone: preparedInputs.resolvedAuditSettings.injectTestTone,
   });
