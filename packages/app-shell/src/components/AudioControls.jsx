@@ -401,7 +401,7 @@ const CSS = `
   -webkit-appearance: none;
   width: 10px;
   height: 10px;
-  border-radius: 0;
+  border-radius: 999px;
   background: var(--nd-text-display);
   border: 1px solid var(--nd-border-visible);
 }
@@ -410,7 +410,7 @@ const CSS = `
   width: 10px;
   height: 10px;
   border: 1px solid var(--nd-border-visible);
-  border-radius: 0;
+  border-radius: 999px;
   background: var(--nd-text-display);
 }
 
@@ -1001,7 +1001,7 @@ const CSS = `
   -webkit-appearance: none;
   width: 10px;
   height: 10px;
-  border-radius: 0;
+  border-radius: 999px;
   background: var(--nd-text-display);
   border: 1px solid var(--nd-border-visible);
 }
@@ -1010,7 +1010,7 @@ const CSS = `
   width: 10px;
   height: 10px;
   border: 1px solid var(--nd-border-visible);
-  border-radius: 0;
+  border-radius: 999px;
   background: var(--nd-text-display);
 }
 
