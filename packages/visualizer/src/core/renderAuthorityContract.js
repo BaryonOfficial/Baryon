@@ -34,7 +34,10 @@ export function hasRenderAuthority(featureFrame) {
 }
 
 export function allowsAudioMotion(featureFrame) {
-  return hasRenderAuthority(featureFrame);
+  return (
+    featureFrame?.audioMotionAuthority !== false &&
+    hasRenderAuthority(featureFrame)
+  );
 }
 
 export function allowsCurrentLiveRenderFrame(featureFrame) {

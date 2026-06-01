@@ -245,6 +245,7 @@ function createResolveFeatureFrameHarness(overrides = {}) {
           lastLiveFrameRef: { current: { fieldState: "idle" } },
           lastActiveFrameRef: { current: null },
           lastIdleFrameRef: { current: null },
+          pausedFileFrameRef: { current: null },
           analysisSchedulerRef: { current: null },
         },
       },
@@ -1689,6 +1690,262 @@ test("resolveFeatureFrame records scheduled analysis reuse as reused semantics",
   );
   expect(args.runtimeDiagnostics.modalFreshness.frameSemanticFresh).toBe(false);
   expect(args.runtimeDiagnostics.modalFreshness.frameSemanticReused).toBe(true);
+});
+
+test("resolveFeatureFrame holds the last file modal frame during paused playback", () => {
+  const frameCacheRefs = {
+    lastLiveFrameRef: { current: null },
+    lastActiveFrameRef: { current: null },
+    lastIdleFrameRef: { current: null },
+    pausedFileFrameRef: { current: null },
+    analysisSchedulerRef: { current: null },
+  };
+  const activeFrame = {
+    fieldState: "active",
+    renderAuthority: true,
+    energyLedger: {
+      projectedRenderEnergy: 0.42,
+      renderEnergyEpsilon: 1e-6,
+      sourceBoundaryState: "live",
+      sourceEnergy: 0.42,
+    },
+    sourceEvidence: {
+      sourceBoundaryState: "live",
+      currentSourceEvidence: true,
+      sourceEnergy: 0.42,
+      transport: {
+        playing: true,
+        fileMuted: false,
+      },
+    },
+    modalFieldSlots: new Float32Array([1, 2, 3, 0.4]),
+    modalFieldPhaseSlots: new Float32Array([0.25, 0.5, 0.75, 1]),
+    modalFieldColorSlots: new Float32Array([0.1, 0.2, 0.3, 1]),
+    bandEnergies: new Float32Array([0.1, 0.2, 0.3, 0.4]),
+    modalResponseCurrentRenderSourceEvidence: true,
+    structureSignal: 0.7,
+    energySignal: 0.8,
+    changeSignal: 0.2,
+    pulseSignal: 0.1,
+    debug: {
+      sourceBoundaryState: "live",
+    },
+  };
+  const activeHarness = createResolveFeatureFrameHarness({
+    status: {
+      isPlaying: true,
+      isLiveInputActive: false,
+      playbackSessionId: "song-1",
+    },
+    renderLoopRefs: {
+      frameCacheRefs,
+    },
+  });
+
+  resolveFeatureFrame(activeHarness.args, {
+    buildFeatureFrame: vi.fn(() => activeFrame),
+  });
+
+  expect(frameCacheRefs.pausedFileFrameRef.current).toMatchObject({
+    playbackSessionId: "song-1",
+  });
+  expect(frameCacheRefs.pausedFileFrameRef.current.frame).not.toBe(
+    activeFrame,
+  );
+
+  activeFrame.modalFieldSlots[3] = 0;
+  activeFrame.sourceEvidence.currentSourceEvidence = true;
+
+  const featureEngine = {
+    enqueueTransportFrame: vi.fn(),
+    readLatestSnapshot: vi.fn(),
+    getStatus: vi.fn(),
+    reset: vi.fn(),
+  };
+  const audio = {
+    readAnalysisSnapshot: vi.fn(),
+  };
+  const prepareFeatureFrame = vi.fn();
+  const runHeavyFeatureAnalysis = vi.fn();
+  const composeFeatureFrame = vi.fn();
+  const pausedHarness = createResolveFeatureFrameHarness({
+    audio,
+    featureEngine,
+    status: {
+      isPlaying: false,
+      isLiveInputActive: false,
+      playbackSessionId: "song-1",
+    },
+    clockMode: "paused-playback",
+    renderLoopRefs: {
+      frameCacheRefs,
+    },
+  });
+
+  const result = resolveFeatureFrame(pausedHarness.args, {
+    prepareFeatureFrame,
+    runHeavyFeatureAnalysis,
+    composeFeatureFrame,
+  });
+
+  expect(audio.readAnalysisSnapshot).not.toHaveBeenCalled();
+  expect(featureEngine.enqueueTransportFrame).not.toHaveBeenCalled();
+  expect(featureEngine.readLatestSnapshot).not.toHaveBeenCalled();
+  expect(featureEngine.reset).not.toHaveBeenCalled();
+  expect(prepareFeatureFrame).not.toHaveBeenCalled();
+  expect(runHeavyFeatureAnalysis).not.toHaveBeenCalled();
+  expect(composeFeatureFrame).not.toHaveBeenCalled();
+  expect(result.effectiveFrame).toBe(
+    frameCacheRefs.pausedFileFrameRef.current.frame,
+  );
+  expect(result.effectiveFrame.audioMotionAuthority).toBe(false);
+  expect(result.effectiveFrame.modalFieldSlots[3]).toBeCloseTo(0.4);
+  expect(result.effectiveFrame.sourceEvidence).toMatchObject({
+    sourceBoundaryState: "muted",
+    currentSourceEvidence: false,
+    sourceEnergy: 0,
+    transport: {
+      playing: false,
+      fileMuted: true,
+    },
+  });
+  expect(result.effectiveFrame.energyLedger).toMatchObject({
+    projectedRenderEnergy: 0.42,
+    sourceBoundaryState: "muted",
+    sourceEnergy: 0,
+  });
+  expect(result.effectiveFrame.debug).toMatchObject({
+    pausedFileHold: true,
+    sourceBoundaryState: "muted",
+    currentSourceEvidence: false,
+  });
+  expect(
+    pausedHarness.args.runtimeDiagnostics.modalFreshness.frameSemanticSource,
+  ).toBe("paused-file-hold");
+  expect(
+    pausedHarness.args.runtimeDiagnostics.modalFreshness.frameSemanticFresh,
+  ).toBe(false);
+  expect(
+    pausedHarness.args.runtimeDiagnostics.modalFreshness.frameSemanticReused,
+  ).toBe(true);
+});
+
+test("resolveFeatureFrame clears a paused file hold when playback stops", () => {
+  const heldFrame = {
+    fieldState: "active",
+    audioMotionAuthority: false,
+    energyLedger: {
+      projectedRenderEnergy: 0.3,
+      renderEnergyEpsilon: 1e-6,
+    },
+  };
+  const silentFrame = {
+    fieldState: "idle",
+    renderAuthority: false,
+    energyLedger: {
+      projectedRenderEnergy: 0,
+      renderEnergyEpsilon: 1e-6,
+    },
+  };
+  const frameCacheRefs = {
+    lastLiveFrameRef: { current: null },
+    lastActiveFrameRef: { current: null },
+    lastIdleFrameRef: { current: null },
+    pausedFileFrameRef: {
+      current: {
+        playbackSessionId: "song-1",
+        frame: heldFrame,
+      },
+    },
+    analysisSchedulerRef: { current: null },
+  };
+  const featureEngine = {
+    enqueueTransportFrame: vi.fn(),
+    readLatestSnapshot: vi.fn(),
+    getStatus: vi.fn(),
+    reset: vi.fn(),
+  };
+  const { args } = createResolveFeatureFrameHarness({
+    featureEngine,
+    status: {
+      isPlaying: false,
+      isLiveInputActive: false,
+      playbackSessionId: "song-1",
+    },
+    clockMode: "running",
+    renderLoopRefs: {
+      frameCacheRefs,
+    },
+  });
+
+  const result = resolveFeatureFrame(args, {
+    prepareFeatureFrame: vi.fn(() => ({
+      silentFeatureFrame: silentFrame,
+    })),
+  });
+
+  expect(result.effectiveFrame).toBe(silentFrame);
+  expect(frameCacheRefs.pausedFileFrameRef.current).toBeNull();
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
+    "silent-frame",
+  );
+});
+
+test("resolveFeatureFrame ignores paused file holds for live input", () => {
+  const silentFrame = {
+    fieldState: "idle",
+    renderAuthority: false,
+    isLiveInputActive: true,
+  };
+  const frameCacheRefs = {
+    lastLiveFrameRef: { current: null },
+    lastActiveFrameRef: { current: null },
+    lastIdleFrameRef: { current: null },
+    pausedFileFrameRef: {
+      current: {
+        playbackSessionId: "song-1",
+        frame: {
+          fieldState: "active",
+          audioMotionAuthority: false,
+          energyLedger: {
+            projectedRenderEnergy: 0.4,
+            renderEnergyEpsilon: 1e-6,
+          },
+        },
+      },
+    },
+    analysisSchedulerRef: { current: null },
+  };
+  const audio = {
+    readAnalysisSnapshot: vi.fn(() => null),
+  };
+  const prepareFeatureFrame = vi.fn(() => ({
+    silentFeatureFrame: silentFrame,
+  }));
+  const { args } = createResolveFeatureFrameHarness({
+    audio,
+    status: {
+      isPlaying: false,
+      isLiveInputActive: true,
+      playbackSessionId: "song-1",
+    },
+    clockMode: "paused-playback",
+    renderLoopRefs: {
+      frameCacheRefs,
+    },
+  });
+
+  const result = resolveFeatureFrame(args, {
+    prepareFeatureFrame,
+  });
+
+  expect(audio.readAnalysisSnapshot).toHaveBeenCalled();
+  expect(prepareFeatureFrame).toHaveBeenCalled();
+  expect(result.effectiveFrame).toBe(silentFrame);
+  expect(frameCacheRefs.pausedFileFrameRef.current).toBeNull();
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
+    "silent-frame",
+  );
 });
 
 test("resolveFeatureFrame composes a source-cut frame during paused playback", () => {

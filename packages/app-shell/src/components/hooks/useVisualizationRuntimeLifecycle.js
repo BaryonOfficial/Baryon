@@ -31,6 +31,7 @@ export function useVisualizationRuntimeLifecycle({
   const lastLiveFrameRef = useRef(null);
   const lastActiveFrameRef = useRef(null);
   const lastIdleFrameRef = useRef(null);
+  const pausedFileFrameRef = useRef(null);
   const analysisSchedulerRef = useRef(createEmptyAnalysisSchedulerState());
   const lastLiveInputRuntimeStatusRef = useRef(null);
   const controlVersionRef = useRef(0);
@@ -50,6 +51,7 @@ export function useVisualizationRuntimeLifecycle({
     lastLiveFrameRef,
     lastActiveFrameRef,
     lastIdleFrameRef,
+    pausedFileFrameRef,
     analysisSchedulerRef,
   }).current;
   const controlCacheRefs = useRef({

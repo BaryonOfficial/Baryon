@@ -93,10 +93,10 @@ describe("Bebop XR design-system CSS", () => {
     ]);
   });
 
-  test("keeps desktop root chrome on the shared void token", () => {
+  test("keeps desktop root chrome on the shared black token", () => {
     const css = readWorkspaceFile("apps/desktop/src/index.css");
 
-    expect(css).toContain("background: var(--baryon-void);");
+    expect(css).toContain("background: var(--nd-black);");
     expect(css).not.toContain("#0a0b0f");
   });
 });

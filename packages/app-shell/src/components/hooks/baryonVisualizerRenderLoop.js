@@ -598,6 +598,7 @@ function classifyFrameSemanticSource(source) {
     case "scheduled-reuse":
     case "last-live-cache":
     case "static-idle-cache":
+    case "paused-file-hold":
       return { fresh: false, reused: true };
     default:
       return { fresh: false, reused: false };
@@ -717,6 +718,139 @@ function shouldComposeInactiveSourceFeatureFrame({
 
 function shouldCaptureLastLiveFrame({ featureFrame }) {
   return allowsCurrentLiveRenderFrame(featureFrame);
+}
+
+function cloneFrameValue(value, seen = new WeakMap()) {
+  if (value == null || typeof value !== "object") {
+    return value;
+  }
+
+  if (seen.has(value)) {
+    return seen.get(value);
+  }
+
+  if (value instanceof ArrayBuffer) {
+    return value.slice(0);
+  }
+
+  if (ArrayBuffer.isView(value)) {
+    const cloned =
+      typeof value.slice === "function"
+        ? value.slice()
+        : new value.constructor(value.buffer.slice(0));
+    seen.set(value, cloned);
+    return cloned;
+  }
+
+  if (Array.isArray(value)) {
+    const cloned = [];
+    seen.set(value, cloned);
+    for (const entry of value) {
+      cloned.push(cloneFrameValue(entry, seen));
+    }
+    return cloned;
+  }
+
+  const cloned = {};
+  seen.set(value, cloned);
+  for (const [key, entry] of Object.entries(value)) {
+    cloned[key] = cloneFrameValue(entry, seen);
+  }
+  return cloned;
+}
+
+function closePausedFileSourceEvidence(sourceEvidence) {
+  return {
+    ...(sourceEvidence ?? {}),
+    sourceBoundaryState: "muted",
+    currentSourceEvidence: false,
+    sourceEnergy: 0,
+    transport: {
+      ...(sourceEvidence?.transport ?? {}),
+      playing: false,
+      fileMuted: true,
+    },
+  };
+}
+
+function closePausedFileEnergyLedger(energyLedger) {
+  return {
+    ...(energyLedger ?? {}),
+    sourceBoundaryState: "muted",
+    sourceEnergy: 0,
+  };
+}
+
+function createPausedFileHoldFrame(featureFrame) {
+  const frame = cloneFrameValue(featureFrame);
+  frame.audioMotionAuthority = false;
+  frame.sourceEvidence = closePausedFileSourceEvidence(frame.sourceEvidence);
+  frame.energyLedger = closePausedFileEnergyLedger(frame.energyLedger);
+  frame.modalResponseCurrentRenderSourceEvidence = false;
+  frame.debug = {
+    ...(frame.debug ?? {}),
+    pausedFileHold: true,
+    sourceBoundaryState: "muted",
+    currentSourceEvidence: false,
+  };
+  return frame;
+}
+
+function getPlaybackSessionId(status) {
+  return status?.playbackSessionId ?? null;
+}
+
+function isActiveFilePlayback(status) {
+  return (
+    status?.isPlaying === true &&
+    status?.isLiveInputActive !== true &&
+    getPlaybackSessionId(status) != null
+  );
+}
+
+function readPausedFileHoldFrame({ frameCacheRefs, status, clockMode }) {
+  if (
+    clockMode !== "paused-playback" ||
+    status?.isPlaying === true ||
+    status?.isLiveInputActive === true
+  ) {
+    return null;
+  }
+
+  const playbackSessionId = getPlaybackSessionId(status);
+  if (playbackSessionId == null) {
+    return null;
+  }
+
+  const heldFrame = frameCacheRefs.pausedFileFrameRef?.current;
+  return heldFrame?.playbackSessionId === playbackSessionId
+    ? (heldFrame.frame ?? null)
+    : null;
+}
+
+function clearPausedFileHoldFrame(frameCacheRefs) {
+  if (frameCacheRefs.pausedFileFrameRef) {
+    frameCacheRefs.pausedFileFrameRef.current = null;
+  }
+}
+
+function refreshPausedFileHoldFrame({ frameCacheRefs, status, featureFrame }) {
+  const playbackSessionId = getPlaybackSessionId(status);
+  if (!frameCacheRefs.pausedFileFrameRef || playbackSessionId == null) {
+    return;
+  }
+
+  const heldFrame = frameCacheRefs.pausedFileFrameRef.current;
+  if (heldFrame?.playbackSessionId !== playbackSessionId) {
+    frameCacheRefs.pausedFileFrameRef.current = null;
+  }
+
+  if (allowsCurrentLiveRenderFrame(featureFrame)) {
+    frameCacheRefs.pausedFileFrameRef.current = {
+      playbackSessionId,
+      frame: createPausedFileHoldFrame(featureFrame),
+    };
+  }
 }
 
 function resolveCachedLiveFeatureFrame(lastLiveFrame, silentFeatureFrame) {
@@ -1954,15 +2088,26 @@ export function resolveFeatureFrame(
     lastIdleFrameRef,
     analysisSchedulerRef,
   } = renderLoopRefs.frameCacheRefs;
+  const pausedFileHoldFrame = readPausedFileHoldFrame({
+    frameCacheRefs: renderLoopRefs.frameCacheRefs,
+    status,
+    clockMode,
+  });
 
   const shouldReuseStaticIdleFrame =
-    shouldReuseIdleFrame(status, controls) && lastIdleFrameRef.current;
+    !pausedFileHoldFrame &&
+    shouldReuseIdleFrame(status, controls) &&
+    lastIdleFrameRef.current;
 
   let featureFrame = null;
-  let frameSemanticSource = shouldReuseStaticIdleFrame
-    ? "static-idle-cache"
-    : null;
-  if (!shouldReuseStaticIdleFrame) {
+  let frameSemanticSource = pausedFileHoldFrame
+    ? "paused-file-hold"
+    : shouldReuseStaticIdleFrame
+      ? "static-idle-cache"
+      : null;
+  if (pausedFileHoldFrame) {
+    featureFrame = pausedFileHoldFrame;
+  } else if (!shouldReuseStaticIdleFrame) {
     const buildFeatureFrameStartedAt = getRenderLoopWallTimeMs();
     const analysisSnapshotStartedAt = getRenderLoopWallTimeMs();
     const analysisSnapshot = audio.readAnalysisSnapshot();
@@ -2315,6 +2460,16 @@ export function resolveFeatureFrame(
   recordFrameSemanticSource(runtimeDiagnostics, frameSemanticSource);
 
   if (status.isPlaying || status.isLiveInputActive) {
+    if (isActiveFilePlayback(status)) {
+      refreshPausedFileHoldFrame({
+        frameCacheRefs: renderLoopRefs.frameCacheRefs,
+        status,
+        featureFrame,
+      });
+    } else {
+      clearPausedFileHoldFrame(renderLoopRefs.frameCacheRefs);
+    }
+
     if (shouldCaptureLastLiveFrame({ featureFrame })) {
       lastLiveFrameRef.current = featureFrame;
     } else if (!allowsCurrentLiveRenderFrame(featureFrame)) {
@@ -2330,6 +2485,9 @@ export function resolveFeatureFrame(
         featureEngine?.reset?.("live-input-interrupted");
       }
     } else {
+      if (frameSemanticSource !== "paused-file-hold") {
+        clearPausedFileHoldFrame(renderLoopRefs.frameCacheRefs);
+      }
       lastLiveFrameRef.current = null;
       lastActiveFrameRef.current = null;
       if (!controls.injectTestTone && clockMode !== "paused-playback") {

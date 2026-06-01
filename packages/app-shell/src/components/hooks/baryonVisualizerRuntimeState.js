@@ -320,6 +320,9 @@ export function clearFrameCache(frameCacheRefs) {
   frameCacheRefs.lastLiveFrameRef.current = null;
   frameCacheRefs.lastActiveFrameRef.current = null;
   frameCacheRefs.lastIdleFrameRef.current = null;
+  if (frameCacheRefs.pausedFileFrameRef) {
+    frameCacheRefs.pausedFileFrameRef.current = null;
+  }
   if (frameCacheRefs.analysisSchedulerRef) {
     frameCacheRefs.analysisSchedulerRef.current =
       createEmptyAnalysisSchedulerState();

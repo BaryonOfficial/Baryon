@@ -350,18 +350,7 @@
     @apply bg-background text-foreground;
     min-height: 100vh;
     min-width: 100vw;
-    background:
-      radial-gradient(
-        circle at top left,
-        color-mix(in srgb, var(--baryon-amber) 12%, transparent),
-        transparent 28%
-      ),
-      radial-gradient(
-        circle at bottom right,
-        color-mix(in srgb, var(--baryon-resonance) 9%, transparent),
-        transparent 20%
-      ),
-      var(--nd-black);
+    background: var(--nd-black);
     color: var(--nd-text-primary);
     font-family: var(--baryon-type-interface-family);
   }
@@ -382,18 +371,4 @@
     left: 0;
   }
 
-  body::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    background-image: radial-gradient(
-      circle,
-      var(--nd-grid) 0.7px,
-      transparent 0.7px
-    );
-    background-size: 14px 14px;
-    opacity: 0.3;
-    mix-blend-mode: screen;
-  }
 }

@@ -25,6 +25,20 @@ describe("render authority contract", () => {
     expect(allowsAudioMotion(ledgerDecayTail)).toBe(true);
   });
 
+  it("lets held render-authorized frames block audio motion explicitly", () => {
+    const heldFrame = {
+      fieldState: "active",
+      audioMotionAuthority: false,
+      energyLedger: {
+        projectedRenderEnergy: 0.08,
+        renderEnergyEpsilon: 1e-6,
+      },
+    };
+
+    expect(hasRenderAuthority(heldFrame)).toBe(true);
+    expect(allowsAudioMotion(heldFrame)).toBe(false);
+  });
+
   it("does not allow legacy render-shaped fields without the ledger", () => {
     expect(
       hasRenderAuthority({
