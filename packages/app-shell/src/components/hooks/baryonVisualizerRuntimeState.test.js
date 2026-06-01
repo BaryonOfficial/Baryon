@@ -234,6 +234,14 @@ test("publishes modal basis cache diagnostics in render perf snapshots", () => {
         modalBasisCacheBandwidthRejectedPhaseCurrentModalEnergy: 0.13,
         liveSynthesisRawGradientEnvelope: 0.38,
         liveSynthesisPhaseCurrentGradientEnvelope: 0.24,
+        modalVarietyAudit: {
+          semanticModeCount: 9,
+          representedBasisPageModeCount: 5,
+          basisAtlasPageCapacity: 12,
+          basisAtlasPressure: 5 / 12,
+          energyEffectiveModeCount: 4.2,
+          renderRepresentedEnergyRatio: 0.77,
+        },
       },
     });
 
@@ -306,6 +314,14 @@ test("publishes modal basis cache diagnostics in render perf snapshots", () => {
     expect(snapshot.render.liveSynthesisPhaseCurrentGradientEnvelope).toBe(
       0.24,
     );
+    expect(snapshot.render.modalVarietyAudit).toEqual({
+      semanticModeCount: 9,
+      representedBasisPageModeCount: 5,
+      basisAtlasPageCapacity: 12,
+      basisAtlasPressure: 5 / 12,
+      energyEffectiveModeCount: 4.2,
+      renderRepresentedEnergyRatio: 0.77,
+    });
   } finally {
     globalThis.window = previousWindow;
   }

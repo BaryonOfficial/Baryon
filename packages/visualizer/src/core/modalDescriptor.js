@@ -123,6 +123,123 @@ function countPhaseAuthorityModes(phaseSlots, maxCount) {
   return activeCount;
 }
 
+function getEntryModeOrder(entry) {
+  return Math.max(Math.abs(entry.u), Math.abs(entry.v), Math.abs(entry.w));
+}
+
+function getSpatialFamilyKey(entry) {
+  return [Math.abs(entry.u), Math.abs(entry.v), Math.abs(entry.w)]
+    .sort((left, right) => left - right)
+    .join(":");
+}
+
+function divideOrFallback(numerator, denominator, fallback = 0) {
+  return denominator > 0 ? numerator / denominator : fallback;
+}
+
+function buildModalVarietyAudit({
+  slotAssignments,
+  rejectedEntries,
+  structuralAdmission,
+  phaseAuthorityModeCount,
+  modeIdentityRetentionRatio,
+}) {
+  const acceptedEntries = slotAssignments.filter(Boolean);
+  const representedEntries = [];
+  const familyKeys = new Set();
+  const representedFamilyKeys = new Set();
+  let acceptedModalEnergy = 0;
+  let representedModalEnergy = 0;
+  let modalEnergySquaredSum = 0;
+  let minModeOrder = Infinity;
+  let maxModeOrder = 0;
+  let weightedModeOrderSum = 0;
+
+  for (let slotIndex = 0; slotIndex < slotAssignments.length; slotIndex += 1) {
+    const entry = slotAssignments[slotIndex];
+    if (!entry) {
+      continue;
+    }
+
+    const modalEnergy = Math.max(0, entry.coefficient) ** 2;
+    const modeOrder = getEntryModeOrder(entry);
+    acceptedModalEnergy += modalEnergy;
+    modalEnergySquaredSum += modalEnergy * modalEnergy;
+    minModeOrder = Math.min(minModeOrder, modeOrder);
+    maxModeOrder = Math.max(maxModeOrder, modeOrder);
+    weightedModeOrderSum += modalEnergy * modeOrder;
+    familyKeys.add(getSpatialFamilyKey(entry));
+
+    if (
+      modeOrder <= structuralAdmission.maxRepresentableModeIndex &&
+      slotIndex < structuralAdmission.basisAtlasPageCapacity
+    ) {
+      representedEntries.push(entry);
+      representedFamilyKeys.add(getSpatialFamilyKey(entry));
+      representedModalEnergy += modalEnergy;
+    }
+  }
+
+  const descriptorRejectedModalEnergy = rejectedEntries.reduce(
+    (total, entry) => total + Math.max(0, entry.coefficient) ** 2,
+    0,
+  );
+  const semanticModalEnergy =
+    acceptedModalEnergy + descriptorRejectedModalEnergy;
+  const energyEffectiveModeCount =
+    modalEnergySquaredSum > 0
+      ? (acceptedModalEnergy * acceptedModalEnergy) / modalEnergySquaredSum
+      : 0;
+
+  return {
+    semanticModeCount: acceptedEntries.length,
+    representedBasisPageModeCount: representedEntries.length,
+    basisAtlasPageCapacity: structuralAdmission.basisAtlasPageCapacity,
+    basisAtlasPressure: divideOrFallback(
+      representedEntries.length,
+      structuralAdmission.basisAtlasPageCapacity,
+    ),
+    spatialFamilyCount: familyKeys.size,
+    representedSpatialFamilyCount: representedFamilyKeys.size,
+    energyEffectiveModeCount,
+    modeOrderMin: Number.isFinite(minModeOrder) ? minModeOrder : 0,
+    modeOrderMax: maxModeOrder,
+    energyWeightedModeOrderMean: divideOrFallback(
+      weightedModeOrderSum,
+      acceptedModalEnergy,
+    ),
+    phaseAuthorityCoverage: divideOrFallback(
+      phaseAuthorityModeCount,
+      acceptedEntries.length,
+    ),
+    modeIdentityRetentionRatio: clamp01(modeIdentityRetentionRatio ?? 1),
+    semanticModalEnergy,
+    representedModalEnergy,
+    renderRepresentedEnergyRatio: divideOrFallback(
+      representedModalEnergy,
+      semanticModalEnergy,
+      semanticModalEnergy > 0 ? 0 : 1,
+    ),
+    descriptorRejectedModeCount: rejectedEntries.length,
+    descriptorRejectedEnergyRatio: divideOrFallback(
+      descriptorRejectedModalEnergy,
+      semanticModalEnergy,
+    ),
+    basisAtlasCapacityRejectedCount:
+      structuralAdmission.basisAtlasCapacityRejectedCount,
+    basisAtlasCapacityRejectedEnergyRatio: divideOrFallback(
+      structuralAdmission.basisAtlasCapacityRejectedEnergy,
+      semanticModalEnergy,
+    ),
+    spatialBandwidthRejectedCount:
+      structuralAdmission.spatialBandwidthRejectedCount,
+    spatialBandwidthRejectedEnergyRatio: divideOrFallback(
+      structuralAdmission.spatialBandwidthRejectedEnergy,
+      semanticModalEnergy,
+    ),
+  };
+}
+
 function buildAdmissionEntries({
   slots,
   phaseSlots,
@@ -441,6 +558,13 @@ export function buildCanonicalFullModalDescriptor({
   )
     ? Math.max(0, Math.floor(phaseAuthorityModeCount))
     : countPhaseAuthorityModes(modalFieldPhaseSlots, validModeCount);
+  const modalVarietyAudit = buildModalVarietyAudit({
+    slotAssignments,
+    rejectedEntries,
+    structuralAdmission,
+    phaseAuthorityModeCount: resolvedPhaseAuthorityModeCount,
+    modeIdentityRetentionRatio,
+  });
 
   return {
     generation: Math.max(0, Math.floor(generation ?? 0)),
@@ -500,6 +624,7 @@ export function buildCanonicalFullModalDescriptor({
         structuralAdmission.spatialBandwidthRejectedCount,
       basisAtlasPageCapacity: structuralAdmission.basisAtlasPageCapacity,
       maxRepresentableModeIndex: structuralAdmission.maxRepresentableModeIndex,
+      modalVarietyAudit,
       rejectionReasons,
     },
     slotViews: {

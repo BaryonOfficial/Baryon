@@ -51,6 +51,19 @@ function createPostProcessDiagnostics() {
     traaNodeActive: false,
     bloomPassPresent: false,
     bloomComposeEnabled: false,
+    temporalHistoryBlend: null,
+    temporalHistoryGraphEnabled: null,
+  };
+}
+
+function createRenderSurfaceDiagnostics() {
+  return {
+    cssWidth: 0,
+    cssHeight: 0,
+    backingWidth: 0,
+    backingHeight: 0,
+    backingMegapixels: 0,
+    pixelRatio: 1,
   };
 }
 
@@ -62,8 +75,11 @@ function createAdaptiveRaymarchDiagnostics() {
     requestedRenderScale: 1,
     effectiveRenderScale: 1,
     currentRung: 0,
+    currentScaleRung: 0,
     stepDownCount: 0,
     stepUpCount: 0,
+    scaleStepDownCount: 0,
+    scaleStepUpCount: 0,
     targetFps: 60,
     targetFrameTimeMs: 1000 / 60,
     decisionFrameCount: 0,
@@ -156,6 +172,33 @@ function readFiniteDiagnosticNumber(value, fallback = 0) {
 
 function readDiagnosticString(value, fallback = null) {
   return typeof value === "string" && value.length > 0 ? value : fallback;
+}
+
+function snapshotRenderSurfaceDiagnostics(renderSurface) {
+  if (!renderSurface) {
+    return createRenderSurfaceDiagnostics();
+  }
+
+  const backingWidth = Math.round(
+    readFiniteDiagnosticNumber(renderSurface.backingWidth),
+  );
+  const backingHeight = Math.round(
+    readFiniteDiagnosticNumber(renderSurface.backingHeight),
+  );
+  const backingMegapixels =
+    Number.isFinite(renderSurface.backingMegapixels) &&
+    renderSurface.backingMegapixels >= 0
+      ? Number(renderSurface.backingMegapixels)
+      : (backingWidth * backingHeight) / 1_000_000;
+
+  return {
+    cssWidth: readFiniteDiagnosticNumber(renderSurface.cssWidth),
+    cssHeight: readFiniteDiagnosticNumber(renderSurface.cssHeight),
+    backingWidth,
+    backingHeight,
+    backingMegapixels,
+    pixelRatio: readFiniteDiagnosticNumber(renderSurface.pixelRatio, 1),
+  };
 }
 
 export function snapshotSourceEvidenceDiagnostics(sourceEvidence) {
@@ -317,9 +360,6 @@ export function clearFrameCache(frameCacheRefs) {
   frameCacheRefs.lastLiveFrameRef.current = null;
   frameCacheRefs.lastActiveFrameRef.current = null;
   frameCacheRefs.lastIdleFrameRef.current = null;
-  if (frameCacheRefs.pausedFileFrameRef) {
-    frameCacheRefs.pausedFileFrameRef.current = null;
-  }
   if (frameCacheRefs.analysisSchedulerRef) {
     frameCacheRefs.analysisSchedulerRef.current =
       createEmptyAnalysisSchedulerState();
@@ -385,6 +425,7 @@ const MODAL_BASIS_CACHE_RENDER_DIAGNOSTIC_DEFAULTS = Object.freeze({
   liveSynthesisResolvedPhaseCurrentModalEnergyRatio: 1,
   liveSynthesisRawGradientEnvelope: 0,
   liveSynthesisPhaseCurrentGradientEnvelope: 0,
+  modalVarietyAudit: null,
 });
 
 export function createRuntimeDiagnostics() {
@@ -459,6 +500,7 @@ export function createRuntimeDiagnostics() {
     },
     modalFreshness: createModalFreshnessDiagnostics(),
     postProcess: createPostProcessDiagnostics(),
+    renderSurface: createRenderSurfaceDiagnostics(),
     adaptiveRaymarch: createAdaptiveRaymarchDiagnostics(),
     uiInteraction: createUiInteractionDiagnostics(),
     perfLastPublishedAtMs: Number.NEGATIVE_INFINITY,
@@ -478,6 +520,15 @@ export function initializeAdaptiveRaymarchRuntimeState(runtimeState) {
   ) {
     runtimeState.autoRaymarchResumeRung = null;
   }
+  if (
+    !Object.prototype.hasOwnProperty.call(
+      runtimeState,
+      "autoRaymarchResumeScaleRung",
+    )
+  ) {
+    runtimeState.autoRaymarchResumeScaleRung = null;
+  }
+
   return runtimeState;
 }
 
@@ -488,9 +539,22 @@ function readFiniteNumber(value, fallback = 0) {
 function snapshotModalBasisCacheRenderDiagnostics(renderDiagnostics = null) {
   return Object.fromEntries(
     Object.entries(MODAL_BASIS_CACHE_RENDER_DIAGNOSTIC_DEFAULTS).map(
-      ([key, fallback]) => [key, renderDiagnostics?.[key] ?? fallback],
+      ([key, fallback]) => [
+        key,
+        key === "modalVarietyAudit"
+          ? snapshotModalVarietyAudit(renderDiagnostics?.modalVarietyAudit)
+          : (renderDiagnostics?.[key] ?? fallback),
+      ],
     ),
   );
+}
+
+function snapshotModalVarietyAudit(modalVarietyAudit) {
+  if (!modalVarietyAudit || typeof modalVarietyAudit !== "object") {
+    return null;
+  }
+
+  return { ...modalVarietyAudit };
 }
 
 export function updateObservationTransferRenderDiagnostics(
@@ -746,6 +810,10 @@ export function updateObservationTransferRenderDiagnostics(
         modalBasisCache?.liveSynthesisPhaseCurrentGradientEnvelope ??
         modalBasisCacheDescriptor?.liveSynthesisPhaseCurrentGradientEnvelope,
     );
+  renderDiagnostics.modalVarietyAudit = snapshotModalVarietyAudit(
+    raymarchDebug.modalVarietyAudit ??
+      runtimeState?.currentModalDescriptor?.diagnostics?.modalVarietyAudit,
+  );
 
   return runtimeDiagnostics;
 }
@@ -756,6 +824,7 @@ export function clearAdaptiveRaymarchResumeState(runtimeState) {
   }
 
   runtimeState.autoRaymarchResumeRung = null;
+  runtimeState.autoRaymarchResumeScaleRung = null;
 }
 
 export function recordRuntimePerfSample(
@@ -907,7 +976,14 @@ function buildRuntimePerfSnapshot(runtimeDiagnostics) {
         runtimeDiagnostics?.postProcess?.bloomPassPresent ?? false,
       bloomComposeEnabled:
         runtimeDiagnostics?.postProcess?.bloomComposeEnabled ?? false,
+      temporalHistoryBlend:
+        runtimeDiagnostics?.postProcess?.temporalHistoryBlend ?? null,
+      temporalHistoryGraphEnabled:
+        runtimeDiagnostics?.postProcess?.temporalHistoryGraphEnabled ?? null,
     },
+    renderSurface: snapshotRenderSurfaceDiagnostics(
+      runtimeDiagnostics?.renderSurface,
+    ),
     adaptiveRaymarch: runtimeDiagnostics?.adaptiveRaymarch
       ? { ...runtimeDiagnostics.adaptiveRaymarch }
       : null,
@@ -989,6 +1065,9 @@ export function snapshotRuntimeDiagnostics(runtimeDiagnostics) {
     postProcess: runtimeDiagnostics.postProcess
       ? { ...runtimeDiagnostics.postProcess }
       : null,
+    renderSurface: snapshotRenderSurfaceDiagnostics(
+      runtimeDiagnostics.renderSurface,
+    ),
     adaptiveRaymarch: runtimeDiagnostics.adaptiveRaymarch
       ? { ...runtimeDiagnostics.adaptiveRaymarch }
       : null,

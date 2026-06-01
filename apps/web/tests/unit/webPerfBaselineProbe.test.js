@@ -17,6 +17,7 @@ test("resolvePerfProbeConfig defaults to fixed Max Quality baseline cases", () =
 
   assert.equal(config.url, "http://127.0.0.1:5173/");
   assert.equal(config.headless, false);
+  assert.equal(config.audioSource, "test-tone");
   assert.equal(config.sampleMs, 5000);
   assert.equal(config.warmupMs, 3000);
   assert.deepEqual(
@@ -40,6 +41,18 @@ test("resolvePerfProbeConfig defaults to fixed Max Quality baseline cases", () =
     config.outputDir,
     /test-results\/perf\/web-baseline\/2026-05-31t14-30-00-000z$/,
   );
+});
+
+test("resolvePerfProbeConfig selects dense file audio source", () => {
+  const config = resolvePerfProbeConfig({
+    env: {
+      BARYON_WEB_PERF_AUDIO_SOURCE: "test-tone",
+    },
+    argv: ["--audio-source", "dense-file"],
+    now: new Date("2026-05-31T14:30:00.000Z"),
+  });
+
+  assert.equal(config.audioSource, "dense-file");
 });
 
 test("resolvePerfProbeConfig selects and filters cost profile scenarios", () => {

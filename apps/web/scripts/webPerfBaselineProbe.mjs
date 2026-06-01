@@ -1,4 +1,6 @@
 import { chromium } from "@playwright/test";
+import { Buffer } from "node:buffer";
+import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -11,6 +13,20 @@ const DEFAULT_OUTPUT_ROOT = path.join(
   "perf",
   "web-baseline",
 );
+const DENSE_POLYPHONIC_FIXTURE = JSON.parse(
+  readFileSync(
+    new URL(
+      "../../../packages/visualizer/src/utils/audio/fixtures/dense-polyphonic-12s.json",
+      import.meta.url,
+    ),
+    "utf8",
+  ),
+);
+const AUDIO_SOURCE_MODES = Object.freeze({
+  testTone: "test-tone",
+  denseFile: "dense-file",
+  none: "none",
+});
 
 export const DEFAULT_BASELINE_CASES = Object.freeze([
   Object.freeze({
@@ -138,6 +154,8 @@ function parseArgs(argv = []) {
       args.profile = readValue();
     } else if (arg === "--scenario" || arg.startsWith("--scenario=")) {
       args.scenarioFilter = readValue();
+    } else if (arg === "--audio-source" || arg.startsWith("--audio-source=")) {
+      args.audioSource = readValue();
     } else if (arg === "--output-dir" || arg.startsWith("--output-dir=")) {
       args.outputDir = readValue();
     }
@@ -170,6 +188,18 @@ function normalizeControlMutations(mutations) {
     }
     return [entry[0], entry[1]];
   });
+}
+
+function normalizeAudioSource(value) {
+  const normalized = String(value ?? AUDIO_SOURCE_MODES.testTone)
+    .trim()
+    .toLowerCase();
+  if (Object.values(AUDIO_SOURCE_MODES).includes(normalized)) {
+    return normalized;
+  }
+  throw new Error(
+    `[web-perf-baseline] Invalid audio source "${value}". Expected test-tone, dense-file, or none.`,
+  );
 }
 
 function resolveProfileScenarios(
@@ -258,6 +288,9 @@ export function resolvePerfProbeConfig({
         : parseBoolean(env.BARYON_WEB_PERF_HEADLESS, false),
     browserChannel: env.BARYON_WEB_PERF_BROWSER_CHANNEL || null,
     executablePath: env.BARYON_WEB_PERF_EXECUTABLE_PATH || null,
+    audioSource: normalizeAudioSource(
+      args.audioSource ?? env.BARYON_WEB_PERF_AUDIO_SOURCE,
+    ),
     sampleMs: parsePositiveInteger(
       args.sampleMs ?? env.BARYON_WEB_PERF_SAMPLE_MS,
       5000,
@@ -335,6 +368,83 @@ export function summarizeFrameIntervals(intervals, durationMs) {
   };
 }
 
+function createDensePolyphonicFixtureWavBuffer({
+  sampleRate = 44100,
+  amplitude = 0.82,
+  durationSeconds = 30,
+} = {}) {
+  const fixtureDurationMs = DENSE_POLYPHONIC_FIXTURE.durationMs;
+  const frameCount = Math.max(1, Math.floor(sampleRate * durationSeconds));
+  const channelCount = 1;
+  const bytesPerSample = 2;
+  const blockAlign = channelCount * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = frameCount * blockAlign;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const bytes = new Uint8Array(buffer);
+  const view = new DataView(buffer);
+  const encoder = new TextEncoder();
+  const fixtureFrames = DENSE_POLYPHONIC_FIXTURE.frames;
+  const writeAscii = (offset, value) => {
+    bytes.set(encoder.encode(value), offset);
+  };
+
+  writeAscii(0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  writeAscii(8, "WAVE");
+  writeAscii(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, channelCount, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bytesPerSample * 8, true);
+  writeAscii(36, "data");
+  view.setUint32(40, dataSize, true);
+
+  let rightIndex = 0;
+  for (let index = 0; index < frameCount; index += 1) {
+    const timeMs = ((index / sampleRate) * 1000) % fixtureDurationMs;
+    while (
+      rightIndex < fixtureFrames.length - 1 &&
+      fixtureFrames[rightIndex].frameTimeMs < timeMs
+    ) {
+      rightIndex += 1;
+    }
+    if (rightIndex > 0 && fixtureFrames[rightIndex - 1].frameTimeMs > timeMs) {
+      rightIndex = 0;
+    }
+
+    const rightFrame =
+      fixtureFrames[Math.min(rightIndex, fixtureFrames.length - 1)];
+    const leftFrame = fixtureFrames[Math.max(0, rightIndex - 1)] ?? rightFrame;
+    const range = Math.max(
+      1,
+      (rightFrame?.frameTimeMs ?? 0) - (leftFrame?.frameTimeMs ?? 0),
+    );
+    const mix =
+      rightFrame === leftFrame
+        ? 0
+        : Math.max(0, Math.min(1, (timeMs - leftFrame.frameTimeMs) / range));
+    const leftData = leftFrame.analysisSnapshot.timeData;
+    const rightData = rightFrame.analysisSnapshot.timeData;
+    const position = index % Math.min(leftData.length, rightData.length);
+    const value = leftData[position] * (1 - mix) + rightData[position] * mix;
+    const normalized = Math.max(
+      -1,
+      Math.min(1, ((value - 128) / 128) * amplitude),
+    );
+    view.setInt16(
+      44 + index * bytesPerSample,
+      Math.round(normalized * 0x7fff),
+      true,
+    );
+  }
+
+  return Buffer.from(buffer);
+}
+
 async function waitForBaryonControls(page) {
   await page.waitForFunction(
     () => typeof window.__baryonControls?.setControl === "function",
@@ -355,15 +465,9 @@ async function applyProbeControls(page, controlMutations) {
       window.__baryonControls.setControl(key, value);
     }
     await new Promise((resolve) => window.requestAnimationFrame(resolve));
-    window.__baryonControls.setControl("raymarchSteps", 80);
-    window.__baryonControls.setControl("injectTestTone", true);
   }, controlMutations);
 
-  const expectedControls = Object.fromEntries([
-    ...controlMutations,
-    ["raymarchSteps", 80],
-    ["injectTestTone", true],
-  ]);
+  const expectedControls = Object.fromEntries(controlMutations);
   await page.waitForFunction(
     (expected) => {
       const controls = window.__baryonControls?.getState?.() ?? {};
@@ -373,6 +477,41 @@ async function applyProbeControls(page, controlMutations) {
     },
     expectedControls,
     { timeout: 10000 },
+  );
+}
+
+async function prepareProbeAudioSource(page, audioSource) {
+  if (audioSource !== AUDIO_SOURCE_MODES.denseFile) {
+    return;
+  }
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "dense-polyphonic-loop-30s.wav",
+    mimeType: "audio/wav",
+    buffer: createDensePolyphonicFixtureWavBuffer(),
+  });
+  const playButton = page.getByRole("button", { name: "Play", exact: true });
+  await playButton.click();
+  await page.waitForFunction(
+    () => {
+      const snapshot = window.__baryonAuditSnapshot;
+      const modalFreshness = window.__baryonPerfMetrics?.modalFreshness;
+      const perfMetricsReady =
+        modalFreshness?.sourceMode === "file" &&
+        modalFreshness?.fieldState !== "idle" &&
+        modalFreshness?.sourceEvidence?.transport?.playing === true;
+      if (perfMetricsReady) {
+        return true;
+      }
+
+      return (
+        snapshot?.audioInputMode === "file" &&
+        snapshot?.analysisSourceUsed === "file" &&
+        snapshot?.raymarchDebug?.fieldState !== "idle"
+      );
+    },
+    null,
+    { timeout: 15000 },
   );
 }
 
@@ -521,7 +660,10 @@ function composeScenarioControlMutations(config, scenario) {
   }
   merged.set("renderQualityPreset", "max-quality");
   merged.set("raymarchSteps", 80);
-  merged.set("injectTestTone", true);
+  merged.set(
+    "injectTestTone",
+    config.audioSource === AUDIO_SOURCE_MODES.testTone,
+  );
   return [...merged.entries()];
 }
 
@@ -542,6 +684,7 @@ async function runBaselineCase(browser, config, scenario, baselineCase) {
     await waitForBaryonControls(page);
     await applyProbeControls(page, controlMutations);
     await waitForBaryonRuntime(page);
+    await prepareProbeAudioSource(page, config.audioSource);
     await waitForMaxQualityRuntime(page);
     await page.waitForTimeout(config.warmupMs);
 
@@ -555,6 +698,7 @@ async function runBaselineCase(browser, config, scenario, baselineCase) {
       ok: true,
       scenario: scenario.name,
       name: baselineCase.name,
+      audioSource: config.audioSource,
       viewport: baselineCase.viewport,
       deviceScaleFactor: baselineCase.deviceScaleFactor,
       controls: Object.fromEntries(controlMutations),
@@ -566,6 +710,7 @@ async function runBaselineCase(browser, config, scenario, baselineCase) {
       frameSummary,
       renderSurface: sample.perfMetrics?.renderSurface ?? null,
       render: sample.perfMetrics?.render ?? null,
+      modalVarietyAudit: sample.perfMetrics?.render?.modalVarietyAudit ?? null,
       postProcess: sample.perfMetrics?.postProcess ?? null,
       perfBreakdown: sample.perfMetrics?.perfBreakdown ?? null,
       frameDrops: sample.perfMetrics?.frameDrops ?? null,
@@ -594,6 +739,7 @@ async function runBaselineCase(browser, config, scenario, baselineCase) {
       ok: false,
       scenario: scenario.name,
       name: baselineCase.name,
+      audioSource: config.audioSource,
       viewport: baselineCase.viewport,
       deviceScaleFactor: baselineCase.deviceScaleFactor,
       requestedPixelCount:
@@ -685,6 +831,7 @@ export async function runWebPerfBaselineProbe(
     headless: config.headless,
     browserChannel: config.browserChannel,
     executablePath: config.executablePath,
+    audioSource: config.audioSource,
     sampleMs: config.sampleMs,
     warmupMs: config.warmupMs,
     outputDir: config.outputDir,

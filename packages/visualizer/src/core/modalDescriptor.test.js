@@ -154,6 +154,26 @@ describe("buildCanonicalFullModalDescriptor", () => {
       0.4 ** 2,
       4,
     );
+    expect(descriptor.diagnostics.modalVarietyAudit).toMatchObject({
+      semanticModeCount: 3,
+      representedBasisPageModeCount: 2,
+      basisAtlasPageCapacity: 2,
+      basisAtlasPressure: 1,
+      spatialFamilyCount: 3,
+      representedSpatialFamilyCount: 2,
+      descriptorRejectedModeCount: 0,
+      basisAtlasCapacityRejectedCount: 1,
+      spatialBandwidthRejectedCount: 0,
+    });
+    expect(
+      descriptor.diagnostics.modalVarietyAudit.renderRepresentedEnergyRatio,
+    ).toBeCloseTo((0.6 ** 2 + 0.5 ** 2) / (0.6 ** 2 + 0.5 ** 2 + 0.4 ** 2), 6);
+    expect(
+      descriptor.diagnostics.modalVarietyAudit.energyEffectiveModeCount,
+    ).toBeCloseTo(
+      (0.6 ** 2 + 0.5 ** 2 + 0.4 ** 2) ** 2 / (0.6 ** 4 + 0.5 ** 4 + 0.4 ** 4),
+      6,
+    );
   });
 
   it("reports spatial-bandwidth rejection separately from atlas capacity", () => {
