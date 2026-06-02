@@ -674,11 +674,15 @@ test.describe("Baryon control smoke", () => {
     const manual3dStart = await page.evaluate(
       () => window.__baryonControlState?.scene?.rotationY ?? 0,
     );
-    await page.waitForTimeout(120);
-    const manual3dEnd = await page.evaluate(
-      () => window.__baryonControlState?.scene?.rotationY ?? 0,
-    );
-    expect(manual3dEnd).not.toBeCloseTo(manual3dStart, 3);
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            () => window.__baryonControlState?.scene?.rotationY ?? 0,
+          ),
+        { timeout: 3000 },
+      )
+      .not.toBeCloseTo(manual3dStart, 3);
 
     await setControl(page, "rotationMode", "audio");
     await setControl(page, "injectTestTone", true);
