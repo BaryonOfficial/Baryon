@@ -134,6 +134,14 @@ function mixColor(left, right, t) {
   return left.map((channel, index) => mix(channel, right[index] ?? channel, t));
 }
 
+function multiplyColor(color, scalar) {
+  return color.map((channel) => channel * scalar);
+}
+
+function addColor(left, right) {
+  return left.map((channel, index) => channel + (right[index] ?? 0));
+}
+
 function smoothstep(edge0, edge1, x) {
   if (edge0 === edge1) {
     return x < edge0 ? 0 : 1;
@@ -1207,6 +1215,110 @@ export function deriveCrowdedHighlightMix({
     crowdedHotCoreMix: clamp01(hotCoreMix) * hotCoreReduction,
     crowdedWhiteEmissionMix:
       clamp01(whiteEmissionMix) * whiteEmissionReduction * radianceAuthority,
+  };
+}
+
+export function deriveWhiteEmissionFieldAuthority({
+  ridgeConcentration = 0,
+  causticRidgeAuthority = 0,
+  photographicFocus = 0,
+  structuralConcentration = 0,
+  modalCoefficientEnergy = 0,
+} = {}) {
+  const whiteEmissionRidgeEvidence = clamp01(
+    Math.max(ridgeConcentration, causticRidgeAuthority),
+  );
+  const whiteEmissionLocalEvidence = clamp01(
+    Math.max(
+      ridgeConcentration,
+      clamp01(photographicFocus) * whiteEmissionRidgeEvidence,
+    ),
+  );
+  const whiteEmissionStructuralDrive = clamp01(
+    Math.max(structuralConcentration, modalCoefficientEnergy),
+  );
+  const whiteEmissionFieldAuthority = clamp01(
+    whiteEmissionLocalEvidence * whiteEmissionStructuralDrive,
+  );
+
+  return {
+    whiteEmissionRidgeEvidence,
+    whiteEmissionLocalEvidence,
+    whiteEmissionStructuralDrive,
+    whiteEmissionFieldAuthority,
+  };
+}
+
+export function deriveCrowdedWhiteEmissionMix({
+  holographicEmissionLift = 0,
+  whiteEmissionFieldAuthority = 0,
+  whiteEmissionCrowding = 0,
+  whiteEmissionFieldCrowding = null,
+  crowdingReduction = WHITE_EMISSION_CROWDING_REDUCTION,
+} = {}) {
+  const fieldAuthority = clamp01(whiteEmissionFieldAuthority);
+  const fieldCrowding =
+    whiteEmissionFieldCrowding == null
+      ? 1 - fieldAuthority
+      : clamp01(whiteEmissionFieldCrowding);
+  const crowding = Math.max(clamp01(whiteEmissionCrowding), fieldCrowding);
+  const crowdingRelief =
+    1 - crowding * clamp01(safeFinite(crowdingReduction, 0));
+  const crowdedWhiteEmissionMix =
+    clamp01(holographicEmissionLift) * fieldAuthority * crowdingRelief;
+
+  return {
+    whiteEmissionFieldCrowding: fieldCrowding,
+    crowdingRelief,
+    crowdedWhiteEmissionMix,
+  };
+}
+
+export function deriveMaterialRadianceTransfer({
+  stabilizedDensity = 0,
+  causticVisibleDensity = 0,
+  volumeColor = [1, 1, 1],
+  surfaceColor = [1, 1, 1],
+  structureAwareEmissionGain = 1,
+} = {}) {
+  const safeStabilizedDensity = Math.max(
+    0,
+    safeFinite(stabilizedDensity, 0),
+  );
+  const safeCausticVisibleDensity = Math.max(
+    0,
+    safeFinite(causticVisibleDensity, 0),
+  );
+  const safeGain = Math.max(0, safeFinite(structureAwareEmissionGain, 1));
+  const resolvedVolumeColor = readVector3(volumeColor, [1, 1, 1]);
+  const resolvedSurfaceColor = readVector3(surfaceColor, [1, 1, 1]);
+  const supportVisibleDensity = Math.max(
+    safeStabilizedDensity - safeCausticVisibleDensity,
+    0,
+  );
+  const supportRevealColor = multiplyColor(
+    resolvedSurfaceColor,
+    PHOTOGRAPHIC_DARK_BODY_RATIO,
+  );
+  const causticRadianceContribution = multiplyColor(
+    resolvedVolumeColor,
+    safeCausticVisibleDensity,
+  );
+  const supportRevealContribution = multiplyColor(
+    supportRevealColor,
+    supportVisibleDensity,
+  );
+  const finalRadiance = multiplyColor(
+    addColor(causticRadianceContribution, supportRevealContribution),
+    safeGain,
+  );
+
+  return {
+    supportVisibleDensity,
+    supportRevealColor,
+    causticRadianceContribution,
+    supportRevealContribution,
+    finalRadiance,
   };
 }
 

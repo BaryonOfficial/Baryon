@@ -52,6 +52,11 @@ import {
 } from "./observationTransfer.js";
 import { deriveRaymarchDiagnosticVisibility } from "./diagnosticVisibility.js";
 import {
+  RAYMARCH_FORBIDDEN_CONSUMER_SUMMARY,
+  RAYMARCH_MATERIAL_TRANSFER_LANES,
+  RAYMARCH_QUANTITY_LEDGER_VERSION,
+} from "./quantityLedger.js";
+import {
   buildRaymarchPerformanceGovernor,
   copyModalField,
   deriveFieldExcitation,
@@ -1186,6 +1191,9 @@ function buildRaymarchDebugSnapshot(
       modalDescriptor?.diagnostics?.phaseAuthorityModeCount ??
       modalBasisPhaseAuthorityModeCount,
     modalVarietyAudit: modalDescriptor?.diagnostics?.modalVarietyAudit ?? null,
+    renderQuantityLedgerVersion: RAYMARCH_QUANTITY_LEDGER_VERSION,
+    renderMaterialTransferLanes: RAYMARCH_MATERIAL_TRANSFER_LANES,
+    renderQuantityForbiddenConsumers: RAYMARCH_FORBIDDEN_CONSUMER_SUMMARY,
     dominantFrequency:
       featureFrame?.debug?.dominantFrequency ??
       featureFrame?.debug?.fundamentalFrequency ??

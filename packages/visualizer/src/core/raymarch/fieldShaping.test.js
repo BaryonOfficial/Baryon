@@ -29,6 +29,7 @@ import {
   MODAL_CROWDING_BODY_COMPRESSION,
   OPTICAL_COLOR_DENSITY_DELTA_MAX,
   OPTICAL_RECTANGULAR_STARTUP_IMPORT_DELTA_MAX,
+  PHOTOGRAPHIC_DARK_BODY_RATIO,
   STRUCTURE_AWARE_EMISSION_BODY_SUPPRESSION,
   STRUCTURE_AWARE_EMISSION_MIN_GAIN,
   WHITE_EMISSION_CROWDING_REDUCTION,
@@ -44,10 +45,13 @@ import {
   deriveHolographicColorMix,
   deriveHolographicFresnel,
   deriveCrowdedHighlightMix,
+  deriveCrowdedWhiteEmissionMix,
   deriveLiveSynthesisCancellationSuppression,
   deriveHotCoreCrowding,
   deriveHotCoreMix,
+  deriveMaterialRadianceTransfer,
   derivePhotographicCymaticProbe,
+  deriveWhiteEmissionFieldAuthority,
   deriveModalCrowdingDensity,
   deriveShellWeight,
   deriveStableContourAccent,
@@ -2111,6 +2115,81 @@ describe("field shaping", () => {
     );
     expect(highlight.crowdedHotCoreMix).toBeGreaterThan(0.48);
     expect(highlight.crowdedWhiteEmissionMix).toBeLessThan(0.52 * 0.45);
+  });
+
+  it("derives white-emission authority from structural and local field evidence only", () => {
+    const supportOnlyFocus = deriveWhiteEmissionFieldAuthority({
+      ridgeConcentration: 0,
+      causticRidgeAuthority: 0,
+      photographicFocus: 1,
+      structuralConcentration: 1,
+      modalCoefficientEnergy: 1,
+      cancellationSuppression: 1,
+    });
+    const ridgeSupportedFocus = deriveWhiteEmissionFieldAuthority({
+      ridgeConcentration: 0.35,
+      causticRidgeAuthority: 0.35,
+      photographicFocus: 1,
+      structuralConcentration: 0.6,
+      modalCoefficientEnergy: 0.4,
+      cancellationSuppression: 0,
+    });
+
+    expect(supportOnlyFocus.whiteEmissionRidgeEvidence).toBe(0);
+    expect(supportOnlyFocus.whiteEmissionFieldAuthority).toBe(0);
+    expect(ridgeSupportedFocus.whiteEmissionRidgeEvidence).toBeGreaterThan(0);
+    expect(ridgeSupportedFocus.whiteEmissionLocalEvidence).toBeGreaterThan(0);
+    expect(ridgeSupportedFocus.whiteEmissionStructuralDrive).toBe(0.6);
+    expect(ridgeSupportedFocus.whiteEmissionFieldAuthority).toBeGreaterThan(0);
+  });
+
+  it("gates white emission by field authority before crowding relief", () => {
+    const unauthorized = deriveCrowdedWhiteEmissionMix({
+      holographicEmissionLift: 0.8,
+      whiteEmissionFieldAuthority: 0,
+      whiteEmissionCrowding: 0,
+    });
+    const authorized = deriveCrowdedWhiteEmissionMix({
+      holographicEmissionLift: 0.8,
+      whiteEmissionFieldAuthority: 1,
+      whiteEmissionCrowding: 0.25,
+    });
+
+    expect(unauthorized.crowdedWhiteEmissionMix).toBe(0);
+    expect(authorized.whiteEmissionFieldCrowding).toBe(0);
+    expect(authorized.crowdedWhiteEmissionMix).toBeCloseTo(
+      0.8 * (1 - 0.25 * WHITE_EMISSION_CROWDING_REDUCTION),
+    );
+  });
+
+  it("splits caustic radiance from support reveal after observation transfer", () => {
+    const supportOnly = deriveMaterialRadianceTransfer({
+      stabilizedDensity: 0.3,
+      causticVisibleDensity: 0,
+      volumeColor: [0.8, 0.7, 0.6],
+      surfaceColor: [1, 0.8, 0.5],
+      structureAwareEmissionGain: 1,
+    });
+    const mixed = deriveMaterialRadianceTransfer({
+      stabilizedDensity: 0.5,
+      causticVisibleDensity: 0.2,
+      volumeColor: [0.9, 0.7, 0.4],
+      surfaceColor: [1, 0.8, 0.5],
+      structureAwareEmissionGain: 0.8,
+    });
+
+    expect(supportOnly.supportVisibleDensity).toBeCloseTo(0.3);
+    expect(supportOnly.causticRadianceContribution).toEqual([0, 0, 0]);
+    expect(supportOnly.supportRevealContribution[0]).toBeGreaterThan(0);
+    expect(supportOnly.finalRadiance[0]).toBeLessThan(0.3);
+    expect(mixed.supportVisibleDensity).toBeCloseTo(0.3);
+    expect(mixed.causticRadianceContribution[0]).toBeCloseTo(0.18);
+    expect(mixed.supportRevealContribution[0]).toBeCloseTo(
+      1 * PHOTOGRAPHIC_DARK_BODY_RATIO * 0.3,
+    );
+    expect(mixed.finalRadiance[0]).toBeCloseTo(
+      (0.9 * 0.2 + 1 * PHOTOGRAPHIC_DARK_BODY_RATIO * 0.3) * 0.8,
+    );
   });
 
   it("reduces crowded white-emission mix before highlights desaturate", () => {

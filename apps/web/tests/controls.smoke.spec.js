@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { expect, test } from "@playwright/test";
+import { RAYMARCH_QUANTITY_LEDGER_VERSION } from "../../../packages/visualizer/src/core/raymarch/quantityLedger.js";
 
 function createMonoWavBuffer({
   sampleRate = 44100,
@@ -565,6 +566,32 @@ test.describe("Baryon control smoke", () => {
       projectionSnapshot.structuralProjectionDrive,
       6,
     );
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const debug = window.__baryonAuditSnapshot?.raymarchDebug ?? {};
+          return {
+            renderQuantityLedgerVersion:
+              debug.renderQuantityLedgerVersion ?? null,
+            observedDensityFloorForbidden:
+              debug.renderQuantityForbiddenConsumers?.observedDensityFloor ??
+              [],
+            cancellationForbidden:
+              debug.renderQuantityForbiddenConsumers?.cancellationSuppression ??
+              [],
+          };
+        }),
+      )
+      .toMatchObject({
+        renderQuantityLedgerVersion: RAYMARCH_QUANTITY_LEDGER_VERSION,
+        observedDensityFloorForbidden: expect.arrayContaining([
+          "highlightMask",
+          "whiteEmissionFieldAuthority",
+        ]),
+        cancellationForbidden: expect.arrayContaining([
+          "whiteEmissionFieldAuthority",
+        ]),
+      });
 
     await setControl(page, "bloomStrength", 0.91);
     await expect

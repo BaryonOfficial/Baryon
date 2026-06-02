@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import { RAYMARCH_QUANTITY_LEDGER_VERSION } from "@baryon/visualizer/core/raymarch/quantityLedger";
 import {
   createRuntimeDiagnostics,
   maybePublishRuntimePerfSnapshot,
@@ -164,6 +165,14 @@ test("publishes observation transfer raymarch diagnostics in render perf snapsho
         observationSampledSupport: 0.18,
         observationSampledDensityFloor: 0.011,
         observationSampledContourSupport: 0.003,
+        renderQuantityLedgerVersion: RAYMARCH_QUANTITY_LEDGER_VERSION,
+        renderQuantityForbiddenConsumers: {
+          observedDensityFloor: [
+            "highlightMask",
+            "whiteEmissionFieldAuthority",
+          ],
+          cancellationSuppression: ["whiteEmissionFieldAuthority"],
+        },
       },
     });
 
@@ -181,6 +190,14 @@ test("publishes observation transfer raymarch diagnostics in render perf snapsho
     expect(snapshot.render.observationSampledSupport).toBe(0.18);
     expect(snapshot.render.observationSampledDensityFloor).toBe(0.011);
     expect(snapshot.render.observationSampledContourSupport).toBe(0.003);
+    expect(snapshot.render.renderQuantityLedgerVersion).toBe(
+      RAYMARCH_QUANTITY_LEDGER_VERSION,
+    );
+    expect(
+      snapshot.render.renderQuantityForbiddenConsumers.observedDensityFloor,
+    ).toEqual(
+      expect.arrayContaining(["highlightMask", "whiteEmissionFieldAuthority"]),
+    );
   } finally {
     globalThis.window = previousWindow;
   }

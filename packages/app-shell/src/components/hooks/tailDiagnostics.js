@@ -38,6 +38,19 @@ function readString(value, fallback = null) {
   return typeof value === "string" ? value : fallback;
 }
 
+function readStringArrayMap(value, fallback = null) {
+  if (!value || typeof value !== "object") {
+    return fallback;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entries]) => [
+      key,
+      Array.isArray(entries) ? [...entries] : [],
+    ]),
+  );
+}
+
 function hasLiveSourceEvidence(sourceEvidence = null) {
   return (
     sourceEvidence?.currentSourceEvidence === true &&
@@ -264,6 +277,14 @@ function buildTailDiagnosticSample({
       observationSampledContourSupport: readFiniteNumber(
         render.observationSampledContourSupport ??
           raymarchDebug.observationSampledContourSupport,
+      ),
+      renderQuantityLedgerVersion: readString(
+        render.renderQuantityLedgerVersion ??
+          raymarchDebug.renderQuantityLedgerVersion,
+      ),
+      renderQuantityForbiddenConsumers: readStringArrayMap(
+        render.renderQuantityForbiddenConsumers ??
+          raymarchDebug.renderQuantityForbiddenConsumers,
       ),
       totalSlotAmplitude: readFiniteNumber(
         runtimeState?.uniforms?.uTotalSlotAmplitude?.value ??

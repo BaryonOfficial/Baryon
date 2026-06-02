@@ -18,6 +18,7 @@ import {
   createRaymarchModalBasisCache,
   createRaymarchSpectralLightCache,
 } from "./fieldCache.js";
+import { getRaymarchQuantityContract } from "./quantityLedger.js";
 
 function makeMeshUniforms(overrides = {}) {
   const base = createVisualizationUniforms({
@@ -194,6 +195,72 @@ describe("raymarch volume material", () => {
     expect(whiteEmissionBlock).not.toContain("cancellationSuppression");
     expect(whiteEmissionBlock).toContain("whiteEmissionFieldCrowding");
     expect(whiteEmissionBlock).toContain(".mul(whiteEmissionFieldAuthority)");
+  });
+
+  it("mirrors quantity-ledger forbidden consumers in shader transfer lanes", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const highlightStart = expectSourceIndex(source, "const highlightMask =");
+    const stabilizedDensityStart = expectSourceIndex(
+      source,
+      "const stabilizedDensity = visibleDensity;",
+    );
+    const hotCoreStart = expectSourceIndex(source, "const hotCoreInput =");
+    const hotCoreMixStart = expectSourceIndex(source, "const hotCoreMix =");
+    const whiteEmissionStart = expectSourceIndex(
+      source,
+      "const whiteEmissionRidgeEvidence =",
+    );
+    const colorBranchStart = expectSourceIndex(source, "let volumeColor;");
+    const supportSplitStart = expectSourceIndex(
+      source,
+      "const supportVisibleDensity =",
+    );
+    const returnStart = expectSourceIndex(
+      source,
+      "return causticRadianceContribution",
+    );
+    const highlightBlock = source.slice(highlightStart, stabilizedDensityStart);
+    const hotCoreBlock = source.slice(hotCoreStart, hotCoreMixStart);
+    const whiteEmissionBlock = source.slice(whiteEmissionStart, colorBranchStart);
+    const finalTransferBlock = source.slice(supportSplitStart, returnStart);
+    const floorContract = getRaymarchQuantityContract("observedDensityFloor");
+    const visibleContract = getRaymarchQuantityContract("visibleDensity");
+    const supportContract = getRaymarchQuantityContract("supportVisibleDensity");
+    const cancellationContract = getRaymarchQuantityContract(
+      "cancellationSuppression",
+    );
+
+    expect(floorContract.forbiddenConsumers).toEqual(
+      expect.arrayContaining(["highlightMask", "whiteEmissionFieldAuthority"]),
+    );
+    expect(visibleContract.forbiddenConsumers).toEqual(
+      expect.arrayContaining(["highlightMask", "hotCoreInput"]),
+    );
+    expect(supportContract.forbiddenConsumers).toEqual(
+      expect.arrayContaining(["causticRadianceContribution"]),
+    );
+    expect(cancellationContract.forbiddenConsumers).toEqual(
+      expect.arrayContaining(["whiteEmissionFieldAuthority"]),
+    );
+    expect(highlightBlock).toContain("causticVisibleDensity");
+    expect(highlightBlock).not.toContain("visibleDensity");
+    expect(highlightBlock).not.toContain("observedDensityFloor");
+    expect(hotCoreBlock).toContain("photographicLaserCausticRadiance");
+    expect(hotCoreBlock).not.toContain("visibleDensity");
+    expect(hotCoreBlock).not.toContain("observedDensityFloor");
+    expect(whiteEmissionBlock).not.toContain("cancellationSuppression");
+    expect(finalTransferBlock).toContain(
+      "causticRadianceContribution = volumeColor.mul",
+    );
+    expect(finalTransferBlock).toContain(
+      "supportRevealContribution = supportRevealColor.mul",
+    );
+    expect(finalTransferBlock).not.toContain(
+      "causticRadianceContribution = volumeColor.mul(stabilizedDensity)",
+    );
   });
 
   it("keeps rim compression out of modal observation support", () => {

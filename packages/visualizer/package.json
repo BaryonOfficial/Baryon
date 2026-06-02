@@ -23,6 +23,7 @@
     "./core/renderAuthorityContract": "./src/core/renderAuthorityContract.js",
     "./core/raymarch/fieldCache": "./src/core/raymarch/fieldCache.js",
     "./core/raymarch/performanceGovernor": "./src/core/raymarch/performanceGovernor.js",
+    "./core/raymarch/quantityLedger": "./src/core/raymarch/quantityLedger.js",
     "./defaults": "./src/defaults.js",
     "./render/outputProfilePolicy": "./src/render/outputProfilePolicy.js",
     "./render/outputPipeline": "./src/render/outputPipeline.js",

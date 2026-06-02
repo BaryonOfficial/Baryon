@@ -1,4 +1,5 @@
 import { expect, test, vi } from "vitest";
+import { RAYMARCH_QUANTITY_LEDGER_VERSION } from "@baryon/visualizer/core/raymarch/quantityLedger";
 import {
   classifyTailDiagnosticSample,
   createTailDiagnosticsRecorder,
@@ -41,6 +42,11 @@ function createRuntimeDiagnostics(overrides = {}) {
       observationReferenceContourSupport: 0.012,
       observationSampledDensityFloor: 0.045,
       observationSampledContourSupport: 0.008,
+      renderQuantityLedgerVersion: RAYMARCH_QUANTITY_LEDGER_VERSION,
+      renderQuantityForbiddenConsumers: {
+        observedDensityFloor: ["highlightMask", "whiteEmissionFieldAuthority"],
+        cancellationSuppression: ["whiteEmissionFieldAuthority"],
+      },
       totalSlotAmplitude: 0.9,
       structuralProjectionDrive: 0.45,
       structuralProjectionConcentration: 0.25,
@@ -159,6 +165,11 @@ test("tail diagnostics records compact samples on the configured interval", () =
       liveSynthesisSupportDiagnosticCoverage: 5 / 9,
       modalBasisCacheZeroAmplitudeSkippedModeCount: 1,
       modalBasisCacheDescriptorStaleReason: "modal-identity",
+      renderQuantityLedgerVersion: RAYMARCH_QUANTITY_LEDGER_VERSION,
+      renderQuantityForbiddenConsumers: {
+        observedDensityFloor: ["highlightMask", "whiteEmissionFieldAuthority"],
+        cancellationSuppression: ["whiteEmissionFieldAuthority"],
+      },
     },
     classification: "unknown",
   });

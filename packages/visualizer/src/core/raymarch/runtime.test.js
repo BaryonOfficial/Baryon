@@ -22,6 +22,7 @@ import {
   OBSERVATION_TRANSFER_REFERENCE,
   deriveObservationTransferParameters,
 } from "./observationTransfer.js";
+import { RAYMARCH_QUANTITY_LEDGER_VERSION } from "./quantityLedger.js";
 import {
   deriveLowStepBloomGuard,
   deriveStepCompensation,
@@ -870,6 +871,19 @@ describe("tickRaymarchRuntime", () => {
     expect(
       runtimeState.debugSnapshot.raymarchDebug.modalDescriptorValidModeCount,
     ).toBe(4);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.renderQuantityLedgerVersion,
+    ).toBe(RAYMARCH_QUANTITY_LEDGER_VERSION);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.renderQuantityForbiddenConsumers
+        .observedDensityFloor,
+    ).toEqual(
+      expect.arrayContaining(["highlightMask", "whiteEmissionFieldAuthority"]),
+    );
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.renderQuantityForbiddenConsumers
+        .cancellationSuppression,
+    ).toEqual(expect.arrayContaining(["whiteEmissionFieldAuthority"]));
     expect(runtimeState.debugSnapshot.raymarchDebug.boundaryMode).toBe(
       "neumann",
     );

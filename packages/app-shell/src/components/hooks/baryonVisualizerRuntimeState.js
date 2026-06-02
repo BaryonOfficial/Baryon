@@ -496,6 +496,8 @@ export function createRuntimeDiagnostics() {
       observationSampledSupport: 0,
       observationSampledDensityFloor: 0,
       observationSampledContourSupport: 0,
+      renderQuantityLedgerVersion: null,
+      renderQuantityForbiddenConsumers: null,
       ...MODAL_BASIS_CACHE_RENDER_DIAGNOSTIC_DEFAULTS,
     },
     modalFreshness: createModalFreshnessDiagnostics(),
@@ -525,6 +527,23 @@ export function initializeAdaptiveRaymarchRuntimeState(runtimeState) {
 
 function readFiniteNumber(value, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
+}
+
+function readString(value, fallback = null) {
+  return typeof value === "string" ? value : fallback;
+}
+
+function snapshotRenderQuantityForbiddenConsumers(value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).map(([quantityName, consumers]) => [
+      quantityName,
+      Array.isArray(consumers) ? [...consumers] : [],
+    ]),
+  );
 }
 
 function snapshotModalBasisCacheRenderDiagnostics(renderDiagnostics = null) {
@@ -601,6 +620,15 @@ export function updateObservationTransferRenderDiagnostics(
   renderDiagnostics.observationSampledContourSupport = readFiniteNumber(
     raymarchDebug.observationSampledContourSupport,
   );
+  renderDiagnostics.renderQuantityLedgerVersion = readString(
+    raymarchDebug.renderQuantityLedgerVersion,
+    renderDiagnostics.renderQuantityLedgerVersion ?? null,
+  );
+  renderDiagnostics.renderQuantityForbiddenConsumers =
+    snapshotRenderQuantityForbiddenConsumers(
+      raymarchDebug.renderQuantityForbiddenConsumers ??
+        renderDiagnostics.renderQuantityForbiddenConsumers,
+    );
   renderDiagnostics.modalBasisCacheActive = Boolean(
     raymarchDebug.modalBasisCacheActive ?? modalBasisCache?.active,
   );
@@ -966,6 +994,11 @@ function buildRuntimePerfSnapshot(runtimeDiagnostics) {
         runtimeDiagnostics?.render?.observationSampledDensityFloor ?? 0,
       observationSampledContourSupport:
         runtimeDiagnostics?.render?.observationSampledContourSupport ?? 0,
+      renderQuantityLedgerVersion:
+        runtimeDiagnostics?.render?.renderQuantityLedgerVersion ?? null,
+      renderQuantityForbiddenConsumers: snapshotRenderQuantityForbiddenConsumers(
+        runtimeDiagnostics?.render?.renderQuantityForbiddenConsumers,
+      ),
       ...snapshotModalBasisCacheRenderDiagnostics(runtimeDiagnostics?.render),
     },
     postProcess: {
