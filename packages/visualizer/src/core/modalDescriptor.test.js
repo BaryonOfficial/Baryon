@@ -174,6 +174,84 @@ describe("buildCanonicalFullModalDescriptor", () => {
       (0.6 ** 2 + 0.5 ** 2 + 0.4 ** 2) ** 2 / (0.6 ** 4 + 0.5 ** 4 + 0.4 ** 4),
       6,
     );
+    expect(
+      descriptor.diagnostics.modalVarietyAudit.basisAtlasCapacitySweep,
+    ).toEqual([
+      expect.objectContaining({
+        basisAtlasPageCapacity: 2,
+        representedBasisPageModeCount: 2,
+      }),
+      expect.objectContaining({
+        basisAtlasPageCapacity: 3,
+        representedBasisPageModeCount: 3,
+        renderRepresentedEnergyRatio: 1,
+      }),
+    ]);
+  });
+
+  it("keeps dominant modes while reserving saturated atlas slots for spatial-order variety", () => {
+    const descriptor = buildCanonicalFullModalDescriptor({
+      maxTotalModes: 8,
+      basisAtlasPageCapacity: 4,
+      basisCacheResolution: 64,
+      modalFieldSlots: makeSlots([
+        [1, 1, 1, 0.95],
+        [1, 1, 2, 0.9],
+        [1, 2, 1, 0.88],
+        [2, 1, 1, 0.86],
+        [5, 4, 3, 0.5],
+        [9, 4, 2, 0.48],
+        [12, 2, 1, 0.46],
+        [14, 3, 2, 0.44],
+      ]),
+      activeModalFieldModeCount: 8,
+    });
+
+    expect(readModeKeys(descriptor.slotViews.modalFieldSlots, 4)).toEqual([
+      "1:1:1",
+      "1:1:2",
+      "5:4:3",
+      "9:4:2",
+    ]);
+    expect(descriptor.diagnostics.modalVarietyAudit).toMatchObject({
+      representedBasisPageModeCount: 4,
+      representedSpatialFamilyCount: 4,
+      basisAtlasCapacityRejectedCount: 4,
+      spatialBandwidthRejectedCount: 0,
+    });
+    expect(
+      descriptor.diagnostics.modalVarietyAudit.renderRepresentedEnergyRatio,
+    ).toBeGreaterThan(0.5);
+  });
+
+  it("does not let stale stable slots trap weak modes in represented basis pages", () => {
+    const stableSlotByModeKey = new Map([
+      ["8:8:8", 0],
+      ["9:9:9", 1],
+    ]);
+    const descriptor = buildCanonicalFullModalDescriptor({
+      maxTotalModes: 6,
+      basisAtlasPageCapacity: 3,
+      basisCacheResolution: 64,
+      stableSlotByModeKey,
+      modalFieldSlots: makeSlots([
+        [8, 8, 8, 0.1],
+        [9, 9, 9, 0.09],
+        [1, 1, 1, 0.95],
+        [1, 1, 2, 0.9],
+        [6, 5, 4, 0.42],
+        [10, 4, 2, 0.4],
+      ]),
+      activeModalFieldModeCount: 6,
+    });
+
+    expect(readModeKeys(descriptor.slotViews.modalFieldSlots, 3)).toEqual([
+      "1:1:1",
+      "1:1:2",
+      "6:5:4",
+    ]);
+    expect(stableSlotByModeKey.get("1:1:1")).toBeLessThan(3);
+    expect(stableSlotByModeKey.get("6:5:4")).toBeLessThan(3);
   });
 
   it("reports spatial-bandwidth rejection separately from atlas capacity", () => {

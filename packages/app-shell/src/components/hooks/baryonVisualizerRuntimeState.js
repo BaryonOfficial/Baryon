@@ -554,7 +554,16 @@ function snapshotModalVarietyAudit(modalVarietyAudit) {
     return null;
   }
 
-  return { ...modalVarietyAudit };
+  return Object.fromEntries(
+    Object.entries(modalVarietyAudit).map(([key, value]) => [
+      key,
+      Array.isArray(value)
+        ? value.map((entry) =>
+            entry && typeof entry === "object" ? { ...entry } : entry,
+          )
+        : value,
+    ]),
+  );
 }
 
 export function updateObservationTransferRenderDiagnostics(

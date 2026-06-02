@@ -192,6 +192,20 @@ test("publishes modal basis cache diagnostics in render perf snapshots", () => {
 
   try {
     const runtimeDiagnostics = createRuntimeDiagnostics();
+    const modalVarietyAudit = {
+      semanticModeCount: 9,
+      representedBasisPageModeCount: 5,
+      basisAtlasPageCapacity: 12,
+      basisAtlasPressure: 5 / 12,
+      energyEffectiveModeCount: 4.2,
+      renderRepresentedEnergyRatio: 0.77,
+      basisAtlasCapacitySweep: [
+        {
+          basisAtlasPageCapacity: 12,
+          renderRepresentedEnergyRatio: 0.77,
+        },
+      ],
+    };
     updateObservationTransferRenderDiagnostics(runtimeDiagnostics, {
       raymarchDebug: {
         modalBasisCacheActive: true,
@@ -234,14 +248,7 @@ test("publishes modal basis cache diagnostics in render perf snapshots", () => {
         modalBasisCacheBandwidthRejectedPhaseCurrentModalEnergy: 0.13,
         liveSynthesisRawGradientEnvelope: 0.38,
         liveSynthesisPhaseCurrentGradientEnvelope: 0.24,
-        modalVarietyAudit: {
-          semanticModeCount: 9,
-          representedBasisPageModeCount: 5,
-          basisAtlasPageCapacity: 12,
-          basisAtlasPressure: 5 / 12,
-          energyEffectiveModeCount: 4.2,
-          renderRepresentedEnergyRatio: 0.77,
-        },
+        modalVarietyAudit,
       },
     });
 
@@ -321,7 +328,17 @@ test("publishes modal basis cache diagnostics in render perf snapshots", () => {
       basisAtlasPressure: 5 / 12,
       energyEffectiveModeCount: 4.2,
       renderRepresentedEnergyRatio: 0.77,
+      basisAtlasCapacitySweep: [
+        {
+          basisAtlasPageCapacity: 12,
+          renderRepresentedEnergyRatio: 0.77,
+        },
+      ],
     });
+    expect(snapshot.render.modalVarietyAudit).not.toBe(modalVarietyAudit);
+    expect(snapshot.render.modalVarietyAudit.basisAtlasCapacitySweep).not.toBe(
+      modalVarietyAudit.basisAtlasCapacitySweep,
+    );
   } finally {
     globalThis.window = previousWindow;
   }
