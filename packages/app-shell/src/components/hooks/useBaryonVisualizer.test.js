@@ -476,6 +476,47 @@ describe("useBaryonVisualizer", () => {
     expect(postNodesRef.current.temporalHistoryBlendUniform.value).toBe(1);
   });
 
+  it("enables internal render probe snapshots while tail diagnostics are active", async () => {
+    const runtimeState = {};
+    visualizationLifecycleState.runtimeStateRef.current = runtimeState;
+    const controlsRef = {
+      current: {
+        auditEnabled: false,
+      },
+    };
+
+    await act(async () => {
+      root.render(React.createElement(HookHarness, { controlsRef }));
+    });
+
+    window.__baryonTailDiagnostics.start();
+    const frameCallback = frameState.callbacks.at(-1);
+    expect(frameCallback).toBeTypeOf("function");
+
+    frameCallback(
+      {
+        clock: { getElapsedTime: () => 0 },
+        camera: {},
+        scene: {},
+      },
+      1 / 60,
+    );
+
+    expect(runtimeState.renderProbeEnabled).toBe(true);
+
+    window.__baryonTailDiagnostics.stop();
+    frameCallback(
+      {
+        clock: { getElapsedTime: () => 0 },
+        camera: {},
+        scene: {},
+      },
+      1 / 60,
+    );
+
+    expect(runtimeState.renderProbeEnabled).toBe(false);
+  });
+
   it("bypasses temporal history while rendering dynamic raymarch content", async () => {
     const renderSpy = vi.fn();
     renderLoopSpies.shouldRenderExternalFrameSpy.mockReturnValue(true);

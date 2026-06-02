@@ -1,4 +1,8 @@
 import { hasRenderAuthority } from "@baryon/visualizer/core/renderAuthorityContract";
+import {
+  RENDER_PROBE_MATERIAL_FIELDS,
+  buildRenderProbeSnapshot,
+} from "./renderProbeSnapshot.js";
 
 const DEFAULT_SAMPLE_INTERVAL_MS = 250;
 const DEFAULT_MAX_DURATION_MS = 60_000;
@@ -10,15 +14,6 @@ const MATERIAL_PROBE_SPIKE_RELATIVE_DELTA = 0.35;
 const SUPPORT_DOMINANCE_RATIO = 2;
 const SUPPORT_DOMINANCE_MIN_DELTA = 0.05;
 const CAUSTIC_COLLAPSE_RATIO = 0.5;
-
-const MATERIAL_PROBE_FIELDS = Object.freeze([
-  "materialProbePhysicalDensity",
-  "materialProbeCausticVisibleDensity",
-  "materialProbeSupportVisibleDensity",
-  "materialProbePreBloomRadiance",
-  "materialProbePostBloomRisk",
-  "materialProbeBloomAmplification",
-]);
 
 /**
  * @typedef {{
@@ -224,6 +219,10 @@ function countSampleClassifications(samples) {
 }
 
 function hasMaterialProbeSignal(sample) {
+  const probe = sample?.probe ?? sample?.render?.renderProbeSnapshot ?? null;
+  if (probe?.health?.available === true) {
+    return true;
+  }
   const render = sample?.render ?? {};
   return (
     readFiniteNumber(render.materialProbePhysicalDensity) > 0 ||
@@ -236,6 +235,10 @@ function hasMaterialProbeSignal(sample) {
 }
 
 function hasActiveProbeCandidate(sample) {
+  const probe = sample?.probe ?? sample?.render?.renderProbeSnapshot ?? null;
+  if (typeof probe?.health?.activeCandidate === "boolean") {
+    return probe.health.activeCandidate;
+  }
   return (
     sample?.render?.volumeVisible === true &&
     sample?.frame?.renderAuthority === true &&
@@ -283,7 +286,7 @@ export function summarizeTailDiagnosticWindow(samples = []) {
     hasActiveProbeCandidate,
   ).length;
   const metrics = Object.fromEntries(
-    MATERIAL_PROBE_FIELDS.map((field) => [
+    RENDER_PROBE_MATERIAL_FIELDS.map((field) => [
       field,
       summarizeNumericWindow(readMaterialProbeValues(safeSamples, field)),
     ]),
@@ -345,8 +348,8 @@ function buildTailDiagnosticSample({
 }) {
   const modalFreshness = runtimeDiagnostics?.modalFreshness ?? {};
   const render = runtimeDiagnostics?.render ?? {};
-  const debugSnapshot = runtimeState?.debugSnapshot ?? {};
-  const raymarchDebug = debugSnapshot.raymarchDebug ?? {};
+  const debugSnapshot = runtimeState?.debugSnapshot ?? null;
+  const raymarchDebug = debugSnapshot?.raymarchDebug ?? {};
   const sourceEvidence =
     modalFreshness.sourceEvidence ?? featureFrame?.sourceEvidence ?? null;
   const renderAuthority =
@@ -605,6 +608,24 @@ function buildTailDiagnosticSample({
       renderScale: readFiniteNumber(render.renderScale, 1),
     },
   };
+  const probe = buildRenderProbeSnapshot({
+    renderDiagnostics: {
+      ...sample.render,
+      observationEnergy: sample.frame.observationEnergy,
+      activeModeCount: sample.frame.activeModeCount,
+    },
+    debugSnapshot,
+    runtimeState,
+    featureFrame,
+    nowMs: tMs,
+  });
+  sample.probe = probe;
+  sample.render.renderProbeSnapshot = probe;
+  sample.render.renderProbeSchemaVersion = probe.schemaVersion;
+  sample.render.renderProbeAvailable = probe.health.available;
+  sample.render.renderProbeActiveCandidate = probe.health.activeCandidate;
+  sample.render.renderProbeStatus = probe.health.status;
+  sample.render.renderProbeUnavailableReason = probe.health.unavailableReason;
   sample.classification = classifyTailDiagnosticSample(sample);
   return sample;
 }

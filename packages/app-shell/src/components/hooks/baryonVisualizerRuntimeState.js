@@ -2,6 +2,10 @@ import {
   getRaymarchModalBasisCacheDescriptorStaleReason,
   isRaymarchModalBasisCacheReadyForDescriptor,
 } from "@baryon/visualizer/core/raymarch/fieldCache";
+import {
+  RENDER_PROBE_SCHEMA_VERSION,
+  buildRenderProbeSnapshot,
+} from "./renderProbeSnapshot.js";
 
 const WORKER_PERF_COUNTER_BASES = Object.freeze([
   "FastSignal",
@@ -502,6 +506,12 @@ export function createRuntimeDiagnostics() {
       materialProbePreBloomRadiance: 0,
       materialProbePostBloomRisk: 0,
       materialProbeBloomAmplification: 1,
+      renderProbeSchemaVersion: RENDER_PROBE_SCHEMA_VERSION,
+      renderProbeAvailable: false,
+      renderProbeActiveCandidate: false,
+      renderProbeStatus: "unavailable",
+      renderProbeUnavailableReason: "raymarch-debug-missing",
+      renderProbeSnapshot: null,
       renderQuantityLedgerVersion: null,
       renderQuantityForbiddenConsumers: null,
       ...MODAL_BASIS_CACHE_RENDER_DIAGNOSTIC_DEFAULTS,
@@ -654,6 +664,20 @@ export function updateObservationTransferRenderDiagnostics(
       raymarchDebug.renderQuantityForbiddenConsumers ??
         renderDiagnostics.renderQuantityForbiddenConsumers,
     );
+  const renderProbeSnapshot = buildRenderProbeSnapshot({
+    renderDiagnostics,
+    debugSnapshot,
+    runtimeState,
+  });
+  renderDiagnostics.renderProbeSchemaVersion =
+    renderProbeSnapshot.schemaVersion;
+  renderDiagnostics.renderProbeAvailable = renderProbeSnapshot.health.available;
+  renderDiagnostics.renderProbeActiveCandidate =
+    renderProbeSnapshot.health.activeCandidate;
+  renderDiagnostics.renderProbeStatus = renderProbeSnapshot.health.status;
+  renderDiagnostics.renderProbeUnavailableReason =
+    renderProbeSnapshot.health.unavailableReason;
+  renderDiagnostics.renderProbeSnapshot = renderProbeSnapshot;
   renderDiagnostics.modalBasisCacheActive = Boolean(
     raymarchDebug.modalBasisCacheActive ?? modalBasisCache?.active,
   );
@@ -1031,11 +1055,29 @@ function buildRuntimePerfSnapshot(runtimeDiagnostics) {
         runtimeDiagnostics?.render?.materialProbePostBloomRisk ?? 0,
       materialProbeBloomAmplification:
         runtimeDiagnostics?.render?.materialProbeBloomAmplification ?? 1,
+      renderProbeSchemaVersion:
+        runtimeDiagnostics?.render?.renderProbeSchemaVersion ??
+        RENDER_PROBE_SCHEMA_VERSION,
+      renderProbeAvailable:
+        runtimeDiagnostics?.render?.renderProbeAvailable ?? false,
+      renderProbeActiveCandidate:
+        runtimeDiagnostics?.render?.renderProbeActiveCandidate ?? false,
+      renderProbeStatus:
+        runtimeDiagnostics?.render?.renderProbeStatus ?? "unavailable",
+      renderProbeUnavailableReason: Object.prototype.hasOwnProperty.call(
+        runtimeDiagnostics?.render ?? {},
+        "renderProbeUnavailableReason",
+      )
+        ? runtimeDiagnostics.render.renderProbeUnavailableReason
+        : "raymarch-debug-missing",
+      renderProbeSnapshot:
+        runtimeDiagnostics?.render?.renderProbeSnapshot ?? null,
       renderQuantityLedgerVersion:
         runtimeDiagnostics?.render?.renderQuantityLedgerVersion ?? null,
-      renderQuantityForbiddenConsumers: snapshotRenderQuantityForbiddenConsumers(
-        runtimeDiagnostics?.render?.renderQuantityForbiddenConsumers,
-      ),
+      renderQuantityForbiddenConsumers:
+        snapshotRenderQuantityForbiddenConsumers(
+          runtimeDiagnostics?.render?.renderQuantityForbiddenConsumers,
+        ),
       ...snapshotModalBasisCacheRenderDiagnostics(runtimeDiagnostics?.render),
     },
     postProcess: {

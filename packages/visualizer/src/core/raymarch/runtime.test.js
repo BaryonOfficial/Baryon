@@ -653,14 +653,14 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(0);
     expect(runtimeState.uniforms.uTotalSlotAmplitude.value).toBe(0);
     expect(runtimeState.uniforms.uStructuralProjectionDrive.value).toBe(0);
-    expect(
-      runtimeState.uniforms.uStructuralProjectionConcentration.value,
-    ).toBe(0);
+    expect(runtimeState.uniforms.uStructuralProjectionConcentration.value).toBe(
+      0,
+    );
     expect(runtimeState.debugSnapshot.totalSlotAmplitude).toBe(0);
     expect(runtimeState.debugSnapshot.structuralProjectionDrive).toBe(0);
-    expect(
-      runtimeState.debugSnapshot.structuralProjectionConcentration,
-    ).toBe(0);
+    expect(runtimeState.debugSnapshot.structuralProjectionConcentration).toBe(
+      0,
+    );
     expect(
       runtimeState.debugSnapshot.modalBasisCacheBandwidthRejectedModeCount,
     ).toBe(0);
@@ -817,9 +817,9 @@ describe("tickRaymarchRuntime", () => {
     const expectedProjectionDrive =
       expectedStructuralEnergy /
       (expectedStructuralEnergy + STRUCTURAL_PROJECTION_REFERENCE_ENERGY);
-    expect(
-      runtimeState.uniforms.uStructuralProjectionDrive.value,
-    ).toBeCloseTo(expectedProjectionDrive);
+    expect(runtimeState.uniforms.uStructuralProjectionDrive.value).toBeCloseTo(
+      expectedProjectionDrive,
+    );
     expect(
       runtimeState.uniforms.uStructuralProjectionConcentration.value,
     ).toBeCloseTo(expectedStructuralEnergy / (2.35 * 2.35));
@@ -888,10 +888,12 @@ describe("tickRaymarchRuntime", () => {
       runtimeState.debugSnapshot.raymarchDebug.materialProbePhysicalDensity,
     ).toBeGreaterThan(0);
     expect(
-      runtimeState.debugSnapshot.raymarchDebug.materialProbeCausticVisibleDensity,
+      runtimeState.debugSnapshot.raymarchDebug
+        .materialProbeCausticVisibleDensity,
     ).toBeGreaterThan(0);
     expect(
-      runtimeState.debugSnapshot.raymarchDebug.materialProbeSupportVisibleDensity,
+      runtimeState.debugSnapshot.raymarchDebug
+        .materialProbeSupportVisibleDensity,
     ).toBeGreaterThanOrEqual(0);
     expect(
       runtimeState.debugSnapshot.raymarchDebug.materialProbePreBloomRadiance,
@@ -1288,6 +1290,43 @@ describe("tickRaymarchRuntime", () => {
       runtimeState.modalBasisCache.liveSynthesisSupportDiagnosticCoverage,
     ).toBe(0);
     expect(runtimeState.debugSnapshot).toBeNull();
+  });
+
+  it("builds internal render probe snapshots without publishing the audit overlay", async () => {
+    const previousWindow = globalThis.window;
+    globalThis.window = {};
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.auditEnabled = false;
+    runtimeState.renderProbeEnabled = true;
+    runtimeState.uniforms.uSpectralMix.value = 0;
+    const renderer = { computeAsync: vi.fn(async () => undefined) };
+    const featureFrame = createActiveFeatureFrame({
+      backboneSlots: new Float32Array([1, 1, 1, 0.9]),
+      detailSlots: new Float32Array(0),
+      backboneColorSlots: new Float32Array(4),
+      detailColorSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array([0, 0, 1, 1]),
+      detailPhaseSlots: new Float32Array(0),
+      modalPhaseAuthority: 1,
+    });
+
+    try {
+      tickRaymarchRuntime(runtimeState, featureFrame, 1, 1 / 60, renderer);
+      await flushMicrotasks();
+
+      expect(runtimeState.debugSnapshot).toBeTruthy();
+      const raymarchDebug =
+        runtimeState.debugSnapshot.raymarchDebug ?? runtimeState.debugSnapshot;
+      expect(raymarchDebug.renderAuthority).toBe(true);
+      expect(
+        raymarchDebug.materialProbePreBloomRadiance,
+      ).toBeGreaterThanOrEqual(0);
+      expect(globalThis.window.__baryonAuditSnapshot).toBeUndefined();
+      expect(runtimeState.modalBasisCache.lastAuditDiagnostics).toBeNull();
+    } finally {
+      globalThis.window = previousWindow;
+    }
   });
 
   it("keeps modal-basis cache freshness independent of phase offsets", async () => {
@@ -3590,9 +3629,9 @@ describe("tickRaymarchRuntime", () => {
     expect(
       runtimeState.currentModalBasisCacheDescriptor.modalBasisCacheTopologyHash,
     ).toBe(activeDescriptor.modalBasisCacheTopologyHash);
-    expect(
-      runtimeState.uniforms.uStructuralProjectionDrive.value,
-    ).toBeCloseTo(initialProjectionDrive);
+    expect(runtimeState.uniforms.uStructuralProjectionDrive.value).toBeCloseTo(
+      initialProjectionDrive,
+    );
     expect(
       runtimeState.uniforms.uStructuralProjectionConcentration.value,
     ).toBeCloseTo(initialProjectionConcentration);
@@ -3624,9 +3663,9 @@ describe("tickRaymarchRuntime", () => {
       "raymarchFieldEvaluationMode",
     );
     expect(runtimeState.volumeMesh.visible).toBe(true);
-    expect(
-      runtimeState.uniforms.uStructuralProjectionDrive.value,
-    ).toBeCloseTo(initialProjectionDrive);
+    expect(runtimeState.uniforms.uStructuralProjectionDrive.value).toBeCloseTo(
+      initialProjectionDrive,
+    );
     expect(
       runtimeState.uniforms.uStructuralProjectionConcentration.value,
     ).toBeCloseTo(initialProjectionConcentration);

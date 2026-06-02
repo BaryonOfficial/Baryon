@@ -506,6 +506,11 @@ export function useBaryonVisualizer({
     }
 
     const controls = renderLoopContext.controlsRef.current;
+    const tailDiagnosticsActive = isTailDiagnosticsRecorderActive(
+      tailDiagnosticsRef.current,
+    );
+    runtimeState.renderProbeEnabled =
+      controls.auditEnabled === true || tailDiagnosticsActive;
     const nextLiveControlSignalVersion =
       liveControlSignalRef?.current?.version ?? 0;
     if (
@@ -803,7 +808,7 @@ export function useBaryonVisualizer({
       runtimeState?.debugSnapshot,
       runtimeState,
     );
-    if (isTailDiagnosticsRecorderActive(tailDiagnosticsRef.current)) {
+    if (tailDiagnosticsActive) {
       recordTailDiagnosticsSample(tailDiagnosticsRef.current, {
         runtimeDiagnostics,
         featureFrame: effectiveFrame,

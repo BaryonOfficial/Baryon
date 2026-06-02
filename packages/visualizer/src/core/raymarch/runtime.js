@@ -771,7 +771,10 @@ function publishRaymarchRuntimeAuditSnapshot(
   fieldState,
   renderAuthority,
 ) {
-  if (runtimeState.auditEnabled) {
+  const shouldBuildRenderProbe =
+    runtimeState.auditEnabled || runtimeState.renderProbeEnabled;
+
+  if (shouldBuildRenderProbe) {
     const raymarchDebug = buildRaymarchDebugSnapshot(
       runtimeState,
       featureFrame,
@@ -781,7 +784,11 @@ function publishRaymarchRuntimeAuditSnapshot(
     runtimeState.debugSnapshot = featureFrame?.debug
       ? { ...featureFrame.debug, raymarchDebug, ...raymarchDebug }
       : raymarchDebug;
-    publishAuditSnapshot(runtimeState.debugSnapshot);
+    if (runtimeState.auditEnabled) {
+      publishAuditSnapshot(runtimeState.debugSnapshot);
+    } else {
+      publishAuditSnapshot(null);
+    }
   } else {
     runtimeState.debugSnapshot = null;
     publishAuditSnapshot(null);
@@ -1172,12 +1179,14 @@ function buildRaymarchDebugSnapshot(
   const materialProbeTransfer = deriveMaterialRadianceTransfer({
     stabilizedDensity: materialProbeVisibleDensity,
     causticVisibleDensity: materialProbeCausticVisibleDensity,
-    volumeColor: readUniformColorRgb(runtimeState.uniforms.uColor, [
-      0.34, 0.62, 0.9,
-    ]),
-    surfaceColor: readUniformColorRgb(runtimeState.uniforms.uSurfaceColor, [
-      0.66, 0.86, 1.0,
-    ]),
+    volumeColor: readUniformColorRgb(
+      runtimeState.uniforms.uColor,
+      [0.34, 0.62, 0.9],
+    ),
+    surfaceColor: readUniformColorRgb(
+      runtimeState.uniforms.uSurfaceColor,
+      [0.66, 0.86, 1.0],
+    ),
     structureAwareEmissionGain: 1,
   });
   const materialProbePreBloomRadiance = computeLinearLuminance(

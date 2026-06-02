@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import { RAYMARCH_QUANTITY_LEDGER_VERSION } from "@baryon/visualizer/core/raymarch/quantityLedger";
+import { RENDER_PROBE_SCHEMA_VERSION } from "./renderProbeSnapshot.js";
 import {
   createRuntimeDiagnostics,
   maybePublishRuntimePerfSnapshot,
@@ -202,6 +203,30 @@ test("publishes observation transfer raymarch diagnostics in render perf snapsho
     expect(snapshot.render.materialProbePreBloomRadiance).toBe(0.21);
     expect(snapshot.render.materialProbePostBloomRisk).toBe(0.34);
     expect(snapshot.render.materialProbeBloomAmplification).toBe(1.62);
+    expect(snapshot.render.renderProbeSchemaVersion).toBe(
+      RENDER_PROBE_SCHEMA_VERSION,
+    );
+    expect(snapshot.render.renderProbeAvailable).toBe(true);
+    expect(snapshot.render.renderProbeActiveCandidate).toBe(false);
+    expect(snapshot.render.renderProbeStatus).toBe("available");
+    expect(snapshot.render.renderProbeUnavailableReason).toBeNull();
+    expect(snapshot.render.renderProbeSnapshot).toMatchObject({
+      schemaVersion: RENDER_PROBE_SCHEMA_VERSION,
+      lanes: ["state", "material", "visual"],
+      health: {
+        available: true,
+        status: "available",
+        unavailableReason: null,
+      },
+      material: {
+        materialProbePhysicalDensity: 0.42,
+        materialProbeCausticVisibleDensity: 0.18,
+        materialProbeSupportVisibleDensity: 0.07,
+        materialProbePreBloomRadiance: 0.21,
+        materialProbePostBloomRisk: 0.34,
+        materialProbeBloomAmplification: 1.62,
+      },
+    });
     expect(snapshot.render.renderQuantityLedgerVersion).toBe(
       RAYMARCH_QUANTITY_LEDGER_VERSION,
     );
@@ -616,6 +641,22 @@ test("keeps observation transfer render diagnostics non-authoritative without au
   expect(runtimeDiagnostics.render.liveSynthesisSupportDiagnosticCoverage).toBe(
     0,
   );
+  expect(runtimeDiagnostics.render.renderProbeSchemaVersion).toBe(
+    RENDER_PROBE_SCHEMA_VERSION,
+  );
+  expect(runtimeDiagnostics.render.renderProbeAvailable).toBe(false);
+  expect(runtimeDiagnostics.render.renderProbeStatus).toBe("unavailable");
+  expect(runtimeDiagnostics.render.renderProbeUnavailableReason).toBe(
+    "raymarch-debug-missing",
+  );
+  expect(runtimeDiagnostics.render.renderProbeSnapshot).toMatchObject({
+    schemaVersion: RENDER_PROBE_SCHEMA_VERSION,
+    health: {
+      available: false,
+      status: "unavailable",
+      unavailableReason: "raymarch-debug-missing",
+    },
+  });
   expect(runtimeDiagnostics.render.modalBasisCacheDescriptorStaleReason).toBe(
     null,
   );

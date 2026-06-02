@@ -7,6 +7,7 @@ import {
   recordTailDiagnosticsSample,
   summarizeTailDiagnosticWindow,
 } from "./tailDiagnostics.js";
+import { RENDER_PROBE_SCHEMA_VERSION } from "./renderProbeSnapshot.js";
 
 function createLiveSourceEvidence(overrides = {}) {
   return {
@@ -184,7 +185,22 @@ test("tail diagnostics records compact samples on the configured interval", () =
         cancellationSuppression: ["whiteEmissionFieldAuthority"],
       },
     },
+    probe: {
+      health: {
+        available: true,
+      },
+    },
     classification: "unknown",
+  });
+  expect(dump.samples[0].probe).toMatchObject({
+    schemaVersion: RENDER_PROBE_SCHEMA_VERSION,
+    health: {
+      available: true,
+      activeCandidate: true,
+      status: "available",
+      unavailableReason: null,
+    },
+    lanes: ["state", "material", "visual"],
   });
   expect(dump.samples[0]).not.toHaveProperty("modeSlots");
 });
@@ -246,9 +262,9 @@ test("tail diagnostics summarizes material probe windows", () => {
       },
     },
   });
-  expect(
-    windowSummary.metrics.materialProbePreBloomRadiance.mean,
-  ).toBeCloseTo(0.20333333333333334);
+  expect(windowSummary.metrics.materialProbePreBloomRadiance.mean).toBeCloseTo(
+    0.20333333333333334,
+  );
 });
 
 test("tail diagnostics classifies material washout seams across a window", () => {
@@ -346,6 +362,39 @@ test("tail diagnostics does not call an unavailable material probe stable", () =
       "input-drop": 1,
       "observation-transfer-drop": 1,
     },
+  });
+});
+
+test("tail diagnostics accepts a healthy zero-valued render probe", () => {
+  expect(
+    summarizeTailDiagnosticWindow([
+      {
+        frame: {
+          renderAuthority: true,
+          projectedRenderEnergy: 0.4,
+          observationEnergy: 1,
+        },
+        render: {
+          volumeVisible: true,
+          materialProbePhysicalDensity: 0,
+          materialProbeCausticVisibleDensity: 0,
+          materialProbeSupportVisibleDensity: 0,
+          materialProbePreBloomRadiance: 0,
+          materialProbePostBloomRisk: 0,
+          materialProbeBloomAmplification: 1,
+        },
+        probe: {
+          health: {
+            available: true,
+            activeCandidate: true,
+          },
+        },
+      },
+    ]),
+  ).toMatchObject({
+    classification: "stable",
+    probeSampleCount: 1,
+    activeProbeCandidateCount: 1,
   });
 });
 
