@@ -1739,15 +1739,26 @@ export function syncUploadedRenderQuantities(runtimeDiagnostics, runtimeState) {
   const totalSlotAmplitude = readFiniteNumber(
     runtimeState?.uniforms?.uTotalSlotAmplitude?.value,
   );
+  const structuralProjectionDrive = readFiniteNumber(
+    runtimeState?.uniforms?.uStructuralProjectionDrive?.value,
+  );
+  const structuralProjectionConcentration = readFiniteNumber(
+    runtimeState?.uniforms?.uStructuralProjectionConcentration?.value,
+  );
   const render = runtimeDiagnostics.render ?? (runtimeDiagnostics.render = {});
   render.activeModeCount = uploadedModeCount;
   render.uploadedModeCount = uploadedModeCount;
   render.totalSlotAmplitude = totalSlotAmplitude;
+  render.structuralProjectionDrive = structuralProjectionDrive;
+  render.structuralProjectionConcentration = structuralProjectionConcentration;
 
   const modalFreshness = runtimeDiagnostics.modalFreshness;
   if (modalFreshness) {
     modalFreshness.uploadedModeCount = uploadedModeCount;
     modalFreshness.totalSlotAmplitude = totalSlotAmplitude;
+    modalFreshness.structuralProjectionDrive = structuralProjectionDrive;
+    modalFreshness.structuralProjectionConcentration =
+      structuralProjectionConcentration;
   }
 }
 

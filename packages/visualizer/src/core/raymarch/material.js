@@ -568,6 +568,8 @@ function createScatteringNode({
     uTrebleBroadbandEnergy,
     uModeCoherence,
     uTotalSlotAmplitude,
+    uStructuralProjectionDrive,
+    uStructuralProjectionConcentration,
     uModalResponseEnergy,
     uLiveFieldCacheActive,
     uObservationDensityFadeStart,
@@ -625,7 +627,12 @@ function createScatteringNode({
     .add(uModalResponseEnergy.mul(0.08))
     .sub(uChangeSignal.mul(0.08));
   const modalCoefficientEnergy = clamp(
-    uTotalSlotAmplitude,
+    uStructuralProjectionDrive,
+    float(0.0),
+    float(1.0),
+  );
+  const structuralConcentration = clamp(
+    uStructuralProjectionConcentration,
     float(0.0),
     float(1.0),
   );
@@ -1240,6 +1247,15 @@ function createScatteringNode({
       const localHotCoreStart = hotCoreStartDynamic.add(
         hotCoreCrowding.mul(float(HOT_CORE_CROWDING_THRESHOLD_LIFT)),
       );
+      const physicalCausticDensity = clamp(
+        photographicLaserCausticRadiance
+          .mul(edgeFade)
+          .mul(uDensityAbsorption)
+          .mul(densityMod)
+          .mul(activeMask),
+        float(0.0),
+        float(DENSITY_MAX),
+      ).mul(float(DENSITY_BOOST));
       const density = clamp(
         photographicLaserCausticRadiance
           .add(photographicBodyContribution)
@@ -1266,11 +1282,19 @@ function createScatteringNode({
         uObservationContourSupportScale,
       );
       const { visibleDensity } = observationTransfer;
+      const causticVisibilityGate = smoothstep(
+        uObservationDensityFadeStart,
+        uObservationDensityFadeEnd,
+        /** @type {any} */ (physicalCausticDensity),
+      );
+      const causticVisibleDensity = physicalCausticDensity.mul(
+        causticVisibilityGate,
+      );
       const observedContourSupport = observationTransfer.observedContourSupport;
       const highlightMask = smoothstep(
         float(HIGHLIGHT_MASK_START),
         float(HIGHLIGHT_MASK_END),
-        visibleDensity,
+        /** @type {any} */ (causticVisibleDensity),
       );
       const stabilizedDensity = visibleDensity;
       const contourMix = smoothstep(
@@ -1403,11 +1427,41 @@ function createScatteringNode({
         float(0.0),
         float(1.0),
       );
-      const crowdedWhiteEmissionMix = holographicEmissionLift.mul(
-        float(1.0).sub(
-          whiteEmissionCrowding.mul(float(WHITE_EMISSION_CROWDING_REDUCTION)),
-        ),
+      const whiteEmissionRidgeEvidence = clamp(
+        max(ridgeConcentration, causticRidgeAuthority),
+        float(0.0),
+        float(1.0),
       );
+      const whiteEmissionLocalEvidence = clamp(
+        max(
+          ridgeConcentration,
+          photographicFocus.mul(whiteEmissionRidgeEvidence),
+        ),
+        float(0.0),
+        float(1.0),
+      );
+      const whiteEmissionStructuralDrive = clamp(
+        max(structuralConcentration, modalCoefficientEnergy),
+        float(0.0),
+        float(1.0),
+      );
+      const whiteEmissionFieldAuthority = clamp(
+        whiteEmissionLocalEvidence.mul(whiteEmissionStructuralDrive),
+        float(0.0),
+        float(1.0),
+      );
+      const whiteEmissionFieldCrowding = float(1.0).sub(
+        whiteEmissionFieldAuthority,
+      );
+      const crowdedWhiteEmissionMix = holographicEmissionLift
+        .mul(whiteEmissionFieldAuthority)
+        .mul(
+          float(1.0).sub(
+            max(whiteEmissionCrowding, whiteEmissionFieldCrowding).mul(
+              float(WHITE_EMISSION_CROWDING_REDUCTION),
+            ),
+          ),
+        );
       let volumeColor;
       if (cachedSpectralLightEnabled) {
         const spectralColor = colorSum.div(colorWeight.max(float(1e-4)));
@@ -1533,7 +1587,22 @@ function createScatteringNode({
         );
       }
 
-      return volumeColor.mul(stabilizedDensity).mul(structureAwareEmissionGain);
+      const supportVisibleDensity = max(
+        stabilizedDensity.sub(causticVisibleDensity),
+        float(0.0),
+      );
+      const supportRevealColor = uSurfaceColor.mul(
+        float(PHOTOGRAPHIC_DARK_BODY_RATIO),
+      );
+      const causticRadianceContribution = volumeColor.mul(
+        causticVisibleDensity,
+      );
+      const supportRevealContribution = supportRevealColor.mul(
+        supportVisibleDensity,
+      );
+      return causticRadianceContribution
+        .add(supportRevealContribution)
+        .mul(structureAwareEmissionGain);
     },
   );
 }

@@ -26,6 +26,7 @@ import {
   getRaymarchModalBasisCacheDescriptorStaleReason,
   isRaymarchModalBasisCacheReadyForDescriptor,
   isRaymarchSpectralLightCacheReadyForDescriptor,
+  deriveStructuralProjectionDrive,
   resolveRaymarchModalBasisCacheDescriptorBlockedReason,
   resolveRaymarchModalBasisCacheDrawableAuthority,
   shouldRebuildRaymarchSpectralLightCache,
@@ -529,6 +530,31 @@ export function resolveRaymarchTotalSlotAmplitude(runtimeState, activeCount) {
   return uploadedFromBuffer;
 }
 
+export function resolveRaymarchStructuralProjectionDrive(
+  runtimeState,
+  activeCount,
+) {
+  const resolution =
+    runtimeState?.modalBasisCache?.resolution ??
+    RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION;
+  return deriveStructuralProjectionDrive({
+    modalFieldSlots: runtimeState?.modalFieldModeBuffer?.value?.array,
+    activeCount: Math.max(0, Math.floor(activeCount ?? 0)),
+    resolution,
+  });
+}
+
+function setRaymarchStructuralProjectionUniforms(uniforms, projectionDrive) {
+  setIfChanged(
+    uniforms.uStructuralProjectionDrive,
+    projectionDrive?.projectionEnergyDrive ?? 0,
+  );
+  setIfChanged(
+    uniforms.uStructuralProjectionConcentration,
+    projectionDrive?.structuralConcentration ?? 0,
+  );
+}
+
 function estimateModalFieldAmplitude(featureFrame) {
   return estimateAverageModeAmplitude(
     featureFrame?.modalDescriptor?.slotViews?.modalFieldSlots ??
@@ -677,6 +703,8 @@ function blockOverflowedModalDescriptor(
   resetModalBasisCacheRuntimeDiagnostics(runtimeState.modalBasisCache);
   deactivateLiveFieldProjectionCache(runtimeState, "descriptor-overflow");
   setIfChanged(runtimeState.uniforms.uModalFieldModeCount, 0);
+  setIfChanged(runtimeState.uniforms.uTotalSlotAmplitude, 0);
+  setRaymarchStructuralProjectionUniforms(runtimeState.uniforms, null);
   runtimeState.volumeMesh.visible = false;
   runtimeState.idleOverlay.visible = resolveIdleOverlayVisible(
     runtimeState,
@@ -808,8 +836,12 @@ function buildRaymarchDebugSnapshot(
     runtimeState,
     activeModeCount,
   );
+  const structuralProjection = resolveRaymarchStructuralProjectionDrive(
+    runtimeState,
+    activeModeCount,
+  );
   const modalCoefficientEnergy = renderAuthority
-    ? clamp01(totalSlotAmplitude)
+    ? clamp01(structuralProjection.projectionEnergyDrive)
     : 0;
   const modalResponseEnergy = renderAuthority
     ? clamp01(
@@ -1130,6 +1162,16 @@ function buildRaymarchDebugSnapshot(
     renderedModalFieldModeCount: renderedModalField.count,
     renderedModalFieldColorWeightMax: renderedModalField.colorWeightMax,
     renderedModalFieldAmplitudeTotal: renderedModalField.amplitudeTotal,
+    structuralProjectionAmplitudeSum: structuralProjection.amplitudeSum,
+    structuralProjectionEnergy: structuralProjection.structuralEnergy,
+    structuralProjectionEffectiveModeCount:
+      structuralProjection.effectiveModeCount,
+    structuralProjectionRmsAmplitude:
+      structuralProjection.rmsStructuralAmplitude,
+    structuralProjectionDrive: structuralProjection.projectionEnergyDrive,
+    structuralProjectionConcentration:
+      structuralProjection.structuralConcentration,
+    structuralProjectionReferenceEnergy: structuralProjection.referenceEnergy,
     modalDescriptorFieldAuthority:
       modalDescriptor?.fieldAuthority ?? "unavailable",
     modalDescriptorOverflow:
@@ -1406,7 +1448,7 @@ function updateReactiveResponse(
     0,
     Math.round(runtimeState?.uniforms?.uModalFieldModeCount?.value ?? 0),
   );
-  const uploadedSlotAmplitude = resolveRaymarchTotalSlotAmplitude(
+  const structuralProjection = resolveRaymarchStructuralProjectionDrive(
     runtimeState,
     uploadedModeCount,
   );
@@ -1416,7 +1458,7 @@ function updateReactiveResponse(
         featureFrame?.modalResponseRenderEnergy ??
         featureFrame?.debug?.modalResponseEnergy ??
         0,
-      uploadedSlotAmplitude,
+      structuralProjection.projectionEnergyDrive,
     ),
   );
   const reactivity = Math.max(
@@ -2156,11 +2198,13 @@ function applyRaymarchRuntimeUploadAuthority({
   });
 
   const modalFieldModeCount = modalFieldLayer.uploadedActiveCount;
-  setIfChanged(uniforms.uModalFieldModeCount, modalFieldModeCount);
-  setIfChanged(
-    uniforms.uTotalSlotAmplitude,
-    resolveRaymarchTotalSlotAmplitude(runtimeState, modalFieldModeCount),
+  const structuralProjection = resolveRaymarchStructuralProjectionDrive(
+    runtimeState,
+    modalFieldModeCount,
   );
+  setIfChanged(uniforms.uModalFieldModeCount, modalFieldModeCount);
+  setIfChanged(uniforms.uTotalSlotAmplitude, structuralProjection.amplitudeSum);
+  setRaymarchStructuralProjectionUniforms(uniforms, structuralProjection);
 
   const boundaryMode = getRuntimeBoundaryMode(runtimeState);
   const descriptorRadius = runtimeState.uniforms.uRadius?.value ?? 1;
@@ -2315,6 +2359,7 @@ export function tickRaymarchRuntime(
     setIfChanged(uniforms.uTrebleBroadbandEnergy, 0);
     setIfChanged(uniforms.uModeCoherence, 0);
     setIfChanged(uniforms.uTotalSlotAmplitude, 0);
+    setRaymarchStructuralProjectionUniforms(uniforms, null);
     setIfChanged(uniforms.uModalResponseEnergy, 0);
     setIfChanged(uniforms.uKeyTintStrength, 0);
     setIfChanged(uniforms.uKeyMode, 0);
@@ -2434,10 +2479,12 @@ export function tickRaymarchRuntime(
   );
   setIfChanged(uniforms.uModeCoherence, featureFrame?.modeCoherence ?? 0);
   const activeModalFieldModeCount = uniforms.uModalFieldModeCount?.value ?? 0;
-  setIfChanged(
-    uniforms.uTotalSlotAmplitude,
-    resolveRaymarchTotalSlotAmplitude(runtimeState, activeModalFieldModeCount),
+  const structuralProjection = resolveRaymarchStructuralProjectionDrive(
+    runtimeState,
+    activeModalFieldModeCount,
   );
+  setIfChanged(uniforms.uTotalSlotAmplitude, structuralProjection.amplitudeSum);
+  setRaymarchStructuralProjectionUniforms(uniforms, structuralProjection);
   setIfChanged(
     uniforms.uModalResponseEnergy,
     featureFrame?.modalResponseEnergy ??

@@ -169,6 +169,20 @@ function buildTailDiagnosticSample({
           modalFreshness.totalSlotAmplitude ??
           featureFrame?.debug?.totalSlotAmplitude,
       ),
+      structuralProjectionDrive: readFiniteNumber(
+        runtimeState?.uniforms?.uStructuralProjectionDrive?.value ??
+          raymarchDebug.structuralProjectionDrive ??
+          render.structuralProjectionDrive ??
+          modalFreshness.structuralProjectionDrive ??
+          featureFrame?.debug?.structuralProjectionDrive,
+      ),
+      structuralProjectionConcentration: readFiniteNumber(
+        runtimeState?.uniforms?.uStructuralProjectionConcentration?.value ??
+          raymarchDebug.structuralProjectionConcentration ??
+          render.structuralProjectionConcentration ??
+          modalFreshness.structuralProjectionConcentration ??
+          featureFrame?.debug?.structuralProjectionConcentration,
+      ),
       observationEnergy: readFiniteNumber(
         modalFreshness.observationEnergy ?? featureFrame?.observationEnergy,
       ),
@@ -250,6 +264,27 @@ function buildTailDiagnosticSample({
       observationSampledContourSupport: readFiniteNumber(
         render.observationSampledContourSupport ??
           raymarchDebug.observationSampledContourSupport,
+      ),
+      totalSlotAmplitude: readFiniteNumber(
+        runtimeState?.uniforms?.uTotalSlotAmplitude?.value ??
+          raymarchDebug.totalSlotAmplitude ??
+          render.totalSlotAmplitude ??
+          modalFreshness.totalSlotAmplitude ??
+          featureFrame?.debug?.totalSlotAmplitude,
+      ),
+      structuralProjectionDrive: readFiniteNumber(
+        runtimeState?.uniforms?.uStructuralProjectionDrive?.value ??
+          raymarchDebug.structuralProjectionDrive ??
+          render.structuralProjectionDrive ??
+          modalFreshness.structuralProjectionDrive ??
+          featureFrame?.debug?.structuralProjectionDrive,
+      ),
+      structuralProjectionConcentration: readFiniteNumber(
+        runtimeState?.uniforms?.uStructuralProjectionConcentration?.value ??
+          raymarchDebug.structuralProjectionConcentration ??
+          render.structuralProjectionConcentration ??
+          modalFreshness.structuralProjectionConcentration ??
+          featureFrame?.debug?.structuralProjectionConcentration,
       ),
       modalBasisCacheReady: readBoolean(render.modalBasisCacheReady),
       modalBasisCacheSupportReady: readBoolean(

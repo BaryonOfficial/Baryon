@@ -13,6 +13,7 @@ import {
   createRaymarchModalBasisCache,
   createRaymarchSpectralLightCache,
   RAYMARCH_MODAL_BASIS_CACHE_CAPACITY,
+  STRUCTURAL_PROJECTION_REFERENCE_ENERGY,
   resolveRaymarchModalBasisCacheDrawableAuthority,
   shouldRebuildRaymarchModalBasisCache,
 } from "./fieldCache.js";
@@ -151,6 +152,8 @@ function createRuntimeState({ withFieldCache = false } = {}) {
       uTrebleBroadbandEnergy: { value: 0 },
       uModeCoherence: { value: 0 },
       uTotalSlotAmplitude: { value: 0 },
+      uStructuralProjectionDrive: { value: 0 },
+      uStructuralProjectionConcentration: { value: 0 },
       uModalResponseEnergy: { value: 0 },
       uLiveFieldCacheActive: { value: 0 },
       uObservationDensityFadeStart: { value: 0 },
@@ -620,6 +623,9 @@ describe("tickRaymarchRuntime", () => {
     runtimeState.modalBasisCache.bandwidthRejectedModeCount = 1;
     runtimeState.modalBasisCache.bandwidthRejectedRawModalEnergy = 0.4;
     runtimeState.modalBasisCache.liveSynthesisRawGradientEnvelope = 3.1;
+    runtimeState.uniforms.uTotalSlotAmplitude.value = 0.9;
+    runtimeState.uniforms.uStructuralProjectionDrive.value = 0.8;
+    runtimeState.uniforms.uStructuralProjectionConcentration.value = 0.7;
     const featureFrame = createActiveFeatureFrame({
       backboneSlots: makeModeSlots(3, () => 0.4),
       detailSlots: makeModeSlots(3, () => 0.35, 10),
@@ -644,6 +650,16 @@ describe("tickRaymarchRuntime", () => {
       "blocked",
     );
     expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(0);
+    expect(runtimeState.uniforms.uTotalSlotAmplitude.value).toBe(0);
+    expect(runtimeState.uniforms.uStructuralProjectionDrive.value).toBe(0);
+    expect(
+      runtimeState.uniforms.uStructuralProjectionConcentration.value,
+    ).toBe(0);
+    expect(runtimeState.debugSnapshot.totalSlotAmplitude).toBe(0);
+    expect(runtimeState.debugSnapshot.structuralProjectionDrive).toBe(0);
+    expect(
+      runtimeState.debugSnapshot.structuralProjectionConcentration,
+    ).toBe(0);
     expect(
       runtimeState.debugSnapshot.modalBasisCacheBandwidthRejectedModeCount,
     ).toBe(0);
@@ -795,6 +811,17 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.uniforms.uTotalSlotAmplitude.value).toBeCloseTo(
       0.8 + 0.6 + 0.55 + 0.4,
     );
+    const expectedStructuralEnergy =
+      0.8 * 0.8 + 0.6 * 0.6 + 0.55 * 0.55 + 0.4 * 0.4;
+    const expectedProjectionDrive =
+      expectedStructuralEnergy /
+      (expectedStructuralEnergy + STRUCTURAL_PROJECTION_REFERENCE_ENERGY);
+    expect(
+      runtimeState.uniforms.uStructuralProjectionDrive.value,
+    ).toBeCloseTo(expectedProjectionDrive);
+    expect(
+      runtimeState.uniforms.uStructuralProjectionConcentration.value,
+    ).toBeCloseTo(expectedStructuralEnergy / (2.35 * 2.35));
     const [sub, lowMid, highMid, air] =
       runtimeState.uniforms.uBandEnergies.value.toArray();
     expect(sub).toBeCloseTo(0.4);
@@ -821,6 +848,19 @@ describe("tickRaymarchRuntime", () => {
     expect(
       runtimeState.debugSnapshot.raymarchDebug.renderedModalFieldAmplitudeTotal,
     ).toBeCloseTo(2.35);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.structuralProjectionAmplitudeSum,
+    ).toBeCloseTo(2.35);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.structuralProjectionEnergy,
+    ).toBeCloseTo(expectedStructuralEnergy);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.structuralProjectionDrive,
+    ).toBeCloseTo(expectedProjectionDrive);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug
+        .structuralProjectionConcentration,
+    ).toBeCloseTo(expectedStructuralEnergy / (2.35 * 2.35));
     expect(
       runtimeState.debugSnapshot.raymarchDebug.modalDescriptorOverflow,
     ).toBe(false);
@@ -859,7 +899,9 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.debugSnapshot.raymarchDebug.modalResponseEnergy).toBe(
       0.37,
     );
-    expect(runtimeState.debugSnapshot.raymarchDebug.observationEnergy).toBe(1);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.observationEnergy,
+    ).toBeCloseTo(expectedProjectionDrive);
     expect(
       runtimeState.debugSnapshot.raymarchDebug
         .projectionEnergyBudgetSourceCoupled,
@@ -3490,6 +3532,10 @@ describe("tickRaymarchRuntime", () => {
     await flushMicrotasks();
     expect(computeCalls).toBe(1);
     const activeDescriptor = runtimeState.modalBasisCache.activeDescriptor;
+    const initialProjectionDrive =
+      runtimeState.uniforms.uStructuralProjectionDrive.value;
+    const initialProjectionConcentration =
+      runtimeState.uniforms.uStructuralProjectionConcentration.value;
 
     const burstTime = 1 + 1 / 60;
     tickRaymarchRuntime(
@@ -3510,6 +3556,12 @@ describe("tickRaymarchRuntime", () => {
     expect(
       runtimeState.currentModalBasisCacheDescriptor.modalBasisCacheTopologyHash,
     ).toBe(activeDescriptor.modalBasisCacheTopologyHash);
+    expect(
+      runtimeState.uniforms.uStructuralProjectionDrive.value,
+    ).toBeCloseTo(initialProjectionDrive);
+    expect(
+      runtimeState.uniforms.uStructuralProjectionConcentration.value,
+    ).toBeCloseTo(initialProjectionConcentration);
 
     const middleTime = 1 + 2 / 60;
     tickRaymarchRuntime(
@@ -3538,6 +3590,12 @@ describe("tickRaymarchRuntime", () => {
       "raymarchFieldEvaluationMode",
     );
     expect(runtimeState.volumeMesh.visible).toBe(true);
+    expect(
+      runtimeState.uniforms.uStructuralProjectionDrive.value,
+    ).toBeCloseTo(initialProjectionDrive);
+    expect(
+      runtimeState.uniforms.uStructuralProjectionConcentration.value,
+    ).toBeCloseTo(initialProjectionConcentration);
 
     const submittedTime = 1 + 3 / 60;
     tickRaymarchRuntime(

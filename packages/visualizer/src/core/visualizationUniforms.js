@@ -68,6 +68,8 @@ export function createVisualizationUniforms(parameters) {
     uTrebleBroadbandEnergy: uniform(0.0),
     uModeCoherence: uniform(0.0),
     uTotalSlotAmplitude: uniform(0.0),
+    uStructuralProjectionDrive: uniform(0.0),
+    uStructuralProjectionConcentration: uniform(0.0),
     uModalResponseEnergy: uniform(0.0),
     uLiveFieldCacheActive: uniform(0.0),
     uObservationDensityFadeStart: uniform(

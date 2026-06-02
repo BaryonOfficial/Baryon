@@ -151,6 +151,88 @@ describe("live synthesis cancellation ratio", () => {
   });
 });
 
+describe("structural projection drive", () => {
+  it("keeps equal structural energy independent of retained mode count", () => {
+    const sparse = raymarchFieldCache.deriveStructuralProjectionDrive({
+      modalFieldSlots: new Float32Array([1, 1, 1, 1]),
+      activeCount: 1,
+      resolution: 8,
+    });
+    const dense = raymarchFieldCache.deriveStructuralProjectionDrive({
+      modalFieldSlots: new Float32Array([
+        1, 1, 1, 0.5, 1, 2, 1, 0.5, 2, 1, 1, 0.5, 1, 1, 2, 0.5,
+      ]),
+      activeCount: 4,
+      resolution: 8,
+    });
+
+    expect(sparse.amplitudeSum).toBeCloseTo(1, 6);
+    expect(dense.amplitudeSum).toBeCloseTo(2, 6);
+    expect(sparse.structuralEnergy).toBeCloseTo(1, 6);
+    expect(dense.structuralEnergy).toBeCloseTo(1, 6);
+    expect(dense.projectionEnergyDrive).toBeCloseTo(
+      sparse.projectionEnergyDrive,
+      6,
+    );
+    expect(sparse.structuralConcentration).toBeCloseTo(1, 6);
+    expect(dense.structuralConcentration).toBeCloseTo(0.25, 6);
+    expect(sparse.effectiveModeCount).toBeCloseTo(1, 6);
+    expect(dense.effectiveModeCount).toBeCloseTo(4, 6);
+    expect(sparse.rmsStructuralAmplitude).toBeCloseTo(1, 6);
+    expect(dense.rmsStructuralAmplitude).toBeCloseTo(0.5, 6);
+  });
+
+  it("raises projection drive with structural energy without replacing it by concentration", () => {
+    const quiet = raymarchFieldCache.deriveStructuralProjectionDrive({
+      modalFieldSlots: new Float32Array([1, 1, 1, 0.25, 1, 2, 1, 0.25]),
+      activeCount: 2,
+      resolution: 8,
+    });
+    const loud = raymarchFieldCache.deriveStructuralProjectionDrive({
+      modalFieldSlots: new Float32Array([1, 1, 1, 0.5, 1, 2, 1, 0.5]),
+      activeCount: 2,
+      resolution: 8,
+    });
+
+    expect(loud.structuralEnergy).toBeGreaterThan(quiet.structuralEnergy);
+    expect(loud.projectionEnergyDrive).toBeGreaterThan(
+      quiet.projectionEnergyDrive,
+    );
+    expect(loud.structuralConcentration).toBeCloseTo(
+      quiet.structuralConcentration,
+      6,
+    );
+    expect(quiet.effectiveModeCount).toBeCloseTo(2, 6);
+    expect(loud.effectiveModeCount).toBeCloseTo(2, 6);
+  });
+
+  it("filters unrepresentable modes out of projection authority", () => {
+    const projection = raymarchFieldCache.deriveStructuralProjectionDrive({
+      modalFieldSlots: new Float32Array([1, 1, 1, 0.5, 9, 1, 1, 1]),
+      activeCount: 2,
+      resolution: 8,
+    });
+
+    expect(projection.amplitudeSum).toBeCloseTo(0.5, 6);
+    expect(projection.structuralEnergy).toBeCloseTo(0.25, 6);
+    expect(projection.effectiveModeCount).toBeCloseTo(1, 6);
+    expect(projection.structuralConcentration).toBeCloseTo(1, 6);
+  });
+
+  it("keeps quiet coherent modes visible above the structural energy epsilon", () => {
+    const projection = raymarchFieldCache.deriveStructuralProjectionDrive({
+      modalFieldSlots: new Float32Array([1, 1, 1, 0.006]),
+      activeCount: 1,
+      resolution: 8,
+    });
+
+    expect(projection.structuralEnergy).toBeLessThan(0.0001);
+    expect(projection.projectionEnergyDrive).toBeGreaterThan(0.003);
+    expect(projection.structuralConcentration).toBeCloseTo(1, 6);
+    expect(projection.effectiveModeCount).toBeCloseTo(1, 6);
+  });
+});
+
 function resolveModalFieldRebuildOptions(options) {
   const modeBuffer =
     options.modalFieldModeBuffer ?? options.backboneModeBuffer ?? null;

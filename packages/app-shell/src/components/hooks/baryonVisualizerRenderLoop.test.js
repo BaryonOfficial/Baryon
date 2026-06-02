@@ -3036,13 +3036,27 @@ test("syncUploadedRenderQuantities mirrors runtime uniforms into diagnostics", (
     uniforms: {
       uModalFieldModeCount: { value: 5 },
       uTotalSlotAmplitude: { value: 0.18 },
+      uStructuralProjectionDrive: { value: 0.42 },
+      uStructuralProjectionConcentration: { value: 0.31 },
     },
   });
 
   expect(runtimeDiagnostics.render.uploadedModeCount).toBe(5);
   expect(runtimeDiagnostics.render.totalSlotAmplitude).toBeCloseTo(0.18);
+  expect(runtimeDiagnostics.render.structuralProjectionDrive).toBeCloseTo(
+    0.42,
+  );
+  expect(
+    runtimeDiagnostics.render.structuralProjectionConcentration,
+  ).toBeCloseTo(0.31);
   expect(runtimeDiagnostics.modalFreshness.uploadedModeCount).toBe(5);
   expect(runtimeDiagnostics.modalFreshness.totalSlotAmplitude).toBeCloseTo(
     0.18,
   );
+  expect(
+    runtimeDiagnostics.modalFreshness.structuralProjectionDrive,
+  ).toBeCloseTo(0.42);
+  expect(
+    runtimeDiagnostics.modalFreshness.structuralProjectionConcentration,
+  ).toBeCloseTo(0.31);
 });

@@ -33,6 +33,8 @@ export const RAYMARCH_BASIS_ATLAS_PACKING = "z-slice-pages-v1";
 const FIELD_CACHE_COMPUTE_WORKGROUP_SIZE = Object.freeze([8, 8, 4]);
 const FIELD_CACHE_COLOR_QUANTIZATION = 32;
 export const MODAL_BASIS_CACHE_ENERGY_EPSILON = 0.01;
+export const STRUCTURAL_PROJECTION_REFERENCE_ENERGY = 0.01;
+const STRUCTURAL_PROJECTION_EPSILON = 1e-12;
 
 export function deriveLiveSynthesisCancellationRatio(field, unsignedSupport) {
   if (!(unsignedSupport > MODAL_BASIS_CACHE_ENERGY_EPSILON)) {
@@ -399,6 +401,8 @@ function createRaymarchCacheUniformSnapshots() {
     uTime: uniform(0),
     uModalFieldModeCount: uniform(0),
     uTotalSlotAmplitude: uniform(0),
+    uStructuralProjectionDrive: uniform(0),
+    uStructuralProjectionConcentration: uniform(0),
   };
 }
 
@@ -446,6 +450,16 @@ function updateRaymarchCacheUniformSnapshots(targetUniforms, sourceUniforms) {
     "uTotalSlotAmplitude",
     0,
   );
+  targetUniforms.uStructuralProjectionDrive.value = readUniformNumber(
+    sourceUniforms,
+    "uStructuralProjectionDrive",
+    0,
+  );
+  targetUniforms.uStructuralProjectionConcentration.value = readUniformNumber(
+    sourceUniforms,
+    "uStructuralProjectionConcentration",
+    0,
+  );
 }
 
 function createRaymarchCacheRequestVec4BufferSnapshot(
@@ -472,6 +486,20 @@ function createRaymarchCacheRequestUniformSnapshots(sourceUniforms) {
     },
     uTotalSlotAmplitude: {
       value: readUniformNumber(sourceUniforms, "uTotalSlotAmplitude", 0),
+    },
+    uStructuralProjectionDrive: {
+      value: readUniformNumber(
+        sourceUniforms,
+        "uStructuralProjectionDrive",
+        0,
+      ),
+    },
+    uStructuralProjectionConcentration: {
+      value: readUniformNumber(
+        sourceUniforms,
+        "uStructuralProjectionConcentration",
+        0,
+      ),
     },
   };
 }
@@ -680,6 +708,83 @@ export function sumLiveSynthesisRepresentableUploadWeight({
   }
 
   return totalWeight;
+}
+
+export function deriveStructuralProjectionDrive({
+  modalFieldSlots,
+  activeCount,
+  resolution = RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
+  referenceEnergy = STRUCTURAL_PROJECTION_REFERENCE_ENERGY,
+}) {
+  const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
+  const normalizedResolution = normalizeModalBasisCacheResolution(resolution);
+  const projectionReferenceEnergy =
+    Number.isFinite(referenceEnergy) && referenceEnergy > 0
+      ? referenceEnergy
+      : STRUCTURAL_PROJECTION_REFERENCE_ENERGY;
+
+  if (!modalFieldSlots || clampedActiveCount <= 0) {
+    return {
+      amplitudeSum: 0,
+      structuralEnergy: 0,
+      effectiveModeCount: 0,
+      rmsStructuralAmplitude: 0,
+      projectionEnergyDrive: 0,
+      structuralConcentration: 0,
+      referenceEnergy: projectionReferenceEnergy,
+    };
+  }
+
+  let amplitudeSum = 0;
+  let structuralEnergy = 0;
+  for (let slotIndex = 0; slotIndex < clampedActiveCount; slotIndex += 1) {
+    const offset = slotIndex * 4;
+    const amplitude = Math.max(0, modalFieldSlots[offset + 3] ?? 0);
+    if (!(amplitude > 0)) {
+      continue;
+    }
+    if (
+      !isBasisPageSlotRepresentable({
+        slots: modalFieldSlots,
+        offset,
+        resolution: normalizedResolution,
+      })
+    ) {
+      continue;
+    }
+    amplitudeSum += amplitude;
+    structuralEnergy += amplitude * amplitude;
+  }
+
+  const hasStructuralEnergy = structuralEnergy > STRUCTURAL_PROJECTION_EPSILON;
+  const hasAmplitudeSum = amplitudeSum > STRUCTURAL_PROJECTION_EPSILON;
+  const amplitudeSumSquared = amplitudeSum * amplitudeSum;
+  const effectiveModeCount =
+    hasStructuralEnergy && hasAmplitudeSum
+      ? amplitudeSumSquared / structuralEnergy
+      : 0;
+  const structuralConcentration =
+    hasStructuralEnergy && hasAmplitudeSum
+      ? clamp01(structuralEnergy / amplitudeSumSquared)
+      : 0;
+  const rmsStructuralAmplitude = hasStructuralEnergy
+    ? Math.sqrt(structuralEnergy / Math.max(effectiveModeCount, 1))
+    : 0;
+  const projectionEnergyDrive = hasStructuralEnergy
+    ? clamp01(
+        structuralEnergy / (structuralEnergy + projectionReferenceEnergy),
+      )
+    : 0;
+
+  return {
+    amplitudeSum,
+    structuralEnergy,
+    effectiveModeCount,
+    rmsStructuralAmplitude,
+    projectionEnergyDrive,
+    structuralConcentration,
+    referenceEnergy: projectionReferenceEnergy,
+  };
 }
 
 function isBasisPageSlotContributing({ slots, offset, resolution }) {

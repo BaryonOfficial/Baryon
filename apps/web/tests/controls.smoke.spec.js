@@ -500,6 +500,8 @@ test.describe("Baryon control smoke", () => {
         stepBudget: expect.any(Number),
       });
 
+    await setControl(page, "testToneHz", 528);
+    await setControl(page, "testToneAmplitude", 1);
     await setControl(page, "injectTestTone", true);
     await expect
       .poll(() =>
@@ -519,6 +521,50 @@ test.describe("Baryon control smoke", () => {
         modeSlotCount: expect.any(Number),
         volumeVisible: true,
       });
+
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const debug = window.__baryonAuditSnapshot?.raymarchDebug ?? {};
+          return {
+            totalSlotAmplitude: debug.totalSlotAmplitude ?? null,
+            structuralProjectionDrive:
+              debug.structuralProjectionDrive ?? null,
+            structuralProjectionConcentration:
+              debug.structuralProjectionConcentration ?? null,
+            modalCoefficientEnergy: debug.modalCoefficientEnergy ?? null,
+          };
+        }),
+      )
+      .toMatchObject({
+        totalSlotAmplitude: expect.any(Number),
+        structuralProjectionDrive: expect.any(Number),
+        structuralProjectionConcentration: expect.any(Number),
+        modalCoefficientEnergy: expect.any(Number),
+      });
+    const projectionSnapshot = await page.evaluate(() => {
+      const debug = window.__baryonAuditSnapshot?.raymarchDebug ?? {};
+      return {
+        totalSlotAmplitude: debug.totalSlotAmplitude ?? 0,
+        structuralProjectionDrive: debug.structuralProjectionDrive ?? 0,
+        structuralProjectionConcentration:
+          debug.structuralProjectionConcentration ?? 0,
+        modalCoefficientEnergy: debug.modalCoefficientEnergy ?? 0,
+      };
+    });
+    expect(projectionSnapshot.totalSlotAmplitude).toBeGreaterThanOrEqual(0);
+    expect(projectionSnapshot.structuralProjectionDrive).toBeGreaterThan(0);
+    expect(projectionSnapshot.structuralProjectionDrive).toBeLessThanOrEqual(1);
+    expect(
+      projectionSnapshot.structuralProjectionConcentration,
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      projectionSnapshot.structuralProjectionConcentration,
+    ).toBeLessThanOrEqual(1);
+    expect(projectionSnapshot.modalCoefficientEnergy).toBeCloseTo(
+      projectionSnapshot.structuralProjectionDrive,
+      6,
+    );
 
     await setControl(page, "bloomStrength", 0.91);
     await expect

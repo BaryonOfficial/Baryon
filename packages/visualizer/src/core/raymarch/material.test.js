@@ -122,6 +122,80 @@ describe("raymarch volume material", () => {
     expect(observationEnergyBlock).not.toContain("phaseCoherentFieldEnergy");
   });
 
+  it("uses structural projection drive instead of raw amplitude sum for modal observation energy", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const coefficientStart = expectSourceIndex(
+      source,
+      "const modalCoefficientEnergy =",
+    );
+    const excitationGateStart = expectSourceIndex(
+      source.slice(coefficientStart),
+      "// Excitation gate:",
+    );
+    const coefficientBlock = source.slice(
+      coefficientStart,
+      coefficientStart + excitationGateStart,
+    );
+    const amplitudeNormStart = expectSourceIndex(
+      source,
+      "const amplitudeNorm =",
+    );
+    const modalFieldCountStart = expectSourceIndex(
+      source,
+      "const modalFieldCount =",
+    );
+    const amplitudeNormBlock = source.slice(
+      amplitudeNormStart,
+      modalFieldCountStart,
+    );
+
+    expect(coefficientBlock).toContain("uStructuralProjectionDrive");
+    expect(coefficientBlock).not.toContain("uTotalSlotAmplitude");
+    expect(amplitudeNormBlock).toContain("uTotalSlotAmplitude");
+  });
+
+  it("uses structural and local field evidence to suppress diffuse white emission", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const structuralConcentrationStart = expectSourceIndex(
+      source,
+      "const structuralConcentration =",
+    );
+    const causticRidgeAuthorityStart = expectSourceIndex(
+      source,
+      "const causticRidgeAuthority =",
+    );
+    const whiteEmissionStart = expectSourceIndex(
+      source,
+      "const whiteEmissionRidgeEvidence =",
+    );
+    const colorBranchStart = expectSourceIndex(source, "let volumeColor;");
+    const whiteEmissionBlock = source.slice(whiteEmissionStart, colorBranchStart);
+
+    expect(structuralConcentrationStart).toBeLessThan(whiteEmissionStart);
+    expect(causticRidgeAuthorityStart).toBeLessThan(whiteEmissionStart);
+    expect(whiteEmissionBlock).toContain("whiteEmissionRidgeEvidence");
+    expect(whiteEmissionBlock).toContain("whiteEmissionLocalEvidence");
+    expect(whiteEmissionBlock).toContain("structuralConcentration");
+    expect(whiteEmissionBlock).toContain("ridgeConcentration");
+    expect(whiteEmissionBlock).toContain("causticRidgeAuthority");
+    expect(whiteEmissionBlock).toContain("photographicFocus");
+    expect(whiteEmissionBlock).toContain(
+      "photographicFocus.mul(whiteEmissionRidgeEvidence)",
+    );
+    expect(whiteEmissionBlock).not.toContain(
+      "max(ridgeConcentration, photographicFocus)",
+    );
+    expect(whiteEmissionBlock).not.toContain("cancellationSuppression");
+    expect(whiteEmissionBlock).toContain("whiteEmissionFieldCrowding");
+    expect(whiteEmissionBlock).toContain(".mul(whiteEmissionFieldAuthority)");
+  });
+
   it("keeps rim compression out of modal observation support", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
@@ -539,7 +613,7 @@ describe("raymarch volume material", () => {
     );
     const finalRadianceStart = expectSourceIndex(
       source,
-      "return volumeColor.mul(stabilizedDensity).mul(structureAwareEmissionGain);",
+      "return causticRadianceContribution",
     );
     const finalRadianceBlock = source.slice(
       stabilizedDensityStart,
@@ -554,11 +628,16 @@ describe("raymarch volume material", () => {
     expect(finalRadianceBlock).not.toContain("effectiveCancellationRatio");
   });
 
-  it("lets observation-rescued density participate in optical highlight readout", () => {
+  it("keeps body and observation-rescued density out of optical highlight readout", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
       "utf8",
     );
+    const physicalCausticDensityStart = expectSourceIndex(
+      source,
+      "const physicalCausticDensity = clamp(",
+    );
+    const densityStart = expectSourceIndex(source, "const density = clamp(");
     const observationTransferStart = expectSourceIndex(
       source,
       "const observationTransfer = deriveObservationTransferNode(",
@@ -566,6 +645,10 @@ describe("raymarch volume material", () => {
     const visibleDensityStart = expectSourceIndex(
       source,
       "const { visibleDensity } = observationTransfer;",
+    );
+    const causticVisibleDensityStart = expectSourceIndex(
+      source,
+      "const causticVisibleDensity = physicalCausticDensity.mul(",
     );
     const highlightMaskStart = expectSourceIndex(
       source,
@@ -579,11 +662,65 @@ describe("raymarch volume material", () => {
       highlightMaskStart,
       stabilizedDensityStart,
     );
+    const physicalCausticDensityBlock = source.slice(
+      physicalCausticDensityStart,
+      densityStart,
+    );
+    const densityBlock = source.slice(densityStart, observationTransferStart);
 
+    expect(physicalCausticDensityStart).toBeLessThan(densityStart);
+    expect(physicalCausticDensityBlock).toContain(
+      "photographicLaserCausticRadiance",
+    );
+    expect(physicalCausticDensityBlock).not.toContain(
+      "photographicBodyContribution",
+    );
+    expect(densityBlock).toContain("photographicBodyContribution");
     expect(visibleDensityStart).toBeGreaterThan(observationTransferStart);
-    expect(highlightMaskStart).toBeGreaterThan(visibleDensityStart);
-    expect(highlightMaskBlock).toContain("visibleDensity");
-    expect(highlightMaskBlock).not.toContain("physicalVisibleDensity");
+    expect(causticVisibleDensityStart).toBeGreaterThan(visibleDensityStart);
+    expect(highlightMaskStart).toBeGreaterThan(causticVisibleDensityStart);
+    expect(highlightMaskBlock).toContain("causticVisibleDensity");
+    expect(highlightMaskBlock).not.toContain("visibleDensity");
+    expect(highlightMaskBlock).not.toContain("observedDensityFloor");
+  });
+
+  it("keeps support density from inheriting full caustic radiance", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const stabilizedDensityStart = expectSourceIndex(
+      source,
+      "const stabilizedDensity = visibleDensity;",
+    );
+    const supportDensityStart = expectSourceIndex(
+      source,
+      "const supportVisibleDensity = max(",
+    );
+    const causticRadianceStart = expectSourceIndex(
+      source,
+      "const causticRadianceContribution = volumeColor.mul(",
+    );
+    const supportRevealStart = expectSourceIndex(
+      source,
+      "const supportRevealContribution = supportRevealColor.mul(",
+    );
+    const finalRadianceStart = expectSourceIndex(
+      source,
+      "return causticRadianceContribution",
+    );
+    const finalRadianceBlock = source.slice(
+      supportDensityStart,
+      finalRadianceStart + 220,
+    );
+
+    expect(supportDensityStart).toBeGreaterThan(stabilizedDensityStart);
+    expect(causticRadianceStart).toBeGreaterThan(supportDensityStart);
+    expect(supportRevealStart).toBeGreaterThan(causticRadianceStart);
+    expect(finalRadianceBlock).toContain("supportRevealColor");
+    expect(finalRadianceBlock).toContain("uSurfaceColor.mul");
+    expect(finalRadianceBlock).toContain("PHOTOGRAPHIC_DARK_BODY_RATIO");
+    expect(finalRadianceBlock).not.toContain("volumeColor.mul(stabilizedDensity)");
   });
 
   it("samples only the canonical modal basis atlas texture for field ownership", () => {
@@ -735,7 +872,7 @@ describe("raymarch volume material", () => {
     );
     const finalDensityStart = expectSourceIndex(
       source,
-      "return volumeColor.mul(stabilizedDensity)",
+      "return causticRadianceContribution",
     );
 
     expect(tintedRadianceStart).toBeGreaterThan(spectralVolumeStart);
