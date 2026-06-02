@@ -1,5 +1,6 @@
 import { formatPerformanceProfileLabel } from "@baryon/visualizer/render/outputProfilePolicy";
 import { usesRaymarchVolumePipeline } from "@baryon/visualizer/visualization/types";
+import { TOP_RIGHT_OVERLAY_PANEL_WIDTH } from "./topRightOverlayLayout.js";
 
 function formatNumber(value, digits = 1) {
   if (
@@ -88,14 +89,14 @@ export default function PerformanceHud({
         top: stacked ? "auto" : top,
         right: stacked ? "auto" : right,
         zIndex: 10000,
-        minWidth: "9.25rem",
+        width: TOP_RIGHT_OVERLAY_PANEL_WIDTH,
+        boxSizing: "border-box",
         padding: "0.7rem 0.78rem",
         borderRadius: "0.78rem",
         background: "var(--nd-surface)",
-        border: "1px solid var(--nd-border-visible)",
+        border: "none",
         color: "var(--nd-text-primary)",
-        fontFamily:
-          '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
+        fontFamily: "var(--baryon-type-mono-family)",
         fontSize: "10.5px",
         lineHeight: 1.45,
         pointerEvents: "none",
@@ -107,7 +108,7 @@ export default function PerformanceHud({
           fontWeight: 700,
           marginBottom: "0.32rem",
           textTransform: "uppercase",
-          letterSpacing: "0.14em",
+          letterSpacing: "var(--baryon-type-section-letter-spacing)",
           color: "var(--nd-text-secondary)",
         }}
       >

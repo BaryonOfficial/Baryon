@@ -9,7 +9,7 @@ import {
   applyReactiveBloomState,
   buildPerformanceHudSnapshot,
   finalizeTerminalVisualIdleState,
-  getEffectiveAdaptiveRenderScale,
+  getEffectiveRenderScale,
   publishDevtoolsSnapshots,
   resolveFeatureFrame,
   shouldBypassTemporalHistoryForRaymarchFrame,
@@ -18,7 +18,7 @@ import {
   updateRendererDiagnostics,
   updateAdaptiveRaymarchStepBudget,
   resolveRaymarchGovernorFrameInputs,
-  syncAdaptiveRenderSurfacePixelRatio,
+  syncRenderSurfacePixelRatio,
   syncUploadedRenderQuantities,
 } from "./baryonVisualizerRenderLoop.js";
 import { RENDER_CONTEXTS } from "@baryon/visualizer/render/outputPipeline";
@@ -87,13 +87,11 @@ function createAdaptiveRaymarchHarness({
   runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 64;
   runtimeDiagnostics.adaptiveRaymarch.requestedRenderScale = 1;
   runtimeDiagnostics.adaptiveRaymarch.currentRung = 3;
-  runtimeDiagnostics.adaptiveRaymarch.currentScaleRung = 2;
 
   const runtimeState = {
     requestedRaymarchSteps: 64,
     effectiveRaymarchSteps: 64,
     autoRaymarchResumeRung: null,
-    autoRaymarchResumeScaleRung: null,
     uniforms: {
       uRaymarchSteps: {
         value: 64,
@@ -149,9 +147,7 @@ function primeAdaptiveRecoveryAttempt(runtimeDiagnostics) {
 
 function assertAdaptiveRecoveryBlocked(runtimeDiagnostics, blockedReason) {
   expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(3);
-  expect(runtimeDiagnostics.adaptiveRaymarch.currentScaleRung).toBe(2);
   expect(runtimeDiagnostics.adaptiveRaymarch.stepUpCount).toBe(0);
-  expect(runtimeDiagnostics.adaptiveRaymarch.scaleStepUpCount).toBe(0);
   expect(runtimeDiagnostics.adaptiveRaymarch.stableWindowCount).toBe(0);
   expect(runtimeDiagnostics.adaptiveRaymarch.recoveryEligible).toBe(false);
   expect(runtimeDiagnostics.adaptiveRaymarch.recoveryBlockedReason).toBe(
@@ -245,6 +241,7 @@ function createResolveFeatureFrameHarness(overrides = {}) {
           lastLiveFrameRef: { current: { fieldState: "idle" } },
           lastActiveFrameRef: { current: null },
           lastIdleFrameRef: { current: null },
+          pausedFileFrameRef: { current: null },
           analysisSchedulerRef: { current: null },
         },
       },
@@ -1124,7 +1121,7 @@ test("publishes authoritative audit callbacks without devtools globals", () => {
   }
 });
 
-test("auto raymarch drops render scale before crossing the cymatic sampling floor", () => {
+test("auto raymarch preserves surface resolution before crossing the cymatic sampling floor", () => {
   const runtimeDiagnostics = createRuntimeDiagnostics();
   runtimeDiagnostics.lastFrameTimeMs = 19.2;
   runtimeDiagnostics.smoothedFrameTimeMs = 19.2;
@@ -1132,7 +1129,6 @@ test("auto raymarch drops render scale before crossing the cymatic sampling floo
     requestedRaymarchSteps: 64,
     effectiveRaymarchSteps: 64,
     autoRaymarchResumeRung: null,
-    autoRaymarchResumeScaleRung: null,
     uniforms: {
       uRaymarchSteps: {
         value: 64,
@@ -1174,12 +1170,8 @@ test("auto raymarch drops render scale before crossing the cymatic sampling floo
 
   expect(runtimeState.effectiveRaymarchSteps).toBeLessThan(64);
   expect(runtimeState.effectiveRaymarchSteps).toBeGreaterThanOrEqual(16);
-  expect(getEffectiveAdaptiveRenderScale(runtimeDiagnostics, 1)).toBeLessThan(
-    1,
-  );
-  expect(
-    runtimeDiagnostics.adaptiveRaymarch.scaleStepDownCount,
-  ).toBeGreaterThan(0);
+  expect(getEffectiveRenderScale(runtimeDiagnostics, 1)).toBe(1);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(1);
 });
 
 test("max-quality keeps the requested raymarch budget under modal complexity", () => {
@@ -1214,7 +1206,7 @@ test("max-quality keeps the requested raymarch budget under modal complexity", (
   expect(runtimeDiagnostics.adaptiveRaymarch.adaptiveRaymarchActive).toBe(
     false,
   );
-  // max-quality holds the user step/scale (the ladder/cap owns them)...
+  // max-quality holds the user step cap and profile render scale.
   expect(runtimeState.performanceGovernor.stepScaleAdaptationActive).toBe(
     false,
   );
@@ -1263,8 +1255,7 @@ test("max-quality keeps user raymarch budget and render scale under frame pressu
   expect(runtimeState.effectiveRaymarchSteps).toBe(64);
   expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(64);
   expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(1);
-  expect(getEffectiveAdaptiveRenderScale(runtimeDiagnostics, 1)).toBe(1);
-  expect(runtimeDiagnostics.adaptiveRaymarch.scaleStepDownCount).toBe(0);
+  expect(getEffectiveRenderScale(runtimeDiagnostics, 1)).toBe(1);
 });
 
 test("auto raymarch ignores long frames caused by active UI interaction", () => {
@@ -1281,9 +1272,7 @@ test("auto raymarch ignores long frames caused by active UI interaction", () => 
   updateAdaptiveRaymarchStepBudget(args);
 
   expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(3);
-  expect(runtimeDiagnostics.adaptiveRaymarch.currentScaleRung).toBe(2);
   expect(runtimeDiagnostics.adaptiveRaymarch.stepDownCount).toBe(0);
-  expect(runtimeDiagnostics.adaptiveRaymarch.scaleStepDownCount).toBe(0);
   expect(
     runtimeDiagnostics.uiInteraction.suppressedAdaptivePressureFrameCount,
   ).toBe(1);
@@ -1304,15 +1293,15 @@ test("auto raymarch does not publish a phase rebuild cadence under frame pressur
   expect(runtimeState).not.toHaveProperty(removedPhaseCadenceKey);
 });
 
-test("performance HUD scale falls back to requested render scale when adaptive mode is idle", () => {
+test("performance HUD scale uses requested render scale when the integrator is idle", () => {
   const runtimeDiagnostics = createRuntimeDiagnostics();
 
-  expect(getEffectiveAdaptiveRenderScale(runtimeDiagnostics, 0.75)).toBe(0.75);
+  expect(getEffectiveRenderScale(runtimeDiagnostics, 0.75)).toBe(0.75);
 
   runtimeDiagnostics.adaptiveRaymarch.adaptiveRaymarchActive = true;
   runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale = 0.67;
 
-  expect(getEffectiveAdaptiveRenderScale(runtimeDiagnostics, 0.75)).toBe(0.67);
+  expect(getEffectiveRenderScale(runtimeDiagnostics, 0.75)).toBe(0.67);
 });
 
 test("custom profile uses the selected target fps for adaptive tuning", () => {
@@ -1321,7 +1310,6 @@ test("custom profile uses the selected target fps for adaptive tuning", () => {
     requestedRaymarchSteps: 64,
     effectiveRaymarchSteps: 64,
     autoRaymarchResumeRung: null,
-    autoRaymarchResumeScaleRung: null,
     uniforms: {
       uRaymarchSteps: {
         value: 64,
@@ -1387,7 +1375,8 @@ test("adaptive raymarch publishes the integrator budget for the runtime tick", (
     runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale,
   );
   expect(runtimeState.raymarchBloomAdaptationActive).toBe(true);
-  // In auto/custom the ladder owns step/scale while bloom adaptation stays on.
+  // In auto/custom the ladder owns steps while render scale stays a profile
+  // contract and bloom adaptation stays on.
   expect(runtimeState.performanceGovernor).toMatchObject({
     stepScaleAdaptationActive: false,
     bloomAdaptationActive: true,
@@ -1642,6 +1631,127 @@ test("resolveFeatureFrame patches current fast audio signals onto stale worker s
   );
 });
 
+test("resolveFeatureFrame refreshes active program audio when the worker structural snapshot is stale", () => {
+  const cases = [
+    {
+      label: "file playback",
+      status: {
+        audioInputMode: "file",
+        isPlaying: true,
+        isLiveInputActive: false,
+        playbackSessionId: "song-1",
+      },
+      preparedInputs: {
+        inputMode: "file",
+        currentFrameAtMs: 1016,
+        analysisSessionKey: "file:song-1",
+        analysisInputsSignature: '"worker-sig"',
+        silentFeatureFrame: null,
+      },
+    },
+    {
+      label: "system line-feed",
+      status: {
+        audioInputMode: "system",
+        isPlaying: false,
+        isLiveInputActive: true,
+        liveInputDeviceKind: "system",
+      },
+      preparedInputs: {
+        inputMode: "system",
+        currentFrameAtMs: 1016,
+        analysisSessionKey: "system",
+        analysisInputsSignature: '"worker-sig"',
+        silentFeatureFrame: null,
+      },
+    },
+  ];
+
+  for (const { label, status, preparedInputs } of cases) {
+    const workerAnalysis = {
+      fieldState: "active",
+      activeModeCount: 2,
+      avgAmplitude: 12,
+      staleWorker: true,
+    };
+    const localAnalysis = {
+      fieldState: "active",
+      activeModeCount: 5,
+      avgAmplitude: 84,
+      localCurrent: true,
+    };
+    const currentFrame = {
+      fieldState: "active",
+      activeModeCount: 5,
+      localCurrent: true,
+    };
+    const featureEngine = {
+      enqueueTransportFrame: vi.fn(),
+      readLatestSnapshot: vi.fn(() => ({
+        frameTimeMs: 1000,
+        analysisSessionKey: preparedInputs.analysisSessionKey,
+        analysisInputsSignature: preparedInputs.analysisInputsSignature,
+        analysisResult: workerAnalysis,
+      })),
+      getStatus: vi.fn(() => ({})),
+    };
+    const runHeavyFeatureAnalysis = vi.fn(() => localAnalysis);
+    const buildFastSignalAnalysisResult = vi.fn(() => ({
+      ...workerAnalysis,
+      avgAmplitude: 84,
+    }));
+    const composeFeatureFrame = vi.fn(({ analysisResult }) =>
+      analysisResult.localCurrent ? currentFrame : workerAnalysis,
+    );
+    const { args } = createResolveFeatureFrameHarness({
+      featureEngine,
+      status,
+      clockMode: status.audioInputMode === "file" ? "playback" : "realtime",
+      renderLoopRefs: {
+        frameCacheRefs: {
+          lastLiveFrameRef: {
+            current: {
+              fieldState: "active",
+              renderAuthority: true,
+            },
+          },
+          lastActiveFrameRef: {
+            current: {
+              fieldState: "active",
+              renderAuthority: true,
+            },
+          },
+          lastIdleFrameRef: { current: null },
+          analysisSchedulerRef: { current: null },
+        },
+      },
+    });
+
+    const result = resolveFeatureFrame(args, {
+      prepareFeatureFrame: vi.fn(() => preparedInputs),
+      runHeavyFeatureAnalysis,
+      composeFeatureFrame,
+      buildFastSignalAnalysisResult,
+    });
+
+    expect(runHeavyFeatureAnalysis, label).toHaveBeenCalledTimes(1);
+    expect(buildFastSignalAnalysisResult, label).not.toHaveBeenCalled();
+    expect(result.effectiveFrame, label).toBe(currentFrame);
+    expect(
+      args.runtimeDiagnostics.modalFreshness.frameSemanticSource,
+      label,
+    ).toBe("local-heavy-analysis");
+    expect(
+      args.runtimeDiagnostics.modalFreshness.frameSemanticFresh,
+      label,
+    ).toBe(true);
+    expect(
+      args.runtimeDiagnostics.modalFreshness.frameSemanticReused,
+      label,
+    ).toBe(false);
+  }
+});
+
 test("resolveFeatureFrame records scheduled analysis reuse as reused semantics", () => {
   const reusedAnalysis = { fieldState: "active", reusedAnalysis: true };
   const reusedFrame = { fieldState: "active", reusedFrame: true };
@@ -1680,6 +1790,341 @@ test("resolveFeatureFrame records scheduled analysis reuse as reused semantics",
   );
   expect(args.runtimeDiagnostics.modalFreshness.frameSemanticFresh).toBe(false);
   expect(args.runtimeDiagnostics.modalFreshness.frameSemanticReused).toBe(true);
+});
+
+test("resolveFeatureFrame holds the last file modal frame during paused playback", () => {
+  const frameCacheRefs = {
+    lastLiveFrameRef: { current: null },
+    lastActiveFrameRef: { current: null },
+    lastIdleFrameRef: { current: null },
+    pausedFileFrameRef: { current: null },
+    analysisSchedulerRef: { current: null },
+  };
+  const activeFrame = {
+    fieldState: "active",
+    renderAuthority: true,
+    energyLedger: {
+      projectedRenderEnergy: 0.42,
+      renderEnergyEpsilon: 1e-6,
+      sourceBoundaryState: "live",
+      sourceEnergy: 0.42,
+    },
+    sourceEvidence: {
+      sourceBoundaryState: "live",
+      currentSourceEvidence: true,
+      sourceEnergy: 0.42,
+      transport: {
+        playing: true,
+        fileMuted: false,
+      },
+    },
+    modalFieldSlots: new Float32Array([1, 2, 3, 0.4]),
+    modalFieldPhaseSlots: new Float32Array([0.25, 0.5, 0.75, 1]),
+    modalFieldColorSlots: new Float32Array([0.1, 0.2, 0.3, 1]),
+    bandEnergies: new Float32Array([0.1, 0.2, 0.3, 0.4]),
+    modalResponseCurrentRenderSourceEvidence: true,
+    structureSignal: 0.7,
+    energySignal: 0.8,
+    changeSignal: 0.2,
+    pulseSignal: 0.1,
+    debug: {
+      sourceBoundaryState: "live",
+    },
+  };
+  const activeHarness = createResolveFeatureFrameHarness({
+    status: {
+      isPlaying: true,
+      isLiveInputActive: false,
+      playbackSessionId: "song-1",
+    },
+    renderLoopRefs: {
+      frameCacheRefs,
+    },
+  });
+
+  resolveFeatureFrame(activeHarness.args, {
+    buildFeatureFrame: vi.fn(() => activeFrame),
+  });
+
+  expect(frameCacheRefs.pausedFileFrameRef.current).toMatchObject({
+    playbackSessionId: "song-1",
+  });
+  expect(frameCacheRefs.pausedFileFrameRef.current.frame).not.toBe(activeFrame);
+
+  activeFrame.modalFieldSlots[3] = 0;
+  activeFrame.sourceEvidence.currentSourceEvidence = true;
+
+  const featureEngine = {
+    enqueueTransportFrame: vi.fn(),
+    readLatestSnapshot: vi.fn(),
+    getStatus: vi.fn(),
+    reset: vi.fn(),
+  };
+  const audio = {
+    readAnalysisSnapshot: vi.fn(),
+  };
+  const prepareFeatureFrame = vi.fn();
+  const runHeavyFeatureAnalysis = vi.fn();
+  const composeFeatureFrame = vi.fn();
+  const pausedHarness = createResolveFeatureFrameHarness({
+    audio,
+    featureEngine,
+    status: {
+      isPlaying: false,
+      isLiveInputActive: false,
+      playbackSessionId: "song-1",
+    },
+    clockMode: "paused-playback",
+    renderLoopRefs: {
+      frameCacheRefs,
+    },
+  });
+
+  const result = resolveFeatureFrame(pausedHarness.args, {
+    prepareFeatureFrame,
+    runHeavyFeatureAnalysis,
+    composeFeatureFrame,
+  });
+
+  expect(audio.readAnalysisSnapshot).not.toHaveBeenCalled();
+  expect(featureEngine.enqueueTransportFrame).not.toHaveBeenCalled();
+  expect(featureEngine.readLatestSnapshot).not.toHaveBeenCalled();
+  expect(featureEngine.reset).not.toHaveBeenCalled();
+  expect(prepareFeatureFrame).not.toHaveBeenCalled();
+  expect(runHeavyFeatureAnalysis).not.toHaveBeenCalled();
+  expect(composeFeatureFrame).not.toHaveBeenCalled();
+  expect(result.effectiveFrame).toBe(
+    frameCacheRefs.pausedFileFrameRef.current.frame,
+  );
+  expect(result.effectiveFrame.audioMotionAuthority).toBe(false);
+  expect(result.effectiveFrame.modalFieldSlots[3]).toBeCloseTo(0.4);
+  expect(result.effectiveFrame.sourceEvidence).toMatchObject({
+    sourceBoundaryState: "muted",
+    currentSourceEvidence: false,
+    sourceEnergy: 0,
+    transport: {
+      playing: false,
+      fileMuted: true,
+    },
+  });
+  expect(result.effectiveFrame.energyLedger).toMatchObject({
+    projectedRenderEnergy: 0.42,
+    sourceBoundaryState: "muted",
+    sourceEnergy: 0,
+  });
+  expect(result.effectiveFrame.debug).toMatchObject({
+    pausedFileHold: true,
+    sourceBoundaryState: "muted",
+    currentSourceEvidence: false,
+  });
+  expect(
+    pausedHarness.args.runtimeDiagnostics.modalFreshness.frameSemanticSource,
+  ).toBe("paused-file-hold");
+  expect(
+    pausedHarness.args.runtimeDiagnostics.modalFreshness.frameSemanticFresh,
+  ).toBe(false);
+  expect(
+    pausedHarness.args.runtimeDiagnostics.modalFreshness.frameSemanticReused,
+  ).toBe(true);
+});
+
+test.each(["natural", "premature", "interrupted", "stopped"])(
+  "resolveFeatureFrame clears paused file holds after %s playback end",
+  (lastPlaybackEndReason) => {
+    const heldFrame = {
+      fieldState: "active",
+      audioMotionAuthority: false,
+      energyLedger: {
+        projectedRenderEnergy: 0.6,
+        renderEnergyEpsilon: 1e-6,
+        sourceBoundaryState: "muted",
+        sourceEnergy: 0,
+      },
+      sourceEvidence: {
+        sourceBoundaryState: "muted",
+        currentSourceEvidence: false,
+        sourceEnergy: 0,
+      },
+      modalFieldSlots: new Float32Array([1, 1, 1, 0.6]),
+    };
+    const silentFrame = {
+      fieldState: "idle",
+      renderAuthority: false,
+      energyLedger: {
+        projectedRenderEnergy: 0,
+        renderEnergyEpsilon: 1e-6,
+      },
+      sourceEvidence: {
+        sourceBoundaryState: "muted",
+        currentSourceEvidence: false,
+      },
+    };
+    const frameCacheRefs = {
+      lastLiveFrameRef: { current: null },
+      lastActiveFrameRef: { current: null },
+      lastIdleFrameRef: { current: null },
+      pausedFileFrameRef: {
+        current: {
+          playbackSessionId: "song-1",
+          frame: heldFrame,
+        },
+      },
+      analysisSchedulerRef: { current: null },
+    };
+    const audio = {
+      readAnalysisSnapshot: vi.fn(() => null),
+    };
+    const prepareFeatureFrame = vi.fn(() => ({
+      silentFeatureFrame: silentFrame,
+    }));
+    const { args } = createResolveFeatureFrameHarness({
+      audio,
+      status: {
+        isPlaying: false,
+        isLiveInputActive: false,
+        playbackSessionId: "song-1",
+        lastPlaybackEndReason,
+        lastPlaybackDiagnostics: {
+          playbackSessionId: "song-1",
+          endedAtContextTimeSeconds: 32,
+        },
+      },
+      clockMode: "paused-playback",
+      renderLoopRefs: {
+        frameCacheRefs,
+      },
+    });
+
+    const result = resolveFeatureFrame(args, {
+      prepareFeatureFrame,
+    });
+
+    expect(audio.readAnalysisSnapshot).toHaveBeenCalled();
+    expect(prepareFeatureFrame).toHaveBeenCalled();
+    expect(result.effectiveFrame).toBe(silentFrame);
+    expect(frameCacheRefs.pausedFileFrameRef.current).toBeNull();
+    expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
+      "silent-frame",
+    );
+  },
+);
+
+test("resolveFeatureFrame clears a paused file hold when playback stops", () => {
+  const heldFrame = {
+    fieldState: "active",
+    audioMotionAuthority: false,
+    energyLedger: {
+      projectedRenderEnergy: 0.3,
+      renderEnergyEpsilon: 1e-6,
+    },
+  };
+  const silentFrame = {
+    fieldState: "idle",
+    renderAuthority: false,
+    energyLedger: {
+      projectedRenderEnergy: 0,
+      renderEnergyEpsilon: 1e-6,
+    },
+  };
+  const frameCacheRefs = {
+    lastLiveFrameRef: { current: null },
+    lastActiveFrameRef: { current: null },
+    lastIdleFrameRef: { current: null },
+    pausedFileFrameRef: {
+      current: {
+        playbackSessionId: "song-1",
+        frame: heldFrame,
+      },
+    },
+    analysisSchedulerRef: { current: null },
+  };
+  const featureEngine = {
+    enqueueTransportFrame: vi.fn(),
+    readLatestSnapshot: vi.fn(),
+    getStatus: vi.fn(),
+    reset: vi.fn(),
+  };
+  const { args } = createResolveFeatureFrameHarness({
+    featureEngine,
+    status: {
+      isPlaying: false,
+      isLiveInputActive: false,
+      playbackSessionId: "song-1",
+    },
+    clockMode: "running",
+    renderLoopRefs: {
+      frameCacheRefs,
+    },
+  });
+
+  const result = resolveFeatureFrame(args, {
+    prepareFeatureFrame: vi.fn(() => ({
+      silentFeatureFrame: silentFrame,
+    })),
+  });
+
+  expect(result.effectiveFrame).toBe(silentFrame);
+  expect(frameCacheRefs.pausedFileFrameRef.current).toBeNull();
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
+    "silent-frame",
+  );
+});
+
+test("resolveFeatureFrame ignores paused file holds for live input", () => {
+  const silentFrame = {
+    fieldState: "idle",
+    renderAuthority: false,
+    isLiveInputActive: true,
+  };
+  const frameCacheRefs = {
+    lastLiveFrameRef: { current: null },
+    lastActiveFrameRef: { current: null },
+    lastIdleFrameRef: { current: null },
+    pausedFileFrameRef: {
+      current: {
+        playbackSessionId: "song-1",
+        frame: {
+          fieldState: "active",
+          audioMotionAuthority: false,
+          energyLedger: {
+            projectedRenderEnergy: 0.4,
+            renderEnergyEpsilon: 1e-6,
+          },
+        },
+      },
+    },
+    analysisSchedulerRef: { current: null },
+  };
+  const audio = {
+    readAnalysisSnapshot: vi.fn(() => null),
+  };
+  const prepareFeatureFrame = vi.fn(() => ({
+    silentFeatureFrame: silentFrame,
+  }));
+  const { args } = createResolveFeatureFrameHarness({
+    audio,
+    status: {
+      isPlaying: false,
+      isLiveInputActive: true,
+      playbackSessionId: "song-1",
+    },
+    clockMode: "paused-playback",
+    renderLoopRefs: {
+      frameCacheRefs,
+    },
+  });
+
+  const result = resolveFeatureFrame(args, {
+    prepareFeatureFrame,
+  });
+
+  expect(audio.readAnalysisSnapshot).toHaveBeenCalled();
+  expect(prepareFeatureFrame).toHaveBeenCalled();
+  expect(result.effectiveFrame).toBe(silentFrame);
+  expect(frameCacheRefs.pausedFileFrameRef.current).toBeNull();
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
+    "silent-frame",
+  );
 });
 
 test("resolveFeatureFrame composes a source-cut frame during paused playback", () => {
@@ -1780,6 +2225,105 @@ test("resolveFeatureFrame composes a source-cut frame during paused playback", (
   ).toBeNull();
 });
 
+test("resolveFeatureFrame does not reuse last-live cache after system source evidence closes", () => {
+  const cachedActiveFrame = {
+    fieldState: "active",
+    renderAuthority: true,
+    stale: true,
+    energyLedger: {
+      projectedRenderEnergy: 0.48,
+      renderEnergyEpsilon: 1e-6,
+      sourceBoundaryState: "live",
+    },
+    sourceEvidence: {
+      sourceKind: "system",
+      analysisClass: "line-feed",
+      sourceBoundaryState: "live",
+      currentSourceEvidence: true,
+    },
+  };
+  const sourceCutFrame = {
+    fieldState: "idle",
+    renderAuthority: false,
+    energyLedger: {
+      projectedRenderEnergy: 0,
+      renderEnergyEpsilon: 1e-6,
+      sourceBoundaryState: "muted",
+    },
+    sourceEvidence: {
+      sourceKind: "system",
+      analysisClass: "line-feed",
+      sourceBoundaryState: "muted",
+      currentSourceEvidence: false,
+    },
+  };
+  const featureEngine = {
+    enqueueTransportFrame: vi.fn(),
+    readLatestSnapshot: vi.fn(() => null),
+    getStatus: vi.fn(() => ({})),
+  };
+  const prepareFeatureFrame = vi.fn(() => ({
+    currentFrameAtMs: 1000,
+    inputMode: "system",
+    analysisSessionKey: "system",
+    analysisInputsSignature: '"system-source-cut"',
+    snapshot: {
+      fftMagnitudes: new Float32Array(4),
+      timeData: new Float32Array(4),
+    },
+    sourceEvidence: {
+      sourceKind: "system",
+      analysisClass: "line-feed",
+      sourceBoundaryState: "muted",
+      currentSourceEvidence: false,
+    },
+    silentFeatureFrame: null,
+  }));
+  const runHeavyFeatureAnalysis = vi.fn(() => ({
+    fieldState: "idle",
+    renderAuthority: false,
+  }));
+  const composeFeatureFrame = vi.fn(() => sourceCutFrame);
+  const { args } = createResolveFeatureFrameHarness({
+    featureEngine,
+    status: {
+      audioInputMode: "system",
+      isPlaying: false,
+      isLiveInputActive: true,
+      liveInputDeviceKind: "system",
+      resolvedLiveInputAnalysisClass: "line-feed",
+    },
+    clockMode: "realtime",
+    renderLoopRefs: {
+      frameCacheRefs: {
+        lastLiveFrameRef: { current: cachedActiveFrame },
+        lastActiveFrameRef: { current: cachedActiveFrame },
+        lastIdleFrameRef: { current: null },
+        pausedFileFrameRef: { current: null },
+        analysisSchedulerRef: { current: null },
+      },
+    },
+  });
+
+  const result = resolveFeatureFrame(args, {
+    prepareFeatureFrame,
+    runHeavyFeatureAnalysis,
+    composeFeatureFrame,
+  });
+
+  expect(featureEngine.enqueueTransportFrame).toHaveBeenCalled();
+  expect(runHeavyFeatureAnalysis).toHaveBeenCalled();
+  expect(composeFeatureFrame).toHaveBeenCalled();
+  expect(result.effectiveFrame).toBe(sourceCutFrame);
+  expect(result.effectiveFrame).not.toBe(cachedActiveFrame);
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
+    "local-heavy-analysis",
+  );
+  expect(
+    args.renderLoopRefs.frameCacheRefs.lastLiveFrameRef.current,
+  ).toBeNull();
+});
+
 test("resolveFeatureFrame does not fall back to cached active frames for inactive sources", () => {
   const cachedActiveFrame = {
     fieldState: "active",
@@ -1836,7 +2380,6 @@ test("clearing adaptive resume state forces the next authoritative session to re
     });
 
   runtimeState.autoRaymarchResumeRung = 6;
-  runtimeState.autoRaymarchResumeScaleRung = 4;
   clearAdaptiveRaymarchResumeState(runtimeState);
   runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
   runtimeDiagnostics.adaptiveRaymarch.requestedRenderScale = 0;
@@ -1844,7 +2387,6 @@ test("clearing adaptive resume state forces the next authoritative session to re
   updateAdaptiveRaymarchStepBudget(args);
 
   expect(runtimeState.autoRaymarchResumeRung).toBe(0);
-  expect(runtimeState.autoRaymarchResumeScaleRung).toBe(0);
   expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(16);
   expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.67);
 });
@@ -2460,7 +3002,7 @@ test("resolveRaymarchGovernorFrameInputs prefers uploaded mode count over descri
   });
 });
 
-test("syncAdaptiveRenderSurfacePixelRatio applies adaptive render scale to DPR", () => {
+test("syncRenderSurfacePixelRatio applies effective render scale to DPR", () => {
   const runtimeDiagnostics = createRuntimeDiagnostics();
   runtimeDiagnostics.adaptiveRaymarch.adaptiveRaymarchActive = true;
   runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale = 0.67;
@@ -2472,7 +3014,7 @@ test("syncAdaptiveRenderSurfacePixelRatio applies adaptive render scale to DPR",
   };
   const pixelRatioRef = { current: 1 };
 
-  const targetPixelRatio = syncAdaptiveRenderSurfacePixelRatio({
+  const targetPixelRatio = syncRenderSurfacePixelRatio({
     gl,
     renderLoopRefs: { pixelRatioRef },
     runtimeDiagnostics,

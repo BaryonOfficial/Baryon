@@ -75,11 +75,8 @@ function createAdaptiveRaymarchDiagnostics() {
     requestedRenderScale: 1,
     effectiveRenderScale: 1,
     currentRung: 0,
-    currentScaleRung: 0,
     stepDownCount: 0,
     stepUpCount: 0,
-    scaleStepDownCount: 0,
-    scaleStepUpCount: 0,
     targetFps: 60,
     targetFrameTimeMs: 1000 / 60,
     decisionFrameCount: 0,
@@ -360,6 +357,9 @@ export function clearFrameCache(frameCacheRefs) {
   frameCacheRefs.lastLiveFrameRef.current = null;
   frameCacheRefs.lastActiveFrameRef.current = null;
   frameCacheRefs.lastIdleFrameRef.current = null;
+  if (frameCacheRefs.pausedFileFrameRef) {
+    frameCacheRefs.pausedFileFrameRef.current = null;
+  }
   if (frameCacheRefs.analysisSchedulerRef) {
     frameCacheRefs.analysisSchedulerRef.current =
       createEmptyAnalysisSchedulerState();
@@ -520,15 +520,6 @@ export function initializeAdaptiveRaymarchRuntimeState(runtimeState) {
   ) {
     runtimeState.autoRaymarchResumeRung = null;
   }
-  if (
-    !Object.prototype.hasOwnProperty.call(
-      runtimeState,
-      "autoRaymarchResumeScaleRung",
-    )
-  ) {
-    runtimeState.autoRaymarchResumeScaleRung = null;
-  }
-
   return runtimeState;
 }
 
@@ -833,7 +824,6 @@ export function clearAdaptiveRaymarchResumeState(runtimeState) {
   }
 
   runtimeState.autoRaymarchResumeRung = null;
-  runtimeState.autoRaymarchResumeScaleRung = null;
 }
 
 export function recordRuntimePerfSample(

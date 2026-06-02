@@ -4,8 +4,10 @@ import * as THREE from "three";
 import {
   advanceRenderOutputTemporalHistoryBypass,
   consumeRenderOutputVisualIdle,
+  getRenderOutputTemporalHistoryGraphEnabled,
   getRenderQualityProfileKey,
   markRenderOutputContentChange,
+  syncRenderOutputNodeTopology,
 } from "@baryon/visualizer/render/outputPipeline";
 import {
   applyAudioControls,
@@ -750,9 +752,11 @@ export function useBaryonVisualizer({
         renderLoopContext.postNodesRef.current?.bloomPass &&
         effectiveBloomEnabled,
       );
+      const postNodes = renderLoopContext.postNodesRef.current;
       runtimeDiagnostics.postProcess.temporalHistoryBlend =
-        renderLoopContext.postNodesRef.current?.temporalHistoryBlendUniform
-          ?.value ?? null;
+        postNodes?.temporalHistoryBlendUniform?.value ?? null;
+      runtimeDiagnostics.postProcess.temporalHistoryGraphEnabled =
+        getRenderOutputTemporalHistoryGraphEnabled(postNodes);
     }
 
     if (externalFrameState?.featureFrame) {
@@ -884,14 +888,29 @@ export function useBaryonVisualizer({
       outputCaptureInFlightRef.current = false;
     } else if (pipeline) {
       const pipelineRenderStartedAt = getWallTimeMs();
-      if (
+      const temporalHistoryBypassRequested =
         shouldBypassTemporalHistory ||
-        visualIdleFinalizer.resumedFromVisualIdle
-      ) {
+        visualIdleFinalizer.resumedFromVisualIdle;
+      if (temporalHistoryBypassRequested) {
         markRenderOutputContentChange(renderLoopContext.postNodesRef.current);
         if (visualIdleFinalizer.resumedFromVisualIdle) {
           consumeRenderOutputVisualIdle(renderLoopContext.postNodesRef.current);
         }
+      }
+      syncRenderOutputNodeTopology(
+        pipeline,
+        renderLoopContext.postNodesRef.current,
+        {
+          bloomEnabled: effectiveBloomEnabled,
+          outputMode: controls.outputMode,
+          bloomActive: effectiveBloomEnabled,
+          temporalHistoryEnabled: !temporalHistoryBypassRequested,
+        },
+      );
+      if (runtimeDiagnostics?.postProcess) {
+        const postNodes = renderLoopContext.postNodesRef.current;
+        runtimeDiagnostics.postProcess.temporalHistoryGraphEnabled =
+          getRenderOutputTemporalHistoryGraphEnabled(postNodes);
       }
       renderLoopContext.gl.setRenderTarget?.(null);
       renderLoopContext.gl.setMRT?.(null);

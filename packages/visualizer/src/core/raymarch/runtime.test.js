@@ -384,12 +384,8 @@ function withUnifiedModalFields(frame) {
     frame.modalResponseEnergy ?? 0,
     frame.modalResponseRenderEnergy ?? 0,
     frame.debug?.modalResponseEnergy ?? 0,
-    frame.modalResponseBackboneEnergy ??
-      frame.debug?.modalResponseBackboneEnergy ??
-      0,
-    frame.modalResponseDetailEnergy ??
-      frame.debug?.modalResponseDetailEnergy ??
-      0,
+    frame.modalResponseRenderSourceCoupledEnergy ?? 0,
+    frame.modalResponseRenderResonantEnergy ?? 0,
   );
   frame.modalFieldSlots = modalFieldSlots;
   frame.modalFieldPhaseSlots = modalFieldPhaseSlots;
@@ -723,6 +719,8 @@ describe("tickRaymarchRuntime", () => {
       beatPulseId: 3,
       beatStrength: 0.82,
       beatConfidence: 0.76,
+      modalResponseRenderSourceCoupledEnergy: 0.37,
+      modalResponseRenderResonantEnergy: 0.12,
       debug: {
         dominantFrequency: 440,
         projectionEnergyBudgetSourceCoupled: 0.74,
@@ -741,8 +739,6 @@ describe("tickRaymarchRuntime", () => {
         projectionEnergyScaleResonant: 0.54,
         projectionOverlapPressureSourceCoupled: 0.23,
         projectionOverlapPressureResonant: 0.41,
-        modalResponseBackboneEnergy: 0.37,
-        modalResponseDetailEnergy: 0.12,
       },
     };
 
@@ -1580,7 +1576,7 @@ describe("tickRaymarchRuntime", () => {
         energySignal: 0,
         changeSignal: 0,
         pulseSignal: 0,
-        debug: { modalResponseBackboneEnergy: 0.5 },
+        debug: { modalResponseRenderSourceCoupledEnergy: 0.5 },
       },
       1,
       1 / 60,
@@ -1702,8 +1698,8 @@ describe("tickRaymarchRuntime", () => {
         changeSignal: 0,
         pulseSignal: 0,
         debug: {
-          modalResponseBackboneEnergy: 0.18,
-          modalResponseDetailEnergy: 0,
+          modalResponseRenderSourceCoupledEnergy: 0.18,
+          modalResponseRenderResonantEnergy: 0,
         },
       },
       1,
@@ -1788,12 +1784,8 @@ describe("tickRaymarchRuntime", () => {
         energySignal: 0,
         changeSignal: 0,
         pulseSignal: 0,
-        modalResponseBackboneEnergy: 0.48,
-        modalResponseDetailEnergy: 0,
-        debug: {
-          modalResponseBackboneEnergy: 0.48,
-          modalResponseDetailEnergy: 0,
-        },
+        modalResponseRenderSourceCoupledEnergy: 0.48,
+        modalResponseRenderResonantEnergy: 0,
       },
       1,
       1 / 60,
@@ -2299,7 +2291,9 @@ describe("tickRaymarchRuntime", () => {
       changeSignal: 0.02,
       pulseSignal: 0,
       modeCoherence: 0.52,
-      debug: { modalResponseBackboneEnergy: 0, modalResponseDetailEnergy: 0 },
+      modalResponseRenderSourceCoupledEnergy: 0,
+      modalResponseRenderResonantEnergy: 0,
+      debug: {},
     };
 
     try {
@@ -3679,10 +3673,9 @@ describe("tickRaymarchRuntime", () => {
       pulseSignal: 0,
       bassSalience: 0.38,
       modeCoherence: 0.44,
-      debug: {
-        modalResponseBackboneEnergy: 0.05,
-        modalResponseDetailEnergy: 0,
-      },
+      modalResponseRenderSourceCoupledEnergy: 0.05,
+      modalResponseRenderResonantEnergy: 0,
+      debug: {},
     };
 
     tickRaymarchRuntime(runtimeState, lowBassFrame, 1, 1 / 60, renderer);
@@ -3849,6 +3842,81 @@ describe("tickRaymarchRuntime", () => {
     expect(transientRuntimeState.uniforms.uDensityGain.value).toBeLessThan(
       steadyRuntimeState.uniforms.uDensityGain.value * 1.08,
     );
+  });
+
+  it("prevents source-coupled-dominant retained tails from driving bloom washout", () => {
+    const detailedRuntimeState = createRuntimeState();
+    const sourceCoupledRuntimeState = createRuntimeState();
+    const debugOnlyAuthorityRuntimeState = createRuntimeState();
+    const detailedFrame = createActiveFeatureFrame({
+      averageAmplitude: 32,
+      transientEnergy: 0.08,
+      spectralFlux: 0.06,
+      changeSignal: 0.12,
+      pulseSignal: 0.08,
+      modalResponseRenderSourceCoupledEnergy: 0.22,
+      modalResponseRenderResonantEnergy: 0.18,
+      debug: {
+        highQPhaseAuthority: 0.55,
+        projectionHighQProtection: 0.42,
+      },
+    });
+    const sourceCoupledDominantFrame = createActiveFeatureFrame({
+      averageAmplitude: 32,
+      transientEnergy: 0.08,
+      spectralFlux: 0.06,
+      changeSignal: 0.12,
+      pulseSignal: 0.08,
+      detailSlots: new Float32Array(32),
+      modalResponseRenderSourceCoupledEnergy: 0.32,
+      modalResponseRenderResonantEnergy: 0.01,
+      debug: {},
+    });
+    const debugOnlyAuthorityFrame = createActiveFeatureFrame({
+      ...sourceCoupledDominantFrame,
+      debug: {
+        highQPhaseAuthority: 1,
+        projectionHighQProtection: 1,
+      },
+    });
+
+    tickRaymarchRuntime(detailedRuntimeState, detailedFrame, 1, 1 / 60);
+    tickRaymarchRuntime(
+      sourceCoupledRuntimeState,
+      sourceCoupledDominantFrame,
+      1,
+      1 / 60,
+    );
+    tickRaymarchRuntime(
+      debugOnlyAuthorityRuntimeState,
+      debugOnlyAuthorityFrame,
+      1,
+      1 / 60,
+    );
+
+    expect(
+      sourceCoupledRuntimeState.debugSnapshot.raymarchDebug
+        .modalResonantDetailAuthority,
+    ).toBeLessThan(
+      detailedRuntimeState.debugSnapshot.raymarchDebug
+        .modalResonantDetailAuthority,
+    );
+    expect(
+      debugOnlyAuthorityRuntimeState.debugSnapshot.raymarchDebug
+        .modalSourceCoupledDominantBloomSuppression,
+    ).toBeCloseTo(
+      sourceCoupledRuntimeState.debugSnapshot.raymarchDebug
+        .modalSourceCoupledDominantBloomSuppression,
+    );
+    expect(
+      sourceCoupledRuntimeState.bloomTuning.effectiveStrength,
+    ).toBeLessThan(detailedRuntimeState.bloomTuning.effectiveStrength);
+    expect(sourceCoupledRuntimeState.bloomTuning.effectiveRadius).toBeLessThan(
+      detailedRuntimeState.bloomTuning.effectiveRadius,
+    );
+    expect(
+      sourceCoupledRuntimeState.bloomTuning.effectiveThreshold,
+    ).toBeGreaterThan(detailedRuntimeState.bloomTuning.effectiveThreshold);
   });
 
   it("keeps the continuous response alive between adjacent active frames", () => {
@@ -4037,10 +4105,9 @@ describe("tickRaymarchRuntime", () => {
       pulseSignal: 0,
       modeCoherence: 0.8,
       rhythmicDensity: 0,
-      debug: {
-        modalResponseBackboneEnergy: 0.32,
-        modalResponseDetailEnergy: 0,
-      },
+      modalResponseRenderSourceCoupledEnergy: 0.32,
+      modalResponseRenderResonantEnergy: 0,
+      debug: {},
     };
 
     for (let frame = 0; frame < 36; frame += 1) {
@@ -4079,10 +4146,9 @@ describe("tickRaymarchRuntime", () => {
       pulseSignal: 0,
       modeCoherence: 0.8,
       rhythmicDensity: 0,
-      debug: {
-        modalResponseBackboneEnergy: 0.02,
-        modalResponseDetailEnergy: 0,
-      },
+      modalResponseRenderSourceCoupledEnergy: 0.02,
+      modalResponseRenderResonantEnergy: 0,
+      debug: {},
     };
 
     tickRaymarchRuntime(baselineRuntime, baseFrame, 2, 1 / 60);
@@ -4090,10 +4156,7 @@ describe("tickRaymarchRuntime", () => {
       retainedRuntime,
       {
         ...baseFrame,
-        debug: {
-          ...baseFrame.debug,
-          modalResponseDetailEnergy: 0.19,
-        },
+        modalResponseRenderResonantEnergy: 0.19,
       },
       2,
       1 / 60,
@@ -4141,7 +4204,9 @@ describe("tickRaymarchRuntime", () => {
         modeCoherence: 0.7,
         modalPhaseAuthority: 1,
         rhythmicDensity: 0,
-        debug: { modalResponseBackboneEnergy: 0, modalResponseDetailEnergy: 0 },
+        modalResponseRenderSourceCoupledEnergy: 0,
+        modalResponseRenderResonantEnergy: 0,
+        debug: {},
       },
       2,
       1 / 60,
@@ -4156,7 +4221,7 @@ describe("tickRaymarchRuntime", () => {
     ).toBe(0);
   });
 
-  it("passes backbone modal response to observation without old observer lanes", () => {
+  it("passes source-coupled modal response to observation without old observer lanes", () => {
     const baselineRuntime = createRuntimeState();
     const observedRuntime = createRuntimeState();
     const baseFrame = {
@@ -4177,7 +4242,9 @@ describe("tickRaymarchRuntime", () => {
       pulseSignal: 0,
       modeCoherence: 0.62,
       rhythmicDensity: 0,
-      debug: { modalResponseBackboneEnergy: 0, modalResponseDetailEnergy: 0 },
+      modalResponseRenderSourceCoupledEnergy: 0,
+      modalResponseRenderResonantEnergy: 0,
+      debug: {},
     };
 
     tickRaymarchRuntime(baselineRuntime, baseFrame, 2, 1 / 60);
@@ -4185,10 +4252,7 @@ describe("tickRaymarchRuntime", () => {
       observedRuntime,
       {
         ...baseFrame,
-        debug: {
-          ...baseFrame.debug,
-          modalResponseBackboneEnergy: 0.24,
-        },
+        modalResponseRenderSourceCoupledEnergy: 0.24,
       },
       2,
       1 / 60,
@@ -4216,7 +4280,7 @@ describe("tickRaymarchRuntime", () => {
     );
   });
 
-  it("surfaces low-Q bass through backbone modal response, not topology floors", () => {
+  it("surfaces low-Q bass through source-coupled modal response, not topology floors", () => {
     const baselineRuntime = createRuntimeState();
     const lowQRuntime = createRuntimeState();
     const baseFrame = {
@@ -4237,7 +4301,9 @@ describe("tickRaymarchRuntime", () => {
       pulseSignal: 0,
       modeCoherence: 0.62,
       rhythmicDensity: 0,
-      debug: { modalResponseBackboneEnergy: 0, modalResponseDetailEnergy: 0 },
+      modalResponseRenderSourceCoupledEnergy: 0,
+      modalResponseRenderResonantEnergy: 0,
+      debug: {},
     };
 
     tickRaymarchRuntime(baselineRuntime, baseFrame, 2, 1 / 60);
@@ -4245,10 +4311,7 @@ describe("tickRaymarchRuntime", () => {
       lowQRuntime,
       {
         ...baseFrame,
-        debug: {
-          ...baseFrame.debug,
-          modalResponseBackboneEnergy: 0.083,
-        },
+        modalResponseRenderSourceCoupledEnergy: 0.083,
       },
       2,
       1 / 60,

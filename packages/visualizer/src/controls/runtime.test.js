@@ -1130,6 +1130,45 @@ describe("control runtime sync", () => {
     expect(snapshot.rotationY).toBe(0.9);
   });
 
+  it("stops audio rotation for held paused frames with render authority", () => {
+    const controls = createControlState();
+    controls.rotationMode = "audio";
+    controls.motionAmount = 1;
+    const runtimeState = createRaymarchHarness();
+    runtimeState.responseEnvelope = 0.58;
+    runtimeState.points.rotation.y = 0.9;
+    runtimeState.sceneMotion.yaw = 0.9;
+    runtimeState.sceneMotion.angularVelocity = -0.72;
+
+    const snapshot = applySceneControls(
+      runtimeState,
+      controls,
+      1 / 60,
+      {
+        fieldState: "active",
+        audioMotionAuthority: false,
+        structureSignal: 0.88,
+        energySignal: 0.9,
+        changeSignal: 0.7,
+        pulseSignal: 0.4,
+        energyLedger: {
+          projectedRenderEnergy: 0.5,
+          renderEnergyEpsilon: 1e-6,
+        },
+      },
+      {
+        isPlaying: false,
+        isLiveInputActive: false,
+      },
+    );
+
+    expect(snapshot.rotationMode).toBe("audio");
+    expect(snapshot.targetAngularVelocity).toBe(0);
+    expect(snapshot.angularVelocity).toBe(0);
+    expect(runtimeState.points.rotation.y).toBe(0.9);
+    expect(snapshot.rotationY).toBe(0.9);
+  });
+
   it("keeps the idle logo synced to manual rotation speed in audio mode", () => {
     const controls = createControlState();
     controls.rotationMode = "audio";
