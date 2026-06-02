@@ -42,6 +42,7 @@ import {
 } from "./phaseSlotSemantics.js";
 import {
   deriveLiveSynthesisCancellationSuppression,
+  deriveMaterialRadianceTransfer,
   deriveHolographicColorMix,
   deriveHolographicFresnel,
 } from "./fieldShaping.js";
@@ -157,6 +158,33 @@ function setIfChanged(uniformNode, value) {
 
 function readFiniteNumber(value, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
+}
+
+function readUniformColorRgb(uniformNode, fallback) {
+  const value = uniformNode?.value ?? uniformNode;
+  if (
+    Number.isFinite(value?.r) &&
+    Number.isFinite(value?.g) &&
+    Number.isFinite(value?.b)
+  ) {
+    return [value.r, value.g, value.b];
+  }
+  if (Array.isArray(value) || ArrayBuffer.isView(value)) {
+    return [
+      readFiniteNumber(value[0], fallback[0]),
+      readFiniteNumber(value[1], fallback[1]),
+      readFiniteNumber(value[2], fallback[2]),
+    ];
+  }
+  return fallback;
+}
+
+function computeLinearLuminance(rgb) {
+  return (
+    readFiniteNumber(rgb?.[0], 0) * 0.2126 +
+    readFiniteNumber(rgb?.[1], 0) * 0.7152 +
+    readFiniteNumber(rgb?.[2], 0) * 0.0722
+  );
 }
 
 function hasModalResponseRenderComponents(featureFrame) {
@@ -1132,6 +1160,33 @@ function buildRaymarchDebugSnapshot(
       (1.1 - effectiveBloomThreshold * 0.4) *
       (1 - bloomResponseBias * 0.18),
   );
+  const materialProbePhysicalDensity = clamp01(
+    diagnosticVisibility.supportedPhysicalDensity,
+  );
+  const materialProbeCausticVisibleDensity = clamp01(
+    diagnosticVisibility.observationTransfer?.physicalVisibleDensity,
+  );
+  const materialProbeVisibleDensity = clamp01(
+    diagnosticVisibility.observationTransfer?.visibleDensity ?? avgDensity,
+  );
+  const materialProbeTransfer = deriveMaterialRadianceTransfer({
+    stabilizedDensity: materialProbeVisibleDensity,
+    causticVisibleDensity: materialProbeCausticVisibleDensity,
+    volumeColor: readUniformColorRgb(runtimeState.uniforms.uColor, [
+      0.34, 0.62, 0.9,
+    ]),
+    surfaceColor: readUniformColorRgb(runtimeState.uniforms.uSurfaceColor, [
+      0.66, 0.86, 1.0,
+    ]),
+    structureAwareEmissionGain: 1,
+  });
+  const materialProbePreBloomRadiance = computeLinearLuminance(
+    materialProbeTransfer.finalRadiance,
+  );
+  const materialProbeBloomAmplification =
+    1 + bloomRisk * Math.max(0, effectiveBloomStrength);
+  const materialProbePostBloomRisk =
+    materialProbePreBloomRadiance * materialProbeBloomAmplification;
   const modalBasisCacheDrawableAuthority =
     runtimeState.modalBasisCacheDrawableAuthority ??
     resolveRaymarchModalBasisCacheDrawableAuthority(
@@ -1212,6 +1267,13 @@ function buildRaymarchDebugSnapshot(
     peakModalFieldAmplitude,
     avgOpacity,
     avgDensity,
+    materialProbePhysicalDensity,
+    materialProbeCausticVisibleDensity,
+    materialProbeSupportVisibleDensity:
+      materialProbeTransfer.supportVisibleDensity,
+    materialProbePreBloomRadiance,
+    materialProbePostBloomRisk,
+    materialProbeBloomAmplification,
     opacityGain,
     earlyExitEnabled: true,
     earlyExitThreshold: EARLY_EXIT_TRANSMITTANCE_EPSILON,

@@ -165,6 +165,12 @@ test("publishes observation transfer raymarch diagnostics in render perf snapsho
         observationSampledSupport: 0.18,
         observationSampledDensityFloor: 0.011,
         observationSampledContourSupport: 0.003,
+        materialProbePhysicalDensity: 0.42,
+        materialProbeCausticVisibleDensity: 0.18,
+        materialProbeSupportVisibleDensity: 0.07,
+        materialProbePreBloomRadiance: 0.21,
+        materialProbePostBloomRisk: 0.34,
+        materialProbeBloomAmplification: 1.62,
         renderQuantityLedgerVersion: RAYMARCH_QUANTITY_LEDGER_VERSION,
         renderQuantityForbiddenConsumers: {
           observedDensityFloor: [
@@ -190,6 +196,12 @@ test("publishes observation transfer raymarch diagnostics in render perf snapsho
     expect(snapshot.render.observationSampledSupport).toBe(0.18);
     expect(snapshot.render.observationSampledDensityFloor).toBe(0.011);
     expect(snapshot.render.observationSampledContourSupport).toBe(0.003);
+    expect(snapshot.render.materialProbePhysicalDensity).toBe(0.42);
+    expect(snapshot.render.materialProbeCausticVisibleDensity).toBe(0.18);
+    expect(snapshot.render.materialProbeSupportVisibleDensity).toBe(0.07);
+    expect(snapshot.render.materialProbePreBloomRadiance).toBe(0.21);
+    expect(snapshot.render.materialProbePostBloomRisk).toBe(0.34);
+    expect(snapshot.render.materialProbeBloomAmplification).toBe(1.62);
     expect(snapshot.render.renderQuantityLedgerVersion).toBe(
       RAYMARCH_QUANTITY_LEDGER_VERSION,
     );

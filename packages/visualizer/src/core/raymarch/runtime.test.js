@@ -884,6 +884,26 @@ describe("tickRaymarchRuntime", () => {
       runtimeState.debugSnapshot.raymarchDebug.renderQuantityForbiddenConsumers
         .cancellationSuppression,
     ).toEqual(expect.arrayContaining(["whiteEmissionFieldAuthority"]));
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.materialProbePhysicalDensity,
+    ).toBeGreaterThan(0);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.materialProbeCausticVisibleDensity,
+    ).toBeGreaterThan(0);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.materialProbeSupportVisibleDensity,
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.materialProbePreBloomRadiance,
+    ).toBeGreaterThan(0);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.materialProbePostBloomRisk,
+    ).toBeGreaterThanOrEqual(
+      runtimeState.debugSnapshot.raymarchDebug.materialProbePreBloomRadiance,
+    );
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.materialProbeBloomAmplification,
+    ).toBeGreaterThanOrEqual(1);
     expect(runtimeState.debugSnapshot.raymarchDebug.boundaryMode).toBe(
       "neumann",
     );

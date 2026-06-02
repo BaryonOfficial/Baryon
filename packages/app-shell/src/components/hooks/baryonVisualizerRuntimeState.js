@@ -496,6 +496,12 @@ export function createRuntimeDiagnostics() {
       observationSampledSupport: 0,
       observationSampledDensityFloor: 0,
       observationSampledContourSupport: 0,
+      materialProbePhysicalDensity: 0,
+      materialProbeCausticVisibleDensity: 0,
+      materialProbeSupportVisibleDensity: 0,
+      materialProbePreBloomRadiance: 0,
+      materialProbePostBloomRisk: 0,
+      materialProbeBloomAmplification: 1,
       renderQuantityLedgerVersion: null,
       renderQuantityForbiddenConsumers: null,
       ...MODAL_BASIS_CACHE_RENDER_DIAGNOSTIC_DEFAULTS,
@@ -619,6 +625,25 @@ export function updateObservationTransferRenderDiagnostics(
   );
   renderDiagnostics.observationSampledContourSupport = readFiniteNumber(
     raymarchDebug.observationSampledContourSupport,
+  );
+  renderDiagnostics.materialProbePhysicalDensity = readFiniteNumber(
+    raymarchDebug.materialProbePhysicalDensity,
+  );
+  renderDiagnostics.materialProbeCausticVisibleDensity = readFiniteNumber(
+    raymarchDebug.materialProbeCausticVisibleDensity,
+  );
+  renderDiagnostics.materialProbeSupportVisibleDensity = readFiniteNumber(
+    raymarchDebug.materialProbeSupportVisibleDensity,
+  );
+  renderDiagnostics.materialProbePreBloomRadiance = readFiniteNumber(
+    raymarchDebug.materialProbePreBloomRadiance,
+  );
+  renderDiagnostics.materialProbePostBloomRisk = readFiniteNumber(
+    raymarchDebug.materialProbePostBloomRisk,
+  );
+  renderDiagnostics.materialProbeBloomAmplification = readFiniteNumber(
+    raymarchDebug.materialProbeBloomAmplification,
+    1,
   );
   renderDiagnostics.renderQuantityLedgerVersion = readString(
     raymarchDebug.renderQuantityLedgerVersion,
@@ -994,6 +1019,18 @@ function buildRuntimePerfSnapshot(runtimeDiagnostics) {
         runtimeDiagnostics?.render?.observationSampledDensityFloor ?? 0,
       observationSampledContourSupport:
         runtimeDiagnostics?.render?.observationSampledContourSupport ?? 0,
+      materialProbePhysicalDensity:
+        runtimeDiagnostics?.render?.materialProbePhysicalDensity ?? 0,
+      materialProbeCausticVisibleDensity:
+        runtimeDiagnostics?.render?.materialProbeCausticVisibleDensity ?? 0,
+      materialProbeSupportVisibleDensity:
+        runtimeDiagnostics?.render?.materialProbeSupportVisibleDensity ?? 0,
+      materialProbePreBloomRadiance:
+        runtimeDiagnostics?.render?.materialProbePreBloomRadiance ?? 0,
+      materialProbePostBloomRisk:
+        runtimeDiagnostics?.render?.materialProbePostBloomRisk ?? 0,
+      materialProbeBloomAmplification:
+        runtimeDiagnostics?.render?.materialProbeBloomAmplification ?? 1,
       renderQuantityLedgerVersion:
         runtimeDiagnostics?.render?.renderQuantityLedgerVersion ?? null,
       renderQuantityForbiddenConsumers: snapshotRenderQuantityForbiddenConsumers(

@@ -5,6 +5,20 @@ const DEFAULT_MAX_DURATION_MS = 60_000;
 const OBSERVER_MIN_RESONANCE_ENERGY = 1e-4;
 const FRAME_MIN_VISIBILITY_ENERGY = 0.02;
 const OBSERVATION_SAMPLED_MIN_DENSITY = 0.005;
+const MATERIAL_PROBE_SPIKE_MIN_DELTA = 0.05;
+const MATERIAL_PROBE_SPIKE_RELATIVE_DELTA = 0.35;
+const SUPPORT_DOMINANCE_RATIO = 2;
+const SUPPORT_DOMINANCE_MIN_DELTA = 0.05;
+const CAUSTIC_COLLAPSE_RATIO = 0.5;
+
+const MATERIAL_PROBE_FIELDS = Object.freeze([
+  "materialProbePhysicalDensity",
+  "materialProbeCausticVisibleDensity",
+  "materialProbeSupportVisibleDensity",
+  "materialProbePreBloomRadiance",
+  "materialProbePostBloomRisk",
+  "materialProbeBloomAmplification",
+]);
 
 /**
  * @typedef {{
@@ -86,6 +100,211 @@ function hasObservationSampledDensity(render = {}) {
     readFiniteNumber(render.observationSampledDensityFloor) >=
     OBSERVATION_SAMPLED_MIN_DENSITY
   );
+}
+
+function quantileSorted(sortedValues, percentile) {
+  if (sortedValues.length === 0) {
+    return 0;
+  }
+  const index = Math.min(
+    sortedValues.length - 1,
+    Math.max(0, Math.ceil(percentile * sortedValues.length) - 1),
+  );
+  return sortedValues[index];
+}
+
+function median(values) {
+  if (values.length === 0) {
+    return 0;
+  }
+  const sorted = [...values].sort((left, right) => left - right);
+  const midpoint = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) {
+    return sorted[midpoint];
+  }
+  return (sorted[midpoint - 1] + sorted[midpoint]) / 2;
+}
+
+function summarizeNumericWindow(values) {
+  if (values.length === 0) {
+    return {
+      mean: 0,
+      variance: 0,
+      min: 0,
+      max: 0,
+      p50: 0,
+      p95: 0,
+      spikeThreshold: 0,
+      spikeCount: 0,
+    };
+  }
+
+  const sorted = [...values].sort((left, right) => left - right);
+  const mean =
+    values.reduce((total, value) => total + value, 0) / values.length;
+  const variance =
+    values.reduce((total, value) => total + (value - mean) ** 2, 0) /
+    values.length;
+  const p50 = median(values);
+  const spikeThreshold =
+    p50 +
+    Math.max(
+      MATERIAL_PROBE_SPIKE_MIN_DELTA,
+      Math.abs(p50) * MATERIAL_PROBE_SPIKE_RELATIVE_DELTA,
+    );
+
+  return {
+    mean,
+    variance,
+    min: sorted[0],
+    max: sorted[sorted.length - 1],
+    p50,
+    p95: quantileSorted(sorted, 0.95),
+    spikeThreshold,
+    spikeCount: values.filter((value) => value > spikeThreshold).length,
+  };
+}
+
+function readMaterialProbeValues(samples, field) {
+  return samples.map((sample) => readFiniteNumber(sample?.render?.[field]));
+}
+
+function summarizeMaterialProbeDominance(samples) {
+  const causticValues = readMaterialProbeValues(
+    samples,
+    "materialProbeCausticVisibleDensity",
+  );
+  const supportValues = readMaterialProbeValues(
+    samples,
+    "materialProbeSupportVisibleDensity",
+  );
+  const causticMedian = median(causticValues);
+  const supportMedian = median(supportValues);
+  let supportDominantSampleCount = 0;
+  let causticCollapseSampleCount = 0;
+
+  samples.forEach((sample) => {
+    const caustic = readFiniteNumber(
+      sample?.render?.materialProbeCausticVisibleDensity,
+    );
+    const support = readFiniteNumber(
+      sample?.render?.materialProbeSupportVisibleDensity,
+    );
+    if (
+      support > caustic * SUPPORT_DOMINANCE_RATIO &&
+      support - caustic >= SUPPORT_DOMINANCE_MIN_DELTA
+    ) {
+      supportDominantSampleCount += 1;
+    }
+    if (
+      causticMedian > 0 &&
+      supportMedian > 0 &&
+      caustic <= causticMedian * CAUSTIC_COLLAPSE_RATIO &&
+      support >= supportMedian
+    ) {
+      causticCollapseSampleCount += 1;
+    }
+  });
+
+  return {
+    supportToCausticMean:
+      summarizeNumericWindow(supportValues).mean /
+      Math.max(1e-6, summarizeNumericWindow(causticValues).mean),
+    supportDominantSampleCount,
+    causticCollapseSampleCount,
+  };
+}
+
+function countSampleClassifications(samples) {
+  return samples.reduce((counts, sample) => {
+    const classification = readString(sample?.classification, "unclassified");
+    counts[classification] = (counts[classification] ?? 0) + 1;
+    return counts;
+  }, {});
+}
+
+function hasMaterialProbeSignal(sample) {
+  const render = sample?.render ?? {};
+  return (
+    readFiniteNumber(render.materialProbePhysicalDensity) > 0 ||
+    readFiniteNumber(render.materialProbeCausticVisibleDensity) > 0 ||
+    readFiniteNumber(render.materialProbeSupportVisibleDensity) > 0 ||
+    readFiniteNumber(render.materialProbePreBloomRadiance) > 0 ||
+    readFiniteNumber(render.materialProbePostBloomRisk) > 0 ||
+    readFiniteNumber(render.materialProbeBloomAmplification, 1) !== 1
+  );
+}
+
+function hasActiveProbeCandidate(sample) {
+  return (
+    sample?.render?.volumeVisible === true &&
+    sample?.frame?.renderAuthority === true &&
+    (readFiniteNumber(sample?.frame?.projectedRenderEnergy) > 0 ||
+      readFiniteNumber(sample?.frame?.observationEnergy) > 0)
+  );
+}
+
+function classifyMaterialProbeWindow({
+  metrics,
+  dominance,
+  sampleCount,
+  probeSampleCount,
+  activeProbeCandidateCount,
+}) {
+  if (sampleCount === 0) {
+    return "empty";
+  }
+  if (probeSampleCount === 0 && activeProbeCandidateCount > 0) {
+    return "probe-unavailable";
+  }
+  if (metrics.materialProbePreBloomRadiance.spikeCount > 0) {
+    return "material-transfer";
+  }
+  if (
+    metrics.materialProbePostBloomRisk.spikeCount > 0 ||
+    metrics.materialProbeBloomAmplification.spikeCount > 0
+  ) {
+    return "bloom-output";
+  }
+  if (dominance.causticCollapseSampleCount > 0) {
+    return "caustic-collapse";
+  }
+  if (dominance.supportDominantSampleCount >= Math.ceil(sampleCount / 2)) {
+    return "support-fill";
+  }
+  return "stable";
+}
+
+export function summarizeTailDiagnosticWindow(samples = []) {
+  const safeSamples = Array.isArray(samples) ? samples : [];
+  const sampleClassifications = countSampleClassifications(safeSamples);
+  const probeSampleCount = safeSamples.filter(hasMaterialProbeSignal).length;
+  const activeProbeCandidateCount = safeSamples.filter(
+    hasActiveProbeCandidate,
+  ).length;
+  const metrics = Object.fromEntries(
+    MATERIAL_PROBE_FIELDS.map((field) => [
+      field,
+      summarizeNumericWindow(readMaterialProbeValues(safeSamples, field)),
+    ]),
+  );
+  const dominance = summarizeMaterialProbeDominance(safeSamples);
+
+  return {
+    sampleCount: safeSamples.length,
+    probeSampleCount,
+    activeProbeCandidateCount,
+    sampleClassifications,
+    classification: classifyMaterialProbeWindow({
+      metrics,
+      dominance,
+      sampleCount: safeSamples.length,
+      probeSampleCount,
+      activeProbeCandidateCount,
+    }),
+    metrics,
+    dominance,
+  };
 }
 
 export function classifyTailDiagnosticSample(sample = {}) {
@@ -278,6 +497,31 @@ function buildTailDiagnosticSample({
         render.observationSampledContourSupport ??
           raymarchDebug.observationSampledContourSupport,
       ),
+      materialProbePhysicalDensity: readFiniteNumber(
+        render.materialProbePhysicalDensity ??
+          raymarchDebug.materialProbePhysicalDensity,
+      ),
+      materialProbeCausticVisibleDensity: readFiniteNumber(
+        render.materialProbeCausticVisibleDensity ??
+          raymarchDebug.materialProbeCausticVisibleDensity,
+      ),
+      materialProbeSupportVisibleDensity: readFiniteNumber(
+        render.materialProbeSupportVisibleDensity ??
+          raymarchDebug.materialProbeSupportVisibleDensity,
+      ),
+      materialProbePreBloomRadiance: readFiniteNumber(
+        render.materialProbePreBloomRadiance ??
+          raymarchDebug.materialProbePreBloomRadiance,
+      ),
+      materialProbePostBloomRisk: readFiniteNumber(
+        render.materialProbePostBloomRisk ??
+          raymarchDebug.materialProbePostBloomRisk,
+      ),
+      materialProbeBloomAmplification: readFiniteNumber(
+        render.materialProbeBloomAmplification ??
+          raymarchDebug.materialProbeBloomAmplification,
+        1,
+      ),
       renderQuantityLedgerVersion: readString(
         render.renderQuantityLedgerVersion ??
           raymarchDebug.renderQuantityLedgerVersion,
@@ -429,13 +673,15 @@ export function createTailDiagnosticsRecorder({
       return sample;
     },
     dump() {
+      const samples = state.samples.map((sample) => ({ ...sample }));
       return {
         active: state.active,
         startedAtMs: state.startedAtMs,
         stoppedAtMs: state.stoppedAtMs,
         sampleIntervalMs,
         maxDurationMs,
-        samples: state.samples.map((sample) => ({ ...sample })),
+        windowSummary: summarizeTailDiagnosticWindow(samples),
+        samples,
       };
     },
   };

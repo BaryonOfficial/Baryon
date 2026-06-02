@@ -5,6 +5,7 @@ import {
   createTailDiagnosticsRecorder,
   installTailDiagnosticsWindowApi,
   recordTailDiagnosticsSample,
+  summarizeTailDiagnosticWindow,
 } from "./tailDiagnostics.js";
 
 function createLiveSourceEvidence(overrides = {}) {
@@ -50,6 +51,12 @@ function createRuntimeDiagnostics(overrides = {}) {
       totalSlotAmplitude: 0.9,
       structuralProjectionDrive: 0.45,
       structuralProjectionConcentration: 0.25,
+      materialProbePhysicalDensity: 0.42,
+      materialProbeCausticVisibleDensity: 0.18,
+      materialProbeSupportVisibleDensity: 0.07,
+      materialProbePreBloomRadiance: 0.21,
+      materialProbePostBloomRisk: 0.34,
+      materialProbeBloomAmplification: 1.62,
       modalBasisCacheReady: true,
       modalBasisCacheSupportReady: true,
       modalBasisCacheSupportSemantic: "coefficient-invariant-basis-support",
@@ -155,6 +162,12 @@ test("tail diagnostics records compact samples on the configured interval", () =
       totalSlotAmplitude: 0.9,
       structuralProjectionDrive: 0.45,
       structuralProjectionConcentration: 0.25,
+      materialProbePhysicalDensity: 0.42,
+      materialProbeCausticVisibleDensity: 0.18,
+      materialProbeSupportVisibleDensity: 0.07,
+      materialProbePreBloomRadiance: 0.21,
+      materialProbePostBloomRisk: 0.34,
+      materialProbeBloomAmplification: 1.62,
       modalBasisCacheSupportReady: true,
       modalBasisCacheSupportSemantic: "coefficient-invariant-basis-support",
       liveSynthesisUnsignedSupportMean: 0.52,
@@ -174,6 +187,166 @@ test("tail diagnostics records compact samples on the configured interval", () =
     classification: "unknown",
   });
   expect(dump.samples[0]).not.toHaveProperty("modeSlots");
+});
+
+test("tail diagnostics summarizes material probe windows", () => {
+  const recorder = createTailDiagnosticsRecorder({
+    sampleIntervalMs: 1,
+    maxDurationMs: 1000,
+  });
+  recorder.start({ nowMs: 1000 });
+
+  [
+    {
+      materialProbePreBloomRadiance: 0.2,
+      materialProbePostBloomRisk: 0.22,
+      materialProbeBloomAmplification: 1.1,
+    },
+    {
+      materialProbePreBloomRadiance: 0.21,
+      materialProbePostBloomRisk: 0.23,
+      materialProbeBloomAmplification: 1.1,
+    },
+    {
+      materialProbePreBloomRadiance: 0.2,
+      materialProbePostBloomRisk: 0.82,
+      materialProbeBloomAmplification: 4.1,
+    },
+  ].forEach((render, index) => {
+    recordTailDiagnosticsSample(recorder, {
+      runtimeDiagnostics: createRuntimeDiagnostics({ render }),
+      runtimeState: {
+        debugSnapshot: {
+          volumeVisible: true,
+          raymarchDebug: { renderAuthority: true },
+        },
+      },
+      nowMs: 1000 + index,
+    });
+  });
+
+  const { windowSummary } = recorder.dump();
+  expect(windowSummary).toMatchObject({
+    sampleCount: 3,
+    classification: "bloom-output",
+    metrics: {
+      materialProbePreBloomRadiance: {
+        max: 0.21,
+        p95: 0.21,
+        spikeCount: 0,
+      },
+      materialProbePostBloomRisk: {
+        max: 0.82,
+        p95: 0.82,
+        spikeCount: 1,
+      },
+      materialProbeBloomAmplification: {
+        max: 4.1,
+        spikeCount: 1,
+      },
+    },
+  });
+  expect(
+    windowSummary.metrics.materialProbePreBloomRadiance.mean,
+  ).toBeCloseTo(0.20333333333333334);
+});
+
+test("tail diagnostics classifies material washout seams across a window", () => {
+  expect(
+    summarizeTailDiagnosticWindow([
+      { render: { materialProbePreBloomRadiance: 0.18 } },
+      { render: { materialProbePreBloomRadiance: 0.19 } },
+      { render: { materialProbePreBloomRadiance: 0.74 } },
+    ]),
+  ).toMatchObject({ classification: "material-transfer" });
+
+  expect(
+    summarizeTailDiagnosticWindow([
+      {
+        render: {
+          materialProbeCausticVisibleDensity: 0.08,
+          materialProbeSupportVisibleDensity: 0.35,
+        },
+      },
+      {
+        render: {
+          materialProbeCausticVisibleDensity: 0.09,
+          materialProbeSupportVisibleDensity: 0.38,
+        },
+      },
+    ]),
+  ).toMatchObject({
+    classification: "support-fill",
+    dominance: { supportDominantSampleCount: 2 },
+  });
+
+  expect(
+    summarizeTailDiagnosticWindow([
+      {
+        render: {
+          materialProbeCausticVisibleDensity: 0.28,
+          materialProbeSupportVisibleDensity: 0.08,
+        },
+      },
+      {
+        render: {
+          materialProbeCausticVisibleDensity: 0.05,
+          materialProbeSupportVisibleDensity: 0.22,
+        },
+      },
+    ]),
+  ).toMatchObject({
+    classification: "caustic-collapse",
+    dominance: { causticCollapseSampleCount: 1 },
+  });
+});
+
+test("tail diagnostics does not call an unavailable material probe stable", () => {
+  expect(
+    summarizeTailDiagnosticWindow([
+      {
+        classification: "observation-transfer-drop",
+        frame: {
+          renderAuthority: true,
+          projectedRenderEnergy: 0.4,
+          observationEnergy: 1,
+        },
+        render: {
+          volumeVisible: true,
+          materialProbePhysicalDensity: 0,
+          materialProbeCausticVisibleDensity: 0,
+          materialProbeSupportVisibleDensity: 0,
+          materialProbePreBloomRadiance: 0,
+          materialProbePostBloomRisk: 0,
+          materialProbeBloomAmplification: 1,
+        },
+      },
+      {
+        classification: "input-drop",
+        frame: {
+          renderAuthority: true,
+          projectedRenderEnergy: 0.2,
+          observationEnergy: 1,
+        },
+        render: {
+          volumeVisible: true,
+          materialProbePhysicalDensity: 0,
+          materialProbeCausticVisibleDensity: 0,
+          materialProbeSupportVisibleDensity: 0,
+          materialProbePreBloomRadiance: 0,
+          materialProbePostBloomRisk: 0,
+          materialProbeBloomAmplification: 1,
+        },
+      },
+    ]),
+  ).toMatchObject({
+    classification: "probe-unavailable",
+    probeSampleCount: 0,
+    sampleClassifications: {
+      "input-drop": 1,
+      "observation-transfer-drop": 1,
+    },
+  });
 });
 
 test("tail diagnostics classifies black-tail failure seams", () => {
