@@ -4,6 +4,8 @@ import { writeFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 
 const BARYON_4_PRESET = "baryon-4";
+const ACTIVE_LUMINANCE_THRESHOLD = 0.004;
+const ACTIVE_GRADIENT_HOTSPOT_THRESHOLD = 0.12;
 const DENSE_POLYPHONIC_FIXTURE = JSON.parse(
   readFileSync(
     new URL(
@@ -59,8 +61,7 @@ function createDensePolyphonicFixtureWavBuffer({
     }
     const rightFrame =
       fixtureFrames[Math.min(rightIndex, fixtureFrames.length - 1)];
-    const leftFrame =
-      fixtureFrames[Math.max(0, rightIndex - 1)] ?? rightFrame;
+    const leftFrame = fixtureFrames[Math.max(0, rightIndex - 1)] ?? rightFrame;
     const range = Math.max(
       1,
       (rightFrame?.frameTimeMs ?? 0) - (leftFrame?.frameTimeMs ?? 0),
@@ -185,7 +186,7 @@ async function readCanvasLuminanceMetrics(page, artifactPath = null) {
           x <= width * 0.85 &&
           y >= height * 0.15 &&
           y <= height * 0.85;
-        const isNonblack = value > 0.004;
+        const isNonblack = value > ACTIVE_LUMINANCE_THRESHOLD;
         luminance.push(value);
         gridValues.push(value);
         centralNonblack.push(isCentral && isNonblack);
@@ -263,8 +264,51 @@ async function readCanvasLuminanceMetrics(page, artifactPath = null) {
     const p98 = percentile(0.98);
     const brightThreshold = p98 * 0.72;
     const brightLaneRatio =
-      luminance.filter((value) => value >= brightThreshold && value > 0.004)
-        .length / luminance.length;
+      luminance.filter(
+        (value) =>
+          value >= brightThreshold && value > ACTIVE_LUMINANCE_THRESHOLD,
+      ).length / luminance.length;
+    const valueAt = (x, y) =>
+      gridValues[
+        Math.min(gridHeight - 1, Math.max(0, y)) * gridWidth +
+          Math.min(gridWidth - 1, Math.max(0, x))
+      ] ?? 0;
+    const activeGradientValues = [];
+    for (let y = 0; y < gridHeight; y += 1) {
+      for (let x = 0; x < gridWidth; x += 1) {
+        const value = valueAt(x, y);
+        if (value <= ACTIVE_LUMINANCE_THRESHOLD) {
+          continue;
+        }
+        activeGradientValues.push(
+          Math.max(
+            Math.abs(value - valueAt(x - 1, y)),
+            Math.abs(value - valueAt(x + 1, y)),
+            Math.abs(value - valueAt(x, y - 1)),
+            Math.abs(value - valueAt(x, y + 1)),
+          ),
+        );
+      }
+    }
+    activeGradientValues.sort((left, right) => left - right);
+    const activeGradientP95 =
+      activeGradientValues.length === 0
+        ? 0
+        : activeGradientValues[
+            Math.min(
+              activeGradientValues.length - 1,
+              Math.max(0, Math.floor((activeGradientValues.length - 1) * 0.95)),
+            )
+          ];
+    const gradientHotspotRatio =
+      activeGradientValues.length === 0
+        ? 0
+        : activeGradientValues.filter(
+            (value) => value >= ACTIVE_GRADIENT_HOTSPOT_THRESHOLD,
+          ).length / activeGradientValues.length;
+    const activePixelShare = nonblackCount / luminance.length;
+    const activeGradientCoverage = activePixelShare * gradientHotspotRatio;
+    const fineLatticePressure = activeGradientP95 * activeGradientCoverage;
 
     const metrics = {
       p50,
@@ -282,6 +326,10 @@ async function readCanvasLuminanceMetrics(page, artifactPath = null) {
           ? 0
           : largestCentralComponent / centralSampleCount,
       brightLaneRatio,
+      activeGradientP95,
+      gradientHotspotRatio,
+      activeGradientCoverage,
+      fineLatticePressure,
       contrastRatio: p98 / Math.max(p50, 1e-4),
     };
 
@@ -412,6 +460,8 @@ test.describe("laser cymatic optical measurement visual audit", () => {
         brightLaneRatio: expect.any(Number),
         contrastRatio: expect.any(Number),
         broadWashRatio: expect.any(Number),
+        activeGradientCoverage: expect.any(Number),
+        fineLatticePressure: expect.any(Number),
       });
 
     const metrics = await readCanvasLuminanceMetrics(
@@ -502,9 +552,9 @@ test.describe("laser cymatic optical measurement visual audit", () => {
     expect(firstFrame.nearWhitePixelRatio).toBeLessThan(0.24);
     expect(firstFrame.brightLowSaturationPixelRatio).toBeLessThan(0.34);
     expect(firstFrame.centralConnectedNonblackRatio).toBeGreaterThan(0.01);
-    expect(coefficientOfVariation(frames.map((frame) => frame.p98))).toBeLessThan(
-      0.18,
-    );
+    expect(
+      coefficientOfVariation(frames.map((frame) => frame.p98)),
+    ).toBeLessThan(0.18);
     expect(
       standardDeviation(frames.map((frame) => frame.negativeSpaceRatio)),
     ).toBeLessThan(0.05);
