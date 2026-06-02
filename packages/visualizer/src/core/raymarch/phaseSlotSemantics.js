@@ -114,11 +114,7 @@ function getModalBasisPhaseWeight(modalFieldSlots, offset) {
   return Math.max(0, modalFieldSlots?.[offset + 3] ?? 0);
 }
 
-export function getModalBasisPhaseCurrentCoefficient(
-  phaseSlots,
-  offset,
-  time = 0,
-) {
+function getModalBasisPhaseMotionContribution(phaseSlots, offset, time = 0) {
   if (!hasPhaseSlotAuthority(phaseSlots, offset)) {
     return 1;
   }
@@ -136,13 +132,15 @@ export function getModalBasisPhaseCurrentCoefficient(
   return 1 - beta + beta * Math.cos(phase);
 }
 
-export function copyCanonicalRaymarchPhaseCurrentCoefficients({
+export function getModalBasisStructuralCoefficient(modeSlots, offset) {
+  return Math.max(0, modeSlots?.[offset + 3] ?? 0);
+}
+
+export function copyCanonicalRaymarchStructuralCoefficients({
   modeSlots,
-  phaseSlots,
   targetSlots,
   capacity,
   activeCount,
-  time = 0,
 }) {
   if (!targetSlots) {
     return 0;
@@ -159,10 +157,7 @@ export function copyCanonicalRaymarchPhaseCurrentCoefficients({
 
   for (let slotIndex = 0; slotIndex < uploadLimit; slotIndex += 1) {
     const offset = slotIndex * 4;
-    const amplitude = modeSlots?.[offset + 3] ?? 0;
-    targetSlots[offset] =
-      amplitude *
-      getModalBasisPhaseCurrentCoefficient(phaseSlots, offset, time);
+    targetSlots[offset] = getModalBasisStructuralCoefficient(modeSlots, offset);
   }
 
   return uploadLimit;
@@ -170,7 +165,7 @@ export function copyCanonicalRaymarchPhaseCurrentCoefficients({
 
 function getAggregatePhaseContributionHashKey(entry, totalContributionWeight) {
   return getEffectivePhaseContributionHashKey(
-    entry.phaseCurrentContributionNumerator /
+    entry.phaseMotionContributionNumerator /
       Math.max(Number.EPSILON, totalContributionWeight),
   );
 }
@@ -212,13 +207,13 @@ export function buildRaymarchModalBasisPhaseSignature({
     const identityEntry = entriesByIdentity.get(aggregateKey) ?? {
       identityKey: normalizedIdentityKey,
       contributionWeight: 0,
-      phaseCurrentContributionNumerator: 0,
+      phaseMotionContributionNumerator: 0,
       hasPhaseAuthority: false,
     };
     identityEntry.contributionWeight += contributionWeight;
-    identityEntry.phaseCurrentContributionNumerator +=
+    identityEntry.phaseMotionContributionNumerator +=
       contributionWeight *
-      getModalBasisPhaseCurrentCoefficient(phaseSlots, offset, time);
+      getModalBasisPhaseMotionContribution(phaseSlots, offset, time);
     identityEntry.hasPhaseAuthority =
       identityEntry.hasPhaseAuthority ||
       hasPhaseSlotAuthority(phaseSlots, offset);

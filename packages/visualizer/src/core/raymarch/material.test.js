@@ -652,6 +652,8 @@ describe("raymarch volume material", () => {
     expect(synthesizeBlock).toContain(
       "greaterThan(cancellationSupportEpsilon)",
     );
+    expect(synthesizeBlock).not.toContain("modalFieldPhaseBuffer");
+    expect(synthesizeBlock).not.toContain("uTime");
     expect(synthesizeBlock).not.toContain(
       "normalizedUnsignedSupport.max(float(1e-4))",
     );
@@ -665,11 +667,17 @@ describe("raymarch volume material", () => {
 
     expect(source).toContain("modalFieldModeBuffer");
     expect(source).not.toContain("modalFieldColorBuffer");
-    expect(source).toContain("modalFieldPhaseBuffer");
+    expect(source).not.toContain("modalFieldPhaseBuffer");
     expect(source).toContain("modalFieldCoefficientBuffer");
     expect(source).toContain("modalFieldCapacity");
     expect(source).not.toContain("evaluateModeNode({");
-    expect(source).toContain("cos(phase)");
+    expect(source).not.toContain("cos(phase)");
+    expect(source).not.toContain(
+      "modalFieldCoefficientBuffer || modalFieldPhaseBuffer",
+    );
+    expect(source).not.toContain(
+      "!modalFieldCoefficientBuffer && !modalFieldPhaseBuffer",
+    );
     expect(source).not.toContain("phaseCurrentCoefficient");
     expect(source).toContain("unsignedSupport.addAssign");
     expect(source).toContain("uModalFieldModeCount");

@@ -189,7 +189,7 @@ describe("buildCanonicalFullModalDescriptor", () => {
     ]);
   });
 
-  it("keeps dominant modes while reserving saturated atlas slots for spatial-order variety", () => {
+  it("preserves continuity order when atlas pages are saturated", () => {
     const descriptor = buildCanonicalFullModalDescriptor({
       maxTotalModes: 8,
       basisAtlasPageCapacity: 4,
@@ -210,30 +210,36 @@ describe("buildCanonicalFullModalDescriptor", () => {
     expect(readModeKeys(descriptor.slotViews.modalFieldSlots, 4)).toEqual([
       "1:1:1",
       "1:1:2",
-      "5:4:3",
-      "9:4:2",
+      "1:2:1",
+      "2:1:1",
     ]);
     expect(descriptor.diagnostics.modalVarietyAudit).toMatchObject({
       representedBasisPageModeCount: 4,
-      representedSpatialFamilyCount: 4,
+      representedSpatialFamilyCount: 2,
       basisAtlasCapacityRejectedCount: 4,
       spatialBandwidthRejectedCount: 0,
     });
     expect(
       descriptor.diagnostics.modalVarietyAudit.renderRepresentedEnergyRatio,
-    ).toBeGreaterThan(0.5);
+    ).toBeCloseTo(
+      (0.95 ** 2 + 0.9 ** 2 + 0.88 ** 2 + 0.86 ** 2) /
+        (0.95 ** 2 +
+          0.9 ** 2 +
+          0.88 ** 2 +
+          0.86 ** 2 +
+          0.5 ** 2 +
+          0.48 ** 2 +
+          0.46 ** 2 +
+          0.44 ** 2),
+      6,
+    );
   });
 
-  it("does not let stale stable slots trap weak modes in represented basis pages", () => {
-    const stableSlotByModeKey = new Map([
-      ["8:8:8", 0],
-      ["9:9:9", 1],
-    ]);
+  it("does not let stronger candidates override upstream continuity order", () => {
     const descriptor = buildCanonicalFullModalDescriptor({
       maxTotalModes: 6,
       basisAtlasPageCapacity: 3,
       basisCacheResolution: 64,
-      stableSlotByModeKey,
       modalFieldSlots: makeSlots([
         [8, 8, 8, 0.1],
         [9, 9, 9, 0.09],
@@ -246,12 +252,11 @@ describe("buildCanonicalFullModalDescriptor", () => {
     });
 
     expect(readModeKeys(descriptor.slotViews.modalFieldSlots, 3)).toEqual([
+      "8:8:8",
+      "9:9:9",
       "1:1:1",
-      "1:1:2",
-      "6:5:4",
     ]);
-    expect(stableSlotByModeKey.get("1:1:1")).toBeLessThan(3);
-    expect(stableSlotByModeKey.get("6:5:4")).toBeLessThan(3);
+    expect(descriptor.diagnostics.basisAtlasCapacityRejectedCount).toBe(3);
   });
 
   it("reports spatial-bandwidth rejection separately from atlas capacity", () => {
@@ -324,23 +329,34 @@ describe("buildCanonicalFullModalDescriptor", () => {
     expect(descriptor.slotViews.modalFieldMetadataSlots[3]).toBeCloseTo(0.9, 6);
   });
 
-  it("reports occupied slot span when stable slots become sparse", () => {
-    const stableSlotByModeKey = new Map([
-      ["1:1:1", 0],
-      ["2:2:2", 1],
-    ]);
-
+  it("compacts when upstream continuity releases an earlier mode", () => {
     const descriptor = buildCanonicalFullModalDescriptor({
       maxTotalModes: 4,
-      stableSlotByModeKey,
       modalFieldSlots: makeSlots([[2, 2, 2, 0.7]]),
       activeModalFieldModeCount: 1,
     });
 
     expect(descriptor.counts.validModeCount).toBe(1);
+    expect(descriptor.counts.modalFieldModeCount).toBe(1);
+    expect(
+      Array.from(descriptor.slotViews.modalFieldSlots.slice(0, 4)),
+    ).toEqual([2, 2, 2, expect.closeTo(0.7, 6)]);
+  });
+
+  it("preserves zero-coefficient retained topology until upstream release", () => {
+    const descriptor = buildCanonicalFullModalDescriptor({
+      maxTotalModes: 4,
+      modalFieldSlots: makeSlots([
+        [1, 1, 1, 0],
+        [2, 2, 2, 0.7],
+      ]),
+      activeModalFieldModeCount: 2,
+    });
+
+    expect(descriptor.counts.validModeCount).toBe(2);
     expect(descriptor.counts.modalFieldModeCount).toBe(2);
     expect(
       Array.from(descriptor.slotViews.modalFieldSlots.slice(0, 8)),
-    ).toEqual([0, 0, 0, 0, 2, 2, 2, expect.closeTo(0.7, 6)]);
+    ).toEqual([1, 1, 1, 0, 2, 2, 2, expect.closeTo(0.7, 6)]);
   });
 });

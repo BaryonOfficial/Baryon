@@ -419,12 +419,12 @@ const MODAL_BASIS_CACHE_RENDER_DIAGNOSTIC_DEFAULTS = Object.freeze({
   modalBasisCacheContributingRawModalEnergy: 0,
   modalBasisCacheBandwidthRejectedModeCount: 0,
   modalBasisCacheBandwidthRejectedRawModalEnergy: 0,
-  modalBasisCacheContributingPhaseCurrentModalEnergy: 0,
-  modalBasisCacheBandwidthRejectedPhaseCurrentModalEnergy: 0,
+  modalBasisCacheContributingStructuralModalEnergy: 0,
+  modalBasisCacheBandwidthRejectedStructuralModalEnergy: 0,
   liveSynthesisResolvedRawModalEnergyRatio: 1,
-  liveSynthesisResolvedPhaseCurrentModalEnergyRatio: 1,
+  liveSynthesisResolvedStructuralModalEnergyRatio: 1,
   liveSynthesisRawGradientEnvelope: 0,
-  liveSynthesisPhaseCurrentGradientEnvelope: 0,
+  liveSynthesisStructuralGradientEnvelope: 0,
   modalVarietyAudit: null,
 });
 
@@ -774,17 +774,17 @@ export function updateObservationTransferRenderDiagnostics(
         modalBasisCache?.bandwidthRejectedRawModalEnergy ??
         modalBasisCacheDescriptor?.bandwidthRejectedRawModalEnergy,
     );
-  renderDiagnostics.modalBasisCacheContributingPhaseCurrentModalEnergy =
+  renderDiagnostics.modalBasisCacheContributingStructuralModalEnergy =
     readFiniteNumber(
-      raymarchDebug.modalBasisCacheContributingPhaseCurrentModalEnergy ??
-        modalBasisCache?.contributingPhaseCurrentModalEnergy ??
-        modalBasisCacheDescriptor?.contributingPhaseCurrentModalEnergy,
+      raymarchDebug.modalBasisCacheContributingStructuralModalEnergy ??
+        modalBasisCache?.contributingStructuralModalEnergy ??
+        modalBasisCacheDescriptor?.contributingStructuralModalEnergy,
     );
-  renderDiagnostics.modalBasisCacheBandwidthRejectedPhaseCurrentModalEnergy =
+  renderDiagnostics.modalBasisCacheBandwidthRejectedStructuralModalEnergy =
     readFiniteNumber(
-      raymarchDebug.modalBasisCacheBandwidthRejectedPhaseCurrentModalEnergy ??
-        modalBasisCache?.bandwidthRejectedPhaseCurrentModalEnergy ??
-        modalBasisCacheDescriptor?.bandwidthRejectedPhaseCurrentModalEnergy,
+      raymarchDebug.modalBasisCacheBandwidthRejectedStructuralModalEnergy ??
+        modalBasisCache?.bandwidthRejectedStructuralModalEnergy ??
+        modalBasisCacheDescriptor?.bandwidthRejectedStructuralModalEnergy,
     );
   renderDiagnostics.liveSynthesisResolvedRawModalEnergyRatio = readFiniteNumber(
     raymarchDebug.liveSynthesisResolvedRawModalEnergyRatio ??
@@ -792,24 +792,23 @@ export function updateObservationTransferRenderDiagnostics(
       modalBasisCacheDescriptor?.liveSynthesisResolvedRawModalEnergyRatio,
     MODAL_BASIS_CACHE_RENDER_DIAGNOSTIC_DEFAULTS.liveSynthesisResolvedRawModalEnergyRatio,
   );
-  renderDiagnostics.liveSynthesisResolvedPhaseCurrentModalEnergyRatio =
+  renderDiagnostics.liveSynthesisResolvedStructuralModalEnergyRatio =
     readFiniteNumber(
-      raymarchDebug.liveSynthesisResolvedPhaseCurrentModalEnergyRatio ??
-        modalBasisCache?.liveSynthesisResolvedPhaseCurrentModalEnergyRatio ??
-        modalBasisCacheDescriptor?.liveSynthesisResolvedPhaseCurrentModalEnergyRatio,
-      MODAL_BASIS_CACHE_RENDER_DIAGNOSTIC_DEFAULTS.liveSynthesisResolvedPhaseCurrentModalEnergyRatio,
+      raymarchDebug.liveSynthesisResolvedStructuralModalEnergyRatio ??
+        modalBasisCache?.liveSynthesisResolvedStructuralModalEnergyRatio ??
+        modalBasisCacheDescriptor?.liveSynthesisResolvedStructuralModalEnergyRatio,
+      MODAL_BASIS_CACHE_RENDER_DIAGNOSTIC_DEFAULTS.liveSynthesisResolvedStructuralModalEnergyRatio,
     );
   renderDiagnostics.liveSynthesisRawGradientEnvelope = readFiniteNumber(
     raymarchDebug.liveSynthesisRawGradientEnvelope ??
       modalBasisCache?.liveSynthesisRawGradientEnvelope ??
       modalBasisCacheDescriptor?.liveSynthesisRawGradientEnvelope,
   );
-  renderDiagnostics.liveSynthesisPhaseCurrentGradientEnvelope =
-    readFiniteNumber(
-      raymarchDebug.liveSynthesisPhaseCurrentGradientEnvelope ??
-        modalBasisCache?.liveSynthesisPhaseCurrentGradientEnvelope ??
-        modalBasisCacheDescriptor?.liveSynthesisPhaseCurrentGradientEnvelope,
-    );
+  renderDiagnostics.liveSynthesisStructuralGradientEnvelope = readFiniteNumber(
+    raymarchDebug.liveSynthesisStructuralGradientEnvelope ??
+      modalBasisCache?.liveSynthesisStructuralGradientEnvelope ??
+      modalBasisCacheDescriptor?.liveSynthesisStructuralGradientEnvelope,
+  );
   renderDiagnostics.modalVarietyAudit = snapshotModalVarietyAudit(
     raymarchDebug.modalVarietyAudit ??
       runtimeState?.currentModalDescriptor?.diagnostics?.modalVarietyAudit,

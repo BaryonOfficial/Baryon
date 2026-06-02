@@ -74,6 +74,14 @@ function clearCachedControlsSnapshot(cachedControlSnapshotsRef) {
   cachedControlSnapshotsRef.current.controlsSnapshot = null;
 }
 
+function clearPausedRenderFrameCaches(frameCacheRefs) {
+  frameCacheRefs.lastActiveFrameRef.current = null;
+  frameCacheRefs.lastIdleFrameRef.current = null;
+  if (frameCacheRefs.pausedFileFrameRef) {
+    frameCacheRefs.pausedFileFrameRef.current = null;
+  }
+}
+
 function getWallTimeMs() {
   return typeof globalThis.performance?.now === "function"
     ? globalThis.performance.now()
@@ -152,7 +160,6 @@ export function useBaryonVisualizer({
     setIsEngineReady,
     setLiveInputRuntimeStatus,
   });
-  const { lastActiveFrameRef, lastIdleFrameRef } = frameCacheRefs;
   const {
     controlVersionRef,
     appliedControlVersionRef,
@@ -427,8 +434,7 @@ export function useBaryonVisualizer({
       controlVersionRef.current += 1;
       appliedControlVersionRef.current = -1;
       if (clearPausedFrameCache) {
-        lastActiveFrameRef.current = null;
-        lastIdleFrameRef.current = null;
+        clearPausedRenderFrameCaches(frameCacheRefs);
       }
       return true;
     },
@@ -436,8 +442,7 @@ export function useBaryonVisualizer({
       appliedControlVersionRef,
       cachedControlSnapshotsRef,
       controlVersionRef,
-      lastActiveFrameRef,
-      lastIdleFrameRef,
+      frameCacheRefs,
     ],
   );
 

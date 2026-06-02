@@ -36,7 +36,7 @@ import {
 } from "./fieldCache.js";
 import {
   buildRaymarchPhaseSlotSignature,
-  copyCanonicalRaymarchPhaseCurrentCoefficients,
+  copyCanonicalRaymarchStructuralCoefficients,
   copyCanonicalRaymarchPhaseSlots,
 } from "./phaseSlotSemantics.js";
 import {
@@ -316,12 +316,12 @@ function resetModalBasisCacheRuntimeDiagnostics(modalBasisCache) {
   modalBasisCache.contributingRawModalEnergy = 0;
   modalBasisCache.bandwidthRejectedModeCount = 0;
   modalBasisCache.bandwidthRejectedRawModalEnergy = 0;
-  modalBasisCache.contributingPhaseCurrentModalEnergy = 0;
-  modalBasisCache.bandwidthRejectedPhaseCurrentModalEnergy = 0;
+  modalBasisCache.contributingStructuralModalEnergy = 0;
+  modalBasisCache.bandwidthRejectedStructuralModalEnergy = 0;
   modalBasisCache.liveSynthesisResolvedRawModalEnergyRatio = 1;
-  modalBasisCache.liveSynthesisResolvedPhaseCurrentModalEnergyRatio = 1;
+  modalBasisCache.liveSynthesisResolvedStructuralModalEnergyRatio = 1;
   modalBasisCache.liveSynthesisRawGradientEnvelope = 0;
-  modalBasisCache.liveSynthesisPhaseCurrentGradientEnvelope = 0;
+  modalBasisCache.liveSynthesisStructuralGradientEnvelope = 0;
   modalBasisCache.liveSynthesisUnsignedSupportMean = 0;
   modalBasisCache.liveSynthesisCancellationRatioMean = 0;
   modalBasisCache.liveSynthesisCancellationRatioMax = 0;
@@ -426,7 +426,6 @@ function resetRenderAuthorityState(runtimeState) {
   runtimeState.currentModalBasisCacheDescriptor = null;
   runtimeState.currentSpectralLightDescriptor = null;
   runtimeState.modalBasisCacheDrawableAuthority = null;
-  runtimeState.modalSlotByModeKey = new Map();
   resetRaymarchUploadState(runtimeState);
   resetCacheActivity(runtimeState.modalBasisCache);
   resetCacheActivity(runtimeState.liveFieldProjectionCache);
@@ -616,10 +615,6 @@ function buildRuntimeModalDescriptor(
     }
   }
 
-  if (!runtimeState.modalSlotByModeKey) {
-    runtimeState.modalSlotByModeKey = new Map();
-  }
-
   return buildCanonicalFullModalDescriptor({
     generation:
       sourceDescriptor?.generation ??
@@ -629,7 +624,6 @@ function buildRuntimeModalDescriptor(
     basisAtlasPageCapacity,
     basisCacheResolution:
       runtimeState.modalBasisCache?.resolution ?? MODAL_BASIS_CACHE_RESOLUTION,
-    stableSlotByModeKey: runtimeState.modalSlotByModeKey,
     modalFieldSlots: featureFrame?.modalFieldSlots,
     modalFieldPhaseSlots: featureFrame?.modalFieldPhaseSlots,
     modalFieldColorSlots: featureFrame?.modalFieldColorSlots,
@@ -989,15 +983,15 @@ function buildRaymarchDebugSnapshot(
       modalBasisCache?.bandwidthRejectedRawModalEnergy,
     0,
   );
-  const modalBasisCacheContributingPhaseCurrentModalEnergy = readFiniteNumber(
-    modalBasisCacheDiagnosticDescriptor?.contributingPhaseCurrentModalEnergy ??
-      modalBasisCache?.contributingPhaseCurrentModalEnergy,
+  const modalBasisCacheContributingStructuralModalEnergy = readFiniteNumber(
+    modalBasisCacheDiagnosticDescriptor?.contributingStructuralModalEnergy ??
+      modalBasisCache?.contributingStructuralModalEnergy,
     0,
   );
-  const modalBasisCacheBandwidthRejectedPhaseCurrentModalEnergy =
+  const modalBasisCacheBandwidthRejectedStructuralModalEnergy =
     readFiniteNumber(
-      modalBasisCacheDiagnosticDescriptor?.bandwidthRejectedPhaseCurrentModalEnergy ??
-        modalBasisCache?.bandwidthRejectedPhaseCurrentModalEnergy,
+      modalBasisCacheDiagnosticDescriptor?.bandwidthRejectedStructuralModalEnergy ??
+        modalBasisCache?.bandwidthRejectedStructuralModalEnergy,
       0,
     );
   const liveSynthesisResolvedRawModalEnergyRatio = readFiniteNumber(
@@ -1005,9 +999,9 @@ function buildRaymarchDebugSnapshot(
       modalBasisCache?.liveSynthesisResolvedRawModalEnergyRatio,
     1,
   );
-  const liveSynthesisResolvedPhaseCurrentModalEnergyRatio = readFiniteNumber(
-    modalBasisCacheDiagnosticDescriptor?.liveSynthesisResolvedPhaseCurrentModalEnergyRatio ??
-      modalBasisCache?.liveSynthesisResolvedPhaseCurrentModalEnergyRatio,
+  const liveSynthesisResolvedStructuralModalEnergyRatio = readFiniteNumber(
+    modalBasisCacheDiagnosticDescriptor?.liveSynthesisResolvedStructuralModalEnergyRatio ??
+      modalBasisCache?.liveSynthesisResolvedStructuralModalEnergyRatio,
     1,
   );
   const liveSynthesisRawGradientEnvelope = readFiniteNumber(
@@ -1015,9 +1009,9 @@ function buildRaymarchDebugSnapshot(
       modalBasisCache?.liveSynthesisRawGradientEnvelope,
     0,
   );
-  const liveSynthesisPhaseCurrentGradientEnvelope = readFiniteNumber(
-    modalBasisCacheDiagnosticDescriptor?.liveSynthesisPhaseCurrentGradientEnvelope ??
-      modalBasisCache?.liveSynthesisPhaseCurrentGradientEnvelope,
+  const liveSynthesisStructuralGradientEnvelope = readFiniteNumber(
+    modalBasisCacheDiagnosticDescriptor?.liveSynthesisStructuralGradientEnvelope ??
+      modalBasisCache?.liveSynthesisStructuralGradientEnvelope,
     0,
   );
   const liveSynthesisSupportDiagnostics =
@@ -1354,12 +1348,12 @@ function buildRaymarchDebugSnapshot(
     modalBasisCacheContributingRawModalEnergy,
     modalBasisCacheBandwidthRejectedModeCount,
     modalBasisCacheBandwidthRejectedRawModalEnergy,
-    modalBasisCacheContributingPhaseCurrentModalEnergy,
-    modalBasisCacheBandwidthRejectedPhaseCurrentModalEnergy,
+    modalBasisCacheContributingStructuralModalEnergy,
+    modalBasisCacheBandwidthRejectedStructuralModalEnergy,
     liveSynthesisResolvedRawModalEnergyRatio,
-    liveSynthesisResolvedPhaseCurrentModalEnergyRatio,
+    liveSynthesisResolvedStructuralModalEnergyRatio,
     liveSynthesisRawGradientEnvelope,
-    liveSynthesisPhaseCurrentGradientEnvelope,
+    liveSynthesisStructuralGradientEnvelope,
     liveSynthesisUnsignedSupportMean,
     liveSynthesisCancellationRatioMean,
     liveSynthesisCancellationRatioMax,
@@ -1826,24 +1820,20 @@ function copyLayerPhaseUpload({
 
 function applyLayerCoefficientUpload({
   modeSlots,
-  phaseSlots,
   targetCoefficientSlots,
   coefficientBufferNode,
   layer,
   capacity,
-  time,
 }) {
   if (!targetCoefficientSlots || !layer) {
     return 0;
   }
 
-  const activeCount = copyCanonicalRaymarchPhaseCurrentCoefficients({
+  const activeCount = copyCanonicalRaymarchStructuralCoefficients({
     modeSlots,
-    phaseSlots,
     targetSlots: targetCoefficientSlots,
     capacity,
     activeCount: layer.uploadedActiveCount,
-    time,
   });
   if (coefficientBufferNode?.value) {
     coefficientBufferNode.value.needsUpdate = activeCount > 0;
@@ -2159,12 +2149,10 @@ function applyRaymarchRuntimeUploadAuthority({
     modalFieldPhaseAuthorityModeCount;
   applyLayerCoefficientUpload({
     modeSlots: modalFieldModeBuffer?.value?.array,
-    phaseSlots: modalFieldPhaseBuffer?.value?.array,
     targetCoefficientSlots: modalFieldCoefficientBuffer?.value?.array ?? null,
     coefficientBufferNode: modalFieldCoefficientBuffer,
     layer: modalFieldLayer,
     capacity: productUploadCapacity,
-    time,
   });
 
   const modalFieldModeCount = modalFieldLayer.uploadedActiveCount;
@@ -2209,7 +2197,6 @@ function applyRaymarchRuntimeUploadAuthority({
           resolution:
             runtimeState.modalBasisCache?.resolution ??
             RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
-          time,
         })
       : null,
   );

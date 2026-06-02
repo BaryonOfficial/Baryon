@@ -91,7 +91,6 @@ const EXCITATION_SOURCE_COUPLED_LOW_SIGNAL_RELEASE = 0.62;
 const EXCITATION_SOURCE_COUPLED_OBSERVED_CONTINUITY_RELEASE = 0.94;
 const EXCITATION_SOURCE_COUPLED_OBSERVED_CONTINUITY_EMPTY_RELEASE = 0.9;
 const EXCITATION_SOURCE_COUPLED_OBSERVED_CONTINUITY_LOW_SIGNAL_RELEASE = 0.82;
-const EXCITATION_SOURCE_COUPLED_FRESH_CAP = 3;
 const EXCITATION_SOURCE_COUPLED_SWITCH_PROJECTION_FRAMES = 7;
 const EXCITATION_RESONANT_BLEND_ATTACK = 0.45;
 const EXCITATION_RESONANT_SHIFT_BLEND_ATTACK = 0.85;
@@ -114,7 +113,6 @@ const EXCITATION_RESONANT_CONTINUITY_LOW_SIGNAL_RELEASE = 0.72;
 const EXCITATION_RESONANT_SHIFT_STALE_TRACKING = 0.86;
 const EXCITATION_RESONANT_SHIFT_STALE_RELEASE = 0.3;
 const EXCITATION_RESONANT_CONTINUITY_PRESENCE_RELEASE = 0.92;
-const EXCITATION_RESONANT_FRESH_CAP = 2;
 const SOURCE_COUPLED_SIGNAL_MIN_DRIVE_ENERGY = 0.045;
 const RESONANT_SIGNAL_MIN_DRIVE_ENERGY = 0.05;
 const SOURCE_COUPLED_SIGNAL_STALE_WINDOW_MS = 66;
@@ -2970,7 +2968,6 @@ function buildModalProjection({
     displaySourceCoupledEntries,
     displayResonantEntries,
     hasResonantDisplayContinuity,
-    resonantAssistNeedsFreshAdmission,
     resonantSignalCoverage,
     resonantStalePressure,
     resonantTargetShifted,
@@ -3848,7 +3845,6 @@ export function buildModalExcitationStructuralState({
     displaySourceCoupledEntries,
     displayResonantEntries,
     hasResonantDisplayContinuity,
-    resonantAssistNeedsFreshAdmission,
     resonantSignalCoverage,
     resonantStalePressure,
     resonantTargetShifted,
@@ -3892,7 +3888,6 @@ export function buildModalExcitationStructuralState({
         ? EXCITATION_SOURCE_COUPLED_OBSERVED_CONTINUITY_LOW_SIGNAL_RELEASE
         : EXCITATION_SOURCE_COUPLED_LOW_SIGNAL_RELEASE,
       retainReleased: !hardSilentFrame,
-      freshCap: EXCITATION_SOURCE_COUPLED_FRESH_CAP,
     },
   );
   if (resonantCouplingFrequencySwitch && resonantSignalAuthoritative) {
@@ -3926,11 +3921,6 @@ export function buildModalExcitationStructuralState({
       trackingOverrides: resonantShiftTrackingOverrides,
       releaseOverrides: resonantShiftReleaseOverrides,
       retainReleased: !hardSilentFrame,
-      freshCap: Math.min(
-        resonantCapacity,
-        EXCITATION_RESONANT_FRESH_CAP +
-          (resonantAssistNeedsFreshAdmission ? 1 : 0),
-      ),
     },
   );
 

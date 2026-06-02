@@ -748,8 +748,8 @@ describe("tickRaymarchRuntime", () => {
       Array.from(
         runtimeState.modalFieldModeBuffer.value.array.slice(0, 16),
       ).map((value) => Number(value.toFixed(6))),
-    ).toEqual([1, 3, 7, 0.6, 2, 2, 6, 0.4, 3, 4, 6, 0.8, 4, 5, 5, 0.55]);
-    expect(runtimeState.modalFieldColorBuffer.value.array[10]).toBeCloseTo(0.1);
+    ).toEqual([3, 4, 6, 0.8, 1, 3, 7, 0.6, 4, 5, 5, 0.55, 2, 2, 6, 0.4]);
+    expect(runtimeState.modalFieldColorBuffer.value.array[10]).toBeCloseTo(1);
     expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(4);
     expect(runtimeState.uniforms.uTransientEnergy.value).toBe(0.7);
     expect(runtimeState.uniforms.uSpectralCentroid.value).toBe(0.42);
@@ -1283,7 +1283,7 @@ describe("tickRaymarchRuntime", () => {
     ).toBe(true);
   });
 
-  it("keeps modal-basis cache freshness independent of clock-only phase-current advance", async () => {
+  it("keeps modal-basis cache freshness and structural coefficients independent of clock-only phase motion", async () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     seedRuntimeCacheNodes(runtimeState);
     runtimeState.uniforms.uSpectralMix.value = 0;
@@ -1314,7 +1314,7 @@ describe("tickRaymarchRuntime", () => {
     await flushMicrotasks();
     const rebuildCount = runtimeState.modalBasisCache.rebuildCount;
     const activeDescriptor = runtimeState.modalBasisCache.activeDescriptor;
-    const initialPhaseCurrentCoefficients = Array.from(
+    const initialStructuralCoefficients = Array.from(
       runtimeState.modalFieldCoefficientBuffer.value.array.slice(0, 8),
     );
     expect(renderer.computeAsync).toHaveBeenCalledTimes(1);
@@ -1345,7 +1345,7 @@ describe("tickRaymarchRuntime", () => {
       Array.from(
         runtimeState.modalFieldCoefficientBuffer.value.array.slice(0, 8),
       ),
-    ).not.toEqual(initialPhaseCurrentCoefficients);
+    ).toEqual(initialStructuralCoefficients);
     tickRaymarchRuntime(runtimeState, frame, 3.5, 1 / 60, renderer);
     expect(renderer.compute).toHaveBeenCalledTimes(2);
     expect(runtimeState.debugSnapshot.modalBasisCacheDescriptorFresh).toBe(
@@ -2830,7 +2830,7 @@ describe("tickRaymarchRuntime", () => {
     );
   });
 
-  it("keeps pinned modal slots addressable when earlier modes disappear", () => {
+  it("compacts modal slots when upstream continuity releases earlier modes", () => {
     const runtimeState = createRuntimeState();
 
     tickRaymarchRuntime(
@@ -2861,13 +2861,46 @@ describe("tickRaymarchRuntime", () => {
       1 / 60,
     );
 
-    expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(2);
+    expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(1);
     expect(runtimeState.currentModalBasisCacheDescriptor.modalFieldCount).toBe(
       1,
     );
     expect(
+      Array.from(runtimeState.modalFieldModeBuffer.value.array.slice(0, 4)),
+    ).toEqual([2, 2, 2, expect.closeTo(0.7, 6)]);
+  });
+
+  it("keeps upstream-retained zero coefficient modal slots addressable", () => {
+    const runtimeState = createRuntimeState();
+
+    tickRaymarchRuntime(
+      runtimeState,
+      {
+        fieldState: "active",
+        renderAuthority: true,
+        averageAmplitude: 48,
+        activeModeCount: 2,
+        modalFieldSlots: new Float32Array([1, 1, 1, 0, 2, 2, 2, 0.7]),
+        modalFieldPhaseSlots: new Float32Array([0, 0, 1, 1, 0, 0, 1, 1]),
+        modalFieldColorSlots: new Float32Array(8),
+        modalFieldMetadataSlots: new Float32Array(8),
+        bandEnergies: new Float32Array([0.4, 0.3, 0.2, 0.1]),
+        structureSignal: 0.74,
+        energySignal: 0.68,
+        changeSignal: 0.61,
+        energyLedger: {
+          projectedRenderEnergy: 0.2,
+          renderEnergyEpsilon: 1e-6,
+        },
+      },
+      1,
+      1 / 60,
+    );
+
+    expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(2);
+    expect(
       Array.from(runtimeState.modalFieldModeBuffer.value.array.slice(0, 8)),
-    ).toEqual([0, 0, 0, 0, 2, 2, 2, expect.closeTo(0.7, 6)]);
+    ).toEqual([1, 1, 1, 0, 2, 2, 2, expect.closeTo(0.7, 6)]);
   });
 
   it("clears upload signatures while projected render authority is absent", () => {

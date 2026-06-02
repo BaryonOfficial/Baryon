@@ -6,7 +6,6 @@ import {
   Loop,
   abs,
   clamp,
-  cos,
   cross,
   dot,
   exp,
@@ -211,7 +210,6 @@ function normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) {
  *   modalLiveFieldTexture?: any,
  *   modalLiveSupportTexture?: any,
  *   modalFieldModeBuffer?: any,
- *   modalFieldPhaseBuffer?: any,
  *   modalFieldCoefficientBuffer?: any,
  *   modalFieldCapacity?: number
  * }} BaryonVolumeMaterial
@@ -295,23 +293,12 @@ function sampleLiveFieldProjectionCacheNode({
   };
 }
 
-function computeLiveModalCoefficientNodes(
-  modeSlot,
-  phaseSlot,
-  uTime,
-  coefficientSlot = null,
-) {
+function computeLiveModalCoefficientNodes(modeSlot, coefficientSlot = null) {
   if (coefficientSlot) {
     return { coefficient: coefficientSlot.x };
   }
 
-  const beta = clamp(phaseSlot.z.mul(phaseSlot.w), float(0.0), float(1.0));
-  const phase = phaseSlot.x.add(phaseSlot.y.mul(uTime));
-  const phaseScale = float(1.0)
-    .sub(beta)
-    .add(beta.mul(cos(phase)))
-    .toVar();
-  const coefficient = modeSlot.w.mul(phaseScale).toVar();
+  const coefficient = modeSlot.w.toVar();
 
   return { coefficient };
 }
@@ -319,12 +306,10 @@ function computeLiveModalCoefficientNodes(
 function synthesizeLiveModalFieldNode({
   localPosition,
   uRadius,
-  uTime,
   uModalFieldModeCount,
   amplitudeNorm,
   modalBasisAtlasTexture,
   modalFieldModeBuffer,
-  modalFieldPhaseBuffer,
   modalFieldCoefficientBuffer = null,
   liveSynthesisModeCount = RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
 }) {
@@ -337,11 +322,7 @@ function synthesizeLiveModalFieldNode({
   );
   const invLiveSynthesisModeCount = 1 / normalizedLiveSynthesisModeCount;
 
-  if (
-    modalBasisAtlasTexture &&
-    modalFieldModeBuffer &&
-    (modalFieldCoefficientBuffer || modalFieldPhaseBuffer)
-  ) {
+  if (modalBasisAtlasTexture && modalFieldModeBuffer) {
     const basisUv = getBasisLocalUvNode({
       localPosition,
       uRadius,
@@ -358,13 +339,10 @@ function synthesizeLiveModalFieldNode({
       ({ i }) => {
         If(i.greaterThanEqual(activeModeCount), () => {}).Else(() => {
           const modeSlot = modalFieldModeBuffer.element(i);
-          const phaseSlot = modalFieldPhaseBuffer?.element(i) ?? null;
           const coefficientSlot =
             modalFieldCoefficientBuffer?.element(i) ?? null;
           const { coefficient } = computeLiveModalCoefficientNodes(
             modeSlot,
-            phaseSlot,
-            uTime,
             coefficientSlot,
           );
           const basisSample = sampleBasisAtlasPageNode({
@@ -417,21 +395,15 @@ function deriveOpticalConvergenceNormalsNode({
   tangent1,
   tangent2,
   sampleUvStep,
-  uTime,
   uModalFieldModeCount,
   amplitudeNorm,
   modalBasisAtlasTexture,
   modalFieldModeBuffer,
-  modalFieldPhaseBuffer,
   modalFieldCoefficientBuffer = null,
   liveSynthesisModeCount = RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
 }) {
   const zeroNormal = vec3(0.0);
-  if (
-    !modalBasisAtlasTexture ||
-    !modalFieldModeBuffer ||
-    (!modalFieldCoefficientBuffer && !modalFieldPhaseBuffer)
-  ) {
+  if (!modalBasisAtlasTexture || !modalFieldModeBuffer) {
     return {
       normalPositiveT1: zeroNormal,
       normalPositiveT2: zeroNormal,
@@ -467,12 +439,9 @@ function deriveOpticalConvergenceNormalsNode({
     ({ i }) => {
       If(i.greaterThanEqual(activeModeCount), () => {}).Else(() => {
         const modeSlot = modalFieldModeBuffer.element(i);
-        const phaseSlot = modalFieldPhaseBuffer?.element(i) ?? null;
         const coefficientSlot = modalFieldCoefficientBuffer?.element(i) ?? null;
         const { coefficient } = computeLiveModalCoefficientNodes(
           modeSlot,
-          phaseSlot,
-          uTime,
           coefficientSlot,
         );
         const basisSamplePosT1 = sampleBasisAtlasPageNode({
@@ -515,13 +484,11 @@ function deriveOpticalConvergenceAuthorityNode({
   tangent1,
   tangent2,
   sampleUvStep,
-  uTime,
   uModalFieldModeCount,
   amplitudeNorm,
   centerGradientNormal,
   modalBasisAtlasTexture,
   modalFieldModeBuffer,
-  modalFieldPhaseBuffer,
   modalFieldCoefficientBuffer = null,
   liveSynthesisModeCount = RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
 }) {
@@ -531,12 +498,10 @@ function deriveOpticalConvergenceAuthorityNode({
       tangent1,
       tangent2,
       sampleUvStep,
-      uTime,
       uModalFieldModeCount,
       amplitudeNorm,
       modalBasisAtlasTexture,
       modalFieldModeBuffer,
-      modalFieldPhaseBuffer,
       modalFieldCoefficientBuffer,
       liveSynthesisModeCount,
     });
@@ -565,14 +530,12 @@ function createScatteringNode({
   modalLiveFieldTexture = null,
   modalLiveSupportTexture = null,
   modalFieldModeBuffer = null,
-  modalFieldPhaseBuffer = null,
   modalFieldCoefficientBuffer = null,
   liveSynthesisModeCount = RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
   spectralLightCacheTexture = null,
   spectralLightEvaluationMode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
 }) {
   const {
-    uTime,
     uRadius,
     uThreshold,
     uAverageAmplitude,
@@ -791,20 +754,16 @@ function createScatteringNode({
         effectiveCancellationRatio.assign(liveFieldSample.cancellationRatio);
       };
       const canSynthesizeLiveField =
-        modalBasisAtlasTexture &&
-        modalFieldModeBuffer &&
-        (modalFieldCoefficientBuffer || modalFieldPhaseBuffer);
+        modalBasisAtlasTexture && modalFieldModeBuffer;
       const assignSynthesizedLiveField = () => {
         assignLiveFieldSample(
           synthesizeLiveModalFieldNode({
             localPosition,
             uRadius,
-            uTime,
             uModalFieldModeCount,
             amplitudeNorm,
             modalBasisAtlasTexture,
             modalFieldModeBuffer,
-            modalFieldPhaseBuffer,
             modalFieldCoefficientBuffer,
             liveSynthesisModeCount,
           }),
@@ -1103,13 +1062,11 @@ function createScatteringNode({
               tangent1,
               tangent2,
               sampleUvStep: convergenceSampleUvStep,
-              uTime,
               uModalFieldModeCount,
               amplitudeNorm,
               centerGradientNormal: gradientNormal,
               modalBasisAtlasTexture,
               modalFieldModeBuffer,
-              modalFieldPhaseBuffer,
               modalFieldCoefficientBuffer,
               liveSynthesisModeCount,
             });
@@ -1668,7 +1625,6 @@ export function createRaymarchVolumeMesh({
   modalLiveFieldTexture = null,
   modalLiveSupportTexture = null,
   modalFieldModeBuffer = null,
-  modalFieldPhaseBuffer = null,
   modalFieldCoefficientBuffer = null,
   modalFieldCapacity = RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
   spectralLightCacheTexture = null,
@@ -1699,7 +1655,6 @@ export function createRaymarchVolumeMesh({
       modalLiveFieldTexture,
       modalLiveSupportTexture,
       modalFieldModeBuffer,
-      modalFieldPhaseBuffer,
       modalFieldCoefficientBuffer,
       liveSynthesisModeCount: modalFieldCapacity,
       spectralLightCacheTexture:
@@ -1714,7 +1669,6 @@ export function createRaymarchVolumeMesh({
     material.modalLiveFieldTexture = modalLiveFieldTexture;
     material.modalLiveSupportTexture = modalLiveSupportTexture;
     material.modalFieldModeBuffer = modalFieldModeBuffer;
-    material.modalFieldPhaseBuffer = modalFieldPhaseBuffer;
     material.modalFieldCoefficientBuffer = modalFieldCoefficientBuffer;
     material.modalFieldCapacity = modalFieldCapacity;
     return material;
@@ -1749,7 +1703,6 @@ export function createRaymarchVolumeMesh({
   mesh.userData.raymarchModalLiveFieldTexture = modalLiveFieldTexture;
   mesh.userData.raymarchModalLiveSupportTexture = modalLiveSupportTexture;
   mesh.userData.raymarchModalFieldModeBuffer = modalFieldModeBuffer;
-  mesh.userData.raymarchModalFieldPhaseBuffer = modalFieldPhaseBuffer;
   mesh.userData.raymarchModalFieldCoefficientBuffer =
     modalFieldCoefficientBuffer;
   mesh.userData.raymarchModalFieldCapacity = modalFieldCapacity;

@@ -26,7 +26,7 @@ import { buildRaymarchModalBasisPhaseSignature } from "./phaseSlotSemantics.js";
 export const RAYMARCH_FIELD_CACHE_RESOLUTION = 64;
 export const RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION =
   RAYMARCH_FIELD_CACHE_RESOLUTION;
-export const RAYMARCH_MODAL_BASIS_CACHE_CAPACITY = 20;
+export const RAYMARCH_MODAL_BASIS_CACHE_CAPACITY = 12;
 export const RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT =
   RAYMARCH_MODAL_BASIS_CACHE_CAPACITY;
 export const RAYMARCH_BASIS_ATLAS_PACKING = "z-slice-pages-v1";
@@ -853,25 +853,7 @@ function countZeroAmplitudeModalSlots(slots, activeCount) {
   return zeroAmplitudeSkippedModeCount;
 }
 
-function getModalBasisPhaseScale({ phaseSlots, offset, time }) {
-  const beta = Math.min(
-    1,
-    Math.max(
-      0,
-      (phaseSlots?.[offset + 2] ?? 0) * (phaseSlots?.[offset + 3] ?? 0),
-    ),
-  );
-  const phase =
-    (phaseSlots?.[offset] ?? 0) + (phaseSlots?.[offset + 1] ?? 0) * time;
-  return 1 - beta + beta * Math.cos(phase);
-}
-
-function collectCanonicalLiveSynthesisDiagnosticTerms({
-  slots,
-  phaseSlots,
-  activeCount,
-  time = 0,
-}) {
+function collectCanonicalLiveSynthesisDiagnosticTerms({ slots, activeCount }) {
   const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
   const entriesByKey = new Map();
 
@@ -891,11 +873,10 @@ function collectCanonicalLiveSynthesisDiagnosticTerms({
       v,
       w,
       amplitude: 0,
-      phaseCurrentCoefficient: 0,
+      structuralCoefficient: 0,
     };
     entry.amplitude += amplitude;
-    entry.phaseCurrentCoefficient +=
-      amplitude * getModalBasisPhaseScale({ phaseSlots, offset, time });
+    entry.structuralCoefficient += amplitude;
     if (!entriesByKey.has(key)) {
       entriesByKey.set(key, entry);
     }
@@ -906,20 +887,16 @@ function collectCanonicalLiveSynthesisDiagnosticTerms({
 
 function summarizeLiveSynthesisDiagnostics({
   slots,
-  phaseSlots,
   activeCount,
   resolution,
   scale,
   boundaryMode,
-  time = 0,
 }) {
   const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
   const basisScale = getModalBasisGradientBasisScale(scale, boundaryMode);
   const canonicalTerms = collectCanonicalLiveSynthesisDiagnosticTerms({
     slots,
-    phaseSlots,
     activeCount: clampedActiveCount,
-    time,
   });
   let contributingBasisPageModeCount = 0;
   const zeroAmplitudeSkippedModeCount = countZeroAmplitudeModalSlots(
@@ -929,15 +906,15 @@ function summarizeLiveSynthesisDiagnostics({
   let bandwidthRejectedModeCount = 0;
   let contributingRawModalEnergy = 0;
   let bandwidthRejectedRawModalEnergy = 0;
-  let contributingPhaseCurrentModalEnergy = 0;
-  let bandwidthRejectedPhaseCurrentModalEnergy = 0;
+  let contributingStructuralModalEnergy = 0;
+  let bandwidthRejectedStructuralModalEnergy = 0;
   let rawGradientEnvelopeNumerator = 0;
-  let phaseCurrentGradientEnvelopeNumerator = 0;
+  let structuralGradientEnvelopeNumerator = 0;
 
   for (const term of canonicalTerms) {
     const modalEnergy = term.amplitude * term.amplitude;
-    const phaseCurrentModalEnergy =
-      term.phaseCurrentCoefficient * term.phaseCurrentCoefficient;
+    const structuralModalEnergy =
+      term.structuralCoefficient * term.structuralCoefficient;
 
     if (
       getModalBasisCacheMaxRepresentableModeIndex(resolution) <
@@ -945,27 +922,26 @@ function summarizeLiveSynthesisDiagnostics({
     ) {
       bandwidthRejectedModeCount += 1;
       bandwidthRejectedRawModalEnergy += modalEnergy;
-      bandwidthRejectedPhaseCurrentModalEnergy += phaseCurrentModalEnergy;
+      bandwidthRejectedStructuralModalEnergy += structuralModalEnergy;
       continue;
     }
 
     contributingBasisPageModeCount += 1;
     contributingRawModalEnergy += modalEnergy;
-    contributingPhaseCurrentModalEnergy += phaseCurrentModalEnergy;
+    contributingStructuralModalEnergy += structuralModalEnergy;
     const gradientBound = getModalBasisTermGradientBound({
       term,
       basisScale,
     });
     rawGradientEnvelopeNumerator += modalEnergy * gradientBound;
-    phaseCurrentGradientEnvelopeNumerator +=
-      phaseCurrentModalEnergy * gradientBound;
+    structuralGradientEnvelopeNumerator +=
+      structuralModalEnergy * gradientBound;
   }
 
   const totalRepresentedModalEnergy =
     contributingRawModalEnergy + bandwidthRejectedRawModalEnergy;
-  const totalRepresentedPhaseCurrentModalEnergy =
-    contributingPhaseCurrentModalEnergy +
-    bandwidthRejectedPhaseCurrentModalEnergy;
+  const totalRepresentedStructuralModalEnergy =
+    contributingStructuralModalEnergy + bandwidthRejectedStructuralModalEnergy;
 
   return {
     modalBasisCacheMaxRepresentableModeIndex:
@@ -975,25 +951,25 @@ function summarizeLiveSynthesisDiagnostics({
     bandwidthRejectedModeCount,
     contributingRawModalEnergy,
     bandwidthRejectedRawModalEnergy,
-    contributingPhaseCurrentModalEnergy,
-    bandwidthRejectedPhaseCurrentModalEnergy,
+    contributingStructuralModalEnergy,
+    bandwidthRejectedStructuralModalEnergy,
     liveSynthesisResolvedRawModalEnergyRatio:
       totalRepresentedModalEnergy > MODAL_BASIS_CACHE_ENERGY_EPSILON
         ? contributingRawModalEnergy / totalRepresentedModalEnergy
         : 1,
-    liveSynthesisResolvedPhaseCurrentModalEnergyRatio:
-      totalRepresentedPhaseCurrentModalEnergy > MODAL_BASIS_CACHE_ENERGY_EPSILON
-        ? contributingPhaseCurrentModalEnergy /
-          totalRepresentedPhaseCurrentModalEnergy
+    liveSynthesisResolvedStructuralModalEnergyRatio:
+      totalRepresentedStructuralModalEnergy > MODAL_BASIS_CACHE_ENERGY_EPSILON
+        ? contributingStructuralModalEnergy /
+          totalRepresentedStructuralModalEnergy
         : 1,
     liveSynthesisRawGradientEnvelope:
       rawGradientEnvelopeNumerator /
       Math.max(MODAL_BASIS_CACHE_ENERGY_EPSILON, contributingRawModalEnergy),
-    liveSynthesisPhaseCurrentGradientEnvelope:
-      phaseCurrentGradientEnvelopeNumerator /
+    liveSynthesisStructuralGradientEnvelope:
+      structuralGradientEnvelopeNumerator /
       Math.max(
         MODAL_BASIS_CACHE_ENERGY_EPSILON,
-        contributingPhaseCurrentModalEnergy,
+        contributingStructuralModalEnergy,
       ),
   };
 }
@@ -1008,7 +984,6 @@ function evaluateRaymarchModalBasisSupportSample({
   x,
   y,
   z,
-  time,
   resolution,
 }) {
   const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
@@ -1021,7 +996,6 @@ function evaluateRaymarchModalBasisSupportSample({
     x,
     y,
     z,
-    time,
     resolution: normalizedResolution,
     scale: getModalBasisFieldScale(radius),
     boundaryMode: normalizedBoundaryMode,
@@ -1051,7 +1025,6 @@ function summarizeLiveSynthesisSupportDiagnostics({
   cavityGeometry,
   radius,
   resolution,
-  time = 0,
 }) {
   const sampleRadius = Math.max(Math.abs(radius), 1e-4);
   const diagnosticSamplePoints =
@@ -1078,7 +1051,6 @@ function summarizeLiveSynthesisSupportDiagnostics({
       x: x * sampleRadius,
       y: y * sampleRadius,
       z: z * sampleRadius,
-      time,
       resolution,
     });
 
@@ -1331,12 +1303,12 @@ export function createRaymarchModalBasisCache({
     contributingRawModalEnergy: 0,
     bandwidthRejectedModeCount: 0,
     bandwidthRejectedRawModalEnergy: 0,
-    contributingPhaseCurrentModalEnergy: 0,
-    bandwidthRejectedPhaseCurrentModalEnergy: 0,
+    contributingStructuralModalEnergy: 0,
+    bandwidthRejectedStructuralModalEnergy: 0,
     liveSynthesisResolvedRawModalEnergyRatio: 1,
-    liveSynthesisResolvedPhaseCurrentModalEnergyRatio: 1,
+    liveSynthesisResolvedStructuralModalEnergyRatio: 1,
     liveSynthesisRawGradientEnvelope: 0,
-    liveSynthesisPhaseCurrentGradientEnvelope: 0,
+    liveSynthesisStructuralGradientEnvelope: 0,
     liveSynthesisUnsignedSupportMean: 0,
     liveSynthesisCancellationRatioMean: 0,
     liveSynthesisCancellationRatioMax: 0,
@@ -1840,12 +1812,10 @@ export function buildRaymarchModalBasisCacheDescriptor({
   );
   const liveSynthesisDiagnostics = summarizeLiveSynthesisDiagnostics({
     slots: modalFieldSlots,
-    phaseSlots: modalFieldPhaseSlots,
     activeCount: modalFieldCount,
     resolution: normalizedResolution,
     scale: modalBasisFieldScale,
     boundaryMode,
-    time,
   });
 
   const descriptor = {
@@ -1935,7 +1905,6 @@ export function buildModalBasisAuditDiagnostics({
   cavityGeometry = "rectangular",
   radius = 1,
   resolution = RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
-  time = 0,
 }) {
   return summarizeLiveSynthesisSupportDiagnostics({
     modalFieldSlots,
@@ -1945,7 +1914,6 @@ export function buildModalBasisAuditDiagnostics({
     cavityGeometry,
     radius: Number.isFinite(radius) ? radius : 1,
     resolution: normalizeModalBasisCacheResolution(resolution),
-    time,
   });
 }
 
@@ -2086,7 +2054,6 @@ function accumulateLiveSynthesisFieldAtPoint({
   x,
   y,
   z,
-  time,
   resolution,
   scale,
   boundaryMode,
@@ -2120,9 +2087,7 @@ function accumulateLiveSynthesisFieldAtPoint({
       ),
     );
     authoritySum += amplitude * beta;
-    const phase =
-      (phaseSlots?.[offset] ?? 0) + (phaseSlots?.[offset + 1] ?? 0) * time;
-    const coefficient = amplitude * (1 - beta + beta * Math.cos(phase));
+    const coefficient = amplitude;
     const family = geometryBackend.evaluateMode({
       u: slots[offset] ?? 0,
       v: slots[offset + 1] ?? 0,
@@ -2133,12 +2098,12 @@ function accumulateLiveSynthesisFieldAtPoint({
       scale,
       boundaryMode,
     });
-    const phaseCurrentContribution = coefficient * family.field;
-    field += phaseCurrentContribution;
+    const structuralContribution = coefficient * family.field;
+    field += structuralContribution;
     gradX += coefficient * family.gradX;
     gradY += coefficient * family.gradY;
     gradZ += coefficient * family.gradZ;
-    unsignedSupport += Math.abs(phaseCurrentContribution);
+    unsignedSupport += Math.abs(structuralContribution);
   }
 
   return {
@@ -2162,7 +2127,6 @@ export function evaluateRaymarchLiveSynthesisFieldPoint({
   x = 0,
   y = 0,
   z = 0,
-  time = 0,
   resolution = RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
 }) {
   const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
@@ -2176,7 +2140,6 @@ export function evaluateRaymarchLiveSynthesisFieldPoint({
     x,
     y,
     z,
-    time,
     resolution: normalizedResolution,
     scale,
     boundaryMode: normalizedBoundaryMode,
@@ -2188,12 +2151,10 @@ export function evaluateRaymarchLiveSynthesisFieldPoint({
   );
   const liveSynthesisDiagnostics = summarizeLiveSynthesisDiagnostics({
     slots: modalFieldSlots,
-    phaseSlots: modalFieldPhaseSlots,
     activeCount: modalFieldCount,
     resolution: normalizedResolution,
     scale,
     boundaryMode: normalizedBoundaryMode,
-    time,
   });
   const totalRepresentedModalEnergy =
     liveSynthesisDiagnostics.contributingRawModalEnergy +
@@ -2232,21 +2193,21 @@ export function evaluateRaymarchLiveSynthesisFieldPoint({
       liveSynthesisDiagnostics.bandwidthRejectedModeCount,
     bandwidthRejectedRawModalEnergy:
       liveSynthesisDiagnostics.bandwidthRejectedRawModalEnergy,
-    contributingPhaseCurrentModalEnergy:
-      liveSynthesisDiagnostics.contributingPhaseCurrentModalEnergy,
-    bandwidthRejectedPhaseCurrentModalEnergy:
-      liveSynthesisDiagnostics.bandwidthRejectedPhaseCurrentModalEnergy,
+    contributingStructuralModalEnergy:
+      liveSynthesisDiagnostics.contributingStructuralModalEnergy,
+    bandwidthRejectedStructuralModalEnergy:
+      liveSynthesisDiagnostics.bandwidthRejectedStructuralModalEnergy,
     liveSynthesisResolvedRawModalEnergyRatio:
       totalRepresentedModalEnergy > MODAL_BASIS_CACHE_ENERGY_EPSILON
         ? liveSynthesisDiagnostics.contributingRawModalEnergy /
           totalRepresentedModalEnergy
         : 1,
-    liveSynthesisResolvedPhaseCurrentModalEnergyRatio:
-      liveSynthesisDiagnostics.liveSynthesisResolvedPhaseCurrentModalEnergyRatio,
+    liveSynthesisResolvedStructuralModalEnergyRatio:
+      liveSynthesisDiagnostics.liveSynthesisResolvedStructuralModalEnergyRatio,
     liveSynthesisRawGradientEnvelope:
       liveSynthesisDiagnostics.liveSynthesisRawGradientEnvelope,
-    liveSynthesisPhaseCurrentGradientEnvelope:
-      liveSynthesisDiagnostics.liveSynthesisPhaseCurrentGradientEnvelope,
+    liveSynthesisStructuralGradientEnvelope:
+      liveSynthesisDiagnostics.liveSynthesisStructuralGradientEnvelope,
   };
 }
 
@@ -3060,18 +3021,18 @@ export function enqueueRaymarchModalBasisCacheRebuild(
         descriptor.bandwidthRejectedModeCount ?? 0;
       modalBasisCache.bandwidthRejectedRawModalEnergy =
         descriptor.bandwidthRejectedRawModalEnergy ?? 0;
-      modalBasisCache.contributingPhaseCurrentModalEnergy =
-        descriptor.contributingPhaseCurrentModalEnergy ?? 0;
-      modalBasisCache.bandwidthRejectedPhaseCurrentModalEnergy =
-        descriptor.bandwidthRejectedPhaseCurrentModalEnergy ?? 0;
+      modalBasisCache.contributingStructuralModalEnergy =
+        descriptor.contributingStructuralModalEnergy ?? 0;
+      modalBasisCache.bandwidthRejectedStructuralModalEnergy =
+        descriptor.bandwidthRejectedStructuralModalEnergy ?? 0;
       modalBasisCache.liveSynthesisResolvedRawModalEnergyRatio =
         descriptor.liveSynthesisResolvedRawModalEnergyRatio ?? 1;
-      modalBasisCache.liveSynthesisResolvedPhaseCurrentModalEnergyRatio =
-        descriptor.liveSynthesisResolvedPhaseCurrentModalEnergyRatio ?? 1;
+      modalBasisCache.liveSynthesisResolvedStructuralModalEnergyRatio =
+        descriptor.liveSynthesisResolvedStructuralModalEnergyRatio ?? 1;
       modalBasisCache.liveSynthesisRawGradientEnvelope =
         descriptor.liveSynthesisRawGradientEnvelope ?? 0;
-      modalBasisCache.liveSynthesisPhaseCurrentGradientEnvelope =
-        descriptor.liveSynthesisPhaseCurrentGradientEnvelope ?? 0;
+      modalBasisCache.liveSynthesisStructuralGradientEnvelope =
+        descriptor.liveSynthesisStructuralGradientEnvelope ?? 0;
       dispatchQueuedRaymarchModalBasisCacheRebuild(modalBasisCache);
     },
     (error) => {

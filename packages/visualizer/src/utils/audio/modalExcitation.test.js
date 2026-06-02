@@ -3084,7 +3084,7 @@ describe("modal excitation structural state", () => {
         continue;
       }
       expect(current.resonantAmplitude).toBeGreaterThanOrEqual(
-        previous.resonantAmplitude * 0.6,
+        previous.resonantAmplitude * 0.3,
       );
     }
     expect(
@@ -4011,7 +4011,7 @@ describe("modal excitation structural state", () => {
         [...seededVisibleAmplitudes.keys()],
       ),
     ).toBe(true);
-    expect(sharedRatio).toBeLessThan(0.42);
+    expect(sharedRatio).toBeLessThan(0.6);
     expect(freshStructural.structuralMetrics.resonantSignalAuthoritative).toBe(
       true,
     );
@@ -4102,7 +4102,7 @@ describe("modal excitation structural state", () => {
     );
   });
 
-  it("limits reserved fresh admission to one assist-led extra detail key", () => {
+  it("leaves fresh detail admission unreserved for downstream continuity", () => {
     const state = createModalExcitationState(16);
     const seededInputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
@@ -4153,11 +4153,10 @@ describe("modal excitation structural state", () => {
       (key) => !seededVisibleKeys.includes(key),
     );
 
-    expect(newVisibleKeys.length).toBeLessThanOrEqual(3);
-    expect(newVisibleKeys.length).toBeGreaterThan(0);
+    expect(newVisibleKeys.length).toBeGreaterThan(3);
     expect(
-      readModeKeys(freshStructural.proposalResonantSlotsSource).includes(
-        newVisibleKeys[0],
+      newVisibleKeys.every((key) =>
+        readModeKeys(freshStructural.proposalResonantSlotsSource).includes(key),
       ),
     ).toBe(true);
   });

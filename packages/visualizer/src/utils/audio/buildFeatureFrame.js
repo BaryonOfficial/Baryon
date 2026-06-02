@@ -64,6 +64,10 @@ import {
   normalizeLiveInputDeviceKind,
 } from "../../core/audio/inputDeviceSemantics.js";
 import { buildCanonicalFullModalDescriptor } from "../../core/modalDescriptor.js";
+import {
+  createModalFieldContinuityState,
+  updateModalFieldContinuity,
+} from "../../core/modalFieldContinuity.js";
 import { MODAL_BASIS_ATLAS_PAGE_CAPACITY } from "../../core/modalBudgets.js";
 import {
   countNonZeroFftBins,
@@ -478,6 +482,10 @@ function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
   ) {
     analysisMemory.modalExcitationState = createModalExcitationState(capacity);
   }
+  if (!analysisMemory.modalFieldContinuityState) {
+    analysisMemory.modalFieldContinuityState =
+      createModalFieldContinuityState();
+  }
 
   if (featureState?.analysis) {
     featureState.analysis = analysisMemory;
@@ -505,6 +513,7 @@ function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
     acousticSourceCoupledTarget,
     acousticResonantTarget,
     modalExcitationState: analysisMemory.modalExcitationState,
+    modalFieldContinuityState: analysisMemory.modalFieldContinuityState,
     sourceCoupledState: analysisMemory.sourceCoupledState,
     resonantState: analysisMemory.resonantState,
     bandState: analysisMemory.bandState,
@@ -618,6 +627,16 @@ function getFrameDeltaMs(previousFrameAtMs, currentFrameAtMs) {
   }
 
   return Math.max(1, currentFrameAtMs - previousFrameAtMs);
+}
+
+function getModalFieldContinuityDeltaMs(previousFrameAtMs, currentFrameAtMs) {
+  if (!Number.isFinite(previousFrameAtMs)) {
+    return DEFAULT_FRAME_TIME_MS;
+  }
+  if (!Number.isFinite(currentFrameAtMs)) {
+    return DEFAULT_FRAME_TIME_MS;
+  }
+  return Math.max(0, currentFrameAtMs - previousFrameAtMs);
 }
 
 function computeEmaAlpha(deltaMs, smoothingMs) {
@@ -1503,6 +1522,11 @@ function buildSilentFeatureFrame({
   bandEnergies.fill(0);
   clearModalStack(sourceCoupledState);
   clearModalStack(resonantState);
+  if (featureState?.analysis) {
+    featureState.analysis.modalFieldContinuityState =
+      createModalFieldContinuityState();
+    featureState.analysis.lastModalFieldContinuityFrameAtMs = undefined;
+  }
 
   let silentFft = featureState?.analysis?.fftMagnitudes;
   if (!silentFft?.length) {
@@ -4015,6 +4039,7 @@ export function prepareAudioFeatureFrameInputs({
     acousticSourceCoupledTarget,
     acousticResonantTarget,
     modalExcitationState,
+    modalFieldContinuityState,
     sourceCoupledState,
     resonantState,
     bandState,
@@ -4138,6 +4163,7 @@ export function prepareAudioFeatureFrameInputs({
       bandEnergies,
       zeroSourceCoupledTargetSlots,
       zeroResonantTargetSlots,
+      modalFieldContinuityState,
       sourceCoupledState,
       resonantState,
       bandState,
@@ -4374,6 +4400,7 @@ export function prepareAudioFeatureFrameInputs({
     acousticSourceCoupledTarget,
     acousticResonantTarget,
     modalExcitationState,
+    modalFieldContinuityState,
     sourceCoupledState,
     resonantState,
     bandState,
@@ -5834,6 +5861,39 @@ export function composeAudioFeatureFrame({
     cavityAcousticScale: preparedInputs.cavityAcousticScale,
     boundaryMode: preparedInputs.boundaryMode,
   });
+  const previousModalFieldContinuityFrameAtMs =
+    preparedInputs.analysisMemory.lastModalFieldContinuityFrameAtMs;
+  const modalFieldContinuityResetToken = `${preparedInputs.analysisSessionKey}|${preparedInputs.analysisInputsSignature}`;
+  const allowImmediateModalFieldBootstrap =
+    !Number.isFinite(previousModalFieldContinuityFrameAtMs) ||
+    (preparedInputs.modalFieldContinuityState?.lastResetToken !== undefined &&
+      preparedInputs.modalFieldContinuityState.lastResetToken !==
+        modalFieldContinuityResetToken);
+  const modalFieldContinuityDeltaMs = getModalFieldContinuityDeltaMs(
+    previousModalFieldContinuityFrameAtMs,
+    preparedInputs.currentFrameAtMs,
+  );
+  preparedInputs.analysisMemory.lastModalFieldContinuityFrameAtMs =
+    preparedInputs.currentFrameAtMs;
+  const modalFieldContinuityResult = updateModalFieldContinuity(
+    preparedInputs.modalFieldContinuityState,
+    {
+      descriptorSource: modalFieldDescriptorSource,
+      deltaTimeSec: modalFieldContinuityDeltaMs / 1000,
+      resetToken: modalFieldContinuityResetToken,
+      renderAuthority,
+      maxVisibleModeCount: Math.min(
+        preparedInputs.capacity,
+        MODAL_BASIS_ATLAS_PAGE_CAPACITY,
+      ),
+      allowImmediateBootstrap: allowImmediateModalFieldBootstrap,
+      normalizeCandidateEvidence: true,
+    },
+  );
+  const continuityDescriptorSource =
+    modalFieldContinuityResult.descriptorSource;
+  const modalFieldContinuityDiagnostics =
+    modalFieldContinuityResult.diagnostics;
   const modalDescriptor = buildCanonicalFullModalDescriptor({
     generation: preparedInputs.auditState?.frame ?? 0,
     maxTotalModes: Math.min(
@@ -5841,12 +5901,12 @@ export function composeAudioFeatureFrame({
       AUDIO_DEFAULTS.maxModalFieldDescriptorModes,
     ),
     basisAtlasPageCapacity: MODAL_BASIS_ATLAS_PAGE_CAPACITY,
-    modalFieldSlots: modalFieldDescriptorSource.modalFieldSlots,
-    modalFieldPhaseSlots: modalFieldDescriptorSource.modalFieldPhaseSlots,
-    modalFieldColorSlots: modalFieldDescriptorSource.modalFieldColorSlots,
-    modalFieldMetadataSlots: modalFieldDescriptorSource.modalFieldMetadataSlots,
+    modalFieldSlots: continuityDescriptorSource.modalFieldSlots,
+    modalFieldPhaseSlots: continuityDescriptorSource.modalFieldPhaseSlots,
+    modalFieldColorSlots: continuityDescriptorSource.modalFieldColorSlots,
+    modalFieldMetadataSlots: continuityDescriptorSource.modalFieldMetadataSlots,
     activeModalFieldModeCount:
-      modalFieldDescriptorSource.activeModalFieldModeCount,
+      continuityDescriptorSource.activeModalFieldModeCount,
     observerCandidateModeCount:
       analysisResult.structuralMetrics?.excitedModeCount,
     observedModalModeCount:
@@ -5854,7 +5914,7 @@ export function composeAudioFeatureFrame({
     phaseAuthorityModeCount:
       analysisResult.structuralMetrics?.modalPhaseCoherentFieldModeCount,
     modeIdentityRetentionRatio:
-      analysisResult.structuralMetrics?.modalPersistence,
+      modalFieldContinuityDiagnostics.modeIdentityRetentionRatio,
   });
 
   let debug = analysisResult.debug;
@@ -5981,6 +6041,7 @@ export function composeAudioFeatureFrame({
     fftMagnitudes: analysisResult.fftMagnitudes,
     activeModeCount,
     activeModalFieldModeCount: modalDescriptor.counts.modalFieldModeCount,
+    modalFieldContinuity: modalFieldContinuityDiagnostics,
     modalDescriptor,
     modalFieldSlots: modalDescriptor.slotViews.modalFieldSlots,
     modalFieldPhaseSlots: modalDescriptor.slotViews.modalFieldPhaseSlots,

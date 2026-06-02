@@ -100,22 +100,8 @@ function resolveTotalCapacity({ maxTotalModes, fallbackCapacity }) {
   return Math.max(0, Math.floor(fallbackCapacity || 0));
 }
 
-function compareModeTuple(left, right) {
-  if (left.u !== right.u) return left.u - right.u;
-  if (left.v !== right.v) return left.v - right.v;
-  return left.w - right.w;
-}
-
 function getEntryModalEnergy(entry) {
   return Math.max(0, entry?.coefficient ?? 0) ** 2;
-}
-
-function compareModalEnergyThenTuple(left, right) {
-  const energyDelta = getEntryModalEnergy(right) - getEntryModalEnergy(left);
-  if (energyDelta !== 0) {
-    return energyDelta;
-  }
-  return compareModeTuple(left, right);
 }
 
 function countPhaseAuthorityModes(phaseSlots, maxCount) {
@@ -137,12 +123,6 @@ function countPhaseAuthorityModes(phaseSlots, maxCount) {
 
 function getEntryModeOrder(entry) {
   return Math.max(Math.abs(entry.u), Math.abs(entry.v), Math.abs(entry.w));
-}
-
-function getModeOrderOctaveBand(entry) {
-  // Selection-only grouping: modal energy stays owned by the descriptor entry.
-  const modeOrder = Math.max(1, getEntryModeOrder(entry));
-  return Math.floor(Math.log2(modeOrder));
 }
 
 function getSpatialFamilyKey(entry) {
@@ -373,10 +353,7 @@ function buildAdmissionEntries({
 
   for (let slotIndex = 0; slotIndex < limit; slotIndex += 1) {
     const offset = slotIndex * 4;
-    const coefficient = slots?.[offset + 3] ?? 0;
-    if (!(coefficient > 0)) {
-      continue;
-    }
+    const coefficient = Math.max(0, slots?.[offset + 3] ?? 0);
     const u = slots?.[offset] ?? 0;
     const v = slots?.[offset + 1] ?? 0;
     const w = slots?.[offset + 2] ?? 0;
@@ -465,226 +442,16 @@ function mergeAdmissionEntries(entries) {
   });
 }
 
-function isBasisRepresentableEntry(entry, maxRepresentableModeIndex) {
-  return getEntryModeOrder(entry) <= maxRepresentableModeIndex;
-}
-
-function selectDiverseBasisEntries(entries, basisAtlasPageCapacity) {
-  const basisCapacity = Math.max(0, Math.floor(basisAtlasPageCapacity ?? 0));
-  if (basisCapacity <= 0 || entries.length <= basisCapacity) {
-    return [...entries].sort(compareModeTuple);
-  }
-
-  const energyOrdered = [...entries].sort(compareModalEnergyThenTuple);
-  const selected = [];
-  const selectedModeKeys = new Set();
-  const selectedFamilyKeys = new Set();
-  const selectedOrderBands = new Set();
-  const anchorCount = Math.min(
-    energyOrdered.length,
-    basisCapacity,
-    Math.max(1, Math.floor(basisCapacity / 2)),
-  );
-
-  const addSelected = (entry) => {
-    if (!entry || selectedModeKeys.has(entry.modeKey)) {
-      return false;
-    }
-    selected.push(entry);
-    selectedModeKeys.add(entry.modeKey);
-    selectedFamilyKeys.add(getSpatialFamilyKey(entry));
-    selectedOrderBands.add(getModeOrderOctaveBand(entry));
-    return true;
-  };
-
-  for (let index = 0; index < anchorCount; index += 1) {
-    addSelected(energyOrdered[index]);
-  }
-
-  while (selected.length < basisCapacity) {
-    let bestEntry = null;
-    let bestRank = null;
-
-    for (const entry of energyOrdered) {
-      if (selectedModeKeys.has(entry.modeKey)) {
-        continue;
-      }
-
-      const familyNovelty = selectedFamilyKeys.has(getSpatialFamilyKey(entry))
-        ? 0
-        : 1;
-      const orderBandNovelty = selectedOrderBands.has(
-        getModeOrderOctaveBand(entry),
-      )
-        ? 0
-        : 1;
-      const rank = [
-        orderBandNovelty,
-        familyNovelty,
-        getEntryModalEnergy(entry),
-        -entry.u,
-        -entry.v,
-        -entry.w,
-      ];
-
-      if (!bestRank || compareRank(rank, bestRank) > 0) {
-        bestEntry = entry;
-        bestRank = rank;
-      }
-    }
-
-    if (!bestEntry) {
-      break;
-    }
-    addSelected(bestEntry);
-  }
-
-  return selected;
-}
-
-function compareRank(left, right) {
-  for (let index = 0; index < left.length; index += 1) {
-    if (left[index] !== right[index]) {
-      return left[index] - right[index];
-    }
-  }
-  return 0;
-}
-
-function orderEntriesForBasisRepresentation(
-  entries,
-  { basisAtlasPageCapacity, basisCacheResolution },
-) {
-  const basisCapacity = Math.max(0, Math.floor(basisAtlasPageCapacity ?? 0));
-  if (entries.length <= basisCapacity) {
-    return [...entries].sort(compareModeTuple);
-  }
-
-  const maxRepresentableModeIndex =
-    getModalBasisCacheMaxRepresentableModeIndex(basisCacheResolution);
-  const representableEntries = entries
-    .filter((entry) =>
-      isBasisRepresentableEntry(entry, maxRepresentableModeIndex),
-    )
-    .sort(compareModalEnergyThenTuple);
-  const bandwidthRejectedEntries = entries
-    .filter(
-      (entry) => !isBasisRepresentableEntry(entry, maxRepresentableModeIndex),
-    )
-    .sort(compareModalEnergyThenTuple);
-  const basisEntries = selectDiverseBasisEntries(
-    representableEntries,
-    basisCapacity,
-  );
-  const basisModeKeys = new Set(basisEntries.map((entry) => entry.modeKey));
-  const remainingRepresentableEntries = representableEntries.filter(
-    (entry) => !basisModeKeys.has(entry.modeKey),
-  );
-
-  return [
-    ...basisEntries,
-    ...remainingRepresentableEntries,
-    ...bandwidthRejectedEntries,
-  ];
-}
-
-function assignEntriesToStableSlotIndices(
-  entries,
-  totalCapacity,
-  {
-    basisAtlasPageCapacity = MODAL_BASIS_ATLAS_PAGE_CAPACITY,
-    basisCacheResolution = MODAL_BASIS_CACHE_RESOLUTION,
-  } = {},
-  stableSlotByModeKey = null,
-) {
+function assignEntriesToStableSlotIndices(entries, totalCapacity) {
   const assignments = new Array(totalCapacity).fill(null);
-  const orderedEntries = orderEntriesForBasisRepresentation(entries, {
-    basisAtlasPageCapacity,
-    basisCacheResolution,
-  }).slice(0, totalCapacity);
+  const orderedEntries = entries.slice(0, totalCapacity);
 
-  if (!stableSlotByModeKey) {
-    for (
-      let index = 0;
-      index < orderedEntries.length && index < totalCapacity;
-      index += 1
-    ) {
-      assignments[index] = orderedEntries[index];
-    }
-    return assignments;
-  }
-
-  const usedSlots = new Set();
-  const orderedModeKeys = new Set(orderedEntries.map((entry) => entry.modeKey));
-  const orderedBasisEntries = orderedEntries.slice(
-    0,
-    Math.max(0, Math.floor(basisAtlasPageCapacity ?? 0)),
-  );
-  const orderedTailEntries = orderedEntries.slice(orderedBasisEntries.length);
-  const assignEntry = (entry, slotIndex) => {
-    assignments[slotIndex] = entry;
-    usedSlots.add(slotIndex);
-    stableSlotByModeKey.set(entry.modeKey, slotIndex);
-  };
-  const assignOrderedEntries = ({ ordered, start, end, allowStableSlot }) => {
-    const unassigned = [];
-    for (const entry of ordered) {
-      const stableSlot = stableSlotByModeKey.get(entry.modeKey);
-      if (
-        allowStableSlot &&
-        Number.isInteger(stableSlot) &&
-        stableSlot >= start &&
-        stableSlot < end &&
-        stableSlot < totalCapacity &&
-        !usedSlots.has(stableSlot)
-      ) {
-        assignEntry(entry, stableSlot);
-      } else {
-        unassigned.push(entry);
-      }
-    }
-
-    let searchFrom = start;
-    for (const entry of unassigned) {
-      while (
-        searchFrom < end &&
-        searchFrom < totalCapacity &&
-        assignments[searchFrom] != null
-      ) {
-        searchFrom += 1;
-      }
-      if (searchFrom >= end || searchFrom >= totalCapacity) {
-        break;
-      }
-      assignEntry(entry, searchFrom);
-      searchFrom += 1;
-    }
-  };
-
-  assignOrderedEntries({
-    ordered: orderedBasisEntries,
-    start: 0,
-    end: Math.min(
-      totalCapacity,
-      Math.max(0, Math.floor(basisAtlasPageCapacity ?? 0)),
-    ),
-    allowStableSlot: true,
-  });
-
-  assignOrderedEntries({
-    ordered: orderedTailEntries,
-    start: Math.min(
-      totalCapacity,
-      Math.max(0, Math.floor(basisAtlasPageCapacity ?? 0)),
-    ),
-    end: totalCapacity,
-    allowStableSlot: true,
-  });
-
-  for (const modeKey of stableSlotByModeKey.keys()) {
-    if (!orderedModeKeys.has(modeKey)) {
-      stableSlotByModeKey.delete(modeKey);
-    }
+  for (
+    let index = 0;
+    index < orderedEntries.length && index < totalCapacity;
+    index += 1
+  ) {
+    assignments[index] = orderedEntries[index];
   }
 
   return assignments;
@@ -753,7 +520,6 @@ function countOccupiedSlotSpan(assignments) {
  *   observedModalModeCount?: number,
  *   phaseAuthorityModeCount?: number,
  *   modeIdentityRetentionRatio?: number,
- *   stableSlotByModeKey?: Map<string, number> | null,
  *   basisAtlasPageCapacity?: number,
  *   basisCacheResolution?: number,
  * }} [options]
@@ -770,7 +536,6 @@ export function buildCanonicalFullModalDescriptor({
   observedModalModeCount,
   phaseAuthorityModeCount,
   modeIdentityRetentionRatio = 1,
-  stableSlotByModeKey = null,
   basisAtlasPageCapacity = MODAL_BASIS_ATLAS_PAGE_CAPACITY,
   basisCacheResolution = MODAL_BASIS_CACHE_RESOLUTION,
 } = {}) {
@@ -797,25 +562,12 @@ export function buildCanonicalFullModalDescriptor({
     admittedEntries = mergedEntries;
     rejectedEntries = [];
   } else {
-    const entriesByAdmissionPriority = [...mergedEntries].sort(
-      (left, right) => {
-        if (right.coefficient !== left.coefficient) {
-          return right.coefficient - left.coefficient;
-        }
-        return compareModeTuple(left, right);
-      },
-    );
-    admittedEntries = entriesByAdmissionPriority.slice(0, totalCapacity);
-    rejectedEntries = entriesByAdmissionPriority.slice(totalCapacity);
+    admittedEntries = mergedEntries.slice(0, totalCapacity);
+    rejectedEntries = mergedEntries.slice(totalCapacity);
   }
   const slotAssignments = assignEntriesToStableSlotIndices(
     admittedEntries,
     totalCapacity,
-    {
-      basisAtlasPageCapacity,
-      basisCacheResolution,
-    },
-    stableSlotByModeKey,
   );
   const acceptedEntries = slotAssignments.filter((entry) => entry != null);
   const occupiedSlotSpan = countOccupiedSlotSpan(slotAssignments);

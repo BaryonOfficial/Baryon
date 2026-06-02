@@ -47,6 +47,8 @@ const visualizationLifecycleState = vi.hoisted(() => ({
   frameCacheRefs: {
     lastActiveFrameRef: { current: null },
     lastIdleFrameRef: { current: null },
+    lastLiveFrameRef: { current: null },
+    pausedFileFrameRef: { current: null },
   },
   controlCacheRefs: {
     controlVersionRef: { current: 0 },
@@ -241,6 +243,12 @@ describe("useBaryonVisualizer", () => {
     };
     visualizationLifecycleState.audioFeatureEngineRef.current = null;
     visualizationLifecycleState.lastAudioIssueSignatureRef.current = null;
+    visualizationLifecycleState.frameCacheRefs.lastActiveFrameRef.current =
+      null;
+    visualizationLifecycleState.frameCacheRefs.lastIdleFrameRef.current = null;
+    visualizationLifecycleState.frameCacheRefs.lastLiveFrameRef.current = null;
+    visualizationLifecycleState.frameCacheRefs.pausedFileFrameRef.current =
+      null;
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -361,6 +369,10 @@ describe("useBaryonVisualizer", () => {
       root.render(React.createElement(HookHarness, { controlsRef }));
     });
 
+    visualizationLifecycleState.frameCacheRefs.pausedFileFrameRef.current = {
+      playbackSessionId: "song-1",
+      frame: { fieldState: "active" },
+    };
     controlsRef.current.backgroundColor = "#112233";
     await act(async () => {
       window.dispatchEvent(
@@ -401,6 +413,10 @@ describe("useBaryonVisualizer", () => {
       renderLoopSpies.applyCachedControlSnapshotsSpy.mock.calls.at(-1)[0]
         .controls.backgroundColor,
     ).toBe("#112233");
+    expect(
+      visualizationLifecycleState.frameCacheRefs.pausedFileFrameRef.current,
+    ).toBeNull();
+    expect(runtimeStateSpies.clearFrameCacheSpy).not.toHaveBeenCalled();
   });
 
   it("advances output temporal camera cuts after rendering", async () => {
@@ -494,6 +510,8 @@ describe("useBaryonVisualizer", () => {
 
     const frameCallback = frameState.callbacks.at(-1);
     expect(frameCallback).toBeTypeOf("function");
+    runtimeStateSpies.clearFrameCacheSpy.mockClear();
+    clearAdaptiveRaymarchResumeStateSpy.mockClear();
 
     frameCallback(
       {
@@ -516,6 +534,8 @@ describe("useBaryonVisualizer", () => {
     expect(
       postNodesRef.current.temporalHistoryCutFramesRemaining,
     ).toBeGreaterThan(0);
+    expect(runtimeStateSpies.clearFrameCacheSpy).not.toHaveBeenCalled();
+    expect(clearAdaptiveRaymarchResumeStateSpy).not.toHaveBeenCalled();
   });
 
   it("forces an external-stage render after camera-only pose changes", async () => {

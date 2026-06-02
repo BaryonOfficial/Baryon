@@ -380,12 +380,12 @@ describe("fieldCache", () => {
 
     cache.lastRebuildSubmittedAtSec = 1;
     cache.activePhaseSampleTimeSec = 0.4;
-    const phaseCurrentAuthority =
+    const phaseMotionAuthority =
       raymarchFieldCache.resolveRaymarchModalBasisCacheDrawableAuthority(
         cache,
         phaseDescriptor,
       );
-    expect(phaseCurrentAuthority).toMatchObject({
+    expect(phaseMotionAuthority).toMatchObject({
       drawable: true,
       state: "modal-basis-cache-ready-current",
       blockedReason: null,
@@ -589,7 +589,7 @@ describe("fieldCache", () => {
 
     modalBasisCache.activeDescriptor = initialDescriptor;
 
-    expect(carrierAdvancedSample.field).not.toBeCloseTo(initialSample.field, 6);
+    expect(carrierAdvancedSample.field).toBeCloseTo(initialSample.field, 6);
     expect(
       raymarchFieldCache.shouldRebuildRaymarchModalBasisCache(
         modalBasisCache,
@@ -637,7 +637,7 @@ describe("fieldCache", () => {
     ).toBe("queued-descriptor");
   });
 
-  it("keeps sampled phase-current time out of modal-basis cache identity", () => {
+  it("keeps clock-only phase motion out of modal-basis cache identity and structural field", () => {
     const modalBasisCache = raymarchFieldCache.createRaymarchModalBasisCache({
       resolution: 8,
     });
@@ -690,7 +690,7 @@ describe("fieldCache", () => {
 
     modalBasisCache.activeDescriptor = initialDescriptor;
 
-    expect(timeAdvancedSample.field).not.toBeCloseTo(initialSample.field, 6);
+    expect(timeAdvancedSample.field).toBeCloseTo(initialSample.field, 6);
     expect(timeAdvancedDescriptor.liveModalPhaseHash).not.toBe(
       initialDescriptor.liveModalPhaseHash,
     );
@@ -815,7 +815,7 @@ describe("fieldCache", () => {
     ).toMatchObject({ needsRebuild: false, reason: "unchanged" });
   });
 
-  it("uses sampled phase-current coefficients for live-synthesis diagnostics", () => {
+  it("keeps sampled phase motion as diagnostics without changing structural field", () => {
     const modalBasisCache = raymarchFieldCache.createRaymarchModalBasisCache({
       resolution: 8,
     });
@@ -956,20 +956,15 @@ describe("fieldCache", () => {
     });
 
     modalBasisCache.activeDescriptor = descriptor;
-    const stableSlotByModeKey = new Map([
-      ["1:2:3", 0],
-      ["2:2:4", 1],
-    ]);
-    const stableReorderedSlots = buildCanonicalFullModalDescriptor({
+    const reorderedCanonical = buildCanonicalFullModalDescriptor({
       maxTotalModes: 2,
       modalFieldSlots: reorderedSlots,
       modalFieldPhaseSlots: reorderedPhaseSlots,
       activeModalFieldModeCount: 2,
-      stableSlotByModeKey,
     }).slotViews;
-    const stableReorderedDescriptor = buildRaymarchModalBasisCacheDescriptor({
-      modalFieldSlots: stableReorderedSlots.modalFieldSlots,
-      modalFieldPhaseSlots: stableReorderedSlots.modalFieldPhaseSlots,
+    const reorderedDescriptor = buildRaymarchModalBasisCacheDescriptor({
+      modalFieldSlots: reorderedCanonical.modalFieldSlots,
+      modalFieldPhaseSlots: reorderedCanonical.modalFieldPhaseSlots,
       modalFieldCount: 2,
       boundaryMode: "neumann",
       radius: 3,
@@ -982,16 +977,16 @@ describe("fieldCache", () => {
     expect(reorderedSample.gradX).toBeCloseTo(sample.gradX, 6);
     expect(reorderedSample.gradY).toBeCloseTo(sample.gradY, 6);
     expect(reorderedSample.gradZ).toBeCloseTo(sample.gradZ, 6);
-    expect(stableReorderedDescriptor.liveModalPhaseHash).toBe(
+    expect(reorderedDescriptor.liveModalPhaseHash).toBe(
       descriptor.liveModalPhaseHash,
     );
     expect(
       raymarchFieldCache.shouldRebuildRaymarchModalBasisCache(
         modalBasisCache,
-        stableReorderedDescriptor,
+        reorderedDescriptor,
       ),
-    ).toMatchObject({ needsRebuild: false, reason: "unchanged" });
-    expect(reassignedSample.field).not.toBeCloseTo(sample.field, 6);
+    ).toMatchObject({ needsRebuild: true, reason: "modal-identity" });
+    expect(reassignedSample.field).toBeCloseTo(sample.field, 6);
     expect(
       raymarchFieldCache.shouldRebuildRaymarchModalBasisCache(
         modalBasisCache,
@@ -1057,10 +1052,6 @@ describe("fieldCache", () => {
       modalFieldSlots: splitSlots,
       modalFieldPhaseSlots: splitEquivalentPhaseSlots,
       activeModalFieldModeCount: 3,
-      stableSlotByModeKey: new Map([
-        ["1:2:3", 0],
-        ["2:2:4", 1],
-      ]),
     });
     const compactDescriptor = buildRaymarchModalBasisCacheDescriptor({
       modalFieldSlots: compactCanonical.slotViews.modalFieldSlots,
@@ -1090,10 +1081,6 @@ describe("fieldCache", () => {
       modalFieldSlots: splitSlots,
       modalFieldPhaseSlots: splitChangedPhaseSlots,
       activeModalFieldModeCount: 3,
-      stableSlotByModeKey: new Map([
-        ["1:2:3", 0],
-        ["2:2:4", 1],
-      ]),
     });
     const splitChangedDescriptor = buildRaymarchModalBasisCacheDescriptor({
       modalFieldSlots: splitChangedCanonical.slotViews.modalFieldSlots,
@@ -1141,7 +1128,7 @@ describe("fieldCache", () => {
         splitEquivalentDescriptor,
       ),
     ).toMatchObject({ needsRebuild: false, reason: "unchanged" });
-    expect(splitChangedSample.field).not.toBeCloseTo(compactSample.field, 6);
+    expect(splitChangedSample.field).toBeCloseTo(compactSample.field, 6);
     expect(
       raymarchFieldCache.shouldRebuildRaymarchModalBasisCache(
         modalBasisCache,
@@ -1150,7 +1137,7 @@ describe("fieldCache", () => {
     ).toMatchObject({ needsRebuild: false, reason: "unchanged" });
   });
 
-  it("hashes aggregate phase-current coefficients for duplicate modal tuples", () => {
+  it("hashes aggregate phase motion for duplicate modal tuples without changing structural field", () => {
     const modalBasisCache = raymarchFieldCache.createRaymarchModalBasisCache({
       resolution: 8,
     });
@@ -1189,7 +1176,6 @@ describe("fieldCache", () => {
         modalFieldSlots: splitSlots,
         modalFieldPhaseSlots: splitAggregateEquivalentPhaseSlots,
         activeModalFieldModeCount: 2,
-        stableSlotByModeKey: new Map([["1:2:3", 0]]),
       },
     );
     const compactDescriptor = buildRaymarchModalBasisCacheDescriptor({
@@ -1223,7 +1209,6 @@ describe("fieldCache", () => {
       modalFieldSlots: splitSlots,
       modalFieldPhaseSlots: splitChangedPhaseSlots,
       activeModalFieldModeCount: 2,
-      stableSlotByModeKey: new Map([["1:2:3", 0]]),
     });
     const splitChangedDescriptor = buildRaymarchModalBasisCacheDescriptor({
       modalFieldSlots: splitChangedCanonical.slotViews.modalFieldSlots,
@@ -1284,7 +1269,7 @@ describe("fieldCache", () => {
         splitAggregateEquivalentDescriptor,
       ),
     ).toMatchObject({ needsRebuild: false, reason: "unchanged" });
-    expect(splitChangedSample.field).not.toBeCloseTo(compactSample.field, 6);
+    expect(splitChangedSample.field).toBeCloseTo(compactSample.field, 6);
     expect(
       raymarchFieldCache.shouldRebuildRaymarchModalBasisCache(
         modalBasisCache,
@@ -1389,7 +1374,7 @@ describe("fieldCache", () => {
         zeroAmplitudePhaseChangedDescriptor,
       ),
     ).toMatchObject({ needsRebuild: false, reason: "unchanged" });
-    expect(contributingPhaseChangedSample.field).not.toBeCloseTo(
+    expect(contributingPhaseChangedSample.field).toBeCloseTo(
       initialSample.field,
       6,
     );
@@ -1474,9 +1459,7 @@ describe("fieldCache", () => {
         subBucketDescriptor,
       ),
     ).toMatchObject({ needsRebuild: false, reason: "unchanged" });
-    expect(Math.abs(visibleSample.field - initialSample.field)).toBeGreaterThan(
-      0.01,
-    );
+    expect(visibleSample.field).toBeCloseTo(initialSample.field, 6);
     expect(
       raymarchFieldCache.shouldRebuildRaymarchModalBasisCache(
         modalBasisCache,
@@ -1569,9 +1552,10 @@ describe("fieldCache", () => {
 
     modalBasisCache.activeDescriptor = visibleInitialDescriptor;
 
-    expect(
-      Math.abs(visibleFlippedSample.field - visibleInitialSample.field),
-    ).toBeGreaterThan(0.01);
+    expect(visibleFlippedSample.field).toBeCloseTo(
+      visibleInitialSample.field,
+      6,
+    );
     expect(
       raymarchFieldCache.shouldRebuildRaymarchModalBasisCache(
         modalBasisCache,
@@ -3158,7 +3142,7 @@ describe("fieldCache", () => {
     ).toBe(true);
   });
 
-  it("applies one effective phase coefficient to scalar and gradient", () => {
+  it("keeps scalar and gradient owned by structural amplitude across phase inversion", () => {
     expect(evaluateRaymarchLiveSynthesisFieldPoint).toBeTypeOf("function");
     const slots = new Float32Array([1, 1, 1, 1]);
     const zeroPhase = evaluateRaymarchLiveSynthesisFieldPoint({
@@ -3190,10 +3174,10 @@ describe("fieldCache", () => {
       time: 0,
     });
 
-    expect(invertedPhase.field).toBeCloseTo(-zeroPhase.field, 6);
-    expect(invertedPhase.gradX).toBeCloseTo(-zeroPhase.gradX, 6);
-    expect(invertedPhase.gradY).toBeCloseTo(-zeroPhase.gradY, 6);
-    expect(invertedPhase.gradZ).toBeCloseTo(-zeroPhase.gradZ, 6);
+    expect(invertedPhase.field).toBeCloseTo(zeroPhase.field, 6);
+    expect(invertedPhase.gradX).toBeCloseTo(zeroPhase.gradX, 6);
+    expect(invertedPhase.gradY).toBeCloseTo(zeroPhase.gradY, 6);
+    expect(invertedPhase.gradZ).toBeCloseTo(zeroPhase.gradZ, 6);
     expect(invertedPhase.modalBasisCachePhaseAuthority).toBe(1);
   });
 
@@ -3308,7 +3292,7 @@ describe("fieldCache", () => {
     ).toMatchObject({ needsRebuild: true, reason: "modal-identity" });
   });
 
-  it("separates raw modal energy from phase-current effective energy", () => {
+  it("uses structural modal energy for the live coefficient even at quadrature phase", () => {
     const descriptor = buildRaymarchModalBasisCacheDescriptor({
       backboneSlots: new Float32Array([1, 1, 1, 1]),
       detailSlots: new Float32Array(0),
@@ -3324,10 +3308,10 @@ describe("fieldCache", () => {
     });
 
     expect(descriptor.contributingRawModalEnergy).toBeCloseTo(1, 6);
-    expect(descriptor.contributingPhaseCurrentModalEnergy).toBeCloseTo(0, 6);
+    expect(descriptor.contributingStructuralModalEnergy).toBeCloseTo(1, 6);
   });
 
-  it("uses phase-current modal support when the field is quadrature", () => {
+  it("keeps quadrature phase from zeroing structural modal support", () => {
     const slots = new Float32Array([1, 1, 1, 1]);
     const samplePoint = {
       backboneSlots: slots,
@@ -3353,21 +3337,22 @@ describe("fieldCache", () => {
       detailPhaseSlots: new Float32Array(0),
     });
 
-    expect(Math.abs(quadrature.field)).toBeLessThan(1e-6);
-    expect(Math.abs(quadrature.gradX)).toBeLessThan(1e-6);
-    expect(Math.abs(quadrature.gradY)).toBeLessThan(1e-6);
-    expect(Math.abs(quadrature.gradZ)).toBeLessThan(1e-6);
+    expect(quadrature.field).toBeCloseTo(inPhase.field, 6);
+    expect(quadrature.gradX).toBeCloseTo(inPhase.gradX, 6);
+    expect(quadrature.gradY).toBeCloseTo(inPhase.gradY, 6);
+    expect(quadrature.gradZ).toBeCloseTo(inPhase.gradZ, 6);
     expect(inPhase.unsignedSupport).toBeGreaterThan(
       raymarchFieldCache.MODAL_BASIS_CACHE_ENERGY_EPSILON,
     );
-    expect(quadrature.unsignedSupport).toBeLessThan(
-      raymarchFieldCache.MODAL_BASIS_CACHE_ENERGY_EPSILON,
-    );
+    expect(quadrature.unsignedSupport).toBeCloseTo(inPhase.unsignedSupport, 6);
     expect(inPhase.cancellationRatio).toBeLessThan(0.5);
-    expect(quadrature.cancellationRatio).toBe(0);
+    expect(quadrature.cancellationRatio).toBeCloseTo(
+      inPhase.cancellationRatio,
+      6,
+    );
   });
 
-  it("separates raw gradient envelope from phase-current effective gradient", () => {
+  it("uses structural gradient envelope even at quadrature phase", () => {
     const descriptor = buildRaymarchModalBasisCacheDescriptor({
       backboneSlots: new Float32Array([1, 1, 1, 1]),
       detailSlots: new Float32Array(0),
@@ -3383,8 +3368,8 @@ describe("fieldCache", () => {
     });
 
     expect(descriptor.liveSynthesisRawGradientEnvelope).toBeGreaterThan(0);
-    expect(descriptor.liveSynthesisPhaseCurrentGradientEnvelope).toBeCloseTo(
-      0,
+    expect(descriptor.liveSynthesisStructuralGradientEnvelope).toBeCloseTo(
+      descriptor.liveSynthesisRawGradientEnvelope,
       6,
     );
   });
@@ -3604,8 +3589,8 @@ describe("fieldCache", () => {
     });
 
     expect(audit.liveSynthesisUnsignedSupportMean).toBeGreaterThan(0.1);
-    expect(audit.liveSynthesisCancellationRatioMean).toBeGreaterThan(0.95);
-    expect(audit.liveSynthesisCancellationRatioMax).toBeGreaterThan(0.95);
+    expect(audit.liveSynthesisCancellationRatioMean).toBeLessThan(0.05);
+    expect(audit.liveSynthesisCancellationRatioMax).toBeLessThan(0.05);
     expect(audit.liveSynthesisSupportDiagnosticSampleCount).toBe(9);
     expect(audit.liveSynthesisSupportDiagnosticSupportedSampleCount).toBe(7);
     expect(audit.liveSynthesisSupportDiagnosticCoverage).toBeCloseTo(7 / 9, 6);

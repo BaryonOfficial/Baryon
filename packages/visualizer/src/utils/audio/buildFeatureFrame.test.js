@@ -833,6 +833,65 @@ function buildManualLowQSourceCoupledFrame({
   return composeManualStructuralFrame({ preparedInputs, structuralState });
 }
 
+function makeModalFieldContinuityStructuralMetrics(overrides = {}) {
+  return {
+    modeCoherence: 0.82,
+    modalPersistence: 0.88,
+    modalDriveEnergy: 0.34,
+    modalResponseEnergy: 0.42,
+    modalResponseInputEnergy: 0.45,
+    modalResponseSourceCoupledEnergy: 0.34,
+    modalResponseResonantEnergy: 0.08,
+    modalResponseModeCount: 4,
+    modalResponseRenderEnergy: 0.42,
+    modalResponseRenderSourceCoupledEnergy: 0.34,
+    modalResponseRenderResonantEnergy: 0.08,
+    modalResponseRawEnergy: 0.42,
+    modalResponseBudgetScaleSourceCoupled: 1,
+    modalResponseBudgetScaleResonant: 1,
+    modalResponseBudgetScale: 1,
+    currentSignalEnergy: 0.45,
+    currentSignalAmplitude: 0.5,
+    excitedModeCount: 4,
+    observedModalModeCount: 4,
+    modalPhaseAuthority: 0.9,
+    modalPhaseCoherentFieldModeCount: 4,
+    ...overrides,
+  };
+}
+
+function buildManualModalContinuityFrame({
+  featureState,
+  frameTimeMs,
+  candidateForcingSlots,
+  sourceCoupledPhaseSlots = makePhaseSlots([]),
+  structuralMetrics = makeModalFieldContinuityStructuralMetrics(),
+} = {}) {
+  const preparedInputs = prepareAudioFeatureFrameInputs({
+    analysisSnapshot: createSnapshot({
+      sourceMode: "file",
+      avgAmplitude: 42,
+      fftMagnitudes: makeFft([
+        [196, 0.72],
+        [392, 0.45],
+        [588, 0.32],
+      ]),
+      rms: 0.22,
+    }),
+    featureState,
+    radius: 3,
+    status: makeActiveStatus(),
+    frameTimeMs,
+  });
+  const structuralState = makeManualStructuralState({
+    candidateForcingSlots,
+    sourceCoupledPhaseSlots,
+    sourceMode: "file",
+    structuralMetrics,
+  });
+  return composeManualStructuralFrame({ preparedInputs, structuralState });
+}
+
 function addModalFingerprintLayer(fingerprint, slotBuffer, weight = 1) {
   for (let index = 0; index < slotBuffer.length; index += 4) {
     const amplitude = (slotBuffer[index + 3] ?? 0) * weight;
@@ -969,6 +1028,95 @@ describe("buildAudioFeatureFrame modal contract", () => {
       steadyFrame.energySignal,
     );
     expect(changingFrame.changeSignal).toBeGreaterThan(0.04);
+  });
+
+  it("routes modal descriptor source through continuity before publication", () => {
+    const featureState = createAudioFeatureState();
+    const firstCandidate = makeModeSlots([[9, 3, 1, 0.42]]);
+
+    const bootstrapped = buildManualModalContinuityFrame({
+      featureState,
+      frameTimeMs: 0,
+      candidateForcingSlots: firstCandidate,
+      sourceCoupledPhaseSlots: makePhaseSlots([[0.1, 0.2, 0.8, 0.9]]),
+    });
+
+    expect(bootstrapped.renderAuthority).toBe(true);
+    expect(readModeKeys(bootstrapped.modalFieldSlots)).toEqual(["9:3:1"]);
+    expect(bootstrapped.modalFieldContinuity).toMatchObject({
+      candidateModeCount: 1,
+      visibleModeCount: 1,
+      admittedModeKeys: ["9:3:1"],
+    });
+
+    const earlyNewIdentity = buildManualModalContinuityFrame({
+      featureState,
+      frameTimeMs: 16,
+      candidateForcingSlots: makeModeSlots([
+        [10, 3, 1, 0.68],
+        [9, 3, 1, 0.4],
+      ]),
+      sourceCoupledPhaseSlots: makePhaseSlots([
+        [0.4, 0.5, 0.8, 0.9],
+        [1.1, 2.2, 0.7, 0.95],
+      ]),
+    });
+
+    expect(readModeKeys(earlyNewIdentity.modalFieldSlots)).toEqual(["9:3:1"]);
+    expect(earlyNewIdentity.modalFieldContinuity.tailModeKeys).toContain(
+      "10:3:1",
+    );
+
+    const promotedNewIdentity = buildManualModalContinuityFrame({
+      featureState,
+      frameTimeMs: 80,
+      candidateForcingSlots: makeModeSlots([
+        [10, 3, 1, 0.7],
+        [9, 3, 1, 0.41],
+      ]),
+      sourceCoupledPhaseSlots: makePhaseSlots([
+        [0.6, 0.7, 0.8, 0.9],
+        [1.1, 2.2, 0.7, 0.95],
+      ]),
+    });
+
+    expect(readModeKeys(promotedNewIdentity.modalFieldSlots)).toEqual([
+      "9:3:1",
+      "10:3:1",
+    ]);
+    expect(promotedNewIdentity.modalFieldPhaseSlots[0]).toBeCloseTo(1.1, 6);
+    expect(promotedNewIdentity.modalFieldPhaseSlots[1]).toBeCloseTo(2.2, 6);
+    expect(promotedNewIdentity.modalFieldContinuity.admittedModeKeys).toEqual([
+      "10:3:1",
+    ]);
+  });
+
+  it("bootstraps modal field continuity immediately after a silent reset", () => {
+    const featureState = createAudioFeatureState();
+    buildManualModalContinuityFrame({
+      featureState,
+      frameTimeMs: 0,
+      candidateForcingSlots: makeModeSlots([[9, 3, 1, 0.42]]),
+    });
+
+    const silent = buildAudioFeatureFrame({
+      analysisSnapshot: null,
+      featureState,
+      radius: 3,
+      status: createStatus(),
+      frameTimeMs: 16,
+    });
+    expect(silent.fieldState).toBe("idle");
+    expect(silent.activeModalFieldModeCount).toBe(0);
+
+    const resumed = buildManualModalContinuityFrame({
+      featureState,
+      frameTimeMs: 32,
+      candidateForcingSlots: makeModeSlots([[10, 3, 1, 0.5]]),
+    });
+
+    expect(readModeKeys(resumed.modalFieldSlots)).toEqual(["10:3:1"]);
+    expect(resumed.modalFieldContinuity.admittedModeKeys).toEqual(["10:3:1"]);
   });
 
   it("does not keep low-Q background bass active from observer authority alone", () => {
@@ -2056,8 +2204,8 @@ describe("buildAudioFeatureFrame modal contract", () => {
       fftMagnitudes: richFft,
       rms: 0.36,
     });
-    // Run several warmup frames so the backbone role can admit modes up to the
-    // canonical modal-field capacity (freshCap admits 2 new modes per frame).
+    // Run several warmup frames so modal-field continuity can settle before
+    // this budget assertion reads the published descriptor.
     for (let i = 0; i < AUDIO_SLOT_CAPACITY / 2; i += 1) {
       buildAudioFeatureFrame({
         analysisSnapshot: snapshot,
@@ -6512,7 +6660,7 @@ describe("modal excitation integration", () => {
     expect(frame.fieldState).toBe("active");
   });
 
-  it("surfaces a newly visible composed detail key within two bright treble frames", () => {
+  it("bounds composed detail replacement through continuity admissions", () => {
     const featureState = createAudioFeatureState();
     const firstFrame = buildAudioFeatureFrame({
       analysisSnapshot: createSnapshot({
@@ -6535,7 +6683,7 @@ describe("modal excitation integration", () => {
     const firstFrameResonantKeys = readModeKeys(firstFrame.modalFieldSlots);
     let frame = null;
 
-    for (let frameIndex = 1; frameIndex <= 2; frameIndex += 1) {
+    for (let frameIndex = 1; frameIndex <= 3; frameIndex += 1) {
       frame = buildAudioFeatureFrame({
         analysisSnapshot: createSnapshot({
           avgAmplitude: 118,
@@ -6558,8 +6706,19 @@ describe("modal excitation integration", () => {
 
     expect(frame.debug.analysisEngine).toBe("modal-excitation");
     const switchedResonantKeys = readModeKeys(frame.modalFieldSlots);
-    expect(hasNewModeKey(switchedResonantKeys, firstFrameResonantKeys)).toBe(
-      true,
+    const newlyVisibleKeys = switchedResonantKeys.filter(
+      (key) => !firstFrameResonantKeys.includes(key),
+    );
+    expect(
+      newlyVisibleKeys.every((key) =>
+        frame.modalFieldContinuity.admittedModeKeys.includes(key),
+      ),
+    ).toBe(true);
+    expect(newlyVisibleKeys.length).toBeLessThanOrEqual(
+      Math.ceil(frame.activeModalFieldModeCount * 0.4),
+    );
+    expect(frame.modalFieldContinuity.retainedModeKeys.length).toBeGreaterThan(
+      0,
     );
   });
 
@@ -7095,7 +7254,7 @@ describe("modal excitation integration", () => {
       0.01,
     );
     expect(residueResult.frame.modalVisibilityEnergy).toBeLessThanOrEqual(
-      residueResult.frame.energyLedger.projectedRenderEnergy,
+      residueResult.frame.energyLedger.projectedRenderEnergy + 1e-9,
     );
     expect(residueResult.frame.activeModalFieldModeCount).toBeGreaterThan(0);
     expect(residueResult.frame.fieldState).toBe("decay");

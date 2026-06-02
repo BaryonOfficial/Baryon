@@ -240,14 +240,14 @@ test("publishes modal basis cache diagnostics in render perf snapshots", () => {
         modalBasisCacheContributingModeCount: 5,
         modalBasisCacheZeroAmplitudeSkippedModeCount: 1,
         modalBasisCacheContributingRawModalEnergy: 0.64,
-        modalBasisCacheContributingPhaseCurrentModalEnergy: 0.52,
+        modalBasisCacheContributingStructuralModalEnergy: 0.52,
         liveSynthesisResolvedRawModalEnergyRatio: 0.77,
-        liveSynthesisResolvedPhaseCurrentModalEnergyRatio: 0.8,
+        liveSynthesisResolvedStructuralModalEnergyRatio: 0.8,
         modalBasisCacheBandwidthRejectedModeCount: 2,
         modalBasisCacheBandwidthRejectedRawModalEnergy: 0.19,
-        modalBasisCacheBandwidthRejectedPhaseCurrentModalEnergy: 0.13,
+        modalBasisCacheBandwidthRejectedStructuralModalEnergy: 0.13,
         liveSynthesisRawGradientEnvelope: 0.38,
-        liveSynthesisPhaseCurrentGradientEnvelope: 0.24,
+        liveSynthesisStructuralGradientEnvelope: 0.24,
         modalVarietyAudit,
       },
     });
@@ -304,23 +304,21 @@ test("publishes modal basis cache diagnostics in render perf snapshots", () => {
       0.64,
     );
     expect(
-      snapshot.render.modalBasisCacheContributingPhaseCurrentModalEnergy,
+      snapshot.render.modalBasisCacheContributingStructuralModalEnergy,
     ).toBe(0.52);
     expect(snapshot.render.liveSynthesisResolvedRawModalEnergyRatio).toBe(0.77);
     expect(
-      snapshot.render.liveSynthesisResolvedPhaseCurrentModalEnergyRatio,
+      snapshot.render.liveSynthesisResolvedStructuralModalEnergyRatio,
     ).toBe(0.8);
     expect(snapshot.render.modalBasisCacheBandwidthRejectedModeCount).toBe(2);
     expect(snapshot.render.modalBasisCacheBandwidthRejectedRawModalEnergy).toBe(
       0.19,
     );
     expect(
-      snapshot.render.modalBasisCacheBandwidthRejectedPhaseCurrentModalEnergy,
+      snapshot.render.modalBasisCacheBandwidthRejectedStructuralModalEnergy,
     ).toBe(0.13);
     expect(snapshot.render.liveSynthesisRawGradientEnvelope).toBe(0.38);
-    expect(snapshot.render.liveSynthesisPhaseCurrentGradientEnvelope).toBe(
-      0.24,
-    );
+    expect(snapshot.render.liveSynthesisStructuralGradientEnvelope).toBe(0.24);
     expect(snapshot.render.modalVarietyAudit).toEqual({
       semanticModeCount: 9,
       representedBasisPageModeCount: 5,
@@ -376,14 +374,14 @@ test("publishes modal basis cache diagnostics from runtime state when audit is d
         contributingBasisPageModeCount: 4,
         zeroAmplitudeSkippedModeCount: 2,
         contributingRawModalEnergy: 0.72,
-        contributingPhaseCurrentModalEnergy: 0.51,
+        contributingStructuralModalEnergy: 0.51,
         liveSynthesisResolvedRawModalEnergyRatio: 0.68,
-        liveSynthesisResolvedPhaseCurrentModalEnergyRatio: 0.74,
+        liveSynthesisResolvedStructuralModalEnergyRatio: 0.74,
         bandwidthRejectedModeCount: 3,
         bandwidthRejectedRawModalEnergy: 0.22,
-        bandwidthRejectedPhaseCurrentModalEnergy: 0.18,
+        bandwidthRejectedStructuralModalEnergy: 0.18,
         liveSynthesisRawGradientEnvelope: 0.45,
-        liveSynthesisPhaseCurrentGradientEnvelope: 0.31,
+        liveSynthesisStructuralGradientEnvelope: 0.31,
         basisAtlasDepth: 384,
         liveSynthesisModeCount: 12,
       },
@@ -440,23 +438,21 @@ test("publishes modal basis cache diagnostics from runtime state when audit is d
       0.72,
     );
     expect(
-      snapshot.render.modalBasisCacheContributingPhaseCurrentModalEnergy,
+      snapshot.render.modalBasisCacheContributingStructuralModalEnergy,
     ).toBe(0.51);
     expect(snapshot.render.liveSynthesisResolvedRawModalEnergyRatio).toBe(0.68);
     expect(
-      snapshot.render.liveSynthesisResolvedPhaseCurrentModalEnergyRatio,
+      snapshot.render.liveSynthesisResolvedStructuralModalEnergyRatio,
     ).toBe(0.74);
     expect(snapshot.render.modalBasisCacheBandwidthRejectedModeCount).toBe(3);
     expect(snapshot.render.modalBasisCacheBandwidthRejectedRawModalEnergy).toBe(
       0.22,
     );
     expect(
-      snapshot.render.modalBasisCacheBandwidthRejectedPhaseCurrentModalEnergy,
+      snapshot.render.modalBasisCacheBandwidthRejectedStructuralModalEnergy,
     ).toBe(0.18);
     expect(snapshot.render.liveSynthesisRawGradientEnvelope).toBe(0.45);
-    expect(snapshot.render.liveSynthesisPhaseCurrentGradientEnvelope).toBe(
-      0.31,
-    );
+    expect(snapshot.render.liveSynthesisStructuralGradientEnvelope).toBe(0.31);
   } finally {
     globalThis.window = previousWindow;
   }

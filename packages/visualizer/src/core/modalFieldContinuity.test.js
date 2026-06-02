@@ -1,0 +1,412 @@
+import { describe, expect, it } from "vitest";
+import {
+  BASIS_REASSIGN_MIN_SECONDS,
+  TOPOLOGY_PROMOTE_SECONDS,
+  TOPOLOGY_RELEASE_SECONDS,
+  createModalFieldContinuityState,
+  updateModalFieldContinuity,
+} from "./modalFieldContinuity.js";
+
+const DT = 1 / 60;
+
+function makeDescriptorSource(entries) {
+  const modalFieldSlots = new Float32Array(entries.length * 4);
+  const modalFieldPhaseSlots = new Float32Array(entries.length * 4);
+  const modalFieldColorSlots = new Float32Array(entries.length * 4);
+  const modalFieldMetadataSlots = new Float32Array(entries.length * 4);
+
+  entries.forEach((entry, index) => {
+    const offset = index * 4;
+    const [u, v, w] = entry.mode;
+    modalFieldSlots[offset] = u;
+    modalFieldSlots[offset + 1] = v;
+    modalFieldSlots[offset + 2] = w;
+    modalFieldSlots[offset + 3] = entry.coefficient;
+
+    modalFieldPhaseSlots[offset] = entry.phaseOffsetRad ?? 0;
+    modalFieldPhaseSlots[offset + 1] = entry.phaseVelocityRadPerSec ?? 0;
+    modalFieldPhaseSlots[offset + 2] = entry.phaseCoherence ?? 0;
+    modalFieldPhaseSlots[offset + 3] = entry.phaseAuthority ?? 0;
+
+    modalFieldColorSlots[offset] = entry.colorR ?? 0;
+    modalFieldColorSlots[offset + 1] = entry.colorG ?? 0;
+    modalFieldColorSlots[offset + 2] = entry.colorB ?? 0;
+    modalFieldColorSlots[offset + 3] = entry.colorWeight ?? 0;
+
+    modalFieldMetadataSlots[offset] = entry.naturalFrequencyHz ?? 0;
+    modalFieldMetadataSlots[offset + 1] = entry.qualityFactor ?? 0;
+    modalFieldMetadataSlots[offset + 2] = entry.dampingRatio ?? 0;
+    modalFieldMetadataSlots[offset + 3] = entry.observedSupport ?? 0;
+  });
+
+  return {
+    modalFieldSlots,
+    modalFieldPhaseSlots,
+    modalFieldColorSlots,
+    modalFieldMetadataSlots,
+    activeModalFieldModeCount: entries.length,
+  };
+}
+
+function update(state, entries, options = {}) {
+  return updateModalFieldContinuity(state, {
+    descriptorSource: makeDescriptorSource(entries),
+    deltaTimeSec: options.deltaTimeSec ?? DT,
+    resetToken: options.resetToken ?? "session",
+    renderAuthority: options.renderAuthority ?? true,
+    maxVisibleModeCount: options.maxVisibleModeCount ?? 8,
+    maxBasisModeOrder: options.maxBasisModeOrder ?? Infinity,
+  });
+}
+
+function readModeKeys(source) {
+  const keys = [];
+  for (let index = 0; index < source.activeModalFieldModeCount; index += 1) {
+    const offset = index * 4;
+    keys.push(
+      `${source.modalFieldSlots[offset]}:${source.modalFieldSlots[offset + 1]}:${
+        source.modalFieldSlots[offset + 2]
+      }`,
+    );
+  }
+  return keys;
+}
+
+describe("modal field continuity", () => {
+  it("requires sustained evidence before a candidate becomes basis eligible", () => {
+    const state = createModalFieldContinuityState();
+    const candidate = { mode: [1, 1, 1], coefficient: 0.4 };
+
+    const early = update(state, [candidate], {
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS - 0.001,
+    });
+    expect(early.descriptorSource.activeModalFieldModeCount).toBe(0);
+
+    const promoted = update(state, [candidate], { deltaTimeSec: 0.001 });
+    expect(readModeKeys(promoted.descriptorSource)).toEqual(["1:1:1"]);
+    expect(promoted.diagnostics.admittedModeKeys).toEqual(["1:1:1"]);
+  });
+
+  it("uses elapsed seconds rather than frame counts for promotion", () => {
+    const oneStepState = createModalFieldContinuityState();
+    const threeStepState = createModalFieldContinuityState();
+    const candidate = { mode: [2, 1, 1], coefficient: 0.32 };
+
+    const oneStep = update(oneStepState, [candidate], {
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
+    });
+
+    update(threeStepState, [candidate], { deltaTimeSec: 0.01 });
+    update(threeStepState, [candidate], { deltaTimeSec: 0.02 });
+    const threeStep = update(threeStepState, [candidate], {
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS - 0.03,
+    });
+
+    expect(readModeKeys(oneStep.descriptorSource)).toEqual(["2:1:1"]);
+    expect(readModeKeys(threeStep.descriptorSource)).toEqual(["2:1:1"]);
+  });
+
+  it("keeps an active identity through short low-evidence release windows", () => {
+    const state = createModalFieldContinuityState();
+    const loud = { mode: [3, 2, 1], coefficient: 0.45 };
+    update(state, [loud], { deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS });
+
+    const oneQuietStep = update(state, [{ ...loud, coefficient: 0.01 }]);
+    expect(readModeKeys(oneQuietStep.descriptorSource)).toEqual(["3:2:1"]);
+    expect(oneQuietStep.diagnostics.releasingModeKeys).toEqual(["3:2:1"]);
+
+    const released = update(state, [{ ...loud, coefficient: 0.01 }], {
+      deltaTimeSec: TOPOLOGY_RELEASE_SECONDS,
+    });
+    expect(released.descriptorSource.activeModalFieldModeCount).toBe(0);
+    expect(released.diagnostics.removedModeKeys).toEqual(["3:2:1"]);
+  });
+
+  it("retains missing topology with zero live coefficient until release", () => {
+    const state = createModalFieldContinuityState();
+    const loud = {
+      mode: [3, 2, 1],
+      coefficient: 0.45,
+      phaseOffsetRad: 0.4,
+      phaseVelocityRadPerSec: 2.5,
+      phaseCoherence: 0.7,
+      phaseAuthority: 0.9,
+      colorR: 0.2,
+      colorG: 0.4,
+      colorB: 0.6,
+      colorWeight: 0.8,
+      observedSupport: 0.45,
+    };
+    update(state, [loud], { deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS });
+
+    const retained = update(state, [], { deltaTimeSec: DT });
+
+    expect(readModeKeys(retained.descriptorSource)).toEqual(["3:2:1"]);
+    expect(retained.diagnostics.releasingModeKeys).toEqual(["3:2:1"]);
+    expect(retained.descriptorSource.modalFieldSlots[3]).toBe(0);
+    expect(retained.descriptorSource.modalFieldPhaseSlots[2]).toBe(0);
+    expect(retained.descriptorSource.modalFieldPhaseSlots[3]).toBe(0);
+    expect(retained.descriptorSource.modalFieldColorSlots[3]).toBe(0);
+    expect(retained.descriptorSource.modalFieldMetadataSlots[3]).toBe(0);
+  });
+
+  it("caps basis-visible admission to the modal basis page budget", () => {
+    const state = createModalFieldContinuityState();
+    const result = update(
+      state,
+      [
+        { mode: [1, 1, 1], coefficient: 0.5 },
+        { mode: [2, 1, 1], coefficient: 0.4 },
+        { mode: [3, 1, 1], coefficient: 0.3 },
+        { mode: [4, 1, 1], coefficient: 0.2 },
+      ],
+      {
+        deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
+        maxVisibleModeCount: 2,
+      },
+    );
+
+    expect(result.descriptorSource.activeModalFieldModeCount).toBe(2);
+    expect(result.diagnostics.activeModeCount).toBe(2);
+    expect(result.diagnostics.admittedModeKeys).toHaveLength(2);
+    expect(readModeKeys(result.descriptorSource)).toEqual(["1:1:1", "2:1:1"]);
+  });
+
+  it("keeps unrepresentable high-order candidates out of basis-visible topology", () => {
+    const state = createModalFieldContinuityState();
+    const result = update(
+      state,
+      [
+        { mode: [1, 1, 1], coefficient: 0.4 },
+        { mode: [9, 1, 1], coefficient: 0.8 },
+      ],
+      {
+        deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
+        maxBasisModeOrder: 4,
+      },
+    );
+
+    expect(readModeKeys(result.descriptorSource)).toEqual(["1:1:1"]);
+    expect(result.diagnostics.tailModeKeys).toEqual(["9:1:1"]);
+  });
+
+  it("does not let phase authority promote or rank visible topology", () => {
+    const phaseOnlyState = createModalFieldContinuityState();
+    const phaseOnly = update(
+      phaseOnlyState,
+      [
+        {
+          mode: [1, 1, 1],
+          coefficient: 0,
+          phaseCoherence: 1,
+          phaseAuthority: 1,
+        },
+      ],
+      { deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS },
+    );
+
+    expect(phaseOnly.descriptorSource.activeModalFieldModeCount).toBe(0);
+    expect(phaseOnly.diagnostics.tailModeKeys).toEqual(["1:1:1"]);
+
+    const rankingState = createModalFieldContinuityState();
+    const ranked = update(
+      rankingState,
+      [
+        { mode: [2, 1, 1], coefficient: 0.3, phaseAuthority: 0 },
+        {
+          mode: [1, 2, 1],
+          coefficient: 0.3,
+          phaseCoherence: 1,
+          phaseAuthority: 1,
+        },
+      ],
+      {
+        deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
+        maxVisibleModeCount: 1,
+      },
+    );
+
+    expect(readModeKeys(ranked.descriptorSource)).toEqual(["2:1:1"]);
+    expect(ranked.diagnostics.tailModeKeys).toEqual(["1:2:1"]);
+  });
+
+  it("replaces weak visible topology with stronger sustained candidates when full", () => {
+    const state = createModalFieldContinuityState();
+    update(
+      state,
+      [
+        { mode: [1, 1, 1], coefficient: 0.12 },
+        { mode: [2, 1, 1], coefficient: 0.11 },
+      ],
+      {
+        deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
+        maxVisibleModeCount: 2,
+      },
+    );
+
+    const replacement = update(
+      state,
+      [
+        { mode: [1, 1, 1], coefficient: 0.12 },
+        { mode: [2, 1, 1], coefficient: 0.11 },
+        { mode: [3, 1, 1], coefficient: 0.8 },
+        { mode: [4, 1, 1], coefficient: 0.7 },
+      ],
+      {
+        deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS + BASIS_REASSIGN_MIN_SECONDS,
+        maxVisibleModeCount: 2,
+      },
+    );
+
+    expect(readModeKeys(replacement.descriptorSource)).toEqual([
+      "1:1:1",
+      "3:1:1",
+    ]);
+    expect(replacement.diagnostics.removedModeKeys).toEqual(["2:1:1"]);
+    expect(replacement.diagnostics.admittedModeKeys).toEqual(["3:1:1"]);
+  });
+
+  it("preserves stable identity order through coefficient rank jitter", () => {
+    const state = createModalFieldContinuityState();
+    update(
+      state,
+      [
+        { mode: [1, 1, 1], coefficient: 0.42 },
+        { mode: [2, 2, 2], coefficient: 0.39 },
+      ],
+      { deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS },
+    );
+
+    const jittered = update(
+      state,
+      [
+        { mode: [2, 2, 2], coefficient: 0.51 },
+        { mode: [1, 1, 1], coefficient: 0.5 },
+      ],
+      { deltaTimeSec: DT },
+    );
+
+    expect(readModeKeys(jittered.descriptorSource)).toEqual(["1:1:1", "2:2:2"]);
+    expect(jittered.diagnostics.retainedModeKeys).toEqual(["1:1:1", "2:2:2"]);
+  });
+
+  it("passes through current coefficient, phase, color, and metadata payloads", () => {
+    const state = createModalFieldContinuityState();
+    update(
+      state,
+      [
+        {
+          mode: [4, 3, 2],
+          coefficient: 0.22,
+          phaseOffsetRad: 0.1,
+          phaseVelocityRadPerSec: 1.5,
+          phaseCoherence: 0.4,
+          phaseAuthority: 0.7,
+          colorR: 0.2,
+          colorG: 0.3,
+          colorB: 0.4,
+          colorWeight: 0.5,
+          naturalFrequencyHz: 220,
+          qualityFactor: 8,
+          dampingRatio: 0.125,
+          observedSupport: 0.6,
+        },
+      ],
+      { deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS },
+    );
+
+    const current = update(state, [
+      {
+        mode: [4, 3, 2],
+        coefficient: 0.83,
+        phaseOffsetRad: 2.1,
+        phaseVelocityRadPerSec: 3.5,
+        phaseCoherence: 0.8,
+        phaseAuthority: 0.95,
+        colorR: 0.6,
+        colorG: 0.7,
+        colorB: 0.8,
+        colorWeight: 0.9,
+        naturalFrequencyHz: 440,
+        qualityFactor: 16,
+        dampingRatio: 0.0625,
+        observedSupport: 0.9,
+      },
+    ]);
+
+    expect(current.descriptorSource.modalFieldSlots[3]).toBeCloseTo(0.83, 6);
+    expect(Array.from(current.descriptorSource.modalFieldPhaseSlots)).toEqual([
+      expect.closeTo(2.1, 6),
+      expect.closeTo(3.5, 6),
+      expect.closeTo(0.8, 6),
+      expect.closeTo(0.95, 6),
+    ]);
+    expect(Array.from(current.descriptorSource.modalFieldColorSlots)).toEqual([
+      expect.closeTo(0.6, 6),
+      expect.closeTo(0.7, 6),
+      expect.closeTo(0.8, 6),
+      expect.closeTo(0.9, 6),
+    ]);
+    expect(
+      Array.from(current.descriptorSource.modalFieldMetadataSlots),
+    ).toEqual([
+      expect.closeTo(440, 6),
+      expect.closeTo(16, 6),
+      expect.closeTo(0.0625, 6),
+      expect.closeTo(0.9, 6),
+    ]);
+  });
+
+  it("makes render-authority loss dormant without destroying retained identity state", () => {
+    const state = createModalFieldContinuityState();
+    const active = { mode: [5, 1, 1], coefficient: 0.5 };
+    update(state, [active], { deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS });
+
+    const dormant = update(state, [{ mode: [6, 1, 1], coefficient: 0.8 }], {
+      renderAuthority: false,
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
+    });
+    expect(dormant.descriptorSource.activeModalFieldModeCount).toBe(0);
+    expect(dormant.diagnostics.activeModeCount).toBe(1);
+    expect(dormant.diagnostics.candidateModeCount).toBe(1);
+
+    const resumed = update(state, [active], { deltaTimeSec: DT });
+    expect(readModeKeys(resumed.descriptorSource)).toEqual(["5:1:1"]);
+  });
+
+  it("clears admission state only on an explicit reset token change", () => {
+    const state = createModalFieldContinuityState();
+    const active = { mode: [7, 1, 1], coefficient: 0.5 };
+    update(state, [active], {
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
+      resetToken: "session-a",
+    });
+
+    const reset = update(state, [active], {
+      deltaTimeSec: DT,
+      resetToken: "session-b",
+    });
+    expect(reset.descriptorSource.activeModalFieldModeCount).toBe(0);
+    expect(reset.diagnostics.reset).toBe(true);
+  });
+
+  it("does not let downstream acknowledgements or diagnostics promote topology", () => {
+    const state = createModalFieldContinuityState();
+    const candidate = { mode: [8, 1, 1], coefficient: 0.4 };
+
+    const result = updateModalFieldContinuity(state, {
+      descriptorSource: makeDescriptorSource([candidate]),
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS - 0.001,
+      resetToken: "session",
+      renderAuthority: true,
+      cacheRebuildAcknowledged: true,
+      renderAcknowledged: true,
+      modeIdentityRetentionRatio: 1,
+      modalBasisCacheDescriptorFresh: true,
+    });
+
+    expect(result.descriptorSource.activeModalFieldModeCount).toBe(0);
+    expect(result.diagnostics.admittedModeKeys).toEqual([]);
+    expect(result.diagnostics.tailModeKeys).toEqual(["8:1:1"]);
+  });
+});
