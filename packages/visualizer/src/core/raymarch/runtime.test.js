@@ -12,6 +12,7 @@ import {
   createRaymarchLiveFieldProjectionCache,
   createRaymarchModalBasisCache,
   createRaymarchSpectralLightCache,
+  RAYMARCH_MODAL_BASIS_CACHE_CAPACITY,
   resolveRaymarchModalBasisCacheDrawableAuthority,
   shouldRebuildRaymarchModalBasisCache,
 } from "./fieldCache.js";
@@ -552,8 +553,12 @@ describe("tickRaymarchRuntime", () => {
 
     tickRaymarchRuntime(runtimeState, featureFrame, 1, 1 / 60);
 
-    expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(12);
-    expect(runtimeState.modalBasisPhaseAuthorityModeCount).toBe(12);
+    expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(
+      RAYMARCH_MODAL_BASIS_CACHE_CAPACITY,
+    );
+    expect(runtimeState.modalBasisPhaseAuthorityModeCount).toBe(
+      RAYMARCH_MODAL_BASIS_CACHE_CAPACITY,
+    );
     expect(runtimeState.currentModalDescriptor).toMatchObject({
       capacity: {
         maxTotalModes: 20,
@@ -2543,6 +2548,7 @@ describe("tickRaymarchRuntime", () => {
   });
 
   it("does not rebuild the basis atlas when modal topology churns without page reassignment", () => {
+    const basisCapacity = 12;
     const pageModes = [
       [1, 1, 1, 0.8],
       [1, 1, 2, 0.8],
@@ -2571,6 +2577,7 @@ describe("tickRaymarchRuntime", () => {
       boundaryMode: "neumann",
       radius: 3,
       resolution: 8,
+      basisCapacity,
     });
     const changed = buildRaymarchModalBasisCacheDescriptor({
       modalFieldSlots: changedSlots,
@@ -2579,8 +2586,12 @@ describe("tickRaymarchRuntime", () => {
       boundaryMode: "neumann",
       radius: 3,
       resolution: 8,
+      basisCapacity,
     });
-    const modalBasisCache = createRaymarchModalBasisCache({ resolution: 8 });
+    const modalBasisCache = createRaymarchModalBasisCache({
+      resolution: 8,
+      basisCapacity,
+    });
     modalBasisCache.ready = true;
     modalBasisCache.activeDescriptor = first;
 
@@ -3736,7 +3747,7 @@ describe("tickRaymarchRuntime", () => {
     ).toMatchObject({
       semanticModeCount: 2,
       representedBasisPageModeCount: 2,
-      basisAtlasPageCapacity: 12,
+      basisAtlasPageCapacity: RAYMARCH_MODAL_BASIS_CACHE_CAPACITY,
       spatialFamilyCount: 2,
       representedSpatialFamilyCount: 2,
       renderRepresentedEnergyRatio: 1,
