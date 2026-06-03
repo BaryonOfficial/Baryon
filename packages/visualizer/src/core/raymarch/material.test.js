@@ -163,14 +163,26 @@ describe("raymarch volume material", () => {
       source,
       "const modalFieldCount =",
     );
+    const excitationInputStart = expectSourceIndex(
+      source,
+      "const excitationInput =",
+    );
+    const latchedFogStart = expectSourceIndex(source, "const latchedFogMask =");
     const amplitudeNormBlock = source.slice(
       amplitudeNormStart,
       modalFieldCountStart,
     );
+    const excitationBlock = source.slice(excitationInputStart, latchedFogStart);
 
     expect(coefficientBlock).toContain("uStructuralProjectionDrive");
     expect(coefficientBlock).not.toContain("uTotalSlotAmplitude");
     expect(amplitudeNormBlock).toContain("uTotalSlotAmplitude");
+    expect(excitationBlock).toContain("uStructureSignal");
+    expect(excitationBlock).toContain("uModalResponseEnergy");
+    expect(excitationBlock).toContain("modalCoefficientEnergy");
+    expect(excitationBlock).toContain("uModeCoherence");
+    expect(excitationBlock).toContain("excitationModalAuthority");
+    expect(excitationBlock).not.toContain("uAverageAmplitude");
   });
 
   it("uses structural and local field evidence to suppress diffuse white emission", () => {

@@ -142,18 +142,14 @@ export function computeModalObservation({
   dominantDriveFrequencyHz,
   dominantDriveSpectralSupport,
   allowBassHarmonicDriver,
-  avgAmplitude,
-  analyserRms,
   driveSource,
-  analysisClass,
+  sourceBoundarySuppressWeakSpectralFallbackDrive = false,
   profile,
 }) {
   if (
     atlasEntry?.layer === "source-coupled" &&
-    analysisClass !== "acoustic-mic" &&
-    driveSource === "spectral-fallback" &&
-    avgAmplitude < 10 &&
-    analyserRms < 0.025
+    sourceBoundarySuppressWeakSpectralFallbackDrive === true &&
+    driveSource === "spectral-fallback"
   ) {
     return {
       observedDrive: 0,

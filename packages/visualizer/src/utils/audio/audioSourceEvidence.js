@@ -4,6 +4,11 @@ const CURRENT_SOURCE_AVG_FLOOR = 0.02;
 const CURRENT_SOURCE_TIME_DOMAIN_PEAK_FLOOR = 1e-4;
 const SPECTRAL_SIGNAL_PEAK_FLOOR = 0.003;
 const SPECTRAL_SIGNAL_RMS_FLOOR = 0.0005;
+const FILE_WEAK_SPECTRAL_FALLBACK_AVG_MAX = 10;
+const FILE_WEAK_SPECTRAL_FALLBACK_RMS_MAX = 0.025;
+const FILE_WEAK_RESONANT_AVG_MIN = 5;
+const FILE_WEAK_RESONANT_AVG_MAX = 10;
+const FILE_WEAK_RESONANT_RMS_MAX = 0.03;
 
 function clamp01(value) {
   if (!Number.isFinite(value)) {
@@ -67,6 +72,21 @@ function normalizeMetrics(metrics = {}) {
       0,
       Math.floor(readFinite(metrics.nonZeroFftBinCount)),
     ),
+  };
+}
+
+function deriveModalObservationPolicy({ analysisClass, metrics }) {
+  const fileAnalysis = analysisClass === "file";
+  return {
+    suppressWeakSpectralFallbackDrive:
+      fileAnalysis &&
+      metrics.avgAmplitude < FILE_WEAK_SPECTRAL_FALLBACK_AVG_MAX &&
+      metrics.analyserRms < FILE_WEAK_SPECTRAL_FALLBACK_RMS_MAX,
+    suppressWeakResonantDrive:
+      fileAnalysis &&
+      metrics.avgAmplitude >= FILE_WEAK_RESONANT_AVG_MIN &&
+      metrics.avgAmplitude < FILE_WEAK_RESONANT_AVG_MAX &&
+      metrics.analyserRms < FILE_WEAK_RESONANT_RMS_MAX,
   };
 }
 
@@ -258,6 +278,10 @@ export function buildAudioSourceEvidenceFrame({
     sourceKind,
     analysisClass,
     metrics: normalizedMetrics,
+    modalObservationPolicy: deriveModalObservationPolicy({
+      analysisClass,
+      metrics: normalizedMetrics,
+    }),
     transport: {
       playing,
       liveInputActive,

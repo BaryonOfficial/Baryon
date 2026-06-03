@@ -278,6 +278,57 @@ describe("audio source evidence", () => {
     });
   });
 
+  it("owns weak file modal suppression policy at the source boundary", () => {
+    const weakFileEvidence = buildAudioSourceEvidenceFrame({
+      inputMode: "file",
+      hasAnalysisSource: true,
+      isPlaying: true,
+      metrics: {
+        avgAmplitude: 8,
+        analyserRms: 0.018,
+        preModalFftPeak: 0.02,
+        nonZeroFftBinCount: 12,
+      },
+    });
+    const strongFileEvidence = buildAudioSourceEvidenceFrame({
+      inputMode: "file",
+      hasAnalysisSource: true,
+      isPlaying: true,
+      metrics: {
+        avgAmplitude: 18,
+        analyserRms: 0.06,
+        preModalFftPeak: 0.2,
+        nonZeroFftBinCount: 12,
+      },
+    });
+    const lineFeedEvidence = buildAudioSourceEvidenceFrame({
+      inputMode: "system",
+      hasAnalysisSource: true,
+      isLiveInputActive: true,
+      isLineFeedLiveInput: true,
+      lineFeedProgramActive: true,
+      metrics: {
+        avgAmplitude: 8,
+        analyserRms: 0.018,
+        preModalFftPeak: 0.02,
+        nonZeroFftBinCount: 12,
+      },
+    });
+
+    expect(weakFileEvidence.modalObservationPolicy).toMatchObject({
+      suppressWeakSpectralFallbackDrive: true,
+      suppressWeakResonantDrive: true,
+    });
+    expect(strongFileEvidence.modalObservationPolicy).toMatchObject({
+      suppressWeakSpectralFallbackDrive: false,
+      suppressWeakResonantDrive: false,
+    });
+    expect(lineFeedEvidence.modalObservationPolicy).toMatchObject({
+      suppressWeakSpectralFallbackDrive: false,
+      suppressWeakResonantDrive: false,
+    });
+  });
+
   it("lets the line-feed activity owner bridge brief zero-valued frames", () => {
     const evidence = buildAudioSourceEvidenceFrame({
       inputMode: "system",

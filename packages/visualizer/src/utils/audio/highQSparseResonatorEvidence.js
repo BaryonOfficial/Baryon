@@ -22,7 +22,7 @@ export function countNonZeroFftBins(fftMagnitudes, threshold = 0.001) {
   return count;
 }
 
-export function deriveHighQSparseResonatorAuthority({
+export function deriveHighQSparseResonatorEvidence({
   highQObservedSnr = 0,
   highQObservedCoherence = 0,
   highQObservedDrive = 0,
@@ -72,18 +72,17 @@ export function deriveHighQSparseResonatorAuthority({
     smoothstep(0.12, 0.36, ringSupport) *
     smoothstep(0.52, 0.74, coherence) *
     smoothstep(0.16, 0.52, periodic);
-  const rawAuthority = Math.max(
+  const rawEvidence = Math.max(
     sparseSpectrumEvidence,
     perModeEvidence,
     driveEvidence,
     ringEvidence,
   );
   const energyGate = smoothstep(0.001, 0.014, retainedEnergy);
-  const highQSparseResonatorAuthority = clamp01(rawAuthority * energyGate);
+  const highQSparseResonatorEvidence = clamp01(rawEvidence * energyGate);
 
   return {
-    highQSparseResonatorAuthority,
+    highQSparseResonatorEvidence,
     highQProjectionLoad: projectionLoad,
-    highQRetainedVisibilityRejected: false,
   };
 }

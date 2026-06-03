@@ -67,7 +67,7 @@ function getProjectionHighQProtection({ layer, modalObserverMetrics }) {
   );
   const highQProtectionEvidence = clamp01(
     Math.max(
-      modalObserverMetrics?.highQSparseResonatorAuthority ?? 0,
+      modalObserverMetrics?.highQSparseResonatorEvidence ?? 0,
       modalObserverMetrics?.highQRingSupport ?? 0,
     ),
   );

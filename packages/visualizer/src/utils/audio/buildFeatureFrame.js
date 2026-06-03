@@ -75,8 +75,8 @@ import {
 } from "../../core/modalBudgets.js";
 import {
   countNonZeroFftBins,
-  deriveHighQSparseResonatorAuthority,
-} from "./highQSparseResonatorAuthority.js";
+  deriveHighQSparseResonatorEvidence,
+} from "./highQSparseResonatorEvidence.js";
 import {
   buildModalEnergyLedger,
   hasProjectedRenderAuthority,
@@ -185,9 +185,8 @@ const EMPTY_MODAL_OBSERVER_VISIBILITY = Object.freeze({
   resonantSlotFloorTotal: 0,
   sourceCoupledSlotFloorTotal: 0,
   ...EMPTY_LOW_Q_SOURCE_COUPLED_VISIBILITY,
-  highQSparseResonatorAuthority: 0,
+  highQSparseResonatorEvidence: 0,
   highQProjectionLoad: 0,
-  highQRetainedVisibilityRejected: false,
 });
 const LIVE_INPUT_ACOUSTIC_INTENT_CONFIGS = Object.freeze({
   ambient: Object.freeze({
@@ -991,11 +990,8 @@ function readModalResponseRenderResonantEnergy(
 function hasFeatureFrameRenderAuthority({
   fieldState,
   hasModalField,
-  activeModeCount,
   modalCoefficientEnergy,
   observationEnergy,
-  modalVisibilityEnergy,
-  modalObserverVisibilityEnergy,
 }) {
   if (fieldState === FIELD_STATES.test) {
     return true;
@@ -1003,11 +999,8 @@ function hasFeatureFrameRenderAuthority({
 
   return (
     hasModalField &&
-    (activeModeCount > 0 ||
-      modalCoefficientEnergy > RENDER_ENERGY_EPSILON ||
-      observationEnergy > RENDER_ENERGY_EPSILON ||
-      modalVisibilityEnergy > RENDER_ENERGY_EPSILON ||
-      modalObserverVisibilityEnergy > RENDER_ENERGY_EPSILON)
+    (modalCoefficientEnergy > RENDER_ENERGY_EPSILON ||
+      observationEnergy > RENDER_ENERGY_EPSILON)
   );
 }
 
@@ -1269,18 +1262,14 @@ function buildDebugSummary({
     highQObservedSnr: structuralMetrics?.highQObservedSnr ?? 0,
     highQObservedCoherence: structuralMetrics?.highQObservedCoherence ?? 0,
     highQObservedNoiseFloor: structuralMetrics?.highQObservedNoiseFloor ?? 0,
-    highQSparseResonatorAuthority:
-      modalVisibilitySummary.highQSparseResonatorAuthority ??
-      structuralMetrics?.highQSparseResonatorAuthority ??
+    highQSparseResonatorEvidence:
+      modalVisibilitySummary.highQSparseResonatorEvidence ??
+      structuralMetrics?.highQSparseResonatorEvidence ??
       0,
     highQProjectionLoad:
       modalVisibilitySummary.highQProjectionLoad ??
       structuralMetrics?.highQProjectionLoad ??
       0,
-    highQRetainedVisibilityRejected: Boolean(
-      modalVisibilitySummary.highQRetainedVisibilityRejected ??
-      structuralMetrics?.highQRetainedVisibilityRejected,
-    ),
     modalPhaseAuthority: structuralMetrics?.modalPhaseAuthority ?? 0,
     highQPhaseAuthority: structuralMetrics?.highQPhaseAuthority ?? 0,
     lowQPhaseAuthority: structuralMetrics?.lowQPhaseAuthority ?? 0,
@@ -2899,7 +2888,7 @@ function deriveModalObserverVisibilityComponents({
     structuralMetrics.highQObservedCoherence ?? modeCoherence,
   );
   const highQObservedSnr = clamp01(structuralMetrics.highQObservedSnr ?? 0);
-  const highQSparseResonatorEvidence = deriveHighQSparseResonatorAuthority({
+  const highQSparseResonatorEvidence = deriveHighQSparseResonatorEvidence({
     highQObservedSnr,
     highQObservedCoherence,
     highQObservedDrive: structuralMetrics.highQObservedDrive ?? 0,
@@ -2936,7 +2925,7 @@ function deriveModalObserverVisibilityComponents({
       highQSupportGate *
       highQCountGate *
       highQQuality *
-      highQSparseResonatorEvidence.highQSparseResonatorAuthority *
+      highQSparseResonatorEvidence.highQSparseResonatorEvidence *
       MODAL_OBSERVER_HIGH_Q_MAX,
   );
 
@@ -3037,9 +3026,8 @@ function deriveModalVisibilityComponents({
     modalObserverTopologyFloor: 0,
     ...EMPTY_LOW_Q_SOURCE_COUPLED_VISIBILITY,
     retainedHighQModalVisibility: 0,
-    highQSparseResonatorAuthority: 0,
+    highQSparseResonatorEvidence: 0,
     highQProjectionLoad: 0,
-    highQRetainedVisibilityRejected: false,
   };
 
   if (hardSilent) {
@@ -3094,8 +3082,8 @@ function deriveModalVisibilityComponents({
   const highQObservedCoherence = clamp01(
     structuralMetrics?.highQObservedCoherence ?? resonatorCoherence,
   );
-  const highQSparseResonatorAuthority = clamp01(
-    observerVisibility.highQSparseResonatorAuthority,
+  const highQSparseResonatorEvidence = clamp01(
+    observerVisibility.highQSparseResonatorEvidence,
   );
   const highQSustainedVisibilityScale = smoothstep(
     0.06,
@@ -3158,10 +3146,10 @@ function deriveModalVisibilityComponents({
     smoothstep(2, 5, highQResonantModeCount) *
     modalQuality *
     highQSustainedVisibilityScale *
-    highQSparseResonatorAuthority;
+    highQSparseResonatorEvidence;
   const retainedHighQObserverSupport =
     MODAL_VISIBILITY_HIGH_Q_OBSERVER_MIN_SUPPORT_WEIGHT +
-    highQSparseResonatorAuthority * 0.08 +
+    highQSparseResonatorEvidence * 0.08 +
     smoothstep(
       MODAL_VISIBILITY_HIGH_Q_OBSERVER_SUPPORT_START,
       MODAL_VISIBILITY_HIGH_Q_OBSERVER_SUPPORT_END,
@@ -3182,7 +3170,7 @@ function deriveModalVisibilityComponents({
     smoothstep(1, 4, highQResonantModeCount) *
     retainedHighQObserverSupport *
     retainedHighQObserverQuality *
-    highQSparseResonatorAuthority;
+    highQSparseResonatorEvidence;
   const retainedHighQModalVisibility = Math.min(
     visibilityEnergyCeiling,
     clamp01(
@@ -3261,10 +3249,8 @@ function deriveModalVisibilityComponents({
     lowQSourceCoupledVisibilityRejected:
       observerVisibility.lowQSourceCoupledVisibilityRejected,
     retainedHighQModalVisibility,
-    highQSparseResonatorAuthority,
+    highQSparseResonatorEvidence,
     highQProjectionLoad: observerVisibility.highQProjectionLoad,
-    highQRetainedVisibilityRejected:
-      observerVisibility.highQRetainedVisibilityRejected,
   };
 }
 
@@ -5787,11 +5773,8 @@ export function composeAudioFeatureFrame({
     hasFeatureFrameRenderAuthority({
       fieldState,
       hasModalField,
-      activeModeCount: fieldStateActiveModeCount,
       modalCoefficientEnergy: projectedModalRenderEnergy,
       observationEnergy,
-      modalVisibilityEnergy,
-      modalObserverVisibilityEnergy,
     });
   if (!projectedRenderAuthority) {
     fieldState = FIELD_STATES.idle;

@@ -21,7 +21,7 @@ const normalizeWithDenseLoad = (denseLoad) =>
     layer: "resonant",
     modalObserverMetrics: {
       highQProjectionLoad: denseLoad,
-      highQSparseResonatorAuthority: 0.8,
+      highQSparseResonatorEvidence: 0.8,
       highQRingSupport: 0.8,
       highQResonantEnergy: 0.4,
       highQObservedCoherence: 0.92,
@@ -50,7 +50,7 @@ describe("projection energy normalization", () => {
       layer: "resonant",
       modalObserverMetrics: {
         highQProjectionLoad: 0,
-        highQSparseResonatorAuthority: 0,
+        highQSparseResonatorEvidence: 0,
         highQRingSupport: 0,
         highQResonantEnergy: 0.4,
         highQObservedCoherence: 0.92,
@@ -63,7 +63,7 @@ describe("projection energy normalization", () => {
       layer: "resonant",
       modalObserverMetrics: {
         highQProjectionLoad: 0.92,
-        highQSparseResonatorAuthority: 0.86,
+        highQSparseResonatorEvidence: 0.86,
         highQRingSupport: 0.78,
         highQResonantEnergy: 0.4,
         highQObservedCoherence: 0.92,

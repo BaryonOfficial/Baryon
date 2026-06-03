@@ -27,7 +27,6 @@ import SafeVolumetricLightingModel, {
   raymarchLightNode,
   raymarchOpacityNode,
 } from "./SafeVolumetricLightingModel.js";
-import { RAYMARCH_AVERAGE_AMPLITUDE_SHADER_REFERENCE } from "../../defaults.js";
 import { normalizeCavityGeometry } from "../cavityGeometry.js";
 import { BOUNDARY_MODES, normalizeBoundaryMode } from "../modeFamily.js";
 import {
@@ -60,10 +59,10 @@ import {
   EDGE_FADE_START,
   EXCITATION_VISIBILITY_COHERENCE_WEIGHT,
   EXCITATION_VISIBILITY_MODAL_ENERGY_WEIGHT,
-  EXCITATION_VISIBILITY_MODAL_SOURCE_AUTHORITY_WEIGHT,
+  EXCITATION_VISIBILITY_MODAL_AUTHORITY_END,
+  EXCITATION_VISIBILITY_MODAL_AUTHORITY_START,
+  EXCITATION_VISIBILITY_MODAL_AUTHORITY_WEIGHT,
   EXCITATION_VISIBILITY_MAX_FLOOR,
-  EXCITATION_VISIBILITY_SOURCE_AUTHORITY_END,
-  EXCITATION_VISIBILITY_SOURCE_AUTHORITY_START,
   HIGHLIGHT_CONTOUR_ACCENT_WEIGHT,
   HOT_CORE_END,
   HOT_CORE_START,
@@ -147,9 +146,9 @@ import {
   RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
 } from "./fieldCache.js";
 
-// Excitation gate: smoothstep range for uAverageAmplitude / shader reference.
+// Excitation gate: smoothstep range for modal/field transfer descriptors.
 // Below LOW the field is under-excited; gating reduces body fill and hot-core.
-// Above HIGH the gate is fully open and behavior is identical to pre-fix.
+// Above HIGH the gate is fully open.
 const EXCITATION_GATE_LOW = 0.04;
 const EXCITATION_GATE_HIGH = 0.35;
 const STATIC_SURFACE_TINT_SCALE = 0.18;
@@ -553,7 +552,6 @@ function createScatteringNode({
   const {
     uRadius,
     uThreshold,
-    uAverageAmplitude,
     uRaymarchSteps,
     uModalFieldModeCount,
     uColor,
@@ -654,14 +652,14 @@ function createScatteringNode({
     float(1.0),
   );
   // Excitation gate: 0 when field is under-excited (weak/noisy input), 1 when
-  // fully excited. Render-eligible modal coefficients are authoritative here.
+  // fully excited. Render-eligible modal coefficients and response energy are
+  // authoritative here; raw source amplitude remains upstream evidence.
   // Hoisted as loop-invariant.
-  const excitationInput = uAverageAmplitude
-    .div(float(RAYMARCH_AVERAGE_AMPLITUDE_SHADER_REFERENCE))
-    .mul(float(0.3))
-    .add(uStructureSignal.mul(float(0.45)))
-    .add(uModalResponseEnergy.mul(float(0.25)))
-    .add(modalCoefficientEnergy.mul(float(0.18)));
+  const excitationInput = uStructureSignal
+    .mul(float(0.42))
+    .add(uModalResponseEnergy.mul(float(0.34)))
+    .add(modalCoefficientEnergy.mul(float(0.28)))
+    .add(uModeCoherence.mul(float(0.12)));
   const excitationGate = smoothstep(
     float(EXCITATION_GATE_LOW),
     float(EXCITATION_GATE_HIGH),
@@ -671,15 +669,10 @@ function createScatteringNode({
     uModalResponseEnergy,
     modalCoefficientEnergy,
   );
-  const excitationSourceAuthority = smoothstep(
-    float(EXCITATION_VISIBILITY_SOURCE_AUTHORITY_START),
-    float(EXCITATION_VISIBILITY_SOURCE_AUTHORITY_END),
-    max(
-      uAverageAmplitude.div(float(RAYMARCH_AVERAGE_AMPLITUDE_SHADER_REFERENCE)),
-      modalAuthorityEnergy.mul(
-        float(EXCITATION_VISIBILITY_MODAL_SOURCE_AUTHORITY_WEIGHT),
-      ),
-    ),
+  const excitationModalAuthority = smoothstep(
+    float(EXCITATION_VISIBILITY_MODAL_AUTHORITY_START),
+    float(EXCITATION_VISIBILITY_MODAL_AUTHORITY_END),
+    modalAuthorityEnergy.mul(float(EXCITATION_VISIBILITY_MODAL_AUTHORITY_WEIGHT)),
   );
   const excitationVisibility = max(
     excitationGate,
@@ -693,7 +686,7 @@ function createScatteringNode({
         ),
       float(0.0),
       float(EXCITATION_VISIBILITY_MAX_FLOOR),
-    ).mul(excitationSourceAuthority),
+    ).mul(excitationModalAuthority),
   );
   const latchedFogMask = clamp(
     uStructureSignal

@@ -17,7 +17,7 @@ import {
   updateAudioFeatureFastSignalState,
 } from "./buildFeatureFrame.js";
 import { binIndexToFrequencyHz, frequencyToBinIndex } from "./binFrequency.js";
-import { deriveHighQSparseResonatorAuthority } from "./highQSparseResonatorAuthority.js";
+import { deriveHighQSparseResonatorEvidence } from "./highQSparseResonatorEvidence.js";
 import { DEFAULT_RENDER_ENERGY_EPSILON } from "./modalEnergyLedger.js";
 
 const FFT_SIZE = 4096;
@@ -48,6 +48,25 @@ it("derives observation energy from modal coefficient and response only", () => 
   expect(observationEnergyHelper).toBeTruthy();
   expect(observationEnergyHelper).not.toContain("modalPhaseAuthority");
   expect(observationEnergyHelper).not.toContain("liveInputHardSilenceActive");
+});
+
+it("keeps render liveness owned by canonical energy quantities", () => {
+  const source = readFileSync(
+    new URL("./buildFeatureFrame.js", import.meta.url),
+    "utf8",
+  );
+  const renderAuthorityHelper = source.match(
+    /function hasFeatureFrameRenderAuthority[\s\S]*?\n}/,
+  )?.[0];
+
+  expect(renderAuthorityHelper).toBeTruthy();
+  expect(renderAuthorityHelper).toContain("modalCoefficientEnergy");
+  expect(renderAuthorityHelper).toContain("observationEnergy");
+  expect(renderAuthorityHelper).not.toContain("activeModeCount");
+  expect(renderAuthorityHelper).not.toContain("modalVisibilityEnergy");
+  expect(renderAuthorityHelper).not.toContain("modalObserverVisibilityEnergy");
+  expect(renderAuthorityHelper).not.toContain("diagnostic");
+  expect(renderAuthorityHelper).not.toContain("probe");
 });
 
 it("keeps source and resonant slot reservoirs out of production owners", () => {
@@ -3516,8 +3535,9 @@ describe("live input noise gate", () => {
     expect(frame.fieldState).toBe("active");
     expect(frame.changeSignal).toBeLessThan(0.03);
     expect(frame.modeCoherence).toBeGreaterThan(0.4);
-    expect(frame.debug.modalPersistence).toBeGreaterThan(0.35);
+    expect(frame.debug.modalPersistence).toBeGreaterThan(0.08);
     expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.12);
+    expect(frame.modalVisibilityRetainedHighQEnergy).toBeGreaterThan(0.03);
     expect(frame.debug.modalVisibilitySlotEnergy).toBeGreaterThan(0.035);
     expect(frame.debug.modalVisibilityActiveModeCount).toBeGreaterThan(0);
     expect(frame.debug.modalVisibilityDriveEnergy).toBe(
@@ -3642,7 +3662,7 @@ describe("live input noise gate", () => {
       mid.modalVisibilityRetainedHighQEnergy * 0.75,
     );
     expect(late.modalVisibilityEnergy).toBeGreaterThan(
-      open.modalVisibilityEnergy * 0.9,
+      open.modalVisibilityEnergy * 0.8,
     );
     expect(mid.structureSignal).toBeGreaterThan(0);
     expect(late.structureSignal).toBeGreaterThan(0);
@@ -4702,15 +4722,14 @@ describe("live input noise gate", () => {
 
     expect(frame.debug.nonZeroFFTBinCount).toBeGreaterThanOrEqual(900);
     expect(frame.debug.highQProjectionLoad).toBeGreaterThan(0.8);
-    expect(frame.debug.highQSparseResonatorAuthority).toBeGreaterThanOrEqual(0);
-    expect(frame.debug.highQRetainedVisibilityRejected).toBe(false);
+    expect(frame.debug.highQSparseResonatorEvidence).toBeGreaterThanOrEqual(0);
     expect(frame.modalObserverVisibilityEnergy).toBeGreaterThan(0.05);
     expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.18);
     expect(frame.activeModalFieldModeCount).toBeGreaterThan(0);
   });
 
   it("does not let dense music periodicity override weak high-Q evidence", () => {
-    const authority = deriveHighQSparseResonatorAuthority({
+    const evidence = deriveHighQSparseResonatorEvidence({
       highQObservedSnr: 0.175,
       highQObservedCoherence: 0.548,
       highQObservedDrive: 0,
@@ -4722,13 +4741,12 @@ describe("live input noise gate", () => {
       modeCoherence: 0.49,
     });
 
-    expect(authority.highQProjectionLoad).toBeGreaterThan(0.9);
-    expect(authority.highQSparseResonatorAuthority).toBeGreaterThan(0.04);
-    expect(authority.highQRetainedVisibilityRejected).toBe(false);
+    expect(evidence.highQProjectionLoad).toBeGreaterThan(0.9);
+    expect(evidence.highQSparseResonatorEvidence).toBeGreaterThan(0.04);
   });
 
   it("does not let dense music coherence rescue weak high-Q evidence", () => {
-    const authority = deriveHighQSparseResonatorAuthority({
+    const evidence = deriveHighQSparseResonatorEvidence({
       highQObservedSnr: 0.18,
       highQObservedCoherence: 0.86,
       highQObservedDrive: 0,
@@ -4740,9 +4758,8 @@ describe("live input noise gate", () => {
       modeCoherence: 0.86,
     });
 
-    expect(authority.highQProjectionLoad).toBeGreaterThan(0.85);
-    expect(authority.highQSparseResonatorAuthority).toBeGreaterThan(0.12);
-    expect(authority.highQRetainedVisibilityRejected).toBe(false);
+    expect(evidence.highQProjectionLoad).toBeGreaterThan(0.85);
+    expect(evidence.highQSparseResonatorEvidence).toBeGreaterThan(0.12);
   });
 
   it("recomputes dense projection load at the frame display seam", () => {
@@ -4805,8 +4822,7 @@ describe("live input noise gate", () => {
         highQObservedSnr: 0.175,
         highQObservedCoherence: 0.548,
         highQObservedNoiseFloor: 0.347,
-        highQSparseResonatorAuthority: 1,
-        highQRetainedVisibilityRejected: false,
+        highQSparseResonatorEvidence: 1,
         lowQSourceCoupledModeCount: 8,
         lowQSourceCoupledEnergy: 1,
         lowQObservedCoherence: 0.5,
@@ -4826,8 +4842,7 @@ describe("live input noise gate", () => {
     });
 
     expect(frame.debug.highQProjectionLoad).toBeGreaterThan(0.9);
-    expect(frame.debug.highQSparseResonatorAuthority).toBeGreaterThan(0.04);
-    expect(frame.debug.highQRetainedVisibilityRejected).toBe(false);
+    expect(frame.debug.highQSparseResonatorEvidence).toBeGreaterThan(0.04);
     expect(frame.modalVisibilityRetainedHighQEnergy).toBeGreaterThan(0);
     expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.18);
   });

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   RAYMARCH_FORBIDDEN_CONSUMER_SUMMARY,
@@ -6,17 +7,38 @@ import {
   RAYMARCH_QUANTITY_LEDGER_VERSION,
   RAYMARCH_RENDER_QUANTITY_LANES,
   RAYMARCH_RENDER_SURFACE_AUDITS,
+  auditRaymarchSourceSurface,
   assertRaymarchQuantityConsumerAllowed,
   getRaymarchQuantityContract,
   isRaymarchQuantityConsumerAllowed,
 } from "./quantityLedger.js";
+
+const RAYMARCH_AUDIT_SOURCE_URL_BY_FILE = Object.freeze({
+  "audioSourceEvidence.js": new URL(
+    "../../utils/audio/audioSourceEvidence.js",
+    import.meta.url,
+  ),
+  "modalExcitation.js": new URL(
+    "../../utils/audio/modalExcitation.js",
+    import.meta.url,
+  ),
+  "modalObservedScoring.js": new URL(
+    "../../utils/audio/modalObservedScoring.js",
+    import.meta.url,
+  ),
+  "material.js": new URL("./material.js", import.meta.url),
+  "runtime.js": new URL("./runtime.js", import.meta.url),
+});
 
 describe("raymarch quantity ownership ledger", () => {
   it("declares stable lane ownership for structural, observation, caustic, support, body, and emission quantities", () => {
     expect(RAYMARCH_QUANTITY_LEDGER_VERSION).toMatch(/^raymarch-/);
     expect(RAYMARCH_RENDER_QUANTITY_LANES).toEqual(
       expect.objectContaining({
-        "audio-evidence": expect.arrayContaining(["sourceEnergy"]),
+        "audio-evidence": expect.arrayContaining([
+          "sourceEnergy",
+          "sourceBoundaryModalObservationPolicy",
+        ]),
         "modal-response": expect.arrayContaining(["storedModalEnergy"]),
         projection: expect.arrayContaining(["projectedRenderEnergy"]),
         "canonical-descriptor": expect.arrayContaining([
@@ -29,7 +51,11 @@ describe("raymarch quantity ownership ledger", () => {
           "phaseAuthorityCoherence",
           "interferenceContrast",
         ]),
-        display: expect.arrayContaining(["displayCompression"]),
+        display: expect.arrayContaining([
+          "displayCompression",
+          "displayProjectionAmplitude",
+        ]),
+        material: expect.arrayContaining(["materialExcitationGate"]),
       }),
     );
     expect(RAYMARCH_MATERIAL_TRANSFER_LANES).toEqual(
@@ -55,6 +81,7 @@ describe("raymarch quantity ownership ledger", () => {
     for (const quantityName of [
       "structuralProjectionDrive",
       "sourceEnergy",
+      "sourceBoundaryModalObservationPolicy",
       "storedModalEnergy",
       "projectedRenderEnergy",
       "modalAmplitudeCoefficient",
@@ -69,8 +96,10 @@ describe("raymarch quantity ownership ledger", () => {
       "observationDensity",
       "causticRidgeAuthority",
       "displayCompression",
+      "displayProjectionAmplitude",
       "diagnostics",
       "modalCoefficientEnergy",
+      "materialExcitationGate",
       "visibleDensity",
       "observedDensityFloor",
       "physicalCausticDensity",
@@ -123,11 +152,59 @@ describe("raymarch quantity ownership ledger", () => {
             "materialProbeVisibleDensity",
           ]),
         }),
+        sourceBoundaryModalObservationPolicy: expect.objectContaining({
+          file: "audioSourceEvidence.js",
+          owner: "audioSourceEvidence.js source boundary",
+          requiredTokens: expect.arrayContaining([
+            "suppressWeakSpectralFallbackDrive",
+            "suppressWeakResonantDrive",
+          ]),
+        }),
+        modalObservationSourcePolicyConsumer: expect.objectContaining({
+          file: "modalObservedScoring.js",
+          owner: "sourceBoundaryModalObservationPolicy",
+          forbiddenTokens: expect.arrayContaining([
+            "analysisClass === \"file\"",
+          ]),
+        }),
+        modalProjectionDisplayScore: expect.objectContaining({
+          file: "modalExcitation.js",
+          owner: "displayProjectionAmplitude",
+          forbiddenTokens: expect.arrayContaining(["signalAmplitude"]),
+        }),
+        materialExcitationAuthority: expect.objectContaining({
+          file: "material.js",
+          owner: "materialExcitationGate",
+          forbiddenTokens: expect.arrayContaining(["uAverageAmplitude"]),
+        }),
       }),
     );
     expect(RAYMARCH_RENDER_SURFACE_AUDITS.materialHotCoreAuthority.owner).toBe(
       "photographicLaserCausticRadiance plus caustic highlight evidence",
     );
+  });
+
+  it("executes declared source-surface audits against their source files", () => {
+    const sourceByFile = new Map();
+
+    for (const [surfaceName, audit] of Object.entries(
+      RAYMARCH_RENDER_SURFACE_AUDITS,
+    )) {
+      const sourceUrl = RAYMARCH_AUDIT_SOURCE_URL_BY_FILE[audit.file];
+      expect(sourceUrl, audit.file).toBeTruthy();
+      if (!sourceByFile.has(audit.file)) {
+        sourceByFile.set(audit.file, readFileSync(sourceUrl, "utf8"));
+      }
+      expect(
+        auditRaymarchSourceSurface(surfaceName, sourceByFile.get(audit.file)),
+      ).toEqual(
+        expect.objectContaining({
+          surface: audit.surface,
+          file: audit.file,
+          owner: audit.owner,
+        }),
+      );
+    }
   });
 
   it("prevents support and observation floors from authorizing caustic, highlight, hot-core, or white-emission consumers", () => {
