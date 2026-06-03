@@ -480,21 +480,21 @@ function buildPreviousModalResponseEnergies(
     if (!modeKey) {
       return;
     }
-    const energy = clamp01(
+    const previousModalResponseEnergy = clamp01(
       entry?.modalResponseEnergy ??
         entry?.retainedEnergy ??
         entry?.amplitude ??
         0,
     );
-    if (energy <= 0) {
+    if (previousModalResponseEnergy <= 0) {
       return;
     }
     const previous = energies.get(modeKey);
-    if ((previous?.modalResponseEnergy ?? 0) > energy) {
+    if ((previous?.modalResponseEnergy ?? 0) > previousModalResponseEnergy) {
       return;
     }
     energies.set(modeKey, {
-      modalResponseEnergy: energy,
+      modalResponseEnergy: previousModalResponseEnergy,
       oscillatorPhaseRad:
         entry?.oscillatorPhaseRad ??
         entry?.modalOscillatorPhaseRad ??
@@ -503,7 +503,7 @@ function buildPreviousModalResponseEnergies(
         entry?.modalOscillatorPhaseRad ??
         entry?.oscillatorPhaseRad ??
         entry?.phase,
-      amplitude: energy,
+      amplitude: previousModalResponseEnergy,
     });
   };
 
@@ -1343,7 +1343,7 @@ function isObservedModeAged(entry, currentFrameAtMs) {
 function deriveObservedModePhaseState({
   atlasEntry,
   previous,
-  response,
+  modalDriveResponse,
   observedDrive,
   retainedEnergy,
   observedSnr,
@@ -1353,7 +1353,9 @@ function deriveObservedModePhaseState({
 }) {
   const profile = getModalObserverProfile(atlasEntry?.layer);
   const layer = atlasEntry?.layer ?? "resonant";
-  const phase = normalizePhaseRad(response?.phase ?? previous?.phase ?? 0);
+  const phase = normalizePhaseRad(
+    modalDriveResponse?.phase ?? previous?.phase ?? 0,
+  );
   const previousPhase = Number.isFinite(previous?.phase)
     ? previous.phase
     : phase;
@@ -1443,7 +1445,7 @@ function deriveObservedModePhaseState({
 function createObservedModalModeEntry({
   atlasEntry,
   previous,
-  response,
+  modalDriveResponse,
   observedDrive,
   observedEnergy,
   retainedEnergy,
@@ -1471,12 +1473,12 @@ function createObservedModalModeEntry({
   const lastObservedAtMs = hasObservedModalDrive({ observedDrive }, profile)
     ? currentFrameAtMs
     : (previous?.lastObservedAtMs ?? firstObservedAtMs);
-  const energy = clamp01(retainedEnergy);
+  const retainedModalEnergy = clamp01(retainedEnergy);
   const renderLayer = classifyObservedModeRenderLayer({
     atlasEntry,
     observedSnr,
     observerCoherence,
-    retainedEnergy: energy,
+    retainedEnergy: retainedModalEnergy,
     observedDrive,
     dominantDriveFrequencyHz,
     dominantDriveSpectralSupport,
@@ -1489,9 +1491,9 @@ function createObservedModalModeEntry({
   const phaseState = deriveObservedModePhaseState({
     atlasEntry,
     previous,
-    response,
+    modalDriveResponse,
     observedDrive,
-    retainedEnergy: energy,
+    retainedEnergy: retainedModalEnergy,
     observedSnr,
     observerCoherence,
     currentFrameAtMs,
@@ -1501,8 +1503,8 @@ function createObservedModalModeEntry({
   return {
     ...atlasEntry,
     renderLayer,
-    amplitude: energy,
-    signalAmplitude: energy,
+    amplitude: retainedModalEnergy,
+    signalAmplitude: retainedModalEnergy,
     currentDriveEnergy: observedDrive,
     driveEnergy: Math.max(driveEnergy, profile.retainedDriveFloor),
     phase: phaseState.phase,
@@ -1516,7 +1518,7 @@ function createObservedModalModeEntry({
     resonantMaturity: isResonant
       ? Math.max(previous?.resonantMaturity ?? 0, HIGH_Q_RESONANT_MIN_MATURITY)
       : 1,
-    retainedEnergy: energy,
+    retainedEnergy: retainedModalEnergy,
     observedDrive,
     observedEnergy,
     observedSnr,
@@ -1527,11 +1529,17 @@ function createObservedModalModeEntry({
     resonantDisplayContinuity: isResonant,
     subtleResonantDisplayContinuity: isResonant,
     resonantDisplayContinuityPresence: isResonant
-      ? Math.max(previous?.resonantDisplayContinuityPresence ?? 0, energy)
+      ? Math.max(
+          previous?.resonantDisplayContinuityPresence ?? 0,
+          retainedModalEnergy,
+        )
       : 0,
     sourceCoupledDisplayContinuity: !isResonant,
     sourceCoupledDisplayContinuityPresence: !isResonant
-      ? Math.max(previous?.sourceCoupledDisplayContinuityPresence ?? 0, energy)
+      ? Math.max(
+          previous?.sourceCoupledDisplayContinuityPresence ?? 0,
+          retainedModalEnergy,
+        )
       : 0,
     observedModal: true,
   };
@@ -1540,7 +1548,7 @@ function createObservedModalModeEntry({
 function summarizeObservedLayerModes(modes, layer) {
   const profile = getModalObserverProfile(layer);
   let count = 0;
-  let energy = 0;
+  let retainedModalEnergySum = 0;
   let observedDrive = 0;
   let observedSnr = 0;
   let coherence = 0;
@@ -1560,7 +1568,7 @@ function summarizeObservedLayerModes(modes, layer) {
       continue;
     }
     count += 1;
-    energy += retainedEnergy;
+    retainedModalEnergySum += retainedEnergy;
     observedDrive += entry?.observedDrive ?? 0;
     observedSnr += Math.min(entry?.observedSnr ?? 0, profile.snrFull);
     coherence += entry?.coherence ?? 0;
@@ -1579,7 +1587,7 @@ function summarizeObservedLayerModes(modes, layer) {
 
   return {
     count,
-    energy: clamp01(energy),
+    energy: clamp01(retainedModalEnergySum),
     observedDrive: clamp01(averageObservedDrive),
     observedSnr: clamp01(averageSnr / profile.snrFull),
     coherence: clamp01(averageCoherence),
@@ -1731,7 +1739,7 @@ function updateObservedModalModes({
 
   for (const atlasEntry of atlas) {
     const profile = getModalObserverProfile(atlasEntry.layer);
-    const response = computeModeResponse(
+    const modalDriveResponse = computeModeResponse(
       driveBuffer,
       preparedInputs.sampleRate,
       atlasEntry.naturalFrequencyHz,
@@ -1750,7 +1758,7 @@ function updateObservedModalModes({
     });
     const observation = computeModalObservation({
       atlasEntry,
-      response,
+      response: modalDriveResponse,
       spectralSupport,
       localNoiseFloor,
       drivePeak,
@@ -1767,7 +1775,7 @@ function updateObservedModalModes({
       profile,
     });
     observationByMode.set(atlasEntry.modeKey, {
-      response,
+      modalDriveResponse,
       spectralSupport,
     });
     const previous = state.observedModes?.get(atlasEntry.modeKey) ?? null;
@@ -1797,7 +1805,7 @@ function updateObservedModalModes({
     const entry = createObservedModalModeEntry({
       atlasEntry,
       previous,
-      response,
+      modalDriveResponse,
       observedDrive: observation.observedDrive,
       observedEnergy: observation.observedEnergy,
       retainedEnergy,
@@ -1947,7 +1955,7 @@ function mergeExcitedObservedModes({
       createObservedModalModeEntry({
         atlasEntry: entry,
         previous,
-        response: { phase: entry.phase ?? previous?.phase ?? 0 },
+        modalDriveResponse: { phase: entry.phase ?? previous?.phase ?? 0 },
         observedDrive: mergedObservedDrive,
         observedEnergy: mergedObservedEnergy,
         retainedEnergy,
@@ -3418,8 +3426,8 @@ export function buildModalExcitationStructuralState({
     const modalResponseDisplayAmplitude = clamp01(
       modalResponseEntry?.displayAmplitude ?? 0,
     );
-    const response =
-      observedMeasurement?.response ??
+    const modalDriveResponse =
+      observedMeasurement?.modalDriveResponse ??
       computeModeResponse(
         driveBuffer,
         preparedInputs.sampleRate,
@@ -3437,7 +3445,7 @@ export function buildModalExcitationStructuralState({
       drivePeak < 0.005
         ? 0
         : clamp01(
-            response.magnitude * drivePeak * 1.9 +
+            modalDriveResponse.magnitude * drivePeak * 1.9 +
               spectralSupport * 0.85 +
               fastSignalState.transientEnergy * 0.08,
           );
@@ -3652,7 +3660,7 @@ export function buildModalExcitationStructuralState({
       modalResponseEntry?.oscillatorPhaseRad,
     )
       ? modalResponseEntry.oscillatorPhaseRad
-      : response.phase;
+      : modalDriveResponse.phase;
     const modalOscillatorPhaseOffsetRad = Number.isFinite(
       modalOscillatorAngularVelocityRadPerSec,
     )

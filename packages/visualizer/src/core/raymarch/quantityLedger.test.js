@@ -4,6 +4,8 @@ import {
   RAYMARCH_MATERIAL_TRANSFER_LANES,
   RAYMARCH_QUANTITY_LEDGER,
   RAYMARCH_QUANTITY_LEDGER_VERSION,
+  RAYMARCH_RENDER_QUANTITY_LANES,
+  RAYMARCH_RENDER_SURFACE_AUDITS,
   assertRaymarchQuantityConsumerAllowed,
   getRaymarchQuantityContract,
   isRaymarchQuantityConsumerAllowed,
@@ -12,6 +14,24 @@ import {
 describe("raymarch quantity ownership ledger", () => {
   it("declares stable lane ownership for structural, observation, caustic, support, body, and emission quantities", () => {
     expect(RAYMARCH_QUANTITY_LEDGER_VERSION).toMatch(/^raymarch-/);
+    expect(RAYMARCH_RENDER_QUANTITY_LANES).toEqual(
+      expect.objectContaining({
+        "audio-evidence": expect.arrayContaining(["sourceEnergy"]),
+        "modal-response": expect.arrayContaining(["storedModalEnergy"]),
+        projection: expect.arrayContaining(["projectedRenderEnergy"]),
+        "canonical-descriptor": expect.arrayContaining([
+          "modalAmplitudeCoefficient",
+          "modalIdentityTopology",
+        ]),
+        "runtime-upload": expect.arrayContaining(["runtimeUploadAuthority"]),
+        phase: expect.arrayContaining([
+          "phaseState",
+          "phaseAuthorityCoherence",
+          "interferenceContrast",
+        ]),
+        display: expect.arrayContaining(["displayCompression"]),
+      }),
+    );
     expect(RAYMARCH_MATERIAL_TRANSFER_LANES).toEqual(
       expect.objectContaining({
         structural: expect.arrayContaining([
@@ -19,7 +39,7 @@ describe("raymarch quantity ownership ledger", () => {
           "modalCoefficientEnergy",
         ]),
         observation: expect.arrayContaining([
-          "visibleDensity",
+          "observationDensity",
           "observedDensityFloor",
         ]),
         caustic: expect.arrayContaining([
@@ -34,6 +54,22 @@ describe("raymarch quantity ownership ledger", () => {
 
     for (const quantityName of [
       "structuralProjectionDrive",
+      "sourceEnergy",
+      "storedModalEnergy",
+      "projectedRenderEnergy",
+      "modalAmplitudeCoefficient",
+      "modalIdentityTopology",
+      "runtimeUploadAuthority",
+      "phaseState",
+      "phaseAuthorityCoherence",
+      "signedField",
+      "unsignedSupport",
+      "cancellation",
+      "interferenceContrast",
+      "observationDensity",
+      "causticRidgeAuthority",
+      "displayCompression",
+      "diagnostics",
       "modalCoefficientEnergy",
       "visibleDensity",
       "observedDensityFloor",
@@ -50,13 +86,53 @@ describe("raymarch quantity ownership ledger", () => {
       expect(contract.quantity).toBe(quantityName);
       expect(contract.lane).toBeTypeOf("string");
       expect(contract.represents).toBeTypeOf("string");
+      expect(contract.deepOwner).toBeTypeOf("string");
+      expect(contract.allowedConsumerPath.length).toBeGreaterThan(0);
       expect(contract.allowedConsumers.length).toBeGreaterThan(0);
       expect(contract.forbiddenConsumers).toBeInstanceOf(Array);
     }
   });
 
+  it("declares executable source-surface audits for material and probe consumers", () => {
+    expect(RAYMARCH_RENDER_SURFACE_AUDITS).toEqual(
+      expect.objectContaining({
+        materialObservationCore: expect.objectContaining({
+          file: "material.js",
+          requiredTokens: expect.arrayContaining([
+            "const { observationDensity } = observationTransfer;",
+          ]),
+          forbiddenTokens: expect.arrayContaining(["visibleDensity"]),
+        }),
+        materialHighlightAuthority: expect.objectContaining({
+          owner: "causticVisibleDensity",
+          forbiddenTokens: expect.arrayContaining(["observedDensityFloor"]),
+        }),
+        materialWhiteEmissionAuthority: expect.objectContaining({
+          owner: "whiteEmissionFieldAuthority",
+          requiredTokens: expect.arrayContaining([
+            "whiteEmissionRidgeEvidence",
+            "whiteEmissionFieldAuthority",
+          ]),
+        }),
+        runtimeMaterialProbeTransfer: expect.objectContaining({
+          file: "runtime.js",
+          requiredTokens: expect.arrayContaining([
+            "materialProbeObservationDensity",
+          ]),
+          forbiddenTokens: expect.arrayContaining([
+            "materialProbeVisibleDensity",
+          ]),
+        }),
+      }),
+    );
+    expect(RAYMARCH_RENDER_SURFACE_AUDITS.materialHotCoreAuthority.owner).toBe(
+      "photographicLaserCausticRadiance plus caustic highlight evidence",
+    );
+  });
+
   it("prevents support and observation floors from authorizing caustic, highlight, hot-core, or white-emission consumers", () => {
     for (const supportQuantity of [
+      "observationDensity",
       "visibleDensity",
       "observedDensityFloor",
       "supportVisibleDensity",
@@ -106,6 +182,79 @@ describe("raymarch quantity ownership ledger", () => {
         "whiteEmissionFieldAuthority",
       ),
     ).toThrow(/cancellationSuppression.*whiteEmissionFieldAuthority/);
+  });
+
+  it("keeps phase state and phase authority out of topology, coefficients, and render authority", () => {
+    for (const phaseQuantity of [
+      "phaseState",
+      "phaseAuthorityCoherence",
+      "interferenceContrast",
+    ]) {
+      for (const consumer of [
+        "modalIdentityTopology",
+        "modalAmplitudeCoefficient",
+        "renderAuthority",
+      ]) {
+        expect(
+          isRaymarchQuantityConsumerAllowed(phaseQuantity, consumer),
+          `${phaseQuantity} -> ${consumer}`,
+        ).toBe(false);
+      }
+    }
+
+    expect(
+      getRaymarchQuantityContract("phaseState").allowedConsumers,
+    ).toContain("interferenceContrast");
+  });
+
+  it("prevents diagnostics and runtime authority from creating energy or liveness", () => {
+    for (const consumer of [
+      "renderAuthority",
+      "runtimeUploadAuthority",
+      "projectedRenderEnergy",
+    ]) {
+      expect(
+        isRaymarchQuantityConsumerAllowed("diagnostics", consumer),
+        `diagnostics -> ${consumer}`,
+      ).toBe(false);
+    }
+
+    for (const energyQuantity of [
+      "sourceEnergy",
+      "storedModalEnergy",
+      "projectedRenderEnergy",
+    ]) {
+      expect(
+        isRaymarchQuantityConsumerAllowed(
+          "runtimeUploadAuthority",
+          energyQuantity,
+        ),
+        `runtimeUploadAuthority -> ${energyQuantity}`,
+      ).toBe(false);
+    }
+  });
+
+  it("keeps display compression downstream of modal semantics", () => {
+    expect(
+      getRaymarchQuantityContract("displayCompression").allowedConsumers,
+    ).toEqual(["finalOutput", "displayDiagnostics"]);
+
+    for (const semanticConsumer of [
+      "sourceEnergy",
+      "storedModalEnergy",
+      "projectedRenderEnergy",
+      "modalAmplitudeCoefficient",
+      "modalIdentityTopology",
+      "runtimeUploadAuthority",
+    ]) {
+      expect(
+        isRaymarchQuantityConsumerAllowed(
+          "displayCompression",
+          semanticConsumer,
+        ),
+        `displayCompression -> ${semanticConsumer}`,
+      ).toBe(false);
+    }
   });
 
   it("summarizes forbidden consumers for runtime audit snapshots", () => {

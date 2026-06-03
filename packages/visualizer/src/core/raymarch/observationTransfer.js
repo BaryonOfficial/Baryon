@@ -241,6 +241,10 @@ export function deriveObservationTransfer({
     observationSupport *
     observationAnchor *
     contourRidgeAnchor;
+  const observationDensity = Math.max(
+    physicalVisibleDensity,
+    observedDensityFloor,
+  );
 
   return {
     physicalVisibilityGate,
@@ -251,6 +255,9 @@ export function deriveObservationTransfer({
     observationSupport,
     observedDensityFloor,
     observedContourSupport,
-    visibleDensity: Math.max(physicalVisibleDensity, observedDensityFloor),
+    observationDensity,
+    // Boundary alias for existing probe/test readers. Material-core consumers
+    // should read observationDensity.
+    visibleDensity: observationDensity,
   };
 }

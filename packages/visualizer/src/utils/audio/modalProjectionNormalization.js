@@ -65,7 +65,7 @@ function getProjectionHighQProtection({ layer, modalObserverMetrics }) {
   const projectionLoad = clamp01(
     modalObserverMetrics?.highQProjectionLoad ?? 0,
   );
-  const highQAuthority = clamp01(
+  const highQProtectionEvidence = clamp01(
     Math.max(
       modalObserverMetrics?.highQSparseResonatorAuthority ?? 0,
       modalObserverMetrics?.highQRingSupport ?? 0,
@@ -78,7 +78,7 @@ function getProjectionHighQProtection({ layer, modalObserverMetrics }) {
     highQEnergy,
   );
 
-  return clamp01(projectionLoad * highQAuthority * energySupport);
+  return clamp01(projectionLoad * highQProtectionEvidence * energySupport);
 }
 
 function computeProjectionProximity(left, right, layer) {
@@ -208,13 +208,13 @@ export function applyProjectionEnergyNormalization({
       entry,
       getLayerObserverProfile,
     );
-    const rawEnergy =
+    const rawProjectedRenderEnergy =
       rawDisplayAmplitude * rawDisplayAmplitude * evidenceQuality;
     return {
       entry,
       rawDisplayAmplitude,
       evidenceQuality,
-      rawEnergy,
+      rawProjectedRenderEnergy,
     };
   });
 
@@ -232,39 +232,42 @@ export function applyProjectionEnergyNormalization({
       );
       competitorPressure +=
         proximity *
-        other.rawEnergy *
+        other.rawProjectedRenderEnergy *
         (1 - 0.25 * clamp01(other.entry?.coherence ?? 0));
     }
     const competitionScale = 1 / (1 + lambda * competitorPressure);
-    const projectedEnergy = item.rawEnergy * competitionScale;
+    const competitionAdjustedProjectedRenderEnergy =
+      item.rawProjectedRenderEnergy * competitionScale;
     return {
       ...item,
       competitorPressure,
       competitionScale,
-      projectedEnergy,
+      competitionAdjustedProjectedRenderEnergy,
     };
   });
 
-  const rawEnergyTotal = competed.reduce(
-    (total, item) => total + item.rawEnergy,
+  const rawProjectedRenderEnergyTotal = competed.reduce(
+    (total, item) => total + item.rawProjectedRenderEnergy,
     0,
   );
-  const projectedEnergyTotal = competed.reduce(
-    (total, item) => total + item.projectedEnergy,
+  const competitionAdjustedProjectedRenderEnergyTotal = competed.reduce(
+    (total, item) => total + item.competitionAdjustedProjectedRenderEnergy,
     0,
   );
   const energyScale =
-    projectedEnergyTotal > structuralBudget
-      ? structuralBudget / Math.max(projectedEnergyTotal, 1e-9)
+    competitionAdjustedProjectedRenderEnergyTotal > structuralBudget
+      ? structuralBudget /
+        Math.max(competitionAdjustedProjectedRenderEnergyTotal, 1e-9)
       : 1;
   const conservedEntries = competed.map((item) => ({
     ...item.entry,
     displayAmplitude: Math.sqrt(
-      Math.max(0, item.projectedEnergy * energyScale),
+      Math.max(0, item.competitionAdjustedProjectedRenderEnergy * energyScale),
     ),
   }));
   const allocatedEnergy = competed.reduce(
-    (total, item) => total + item.projectedEnergy * energyScale,
+    (total, item) =>
+      total + item.competitionAdjustedProjectedRenderEnergy * energyScale,
     0,
   );
   const used = Math.min(allocatedEnergy, structuralBudget);
@@ -272,7 +275,10 @@ export function applyProjectionEnergyNormalization({
     (maxPressure, item) => Math.max(maxPressure, item.competitorPressure),
     0,
   );
-  const competitionReduction = Math.max(0, rawEnergyTotal - used);
+  const competitionReduction = Math.max(
+    0,
+    rawProjectedRenderEnergyTotal - used,
+  );
   const normalizationApplied =
     energyScale < 0.999999 ||
     competitionReduction > 1e-6 ||
@@ -287,14 +293,14 @@ export function applyProjectionEnergyNormalization({
   if (layer === "source-coupled") {
     metrics.projectionEnergyBudgetSourceCoupled = budget;
     metrics.projectionEnergyUsedSourceCoupled = used;
-    metrics.projectionRawEnergySourceCoupled = rawEnergyTotal;
+    metrics.projectionRawEnergySourceCoupled = rawProjectedRenderEnergyTotal;
     metrics.projectionAllocatedEnergySourceCoupled = used;
     metrics.projectionEnergyScaleSourceCoupled = energyScale;
     metrics.projectionOverlapPressureSourceCoupled = maxOverlapPressure;
   } else {
     metrics.projectionEnergyBudgetResonant = structuralBudget;
     metrics.projectionEnergyUsedResonant = used;
-    metrics.projectionRawEnergyResonant = rawEnergyTotal;
+    metrics.projectionRawEnergyResonant = rawProjectedRenderEnergyTotal;
     metrics.projectionAllocatedEnergyResonant = used;
     metrics.projectionEnergyScaleResonant = energyScale;
     metrics.projectionOverlapPressureResonant = maxOverlapPressure;

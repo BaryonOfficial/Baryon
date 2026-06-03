@@ -2170,7 +2170,7 @@ function accumulateLiveSynthesisFieldAtPoint({
   let gradY = 0;
   let gradZ = 0;
   let unsignedSupport = 0;
-  let authoritySum = 0;
+  let phaseAuthorityWeightedAmplitudeSum = 0;
   let totalWeight = 0;
   const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
@@ -2192,7 +2192,7 @@ function accumulateLiveSynthesisFieldAtPoint({
         (phaseSlots?.[offset + 2] ?? 0) * (phaseSlots?.[offset + 3] ?? 0),
       ),
     );
-    authoritySum += amplitude * beta;
+    phaseAuthorityWeightedAmplitudeSum += amplitude * beta;
     const coefficient = amplitude;
     const family = geometryBackend.evaluateMode({
       u: slots[offset] ?? 0,
@@ -2218,7 +2218,7 @@ function accumulateLiveSynthesisFieldAtPoint({
     gradY,
     gradZ,
     unsignedSupport,
-    authoritySum,
+    phaseAuthorityWeightedAmplitudeSum,
     totalWeight,
   };
 }
@@ -2416,7 +2416,7 @@ export function evaluateRaymarchLiveSynthesisFieldPoint({
       1,
       Math.max(
         0,
-        modalField.authoritySum /
+        modalField.phaseAuthorityWeightedAmplitudeSum /
           Math.max(MODAL_BASIS_CACHE_ENERGY_EPSILON, modalField.totalWeight),
       ),
     ),

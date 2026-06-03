@@ -57,6 +57,7 @@ import {
   RAYMARCH_FORBIDDEN_CONSUMER_SUMMARY,
   RAYMARCH_MATERIAL_TRANSFER_LANES,
   RAYMARCH_QUANTITY_LEDGER_VERSION,
+  RAYMARCH_RENDER_QUANTITY_LANES,
 } from "./quantityLedger.js";
 import {
   buildRaymarchPerformanceGovernor,
@@ -1193,11 +1194,11 @@ function buildRaymarchDebugSnapshot(
   const materialProbeCausticVisibleDensity = clamp01(
     diagnosticVisibility.observationTransfer?.physicalVisibleDensity,
   );
-  const materialProbeVisibleDensity = clamp01(
-    diagnosticVisibility.observationTransfer?.visibleDensity ?? avgDensity,
+  const materialProbeObservationDensity = clamp01(
+    diagnosticVisibility.observationTransfer?.observationDensity ?? avgDensity,
   );
   const materialProbeTransfer = deriveMaterialRadianceTransfer({
-    stabilizedDensity: materialProbeVisibleDensity,
+    stabilizedDensity: materialProbeObservationDensity,
     causticVisibleDensity: materialProbeCausticVisibleDensity,
     volumeColor: readUniformColorRgb(
       runtimeState.uniforms.uColor,
@@ -1276,6 +1277,7 @@ function buildRaymarchDebugSnapshot(
       modalBasisPhaseAuthorityModeCount,
     modalVarietyAudit: modalDescriptor?.diagnostics?.modalVarietyAudit ?? null,
     renderQuantityLedgerVersion: RAYMARCH_QUANTITY_LEDGER_VERSION,
+    renderQuantityOwnershipLanes: RAYMARCH_RENDER_QUANTITY_LANES,
     renderMaterialTransferLanes: RAYMARCH_MATERIAL_TRANSFER_LANES,
     renderQuantityForbiddenConsumers: RAYMARCH_FORBIDDEN_CONSUMER_SUMMARY,
     dominantFrequency:
@@ -2028,14 +2030,14 @@ function updateModalBasisCache(
     );
   if (descriptorBlockedReason) {
     blockModalBasisCacheForDescriptor(modalBasisCache, descriptorBlockedReason);
-    const authority = setModalBasisCacheDrawableAuthority(
+    const drawableAuthority = setModalBasisCacheDrawableAuthority(
       runtimeState,
       resolveRaymarchModalBasisCacheDrawableAuthority(
         modalBasisCache,
         modalBasisCacheDescriptor,
       ),
     );
-    return authority.drawable ? "modal-basis-cached" : "unavailable";
+    return drawableAuthority.drawable ? "modal-basis-cached" : "unavailable";
   }
 
   const { needsRebuild, reason } = shouldRebuildRaymarchModalBasisCache(
@@ -2059,7 +2061,7 @@ function updateModalBasisCache(
     );
   }
 
-  const authority = setModalBasisCacheDrawableAuthority(
+  const drawableAuthority = setModalBasisCacheDrawableAuthority(
     runtimeState,
     resolveRaymarchModalBasisCacheDrawableAuthority(
       modalBasisCache,
@@ -2067,7 +2069,7 @@ function updateModalBasisCache(
     ),
   );
 
-  if (authority.drawable) {
+  if (drawableAuthority.drawable) {
     return "modal-basis-cached";
   }
   return "unavailable";

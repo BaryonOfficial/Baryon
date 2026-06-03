@@ -45,6 +45,25 @@ describe("observation transfer", () => {
     expect(parameters.fieldNoiseFloor).toBe(0);
   });
 
+  it("publishes observationDensity as the canonical material-core density", () => {
+    const transfer = deriveObservationTransfer({
+      density: 0.28,
+      modalStructureAnchor: 1,
+      ridgeAnchor: 1,
+      signedRadianceAuthority: 1,
+      modalCoefficientEnergy: 0.7,
+      parameters: deriveReferenceParameters(),
+    });
+
+    expect(transfer.observationDensity).toBe(
+      Math.max(
+        transfer.physicalVisibleDensity,
+        transfer.observedDensityFloor,
+      ),
+    );
+    expect(transfer.visibleDensity).toBe(transfer.observationDensity);
+  });
+
   it("lifts exposure and lowers the visibility gate when the field drive is weak", () => {
     const wellDriven = deriveReferenceParameters({ visibilityDrive: 1 });
     const weaklyDriven = deriveReferenceParameters({ visibilityDrive: 0.15 });

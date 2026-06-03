@@ -42,7 +42,7 @@ export function deriveRaymarchDiagnosticVisibility({
     modalResponseEnergy,
     parameters,
   });
-  const avgDensity = clamp01(observationTransfer.visibleDensity);
+  const avgDensity = clamp01(observationTransfer.observationDensity);
   const safeOpacityGain = readPositiveFinite(opacityGain, 1);
   const safeStepBudget = readPositiveFinite(stepBudget, 48);
   const safeSpectralFlux = Math.max(

@@ -112,9 +112,9 @@ function countPhaseAuthorityModes(phaseSlots, maxCount) {
   let activeCount = 0;
   for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
     const offset = slotIndex * 4;
-    const authority =
+    const phaseAuthorityWeight =
       (phaseSlots?.[offset + 2] ?? 0) * (phaseSlots?.[offset + 3] ?? 0);
-    if (authority > 1e-4) {
+    if (phaseAuthorityWeight > 1e-4) {
       activeCount += 1;
     }
   }

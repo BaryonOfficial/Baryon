@@ -1299,7 +1299,7 @@ function createScatteringNode({
         float(0.0),
         float(DENSITY_MAX),
       ).mul(float(DENSITY_BOOST));
-      const density = clamp(
+      const observationInputDensity = clamp(
         photographicLaserCausticRadiance
           .add(photographicBodyContribution)
           .mul(edgeFade)
@@ -1312,7 +1312,7 @@ function createScatteringNode({
       const modalStructureAnchor = /** @type {any} */ (causticRidgeAuthority);
       const ridgeAnchor = /** @type {any} */ (causticRidgeAuthority);
       const observationTransfer = deriveObservationTransferNode(
-        density,
+        observationInputDensity,
         modalCoefficientEnergy,
         modalStructureAnchor,
         uModalResponseEnergy,
@@ -1324,7 +1324,7 @@ function createScatteringNode({
         uObservationDensityFloor,
         uObservationContourSupportScale,
       );
-      const { visibleDensity } = observationTransfer;
+      const { observationDensity } = observationTransfer;
       const causticVisibilityGate = smoothstep(
         uObservationDensityFadeStart,
         uObservationDensityFadeEnd,
@@ -1339,7 +1339,7 @@ function createScatteringNode({
         float(HIGHLIGHT_MASK_END),
         /** @type {any} */ (causticVisibleDensity),
       );
-      const stabilizedDensity = visibleDensity;
+      const stabilizedDensity = observationDensity;
       const contourMix = smoothstep(
         float(COLOR_BLEND_START),
         float(COLOR_BLEND_END),
@@ -1652,7 +1652,7 @@ function createScatteringNode({
 
 // GPU mirror of deriveObservationTransfer in observationTransfer.js.
 function deriveObservationTransferNode(
-  density,
+  observationInputDensity,
   modalCoefficientEnergy,
   modalStructureAnchor,
   modalResponseEnergy = float(0.0),
@@ -1667,9 +1667,11 @@ function deriveObservationTransferNode(
   const physicalVisibilityGate = smoothstep(
     observationDensityFadeStart,
     observationDensityFadeEnd,
-    density,
+    observationInputDensity,
   );
-  const physicalVisibleDensity = density.mul(physicalVisibilityGate);
+  const physicalVisibleDensity = observationInputDensity.mul(
+    physicalVisibilityGate,
+  );
   const contourRidgeAnchor = clamp(ridgeAnchor, float(0.0), float(1.0));
   const observationAnchor = clamp(
     modalStructureAnchor.mul(signedRadianceAuthority),
@@ -1704,6 +1706,7 @@ function deriveObservationTransferNode(
     float(0.0),
     observationContourSupportScale,
   );
+  const observationDensity = max(physicalVisibleDensity, observedDensityFloor);
 
   return {
     physicalVisibilityGate,
@@ -1714,7 +1717,7 @@ function deriveObservationTransferNode(
     observationSupport,
     observedDensityFloor,
     observedContourSupport,
-    visibleDensity: max(physicalVisibleDensity, observedDensityFloor),
+    observationDensity,
   };
 }
 

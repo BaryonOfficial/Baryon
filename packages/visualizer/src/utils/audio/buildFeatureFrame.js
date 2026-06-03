@@ -2851,7 +2851,7 @@ function deriveLowQSourceCoupledVisibilityAuthority({
         directSourceSnrGate,
       )
     : observedSnrGate;
-  const authority = clamp01(
+  const lowQSourceCoupledVisibilityAuthority = clamp01(
     lowQEnergyGate *
       lowQCoherenceGate *
       snrGate *
@@ -2860,14 +2860,17 @@ function deriveLowQSourceCoupledVisibilityAuthority({
   );
 
   return {
-    lowQSourceCoupledVisibilityAuthority: authority,
+    lowQSourceCoupledVisibilityAuthority,
     lowQSourceCoupledVisibilityEnergy:
-      LOW_Q_SOURCE_COUPLED_VISIBILITY_ENERGY_MAX * authority,
+      LOW_Q_SOURCE_COUPLED_VISIBILITY_ENERGY_MAX *
+      lowQSourceCoupledVisibilityAuthority,
     lowQSourceCoupledTopologyFloor:
-      LOW_Q_SOURCE_COUPLED_TOPOLOGY_FLOOR_MAX * authority,
+      LOW_Q_SOURCE_COUPLED_TOPOLOGY_FLOOR_MAX *
+      lowQSourceCoupledVisibilityAuthority,
     lowQSourceCoupledSourceSupport: sourceSupport,
     lowQSourceCoupledVisibilityRejected: Boolean(
-      hasLowQSourceCoupledCandidate && authority <= 0,
+      hasLowQSourceCoupledCandidate &&
+        lowQSourceCoupledVisibilityAuthority <= 0,
     ),
   };
 }
@@ -2896,7 +2899,7 @@ function deriveModalObserverVisibilityComponents({
     structuralMetrics.highQObservedCoherence ?? modeCoherence,
   );
   const highQObservedSnr = clamp01(structuralMetrics.highQObservedSnr ?? 0);
-  const highQAuthority = deriveHighQSparseResonatorAuthority({
+  const highQSparseResonatorEvidence = deriveHighQSparseResonatorAuthority({
     highQObservedSnr,
     highQObservedCoherence,
     highQObservedDrive: structuralMetrics.highQObservedDrive ?? 0,
@@ -2933,7 +2936,7 @@ function deriveModalObserverVisibilityComponents({
       highQSupportGate *
       highQCountGate *
       highQQuality *
-      highQAuthority.highQSparseResonatorAuthority *
+      highQSparseResonatorEvidence.highQSparseResonatorAuthority *
       MODAL_OBSERVER_HIGH_Q_MAX,
   );
 
@@ -3005,7 +3008,7 @@ function deriveModalObserverVisibilityComponents({
     resonantSlotFloorTotal,
     sourceCoupledSlotFloorTotal,
     ...lowQSourceCoupledVisibility,
-    ...highQAuthority,
+    ...highQSparseResonatorEvidence,
   };
 }
 

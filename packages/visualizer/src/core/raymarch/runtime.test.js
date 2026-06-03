@@ -22,7 +22,11 @@ import {
   OBSERVATION_TRANSFER_REFERENCE,
   deriveObservationTransferParameters,
 } from "./observationTransfer.js";
-import { RAYMARCH_QUANTITY_LEDGER_VERSION } from "./quantityLedger.js";
+import {
+  RAYMARCH_QUANTITY_LEDGER_VERSION,
+  RAYMARCH_RENDER_QUANTITY_LANES,
+  auditRaymarchSourceSurface,
+} from "./quantityLedger.js";
 import {
   deriveLowStepBloomGuard,
   deriveStepCompensation,
@@ -488,6 +492,17 @@ describe("tickRaymarchRuntime", () => {
     );
   });
 
+  it("uses the executable ledger audit for the runtime material probe surface", () => {
+    const source = readFileSync(
+      new URL("./runtime.js", import.meta.url),
+      "utf8",
+    );
+
+    expect(
+      auditRaymarchSourceSurface("runtimeMaterialProbeTransfer", source).owner,
+    ).toBe("runtime.js diagnostic material probe");
+  });
+
   it("keeps source and resonance evidence labels out of laser response ownership", () => {
     const source = readFileSync(
       new URL("./runtime.js", import.meta.url),
@@ -899,6 +914,9 @@ describe("tickRaymarchRuntime", () => {
     expect(
       runtimeState.debugSnapshot.raymarchDebug.renderQuantityLedgerVersion,
     ).toBe(RAYMARCH_QUANTITY_LEDGER_VERSION);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.renderQuantityOwnershipLanes,
+    ).toBe(RAYMARCH_RENDER_QUANTITY_LANES);
     expect(
       runtimeState.debugSnapshot.raymarchDebug.renderQuantityForbiddenConsumers
         .observedDensityFloor,

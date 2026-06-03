@@ -19,7 +19,10 @@ import {
   createRaymarchModalBasisCache,
   createRaymarchSpectralLightCache,
 } from "./fieldCache.js";
-import { getRaymarchQuantityContract } from "./quantityLedger.js";
+import {
+  auditRaymarchSourceSurface,
+  getRaymarchQuantityContract,
+} from "./quantityLedger.js";
 
 function makeMeshUniforms(overrides = {}) {
   const base = createVisualizationUniforms({
@@ -217,10 +220,20 @@ describe("raymarch volume material", () => {
       new URL("./material.js", import.meta.url),
       "utf8",
     );
+    for (const surfaceName of [
+      "materialObservationCore",
+      "materialHighlightAuthority",
+      "materialHotCoreAuthority",
+      "materialWhiteEmissionAuthority",
+    ]) {
+      expect(auditRaymarchSourceSurface(surfaceName, source).file).toBe(
+        "material.js",
+      );
+    }
     const highlightStart = expectSourceIndex(source, "const highlightMask =");
     const stabilizedDensityStart = expectSourceIndex(
       source,
-      "const stabilizedDensity = visibleDensity;",
+      "const stabilizedDensity = observationDensity;",
     );
     const hotCoreStart = expectSourceIndex(source, "const hotCoreInput =");
     const hotCoreMixStart = expectSourceIndex(source, "const hotCoreMix =");
@@ -245,7 +258,7 @@ describe("raymarch volume material", () => {
     );
     const finalTransferBlock = source.slice(supportSplitStart, returnStart);
     const floorContract = getRaymarchQuantityContract("observedDensityFloor");
-    const visibleContract = getRaymarchQuantityContract("visibleDensity");
+    const observationContract = getRaymarchQuantityContract("observationDensity");
     const supportContract = getRaymarchQuantityContract(
       "supportVisibleDensity",
     );
@@ -256,7 +269,7 @@ describe("raymarch volume material", () => {
     expect(floorContract.forbiddenConsumers).toEqual(
       expect.arrayContaining(["highlightMask", "whiteEmissionFieldAuthority"]),
     );
-    expect(visibleContract.forbiddenConsumers).toEqual(
+    expect(observationContract.forbiddenConsumers).toEqual(
       expect.arrayContaining(["highlightMask", "hotCoreInput"]),
     );
     expect(supportContract.forbiddenConsumers).toEqual(
@@ -689,14 +702,17 @@ describe("raymarch volume material", () => {
       source,
       "const cancellationSuppression =",
     );
-    const densityStart = expectSourceIndex(source, "const density =");
+    const densityStart = expectSourceIndex(
+      source,
+      "const observationInputDensity =",
+    );
     const observationTransferStart = expectSourceIndex(
       source,
       "const observationTransfer = deriveObservationTransferNode(",
     );
     const stabilizedDensityStart = expectSourceIndex(
       source,
-      "const stabilizedDensity = visibleDensity;",
+      "const stabilizedDensity = observationDensity;",
     );
     const finalRadianceStart = expectSourceIndex(
       source,
@@ -724,14 +740,17 @@ describe("raymarch volume material", () => {
       source,
       "const physicalCausticDensity = clamp(",
     );
-    const densityStart = expectSourceIndex(source, "const density = clamp(");
+    const densityStart = expectSourceIndex(
+      source,
+      "const observationInputDensity = clamp(",
+    );
     const observationTransferStart = expectSourceIndex(
       source,
       "const observationTransfer = deriveObservationTransferNode(",
     );
-    const visibleDensityStart = expectSourceIndex(
+    const observationDensityStart = expectSourceIndex(
       source,
-      "const { visibleDensity } = observationTransfer;",
+      "const { observationDensity } = observationTransfer;",
     );
     const causticVisibleDensityStart = expectSourceIndex(
       source,
@@ -743,7 +762,7 @@ describe("raymarch volume material", () => {
     );
     const stabilizedDensityStart = expectSourceIndex(
       source,
-      "const stabilizedDensity = visibleDensity;",
+      "const stabilizedDensity = observationDensity;",
     );
     const highlightMaskBlock = source.slice(
       highlightMaskStart,
@@ -763,8 +782,8 @@ describe("raymarch volume material", () => {
       "photographicBodyContribution",
     );
     expect(densityBlock).toContain("photographicBodyContribution");
-    expect(visibleDensityStart).toBeGreaterThan(observationTransferStart);
-    expect(causticVisibleDensityStart).toBeGreaterThan(visibleDensityStart);
+    expect(observationDensityStart).toBeGreaterThan(observationTransferStart);
+    expect(causticVisibleDensityStart).toBeGreaterThan(observationDensityStart);
     expect(highlightMaskStart).toBeGreaterThan(causticVisibleDensityStart);
     expect(highlightMaskBlock).toContain("causticVisibleDensity");
     expect(highlightMaskBlock).not.toContain("visibleDensity");
@@ -778,7 +797,7 @@ describe("raymarch volume material", () => {
     );
     const stabilizedDensityStart = expectSourceIndex(
       source,
-      "const stabilizedDensity = visibleDensity;",
+      "const stabilizedDensity = observationDensity;",
     );
     const supportDensityStart = expectSourceIndex(
       source,
@@ -1222,7 +1241,10 @@ describe("raymarch volume material", () => {
       source,
       "const photographicRadianceScale =",
     );
-    const densityStart = expectSourceIndex(source, "const density = clamp(");
+    const densityStart = expectSourceIndex(
+      source,
+      "const observationInputDensity = clamp(",
+    );
     const photographicRadianceScaleBlock = source.slice(
       photographicRadianceScaleStart,
       photographicLaserStart,
@@ -1525,7 +1547,10 @@ describe("raymarch volume material", () => {
       source,
       "const photographicLaserCausticRadiance =",
     );
-    const densityStart = expectSourceIndex(source, "const density = clamp(");
+    const densityStart = expectSourceIndex(
+      source,
+      "const observationInputDensity = clamp(",
+    );
     const blackfieldGateBlock = source.slice(
       blackfieldGateStart,
       photographicBodyStart,
@@ -1582,7 +1607,10 @@ describe("raymarch volume material", () => {
       new URL("./material.js", import.meta.url),
       "utf8",
     );
-    const densityStart = expectSourceIndex(source, "const density = clamp(");
+    const densityStart = expectSourceIndex(
+      source,
+      "const observationInputDensity = clamp(",
+    );
     const fringeStart = expectSourceIndex(
       source,
       "const photographicFringeWeight =",
