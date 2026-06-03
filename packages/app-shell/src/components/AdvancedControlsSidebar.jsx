@@ -1441,9 +1441,7 @@ export default function AdvancedControlsSidebar({
   );
   const selectedPreset =
     presets.find((preset) => preset.name === selectedPresetName) ?? null;
-  const canDeleteSelectedPreset = Boolean(
-    selectedPresetName && !selectedPreset?.builtIn,
-  );
+  const canDeleteSelectedPreset = Boolean(selectedPresetName && selectedPreset);
 
   const helpDefinitions = new Map();
   for (const group of [

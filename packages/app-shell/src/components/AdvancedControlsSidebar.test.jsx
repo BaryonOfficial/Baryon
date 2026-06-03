@@ -125,18 +125,12 @@ describe("AdvancedControlsSidebar info links", () => {
     expect(closeButton?.getAttribute("title")).toBe("Close advanced controls");
   });
 
-  it("does not offer deletion for a built-in visual preset", () => {
+  it("does not offer deletion when no user preset is selected", () => {
     const deletePreset = vi.fn();
 
     renderSidebar({
-      presets: [
-        {
-          name: "Calibrated Clarity",
-          builtIn: true,
-          controls: {},
-        },
-      ],
-      selectedPresetName: "Calibrated Clarity",
+      presets: [],
+      selectedPresetName: "",
       deletePreset,
     });
 
@@ -147,6 +141,16 @@ describe("AdvancedControlsSidebar info links", () => {
     expect(deleteButton?.disabled).toBe(true);
     deleteButton?.click();
     expect(deletePreset).not.toHaveBeenCalled();
+  });
+
+  it("renders only the placeholder option when there are no user presets", () => {
+    renderSidebar({ presets: [] });
+
+    const select = container.querySelector('select[aria-label="Load preset"]');
+    expect(select).toBeInstanceOf(HTMLSelectElement);
+    expect(Array.from(select.options).map((option) => option.value)).toEqual([
+      "",
+    ]);
   });
 
   it("adds extra separation between preset name and load controls", () => {
@@ -388,11 +392,8 @@ describe("AdvancedControlsSidebar info links", () => {
   it("does not let sidebar scrolling change a focused select control", () => {
     const loadPreset = vi.fn();
     renderSidebar({
-      presets: [
-        { name: "Calibrated Clarity", builtIn: true, controls: {} },
-        { name: "Saved Haze", controls: {} },
-      ],
-      selectedPresetName: "Calibrated Clarity",
+      presets: [{ name: "Saved Haze", controls: {} }],
+      selectedPresetName: "Saved Haze",
       loadPreset,
     });
 
@@ -410,7 +411,7 @@ describe("AdvancedControlsSidebar info links", () => {
     expect(dispatchResult).toBe(true);
     expect(wheelEvent.defaultPrevented).toBe(false);
     expect(document.activeElement).not.toBe(select);
-    expect(select.value).toBe("Calibrated Clarity");
+    expect(select.value).toBe("Saved Haze");
     expect(loadPreset).not.toHaveBeenCalled();
   });
 });

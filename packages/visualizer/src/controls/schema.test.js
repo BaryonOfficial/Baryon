@@ -239,6 +239,7 @@ describe("control schema", () => {
     expect(spectralMix).toMatchObject({
       label: "Color Mix",
       defaultValue: 0.96,
+      binding: { min: 0.01, max: 1, step: 0.01 },
       runtimePath: "runtime.uniforms.uSpectralMix.value",
     });
   });

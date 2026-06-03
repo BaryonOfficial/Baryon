@@ -46,12 +46,36 @@ function createRuntimeState({ withFieldCache = false } = {}) {
   const materialCache = withFieldCache
     ? {
         neumann: {
-          off: { steps: 64 },
-          cached: { steps: 64 },
+          off: {
+            steps: 64,
+            modalBasisAtlasTexture: modalBasisCache.texture,
+            spectralLightEvaluationMode:
+              RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
+            spectralLightCacheTexture: null,
+          },
+          cached: {
+            steps: 64,
+            modalBasisAtlasTexture: modalBasisCache.texture,
+            spectralLightEvaluationMode:
+              RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
+            spectralLightCacheTexture: spectralLightCache.texture,
+          },
         },
         dirichlet: {
-          off: { steps: 64 },
-          cached: { steps: 64 },
+          off: {
+            steps: 64,
+            modalBasisAtlasTexture: modalBasisCache.texture,
+            spectralLightEvaluationMode:
+              RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
+            spectralLightCacheTexture: null,
+          },
+          cached: {
+            steps: 64,
+            modalBasisAtlasTexture: modalBasisCache.texture,
+            spectralLightEvaluationMode:
+              RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
+            spectralLightCacheTexture: spectralLightCache.texture,
+          },
         },
       }
     : null;
@@ -218,6 +242,7 @@ function createRuntimeState({ withFieldCache = false } = {}) {
               liveFieldProjectionCache.fieldTexture,
             raymarchModalLiveSupportTexture:
               liveFieldProjectionCache.supportTexture,
+            raymarchSpectralLightCacheTexture: spectralLightCache.texture,
           }
         : undefined,
     },
@@ -410,7 +435,21 @@ function withUnifiedModalFields(frame) {
   return frame;
 }
 
+function withDefaultTextureCopy(renderer) {
+  if (
+    renderer &&
+    typeof renderer.computeAsync === "function" &&
+    !Object.prototype.hasOwnProperty.call(renderer, "copyTextureToTexture")
+  ) {
+    renderer.copyTextureToTexture = vi.fn();
+  }
+  return renderer;
+}
+
 function tickRaymarchRuntime(runtimeState, featureFrame, ...args) {
+  if (args.length >= 3) {
+    args[2] = withDefaultTextureCopy(args[2]);
+  }
   return tickRaymarchRuntimeBase(
     runtimeState,
     withUnifiedModalFields(featureFrame),
@@ -1319,6 +1358,13 @@ describe("tickRaymarchRuntime", () => {
 
     tickRaymarchRuntime(runtimeState, featureFrame, 1, 1 / 60, renderer);
     await flushMicrotasks();
+    tickRaymarchRuntime(
+      runtimeState,
+      featureFrame,
+      1 + 1 / 60,
+      1 / 60,
+      renderer,
+    );
 
     // Cache committed a rebuild, but the sampled-support audit never ran.
     expect(runtimeState.modalBasisCache.ready).toBe(true);
@@ -1410,6 +1456,7 @@ describe("tickRaymarchRuntime", () => {
 
     tickRaymarchRuntime(runtimeState, baseFrame, 3, 1 / 60, renderer);
     await flushMicrotasks();
+    tickRaymarchRuntime(runtimeState, baseFrame, 3, 1 / 60, renderer);
     const rebuildCount = runtimeState.modalBasisCache.rebuildCount;
     const activeDescriptor = runtimeState.modalBasisCache.activeDescriptor;
 
@@ -1470,12 +1517,14 @@ describe("tickRaymarchRuntime", () => {
 
     tickRaymarchRuntime(runtimeState, frame, 3, 1 / 60, renderer);
     await flushMicrotasks();
+    tickRaymarchRuntime(runtimeState, frame, 3, 1 / 60, renderer);
     const rebuildCount = runtimeState.modalBasisCache.rebuildCount;
     const activeDescriptor = runtimeState.modalBasisCache.activeDescriptor;
     const initialStructuralCoefficients = Array.from(
       runtimeState.modalFieldCoefficientBuffer.value.array.slice(0, 8),
     );
     expect(renderer.computeAsync).toHaveBeenCalledTimes(1);
+    renderer.compute.mockClear();
     runtimeState.modalFieldCoefficientBuffer.value.needsUpdate = false;
 
     tickRaymarchRuntime(runtimeState, frame, 3.5, 1 / 60, renderer);
@@ -1540,6 +1589,7 @@ describe("tickRaymarchRuntime", () => {
 
     tickRaymarchRuntime(runtimeState, baseFrame, 1, 1 / 60, renderer);
     await flushMicrotasks();
+    tickRaymarchRuntime(runtimeState, baseFrame, 1, 1 / 60, renderer);
 
     const activeDescriptor = runtimeState.modalBasisCache.activeDescriptor;
     const rebuildCount = runtimeState.modalBasisCache.rebuildCount;
@@ -2849,6 +2899,7 @@ describe("tickRaymarchRuntime", () => {
 
     tickRaymarchRuntime(runtimeState, activeFrame, 1, 1 / 60, renderer);
     await flushMicrotasks();
+    tickRaymarchRuntime(runtimeState, activeFrame, 1, 1 / 60, renderer);
 
     const activeDescriptor = runtimeState.modalBasisCache.activeDescriptor;
     const activeSupportMean =
@@ -2915,6 +2966,7 @@ describe("tickRaymarchRuntime", () => {
     let resolvePendingCompute;
     const renderer = {
       compute: vi.fn(),
+      copyTextureToTexture: vi.fn(),
       computeAsync: async (node) => {
         if (node?.id !== "field") {
           return undefined;
@@ -2947,7 +2999,13 @@ describe("tickRaymarchRuntime", () => {
 
     tickRaymarchRuntime(runtimeState, activeFrame, 1, 1 / 60, renderer);
     await flushMicrotasks();
-    tickRaymarchRuntime(runtimeState, activeFrame, 1 + 1 / 60, 1 / 60, renderer);
+    tickRaymarchRuntime(
+      runtimeState,
+      activeFrame,
+      1 + 1 / 60,
+      1 / 60,
+      renderer,
+    );
 
     expect(basisComputeCalls).toBe(1);
     expect(renderer.compute).toHaveBeenCalledTimes(1);
@@ -2956,7 +3014,13 @@ describe("tickRaymarchRuntime", () => {
       runtimeState.liveFieldProjectionCache.lastComputedAtSec;
     const activeDescriptor = runtimeState.modalBasisCache.activeDescriptor;
 
-    tickRaymarchRuntime(runtimeState, pendingFrame, 1 + 2 / 60, 1 / 60, renderer);
+    tickRaymarchRuntime(
+      runtimeState,
+      pendingFrame,
+      1 + 2 / 60,
+      1 / 60,
+      renderer,
+    );
 
     expect(basisComputeCalls).toBe(2);
     expect(runtimeState.modalBasisCache.rebuildPending).toBe(true);
@@ -2976,12 +3040,180 @@ describe("tickRaymarchRuntime", () => {
     );
     expect(runtimeState.volumeMesh.visible).toBe(true);
     expect(runtimeState.debugSnapshot.modalBasisDisplayCoherent).toBe(true);
-    expect(runtimeState.debugSnapshot.modalBasisDisplayFailedClosed).toBe(false);
-    expect(runtimeState.debugSnapshot.modalBasisDisplayBlockedReason).toBeNull();
+    expect(runtimeState.debugSnapshot.modalBasisDisplayFailedClosed).toBe(
+      false,
+    );
+    expect(
+      runtimeState.debugSnapshot.modalBasisDisplayBlockedReason,
+    ).toBeNull();
     expect(runtimeState.debugSnapshot.modalBasisCacheFailedClosed).toBe(false);
 
     resolvePendingCompute();
     await flushMicrotasks();
+  });
+
+  it("does not overwrite material-facing modal packet buffers while identity rebuilds", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 0;
+    let basisComputeCalls = 0;
+    let resolvePendingCompute;
+    const renderer = {
+      compute: vi.fn(),
+      copyTextureToTexture: vi.fn(),
+      computeAsync: async (node) => {
+        if (node?.id !== "field") {
+          return undefined;
+        }
+        basisComputeCalls += 1;
+        if (basisComputeCalls === 2) {
+          return new Promise((resolve) => {
+            resolvePendingCompute = resolve;
+          });
+        }
+        return undefined;
+      },
+    };
+    const activeFrame = createActiveFeatureFrame({
+      backboneSlots: new Float32Array([3, 4, 6, 0.8]),
+      detailSlots: new Float32Array(0),
+      backboneColorSlots: new Float32Array(4),
+      detailColorSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array([0.1, 0.2, 0.8, 0.9]),
+      detailPhaseSlots: new Float32Array(0),
+    });
+    const pendingFrame = createActiveFeatureFrame({
+      backboneSlots: new Float32Array([5, 4, 6, 0.35, 6, 4, 6, 0.25]),
+      detailSlots: new Float32Array(0),
+      backboneColorSlots: new Float32Array(8),
+      detailColorSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array([
+        0.4, 0.2, 0.8, 0.9, 0.5, 0.2, 0.8, 0.9,
+      ]),
+      detailPhaseSlots: new Float32Array(0),
+    });
+
+    tickRaymarchRuntime(runtimeState, activeFrame, 1, 1 / 60, renderer);
+    await flushMicrotasks();
+    tickRaymarchRuntime(
+      runtimeState,
+      activeFrame,
+      1 + 1 / 60,
+      1 / 60,
+      renderer,
+    );
+
+    const activeSlots = Array.from(
+      runtimeState.modalFieldModeBuffer.value.array.slice(0, 8),
+    );
+    const activeCoefficients = Array.from(
+      runtimeState.modalFieldCoefficientBuffer.value.array.slice(0, 8),
+    );
+    const activeCount = runtimeState.uniforms.uModalFieldModeCount.value;
+    const activeTotalSlotAmplitude =
+      runtimeState.uniforms.uTotalSlotAmplitude.value;
+    const activeDescriptor = runtimeState.modalBasisCache.activeDescriptor;
+    const committedLiveFieldComputedAt =
+      runtimeState.liveFieldProjectionCache.lastComputedAtSec;
+    const activeBasisTexture = runtimeState.modalBasisCache.texture;
+    const activeMaterial = runtimeState.volumeMesh.material;
+    renderer.copyTextureToTexture.mockClear();
+
+    tickRaymarchRuntime(
+      runtimeState,
+      pendingFrame,
+      1 + 2 / 60,
+      1 / 60,
+      renderer,
+    );
+    const pendingDescriptor = runtimeState.currentModalBasisCacheDescriptor;
+
+    expect(basisComputeCalls).toBe(2);
+    expect(runtimeState.modalBasisCache.rebuildPending).toBe(true);
+    expect(runtimeState.modalBasisCache.activeDescriptor).toEqual(
+      activeDescriptor,
+    );
+    expect(runtimeState.debugSnapshot.modalBasisCacheDrawableState).toBe(
+      "modal-basis-cache-ready-stale",
+    );
+    expect(runtimeState.debugSnapshot.modalRenderPacketStatus).toBe(
+      "active-retained-pending",
+    );
+    expect(
+      runtimeState.debugSnapshot
+        .modalRenderPacketActiveIdentityPageAssignmentHash,
+    ).toBe(activeDescriptor.identityPageAssignmentHash);
+    expect(
+      runtimeState.debugSnapshot
+        .modalRenderPacketPendingIdentityPageAssignmentHash,
+    ).toBe(
+      runtimeState.currentModalBasisCacheDescriptor.identityPageAssignmentHash,
+    );
+    expect(runtimeState.liveFieldProjectionCache.lastComputedAtSec).toBe(
+      committedLiveFieldComputedAt,
+    );
+    expect(
+      Array.from(runtimeState.modalFieldModeBuffer.value.array.slice(0, 8)),
+    ).toEqual(activeSlots);
+    expect(
+      Array.from(
+        runtimeState.modalFieldCoefficientBuffer.value.array.slice(0, 8),
+      ),
+    ).toEqual(activeCoefficients);
+    expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(activeCount);
+    expect(runtimeState.uniforms.uTotalSlotAmplitude.value).toBe(
+      activeTotalSlotAmplitude,
+    );
+
+    resolvePendingCompute();
+    await flushMicrotasks();
+
+    expect(runtimeState.modalBasisCache.activeDescriptor).toEqual(
+      activeDescriptor,
+    );
+    expect(runtimeState.modalBasisCache.pendingDescriptor).toEqual(
+      pendingDescriptor,
+    );
+    expect(runtimeState.modalBasisCache.pendingReady).toBe(true);
+    expect(
+      runtimeState.volumeMesh.userData.raymarchModalBasisAtlasTexture,
+    ).toBe(activeBasisTexture);
+    expect(runtimeState.volumeMesh.material.modalBasisAtlasTexture).toBe(
+      activeBasisTexture,
+    );
+    expect(renderer.copyTextureToTexture).not.toHaveBeenCalled();
+
+    tickRaymarchRuntime(
+      runtimeState,
+      pendingFrame,
+      1 + 3 / 60,
+      1 / 60,
+      renderer,
+    );
+
+    expect(runtimeState.modalBasisCache.activeDescriptor).toEqual(
+      pendingDescriptor,
+    );
+    expect(runtimeState.modalBasisCache.pendingDescriptor).toBeNull();
+    expect(runtimeState.modalBasisCache.pendingReady).toBe(false);
+    expect(runtimeState.modalBasisCache.texture).toBe(activeBasisTexture);
+    expect(
+      runtimeState.volumeMesh.userData.raymarchModalBasisAtlasTexture,
+    ).toBe(activeBasisTexture);
+    expect(runtimeState.volumeMesh.material.modalBasisAtlasTexture).toBe(
+      activeBasisTexture,
+    );
+    expect(runtimeState.volumeMesh.material).toBe(activeMaterial);
+    expect(renderer.copyTextureToTexture).toHaveBeenCalledTimes(1);
+    expect(renderer.copyTextureToTexture.mock.calls[0][0]).toBe(
+      runtimeState.modalBasisCache.pendingTexture,
+    );
+    expect(renderer.copyTextureToTexture.mock.calls[0][1]).toBe(
+      activeBasisTexture,
+    );
+    expect(
+      Array.from(runtimeState.modalFieldModeBuffer.value.array.slice(0, 8)),
+    ).toEqual(Array.from(pendingFrame.modalFieldSlots.slice(0, 8)));
   });
 
   it("hides stale modal-basis identity when no committed live field is available", () => {
@@ -3394,6 +3626,429 @@ describe("tickRaymarchRuntime", () => {
     ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached);
   });
 
+  it("does not expose pending Spectral Light cache textures before runtime commit", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 0.65;
+    let spectralComputeCalls = 0;
+    let resolvePendingSpectralCompute;
+    const renderer = {
+      copyTextureToTexture: vi.fn(),
+      computeAsync: async (node) => {
+        if (node?.id !== "spectral") {
+          return undefined;
+        }
+        spectralComputeCalls += 1;
+        if (spectralComputeCalls === 2) {
+          return new Promise((resolve) => {
+            resolvePendingSpectralCompute = resolve;
+          });
+        }
+        return undefined;
+      },
+    };
+    const activeFrame = createActiveFeatureFrame({
+      backboneSlots: new Float32Array([1, 1, 1, 0.4]),
+      detailSlots: new Float32Array([2, 2, 2, 0.3]),
+      backboneColorSlots: new Float32Array([1, 0.1, 0.05, 0.8]),
+      detailColorSlots: new Float32Array([0.05, 0.6, 1, 0.7]),
+    });
+    const pendingFrame = createActiveFeatureFrame({
+      backboneSlots: new Float32Array([1, 1, 1, 0.4]),
+      detailSlots: new Float32Array([2, 2, 2, 0.3]),
+      backboneColorSlots: new Float32Array([0.2, 0.9, 0.1, 0.85]),
+      detailColorSlots: new Float32Array([0.9, 0.2, 1, 0.75]),
+    });
+
+    tickRaymarchRuntime(runtimeState, activeFrame, 1, 1 / 60, renderer);
+    await flushMicrotasks();
+    tickRaymarchRuntime(
+      runtimeState,
+      activeFrame,
+      1 + 1 / 60,
+      1 / 60,
+      renderer,
+    );
+
+    const activeDescriptor = runtimeState.spectralLightCache.activeDescriptor;
+    const activeTexture = runtimeState.spectralLightCache.texture;
+    const activeMaterial = runtimeState.volumeMesh.material;
+    expect(spectralComputeCalls).toBe(1);
+    expect(activeDescriptor).toMatchObject({ spectralLightModeCount: 2 });
+    expect(runtimeState.volumeMesh.material.spectralLightCacheTexture).toBe(
+      activeTexture,
+    );
+    expect(
+      runtimeState.volumeMesh.userData.raymarchSpectralLightEvaluationMode,
+    ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached);
+    renderer.copyTextureToTexture.mockClear();
+
+    tickRaymarchRuntime(
+      runtimeState,
+      pendingFrame,
+      1 + 2 / 60,
+      1 / 60,
+      renderer,
+    );
+    const pendingDescriptor = runtimeState.currentSpectralLightDescriptor;
+
+    expect(spectralComputeCalls).toBe(2);
+    expect(runtimeState.spectralLightCache.rebuildPending).toBe(true);
+    expect(runtimeState.spectralLightCache.activeDescriptor).toEqual(
+      activeDescriptor,
+    );
+    expect(runtimeState.volumeMesh.material.spectralLightCacheTexture).toBe(
+      activeTexture,
+    );
+    expect(renderer.copyTextureToTexture).not.toHaveBeenCalled();
+
+    resolvePendingSpectralCompute();
+    await flushMicrotasks();
+
+    expect(runtimeState.spectralLightCache.activeDescriptor).toEqual(
+      activeDescriptor,
+    );
+    expect(runtimeState.spectralLightCache.pendingDescriptor).toEqual(
+      pendingDescriptor,
+    );
+    expect(runtimeState.spectralLightCache.pendingReady).toBe(true);
+    expect(runtimeState.volumeMesh.material.spectralLightCacheTexture).toBe(
+      activeTexture,
+    );
+
+    tickRaymarchRuntime(
+      runtimeState,
+      pendingFrame,
+      1 + 3 / 60,
+      1 / 60,
+      renderer,
+    );
+
+    expect(runtimeState.spectralLightCache.activeDescriptor).toEqual(
+      pendingDescriptor,
+    );
+    expect(runtimeState.spectralLightCache.pendingDescriptor).toBeNull();
+    expect(runtimeState.spectralLightCache.pendingReady).toBe(false);
+    expect(runtimeState.spectralLightCache.texture).toBe(activeTexture);
+    expect(runtimeState.volumeMesh.material.spectralLightCacheTexture).toBe(
+      activeTexture,
+    );
+    expect(runtimeState.volumeMesh.material).toBe(activeMaterial);
+    expect(renderer.copyTextureToTexture).toHaveBeenCalledTimes(1);
+    expect(renderer.copyTextureToTexture.mock.calls[0][0]).toBe(
+      runtimeState.spectralLightCache.pendingTexture,
+    );
+    expect(renderer.copyTextureToTexture.mock.calls[0][1]).toBe(activeTexture);
+  });
+
+  it("does not commit Spectral Light ahead of a pending modal-basis topology commit", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 0.65;
+    let basisComputeCalls = 0;
+    let spectralComputeCalls = 0;
+    let resolvePendingBasisCompute;
+    const renderer = {
+      compute: vi.fn(),
+      copyTextureToTexture: vi.fn(),
+      computeAsync: async (node) => {
+        if (node?.id === "field") {
+          basisComputeCalls += 1;
+          if (basisComputeCalls === 2) {
+            return new Promise((resolve) => {
+              resolvePendingBasisCompute = resolve;
+            });
+          }
+          return undefined;
+        }
+        if (node?.id === "spectral") {
+          spectralComputeCalls += 1;
+        }
+        return undefined;
+      },
+    };
+    const activeFrame = createActiveFeatureFrame({
+      backboneSlots: new Float32Array([1, 1, 1, 0.4]),
+      detailSlots: new Float32Array([2, 2, 2, 0.3]),
+      backboneColorSlots: new Float32Array([1, 0.1, 0.05, 0.8]),
+      detailColorSlots: new Float32Array([0.05, 0.6, 1, 0.7]),
+    });
+    const pendingFrame = createActiveFeatureFrame({
+      backboneSlots: new Float32Array([3, 1, 1, 0.4]),
+      detailSlots: new Float32Array([4, 2, 2, 0.3]),
+      backboneColorSlots: new Float32Array([0.2, 0.9, 0.1, 0.85]),
+      detailColorSlots: new Float32Array([0.9, 0.2, 1, 0.75]),
+    });
+
+    tickRaymarchRuntime(runtimeState, activeFrame, 1, 1 / 60, renderer);
+    await flushMicrotasks();
+    tickRaymarchRuntime(
+      runtimeState,
+      activeFrame,
+      1 + 1 / 60,
+      1 / 60,
+      renderer,
+    );
+
+    const activeModalDescriptor = runtimeState.modalBasisCache.activeDescriptor;
+    const activeSpectralDescriptor =
+      runtimeState.spectralLightCache.activeDescriptor;
+    renderer.copyTextureToTexture.mockClear();
+
+    tickRaymarchRuntime(
+      runtimeState,
+      pendingFrame,
+      1 + 2 / 60,
+      1 / 60,
+      renderer,
+    );
+    const pendingModalDescriptor =
+      runtimeState.currentModalBasisCacheDescriptor;
+    await flushMicrotasks();
+    const pendingSpectralDescriptor =
+      runtimeState.spectralLightCache.pendingDescriptor;
+
+    expect(basisComputeCalls).toBe(2);
+    expect(spectralComputeCalls).toBe(2);
+    expect(runtimeState.modalBasisCache.rebuildPending).toBe(true);
+    expect(runtimeState.spectralLightCache.pendingReady).toBe(true);
+
+    tickRaymarchRuntime(
+      runtimeState,
+      pendingFrame,
+      1 + 3 / 60,
+      1 / 60,
+      renderer,
+    );
+
+    expect(runtimeState.modalBasisCache.activeDescriptor).toEqual(
+      activeModalDescriptor,
+    );
+    expect(runtimeState.spectralLightCache.activeDescriptor).toEqual(
+      activeSpectralDescriptor,
+    );
+    expect(runtimeState.spectralLightCache.pendingDescriptor).toEqual(
+      pendingSpectralDescriptor,
+    );
+    expect(renderer.copyTextureToTexture).not.toHaveBeenCalled();
+    expect(runtimeState.debugSnapshot.modalRenderPacketStatus).toBe(
+      "active-retained-pending",
+    );
+
+    resolvePendingBasisCompute();
+    await flushMicrotasks();
+    tickRaymarchRuntime(
+      runtimeState,
+      pendingFrame,
+      1 + 4 / 60,
+      1 / 60,
+      renderer,
+    );
+
+    expect(runtimeState.modalBasisCache.activeDescriptor).toEqual(
+      pendingModalDescriptor,
+    );
+    expect(runtimeState.spectralLightCache.activeDescriptor).toEqual(
+      pendingSpectralDescriptor,
+    );
+    expect(runtimeState.spectralLightCache.pendingReady).toBe(false);
+    expect(renderer.copyTextureToTexture).toHaveBeenCalledTimes(2);
+    expect(renderer.copyTextureToTexture.mock.calls[0][0]).toBe(
+      runtimeState.modalBasisCache.pendingTexture,
+    );
+    expect(renderer.copyTextureToTexture.mock.calls[1][0]).toBe(
+      runtimeState.spectralLightCache.pendingTexture,
+    );
+  });
+
+  it("does not promote pending modal-basis descriptors without texture-copy support", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 0;
+    const renderer = {
+      computeAsync: vi.fn(async () => undefined),
+      copyTextureToTexture: undefined,
+    };
+    const frame = createActiveFeatureFrame({
+      backboneSlots: new Float32Array([3, 4, 6, 0.8]),
+      detailSlots: new Float32Array(0),
+      backboneColorSlots: new Float32Array(4),
+      detailColorSlots: new Float32Array(0),
+    });
+
+    tickRaymarchRuntime(runtimeState, frame, 1, 1 / 60, renderer);
+    await flushMicrotasks();
+    tickRaymarchRuntime(runtimeState, frame, 1 + 1 / 60, 1 / 60, renderer);
+
+    expect(runtimeState.modalBasisCache.activeDescriptor).toBeNull();
+    expect(runtimeState.modalBasisCache.ready).toBe(false);
+    expect(runtimeState.modalBasisCache.pendingReady).toBe(true);
+    expect(runtimeState.modalBasisCache.lastError).toBe(
+      "renderer-copy-unavailable",
+    );
+    expect(runtimeState.debugSnapshot.modalBasisCacheDrawable).toBe(false);
+  });
+
+  it("does not promote pending modal-basis descriptors when cache textures alias", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 0;
+    runtimeState.modalBasisCache.pendingTexture =
+      runtimeState.modalBasisCache.texture;
+    const renderer = {
+      computeAsync: vi.fn(async () => undefined),
+      copyTextureToTexture: vi.fn(),
+    };
+    const frame = createActiveFeatureFrame({
+      backboneSlots: new Float32Array([3, 4, 6, 0.8]),
+      detailSlots: new Float32Array(0),
+      backboneColorSlots: new Float32Array(4),
+      detailColorSlots: new Float32Array(0),
+    });
+
+    tickRaymarchRuntime(runtimeState, frame, 1, 1 / 60, renderer);
+    await flushMicrotasks();
+    tickRaymarchRuntime(runtimeState, frame, 1 + 1 / 60, 1 / 60, renderer);
+
+    expect(runtimeState.modalBasisCache.activeDescriptor).toBeNull();
+    expect(runtimeState.modalBasisCache.ready).toBe(false);
+    expect(runtimeState.modalBasisCache.pendingReady).toBe(true);
+    expect(runtimeState.modalBasisCache.lastError).toBe("cache-texture-alias");
+    expect(renderer.copyTextureToTexture).not.toHaveBeenCalled();
+    expect(runtimeState.debugSnapshot.modalBasisCacheDrawable).toBe(false);
+  });
+
+  it("does not promote pending Spectral Light descriptors without texture-copy support", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 0.65;
+    const renderer = {
+      computeAsync: vi.fn(async () => undefined),
+      copyTextureToTexture: vi.fn(),
+    };
+    const activeFrame = createActiveFeatureFrame({
+      backboneSlots: new Float32Array([1, 1, 1, 0.4]),
+      detailSlots: new Float32Array([2, 2, 2, 0.3]),
+      backboneColorSlots: new Float32Array([1, 0.1, 0.05, 0.8]),
+      detailColorSlots: new Float32Array([0.05, 0.6, 1, 0.7]),
+    });
+    const colorFrame = createActiveFeatureFrame({
+      backboneSlots: new Float32Array([1, 1, 1, 0.4]),
+      detailSlots: new Float32Array([2, 2, 2, 0.3]),
+      backboneColorSlots: new Float32Array([0.2, 0.9, 0.1, 0.85]),
+      detailColorSlots: new Float32Array([0.9, 0.2, 1, 0.75]),
+    });
+
+    tickRaymarchRuntime(runtimeState, activeFrame, 1, 1 / 60, renderer);
+    await flushMicrotasks();
+    tickRaymarchRuntime(
+      runtimeState,
+      activeFrame,
+      1 + 1 / 60,
+      1 / 60,
+      renderer,
+    );
+
+    const activeSpectralDescriptor =
+      runtimeState.spectralLightCache.activeDescriptor;
+    renderer.copyTextureToTexture = undefined;
+
+    tickRaymarchRuntime(runtimeState, colorFrame, 1 + 2 / 60, 1 / 60, renderer);
+    const pendingSpectralDescriptor =
+      runtimeState.currentSpectralLightDescriptor;
+    await flushMicrotasks();
+    tickRaymarchRuntime(runtimeState, colorFrame, 1 + 3 / 60, 1 / 60, renderer);
+
+    expect(runtimeState.spectralLightCache.activeDescriptor).toEqual(
+      activeSpectralDescriptor,
+    );
+    expect(runtimeState.spectralLightCache.pendingDescriptor).toEqual(
+      pendingSpectralDescriptor,
+    );
+    expect(runtimeState.spectralLightCache.pendingReady).toBe(true);
+    expect(runtimeState.spectralLightCache.lastError).toBe(
+      "renderer-copy-unavailable",
+    );
+  });
+
+  it("keeps cache resources bounded across repeated modal and Spectral commits", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 0.65;
+    const renderer = {
+      compute: vi.fn(),
+      computeAsync: vi.fn(async () => undefined),
+      copyTextureToTexture: vi.fn(),
+    };
+    const materialCacheSize = () =>
+      Object.values(
+        runtimeState.volumeMesh.userData.raymarchMaterialCache,
+      ).flatMap((boundaryMaterials) => Object.keys(boundaryMaterials)).length;
+    const makeFrame = (index) =>
+      createActiveFeatureFrame({
+        backboneSlots: new Float32Array([1 + (index % 6), 1, 1, 0.45]),
+        detailSlots: new Float32Array([2 + (index % 5), 2, 2, 0.35]),
+        backboneColorSlots: new Float32Array([(index % 5) / 5, 0.2, 0.8, 0.8]),
+        detailColorSlots: new Float32Array([0.1, (index % 7) / 7, 0.9, 0.7]),
+      });
+
+    tickRaymarchRuntime(runtimeState, makeFrame(0), 1, 1 / 60, renderer);
+    await flushMicrotasks();
+    tickRaymarchRuntime(
+      runtimeState,
+      makeFrame(0),
+      1 + 1 / 60,
+      1 / 60,
+      renderer,
+    );
+
+    const activeModalTexture = runtimeState.modalBasisCache.texture;
+    const activeSpectralTexture = runtimeState.spectralLightCache.texture;
+    const activeMaterial = runtimeState.volumeMesh.material;
+    const initialMaterialCacheSize = materialCacheSize();
+    const initialModalComputeNodeCount = Object.keys(
+      runtimeState.modalBasisCache.computeNodesByKey,
+    ).length;
+    const initialSpectralComputeNodeCount = Object.keys(
+      runtimeState.spectralLightCache.computeNodesByKey,
+    ).length;
+    renderer.copyTextureToTexture.mockClear();
+
+    for (let index = 1; index <= 100; index += 1) {
+      const frame = makeFrame(index);
+      const time = 1 + index;
+      tickRaymarchRuntime(runtimeState, frame, time, 1 / 60, renderer);
+      await flushMicrotasks();
+      tickRaymarchRuntime(runtimeState, frame, time + 1 / 60, 1 / 60, renderer);
+
+      expect(runtimeState.modalBasisCache.texture).toBe(activeModalTexture);
+      expect(runtimeState.spectralLightCache.texture).toBe(
+        activeSpectralTexture,
+      );
+      expect(runtimeState.volumeMesh.material).toBe(activeMaterial);
+      expect(materialCacheSize()).toBe(initialMaterialCacheSize);
+      expect(
+        Object.keys(runtimeState.modalBasisCache.computeNodesByKey),
+      ).toHaveLength(initialModalComputeNodeCount);
+      expect(
+        Object.keys(runtimeState.spectralLightCache.computeNodesByKey),
+      ).toHaveLength(initialSpectralComputeNodeCount);
+    }
+
+    expect(renderer.copyTextureToTexture).toHaveBeenCalledTimes(200);
+    renderer.copyTextureToTexture.mock.calls.forEach(
+      ([source, destination]) => {
+        expect([
+          runtimeState.modalBasisCache.pendingTexture,
+          runtimeState.spectralLightCache.pendingTexture,
+        ]).toContain(source);
+        expect([activeModalTexture, activeSpectralTexture]).toContain(
+          destination,
+        );
+      },
+    );
+  });
+
   it("builds the governor inline from the published integrator budget", () => {
     const runtimeState = createRuntimeState();
     const featureFrame = {
@@ -3483,6 +4138,56 @@ describe("tickRaymarchRuntime", () => {
     ).toBe(false);
     expect(runtimeState.backboneColorBuffer.value.needsUpdate).toBe(false);
     expect(runtimeState.detailColorBuffer.value.needsUpdate).toBe(false);
+  });
+
+  it("activates Spectral Light after selecting Spectral color mode", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 0;
+    const renderer = {
+      computeAsync: vi.fn(async () => undefined),
+    };
+    const frame = createActiveFeatureFrame({
+      backboneColorSlots: new Float32Array([1, 0.1, 0.1, 0.9]),
+      detailColorSlots: new Float32Array([0.2, 0.5, 1, 0.5]),
+    });
+
+    tickRaymarchRuntime(runtimeState, frame, 1, 1 / 60, renderer);
+
+    expect(runtimeState.currentSpectralLightDescriptor).toBeNull();
+    expect(runtimeState.spectralLightCache.activeDescriptor).toBeNull();
+    expect(
+      runtimeState.volumeMesh.userData.raymarchSpectralLightEvaluationMode,
+    ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off);
+    expect(
+      runtimeState.volumeMesh.material.spectralLightCacheTexture,
+    ).toBeNull();
+
+    runtimeState.uniforms.uSpectralMix.value = 0.85;
+    tickRaymarchRuntime(runtimeState, frame, 1 + 1 / 60, 1 / 60, renderer);
+
+    expect(renderer.computeAsync).toHaveBeenCalled();
+    expect(runtimeState.spectralLightCache.pendingReady).toBe(false);
+    expect(
+      runtimeState.volumeMesh.userData.raymarchSpectralLightEvaluationMode,
+    ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off);
+
+    await flushMicrotasks();
+    tickRaymarchRuntime(runtimeState, frame, 1 + 2 / 60, 1 / 60, renderer);
+
+    expect(runtimeState.spectralLightCache.ready).toBe(true);
+    expect(runtimeState.spectralLightCache.activeDescriptor).toEqual(
+      runtimeState.currentSpectralLightDescriptor,
+    );
+    expect(
+      runtimeState.volumeMesh.userData.raymarchSpectralLightEvaluationMode,
+    ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached);
+    expect(runtimeState.volumeMesh.material.spectralLightEvaluationMode).toBe(
+      RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
+    );
+    expect(runtimeState.volumeMesh.material.spectralLightCacheTexture).toBe(
+      runtimeState.spectralLightCache.texture,
+    );
   });
 
   it("cancels pending and queued Spectral Light rebuilds when color turns static", async () => {
@@ -3664,11 +4369,13 @@ describe("tickRaymarchRuntime", () => {
     await Promise.resolve();
     expect(computeCalls).toBe(1);
     resolveFirst();
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushMicrotasks(5);
+
+    expect(runtimeState.modalBasisCache.pendingReady).toBe(true);
+    expect(runtimeState.modalBasisCache.queuedDescriptor).toEqual(
+      newestDescriptor,
+    );
+    tickRaymarchRuntime(runtimeState, makeFrame(7, 0.65), 5, 1 / 60, renderer);
 
     expect(runtimeState.modalBasisCache.pendingDescriptor).toEqual(
       newestDescriptor,
@@ -3676,6 +4383,8 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.modalBasisCache.queuedDescriptor).toBeNull();
     expect(runtimeState.modalBasisCache.rebuildPending).toBe(true);
     expect(computeCalls).toBe(2);
+    resolveFirst();
+    await flushMicrotasks(5);
   });
 
   it("streams coefficient redistribution without queueing modal-basis rebuilds", async () => {
@@ -3750,6 +4459,13 @@ describe("tickRaymarchRuntime", () => {
     expect(computeCalls).toBe(1);
     resolveFirst();
     await flushMicrotasks(5);
+    tickRaymarchRuntime(
+      runtimeState,
+      makeFrame(0.65, 0.5, 0.4),
+      5,
+      1 / 60,
+      renderer,
+    );
 
     expect(
       runtimeState.modalBasisCache.activeDescriptor
@@ -3783,6 +4499,7 @@ describe("tickRaymarchRuntime", () => {
 
     tickRaymarchRuntime(runtimeState, makeFrame(0.2), 1, 1 / 60, renderer);
     await flushMicrotasks();
+    tickRaymarchRuntime(runtimeState, makeFrame(0.2), 1, 1 / 60, renderer);
     expect(computeCalls).toBe(1);
     const activeDescriptor = runtimeState.modalBasisCache.activeDescriptor;
     const initialProjectionDrive =
@@ -3971,7 +4688,12 @@ describe("tickRaymarchRuntime", () => {
       Array.from(
         runtimeState.modalFieldPhaseBuffer.value.array.slice(0, 8),
       ).some((value) => Math.abs(value - 2.8) < 1e-6),
-    ).toBe(true);
+    ).toBe(false);
+    expect(runtimeState.modalRenderPacketRetained).toMatchObject({
+      pendingIdentityPageAssignmentHash:
+        runtimeState.currentModalBasisCacheDescriptor
+          .identityPageAssignmentHash,
+    });
 
     resolveSecond();
     await flushMicrotasks(5);
@@ -3999,6 +4721,11 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.debugSnapshot.modalBasisCacheDrawableState).toBe(
       "modal-basis-cache-ready-current",
     );
+    expect(
+      Array.from(
+        runtimeState.modalFieldPhaseBuffer.value.array.slice(0, 8),
+      ).some((value) => Math.abs(value - 2.8) < 1e-6),
+    ).toBe(true);
   });
 
   it("keeps low-amplitude bass rendering on the cached product path", async () => {

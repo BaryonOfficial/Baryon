@@ -19,7 +19,6 @@
     "./controls/persistence": "./src/controls/persistence.js",
     "./controls/runtime": "./src/controls/runtime.js",
     "./controls/schema": "./src/controls/schema.js",
-    "./controls/visualPresets": "./src/controls/visualPresets.js",
     "./core/renderAuthorityContract": "./src/core/renderAuthorityContract.js",
     "./core/raymarch/fieldCache": "./src/core/raymarch/fieldCache.js",
     "./core/raymarch/performanceGovernor": "./src/core/raymarch/performanceGovernor.js",

@@ -366,7 +366,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
         "How strongly Spectral Light colors tint the volume when Color Mode is set to Spectral",
       defaultValue: RENDER_DEFAULTS.spectralMix,
       methods: ALL_METHODS,
-      binding: { min: 0, max: 1, step: 0.01 },
+      binding: { min: 0.01, max: 1, step: 0.01 },
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.uniforms.uSpectralMix.value",

@@ -1378,6 +1378,11 @@ export function createRaymarchModalBasisCache({
     normalizedResolution,
     basisAtlasDepth,
   );
+  const pendingTexture = createCacheTexture(
+    normalizedResolution,
+    normalizedResolution,
+    basisAtlasDepth,
+  );
   return {
     ...createCacheState({
       resolution: normalizedResolution,
@@ -1386,6 +1391,7 @@ export function createRaymarchModalBasisCache({
       mode: "modal-basis-cached",
     }),
     semantic: "modal-basis-cache",
+    pendingTexture,
     basisCapacity: normalizedBasisCapacity,
     basisTextureResolution: normalizedResolution,
     basisAtlasDepth,
@@ -1449,16 +1455,27 @@ export function createRaymarchSpectralLightCache({
 } = {}) {
   const normalizedResolution = Math.max(8, Math.round(resolution));
   const texture = createCacheTexture(normalizedResolution);
+  const pendingTexture = createCacheTexture(normalizedResolution);
 
-  return createCacheState({
-    resolution: normalizedResolution,
-    texture,
-    mode: "off",
-  });
+  return {
+    ...createCacheState({
+      resolution: normalizedResolution,
+      texture,
+      mode: "off",
+    }),
+    semantic: "spectral-light-cache",
+    pendingTexture,
+  };
 }
 
 export function disposeRaymarchFieldCache(fieldCache) {
   fieldCache?.texture?.dispose?.();
+  if (
+    fieldCache?.pendingTexture &&
+    fieldCache.pendingTexture !== fieldCache.texture
+  ) {
+    fieldCache.pendingTexture.dispose?.();
+  }
   if (fieldCache?.computeNodesByKey) {
     Object.values(fieldCache.computeNodesByKey).forEach((node) => {
       node?.dispose?.();
@@ -1525,6 +1542,9 @@ function createCacheState({ resolution, depth = resolution, texture, mode }) {
     queuedRebuildReason: null,
     queuedRequest: null,
     pendingDescriptor: null,
+    pendingReady: false,
+    pendingCacheBuiltAtSec: null,
+    pendingRebuildReason: null,
     activeCacheBuiltAtSec: null,
     mode,
     computeNodesByKey: Object.create(null),
@@ -1704,6 +1724,15 @@ export function resolveRaymarchModalBasisCacheDrawableAuthority(
     });
   }
 
+  if (hasDrawableActiveDescriptor && modalBasisCache.pendingReady) {
+    return makeModalBasisCacheDrawableAuthority({
+      drawable: true,
+      state: RAYMARCH_MODAL_BASIS_CACHE_DRAWABLE_STATES.readyStale,
+      staleReason:
+        modalBasisCache.pendingRebuildReason ?? staleReason ?? "pending-ready",
+    });
+  }
+
   if (hasDrawableActiveDescriptor && modalBasisCache.queuedDescriptor) {
     return makeModalBasisCacheDrawableAuthority({
       drawable: true,
@@ -1719,6 +1748,13 @@ export function resolveRaymarchModalBasisCacheDrawableAuthority(
     return makeModalBasisCacheDrawableAuthority({
       state: RAYMARCH_MODAL_BASIS_CACHE_DRAWABLE_STATES.building,
       blockedReason: "cache-rebuild-pending",
+    });
+  }
+
+  if (modalBasisCache.pendingReady) {
+    return makeModalBasisCacheDrawableAuthority({
+      state: RAYMARCH_MODAL_BASIS_CACHE_DRAWABLE_STATES.building,
+      blockedReason: "pending-cache-awaiting-runtime-commit",
     });
   }
 
@@ -1778,6 +1814,9 @@ function markCacheBackendUnavailable(
   cache.ready = false;
   cache.rebuildPending = false;
   cache.pendingDescriptor = null;
+  cache.pendingReady = false;
+  cache.pendingCacheBuiltAtSec = null;
+  cache.pendingRebuildReason = null;
   cache.pendingPhaseSampleTimeSec = null;
   cache.activePhaseSampleTimeSec = null;
   cache.activeCacheBuiltAtSec = null;
@@ -1813,6 +1852,7 @@ function beginCacheRebuild(cache, descriptor, schedulerTimeSec = null) {
   // Keep the prior basis atlas drawable while a new coefficient-invariant rebuild runs.
   cache.ready = Boolean(cache.activeDescriptor);
   cache.rebuildPending = true;
+  cache.pendingReady = false;
   cache.pendingDescriptor = descriptor;
   cache.lastError = null;
   if (Number.isFinite(schedulerTimeSec)) {
@@ -2567,7 +2607,9 @@ function createSpectralLightComputeKernel({
   boundaryMode,
   cavityGeometry,
 }) {
-  const { resolution, texture } = spectralLightCache;
+  const { resolution } = spectralLightCache;
+  const texture =
+    spectralLightCache.pendingTexture ?? spectralLightCache.texture;
   const uRadius = uniforms.uRadius;
   const modalFieldActiveCount = int(uniforms.uModalFieldModeCount);
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
@@ -2664,7 +2706,8 @@ function createModalBasisCacheComputeKernel({
   boundaryMode,
   cavityGeometry,
 }) {
-  const { resolution, texture } = modalBasisCache;
+  const { resolution } = modalBasisCache;
+  const texture = modalBasisCache.pendingTexture ?? modalBasisCache.texture;
   const uRadius = uniforms.uRadius;
   const modalFieldActiveCount = int(uniforms.uModalFieldModeCount);
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
@@ -2958,6 +3001,8 @@ function getOrCreateRaymarchSpectralLightCacheComputeNode(
     cavityGeometry: normalizedCavityGeometry,
     modalFieldCapacity: normalizedModalFieldCapacity,
   });
+  const targetTexture =
+    spectralLightCache.pendingTexture ?? spectralLightCache.texture;
   const computeInputs = getOrUpdateRaymarchCacheComputeInputs(
     spectralLightCache,
     nodeKey,
@@ -2971,7 +3016,16 @@ function getOrCreateRaymarchSpectralLightCacheComputeNode(
   );
   const cachedNode = spectralLightCache.computeNodesByKey?.[nodeKey];
   if (cachedNode) {
-    return cachedNode;
+    const cachedTargetTexture =
+      /** @type {{ raymarchSpectralLightTargetTexture?: unknown }} */ (
+        cachedNode
+      ).raymarchSpectralLightTargetTexture;
+    if (cachedTargetTexture && cachedTargetTexture !== targetTexture) {
+      cachedNode.dispose?.();
+      delete spectralLightCache.computeNodesByKey[nodeKey];
+    } else {
+      return cachedNode;
+    }
   }
 
   const computeNode = createSpectralLightComputeKernel({
@@ -2983,6 +3037,11 @@ function getOrCreateRaymarchSpectralLightCacheComputeNode(
     boundaryMode: normalizedBoundaryMode,
     cavityGeometry: normalizedCavityGeometry,
   });
+  if (computeNode && typeof computeNode === "object") {
+    /** @type {{ raymarchSpectralLightTargetTexture?: unknown }} */ (
+      computeNode
+    ).raymarchSpectralLightTargetTexture = targetTexture;
+  }
   spectralLightCache.computeNodesByKey[nodeKey] = computeNode;
   return computeNode;
 }
@@ -3011,6 +3070,8 @@ function getOrCreateRaymarchModalBasisCacheComputeNode(
     cavityGeometry: normalizedCavityGeometry,
     modalFieldCapacity: normalizedModalFieldCapacity,
   });
+  const targetTexture =
+    modalBasisCache.pendingTexture ?? modalBasisCache.texture;
   const computeInputs = getOrUpdateRaymarchCacheComputeInputs(
     modalBasisCache,
     nodeKey,
@@ -3022,7 +3083,15 @@ function getOrCreateRaymarchModalBasisCacheComputeNode(
   );
   const cachedNode = modalBasisCache.computeNodesByKey?.[nodeKey];
   if (cachedNode) {
-    return cachedNode;
+    const cachedTargetTexture =
+      /** @type {{ raymarchModalBasisTargetTexture?: unknown }} */ (cachedNode)
+        .raymarchModalBasisTargetTexture;
+    if (cachedTargetTexture && cachedTargetTexture !== targetTexture) {
+      cachedNode.dispose?.();
+      delete modalBasisCache.computeNodesByKey[nodeKey];
+    } else {
+      return cachedNode;
+    }
   }
 
   const computeNode = createModalBasisCacheComputeKernel({
@@ -3033,6 +3102,11 @@ function getOrCreateRaymarchModalBasisCacheComputeNode(
     boundaryMode: normalizedBoundaryMode,
     cavityGeometry: normalizedCavityGeometry,
   });
+  if (computeNode && typeof computeNode === "object") {
+    /** @type {{ raymarchModalBasisTargetTexture?: unknown }} */ (
+      computeNode
+    ).raymarchModalBasisTargetTexture = targetTexture;
+  }
   modalBasisCache.computeNodesByKey[nodeKey] = computeNode;
   return computeNode;
 }
@@ -3170,6 +3244,83 @@ function dispatchQueuedRaymarchSpectralLightCacheRebuild(spectralLightCache) {
   );
 }
 
+function applyCommittedSpectralLightDescriptor(spectralLightCache, descriptor) {
+  spectralLightCache.activeDescriptor = descriptor;
+  spectralLightCache.ready = true;
+  spectralLightCache.rebuildPending = false;
+  spectralLightCache.activeCacheBuiltAtSec =
+    spectralLightCache.pendingCacheBuiltAtSec;
+  spectralLightCache.pendingCacheBuiltAtSec = null;
+  spectralLightCache.pendingDescriptor = null;
+  spectralLightCache.pendingReady = false;
+  spectralLightCache.lastError = null;
+  spectralLightCache.backend = "compute";
+  spectralLightCache.rebuildCount += 1;
+  spectralLightCache.lastRebuildReason =
+    spectralLightCache.pendingRebuildReason ??
+    spectralLightCache.lastRebuildReason;
+  spectralLightCache.pendingRebuildReason = null;
+}
+
+export function isRaymarchSpectralLightCachePendingReadyForDescriptor(
+  spectralLightCache,
+  descriptor,
+) {
+  return Boolean(
+    spectralLightCache?.pendingReady === true &&
+    spectralLightDescriptorsEqual(
+      spectralLightCache.pendingDescriptor,
+      descriptor,
+    ),
+  );
+}
+
+export function commitRaymarchSpectralLightCachePendingDescriptor(
+  spectralLightCache,
+) {
+  if (
+    !spectralLightCache?.pendingReady ||
+    !spectralLightCache.pendingDescriptor ||
+    !spectralLightCache.pendingTexture
+  ) {
+    return { committed: false, reason: "pending-unavailable" };
+  }
+
+  const descriptor = spectralLightCache.pendingDescriptor;
+  applyCommittedSpectralLightDescriptor(spectralLightCache, descriptor);
+  dispatchQueuedRaymarchSpectralLightCacheRebuild(spectralLightCache);
+  return {
+    committed: true,
+    descriptor,
+    texture: spectralLightCache.texture,
+  };
+}
+
+export function discardRaymarchSpectralLightCachePendingDescriptor(
+  spectralLightCache,
+) {
+  if (
+    !spectralLightCache?.pendingReady ||
+    !spectralLightCache.pendingDescriptor
+  ) {
+    return { discarded: false, reason: "pending-unavailable" };
+  }
+
+  const descriptor = spectralLightCache.pendingDescriptor;
+  spectralLightCache.ready = Boolean(spectralLightCache.activeDescriptor);
+  spectralLightCache.rebuildPending = false;
+  spectralLightCache.pendingDescriptor = null;
+  spectralLightCache.pendingReady = false;
+  spectralLightCache.pendingCacheBuiltAtSec = null;
+  spectralLightCache.pendingRebuildReason = null;
+  spectralLightCache.lastRebuildReason = "pending-discarded";
+  dispatchQueuedRaymarchSpectralLightCacheRebuild(spectralLightCache);
+  return {
+    discarded: true,
+    descriptor,
+  };
+}
+
 function dispatchQueuedRaymarchModalBasisCacheRebuild(modalBasisCache) {
   const queued = takeQueuedCacheRebuild(modalBasisCache);
   if (
@@ -3192,6 +3343,115 @@ function dispatchQueuedRaymarchModalBasisCacheRebuild(modalBasisCache) {
   );
 }
 
+function applyCommittedModalBasisDescriptor(modalBasisCache, descriptor) {
+  modalBasisCache.activeDescriptor = descriptor;
+  modalBasisCache.ready = true;
+  modalBasisCache.rebuildPending = false;
+  modalBasisCache.activePhaseSampleTimeSec =
+    modalBasisCache.pendingPhaseSampleTimeSec;
+  modalBasisCache.activeCacheBuiltAtSec =
+    modalBasisCache.pendingCacheBuiltAtSec ??
+    modalBasisCache.pendingPhaseSampleTimeSec;
+  modalBasisCache.pendingPhaseSampleTimeSec = null;
+  modalBasisCache.pendingCacheBuiltAtSec = null;
+  modalBasisCache.pendingDescriptor = null;
+  modalBasisCache.pendingReady = false;
+  modalBasisCache.lastError = null;
+  modalBasisCache.backend = "compute";
+  modalBasisCache.rebuildCount += 1;
+  modalBasisCache.lastRebuildReason =
+    modalBasisCache.pendingRebuildReason ?? modalBasisCache.lastRebuildReason;
+  modalBasisCache.pendingRebuildReason = null;
+  modalBasisCache.activeBasisPageModeCount =
+    descriptor.contributingBasisPageModeCount ?? 0;
+  modalBasisCache.modalBasisCachePhaseAuthority =
+    descriptor.phaseAuthority ?? 0;
+  modalBasisCache.modeIdentityRetentionRatio =
+    descriptor.modeIdentityRetentionRatio ?? 1;
+  modalBasisCache.modalBasisCacheMaxRepresentableModeIndex =
+    descriptor.modalBasisCacheMaxRepresentableModeIndex ??
+    getModalBasisCacheMaxRepresentableModeIndex(modalBasisCache.resolution);
+  modalBasisCache.contributingBasisPageModeCount =
+    descriptor.contributingBasisPageModeCount ?? 0;
+  modalBasisCache.zeroAmplitudeSkippedModeCount =
+    descriptor.zeroAmplitudeSkippedModeCount ?? 0;
+  modalBasisCache.contributingRawModalEnergy =
+    descriptor.contributingRawModalEnergy ?? 0;
+  modalBasisCache.bandwidthRejectedModeCount =
+    descriptor.bandwidthRejectedModeCount ?? 0;
+  modalBasisCache.bandwidthRejectedRawModalEnergy =
+    descriptor.bandwidthRejectedRawModalEnergy ?? 0;
+  modalBasisCache.contributingStructuralModalEnergy =
+    descriptor.contributingStructuralModalEnergy ?? 0;
+  modalBasisCache.bandwidthRejectedStructuralModalEnergy =
+    descriptor.bandwidthRejectedStructuralModalEnergy ?? 0;
+  modalBasisCache.liveSynthesisResolvedRawModalEnergyRatio =
+    descriptor.liveSynthesisResolvedRawModalEnergyRatio ?? 1;
+  modalBasisCache.liveSynthesisResolvedStructuralModalEnergyRatio =
+    descriptor.liveSynthesisResolvedStructuralModalEnergyRatio ?? 1;
+  modalBasisCache.liveSynthesisRawGradientEnvelope =
+    descriptor.liveSynthesisRawGradientEnvelope ?? 0;
+  modalBasisCache.liveSynthesisStructuralGradientEnvelope =
+    descriptor.liveSynthesisStructuralGradientEnvelope ?? 0;
+}
+
+export function isRaymarchModalBasisCachePendingReadyForDescriptor(
+  modalBasisCache,
+  descriptor,
+) {
+  return Boolean(
+    modalBasisCache?.pendingReady === true &&
+    modalBasisCacheDescriptorsEqual(
+      modalBasisCache.pendingDescriptor,
+      descriptor,
+    ),
+  );
+}
+
+export function commitRaymarchModalBasisCachePendingDescriptor(
+  modalBasisCache,
+) {
+  if (
+    !modalBasisCache?.pendingReady ||
+    !modalBasisCache.pendingDescriptor ||
+    !modalBasisCache.pendingTexture
+  ) {
+    return { committed: false, reason: "pending-unavailable" };
+  }
+
+  const descriptor = modalBasisCache.pendingDescriptor;
+  applyCommittedModalBasisDescriptor(modalBasisCache, descriptor);
+  dispatchQueuedRaymarchModalBasisCacheRebuild(modalBasisCache);
+  return {
+    committed: true,
+    descriptor,
+    texture: modalBasisCache.texture,
+  };
+}
+
+export function discardRaymarchModalBasisCachePendingDescriptor(
+  modalBasisCache,
+) {
+  if (!modalBasisCache?.pendingReady || !modalBasisCache.pendingDescriptor) {
+    return { discarded: false, reason: "pending-unavailable" };
+  }
+
+  const descriptor = modalBasisCache.pendingDescriptor;
+  modalBasisCache.ready = Boolean(modalBasisCache.activeDescriptor);
+  modalBasisCache.rebuildPending = false;
+  modalBasisCache.pendingDescriptor = null;
+  modalBasisCache.pendingReady = false;
+  modalBasisCache.pendingPhaseSampleTimeSec = null;
+  modalBasisCache.pendingCacheBuiltAtSec = null;
+  modalBasisCache.pendingRebuildReason = null;
+  modalBasisCache.lastRebuildReason = "pending-discarded";
+  dispatchQueuedRaymarchModalBasisCacheRebuild(modalBasisCache);
+  return {
+    discarded: true,
+    descriptor,
+  };
+}
+
 export function enqueueRaymarchSpectralLightCacheRebuild(
   spectralLightCache,
   renderer,
@@ -3211,6 +3471,21 @@ export function enqueueRaymarchSpectralLightCacheRebuild(
 
   if (spectralLightCache.backend === "unavailable") {
     return { enqueued: false, reason: "unavailable" };
+  }
+
+  if (spectralLightCache.pendingReady) {
+    return queueLatestCacheRebuild(
+      spectralLightCache,
+      descriptor,
+      rebuildReason,
+      {
+        renderer,
+        options: snapshotRaymarchCacheRebuildOptions(options, {
+          includeColor: true,
+        }),
+      },
+      spectralLightDescriptorsEqual,
+    );
   }
 
   if (spectralLightCache.rebuildPending) {
@@ -3248,6 +3523,7 @@ export function enqueueRaymarchSpectralLightCacheRebuild(
   }
 
   const rebuildGeneration = beginCacheRebuild(spectralLightCache, descriptor);
+  const pendingCacheBuiltAtSec = getCacheSchedulerTimeSec(options);
   const submission = submitRaymarchCacheCompute(renderer, computeNode).then(
     () => {
       if (
@@ -3255,15 +3531,13 @@ export function enqueueRaymarchSpectralLightCacheRebuild(
       ) {
         return;
       }
-      spectralLightCache.activeDescriptor = descriptor;
-      spectralLightCache.ready = true;
       spectralLightCache.rebuildPending = false;
-      spectralLightCache.pendingDescriptor = null;
+      spectralLightCache.pendingReady = true;
+      spectralLightCache.pendingCacheBuiltAtSec = pendingCacheBuiltAtSec;
+      spectralLightCache.pendingRebuildReason = rebuildReason;
       spectralLightCache.lastError = null;
       spectralLightCache.backend = "compute";
-      spectralLightCache.rebuildCount += 1;
-      spectralLightCache.lastRebuildReason = rebuildReason;
-      dispatchQueuedRaymarchSpectralLightCacheRebuild(spectralLightCache);
+      spectralLightCache.lastRebuildReason = "pending-ready";
     },
     (error) => {
       if (
@@ -3307,6 +3581,22 @@ export function enqueueRaymarchModalBasisCacheRebuild(
   const basisCapacity = normalizeBasisCapacity(
     descriptor?.basisCapacity ?? modalBasisCache.basisCapacity,
   );
+
+  if (modalBasisCache.pendingReady) {
+    return queueLatestCacheRebuild(
+      modalBasisCache,
+      descriptor,
+      rebuildReason,
+      {
+        renderer,
+        options: snapshotRaymarchCacheRebuildOptions({
+          ...options,
+          modalFieldCapacity: basisCapacity,
+        }),
+      },
+      modalBasisCacheDescriptorsEqual,
+    );
+  }
 
   if (modalBasisCache.rebuildPending) {
     return queueLatestCacheRebuild(
@@ -3355,51 +3645,15 @@ export function enqueueRaymarchModalBasisCacheRebuild(
       ) {
         return;
       }
-      modalBasisCache.activeDescriptor = descriptor;
-      modalBasisCache.ready = true;
+      modalBasisCache.ready = Boolean(modalBasisCache.activeDescriptor);
       modalBasisCache.rebuildPending = false;
-      modalBasisCache.activePhaseSampleTimeSec =
+      modalBasisCache.pendingReady = true;
+      modalBasisCache.pendingCacheBuiltAtSec =
         modalBasisCache.pendingPhaseSampleTimeSec;
-      modalBasisCache.activeCacheBuiltAtSec =
-        modalBasisCache.pendingPhaseSampleTimeSec;
-      modalBasisCache.pendingPhaseSampleTimeSec = null;
-      modalBasisCache.pendingDescriptor = null;
+      modalBasisCache.pendingRebuildReason = rebuildReason;
       modalBasisCache.lastError = null;
       modalBasisCache.backend = "compute";
-      modalBasisCache.rebuildCount += 1;
-      modalBasisCache.lastRebuildReason = rebuildReason;
-      modalBasisCache.activeBasisPageModeCount =
-        descriptor.contributingBasisPageModeCount ?? 0;
-      modalBasisCache.modalBasisCachePhaseAuthority =
-        descriptor.phaseAuthority ?? 0;
-      modalBasisCache.modeIdentityRetentionRatio =
-        descriptor.modeIdentityRetentionRatio ?? 1;
-      modalBasisCache.modalBasisCacheMaxRepresentableModeIndex =
-        descriptor.modalBasisCacheMaxRepresentableModeIndex ??
-        getModalBasisCacheMaxRepresentableModeIndex(modalBasisCache.resolution);
-      modalBasisCache.contributingBasisPageModeCount =
-        descriptor.contributingBasisPageModeCount ?? 0;
-      modalBasisCache.zeroAmplitudeSkippedModeCount =
-        descriptor.zeroAmplitudeSkippedModeCount ?? 0;
-      modalBasisCache.contributingRawModalEnergy =
-        descriptor.contributingRawModalEnergy ?? 0;
-      modalBasisCache.bandwidthRejectedModeCount =
-        descriptor.bandwidthRejectedModeCount ?? 0;
-      modalBasisCache.bandwidthRejectedRawModalEnergy =
-        descriptor.bandwidthRejectedRawModalEnergy ?? 0;
-      modalBasisCache.contributingStructuralModalEnergy =
-        descriptor.contributingStructuralModalEnergy ?? 0;
-      modalBasisCache.bandwidthRejectedStructuralModalEnergy =
-        descriptor.bandwidthRejectedStructuralModalEnergy ?? 0;
-      modalBasisCache.liveSynthesisResolvedRawModalEnergyRatio =
-        descriptor.liveSynthesisResolvedRawModalEnergyRatio ?? 1;
-      modalBasisCache.liveSynthesisResolvedStructuralModalEnergyRatio =
-        descriptor.liveSynthesisResolvedStructuralModalEnergyRatio ?? 1;
-      modalBasisCache.liveSynthesisRawGradientEnvelope =
-        descriptor.liveSynthesisRawGradientEnvelope ?? 0;
-      modalBasisCache.liveSynthesisStructuralGradientEnvelope =
-        descriptor.liveSynthesisStructuralGradientEnvelope ?? 0;
-      dispatchQueuedRaymarchModalBasisCacheRebuild(modalBasisCache);
+      modalBasisCache.lastRebuildReason = "pending-ready";
     },
     (error) => {
       if (
@@ -3434,6 +3688,17 @@ export function shouldRebuildRaymarchModalBasisCache(
     resolveRaymarchModalBasisCacheDescriptorBlockedReason(descriptor);
   if (blockedReason) {
     return { needsRebuild: false, reason: blockedReason };
+  }
+
+  if (modalBasisCache.pendingReady) {
+    const pendingReadyReason = resolveModalBasisCacheRebuildReason(
+      modalBasisCache.pendingDescriptor,
+      descriptor,
+    );
+    return {
+      needsRebuild: Boolean(pendingReadyReason),
+      reason: pendingReadyReason ?? "pending-ready",
+    };
   }
 
   if (modalBasisCache.rebuildPending) {
@@ -3481,6 +3746,17 @@ export function shouldRebuildRaymarchSpectralLightCache(
 ) {
   if (!spectralLightCache) {
     return { needsRebuild: false, reason: "unavailable" };
+  }
+
+  if (spectralLightCache.pendingReady) {
+    const pendingReadyReason = resolveSpectralLightRebuildReason(
+      spectralLightCache.pendingDescriptor,
+      descriptor,
+    );
+    return {
+      needsRebuild: Boolean(pendingReadyReason),
+      reason: pendingReadyReason ?? "pending-ready",
+    };
   }
 
   if (spectralLightCache.rebuildPending) {

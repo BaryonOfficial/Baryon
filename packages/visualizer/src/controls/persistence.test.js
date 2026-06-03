@@ -173,6 +173,16 @@ describe("deserializeControls", () => {
     expect(result).not.toHaveProperty("chromesthesiaMix");
   });
 
+  it("activates Spectral Light with the default mix when stored mix is zero", () => {
+    const result = deserializeControls(
+      { colorMode: "spectral", spectralMix: 0 },
+      CONTROL_DEFINITIONS,
+    );
+
+    expect(result.colorMode).toBe("spectral");
+    expect(result.spectralMix).toBe(0.96);
+  });
+
   it("falls back to default when the stored type does not match", () => {
     const bloomDef = CONTROL_DEFINITIONS.find((d) => d.key === "bloomStrength");
     // bloomStrength default is a number — pass a string instead

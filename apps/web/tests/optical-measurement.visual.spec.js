@@ -4,9 +4,27 @@ import { writeFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import sharp from "sharp";
 
-const BARYON_4_PRESET = "baryon-4";
 const ACTIVE_LUMINANCE_THRESHOLD = 0.004;
 const ACTIVE_GRADIENT_HOTSPOT_THRESHOLD = 0.12;
+const OPTICAL_MEASUREMENT_CONTROLS = Object.freeze({
+  raymarchSteps: 104,
+  zeroPointPrecision: 0.018,
+  densityGain: 3.08,
+  absorption: 3.62,
+  opacityGain: 2.7,
+  rimBloomBias: 0.26,
+  rimCompression: 1.02,
+  holographicIntensity: 0.52,
+  holographicShift: 0.42,
+  holographicFresnelPower: 4.8,
+  bloomEnabled: true,
+  bloomStrength: 0.76,
+  bloomRadius: 0,
+  bloomThreshold: 0.46,
+  bloomResponseBias: 0.82,
+  colorMode: "spectral",
+  spectralMix: 0.92,
+});
 const DENSE_POLYPHONIC_FIXTURE = JSON.parse(
   readFileSync(
     new URL(
@@ -102,9 +120,10 @@ async function setControl(page, key, value) {
   );
 }
 
-async function loadBuiltInPreset(page, name) {
-  await page.getByTestId("advanced-controls-trigger").click();
-  await page.getByLabel("Load preset").selectOption(name);
+async function applyOpticalMeasurementControls(page) {
+  for (const [key, value] of Object.entries(OPTICAL_MEASUREMENT_CONTROLS)) {
+    await setControl(page, key, value);
+  }
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -117,12 +136,10 @@ async function loadBuiltInPreset(page, name) {
       }),
     )
     .toEqual({
-      colorMode: "spectral",
-      raymarchSteps: expect.any(Number),
-      zeroPointPrecision: expect.any(Number),
+      colorMode: OPTICAL_MEASUREMENT_CONTROLS.colorMode,
+      raymarchSteps: OPTICAL_MEASUREMENT_CONTROLS.raymarchSteps,
+      zeroPointPrecision: OPTICAL_MEASUREMENT_CONTROLS.zeroPointPrecision,
     });
-  await page.getByRole("button", { name: "Close" }).click();
-  await expect(page.getByTestId("advanced-controls-sidebar")).toBeHidden();
 }
 
 async function readCanvasLuminanceMetrics(page, artifactPath = null) {
@@ -397,7 +414,7 @@ async function setCameraPose(page, cameraPose) {
 }
 
 test.describe("laser cymatic optical measurement visual audit", () => {
-  test("baryon-4 528 Hz tone meets optical measurement canvas metrics", async ({
+  test("528 Hz tone meets optical measurement canvas metrics", async ({
     page,
     browserName,
   }, testInfo) => {
@@ -407,7 +424,7 @@ test.describe("laser cymatic optical measurement visual audit", () => {
     await page.goto("/");
     await waitForControlSurface(page);
 
-    await loadBuiltInPreset(page, BARYON_4_PRESET);
+    await applyOpticalMeasurementControls(page);
     await setControl(page, "auditEnabled", true);
     await setControl(page, "injectTestTone", true);
     await setControl(page, "testToneHz", 528);
@@ -460,7 +477,7 @@ test.describe("laser cymatic optical measurement visual audit", () => {
     expect(metrics.centralConnectedNonblackRatio).toBeGreaterThan(0.01);
   });
 
-  test("baryon-4 dense polyphonic fixture remains structured and temporally stable", async ({
+  test("dense polyphonic fixture remains structured and temporally stable", async ({
     page,
     browserName,
   }, testInfo) => {
@@ -471,7 +488,7 @@ test.describe("laser cymatic optical measurement visual audit", () => {
     await page.goto("/");
     await waitForControlSurface(page);
 
-    await loadBuiltInPreset(page, BARYON_4_PRESET);
+    await applyOpticalMeasurementControls(page);
     await setControl(page, "auditEnabled", true);
     await page.locator('input[type="file"]').setInputFiles({
       name: "dense-polyphonic-12s.wav",
@@ -539,7 +556,7 @@ test.describe("laser cymatic optical measurement visual audit", () => {
     ).toBeLessThan(0.05);
   });
 
-  test("baryon-4 528 Hz tone keeps photographic material identity across camera views", async ({
+  test("528 Hz tone keeps photographic material identity across camera views", async ({
     page,
     browserName,
   }, testInfo) => {
@@ -550,7 +567,7 @@ test.describe("laser cymatic optical measurement visual audit", () => {
     await page.goto("/");
     await waitForControlSurface(page);
 
-    await loadBuiltInPreset(page, BARYON_4_PRESET);
+    await applyOpticalMeasurementControls(page);
     await setControl(page, "auditEnabled", true);
     await setControl(page, "injectTestTone", true);
     await setControl(page, "testToneHz", 528);

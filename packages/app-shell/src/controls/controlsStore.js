@@ -1,9 +1,11 @@
-import { deserializeControls } from "@baryon/visualizer/controls/persistence";
+import {
+  deserializeControls,
+  normalizeSpectralLightActivationControls,
+} from "@baryon/visualizer/controls/persistence";
 import {
   CONTROL_DEFINITIONS,
   createControlState,
 } from "@baryon/visualizer/controls/schema";
-import { BUILT_IN_VISUAL_PRESETS } from "@baryon/visualizer/controls/visualPresets";
 import {
   PRESETS_KEY,
   createControlsPersistScheduler,
@@ -14,11 +16,6 @@ import {
   savePresetCollection,
   writeStoredJson,
 } from "../components/hooks/baryonControlsState.js";
-
-/** @type {Set<string>} */
-const BUILT_IN_VISUAL_PRESET_NAMES = new Set(
-  BUILT_IN_VISUAL_PRESETS.map((preset) => preset.name),
-);
 
 function getBrowserStorage() {
   if (typeof window === "undefined") {
@@ -36,25 +33,33 @@ function createSnapshot({
 }) {
   return {
     controlsState: { ...controlsRef.current },
-    presets: mergeSelectablePresets(presets),
+    presets,
     presetName,
     selectedPresetName,
   };
 }
 
-function mergeSelectablePresets(userPresets) {
-  const selectableUserPresets = userPresets.filter(
-    (preset) => !BUILT_IN_VISUAL_PRESET_NAMES.has(preset.name),
-  );
-  return [...BUILT_IN_VISUAL_PRESETS, ...selectableUserPresets];
+function findPreset(userPresets, name) {
+  return userPresets.find((preset) => preset.name === name) ?? null;
 }
 
-function findPreset(userPresets, name) {
-  return (
-    BUILT_IN_VISUAL_PRESETS.find((preset) => preset.name === name) ??
-    userPresets.find((preset) => preset.name === name) ??
-    null
+function applyControlUpdate(controls, key, value) {
+  let changed = false;
+  if (!Object.is(controls[key], value)) {
+    controls[key] = value;
+    changed = true;
+  }
+
+  const normalizedControls = normalizeSpectralLightActivationControls(
+    controls,
+    CONTROL_DEFINITIONS,
   );
+  if (normalizedControls !== controls) {
+    Object.assign(controls, normalizedControls);
+    changed = true;
+  }
+
+  return changed;
 }
 
 export function createControlsStore({ storage = getBrowserStorage() } = {}) {
@@ -130,11 +135,9 @@ export function createControlsStore({ storage = getBrowserStorage() } = {}) {
         throw new Error(`[Baryon controls] Unknown control key: ${key}`);
       }
 
-      if (Object.is(controlsRef.current[key], value)) {
+      if (!applyControlUpdate(controlsRef.current, key, value)) {
         return snapshot;
       }
-
-      controlsRef.current[key] = value;
       return syncControls(controlsRef.current, options);
     },
     resetControls() {
@@ -151,10 +154,6 @@ export function createControlsStore({ storage = getBrowserStorage() } = {}) {
       return emit();
     },
     savePreset() {
-      if (BUILT_IN_VISUAL_PRESET_NAMES.has(state.presetName.trim())) {
-        return snapshot;
-      }
-
       const nextPresets = savePresetCollection(
         state.presets,
         state.presetName,
@@ -177,15 +176,9 @@ export function createControlsStore({ storage = getBrowserStorage() } = {}) {
         return snapshot;
       }
 
-      const sourceControls = preset.builtIn
-        ? {
-            ...controlsRef.current,
-            ...preset.controls,
-          }
-        : preset.controls;
       Object.assign(
         controlsRef.current,
-        deserializeControls(sourceControls, CONTROL_DEFINITIONS),
+        deserializeControls(preset.controls, CONTROL_DEFINITIONS),
       );
       state.selectedPresetName = name;
       return syncControls(controlsRef.current, {
@@ -195,9 +188,6 @@ export function createControlsStore({ storage = getBrowserStorage() } = {}) {
     },
     deletePreset(name = state.selectedPresetName) {
       if (!name) {
-        return snapshot;
-      }
-      if (BUILT_IN_VISUAL_PRESET_NAMES.has(name)) {
         return snapshot;
       }
 

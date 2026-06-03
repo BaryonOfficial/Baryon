@@ -132,6 +132,37 @@ function normalizeLegacyVisualizationMethod(raw) {
   };
 }
 
+function resolveDefaultControlValue(definitions, key, fallback) {
+  const definition = definitions.find((item) => item.key === key);
+  return definition?.defaultValue ?? fallback;
+}
+
+function hasPositiveNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+export function normalizeSpectralLightActivationControls(
+  controls,
+  definitions,
+) {
+  if (!controls || typeof controls !== "object" || Array.isArray(controls)) {
+    return controls;
+  }
+
+  if (controls.colorMode !== "spectral") {
+    return controls;
+  }
+
+  if (hasPositiveNumber(controls.spectralMix)) {
+    return controls;
+  }
+
+  return {
+    ...controls,
+    spectralMix: resolveDefaultControlValue(definitions, "spectralMix", 1),
+  };
+}
+
 /**
  * Serialize a control state object to a plain JSON-safe object.
  * Only live (non-debug) controls are included so that audit/dev settings
@@ -201,7 +232,7 @@ export function deserializeControls(raw, definitions) {
       }
     }
   }
-  return result;
+  return normalizeSpectralLightActivationControls(result, definitions);
 }
 
 /**

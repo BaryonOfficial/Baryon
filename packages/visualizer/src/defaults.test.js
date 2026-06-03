@@ -13,7 +13,6 @@ import {
   SIMULATION_DEFAULTS,
   CAVITY_ACOUSTIC_DEFAULTS,
 } from "./defaults.js";
-import { BUILT_IN_VISUAL_PRESETS } from "./controls/visualPresets.js";
 import { DEFAULT_PERFORMANCE_PROFILE } from "./render/outputProfilePolicy.js";
 
 describe("defaults compatibility surface", () => {
@@ -72,21 +71,20 @@ describe("defaults compatibility surface", () => {
     expect(DEFAULTS.renderQualityPreset).toBe(DEFAULT_PERFORMANCE_PROFILE);
   });
 
-  it("keeps promoted live raymarch defaults aligned with baryon-7", () => {
-    const baryon7Preset = BUILT_IN_VISUAL_PRESETS.find(
-      (preset) => preset.name === "baryon-7",
+  it("keeps promoted live raymarch defaults on the initialized app baseline", () => {
+    expect(DEFAULTS.raymarchSteps).toBe(RAYMARCH_DEFAULTS.raymarchSteps);
+    expect(DEFAULTS.zeroPointPrecision).toBe(
+      SIMULATION_DEFAULTS.zeroPointPrecision,
     );
-
-    expect(baryon7Preset).toEqual(
-      expect.objectContaining({
-        name: "baryon-7",
-        builtIn: true,
-        controls: expect.any(Object),
-      }),
+    expect(DEFAULTS.densityGain).toBe(RAYMARCH_DEFAULTS.densityGain);
+    expect(DEFAULTS.absorption).toBe(RAYMARCH_DEFAULTS.absorption);
+    expect(DEFAULTS.opacityGain).toBe(RAYMARCH_DEFAULTS.opacityGain);
+    expect(DEFAULTS.holographicIntensity).toBe(
+      RAYMARCH_DEFAULTS.holographicIntensity,
     );
-    for (const [key, value] of Object.entries(baryon7Preset.controls)) {
-      expect(DEFAULTS[key]).toBe(value);
-    }
+    expect(DEFAULTS.bloomStrength).toBe(RENDER_DEFAULTS.bloomStrength);
+    expect(DEFAULTS.bloomThreshold).toBe(RENDER_DEFAULTS.bloomThreshold);
+    expect(DEFAULTS.colorMode).toBe(RENDER_DEFAULTS.colorMode);
     expect(RENDER_DEFAULTS.performanceHudEnabled).toBe(false);
     expect(DEFAULTS.cavityGeometry).toBe(SIMULATION_DEFAULTS.cavityGeometry);
   });
@@ -101,8 +99,8 @@ describe("defaults compatibility surface", () => {
       soundSpeedMetersPerSecond: 1480,
       subfloorPolicy: "project-subfundamental",
     });
-    expect(SIMULATION_DEFAULTS.cavityAcousticScale.radiusMeters).toBeGreaterThan(
-      SIMULATION_DEFAULTS.radius,
-    );
+    expect(
+      SIMULATION_DEFAULTS.cavityAcousticScale.radiusMeters,
+    ).toBeGreaterThan(SIMULATION_DEFAULTS.radius);
   });
 });

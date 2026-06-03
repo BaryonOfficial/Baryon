@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { DEFAULT_PERFORMANCE_PROFILE } from "@baryon/visualizer/render/outputPipeline";
 import {
   PRESETS_KEY,
   SETTINGS_KEY,
@@ -9,11 +8,6 @@ import {
 import { installLocalStorageMock } from "../test/installLocalStorageMock.js";
 import * as localStorageMockModule from "../test/installLocalStorageMock.js";
 import { createControlsStore } from "./controlsStore.js";
-
-const CALIBRATED_CLARITY_NAME = "Calibrated Clarity";
-const STAGE_CONTAINMENT_NAME = "Stage Containment";
-const BARYON_4_NAME = "baryon-4";
-const BARYON_7_NAME = "baryon-7";
 
 function seedStorage({ controls = null, presets = null } = {}) {
   window.localStorage.clear();
@@ -46,7 +40,6 @@ describe("createControlsStore", () => {
       presets: [
         {
           name: "Stage",
-          builtIn: true,
           createdAt: 42,
           staleMetadata: "legacy",
           controls: {
@@ -68,22 +61,6 @@ describe("createControlsStore", () => {
     expect(store.controlsRef.current).not.toHaveProperty("structureMax");
     expect(store.getSnapshot().presets).toEqual([
       expect.objectContaining({
-        name: CALIBRATED_CLARITY_NAME,
-        builtIn: true,
-      }),
-      expect.objectContaining({
-        name: STAGE_CONTAINMENT_NAME,
-        builtIn: true,
-      }),
-      expect.objectContaining({
-        name: BARYON_4_NAME,
-        builtIn: true,
-      }),
-      expect.objectContaining({
-        name: BARYON_7_NAME,
-        builtIn: true,
-      }),
-      expect.objectContaining({
         name: "Stage",
         controls: expect.objectContaining({
           backgroundColor: "#0f0f0f",
@@ -94,10 +71,16 @@ describe("createControlsStore", () => {
       .getSnapshot()
       .presets.find((preset) => preset.name === "Stage");
     expect(userPreset?.createdAt).toBe(42);
-    expect(userPreset).not.toHaveProperty("builtIn");
     expect(userPreset).not.toHaveProperty("staleMetadata");
     expect(userPreset?.controls).not.toHaveProperty("structureMin");
     expect(userPreset?.controls).not.toHaveProperty("structureMax");
+  });
+
+  it("starts without selectable presets when storage is empty", () => {
+    const store = createControlsStore();
+
+    expect(store.getSnapshot().presets).toEqual([]);
+    expect(store.getSnapshot().selectedPresetName).toBe("");
   });
 
   it("keeps controlsRef stable while publishing immutable snapshots", () => {
@@ -129,6 +112,23 @@ describe("createControlsStore", () => {
     expect(snapshots[0].controlsState.backgroundColor).toBe("#334455");
   });
 
+  it("seeds a positive Spectral Light mix when selecting Spectral mode", () => {
+    const store = createControlsStore();
+
+    store.updateControl("spectralMix", 0);
+    expect(store.controlsRef.current.colorMode).toBe("static");
+    expect(store.controlsRef.current.spectralMix).toBe(0);
+
+    store.updateControl("colorMode", "spectral");
+
+    expect(store.controlsRef.current.colorMode).toBe("spectral");
+    expect(store.controlsRef.current.spectralMix).toBe(0.96);
+    expect(store.getSnapshot().controlsState).toMatchObject({
+      colorMode: "spectral",
+      spectralMix: 0.96,
+    });
+  });
+
   it("deletes the selected preset when deletePreset is called without a name", () => {
     const store = createControlsStore();
 
@@ -148,154 +148,41 @@ describe("createControlsStore", () => {
     ).toHaveLength(0);
   });
 
-  it("exposes the calibrated clarity preset without writing it to storage", () => {
+  it("ignores preset loads for names absent from user storage", () => {
     const store = createControlsStore();
 
-    expect(store.getSnapshot().presets[0]?.name).toBe(CALIBRATED_CLARITY_NAME);
-
-    store.loadPreset(CALIBRATED_CLARITY_NAME);
-
-    expect(store.getSnapshot().selectedPresetName).toBe(
-      CALIBRATED_CLARITY_NAME,
-    );
-    expect(store.controlsRef.current).not.toHaveProperty("structureMin");
-    expect(store.controlsRef.current).not.toHaveProperty("structureMax");
-    expect(store.controlsRef.current.densityGain).toBe(2.85);
-    expect(store.controlsRef.current.absorption).toBe(3.05);
-    expect(store.controlsRef.current.opacityGain).toBe(2.05);
-    expect(store.controlsRef.current.holographicIntensity).toBe(0.36);
-    expect(store.controlsRef.current.holographicFresnelPower).toBe(5.1);
-    expect(store.controlsRef.current.bloomStrength).toBe(0.94);
-    expect(store.controlsRef.current.bloomThreshold).toBe(0.2);
-    expect(store.controlsRef.current.bloomResponseBias).toBe(0.86);
-    expect(store.controlsRef.current.rimBloomBias).toBe(0.2);
-    expect(store.controlsRef.current.rimCompression).toBe(1.08);
-
-    const storedPresets = window.localStorage.getItem(PRESETS_KEY);
-    expect(storedPresets).toBeNull();
-  });
-
-  it("preserves non-visual controls when loading a built-in visual preset", () => {
-    const store = createControlsStore();
-
-    store.updateControl("renderQualityPreset", "max-quality", {
-      persistMode: "immediate",
+    store.updateControl("backgroundColor", "#223344", {
+      persistMode: "none",
     });
-    store.updateControl("customPerformanceTargetFps", 72, {
-      persistMode: "immediate",
-    });
+    const before = store.getSnapshot();
 
-    store.loadPreset(CALIBRATED_CLARITY_NAME);
-    store.updateControl("bloomThreshold", 0.41, { persistMode: "immediate" });
+    store.loadPreset("Missing Stage");
 
-    expect(store.controlsRef.current.renderQualityPreset).toBe("max-quality");
-    expect(store.controlsRef.current.customPerformanceTargetFps).toBe(72);
-    expect(store.controlsRef.current.bloomThreshold).toBe(0.41);
+    expect(store.getSnapshot()).toBe(before);
+    expect(store.controlsRef.current.backgroundColor).toBe("#223344");
     expect(store.getSnapshot().selectedPresetName).toBe("");
   });
 
-  it("exposes the stage containment preset without writing it to storage", () => {
+  it("loads only user-saved presets", () => {
     const store = createControlsStore();
 
-    expect(store.getSnapshot().presets[1]?.name).toBe(STAGE_CONTAINMENT_NAME);
+    store.updateControl("backgroundColor", "#445566", {
+      persistMode: "none",
+    });
+    store.updateControl("renderQualityPreset", "max-quality", {
+      persistMode: "none",
+    });
+    store.setPresetName("Saved Stage");
+    store.savePreset();
+    store.updateControl("backgroundColor", "#000000", {
+      persistMode: "none",
+    });
 
-    store.loadPreset(STAGE_CONTAINMENT_NAME);
+    store.loadPreset("Saved Stage");
 
-    expect(store.getSnapshot().selectedPresetName).toBe(STAGE_CONTAINMENT_NAME);
-    expect(store.controlsRef.current).not.toHaveProperty("structureMin");
-    expect(store.controlsRef.current).not.toHaveProperty("structureMax");
-    expect(store.controlsRef.current.densityGain).toBe(2.85);
-    expect(store.controlsRef.current.absorption).toBe(3.75);
-    expect(store.controlsRef.current.opacityGain).toBe(2.85);
-    expect(store.controlsRef.current.holographicIntensity).toBe(0.46);
-    expect(store.controlsRef.current.holographicFresnelPower).toBe(4.2);
-    expect(store.controlsRef.current.bloomStrength).toBe(0.82);
-    expect(store.controlsRef.current.bloomThreshold).toBe(0.42);
-    expect(store.controlsRef.current.bloomResponseBias).toBe(0.72);
-    expect(store.controlsRef.current.rimBloomBias).toBe(0.22);
-    expect(store.controlsRef.current.spectralMix).toBe(0.95);
-
-    const storedPresets = window.localStorage.getItem(PRESETS_KEY);
-    expect(storedPresets).toBeNull();
-  });
-
-  it("exposes baryon-4 as the optical measurement acceptance preset", () => {
-    const store = createControlsStore();
-
-    expect(store.getSnapshot().presets[2]?.name).toBe(BARYON_4_NAME);
-
-    store.loadPreset(BARYON_4_NAME);
-
-    expect(store.getSnapshot().selectedPresetName).toBe(BARYON_4_NAME);
-    expect(store.controlsRef.current.raymarchSteps).toBe(104);
-    expect(store.controlsRef.current.zeroPointPrecision).toBe(0.018);
-    expect(store.controlsRef.current).not.toHaveProperty("structureMin");
-    expect(store.controlsRef.current).not.toHaveProperty("structureMax");
-    expect(store.controlsRef.current.densityGain).toBe(3.08);
-    expect(store.controlsRef.current.absorption).toBe(3.62);
-    expect(store.controlsRef.current.opacityGain).toBe(2.7);
-    expect(store.controlsRef.current.holographicIntensity).toBe(0.52);
-    expect(store.controlsRef.current.holographicShift).toBe(0.42);
-    expect(store.controlsRef.current.holographicFresnelPower).toBe(4.8);
-    expect(store.controlsRef.current.bloomStrength).toBe(0.76);
-    expect(store.controlsRef.current.bloomThreshold).toBe(0.46);
-    expect(store.controlsRef.current.bloomResponseBias).toBe(0.82);
-    expect(store.controlsRef.current.rimBloomBias).toBe(0.26);
-    expect(store.controlsRef.current.rimCompression).toBe(1.02);
-    expect(store.controlsRef.current.spectralMix).toBe(0.92);
-
-    const storedPresets = window.localStorage.getItem(PRESETS_KEY);
-    expect(storedPresets).toBeNull();
-  });
-
-  it("exposes baryon-7 as the default visual preset", () => {
-    const store = createControlsStore();
-
-    expect(store.getSnapshot().presets[3]?.name).toBe(BARYON_7_NAME);
-
-    store.loadPreset(BARYON_7_NAME);
-
-    expect(store.getSnapshot().selectedPresetName).toBe(BARYON_7_NAME);
-    expect(store.controlsRef.current.raymarchSteps).toBe(72);
-    expect(store.controlsRef.current.zeroPointPrecision).toBe(0.1);
-    expect(store.controlsRef.current).not.toHaveProperty("structureMin");
-    expect(store.controlsRef.current).not.toHaveProperty("structureMax");
-    expect(store.controlsRef.current.densityGain).toBe(4);
-    expect(store.controlsRef.current.absorption).toBe(4);
-    expect(store.controlsRef.current.opacityGain).toBe(3);
-    expect(store.controlsRef.current.holographicIntensity).toBe(0.52);
-    expect(store.controlsRef.current.holographicShift).toBe(0.42);
-    expect(store.controlsRef.current.holographicFresnelPower).toBe(4.8);
-    expect(store.controlsRef.current.rotationMode).toBe("off");
-    expect(store.controlsRef.current.bloomStrength).toBe(0.8);
-    expect(store.controlsRef.current.bloomThreshold).toBe(0.24);
-    expect(store.controlsRef.current.bloomResponseBias).toBe(1);
-    expect(store.controlsRef.current.rimBloomBias).toBe(0.39);
-    expect(store.controlsRef.current.rimCompression).toBe(1.2);
-    expect(store.controlsRef.current.colorMode).toBe("static");
-    expect(store.controlsRef.current.spectralMix).toBe(0.96);
-    expect(store.controlsRef.current.renderQualityPreset).toBe(
-      DEFAULT_PERFORMANCE_PROFILE,
-    );
-
-    const storedPresets = window.localStorage.getItem(PRESETS_KEY);
-    expect(storedPresets).toBeNull();
-  });
-
-  it("does not delete built-in visual presets", () => {
-    const store = createControlsStore();
-
-    store.loadPreset(CALIBRATED_CLARITY_NAME);
-    store.deletePreset();
-
-    expect(store.getSnapshot().selectedPresetName).toBe(
-      CALIBRATED_CLARITY_NAME,
-    );
-    expect(
-      store
-        .getSnapshot()
-        .presets.some((preset) => preset.name === CALIBRATED_CLARITY_NAME),
-    ).toBe(true);
+    expect(store.getSnapshot().selectedPresetName).toBe("Saved Stage");
+    expect(store.controlsRef.current.backgroundColor).toBe("#445566");
+    expect(store.controlsRef.current.renderQualityPreset).toBe("max-quality");
   });
 
   it("drops legacy structure-window fields from user presets and saved presets", () => {

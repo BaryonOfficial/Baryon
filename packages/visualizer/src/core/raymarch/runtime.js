@@ -18,14 +18,20 @@ import {
   buildRaymarchSpectralLightCacheDescriptor,
   advanceRaymarchCacheGeneration,
   clearQueuedRaymarchCacheRebuild,
+  commitRaymarchModalBasisCachePendingDescriptor,
+  commitRaymarchSpectralLightCachePendingDescriptor,
   computeRaymarchLiveFieldProjectionCache,
+  discardRaymarchModalBasisCachePendingDescriptor,
+  discardRaymarchSpectralLightCachePendingDescriptor,
   disposeRaymarchLiveFieldProjectionCache,
   disposeRaymarchModalBasisCache,
   disposeRaymarchSpectralLightCache,
   enqueueRaymarchModalBasisCacheRebuild,
   enqueueRaymarchSpectralLightCacheRebuild,
   getRaymarchModalBasisCacheDescriptorStaleReason,
+  isRaymarchModalBasisCachePendingReadyForDescriptor,
   isRaymarchModalBasisCacheReadyForDescriptor,
+  isRaymarchSpectralLightCachePendingReadyForDescriptor,
   isRaymarchSpectralLightCacheReadyForDescriptor,
   deriveStructuralProjectionDrive,
   resolveRaymarchModalBasisCacheDescriptorBlockedReason,
@@ -337,6 +343,24 @@ function clearBufferNode(bufferNode) {
   bufferNode.value.needsUpdate = true;
 }
 
+function snapshotBufferArray(bufferNode) {
+  const array = bufferNode?.value?.array;
+  return array ? new Float32Array(array) : null;
+}
+
+function restoreBufferArray(bufferNode, snapshot) {
+  const array = bufferNode?.value?.array;
+  if (!array?.fill) {
+    return;
+  }
+
+  array.fill(0);
+  if (snapshot) {
+    array.set(snapshot.subarray(0, Math.min(array.length, snapshot.length)), 0);
+  }
+  bufferNode.value.needsUpdate = true;
+}
+
 function resetCacheActivity(cache) {
   if (!cache) {
     return;
@@ -347,6 +371,9 @@ function resetCacheActivity(cache) {
   cache.rebuildPending = false;
   cache.activeDescriptor = null;
   cache.pendingDescriptor = null;
+  cache.pendingReady = false;
+  cache.pendingCacheBuiltAtSec = null;
+  cache.pendingRebuildReason = null;
   cache.activePhaseSampleTimeSec = null;
   cache.pendingPhaseSampleTimeSec = null;
   cache.activeCacheBuiltAtSec = null;
@@ -446,6 +473,9 @@ function blockModalBasisCacheForDescriptor(modalBasisCache, reason) {
   modalBasisCache.rebuildPending = false;
   modalBasisCache.activeDescriptor = null;
   modalBasisCache.pendingDescriptor = null;
+  modalBasisCache.pendingReady = false;
+  modalBasisCache.pendingCacheBuiltAtSec = null;
+  modalBasisCache.pendingRebuildReason = null;
   modalBasisCache.activePhaseSampleTimeSec = null;
   modalBasisCache.pendingPhaseSampleTimeSec = null;
   modalBasisCache.activeCacheBuiltAtSec = null;
@@ -475,9 +505,9 @@ function hasCommittedLiveFieldProjectionCache(runtimeState) {
   const volumeUserData = runtimeState?.volumeMesh?.userData;
   return Boolean(
     liveFieldProjectionCache?.active === true &&
-      liveFieldProjectionCache?.ready === true &&
-      volumeUserData?.raymarchModalLiveFieldTexture &&
-      volumeUserData?.raymarchModalLiveSupportTexture,
+    liveFieldProjectionCache?.ready === true &&
+    volumeUserData?.raymarchModalLiveFieldTexture &&
+    volumeUserData?.raymarchModalLiveSupportTexture,
   );
 }
 
@@ -557,6 +587,8 @@ function resetRenderAuthorityState(runtimeState) {
   runtimeState.currentModalBasisCacheDescriptor = null;
   runtimeState.currentSpectralLightDescriptor = null;
   runtimeState.modalBasisCacheDrawableAuthority = null;
+  runtimeState.activeModalRenderPacket = null;
+  runtimeState.modalRenderPacketRetained = null;
   resetRaymarchUploadState(runtimeState);
   resetCacheActivity(runtimeState.modalBasisCache);
   resetCacheActivity(runtimeState.liveFieldProjectionCache);
@@ -826,6 +858,8 @@ function blockOverflowedModalDescriptor(
   runtimeState.modalBasisPhaseAuthorityModeCount = 0;
   runtimeState.currentModalBasisCacheDescriptor = null;
   runtimeState.currentSpectralLightDescriptor = null;
+  runtimeState.activeModalRenderPacket = null;
+  runtimeState.modalRenderPacketRetained = null;
   resetRaymarchUploadState(runtimeState);
   resetCacheActivity(runtimeState.modalBasisCache);
   resetCacheActivity(runtimeState.liveFieldProjectionCache);
@@ -1301,11 +1335,10 @@ function buildRaymarchDebugSnapshot(
     );
   const modalBasisCacheDrawable =
     modalBasisCacheDrawableAuthority.drawable === true;
-  const modalBasisDisplayAuthority =
-    resolveRaymarchModalBasisDisplayAuthority(
-      runtimeState,
-      modalBasisCacheDrawableAuthority,
-    );
+  const modalBasisDisplayAuthority = resolveRaymarchModalBasisDisplayAuthority(
+    runtimeState,
+    modalBasisCacheDrawableAuthority,
+  );
   const spectralLightCacheDescriptorFresh =
     isRaymarchSpectralLightCacheReadyForDescriptor(
       spectralLightCache,
@@ -1316,6 +1349,8 @@ function buildRaymarchDebugSnapshot(
     runtimeState.modalFieldColorBuffer?.value?.array,
     activeModeCount,
   );
+  const activeModalRenderPacket = runtimeState.activeModalRenderPacket ?? null;
+  const retainedModalRenderPacket = runtimeState.modalRenderPacketRetained;
 
   return {
     fieldState,
@@ -1361,6 +1396,23 @@ function buildRaymarchDebugSnapshot(
     renderQuantityOwnershipLanes: RAYMARCH_RENDER_QUANTITY_LANES,
     renderMaterialTransferLanes: RAYMARCH_MATERIAL_TRANSFER_LANES,
     renderQuantityForbiddenConsumers: RAYMARCH_FORBIDDEN_CONSUMER_SUMMARY,
+    modalRenderPacketStatus: retainedModalRenderPacket
+      ? "active-retained-pending"
+      : activeModalRenderPacket
+        ? "active"
+        : "none",
+    modalRenderPacketActiveGeneration:
+      activeModalRenderPacket?.generationId ?? null,
+    modalRenderPacketActiveIdentityPageAssignmentHash:
+      activeModalRenderPacket?.identityPageAssignmentHash ?? null,
+    modalRenderPacketActiveDescriptorIdentityHash:
+      activeModalRenderPacket?.descriptorIdentityHash ?? null,
+    modalRenderPacketPendingIdentityPageAssignmentHash:
+      retainedModalRenderPacket?.pendingIdentityPageAssignmentHash ?? null,
+    modalRenderPacketPendingDescriptorIdentityHash:
+      retainedModalRenderPacket?.pendingDescriptorIdentityHash ?? null,
+    modalRenderPacketRetainedAtSec:
+      retainedModalRenderPacket?.retainedAtSec ?? null,
     dominantFrequency:
       featureFrame?.debug?.dominantFrequency ??
       featureFrame?.debug?.fundamentalFrequency ??
@@ -2177,11 +2229,108 @@ function resolveRenderableSpectralLightCacheEvaluation(spectralLightCache) {
   return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off;
 }
 
+function resolveCacheTextureCopyRegion(cache) {
+  const sourceData =
+    cache?.pendingTexture?.source?.data ?? cache?.pendingTexture?.image ?? {};
+  const width = Math.max(
+    1,
+    Math.round(sourceData.width ?? cache?.resolution ?? 1),
+  );
+  const height = Math.max(
+    1,
+    Math.round(sourceData.height ?? cache?.resolution ?? width),
+  );
+  const depth = Math.max(
+    1,
+    Math.round(sourceData.depth ?? cache?.depth ?? cache?.resolution ?? width),
+  );
+  return new THREE.Box3(
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(width, height, depth),
+  );
+}
+
+function copyPendingCacheTextureToActive(renderer, cache) {
+  if (!cache?.pendingTexture || !cache.texture) {
+    return false;
+  }
+  if (cache.pendingTexture === cache.texture) {
+    cache.lastError = "cache-texture-alias";
+    cache.lastRebuildReason = "texture-alias";
+    return false;
+  }
+  if (typeof renderer?.copyTextureToTexture !== "function") {
+    cache.lastError = "renderer-copy-unavailable";
+    cache.lastRebuildReason = "copy-unavailable";
+    return false;
+  }
+
+  renderer.copyTextureToTexture(
+    cache.pendingTexture,
+    cache.texture,
+    resolveCacheTextureCopyRegion(cache),
+    new THREE.Vector3(0, 0, 0),
+    0,
+    0,
+  );
+  return true;
+}
+
+function canCommitSpectralLightRenderPacket(
+  runtimeState,
+  modalBasisCacheDescriptor,
+) {
+  if (!runtimeState?.modalBasisCache) {
+    return true;
+  }
+  return isRaymarchModalBasisCacheReadyForDescriptor(
+    runtimeState.modalBasisCache,
+    modalBasisCacheDescriptor ?? runtimeState.currentModalBasisCacheDescriptor,
+  );
+}
+
+function reconcileReadySpectralLightRenderPacket(
+  runtimeState,
+  renderer,
+  descriptor,
+) {
+  const spectralLightCache = runtimeState?.spectralLightCache;
+  if (!spectralLightCache?.pendingReady || !descriptor) {
+    return false;
+  }
+  if (
+    !isRaymarchSpectralLightCachePendingReadyForDescriptor(
+      spectralLightCache,
+      descriptor,
+    )
+  ) {
+    const queuedRenderer = spectralLightCache.queuedRequest?.renderer;
+    if (
+      spectralLightCache.queuedDescriptor &&
+      typeof queuedRenderer?.computeAsync === "function"
+    ) {
+      discardRaymarchSpectralLightCachePendingDescriptor(spectralLightCache);
+    }
+    return false;
+  }
+
+  if (!copyPendingCacheTextureToActive(renderer, spectralLightCache)) {
+    return false;
+  }
+  const result =
+    commitRaymarchSpectralLightCachePendingDescriptor(spectralLightCache);
+  if (result.committed !== true) {
+    return false;
+  }
+
+  return true;
+}
+
 function resolveSpectralLightEvaluationMode(
   runtimeState,
   renderer,
-  { modalFieldCapacity },
-  { spectralLightEnabled, spectralLightDescriptor },
+  { modalFieldCapacity, schedulerTimeSec },
+  { spectralLightEnabled, spectralLightDescriptor, modalBasisCacheDescriptor },
 ) {
   const spectralLightCache = runtimeState.spectralLightCache;
   if (!spectralLightCache) {
@@ -2217,6 +2366,7 @@ function resolveSpectralLightEvaluationMode(
           modalFieldColorBuffer: runtimeState.modalFieldColorBuffer,
           modalFieldCapacity,
           uniforms: runtimeState.uniforms,
+          schedulerTimeSec,
         },
       );
       if (spectralLightCache.backend === "unavailable") {
@@ -2225,6 +2375,15 @@ function resolveSpectralLightEvaluationMode(
     }
   }
 
+  if (
+    canCommitSpectralLightRenderPacket(runtimeState, modalBasisCacheDescriptor)
+  ) {
+    reconcileReadySpectralLightRenderPacket(
+      runtimeState,
+      renderer,
+      spectralLightDescriptor,
+    );
+  }
   return resolveRenderableSpectralLightCacheEvaluation(spectralLightCache);
 }
 
@@ -2241,6 +2400,11 @@ function updateRaymarchEvaluationModes(
   updateModalBasisCache(runtimeState, renderer, capacities, {
     modalBasisCacheDescriptor,
   });
+  reconcileReadyModalBasisRenderPacket(
+    runtimeState,
+    renderer,
+    modalBasisCacheDescriptor,
+  );
 
   const spectralLightEvaluationMode = resolveSpectralLightEvaluationMode(
     runtimeState,
@@ -2248,6 +2412,7 @@ function updateRaymarchEvaluationModes(
     capacities,
     {
       spectralLightEnabled,
+      modalBasisCacheDescriptor,
       spectralLightDescriptor,
     },
   );
@@ -2319,6 +2484,208 @@ function updateLiveFieldProjectionCache(
     result.computed ? 1 : 0,
   );
   return result;
+}
+
+function readModalResponseEnergy(featureFrame) {
+  return (
+    featureFrame?.modalResponseEnergy ??
+    featureFrame?.modalResponseRenderEnergy ??
+    featureFrame?.debug?.modalResponseEnergy ??
+    0
+  );
+}
+
+function snapshotActiveModalRenderPacket(runtimeState, featureFrame) {
+  const activeModeCount = Math.max(
+    0,
+    Math.floor(runtimeState?.uniforms?.uModalFieldModeCount?.value ?? 0),
+  );
+  return {
+    generationId:
+      (runtimeState?.activeModalRenderPacket?.generationId ?? 0) + 1,
+    descriptor: runtimeState.currentModalBasisCacheDescriptor ?? null,
+    spectralLightDescriptor:
+      runtimeState.currentSpectralLightDescriptor ?? null,
+    descriptorIdentityHash:
+      runtimeState.currentModalBasisCacheDescriptor?.identitySetHash ?? null,
+    identityPageAssignmentHash:
+      runtimeState.currentModalBasisCacheDescriptor
+        ?.identityPageAssignmentHash ?? null,
+    modalFieldModeBuffer: snapshotBufferArray(
+      runtimeState.modalFieldModeBuffer,
+    ),
+    modalFieldColorBuffer: snapshotBufferArray(
+      runtimeState.modalFieldColorBuffer,
+    ),
+    modalFieldPhaseBuffer: snapshotBufferArray(
+      runtimeState.modalFieldPhaseBuffer,
+    ),
+    modalFieldCoefficientBuffer: snapshotBufferArray(
+      runtimeState.modalFieldCoefficientBuffer,
+    ),
+    modalFieldModeCount: activeModeCount,
+    modalBasisPhaseAuthorityModeCount:
+      runtimeState.modalBasisPhaseAuthorityModeCount ?? 0,
+    totalSlotAmplitude: runtimeState.uniforms?.uTotalSlotAmplitude?.value ?? 0,
+    structuralProjectionDrive:
+      runtimeState.uniforms?.uStructuralProjectionDrive?.value ?? 0,
+    structuralProjectionConcentration:
+      runtimeState.uniforms?.uStructuralProjectionConcentration?.value ?? 0,
+    modalResponseEnergy: readModalResponseEnergy(featureFrame),
+    performanceGovernor: runtimeState.performanceGovernor ?? null,
+    spectralLightBuffersUploaded:
+      runtimeState.spectralLightBuffersUploaded === true,
+    auditDiagnostics: runtimeState.lastModalBasisAuditDiagnostics ?? null,
+    status: "active",
+    committedAtSec: runtimeState.uniforms?.uTime?.value ?? null,
+  };
+}
+
+function restoreActiveModalRenderPacket(runtimeState, packet) {
+  if (!runtimeState || !packet) {
+    return false;
+  }
+
+  restoreBufferArray(
+    runtimeState.modalFieldModeBuffer,
+    packet.modalFieldModeBuffer,
+  );
+  restoreBufferArray(
+    runtimeState.modalFieldColorBuffer,
+    packet.modalFieldColorBuffer,
+  );
+  restoreBufferArray(
+    runtimeState.modalFieldPhaseBuffer,
+    packet.modalFieldPhaseBuffer,
+  );
+  restoreBufferArray(
+    runtimeState.modalFieldCoefficientBuffer,
+    packet.modalFieldCoefficientBuffer,
+  );
+  runtimeState.performanceGovernor = packet.performanceGovernor ?? null;
+  runtimeState.modalBasisPhaseAuthorityModeCount =
+    packet.modalBasisPhaseAuthorityModeCount ?? 0;
+  runtimeState.currentSpectralLightDescriptor =
+    packet.spectralLightDescriptor ?? null;
+  runtimeState.spectralLightBuffersUploaded =
+    packet.spectralLightBuffersUploaded === true;
+  applyModalBasisAuditDiagnostics(
+    runtimeState,
+    packet.auditDiagnostics ?? null,
+  );
+  setIfChanged(
+    runtimeState.uniforms.uModalFieldModeCount,
+    packet.modalFieldModeCount ?? 0,
+  );
+  setIfChanged(
+    runtimeState.uniforms.uTotalSlotAmplitude,
+    packet.totalSlotAmplitude ?? 0,
+  );
+  setIfChanged(
+    runtimeState.uniforms.uStructuralProjectionDrive,
+    packet.structuralProjectionDrive ?? 0,
+  );
+  setIfChanged(
+    runtimeState.uniforms.uStructuralProjectionConcentration,
+    packet.structuralProjectionConcentration ?? 0,
+  );
+  setIfChanged(
+    runtimeState.uniforms.uModalResponseEnergy,
+    packet.modalResponseEnergy ?? 0,
+  );
+  resetRaymarchUploadState(runtimeState);
+  runtimeState.modalRenderPacketRetained = {
+    activeGenerationId: packet.generationId,
+    pendingDescriptorIdentityHash:
+      runtimeState.currentModalBasisCacheDescriptor?.identitySetHash ?? null,
+    pendingIdentityPageAssignmentHash:
+      runtimeState.currentModalBasisCacheDescriptor
+        ?.identityPageAssignmentHash ?? null,
+    retainedAtSec: runtimeState.uniforms?.uTime?.value ?? null,
+  };
+  return true;
+}
+
+function syncModalRenderPacketState(runtimeState, featureFrame) {
+  const drawableAuthority = runtimeState.modalBasisCacheDrawableAuthority;
+  const displayAuthority = resolveRaymarchModalBasisDisplayAuthority(
+    runtimeState,
+    drawableAuthority,
+  );
+  if (
+    drawableAuthority?.staleWhileRebuilding === true &&
+    displayAuthority.coherent &&
+    runtimeState.activeModalRenderPacket
+  ) {
+    restoreActiveModalRenderPacket(
+      runtimeState,
+      runtimeState.activeModalRenderPacket,
+    );
+    return;
+  }
+
+  runtimeState.modalRenderPacketRetained = null;
+  if (
+    displayAuthority.coherent &&
+    drawableAuthority?.staleWhileRebuilding !== true &&
+    hasCommittedLiveFieldProjectionCache(runtimeState)
+  ) {
+    runtimeState.activeModalRenderPacket = snapshotActiveModalRenderPacket(
+      runtimeState,
+      featureFrame,
+    );
+  }
+}
+
+function reconcileReadyModalBasisRenderPacket(
+  runtimeState,
+  renderer,
+  descriptor,
+) {
+  const modalBasisCache = runtimeState?.modalBasisCache;
+  if (!modalBasisCache?.pendingReady) {
+    return false;
+  }
+  if (
+    !isRaymarchModalBasisCachePendingReadyForDescriptor(
+      modalBasisCache,
+      descriptor,
+    )
+  ) {
+    const queuedRenderer = modalBasisCache.queuedRequest?.renderer;
+    if (
+      modalBasisCache.queuedDescriptor &&
+      typeof queuedRenderer?.computeAsync === "function"
+    ) {
+      discardRaymarchModalBasisCachePendingDescriptor(modalBasisCache);
+      setModalBasisCacheDrawableAuthority(
+        runtimeState,
+        resolveRaymarchModalBasisCacheDrawableAuthority(
+          modalBasisCache,
+          descriptor,
+        ),
+      );
+    }
+    return false;
+  }
+
+  if (!copyPendingCacheTextureToActive(renderer, modalBasisCache)) {
+    return false;
+  }
+  const result =
+    commitRaymarchModalBasisCachePendingDescriptor(modalBasisCache);
+  if (result.committed !== true) {
+    return false;
+  }
+
+  setModalBasisCacheDrawableAuthority(
+    runtimeState,
+    resolveRaymarchModalBasisCacheDrawableAuthority(
+      modalBasisCache,
+      descriptor,
+    ),
+  );
+  return true;
 }
 
 function applyRaymarchRuntimeUploadAuthority({
@@ -2503,6 +2870,7 @@ function applyRaymarchRuntimeUploadAuthority({
     modalFieldCapacity: productUploadCapacity,
     time,
   });
+  syncModalRenderPacketState(runtimeState, featureFrame);
 }
 
 export function tickRaymarchRuntime(
@@ -2692,12 +3060,14 @@ export function tickRaymarchRuntime(
   );
   setIfChanged(uniforms.uTotalSlotAmplitude, structuralProjection.amplitudeSum);
   setRaymarchStructuralProjectionUniforms(uniforms, structuralProjection);
+  const retainedModalResponseEnergy =
+    runtimeState.modalRenderPacketRetained &&
+    runtimeState.activeModalRenderPacket
+      ? runtimeState.activeModalRenderPacket.modalResponseEnergy
+      : null;
   setIfChanged(
     uniforms.uModalResponseEnergy,
-    featureFrame?.modalResponseEnergy ??
-      featureFrame?.modalResponseRenderEnergy ??
-      featureFrame?.debug?.modalResponseEnergy ??
-      0,
+    retainedModalResponseEnergy ?? readModalResponseEnergy(featureFrame),
   );
 
   // Key tonic hue — EMA with circular shortest-path wrapping
