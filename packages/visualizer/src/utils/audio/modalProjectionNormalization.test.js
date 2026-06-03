@@ -31,20 +31,20 @@ const normalizeWithDenseLoad = (denseLoad) =>
   });
 
 describe("projection energy normalization", () => {
-  it("does not reduce supported modal projection budget because the spectrum is dense", () => {
+  it("does not grant structural budget because the high-Q spectrum is dense", () => {
     const sparse = normalizeWithDenseLoad(0);
     const dense = normalizeWithDenseLoad(1);
 
     expect(dense.metrics.projectionLoad).toBe(1);
     expect(
       dense.metrics.projectionAllocatedEnergyResonant,
-    ).toBeGreaterThanOrEqual(sparse.metrics.projectionAllocatedEnergyResonant);
-    expect(dense.entries[0].displayAmplitude).toBeGreaterThanOrEqual(
+    ).toBeCloseTo(sparse.metrics.projectionAllocatedEnergyResonant);
+    expect(dense.entries[0].displayAmplitude).toBeCloseTo(
       sparse.entries[0].displayAmplitude,
     );
   });
 
-  it("protects supported high-Q detail from resonant projection budget collapse", () => {
+  it("keeps high-Q protection diagnostic from owning structural projection budget", () => {
     const unprotected = applyProjectionEnergyNormalization({
       entries: [makeSupportedEntry()],
       layer: "resonant",
@@ -77,8 +77,8 @@ describe("projection energy normalization", () => {
     );
     expect(
       protectedDetail.metrics.projectionAllocatedEnergyResonant,
-    ).toBeGreaterThan(unprotected.metrics.projectionAllocatedEnergyResonant);
-    expect(protectedDetail.entries[0].displayAmplitude).toBeGreaterThan(
+    ).toBeCloseTo(unprotected.metrics.projectionAllocatedEnergyResonant);
+    expect(protectedDetail.entries[0].displayAmplitude).toBeCloseTo(
       unprotected.entries[0].displayAmplitude,
     );
   });

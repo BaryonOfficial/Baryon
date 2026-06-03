@@ -8,7 +8,6 @@ const PROJECTION_EVIDENCE_DRIVE_WEIGHT = 0.22;
 const PROJECTION_EVIDENCE_PHASE_WEIGHT = 0.12;
 const PROJECTION_EVIDENCE_MIN = 0.12;
 const PROJECTION_RESONANT_LAYER_BUDGET = 0.34;
-const PROJECTION_RESONANT_HIGH_Q_PROTECTED_BUDGET = 0.78;
 const PROJECTION_HIGH_Q_PROTECTION_ENERGY_START = 0.00045;
 const PROJECTION_HIGH_Q_PROTECTION_ENERGY_FULL = 0.018;
 
@@ -191,15 +190,7 @@ export function applyProjectionEnergyNormalization({
     layer,
     modalObserverMetrics,
   });
-  const protectedBudget =
-    layer === "resonant"
-      ? Math.max(
-          budget,
-          budget +
-            (PROJECTION_RESONANT_HIGH_Q_PROTECTED_BUDGET - budget) *
-              highQProtection,
-        )
-      : budget;
+  const structuralBudget = budget;
   const lambda =
     layer === "source-coupled"
       ? PROJECTION_COMPETITION_LAMBDA_SOURCE_COUPLED
@@ -263,8 +254,8 @@ export function applyProjectionEnergyNormalization({
     0,
   );
   const energyScale =
-    projectedEnergyTotal > protectedBudget
-      ? protectedBudget / Math.max(projectedEnergyTotal, 1e-9)
+    projectedEnergyTotal > structuralBudget
+      ? structuralBudget / Math.max(projectedEnergyTotal, 1e-9)
       : 1;
   const conservedEntries = competed.map((item) => ({
     ...item.entry,
@@ -276,7 +267,7 @@ export function applyProjectionEnergyNormalization({
     (total, item) => total + item.projectedEnergy * energyScale,
     0,
   );
-  const used = Math.min(allocatedEnergy, protectedBudget);
+  const used = Math.min(allocatedEnergy, structuralBudget);
   const maxOverlapPressure = competed.reduce(
     (maxPressure, item) => Math.max(maxPressure, item.competitorPressure),
     0,
@@ -301,7 +292,7 @@ export function applyProjectionEnergyNormalization({
     metrics.projectionEnergyScaleSourceCoupled = energyScale;
     metrics.projectionOverlapPressureSourceCoupled = maxOverlapPressure;
   } else {
-    metrics.projectionEnergyBudgetResonant = protectedBudget;
+    metrics.projectionEnergyBudgetResonant = structuralBudget;
     metrics.projectionEnergyUsedResonant = used;
     metrics.projectionRawEnergyResonant = rawEnergyTotal;
     metrics.projectionAllocatedEnergyResonant = used;

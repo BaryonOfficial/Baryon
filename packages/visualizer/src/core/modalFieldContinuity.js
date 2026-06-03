@@ -1,3 +1,8 @@
+import {
+  MODAL_BASIS_CACHE_RESOLUTION,
+  getModalBasisCacheMaxRepresentableModeIndex,
+} from "./modalBudgets.js";
+
 export const TOPOLOGY_ADMIT_EVIDENCE = 0.08;
 export const TOPOLOGY_PROMOTE_SECONDS = 0.05;
 export const TOPOLOGY_RELEASE_EVIDENCE = 0.025;
@@ -5,9 +10,16 @@ export const TOPOLOGY_BOOTSTRAP_EVIDENCE = 0;
 export const TOPOLOGY_RELEASE_SECONDS = 0.13;
 export const BASIS_REASSIGN_MIN_SECONDS = 0.067;
 export const IDENTITY_RETENTION_MIN = 0.72;
+export const STRUCTURAL_ADMISSION_REFERENCE_MODE_ORDER_FRACTION = 0.25;
 const TOPOLOGY_REPLACE_EVIDENCE_MARGIN = 0.08;
 const TOPOLOGY_REPLACE_EVIDENCE_RATIO = 1.35;
 const TOPOLOGY_REPLACE_MAX_FRACTION = 0.4;
+const STRUCTURAL_ADMISSION_COMPLIANCE_EXPONENT = 2;
+const STRUCTURAL_ADMISSION_MIN_COMPLIANCE = 0.12;
+const DETAIL_ADMISSION_MAX_FRACTION = 0.25;
+const DEFAULT_MAX_BASIS_MODE_ORDER = getModalBasisCacheMaxRepresentableModeIndex(
+  MODAL_BASIS_CACHE_RESOLUTION,
+);
 
 function clamp01(value) {
   if (!Number.isFinite(value)) return 0;
@@ -39,10 +51,42 @@ function getModeOrder(mode) {
   );
 }
 
+function getModeSpatialWavenumber(mode) {
+  const u = normalizeModeCoordinate(mode?.[0]);
+  const v = normalizeModeCoordinate(mode?.[1]);
+  const w = normalizeModeCoordinate(mode?.[2]);
+  return Math.hypot(u, v, w);
+}
+
 function normalizeMaxBasisModeOrder(maxBasisModeOrder) {
   return Number.isFinite(maxBasisModeOrder)
     ? Math.max(0, Math.floor(maxBasisModeOrder))
-    : Infinity;
+    : DEFAULT_MAX_BASIS_MODE_ORDER;
+}
+
+function deriveStructuralAdmissionReferenceModeOrder(maxBasisModeOrder) {
+  return Math.max(
+    1,
+    normalizeMaxBasisModeOrder(maxBasisModeOrder) *
+      STRUCTURAL_ADMISSION_REFERENCE_MODE_ORDER_FRACTION,
+  );
+}
+
+function deriveStructuralAdmissionCompliance(mode, maxBasisModeOrder) {
+  const spatialWavenumber = getModeSpatialWavenumber(mode);
+  if (!(spatialWavenumber > 0)) {
+    return 1;
+  }
+  const referenceModeOrder =
+    deriveStructuralAdmissionReferenceModeOrder(maxBasisModeOrder);
+  return clamp01(
+    1 /
+      (1 +
+        Math.pow(
+          spatialWavenumber / referenceModeOrder,
+          STRUCTURAL_ADMISSION_COMPLIANCE_EXPONENT,
+        )),
+  );
 }
 
 function cloneSlotQuad(source, offset) {
@@ -108,13 +152,21 @@ function readCandidateEntries(
     const evidenceScore = clamp01(
       Math.max(coefficient, observedSupport, relativeEvidence),
     );
+    const basisRepresentable = getModeOrder(mode) <= normalizedMaxBasisModeOrder;
+    const structuralAdmissionCompliance =
+      deriveStructuralAdmissionCompliance(mode, normalizedMaxBasisModeOrder);
+    const structuralAdmissionScore = basisRepresentable
+      ? clamp01(evidenceScore * structuralAdmissionCompliance)
+      : 0;
 
     entries.push({
       modeKey,
       mode,
       candidateIndex: index,
-      basisRepresentable: getModeOrder(mode) <= normalizedMaxBasisModeOrder,
+      basisRepresentable,
       evidenceScore,
+      structuralAdmissionScore,
+      structuralAdmissionCompliance,
       storedEnergySnapshot: coefficient * coefficient,
       payload: {
         slot: [
@@ -147,6 +199,8 @@ function createRecord(entry, nowSec) {
     releaseStartedAtSec: null,
     lastCoefficientSnapshot: entry.payload.slot[3] ?? 0,
     lastStoredEnergySnapshot: entry.storedEnergySnapshot,
+    structuralAdmissionScore: entry.structuralAdmissionScore,
+    structuralAdmissionCompliance: entry.structuralAdmissionCompliance,
     eligibilityEpoch: 0,
     basisEligible: false,
     basisRepresentable: entry.basisRepresentable,
@@ -205,6 +259,8 @@ function updateRecordSnapshot(record, entry, nowSec) {
   record.lastObservedAtSec = nowSec;
   record.lastCoefficientSnapshot = entry.payload.slot[3] ?? 0;
   record.lastStoredEnergySnapshot = entry.storedEnergySnapshot;
+  record.structuralAdmissionScore = entry.structuralAdmissionScore;
+  record.structuralAdmissionCompliance = entry.structuralAdmissionCompliance;
   record.basisRepresentable = entry.basisRepresentable;
   record.candidateIndex = entry.candidateIndex;
   record.payload = entry.payload;
@@ -267,7 +323,48 @@ function compareModeTuple(left, right) {
   return 0;
 }
 
+function getStructuralAdmissionScore(record) {
+  return Number.isFinite(record?.structuralAdmissionScore)
+    ? record.structuralAdmissionScore
+    : (record?.evidenceScore ?? 0);
+}
+
+function getAdmissionRole(record) {
+  return record?.basisRepresentable &&
+    (record?.structuralAdmissionCompliance ?? 0) >=
+      STRUCTURAL_ADMISSION_MIN_COMPLIANCE
+    ? "structural"
+    : "detail";
+}
+
+function getDetailAdmissionBudget(maxVisibleModeCount) {
+  if (!Number.isFinite(maxVisibleModeCount)) {
+    return Infinity;
+  }
+  return Math.max(
+    0,
+    Math.floor(maxVisibleModeCount * DETAIL_ADMISSION_MAX_FRACTION),
+  );
+}
+
+function countVisibleDetailRecords(state) {
+  return getBasisEligibleRecords(state).filter(
+    (record) => getAdmissionRole(record) === "detail",
+  ).length;
+}
+
 function compareAdmissionRecords(left, right) {
+  const roleDelta =
+    (getAdmissionRole(left) === "structural" ? 0 : 1) -
+    (getAdmissionRole(right) === "structural" ? 0 : 1);
+  if (roleDelta !== 0) {
+    return roleDelta;
+  }
+  const admissionDelta =
+    getStructuralAdmissionScore(right) - getStructuralAdmissionScore(left);
+  if (admissionDelta !== 0) {
+    return admissionDelta;
+  }
   const evidenceDelta = right.evidenceScore - left.evidenceScore;
   if (evidenceDelta !== 0) {
     return evidenceDelta;
@@ -296,6 +393,17 @@ function compareReplacementTargets(left, right) {
   if (stateDelta !== 0) {
     return stateDelta;
   }
+  const roleDelta =
+    (getAdmissionRole(left) === "detail" ? 0 : 1) -
+    (getAdmissionRole(right) === "detail" ? 0 : 1);
+  if (roleDelta !== 0) {
+    return roleDelta;
+  }
+  const admissionDelta =
+    getStructuralAdmissionScore(left) - getStructuralAdmissionScore(right);
+  if (admissionDelta !== 0) {
+    return admissionDelta;
+  }
   const evidenceDelta = left.evidenceScore - right.evidenceScore;
   if (evidenceDelta !== 0) {
     return evidenceDelta;
@@ -308,15 +416,43 @@ function compareReplacementTargets(left, right) {
   return compareModeTuple(left, right);
 }
 
-function selectAdmissionRecords(records, availableVisibleSlots) {
+function selectAdmissionRecords({
+  records,
+  availableVisibleSlots,
+  maxDetailVisibleCount,
+  currentDetailVisibleCount,
+}) {
   if (availableVisibleSlots <= 0) {
     return [];
   }
   const orderedRecords = [...records].sort(compareAdmissionRecords);
-  if (!Number.isFinite(availableVisibleSlots)) {
-    return orderedRecords;
+  const selectedRecords = [];
+  let selectedDetailCount = 0;
+  const remainingDetailSlots =
+    Number.isFinite(maxDetailVisibleCount) ||
+    Number.isFinite(currentDetailVisibleCount)
+      ? Math.max(
+          0,
+          maxDetailVisibleCount - Math.max(0, currentDetailVisibleCount),
+        )
+      : Infinity;
+  for (const record of orderedRecords) {
+    const isDetail = getAdmissionRole(record) === "detail";
+    if (isDetail && selectedDetailCount >= remainingDetailSlots) {
+      continue;
+    }
+    selectedRecords.push(record);
+    if (isDetail) {
+      selectedDetailCount += 1;
+    }
+    if (
+      Number.isFinite(availableVisibleSlots) &&
+      selectedRecords.length >= availableVisibleSlots
+    ) {
+      break;
+    }
   }
-  return orderedRecords.slice(0, availableVisibleSlots);
+  return selectedRecords;
 }
 
 function selectReplacementPairs({
@@ -349,13 +485,38 @@ function selectReplacementPairs({
 
   for (const candidate of candidates) {
     const target = targets.find(
-      (record) =>
-        !usedTargetKeys.has(record.modeKey) &&
-        candidate.evidenceScore >
+      (record) => {
+        if (usedTargetKeys.has(record.modeKey)) {
+          return false;
+        }
+
+        const candidateRole = getAdmissionRole(candidate);
+        const targetRole = getAdmissionRole(record);
+        if (targetRole === "structural" && candidateRole !== "structural") {
+          return false;
+        }
+
+        const evidenceReplacement =
+          candidate.evidenceScore >
           Math.max(
             record.evidenceScore + TOPOLOGY_REPLACE_EVIDENCE_MARGIN,
             record.evidenceScore * TOPOLOGY_REPLACE_EVIDENCE_RATIO,
-          ),
+          );
+
+        if (candidateRole === "detail" && targetRole === "detail") {
+          return evidenceReplacement;
+        }
+
+        const structuralReplacement =
+          getStructuralAdmissionScore(candidate) >
+          Math.max(
+            getStructuralAdmissionScore(record) +
+              TOPOLOGY_REPLACE_EVIDENCE_MARGIN,
+            getStructuralAdmissionScore(record) *
+              TOPOLOGY_REPLACE_EVIDENCE_RATIO,
+          );
+        return structuralReplacement || evidenceReplacement;
+      },
     );
     if (!target) {
       continue;
@@ -554,7 +715,6 @@ export function updateModalFieldContinuity(
 
     if (!record.basisEligible) {
       if (
-        entry.basisRepresentable &&
         entry.evidenceScore >= TOPOLOGY_ADMIT_EVIDENCE
       ) {
         record.qualifyingEvidenceSec += resolvedDeltaTimeSec;
@@ -573,7 +733,6 @@ export function updateModalFieldContinuity(
     for (const record of state.recordsByModeKey.values()) {
       if (
         !record.basisEligible &&
-        record.basisRepresentable &&
         (record.qualifyingEvidenceSec >= TOPOLOGY_PROMOTE_SECONDS ||
           (allowBootstrapAdmission &&
             record.evidenceScore > TOPOLOGY_BOOTSTRAP_EVIDENCE))
@@ -588,10 +747,14 @@ export function updateModalFieldContinuity(
           normalizedMaxVisibleModeCount - countBasisEligibleRecords(state),
         )
       : Infinity;
-    const selectedRecords = selectAdmissionRecords(
-      eligibleRecords,
+    const selectedRecords = selectAdmissionRecords({
+      records: eligibleRecords,
       availableVisibleSlots,
-    );
+      maxDetailVisibleCount: getDetailAdmissionBudget(
+        normalizedMaxVisibleModeCount,
+      ),
+      currentDetailVisibleCount: countVisibleDetailRecords(state),
+    });
     const selectedRecordKeys = new Set(
       selectedRecords.map((record) => record.modeKey),
     );

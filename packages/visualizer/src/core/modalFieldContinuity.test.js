@@ -183,11 +183,109 @@ describe("modal field continuity", () => {
       {
         deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
         maxBasisModeOrder: 4,
+        maxVisibleModeCount: 2,
       },
     );
 
     expect(readModeKeys(result.descriptorSource)).toEqual(["1:1:1"]);
     expect(result.diagnostics.tailModeKeys).toEqual(["9:1:1"]);
+  });
+
+  it("admits finite-bandwidth structural modes before louder high-order detail", () => {
+    const state = createModalFieldContinuityState();
+    const result = update(
+      state,
+      [
+        { mode: [18, 18, 18], coefficient: 0.95, observedSupport: 0.95 },
+        { mode: [2, 1, 1], coefficient: 0.3, observedSupport: 0.3 },
+        { mode: [3, 1, 1], coefficient: 0.28, observedSupport: 0.28 },
+      ],
+      {
+        deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
+        maxVisibleModeCount: 2,
+      },
+    );
+
+    expect(readModeKeys(result.descriptorSource)).toEqual([
+      "2:1:1",
+      "3:1:1",
+    ]);
+    expect(result.diagnostics.tailModeKeys).toContain("18:18:18");
+  });
+
+  it("does not admit loud high-order detail solely because slots are free", () => {
+    const state = createModalFieldContinuityState();
+    const result = update(
+      state,
+      [{ mode: [18, 18, 18], coefficient: 0.95, observedSupport: 0.95 }],
+      {
+        deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
+        maxVisibleModeCount: 2,
+      },
+    );
+
+    expect(result.descriptorSource.activeModalFieldModeCount).toBe(0);
+    expect(result.diagnostics.admittedModeKeys).toEqual([]);
+    expect(result.diagnostics.tailModeKeys).toEqual(["18:18:18"]);
+  });
+
+  it("lets sustained structural candidates replace active upper-band detail", () => {
+    const state = createModalFieldContinuityState();
+    const detail = {
+      mode: [8, 8, 8],
+      coefficient: 0.38,
+      observedSupport: 0.38,
+    };
+    const structural = {
+      mode: [2, 1, 1],
+      coefficient: 0.32,
+      observedSupport: 0.32,
+    };
+
+    const initial = update(state, [detail], {
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
+      maxVisibleModeCount: 1,
+    });
+    expect(readModeKeys(initial.descriptorSource)).toEqual(["8:8:8"]);
+
+    const replaced = update(state, [detail, structural], {
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS + BASIS_REASSIGN_MIN_SECONDS,
+      maxVisibleModeCount: 1,
+    });
+
+    expect(readModeKeys(replaced.descriptorSource)).toEqual(["2:1:1"]);
+    expect(replaced.diagnostics.removedModeKeys).toEqual(["8:8:8"]);
+    expect(replaced.diagnostics.admittedModeKeys).toEqual(["2:1:1"]);
+  });
+
+  it("does not let loud high-order detail evict structural topology", () => {
+    const state = createModalFieldContinuityState();
+    const structural = {
+      mode: [2, 1, 1],
+      coefficient: 0.3,
+      observedSupport: 0.3,
+    };
+    const detail = {
+      mode: [18, 18, 18],
+      coefficient: 0.95,
+      observedSupport: 0.95,
+    };
+
+    const initial = update(state, [structural], {
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
+      maxVisibleModeCount: 1,
+    });
+    expect(readModeKeys(initial.descriptorSource)).toEqual(["2:1:1"]);
+
+    const retained = update(state, [structural, detail], {
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS + BASIS_REASSIGN_MIN_SECONDS,
+      maxVisibleModeCount: 1,
+    });
+
+    expect(readModeKeys(retained.descriptorSource)).toEqual(["2:1:1"]);
+    expect(retained.diagnostics.removedModeKeys).toEqual([]);
+    expect(retained.diagnostics.admittedModeKeys).toEqual([]);
+    expect(retained.diagnostics.tailModeKeys).toContain("18:18:18");
   });
 
   it("does not let phase authority promote or rank visible topology", () => {

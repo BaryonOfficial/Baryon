@@ -68,7 +68,11 @@ import {
   createModalFieldContinuityState,
   updateModalFieldContinuity,
 } from "../../core/modalFieldContinuity.js";
-import { MODAL_BASIS_ATLAS_PAGE_CAPACITY } from "../../core/modalBudgets.js";
+import {
+  MODAL_BASIS_ATLAS_PAGE_CAPACITY,
+  MODAL_BASIS_CACHE_RESOLUTION,
+  getModalBasisCacheMaxRepresentableModeIndex,
+} from "../../core/modalBudgets.js";
 import {
   countNonZeroFftBins,
   deriveHighQSparseResonatorAuthority,
@@ -82,6 +86,9 @@ import {
   collectAudioSourceEvidenceInputs,
   resolveAudioRenderBoundary,
 } from "./audioSourceEvidence.js";
+
+const MODAL_FIELD_CONTINUITY_MAX_BASIS_MODE_ORDER =
+  getModalBasisCacheMaxRepresentableModeIndex(MODAL_BASIS_CACHE_RESOLUTION);
 
 /** @typedef {import("../../core/cavityGeometry.js").CavityGeometry} CavityGeometry */
 
@@ -5886,6 +5893,7 @@ export function composeAudioFeatureFrame({
         preparedInputs.capacity,
         MODAL_BASIS_ATLAS_PAGE_CAPACITY,
       ),
+      maxBasisModeOrder: MODAL_FIELD_CONTINUITY_MAX_BASIS_MODE_ORDER,
       allowImmediateBootstrap: allowImmediateModalFieldBootstrap,
       normalizeCandidateEvidence: true,
     },
