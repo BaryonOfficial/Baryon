@@ -30,6 +30,32 @@ function makeMetadataSlots(entries) {
   return slots;
 }
 
+function makeColorSlots(entries) {
+  const slots = new Float32Array(entries.length * 4);
+  entries.forEach(([r, g, b, weight], index) => {
+    const offset = index * 4;
+    slots[offset] = r;
+    slots[offset + 1] = g;
+    slots[offset + 2] = b;
+    slots[offset + 3] = weight;
+  });
+  return slots;
+}
+
+function makeSpectralSlots(entries) {
+  const slots = new Float32Array(entries.length * 4);
+  entries.forEach(
+    ([phase, wavelength, harmonicConfidence, accentEnergy], index) => {
+      const offset = index * 4;
+      slots[offset] = phase;
+      slots[offset + 1] = wavelength;
+      slots[offset + 2] = harmonicConfidence;
+      slots[offset + 3] = accentEnergy;
+    },
+  );
+  return slots;
+}
+
 function readModeKeys(slots, count) {
   const keys = [];
   for (let index = 0; index < count; index += 1) {
@@ -154,109 +180,6 @@ describe("buildCanonicalFullModalDescriptor", () => {
       0.4 ** 2,
       4,
     );
-    expect(descriptor.diagnostics.modalVarietyAudit).toMatchObject({
-      semanticModeCount: 3,
-      representedBasisPageModeCount: 2,
-      basisAtlasPageCapacity: 2,
-      basisAtlasPressure: 1,
-      spatialFamilyCount: 3,
-      representedSpatialFamilyCount: 2,
-      descriptorRejectedModeCount: 0,
-      basisAtlasCapacityRejectedCount: 1,
-      spatialBandwidthRejectedCount: 0,
-    });
-    expect(
-      descriptor.diagnostics.modalVarietyAudit.renderRepresentedEnergyRatio,
-    ).toBeCloseTo((0.6 ** 2 + 0.5 ** 2) / (0.6 ** 2 + 0.5 ** 2 + 0.4 ** 2), 6);
-    expect(
-      descriptor.diagnostics.modalVarietyAudit.energyEffectiveModeCount,
-    ).toBeCloseTo(
-      (0.6 ** 2 + 0.5 ** 2 + 0.4 ** 2) ** 2 / (0.6 ** 4 + 0.5 ** 4 + 0.4 ** 4),
-      6,
-    );
-    expect(
-      descriptor.diagnostics.modalVarietyAudit.basisAtlasCapacitySweep,
-    ).toEqual([
-      expect.objectContaining({
-        basisAtlasPageCapacity: 2,
-        representedBasisPageModeCount: 2,
-      }),
-      expect.objectContaining({
-        basisAtlasPageCapacity: 3,
-        representedBasisPageModeCount: 3,
-        renderRepresentedEnergyRatio: 1,
-      }),
-    ]);
-  });
-
-  it("preserves continuity order when atlas pages are saturated", () => {
-    const descriptor = buildCanonicalFullModalDescriptor({
-      maxTotalModes: 8,
-      basisAtlasPageCapacity: 4,
-      basisCacheResolution: 64,
-      modalFieldSlots: makeSlots([
-        [1, 1, 1, 0.95],
-        [1, 1, 2, 0.9],
-        [1, 2, 1, 0.88],
-        [2, 1, 1, 0.86],
-        [5, 4, 3, 0.5],
-        [9, 4, 2, 0.48],
-        [12, 2, 1, 0.46],
-        [14, 3, 2, 0.44],
-      ]),
-      activeModalFieldModeCount: 8,
-    });
-
-    expect(readModeKeys(descriptor.slotViews.modalFieldSlots, 4)).toEqual([
-      "1:1:1",
-      "1:1:2",
-      "1:2:1",
-      "2:1:1",
-    ]);
-    expect(descriptor.diagnostics.modalVarietyAudit).toMatchObject({
-      representedBasisPageModeCount: 4,
-      representedSpatialFamilyCount: 2,
-      basisAtlasCapacityRejectedCount: 4,
-      spatialBandwidthRejectedCount: 0,
-    });
-    expect(
-      descriptor.diagnostics.modalVarietyAudit.renderRepresentedEnergyRatio,
-    ).toBeCloseTo(
-      (0.95 ** 2 + 0.9 ** 2 + 0.88 ** 2 + 0.86 ** 2) /
-        (0.95 ** 2 +
-          0.9 ** 2 +
-          0.88 ** 2 +
-          0.86 ** 2 +
-          0.5 ** 2 +
-          0.48 ** 2 +
-          0.46 ** 2 +
-          0.44 ** 2),
-      6,
-    );
-  });
-
-  it("does not let stronger candidates override upstream continuity order", () => {
-    const descriptor = buildCanonicalFullModalDescriptor({
-      maxTotalModes: 6,
-      basisAtlasPageCapacity: 3,
-      basisCacheResolution: 64,
-      modalFieldSlots: makeSlots([
-        [8, 8, 8, 0.1],
-        [9, 9, 9, 0.09],
-        [1, 1, 1, 0.95],
-        [1, 1, 2, 0.9],
-        [6, 5, 4, 0.42],
-        [10, 4, 2, 0.4],
-      ]),
-      activeModalFieldModeCount: 6,
-    });
-
-    expect(readModeKeys(descriptor.slotViews.modalFieldSlots, 3)).toEqual([
-      "8:8:8",
-      "9:9:9",
-      "1:1:1",
-    ]);
-    expect(descriptor.diagnostics.basisAtlasCapacityRejectedCount).toBe(3);
   });
 
   it("reports spatial-bandwidth rejection separately from atlas capacity", () => {
@@ -329,34 +252,55 @@ describe("buildCanonicalFullModalDescriptor", () => {
     expect(descriptor.slotViews.modalFieldMetadataSlots[3]).toBeCloseTo(0.9, 6);
   });
 
-  it("compacts when upstream continuity releases an earlier mode", () => {
+  it("keeps duplicate Spectral mode keys owner-first instead of averaging RGB", () => {
+    const descriptor = buildCanonicalFullModalDescriptor({
+      maxTotalModes: 3,
+      modalFieldSlots: makeSlots([
+        [2, 2, 2, 0.4],
+        [2, 2, 2, 0.3],
+      ]),
+      modalFieldColorSlots: makeColorSlots([
+        [1, 0, 0, 0.5],
+        [0, 1, 1, 1],
+      ]),
+      modalFieldSpectralSlots: makeSpectralSlots([
+        [0, 1, 0.7, 0.1],
+        [0.5, 0.7, 0.9, 0.4],
+      ]),
+      activeModalFieldModeCount: 2,
+    });
+
+    const colorSlots = descriptor.slotViews.modalFieldColorSlots;
+    const spectralSlots = descriptor.slotViews.modalFieldSpectralSlots;
+
+    expect(descriptor.counts.modalFieldModeCount).toBe(1);
+    expect(colorSlots[0]).toBeCloseTo(0, 6);
+    expect(colorSlots[1]).toBeCloseTo(1, 6);
+    expect(colorSlots[2]).toBeCloseTo(1, 6);
+    expect(colorSlots[3]).toBeCloseTo((0.5 * 0.4 + 1 * 0.3) / 0.7, 6);
+    expect(spectralSlots[0]).toBeCloseTo(0.5, 6);
+    expect(spectralSlots[1]).toBeCloseTo(0.7, 6);
+    expect(spectralSlots[2]).toBeCloseTo(0.9, 6);
+    expect(spectralSlots[3]).toBeCloseTo(0.4, 6);
+  });
+
+  it("reports occupied slot span when stable slots become sparse", () => {
+    const stableSlotByModeKey = new Map([
+      ["1:1:1", 0],
+      ["2:2:2", 1],
+    ]);
+
     const descriptor = buildCanonicalFullModalDescriptor({
       maxTotalModes: 4,
+      stableSlotByModeKey,
       modalFieldSlots: makeSlots([[2, 2, 2, 0.7]]),
       activeModalFieldModeCount: 1,
     });
 
     expect(descriptor.counts.validModeCount).toBe(1);
-    expect(descriptor.counts.modalFieldModeCount).toBe(1);
-    expect(
-      Array.from(descriptor.slotViews.modalFieldSlots.slice(0, 4)),
-    ).toEqual([2, 2, 2, expect.closeTo(0.7, 6)]);
-  });
-
-  it("preserves zero-coefficient retained topology until upstream release", () => {
-    const descriptor = buildCanonicalFullModalDescriptor({
-      maxTotalModes: 4,
-      modalFieldSlots: makeSlots([
-        [1, 1, 1, 0],
-        [2, 2, 2, 0.7],
-      ]),
-      activeModalFieldModeCount: 2,
-    });
-
-    expect(descriptor.counts.validModeCount).toBe(2);
     expect(descriptor.counts.modalFieldModeCount).toBe(2);
     expect(
       Array.from(descriptor.slotViews.modalFieldSlots.slice(0, 8)),
-    ).toEqual([1, 1, 1, 0, 2, 2, 2, expect.closeTo(0.7, 6)]);
+    ).toEqual([0, 0, 0, 0, 2, 2, 2, expect.closeTo(0.7, 6)]);
   });
 });

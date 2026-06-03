@@ -30,11 +30,15 @@ describe("Spectral Light render contract", () => {
       "utf8",
     );
     for (const source of [raymarchMaterial]) {
-      expect(source).toContain("colorWeight");
+      expect(source).toContain("spectralOwnerColor");
+      expect(source).toContain("spectralCausticAccentColor");
+      expect(source).toContain("spectralCausticRimRadiance");
+      expect(source).toContain("spectralInterferenceRadiance");
       expect(source).toContain("spectralLightWeight");
       expect(source).not.toContain("FallbackColor");
       expect(source).not.toContain("tonalFallback");
       expect(source).not.toContain("uKeyTint");
+      expect(source).not.toContain("spectralFilm");
       expect(source).not.toContain(legacyColorTerm);
     }
   });

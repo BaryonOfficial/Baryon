@@ -100,8 +100,10 @@ function resolveTotalCapacity({ maxTotalModes, fallbackCapacity }) {
   return Math.max(0, Math.floor(fallbackCapacity || 0));
 }
 
-function getEntryModalEnergy(entry) {
-  return Math.max(0, entry?.coefficient ?? 0) ** 2;
+function compareModeTuple(left, right) {
+  if (left.u !== right.u) return left.u - right.u;
+  if (left.v !== right.v) return left.v - right.v;
+  return left.w - right.w;
 }
 
 function countPhaseAuthorityModes(phaseSlots, maxCount) {
@@ -112,238 +114,20 @@ function countPhaseAuthorityModes(phaseSlots, maxCount) {
   let activeCount = 0;
   for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
     const offset = slotIndex * 4;
-    const phaseAuthorityWeight =
+    const authority =
       (phaseSlots?.[offset + 2] ?? 0) * (phaseSlots?.[offset + 3] ?? 0);
-    if (phaseAuthorityWeight > 1e-4) {
+    if (authority > 1e-4) {
       activeCount += 1;
     }
   }
   return activeCount;
 }
 
-function getEntryModeOrder(entry) {
-  return Math.max(Math.abs(entry.u), Math.abs(entry.v), Math.abs(entry.w));
-}
-
-function getSpatialFamilyKey(entry) {
-  return [Math.abs(entry.u), Math.abs(entry.v), Math.abs(entry.w)]
-    .sort((left, right) => left - right)
-    .join(":");
-}
-
-function divideOrFallback(numerator, denominator, fallback = 0) {
-  return denominator > 0 ? numerator / denominator : fallback;
-}
-
-function buildModalVarietyAudit({
-  slotAssignments,
-  rejectedEntries,
-  structuralAdmission,
-  phaseAuthorityModeCount,
-  modeIdentityRetentionRatio,
-}) {
-  const acceptedEntries = slotAssignments.filter(Boolean);
-  const representedEntries = [];
-  const familyKeys = new Set();
-  const representedFamilyKeys = new Set();
-  let acceptedModalEnergy = 0;
-  let representedModalEnergy = 0;
-  let modalEnergySquaredSum = 0;
-  let minModeOrder = Infinity;
-  let maxModeOrder = 0;
-  let weightedModeOrderSum = 0;
-
-  for (let slotIndex = 0; slotIndex < slotAssignments.length; slotIndex += 1) {
-    const entry = slotAssignments[slotIndex];
-    if (!entry) {
-      continue;
-    }
-
-    const modalEnergy = Math.max(0, entry.coefficient) ** 2;
-    const modeOrder = getEntryModeOrder(entry);
-    acceptedModalEnergy += modalEnergy;
-    modalEnergySquaredSum += modalEnergy * modalEnergy;
-    minModeOrder = Math.min(minModeOrder, modeOrder);
-    maxModeOrder = Math.max(maxModeOrder, modeOrder);
-    weightedModeOrderSum += modalEnergy * modeOrder;
-    familyKeys.add(getSpatialFamilyKey(entry));
-
-    if (
-      modeOrder <= structuralAdmission.maxRepresentableModeIndex &&
-      slotIndex < structuralAdmission.basisAtlasPageCapacity
-    ) {
-      representedEntries.push(entry);
-      representedFamilyKeys.add(getSpatialFamilyKey(entry));
-      representedModalEnergy += modalEnergy;
-    }
-  }
-
-  const descriptorRejectedModalEnergy = rejectedEntries.reduce(
-    (total, entry) => total + Math.max(0, entry.coefficient) ** 2,
-    0,
-  );
-  const semanticModalEnergy =
-    acceptedModalEnergy + descriptorRejectedModalEnergy;
-  const energyEffectiveModeCount =
-    modalEnergySquaredSum > 0
-      ? (acceptedModalEnergy * acceptedModalEnergy) / modalEnergySquaredSum
-      : 0;
-
-  return {
-    semanticModeCount: acceptedEntries.length,
-    representedBasisPageModeCount: representedEntries.length,
-    basisAtlasPageCapacity: structuralAdmission.basisAtlasPageCapacity,
-    basisAtlasPressure: divideOrFallback(
-      representedEntries.length,
-      structuralAdmission.basisAtlasPageCapacity,
-    ),
-    spatialFamilyCount: familyKeys.size,
-    representedSpatialFamilyCount: representedFamilyKeys.size,
-    energyEffectiveModeCount,
-    modeOrderMin: Number.isFinite(minModeOrder) ? minModeOrder : 0,
-    modeOrderMax: maxModeOrder,
-    energyWeightedModeOrderMean: divideOrFallback(
-      weightedModeOrderSum,
-      acceptedModalEnergy,
-    ),
-    phaseAuthorityCoverage: divideOrFallback(
-      phaseAuthorityModeCount,
-      acceptedEntries.length,
-    ),
-    modeIdentityRetentionRatio: clamp01(modeIdentityRetentionRatio ?? 1),
-    semanticModalEnergy,
-    representedModalEnergy,
-    renderRepresentedEnergyRatio: divideOrFallback(
-      representedModalEnergy,
-      semanticModalEnergy,
-      semanticModalEnergy > 0 ? 0 : 1,
-    ),
-    descriptorRejectedModeCount: rejectedEntries.length,
-    descriptorRejectedEnergyRatio: divideOrFallback(
-      descriptorRejectedModalEnergy,
-      semanticModalEnergy,
-    ),
-    basisAtlasCapacityRejectedCount:
-      structuralAdmission.basisAtlasCapacityRejectedCount,
-    basisAtlasCapacityRejectedEnergyRatio: divideOrFallback(
-      structuralAdmission.basisAtlasCapacityRejectedEnergy,
-      semanticModalEnergy,
-    ),
-    spatialBandwidthRejectedCount:
-      structuralAdmission.spatialBandwidthRejectedCount,
-    spatialBandwidthRejectedEnergyRatio: divideOrFallback(
-      structuralAdmission.spatialBandwidthRejectedEnergy,
-      semanticModalEnergy,
-    ),
-    basisAtlasCapacitySweep: buildBasisAtlasCapacitySweep({
-      slotAssignments,
-      semanticModalEnergy,
-      maxRepresentableModeIndex: structuralAdmission.maxRepresentableModeIndex,
-      basisAtlasPageCapacity: structuralAdmission.basisAtlasPageCapacity,
-    }),
-  };
-}
-
-function resolveBasisAtlasSweepCapacities({
-  basisAtlasPageCapacity,
-  modalFieldCount,
-}) {
-  const capacities = new Set([
-    basisAtlasPageCapacity,
-    8,
-    12,
-    16,
-    20,
-    24,
-    modalFieldCount,
-  ]);
-  return [...capacities]
-    .filter((capacity) => Number.isFinite(capacity) && capacity > 0)
-    .map((capacity) => Math.floor(capacity))
-    .filter((capacity) => capacity <= Math.max(1, modalFieldCount))
-    .sort((left, right) => left - right);
-}
-
-function buildBasisAtlasCapacitySweep({
-  slotAssignments,
-  semanticModalEnergy,
-  maxRepresentableModeIndex,
-  basisAtlasPageCapacity,
-}) {
-  return resolveBasisAtlasSweepCapacities({
-    basisAtlasPageCapacity,
-    modalFieldCount: slotAssignments.filter(Boolean).length,
-  }).map((capacity) => {
-    const representedFamilyKeys = new Set();
-    let representedModeCount = 0;
-    let representedModalEnergy = 0;
-    let basisAtlasCapacityRejectedCount = 0;
-    let basisAtlasCapacityRejectedEnergy = 0;
-    let spatialBandwidthRejectedCount = 0;
-    let spatialBandwidthRejectedEnergy = 0;
-
-    for (
-      let slotIndex = 0;
-      slotIndex < slotAssignments.length;
-      slotIndex += 1
-    ) {
-      const entry = slotAssignments[slotIndex];
-      if (!entry) {
-        continue;
-      }
-      const modalEnergy = getEntryModalEnergy(entry);
-      if (getEntryModeOrder(entry) > maxRepresentableModeIndex) {
-        spatialBandwidthRejectedCount += 1;
-        spatialBandwidthRejectedEnergy += modalEnergy;
-        continue;
-      }
-      if (slotIndex >= capacity) {
-        basisAtlasCapacityRejectedCount += 1;
-        basisAtlasCapacityRejectedEnergy += modalEnergy;
-        continue;
-      }
-
-      representedModeCount += 1;
-      representedFamilyKeys.add(getSpatialFamilyKey(entry));
-      representedModalEnergy += modalEnergy;
-    }
-
-    const rejectedEnergy = Math.max(
-      0,
-      semanticModalEnergy - representedModalEnergy,
-    );
-    return {
-      basisAtlasPageCapacity: capacity,
-      representedBasisPageModeCount: representedModeCount,
-      representedSpatialFamilyCount: representedFamilyKeys.size,
-      representedModalEnergy,
-      renderRepresentedEnergyRatio: divideOrFallback(
-        representedModalEnergy,
-        semanticModalEnergy,
-        semanticModalEnergy > 0 ? 0 : 1,
-      ),
-      basisAtlasCapacityRejectedCount,
-      basisAtlasCapacityRejectedEnergyRatio: divideOrFallback(
-        basisAtlasCapacityRejectedEnergy,
-        semanticModalEnergy,
-      ),
-      spatialBandwidthRejectedCount,
-      spatialBandwidthRejectedEnergyRatio: divideOrFallback(
-        spatialBandwidthRejectedEnergy,
-        semanticModalEnergy,
-      ),
-      unrepresentedModalEnergyRatio: divideOrFallback(
-        rejectedEnergy,
-        semanticModalEnergy,
-      ),
-    };
-  });
-}
-
 function buildAdmissionEntries({
   slots,
   phaseSlots,
   colorSlots,
+  spectralSlots,
   metadataSlots,
   validCount,
 }) {
@@ -353,7 +137,10 @@ function buildAdmissionEntries({
 
   for (let slotIndex = 0; slotIndex < limit; slotIndex += 1) {
     const offset = slotIndex * 4;
-    const coefficient = Math.max(0, slots?.[offset + 3] ?? 0);
+    const coefficient = slots?.[offset + 3] ?? 0;
+    if (!(coefficient > 0)) {
+      continue;
+    }
     const u = slots?.[offset] ?? 0;
     const v = slots?.[offset + 1] ?? 0;
     const w = slots?.[offset + 2] ?? 0;
@@ -371,6 +158,10 @@ function buildAdmissionEntries({
       colorG: colorSlots?.[offset + 1] ?? 0,
       colorB: colorSlots?.[offset + 2] ?? 0,
       colorWeight: colorSlots?.[offset + 3] ?? 0,
+      spectralPhase: spectralSlots?.[offset] ?? 0,
+      spectralWavelength: spectralSlots?.[offset + 1] ?? 0,
+      spectralHarmonicConfidence: spectralSlots?.[offset + 2] ?? 0,
+      spectralAccentEnergy: spectralSlots?.[offset + 3] ?? 0,
       naturalFrequencyHz: readFiniteNonNegative(metadataSlots?.[offset]),
       qualityFactor: readFiniteNonNegative(metadataSlots?.[offset + 1]),
       dampingRatio: readFiniteNonNegative(metadataSlots?.[offset + 2]),
@@ -386,14 +177,20 @@ function mergeAdmissionEntries(entries) {
 
   for (const entry of entries) {
     const existing = merged.get(entry.modeKey);
+    const spectralInfluence = Math.max(0, entry.colorWeight) * entry.coefficient;
     if (!existing) {
       merged.set(entry.modeKey, {
         ...entry,
         coefficient: entry.coefficient,
         colorWeightNumerator: entry.colorWeight * entry.coefficient,
-        colorRNumerator: entry.colorR * entry.colorWeight * entry.coefficient,
-        colorGNumerator: entry.colorG * entry.colorWeight * entry.coefficient,
-        colorBNumerator: entry.colorB * entry.colorWeight * entry.coefficient,
+        spectralOwnerInfluence: spectralInfluence,
+        spectralOwnerColorR: entry.colorR,
+        spectralOwnerColorG: entry.colorG,
+        spectralOwnerColorB: entry.colorB,
+        spectralOwnerPhase: entry.spectralPhase,
+        spectralOwnerWavelength: entry.spectralWavelength,
+        spectralOwnerHarmonicConfidence: entry.spectralHarmonicConfidence,
+        spectralOwnerAccentEnergy: entry.spectralAccentEnergy,
         naturalFrequencyNumerator: entry.naturalFrequencyHz * entry.coefficient,
         qualityFactorNumerator: entry.qualityFactor * entry.coefficient,
         dampingRatioNumerator: entry.dampingRatio * entry.coefficient,
@@ -409,12 +206,17 @@ function mergeAdmissionEntries(entries) {
       existing.phaseCoherence = entry.phaseCoherence;
     }
     existing.colorWeightNumerator += entry.colorWeight * entry.coefficient;
-    existing.colorRNumerator +=
-      entry.colorR * entry.colorWeight * entry.coefficient;
-    existing.colorGNumerator +=
-      entry.colorG * entry.colorWeight * entry.coefficient;
-    existing.colorBNumerator +=
-      entry.colorB * entry.colorWeight * entry.coefficient;
+    if (spectralInfluence > existing.spectralOwnerInfluence) {
+      existing.spectralOwnerInfluence = spectralInfluence;
+      existing.spectralOwnerColorR = entry.colorR;
+      existing.spectralOwnerColorG = entry.colorG;
+      existing.spectralOwnerColorB = entry.colorB;
+      existing.spectralOwnerPhase = entry.spectralPhase;
+      existing.spectralOwnerWavelength = entry.spectralWavelength;
+      existing.spectralOwnerHarmonicConfidence =
+        entry.spectralHarmonicConfidence;
+      existing.spectralOwnerAccentEnergy = entry.spectralAccentEnergy;
+    }
     existing.naturalFrequencyNumerator +=
       entry.naturalFrequencyHz * entry.coefficient;
     existing.qualityFactorNumerator += entry.qualityFactor * entry.coefficient;
@@ -428,13 +230,16 @@ function mergeAdmissionEntries(entries) {
   return Array.from(merged.values()).map((entry) => {
     const coefficientDenom = Math.max(entry.coefficient, 1e-9);
     const colorWeight = entry.colorWeightNumerator / coefficientDenom;
-    const colorDenom = Math.max(entry.colorWeightNumerator, 1e-9);
     return {
       ...entry,
-      colorR: entry.colorRNumerator / colorDenom,
-      colorG: entry.colorGNumerator / colorDenom,
-      colorB: entry.colorBNumerator / colorDenom,
+      colorR: entry.spectralOwnerColorR,
+      colorG: entry.spectralOwnerColorG,
+      colorB: entry.spectralOwnerColorB,
       colorWeight,
+      spectralPhase: entry.spectralOwnerPhase,
+      spectralWavelength: entry.spectralOwnerWavelength,
+      spectralHarmonicConfidence: entry.spectralOwnerHarmonicConfidence,
+      spectralAccentEnergy: entry.spectralOwnerAccentEnergy,
       naturalFrequencyHz: entry.naturalFrequencyNumerator / coefficientDenom,
       qualityFactor: entry.qualityFactorNumerator / coefficientDenom,
       dampingRatio: entry.dampingRatioNumerator / coefficientDenom,
@@ -442,16 +247,55 @@ function mergeAdmissionEntries(entries) {
   });
 }
 
-function assignEntriesToStableSlotIndices(entries, totalCapacity) {
+function assignEntriesToStableSlotIndices(
+  entries,
+  totalCapacity,
+  stableSlotByModeKey = null,
+) {
   const assignments = new Array(totalCapacity).fill(null);
-  const orderedEntries = entries.slice(0, totalCapacity);
+  if (!stableSlotByModeKey) {
+    const sorted = [...entries].sort(compareModeTuple);
+    for (
+      let index = 0;
+      index < sorted.length && index < totalCapacity;
+      index += 1
+    ) {
+      assignments[index] = sorted[index];
+    }
+    return assignments;
+  }
 
-  for (
-    let index = 0;
-    index < orderedEntries.length && index < totalCapacity;
-    index += 1
-  ) {
-    assignments[index] = orderedEntries[index];
+  const usedSlots = new Set();
+  const unassigned = [];
+
+  for (const entry of entries) {
+    const stableSlot = stableSlotByModeKey.get(entry.modeKey);
+    if (
+      Number.isInteger(stableSlot) &&
+      stableSlot >= 0 &&
+      stableSlot < totalCapacity &&
+      !usedSlots.has(stableSlot)
+    ) {
+      assignments[stableSlot] = entry;
+      usedSlots.add(stableSlot);
+    } else {
+      unassigned.push(entry);
+    }
+  }
+
+  unassigned.sort(compareModeTuple);
+  let searchFrom = 0;
+  for (const entry of unassigned) {
+    while (searchFrom < totalCapacity && assignments[searchFrom] != null) {
+      searchFrom += 1;
+    }
+    if (searchFrom >= totalCapacity) {
+      break;
+    }
+    assignments[searchFrom] = entry;
+    stableSlotByModeKey.set(entry.modeKey, searchFrom);
+    usedSlots.add(searchFrom);
+    searchFrom += 1;
   }
 
   return assignments;
@@ -461,6 +305,7 @@ function writeUnifiedModalSlotViewsFromAssignments(assignments, capacity) {
   const slots = new Float32Array(capacity * 4);
   const phaseSlots = new Float32Array(capacity * 4);
   const colorSlots = new Float32Array(capacity * 4);
+  const spectralSlots = new Float32Array(capacity * 4);
   const metadataSlots = new Float32Array(capacity * 4);
 
   for (let slotIndex = 0; slotIndex < capacity; slotIndex += 1) {
@@ -484,6 +329,11 @@ function writeUnifiedModalSlotViewsFromAssignments(assignments, capacity) {
     colorSlots[offset + 2] = entry.colorB;
     colorSlots[offset + 3] = entry.colorWeight;
 
+    spectralSlots[offset] = entry.spectralPhase;
+    spectralSlots[offset + 1] = entry.spectralWavelength;
+    spectralSlots[offset + 2] = entry.spectralHarmonicConfidence;
+    spectralSlots[offset + 3] = entry.spectralAccentEnergy;
+
     metadataSlots[offset] = entry.naturalFrequencyHz;
     metadataSlots[offset + 1] = entry.qualityFactor;
     metadataSlots[offset + 2] = entry.dampingRatio;
@@ -494,6 +344,7 @@ function writeUnifiedModalSlotViewsFromAssignments(assignments, capacity) {
     modalFieldSlots: slots,
     modalFieldPhaseSlots: phaseSlots,
     modalFieldColorSlots: colorSlots,
+    modalFieldSpectralSlots: spectralSlots,
     modalFieldMetadataSlots: metadataSlots,
   };
 }
@@ -514,12 +365,14 @@ function countOccupiedSlotSpan(assignments) {
  *   modalFieldSlots?: Float32Array | number[],
  *   modalFieldPhaseSlots?: Float32Array | number[],
  *   modalFieldColorSlots?: Float32Array | number[] | null,
+ *   modalFieldSpectralSlots?: Float32Array | number[] | null,
  *   modalFieldMetadataSlots?: Float32Array | number[] | null,
  *   activeModalFieldModeCount?: number,
  *   observerCandidateModeCount?: number,
  *   observedModalModeCount?: number,
  *   phaseAuthorityModeCount?: number,
  *   modeIdentityRetentionRatio?: number,
+ *   stableSlotByModeKey?: Map<string, number> | null,
  *   basisAtlasPageCapacity?: number,
  *   basisCacheResolution?: number,
  * }} [options]
@@ -530,12 +383,14 @@ export function buildCanonicalFullModalDescriptor({
   modalFieldSlots,
   modalFieldPhaseSlots,
   modalFieldColorSlots = null,
+  modalFieldSpectralSlots = null,
   modalFieldMetadataSlots = null,
   activeModalFieldModeCount,
   observerCandidateModeCount,
   observedModalModeCount,
   phaseAuthorityModeCount,
   modeIdentityRetentionRatio = 1,
+  stableSlotByModeKey = null,
   basisAtlasPageCapacity = MODAL_BASIS_ATLAS_PAGE_CAPACITY,
   basisCacheResolution = MODAL_BASIS_CACHE_RESOLUTION,
 } = {}) {
@@ -552,6 +407,7 @@ export function buildCanonicalFullModalDescriptor({
     slots: modalFieldSlots,
     phaseSlots: modalFieldPhaseSlots,
     colorSlots: modalFieldColorSlots,
+    spectralSlots: modalFieldSpectralSlots,
     metadataSlots: modalFieldMetadataSlots,
     validCount: validModeCount,
   });
@@ -562,12 +418,21 @@ export function buildCanonicalFullModalDescriptor({
     admittedEntries = mergedEntries;
     rejectedEntries = [];
   } else {
-    admittedEntries = mergedEntries.slice(0, totalCapacity);
-    rejectedEntries = mergedEntries.slice(totalCapacity);
+    const entriesByAdmissionPriority = [...mergedEntries].sort(
+      (left, right) => {
+        if (right.coefficient !== left.coefficient) {
+          return right.coefficient - left.coefficient;
+        }
+        return compareModeTuple(left, right);
+      },
+    );
+    admittedEntries = entriesByAdmissionPriority.slice(0, totalCapacity);
+    rejectedEntries = entriesByAdmissionPriority.slice(totalCapacity);
   }
   const slotAssignments = assignEntriesToStableSlotIndices(
     admittedEntries,
     totalCapacity,
+    stableSlotByModeKey,
   );
   const acceptedEntries = slotAssignments.filter((entry) => entry != null);
   const occupiedSlotSpan = countOccupiedSlotSpan(slotAssignments);
@@ -605,13 +470,6 @@ export function buildCanonicalFullModalDescriptor({
   )
     ? Math.max(0, Math.floor(phaseAuthorityModeCount))
     : countPhaseAuthorityModes(modalFieldPhaseSlots, validModeCount);
-  const modalVarietyAudit = buildModalVarietyAudit({
-    slotAssignments,
-    rejectedEntries,
-    structuralAdmission,
-    phaseAuthorityModeCount: resolvedPhaseAuthorityModeCount,
-    modeIdentityRetentionRatio,
-  });
 
   return {
     generation: Math.max(0, Math.floor(generation ?? 0)),
@@ -671,7 +529,6 @@ export function buildCanonicalFullModalDescriptor({
         structuralAdmission.spatialBandwidthRejectedCount,
       basisAtlasPageCapacity: structuralAdmission.basisAtlasPageCapacity,
       maxRepresentableModeIndex: structuralAdmission.maxRepresentableModeIndex,
-      modalVarietyAudit,
       rejectionReasons,
     },
     slotViews: {

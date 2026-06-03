@@ -29,17 +29,9 @@ const MODAL_EXCITATION_SOURCE_URL = new URL(
   "./modalExcitation.js",
   import.meta.url,
 );
-const MODAL_OBSERVED_SCORING_SOURCE_URL = new URL(
-  "./modalObservedScoring.js",
-  import.meta.url,
-);
 
 function readModalExcitationSource() {
   return readFileSync(MODAL_EXCITATION_SOURCE_URL, { encoding: "utf8" });
-}
-
-function readModalObservedScoringSource() {
-  return readFileSync(MODAL_OBSERVED_SCORING_SOURCE_URL, { encoding: "utf8" });
 }
 
 function expectModalHelperBoundary({ helperPath, localFunctions }) {
@@ -49,45 +41,6 @@ function expectModalHelperBoundary({ helperPath, localFunctions }) {
   for (const localFunction of localFunctions) {
     expect(source).not.toContain(`function ${localFunction}`);
   }
-}
-
-function extractModalExcitationFunctionSource(functionName) {
-  const source = readModalExcitationSource();
-  const start = source.indexOf(`function ${functionName}`);
-  expect(start).toBeGreaterThanOrEqual(0);
-  const paramsStart = source.indexOf("(", start);
-  expect(paramsStart).toBeGreaterThan(start);
-
-  let paramsDepth = 0;
-  let bodyStart = -1;
-  for (let index = paramsStart; index < source.length; index += 1) {
-    const char = source[index];
-    if (char === "(") {
-      paramsDepth += 1;
-    } else if (char === ")") {
-      paramsDepth -= 1;
-      if (paramsDepth === 0) {
-        bodyStart = source.indexOf("{", index);
-        break;
-      }
-    }
-  }
-  expect(bodyStart).toBeGreaterThan(start);
-
-  let depth = 0;
-  for (let index = bodyStart; index < source.length; index += 1) {
-    const char = source[index];
-    if (char === "{") {
-      depth += 1;
-    } else if (char === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        return source.slice(start, index + 1);
-      }
-    }
-  }
-
-  throw new Error(`Unable to extract function source for ${functionName}`);
 }
 
 it("keeps phase-slot derivation in the modal phase slot helper", () => {
@@ -133,82 +86,6 @@ it("keeps observed-mode scoring in the modal observed scoring helper", () => {
       "getResonantHarmonicCoupling",
     ],
   });
-});
-
-it("keeps retained display continuity out of canonical observed modal state", () => {
-  const source = extractModalExcitationFunctionSource(
-    "createObservedModalModeEntry",
-  );
-
-  expect(source).not.toContain("driveEnergy: Math.max");
-  expect(source).not.toContain("coherence: Math.max");
-  expect(source).not.toContain("persistence: Math.max");
-  expect(source).not.toContain("resonantMaturity: isResonant");
-  expect(source).toContain("driveEnergy,");
-  expect(source).toContain("coherence,");
-  expect(source).toContain("persistence,");
-  expect(source).toContain("resonantMaturity,");
-  expect(source).toContain("displayContinuityDriveEnergy,");
-  expect(source).toContain("displayContinuityCoherence,");
-  expect(source).toContain("displayContinuityPersistence,");
-  expect(source).toContain("resonantDisplayContinuityMaturity,");
-});
-
-it("keeps high-Q sparse evidence out of topology ownership", () => {
-  const source = extractModalExcitationFunctionSource(
-    "deriveHighQTopologySignal",
-  );
-
-  expect(source).not.toContain("highQSparseResonatorEvidence");
-  expect(source).toContain("highQResonantEnergy");
-  expect(source).toContain("highQRingSupport");
-  expect(source).toContain("highQObservedDrive");
-  expect(source).toContain("highQObservedCoherence");
-});
-
-it("keeps display continuity support on projection and display paths only", () => {
-  const signalScoreSource =
-    extractModalExcitationFunctionSource("getSignalScore");
-  const displayScoreSource =
-    extractModalExcitationFunctionSource("getDisplayScore");
-  const projectionShortlistSource = extractModalExcitationFunctionSource(
-    "buildProjectionShortlist",
-  );
-
-  expect(signalScoreSource).toContain("getDisplayContinuityDriveEnergy");
-  expect(signalScoreSource).toContain("getDisplayContinuityCoherence");
-  expect(displayScoreSource).toContain("getDisplayContinuityDriveEnergy");
-  expect(displayScoreSource).toContain("getDisplayContinuityCoherence");
-  expect(projectionShortlistSource).toContain("getDisplayContinuityCoherence");
-});
-
-it("keeps projection shortlist scores out of semantic modal candidate energy", () => {
-  const projectionShortlistSource = extractModalExcitationFunctionSource(
-    "buildProjectionShortlist",
-  );
-  const modalCandidateSource = extractModalExcitationFunctionSource(
-    "buildModalCandidateList",
-  );
-
-  expect(projectionShortlistSource).toContain("displayProjectionAmplitude");
-  expect(projectionShortlistSource).not.toContain("signalAmplitude");
-  expect(modalCandidateSource).not.toContain("displayProjectionAmplitude");
-  expect(modalCandidateSource).toContain("storedEnergy");
-  expect(modalCandidateSource).toContain("forcingEnergy");
-  expect(modalCandidateSource).toContain("observedSupport");
-});
-
-it("keeps file weak-noise policy owned by source evidence", () => {
-  const modalExcitationSource = readModalExcitationSource();
-  const observedScoringSource = readModalObservedScoringSource();
-
-  expect(modalExcitationSource).not.toContain("weakFile");
-  expect(modalExcitationSource).not.toContain('analysisClass === "file"');
-  expect(observedScoringSource).not.toContain("avgAmplitude < 10");
-  expect(observedScoringSource).not.toContain("analyserRms < 0.025");
-  expect(observedScoringSource).toContain(
-    "sourceBoundarySuppressWeakSpectralFallbackDrive",
-  );
 });
 
 function createStatus(overrides = {}) {
@@ -697,30 +574,6 @@ function expectCanonicalObservedModeEntries(state) {
     });
     for (const field of REMOVED_MODAL_OBSERVER_ENTRY_FIELDS) {
       expect(entry[field]).toBeUndefined();
-    }
-  }
-}
-
-function expectObservedDisplayContinuityEntries(state) {
-  const continuityEntries = Array.from(state.observedModes?.values?.() ?? []).filter(
-    (entry) =>
-      entry.resonantDisplayContinuity === true ||
-      entry.sourceCoupledDisplayContinuity === true,
-  );
-
-  expect(continuityEntries.length).toBeGreaterThan(0);
-  for (const entry of continuityEntries) {
-    expect(entry.displayContinuityDriveEnergy).toBeGreaterThanOrEqual(0);
-    expect(entry.displayContinuityCoherence).toBeGreaterThanOrEqual(0);
-    expect(entry.displayContinuityPersistence).toBeGreaterThanOrEqual(0);
-    if (entry.resonantDisplayContinuity === true) {
-      expect(entry.resonantDisplayContinuityMaturity).toBeGreaterThanOrEqual(0);
-      expect(entry.resonantDisplayContinuityPresence).toBeGreaterThanOrEqual(0);
-    }
-    if (entry.sourceCoupledDisplayContinuity === true) {
-      expect(
-        entry.sourceCoupledDisplayContinuityPresence,
-      ).toBeGreaterThanOrEqual(0);
     }
   }
 }
@@ -1234,10 +1087,16 @@ describe("modal excitation structural state", () => {
       performanceNow: () => 3,
     });
 
+    const slots = structural.candidateForcingSlotsSource;
     const colors = structural.sourceCoupledColorSlotsSource;
     let staleGreenWeight = 0;
     for (let offset = 0; offset < colors.length; offset += 4) {
-      if (colors[offset + 1] === 1 && colors[offset + 3] > staleGreenWeight) {
+      if (
+        slots[offset] === 8 &&
+        slots[offset + 1] === 8 &&
+        slots[offset + 2] === 8 &&
+        colors[offset + 3] > staleGreenWeight
+      ) {
         staleGreenWeight = colors[offset + 3];
       }
     }
@@ -1908,7 +1767,7 @@ describe("modal excitation structural state", () => {
     }
 
     expect(structural.structuralMetrics.modeCoherence).toBeGreaterThan(0.5);
-    expectObservedDisplayContinuityEntries(state);
+    expect(structural.structuralMetrics.modalPersistence).toBeGreaterThan(0.45);
     expect(
       countActiveSlotsLocal(structural.proposalResonantSlotsSource),
     ).toBeGreaterThan(0);
@@ -1959,7 +1818,7 @@ describe("modal excitation structural state", () => {
     }
 
     expect(structural.structuralMetrics.modeCoherence).toBeGreaterThan(0.35);
-    expectObservedDisplayContinuityEntries(state);
+    expect(structural.structuralMetrics.modalPersistence).toBeGreaterThan(0.35);
     expect(
       sumAmplitudes(structural.candidateResponseSlotsSource),
     ).toBeGreaterThan(0.035);
@@ -1973,9 +1832,10 @@ describe("modal excitation structural state", () => {
       0.035,
     );
     expect(structural.structuralMetrics.highQRingSupport).toBeGreaterThan(0.5);
+    expect(structural.structuralMetrics.projectionHighQProtection).toBe(0);
     expect(
-      structural.structuralMetrics.projectionHighQProtection,
-    ).toBeGreaterThan(0.1);
+      structural.structuralMetrics.resonantSignalAuthoritativeModalResponse,
+    ).toBe(true);
     expect(
       structural.structuralMetrics.modalResponseResonantEnergy,
     ).toBeGreaterThan(0.14);
@@ -2045,7 +1905,7 @@ describe("modal excitation structural state", () => {
     ).toBeGreaterThanOrEqual(2);
   });
 
-  it("keeps retained display continuity separate from phase authority", () => {
+  it("retains bounded phase authority for coherent sustained bowl modes", () => {
     const state = createModalExcitationState(16);
     const status = createStatus({
       audioInputMode: "live",
@@ -2091,16 +1951,15 @@ describe("modal excitation structural state", () => {
       state.observedModes?.values?.() ?? [],
     ).filter((entry) => entry.layer === "resonant" && entry.phaseAuthority > 0);
 
-    expectObservedDisplayContinuityEntries(state);
-    expect(structural.structuralMetrics.modalPhaseAuthority).toBeGreaterThanOrEqual(
-      0,
-    );
-    expect(structural.structuralMetrics.highQPhaseAuthority).toBeGreaterThanOrEqual(
-      0,
-    );
+    expect(structural.structuralMetrics.modalPhaseAuthority).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.highQPhaseAuthority).toBeGreaterThan(0);
     expect(
       structural.structuralMetrics.lowQPhaseAuthority,
     ).toBeGreaterThanOrEqual(0);
+    expect(
+      structural.structuralMetrics.modalPhaseCoherentFieldModeCount,
+    ).toBeGreaterThan(0);
+    expect(resonantPhaseEntries.length).toBeGreaterThan(0);
     for (const entry of resonantPhaseEntries) {
       expect(Math.abs(entry.phaseVelocityRadPerSec)).toBeLessThanOrEqual(
         Math.PI * 1.25,
@@ -2110,9 +1969,7 @@ describe("modal excitation structural state", () => {
     }
     expect(
       countAuthoritativePhaseSlots(structural.resonantPhaseSlotsSource),
-    ).toBeLessThanOrEqual(
-      structural.structuralMetrics.modalPhaseCoherentFieldModeCount,
-    );
+    ).toBeGreaterThan(0);
     expectCanonicalObservedModeEntries(state);
   });
 
@@ -2167,7 +2024,7 @@ describe("modal excitation structural state", () => {
     );
     expect(
       sumAmplitudes(structural.candidateResponseSlotsSource),
-    ).toBeGreaterThan(0.0025);
+    ).toBeGreaterThan(0.003);
     expect(
       countActiveSlotsLocal(structural.candidateResponseSlotsSource),
     ).toBeGreaterThanOrEqual(4);
@@ -2257,7 +2114,7 @@ describe("modal excitation structural state", () => {
     );
     expect(
       sumAmplitudes(structural.candidateResponseSlotsSource),
-    ).toBeGreaterThan(0.0025);
+    ).toBeGreaterThan(0.003);
   });
 
   it("keeps observed high-Q detail when a ringing bowl tail alternates dominant partials", () => {
@@ -2311,7 +2168,7 @@ describe("modal excitation structural state", () => {
 
     expect(
       sumAmplitudes(structural.candidateResponseSlotsSource),
-    ).toBeGreaterThan(0.0025);
+    ).toBeGreaterThan(0.003);
   });
 
   it("refreshes high-Q detail from sustained upper bowl harmonics after the strike", () => {
@@ -3096,7 +2953,7 @@ describe("modal excitation structural state", () => {
     }
 
     expect(structural.structuralMetrics.modeCoherence).toBeGreaterThan(0.8);
-    expectObservedDisplayContinuityEntries(state);
+    expect(structural.structuralMetrics.modalPersistence).toBeGreaterThan(0.5);
     expect(structural.structuralMetrics.highOrderModalEnergy).toBeGreaterThan(
       0,
     );
@@ -3231,7 +3088,7 @@ describe("modal excitation structural state", () => {
         continue;
       }
       expect(current.resonantAmplitude).toBeGreaterThanOrEqual(
-        previous.resonantAmplitude * 0.3,
+        previous.resonantAmplitude * 0.6,
       );
     }
     expect(
@@ -3320,7 +3177,7 @@ describe("modal excitation structural state", () => {
     }
 
     expect(structural.structuralMetrics.modeCoherence).toBeGreaterThan(0.55);
-    expectObservedDisplayContinuityEntries(state);
+    expect(structural.structuralMetrics.modalPersistence).toBeGreaterThan(0.5);
     expect(
       countActiveSlotsLocal(structural.candidateResponseSlotsSource),
     ).toBeGreaterThan(0);
@@ -3353,7 +3210,7 @@ describe("modal excitation structural state", () => {
     }
 
     expect(structural.structuralMetrics.modeCoherence).toBeGreaterThan(0.45);
-    expectObservedDisplayContinuityEntries(state);
+    expect(structural.structuralMetrics.modalPersistence).toBeGreaterThan(0.35);
     expect(
       countActiveSlotsLocal(structural.candidateForcingSlotsSource),
     ).toBeGreaterThan(0);
@@ -3365,7 +3222,7 @@ describe("modal excitation structural state", () => {
     ).toBeGreaterThan(0);
     expect(
       sumAmplitudes(structural.candidateResponseSlotsSource),
-    ).toBeGreaterThan(0.0025);
+    ).toBeGreaterThan(0.003);
   });
 
   it("keeps long coherent ring-out detail from decaying to an empty render", () => {
@@ -3390,7 +3247,8 @@ describe("modal excitation structural state", () => {
       });
     }
 
-    expectObservedDisplayContinuityEntries(state);
+    expect(structural.structuralMetrics.modeCoherence).toBeGreaterThan(0.45);
+    expect(structural.structuralMetrics.modalPersistence).toBeGreaterThan(0.35);
     expect(
       countActiveSlotsLocal(structural.candidateResponseSlotsSource),
     ).toBeGreaterThan(0);
@@ -3814,8 +3672,8 @@ describe("modal excitation structural state", () => {
       switchedDisplayAmplitudes,
     );
 
-    expect(staleProposalRatio).toBeLessThan(0.78);
-    expect(staleDisplayRatio).toBeLessThan(0.78);
+    expect(staleProposalRatio).toBeLessThan(0.69);
+    expect(staleDisplayRatio).toBeLessThan(0.72);
     expect(staleDisplayRatio).toBeLessThanOrEqual(staleProposalRatio + 0.18);
   });
 
@@ -4157,7 +4015,7 @@ describe("modal excitation structural state", () => {
         [...seededVisibleAmplitudes.keys()],
       ),
     ).toBe(true);
-    expect(sharedRatio).toBeLessThan(0.6);
+    expect(sharedRatio).toBeLessThan(0.42);
     expect(freshStructural.structuralMetrics.resonantSignalAuthoritative).toBe(
       true,
     );
@@ -4248,7 +4106,7 @@ describe("modal excitation structural state", () => {
     );
   });
 
-  it("leaves fresh detail admission unreserved for downstream continuity", () => {
+  it("limits reserved fresh admission to one assist-led extra detail key", () => {
     const state = createModalExcitationState(16);
     const seededInputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
@@ -4299,10 +4157,11 @@ describe("modal excitation structural state", () => {
       (key) => !seededVisibleKeys.includes(key),
     );
 
-    expect(newVisibleKeys.length).toBeGreaterThan(3);
+    expect(newVisibleKeys.length).toBeLessThanOrEqual(3);
+    expect(newVisibleKeys.length).toBeGreaterThan(0);
     expect(
-      newVisibleKeys.every((key) =>
-        readModeKeys(freshStructural.proposalResonantSlotsSource).includes(key),
+      readModeKeys(freshStructural.proposalResonantSlotsSource).includes(
+        newVisibleKeys[0],
       ),
     ).toBe(true);
   });

@@ -5,6 +5,7 @@ function createLayerBuffer(slotCount) {
     slots: new Float32Array(slotCount * 4),
     referenceSlots: new Float32Array(slotCount * 4),
     colorSlots: new Float32Array(slotCount * 4),
+    spectralSlots: new Float32Array(slotCount * 4),
     phaseSlots: new Float32Array(slotCount * 4),
   };
 }

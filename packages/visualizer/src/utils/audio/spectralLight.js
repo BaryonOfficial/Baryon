@@ -105,6 +105,8 @@ function clamp01(value) {
 
 const SPECTRAL_LIGHT_STRENGTH_GATE_START = 0.04;
 const SPECTRAL_LIGHT_STRENGTH_GATE_END = 0.32;
+const SPECTRAL_OBSERVER_LUMINANCE_TARGET = 0.42;
+const SPECTRAL_OBSERVER_LUMINANCE_MIN_SCALE = 0.62;
 
 function smoothstep(edge0, edge1, value) {
   if (edge1 <= edge0) {
@@ -207,6 +209,10 @@ function maxChannel(rgb) {
   return Math.max(rgb.r, rgb.g, rgb.b);
 }
 
+function linearRgbLuminance(rgb) {
+  return 0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b;
+}
+
 function normalizeRgbPeak(rgb) {
   const peak = maxChannel(rgb);
   if (!Number.isFinite(peak) || peak <= SPECTRAL_EPSILON) {
@@ -267,6 +273,19 @@ function clampRgb(rgb) {
     g: clamp01(rgb.g),
     b: clamp01(rgb.b),
   };
+}
+
+function deriveObserverLuminanceScale(rgb) {
+  const luminance = linearRgbLuminance(rgb);
+  if (!Number.isFinite(luminance) || luminance <= 0) {
+    return 0;
+  }
+  return clamp(
+    SPECTRAL_OBSERVER_LUMINANCE_TARGET /
+      Math.max(SPECTRAL_OBSERVER_LUMINANCE_TARGET, luminance),
+    SPECTRAL_OBSERVER_LUMINANCE_MIN_SCALE,
+    1,
+  );
 }
 
 export function foldAudioFrequencyToSpectralPhase(
@@ -397,6 +416,8 @@ export function createSpectralLightColor({
       xyz: { x: 0, y: 0, z: 0 },
       harmonicConfidence: 0,
       accentEnergy: 0,
+      observerLuminance: 0,
+      observerLuminanceScale: 0,
     };
   }
 
@@ -407,6 +428,8 @@ export function createSpectralLightColor({
   const xyz = sampleCie1931(wavelengthNm);
   const displayScaledRgb = normalizeRgbPeak(xyzToLinearSrgb(xyz));
   const rgb = normalizeRgbPeak(compressLinearSrgbToGamut(displayScaledRgb));
+  const observerLuminance = linearRgbLuminance(rgb);
+  const observerLuminanceScale = deriveObserverLuminanceScale(rgb);
   const strengthSignal = clamp01(strength);
   const harmonicSignal = clamp01(harmonicConfidence);
   const transientSignal = clamp01(transientEnergy);
@@ -415,11 +438,12 @@ export function createSpectralLightColor({
     SPECTRAL_LIGHT_STRENGTH_GATE_END,
     strengthSignal,
   );
-  const weight =
+  const baseWeight =
     strengthSignal > 0
       ? strengthGate *
         clamp01(0.55 + 0.35 * harmonicSignal + 0.1 * transientSignal)
       : 0;
+  const weight = baseWeight * observerLuminanceScale;
 
   return {
     rgb,
@@ -429,6 +453,8 @@ export function createSpectralLightColor({
     xyz,
     harmonicConfidence: harmonicSignal,
     accentEnergy: transientSignal,
+    observerLuminance,
+    observerLuminanceScale,
   };
 }
 

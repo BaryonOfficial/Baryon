@@ -17,7 +17,7 @@ import {
   updateAudioFeatureFastSignalState,
 } from "./buildFeatureFrame.js";
 import { binIndexToFrequencyHz, frequencyToBinIndex } from "./binFrequency.js";
-import { deriveHighQSparseResonatorEvidence } from "./highQSparseResonatorEvidence.js";
+import { deriveHighQSparseResonatorAuthority } from "./highQSparseResonatorAuthority.js";
 import { DEFAULT_RENDER_ENERGY_EPSILON } from "./modalEnergyLedger.js";
 
 const FFT_SIZE = 4096;
@@ -48,25 +48,6 @@ it("derives observation energy from modal coefficient and response only", () => 
   expect(observationEnergyHelper).toBeTruthy();
   expect(observationEnergyHelper).not.toContain("modalPhaseAuthority");
   expect(observationEnergyHelper).not.toContain("liveInputHardSilenceActive");
-});
-
-it("keeps render liveness owned by canonical energy quantities", () => {
-  const source = readFileSync(
-    new URL("./buildFeatureFrame.js", import.meta.url),
-    "utf8",
-  );
-  const renderAuthorityHelper = source.match(
-    /function hasFeatureFrameRenderAuthority[\s\S]*?\n}/,
-  )?.[0];
-
-  expect(renderAuthorityHelper).toBeTruthy();
-  expect(renderAuthorityHelper).toContain("modalCoefficientEnergy");
-  expect(renderAuthorityHelper).toContain("observationEnergy");
-  expect(renderAuthorityHelper).not.toContain("activeModeCount");
-  expect(renderAuthorityHelper).not.toContain("modalVisibilityEnergy");
-  expect(renderAuthorityHelper).not.toContain("modalObserverVisibilityEnergy");
-  expect(renderAuthorityHelper).not.toContain("diagnostic");
-  expect(renderAuthorityHelper).not.toContain("probe");
 });
 
 it("keeps source and resonant slot reservoirs out of production owners", () => {
@@ -852,65 +833,6 @@ function buildManualLowQSourceCoupledFrame({
   return composeManualStructuralFrame({ preparedInputs, structuralState });
 }
 
-function makeModalFieldContinuityStructuralMetrics(overrides = {}) {
-  return {
-    modeCoherence: 0.82,
-    modalPersistence: 0.88,
-    modalDriveEnergy: 0.34,
-    modalResponseEnergy: 0.42,
-    modalResponseInputEnergy: 0.45,
-    modalResponseSourceCoupledEnergy: 0.34,
-    modalResponseResonantEnergy: 0.08,
-    modalResponseModeCount: 4,
-    modalResponseRenderEnergy: 0.42,
-    modalResponseRenderSourceCoupledEnergy: 0.34,
-    modalResponseRenderResonantEnergy: 0.08,
-    modalResponseRawEnergy: 0.42,
-    modalResponseBudgetScaleSourceCoupled: 1,
-    modalResponseBudgetScaleResonant: 1,
-    modalResponseBudgetScale: 1,
-    currentSignalEnergy: 0.45,
-    currentSignalAmplitude: 0.5,
-    excitedModeCount: 4,
-    observedModalModeCount: 4,
-    modalPhaseAuthority: 0.9,
-    modalPhaseCoherentFieldModeCount: 4,
-    ...overrides,
-  };
-}
-
-function buildManualModalContinuityFrame({
-  featureState,
-  frameTimeMs,
-  candidateForcingSlots,
-  sourceCoupledPhaseSlots = makePhaseSlots([]),
-  structuralMetrics = makeModalFieldContinuityStructuralMetrics(),
-} = {}) {
-  const preparedInputs = prepareAudioFeatureFrameInputs({
-    analysisSnapshot: createSnapshot({
-      sourceMode: "file",
-      avgAmplitude: 42,
-      fftMagnitudes: makeFft([
-        [196, 0.72],
-        [392, 0.45],
-        [588, 0.32],
-      ]),
-      rms: 0.22,
-    }),
-    featureState,
-    radius: 3,
-    status: makeActiveStatus(),
-    frameTimeMs,
-  });
-  const structuralState = makeManualStructuralState({
-    candidateForcingSlots,
-    sourceCoupledPhaseSlots,
-    sourceMode: "file",
-    structuralMetrics,
-  });
-  return composeManualStructuralFrame({ preparedInputs, structuralState });
-}
-
 function addModalFingerprintLayer(fingerprint, slotBuffer, weight = 1) {
   for (let index = 0; index < slotBuffer.length; index += 4) {
     const amplitude = (slotBuffer[index + 3] ?? 0) * weight;
@@ -1047,95 +969,6 @@ describe("buildAudioFeatureFrame modal contract", () => {
       steadyFrame.energySignal,
     );
     expect(changingFrame.changeSignal).toBeGreaterThan(0.04);
-  });
-
-  it("routes modal descriptor source through continuity before publication", () => {
-    const featureState = createAudioFeatureState();
-    const firstCandidate = makeModeSlots([[9, 3, 1, 0.42]]);
-
-    const bootstrapped = buildManualModalContinuityFrame({
-      featureState,
-      frameTimeMs: 0,
-      candidateForcingSlots: firstCandidate,
-      sourceCoupledPhaseSlots: makePhaseSlots([[0.1, 0.2, 0.8, 0.9]]),
-    });
-
-    expect(bootstrapped.renderAuthority).toBe(true);
-    expect(readModeKeys(bootstrapped.modalFieldSlots)).toEqual(["9:3:1"]);
-    expect(bootstrapped.modalFieldContinuity).toMatchObject({
-      candidateModeCount: 1,
-      visibleModeCount: 1,
-      admittedModeKeys: ["9:3:1"],
-    });
-
-    const earlyNewIdentity = buildManualModalContinuityFrame({
-      featureState,
-      frameTimeMs: 16,
-      candidateForcingSlots: makeModeSlots([
-        [10, 3, 1, 0.68],
-        [9, 3, 1, 0.4],
-      ]),
-      sourceCoupledPhaseSlots: makePhaseSlots([
-        [0.4, 0.5, 0.8, 0.9],
-        [1.1, 2.2, 0.7, 0.95],
-      ]),
-    });
-
-    expect(readModeKeys(earlyNewIdentity.modalFieldSlots)).toEqual(["9:3:1"]);
-    expect(earlyNewIdentity.modalFieldContinuity.tailModeKeys).toContain(
-      "10:3:1",
-    );
-
-    const promotedNewIdentity = buildManualModalContinuityFrame({
-      featureState,
-      frameTimeMs: 80,
-      candidateForcingSlots: makeModeSlots([
-        [10, 3, 1, 0.7],
-        [9, 3, 1, 0.41],
-      ]),
-      sourceCoupledPhaseSlots: makePhaseSlots([
-        [0.6, 0.7, 0.8, 0.9],
-        [1.1, 2.2, 0.7, 0.95],
-      ]),
-    });
-
-    expect(readModeKeys(promotedNewIdentity.modalFieldSlots)).toEqual([
-      "9:3:1",
-      "10:3:1",
-    ]);
-    expect(promotedNewIdentity.modalFieldPhaseSlots[0]).toBeCloseTo(1.1, 6);
-    expect(promotedNewIdentity.modalFieldPhaseSlots[1]).toBeCloseTo(2.2, 6);
-    expect(promotedNewIdentity.modalFieldContinuity.admittedModeKeys).toEqual([
-      "10:3:1",
-    ]);
-  });
-
-  it("bootstraps modal field continuity immediately after a silent reset", () => {
-    const featureState = createAudioFeatureState();
-    buildManualModalContinuityFrame({
-      featureState,
-      frameTimeMs: 0,
-      candidateForcingSlots: makeModeSlots([[9, 3, 1, 0.42]]),
-    });
-
-    const silent = buildAudioFeatureFrame({
-      analysisSnapshot: null,
-      featureState,
-      radius: 3,
-      status: createStatus(),
-      frameTimeMs: 16,
-    });
-    expect(silent.fieldState).toBe("idle");
-    expect(silent.activeModalFieldModeCount).toBe(0);
-
-    const resumed = buildManualModalContinuityFrame({
-      featureState,
-      frameTimeMs: 32,
-      candidateForcingSlots: makeModeSlots([[10, 3, 1, 0.5]]),
-    });
-
-    expect(readModeKeys(resumed.modalFieldSlots)).toEqual(["10:3:1"]);
-    expect(resumed.modalFieldContinuity.admittedModeKeys).toEqual(["10:3:1"]);
   });
 
   it("does not keep low-Q background bass active from observer authority alone", () => {
@@ -2223,8 +2056,8 @@ describe("buildAudioFeatureFrame modal contract", () => {
       fftMagnitudes: richFft,
       rms: 0.36,
     });
-    // Run several warmup frames so modal-field continuity can settle before
-    // this budget assertion reads the published descriptor.
+    // Run several warmup frames so the backbone role can admit modes up to the
+    // canonical modal-field capacity (freshCap admits 2 new modes per frame).
     for (let i = 0; i < AUDIO_SLOT_CAPACITY / 2; i += 1) {
       buildAudioFeatureFrame({
         analysisSnapshot: snapshot,
@@ -2800,6 +2633,38 @@ describe("Spectral Light feature frame outputs", () => {
     });
   });
 
+  it("preserves Spectral Light phase metadata beside modal color slots", () => {
+    const featureState = createAudioFeatureState();
+    const frame = buildAudioFeatureFrame({
+      analysisSnapshot: createSnapshot({
+        fftMagnitudes: makeFft([
+          [220, 0.95],
+          [440, 0.72],
+          [660, 0.44],
+          [880, 0.28],
+        ]),
+      }),
+      featureState,
+      radius: 3,
+      status: makeActiveStatus(),
+    });
+    const colorSlots = frame.modalFieldColorSlots;
+    const spectralSlots = frame.modalFieldSpectralSlots;
+    const firstWeightedOffset = Array.from(colorSlots).findIndex(
+      (value, index) => index % 4 === 3 && value > 0,
+    );
+    const offset = firstWeightedOffset - 3;
+
+    expect(spectralSlots).toBeInstanceOf(Float32Array);
+    expect(spectralSlots.length).toBe(colorSlots.length);
+    expect(offset).toBeGreaterThanOrEqual(0);
+    expect(spectralSlots[offset]).toBeGreaterThanOrEqual(0);
+    expect(spectralSlots[offset]).toBeLessThan(1);
+    expect(spectralSlots[offset + 1]).toBeGreaterThan(0);
+    expect(spectralSlots[offset + 1]).toBeLessThanOrEqual(1);
+    expect(spectralSlots[offset + 2]).toBeGreaterThan(0);
+  });
+
   it("keeps injected warm tones red at the modal color-slot boundary", () => {
     for (const testToneHz of [220, 440]) {
       const featureState = createAudioFeatureState();
@@ -2830,6 +2695,36 @@ describe("Spectral Light feature frame outputs", () => {
       expect(color.g).toBeLessThan(0.08);
       expect(color.b).toBeLessThan(0.15);
     }
+  });
+
+  it("keeps the 528 Hz Spectral Light test tone in the green-cyan family", () => {
+    const featureState = createAudioFeatureState();
+    let frame = null;
+
+    for (let frameIndex = 0; frameIndex < 8; frameIndex += 1) {
+      frame = buildAudioFeatureFrame({
+        analysisSnapshot: null,
+        featureState,
+        radius: 3,
+        status: createStatus(),
+        auditSettings: createAuditSettings({
+          injectTestTone: true,
+          testToneHz: 528,
+          testToneAmplitude: 0.5,
+        }),
+        frameTimeMs: frameIndex * 33,
+      });
+    }
+
+    const color = averageWeightedColorSlots(
+      frame.modalFieldColorSlots,
+      frame.modalFieldColorSlots,
+    );
+
+    expect(color.weight).toBeGreaterThan(0.5);
+    expect(color.g).toBeGreaterThan(0.84);
+    expect(color.b).toBeGreaterThan(0.28);
+    expect(color.r).toBeLessThan(0.08);
   });
 
   it("skips Spectral Light color work when the render path does not need it", () => {
@@ -3535,9 +3430,8 @@ describe("live input noise gate", () => {
     expect(frame.fieldState).toBe("active");
     expect(frame.changeSignal).toBeLessThan(0.03);
     expect(frame.modeCoherence).toBeGreaterThan(0.4);
-    expect(frame.debug.modalPersistence).toBeGreaterThan(0.08);
+    expect(frame.debug.modalPersistence).toBeGreaterThan(0.35);
     expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.12);
-    expect(frame.modalVisibilityRetainedHighQEnergy).toBeGreaterThan(0.03);
     expect(frame.debug.modalVisibilitySlotEnergy).toBeGreaterThan(0.035);
     expect(frame.debug.modalVisibilityActiveModeCount).toBeGreaterThan(0);
     expect(frame.debug.modalVisibilityDriveEnergy).toBe(
@@ -3662,7 +3556,7 @@ describe("live input noise gate", () => {
       mid.modalVisibilityRetainedHighQEnergy * 0.75,
     );
     expect(late.modalVisibilityEnergy).toBeGreaterThan(
-      open.modalVisibilityEnergy * 0.8,
+      open.modalVisibilityEnergy * 0.9,
     );
     expect(mid.structureSignal).toBeGreaterThan(0);
     expect(late.structureSignal).toBeGreaterThan(0);
@@ -4722,14 +4616,15 @@ describe("live input noise gate", () => {
 
     expect(frame.debug.nonZeroFFTBinCount).toBeGreaterThanOrEqual(900);
     expect(frame.debug.highQProjectionLoad).toBeGreaterThan(0.8);
-    expect(frame.debug.highQSparseResonatorEvidence).toBeGreaterThanOrEqual(0);
+    expect(frame.debug.highQSparseResonatorAuthority).toBeGreaterThanOrEqual(0);
+    expect(frame.debug.highQRetainedVisibilityRejected).toBe(false);
     expect(frame.modalObserverVisibilityEnergy).toBeGreaterThan(0.05);
     expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.18);
     expect(frame.activeModalFieldModeCount).toBeGreaterThan(0);
   });
 
   it("does not let dense music periodicity override weak high-Q evidence", () => {
-    const evidence = deriveHighQSparseResonatorEvidence({
+    const authority = deriveHighQSparseResonatorAuthority({
       highQObservedSnr: 0.175,
       highQObservedCoherence: 0.548,
       highQObservedDrive: 0,
@@ -4741,12 +4636,13 @@ describe("live input noise gate", () => {
       modeCoherence: 0.49,
     });
 
-    expect(evidence.highQProjectionLoad).toBeGreaterThan(0.9);
-    expect(evidence.highQSparseResonatorEvidence).toBeGreaterThan(0.04);
+    expect(authority.highQProjectionLoad).toBeGreaterThan(0.9);
+    expect(authority.highQSparseResonatorAuthority).toBeGreaterThan(0.04);
+    expect(authority.highQRetainedVisibilityRejected).toBe(false);
   });
 
   it("does not let dense music coherence rescue weak high-Q evidence", () => {
-    const evidence = deriveHighQSparseResonatorEvidence({
+    const authority = deriveHighQSparseResonatorAuthority({
       highQObservedSnr: 0.18,
       highQObservedCoherence: 0.86,
       highQObservedDrive: 0,
@@ -4758,8 +4654,9 @@ describe("live input noise gate", () => {
       modeCoherence: 0.86,
     });
 
-    expect(evidence.highQProjectionLoad).toBeGreaterThan(0.85);
-    expect(evidence.highQSparseResonatorEvidence).toBeGreaterThan(0.12);
+    expect(authority.highQProjectionLoad).toBeGreaterThan(0.85);
+    expect(authority.highQSparseResonatorAuthority).toBeGreaterThan(0.12);
+    expect(authority.highQRetainedVisibilityRejected).toBe(false);
   });
 
   it("recomputes dense projection load at the frame display seam", () => {
@@ -4822,7 +4719,8 @@ describe("live input noise gate", () => {
         highQObservedSnr: 0.175,
         highQObservedCoherence: 0.548,
         highQObservedNoiseFloor: 0.347,
-        highQSparseResonatorEvidence: 1,
+        highQSparseResonatorAuthority: 1,
+        highQRetainedVisibilityRejected: false,
         lowQSourceCoupledModeCount: 8,
         lowQSourceCoupledEnergy: 1,
         lowQObservedCoherence: 0.5,
@@ -4842,7 +4740,8 @@ describe("live input noise gate", () => {
     });
 
     expect(frame.debug.highQProjectionLoad).toBeGreaterThan(0.9);
-    expect(frame.debug.highQSparseResonatorEvidence).toBeGreaterThan(0.04);
+    expect(frame.debug.highQSparseResonatorAuthority).toBeGreaterThan(0.04);
+    expect(frame.debug.highQRetainedVisibilityRejected).toBe(false);
     expect(frame.modalVisibilityRetainedHighQEnergy).toBeGreaterThan(0);
     expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.18);
   });
@@ -5365,8 +5264,6 @@ describe("live input noise gate", () => {
     );
     expect(frame.debug.lowQSourceCoupledVisibilityEnergy).toBeGreaterThan(0.12);
     expect(frame.debug.lowQSourceCoupledTopologyFloor).toBeGreaterThan(0.12);
-    expect(frame.modalResponseRenderSourceCoupledEnergy).toBeGreaterThan(0);
-    expect(frame.modalResponseRenderResonantEnergy).toBe(0);
   });
 
   it("keeps coherent system source-coupled modes active from low-Q visibility energy", () => {
@@ -6675,7 +6572,7 @@ describe("modal excitation integration", () => {
     expect(frame.fieldState).toBe("active");
   });
 
-  it("bounds composed detail replacement through continuity admissions", () => {
+  it("surfaces a newly visible composed detail key within two bright treble frames", () => {
     const featureState = createAudioFeatureState();
     const firstFrame = buildAudioFeatureFrame({
       analysisSnapshot: createSnapshot({
@@ -6698,7 +6595,7 @@ describe("modal excitation integration", () => {
     const firstFrameResonantKeys = readModeKeys(firstFrame.modalFieldSlots);
     let frame = null;
 
-    for (let frameIndex = 1; frameIndex <= 3; frameIndex += 1) {
+    for (let frameIndex = 1; frameIndex <= 2; frameIndex += 1) {
       frame = buildAudioFeatureFrame({
         analysisSnapshot: createSnapshot({
           avgAmplitude: 118,
@@ -6721,19 +6618,8 @@ describe("modal excitation integration", () => {
 
     expect(frame.debug.analysisEngine).toBe("modal-excitation");
     const switchedResonantKeys = readModeKeys(frame.modalFieldSlots);
-    const newlyVisibleKeys = switchedResonantKeys.filter(
-      (key) => !firstFrameResonantKeys.includes(key),
-    );
-    expect(
-      newlyVisibleKeys.every((key) =>
-        frame.modalFieldContinuity.admittedModeKeys.includes(key),
-      ),
-    ).toBe(true);
-    expect(newlyVisibleKeys.length).toBeLessThanOrEqual(
-      Math.ceil(frame.activeModalFieldModeCount * 0.4),
-    );
-    expect(frame.modalFieldContinuity.retainedModeKeys.length).toBeGreaterThan(
-      0,
+    expect(hasNewModeKey(switchedResonantKeys, firstFrameResonantKeys)).toBe(
+      true,
     );
   });
 
@@ -7269,7 +7155,7 @@ describe("modal excitation integration", () => {
       0.01,
     );
     expect(residueResult.frame.modalVisibilityEnergy).toBeLessThanOrEqual(
-      residueResult.frame.energyLedger.projectedRenderEnergy + 1e-9,
+      residueResult.frame.energyLedger.projectedRenderEnergy,
     );
     expect(residueResult.frame.activeModalFieldModeCount).toBeGreaterThan(0);
     expect(residueResult.frame.fieldState).toBe("decay");

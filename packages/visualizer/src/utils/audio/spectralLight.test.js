@@ -133,6 +133,26 @@ describe("Spectral Light color science", () => {
     );
   });
 
+  it("attenuates over-luminous yellow-green wavelengths before they own render energy", () => {
+    const warm = createSpectralLightColor({
+      frequency: 440,
+      strength: 0.8,
+      harmonicConfidence: 0.8,
+    });
+    const yellowGreen = createSpectralLightColor({
+      frequency: 528,
+      strength: 0.8,
+      harmonicConfidence: 0.8,
+    });
+
+    expect(yellowGreen.observerLuminanceScale).toBeLessThan(
+      warm.observerLuminanceScale,
+    );
+    expect(yellowGreen.observerLuminanceScale).toBeLessThan(0.75);
+    expect(yellowGreen.weight).toBeLessThan(warm.weight * 0.8);
+    expect(yellowGreen.weight).toBeGreaterThan(0.5);
+  });
+
   it("returns zero color weight for invalid or absent entries", () => {
     expect(createSpectralLightColor({ frequency: 0 }).weight).toBe(0);
     expect(

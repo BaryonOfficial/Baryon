@@ -8,7 +8,6 @@ import { buildCanonicalFullModalDescriptor } from "../modalDescriptor.js";
 import {
   MODAL_BASIS_ATLAS_PAGE_CAPACITY,
   MODAL_BASIS_CACHE_RESOLUTION,
-  getModalBasisCacheMaxRepresentableModeIndex,
 } from "../modalBudgets.js";
 import { getBoundaryModeFromValue } from "../modeFamily.js";
 import { hasRenderAuthority } from "../renderAuthorityContract.js";
@@ -27,7 +26,6 @@ import {
   getRaymarchModalBasisCacheDescriptorStaleReason,
   isRaymarchModalBasisCacheReadyForDescriptor,
   isRaymarchSpectralLightCacheReadyForDescriptor,
-  deriveStructuralProjectionDrive,
   resolveRaymarchModalBasisCacheDescriptorBlockedReason,
   resolveRaymarchModalBasisCacheDrawableAuthority,
   shouldRebuildRaymarchSpectralLightCache,
@@ -38,12 +36,11 @@ import {
 } from "./fieldCache.js";
 import {
   buildRaymarchPhaseSlotSignature,
-  copyCanonicalRaymarchStructuralCoefficients,
+  copyCanonicalRaymarchPhaseCurrentCoefficients,
   copyCanonicalRaymarchPhaseSlots,
 } from "./phaseSlotSemantics.js";
 import {
   deriveLiveSynthesisCancellationSuppression,
-  deriveMaterialRadianceTransfer,
   deriveHolographicColorMix,
   deriveHolographicFresnel,
 } from "./fieldShaping.js";
@@ -53,12 +50,6 @@ import {
   deriveObservationTransferParameters,
 } from "./observationTransfer.js";
 import { deriveRaymarchDiagnosticVisibility } from "./diagnosticVisibility.js";
-import {
-  RAYMARCH_FORBIDDEN_CONSUMER_SUMMARY,
-  RAYMARCH_MATERIAL_TRANSFER_LANES,
-  RAYMARCH_QUANTITY_LEDGER_VERSION,
-  RAYMARCH_RENDER_QUANTITY_LANES,
-} from "./quantityLedger.js";
 import {
   buildRaymarchPerformanceGovernor,
   copyModalField,
@@ -88,8 +79,6 @@ const THRESHOLD_RESPONSE_REDUCTION = 0.42;
 const BLOOM_STRENGTH_RESPONSE_GAIN = 0.18;
 const BLOOM_RADIUS_RESPONSE_GAIN = 0.16;
 const BLOOM_THRESHOLD_RESPONSE_GAIN = 0.08;
-const STRUCTURAL_BODY_BLOOM_STRENGTH_SUPPRESSION_MAX = 0.55;
-const STRUCTURAL_BODY_BLOOM_THRESHOLD_LIFT_MAX = 0.08;
 // Smoothing for the loudness-aware visibility drive that feeds the observation
 // transfer's exposure compensation. Slow enough that the gate does not pump on
 // beats, fast enough to follow quiet/loud passages.
@@ -106,14 +95,6 @@ function clamp(value, min, max) {
 
 function clamp01(value) {
   return clamp(value, 0, 1);
-}
-
-function smoothstep(edge0, edge1, value) {
-  if (edge0 === edge1) {
-    return value >= edge1 ? 1 : 0;
-  }
-  const t = clamp01((value - edge0) / (edge1 - edge0));
-  return t * t * (3 - 2 * t);
 }
 
 function damp(current, target, smoothing, deltaTime) {
@@ -167,130 +148,6 @@ function setIfChanged(uniformNode, value) {
 
 function readFiniteNumber(value, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
-}
-
-function readUniformColorRgb(uniformNode, fallback) {
-  const value = uniformNode?.value ?? uniformNode;
-  if (
-    Number.isFinite(value?.r) &&
-    Number.isFinite(value?.g) &&
-    Number.isFinite(value?.b)
-  ) {
-    return [value.r, value.g, value.b];
-  }
-  if (Array.isArray(value) || ArrayBuffer.isView(value)) {
-    return [
-      readFiniteNumber(value[0], fallback[0]),
-      readFiniteNumber(value[1], fallback[1]),
-      readFiniteNumber(value[2], fallback[2]),
-    ];
-  }
-  return fallback;
-}
-
-function computeLinearLuminance(rgb) {
-  return (
-    readFiniteNumber(rgb?.[0], 0) * 0.2126 +
-    readFiniteNumber(rgb?.[1], 0) * 0.7152 +
-    readFiniteNumber(rgb?.[2], 0) * 0.0722
-  );
-}
-
-function hasModalResponseDiagnosticComponents(featureFrame) {
-  return (
-    Number.isFinite(featureFrame?.modalResponseRenderSourceCoupledEnergy) ||
-    Number.isFinite(featureFrame?.modalResponseRenderResonantEnergy)
-  );
-}
-
-function readModalResponseEvidenceDiagnostics(featureFrame) {
-  return {
-    hasComponents: hasModalResponseDiagnosticComponents(featureFrame),
-    sourceCoupledDiagnosticEnergy: clamp01(
-      readFiniteNumber(featureFrame?.modalResponseRenderSourceCoupledEnergy, 0),
-    ),
-    resonantDiagnosticEnergy: clamp01(
-      readFiniteNumber(featureFrame?.modalResponseRenderResonantEnergy, 0),
-    ),
-  };
-}
-
-function deriveModalStructuralDetailAuthority(runtimeState, activeCount) {
-  const slots = runtimeState?.modalFieldModeBuffer?.value?.array;
-  const slotCount = Math.min(
-    Math.max(0, Math.floor(activeCount ?? 0)),
-    Math.floor((slots?.length ?? 0) / 4),
-  );
-  if (!slots || slotCount <= 0) {
-    return 1;
-  }
-
-  const maxRepresentableModeOrder = Math.max(
-    1,
-    getModalBasisCacheMaxRepresentableModeIndex(
-      runtimeState?.modalBasisCache?.resolution ?? MODAL_BASIS_CACHE_RESOLUTION,
-    ),
-  );
-  let structuralEnergy = 0;
-  let weightedDetail = 0;
-  for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
-    const offset = slotIndex * 4;
-    const amplitude = Math.max(0, slots[offset + 3] ?? 0);
-    if (!(amplitude > 0)) {
-      continue;
-    }
-    const u = readFiniteNumber(slots[offset], 0);
-    const v = readFiniteNumber(slots[offset + 1], 0);
-    const w = readFiniteNumber(slots[offset + 2], 0);
-    if (
-      Math.max(Math.abs(u), Math.abs(v), Math.abs(w)) >
-      maxRepresentableModeOrder
-    ) {
-      continue;
-    }
-    const modalEnergy = amplitude * amplitude;
-    const modalBandwidth = clamp01(
-      Math.hypot(u, v, w) / maxRepresentableModeOrder,
-    );
-    structuralEnergy += modalEnergy;
-    weightedDetail += modalEnergy * modalBandwidth;
-  }
-
-  return structuralEnergy > 1e-9
-    ? clamp01(weightedDetail / structuralEnergy)
-    : 1;
-}
-
-function deriveStructuralBodyBloomControls(runtimeState, transientEnergy = 0) {
-  const activeModeCount = Math.max(
-    0,
-    Math.floor(runtimeState?.uniforms?.uModalFieldModeCount?.value ?? 0),
-  );
-  const structuralProjection = resolveRaymarchStructuralProjectionDrive(
-    runtimeState,
-    activeModeCount,
-  );
-  const modalStructuralDetailAuthority = deriveModalStructuralDetailAuthority(
-    runtimeState,
-    activeModeCount,
-  );
-  const transientRelief = 1 - smoothstep(0.04, 0.32, clamp01(transientEnergy));
-  const structuralBodyBloomSuppression = clamp01(
-    structuralProjection.projectionEnergyDrive *
-      (1 - modalStructuralDetailAuthority) *
-      transientRelief,
-  );
-
-  return {
-    modalStructuralDetailAuthority,
-    structuralBodyBloomSuppression,
-    bloomStrengthScale:
-      1 -
-      structuralBodyBloomSuppression *
-        STRUCTURAL_BODY_BLOOM_STRENGTH_SUPPRESSION_MAX,
-    bloomThresholdLift:
-      structuralBodyBloomSuppression * STRUCTURAL_BODY_BLOOM_THRESHOLD_LIFT_MAX,
-  };
 }
 
 function hashUint32(value, hash) {
@@ -371,12 +228,12 @@ function resetModalBasisCacheRuntimeDiagnostics(modalBasisCache) {
   modalBasisCache.contributingRawModalEnergy = 0;
   modalBasisCache.bandwidthRejectedModeCount = 0;
   modalBasisCache.bandwidthRejectedRawModalEnergy = 0;
-  modalBasisCache.contributingStructuralModalEnergy = 0;
-  modalBasisCache.bandwidthRejectedStructuralModalEnergy = 0;
+  modalBasisCache.contributingPhaseCurrentModalEnergy = 0;
+  modalBasisCache.bandwidthRejectedPhaseCurrentModalEnergy = 0;
   modalBasisCache.liveSynthesisResolvedRawModalEnergyRatio = 1;
-  modalBasisCache.liveSynthesisResolvedStructuralModalEnergyRatio = 1;
+  modalBasisCache.liveSynthesisResolvedPhaseCurrentModalEnergyRatio = 1;
   modalBasisCache.liveSynthesisRawGradientEnvelope = 0;
-  modalBasisCache.liveSynthesisStructuralGradientEnvelope = 0;
+  modalBasisCache.liveSynthesisPhaseCurrentGradientEnvelope = 0;
   modalBasisCache.liveSynthesisUnsignedSupportMean = 0;
   modalBasisCache.liveSynthesisCancellationRatioMean = 0;
   modalBasisCache.liveSynthesisCancellationRatioMax = 0;
@@ -466,6 +323,7 @@ function deactivateLiveFieldProjectionCache(runtimeState, reason = "inactive") {
 function resetRenderAuthorityState(runtimeState) {
   clearBufferNode(runtimeState.modalFieldModeBuffer);
   clearBufferNode(runtimeState.modalFieldColorBuffer);
+  clearBufferNode(runtimeState.modalFieldSpectralBuffer);
   clearBufferNode(runtimeState.modalFieldPhaseBuffer);
   clearBufferNode(runtimeState.modalFieldCoefficientBuffer);
   runtimeState.performanceGovernor = null;
@@ -481,6 +339,7 @@ function resetRenderAuthorityState(runtimeState) {
   runtimeState.currentModalBasisCacheDescriptor = null;
   runtimeState.currentSpectralLightDescriptor = null;
   runtimeState.modalBasisCacheDrawableAuthority = null;
+  runtimeState.modalSlotByModeKey = new Map();
   resetRaymarchUploadState(runtimeState);
   resetCacheActivity(runtimeState.modalBasisCache);
   resetCacheActivity(runtimeState.liveFieldProjectionCache);
@@ -584,31 +443,6 @@ export function resolveRaymarchTotalSlotAmplitude(runtimeState, activeCount) {
   return uploadedFromBuffer;
 }
 
-export function resolveRaymarchStructuralProjectionDrive(
-  runtimeState,
-  activeCount,
-) {
-  const resolution =
-    runtimeState?.modalBasisCache?.resolution ??
-    RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION;
-  return deriveStructuralProjectionDrive({
-    modalFieldSlots: runtimeState?.modalFieldModeBuffer?.value?.array,
-    activeCount: Math.max(0, Math.floor(activeCount ?? 0)),
-    resolution,
-  });
-}
-
-function setRaymarchStructuralProjectionUniforms(uniforms, projectionDrive) {
-  setIfChanged(
-    uniforms.uStructuralProjectionDrive,
-    projectionDrive?.projectionEnergyDrive ?? 0,
-  );
-  setIfChanged(
-    uniforms.uStructuralProjectionConcentration,
-    projectionDrive?.structuralConcentration ?? 0,
-  );
-}
-
 function estimateModalFieldAmplitude(featureFrame) {
   return estimateAverageModeAmplitude(
     featureFrame?.modalDescriptor?.slotViews?.modalFieldSlots ??
@@ -695,6 +529,10 @@ function buildRuntimeModalDescriptor(
     }
   }
 
+  if (!runtimeState.modalSlotByModeKey) {
+    runtimeState.modalSlotByModeKey = new Map();
+  }
+
   return buildCanonicalFullModalDescriptor({
     generation:
       sourceDescriptor?.generation ??
@@ -704,9 +542,11 @@ function buildRuntimeModalDescriptor(
     basisAtlasPageCapacity,
     basisCacheResolution:
       runtimeState.modalBasisCache?.resolution ?? MODAL_BASIS_CACHE_RESOLUTION,
+    stableSlotByModeKey: runtimeState.modalSlotByModeKey,
     modalFieldSlots: featureFrame?.modalFieldSlots,
     modalFieldPhaseSlots: featureFrame?.modalFieldPhaseSlots,
     modalFieldColorSlots: featureFrame?.modalFieldColorSlots,
+    modalFieldSpectralSlots: featureFrame?.modalFieldSpectralSlots,
     modalFieldMetadataSlots: featureFrame?.modalFieldMetadataSlots,
     activeModalFieldModeCount:
       sourceDescriptor?.counts?.validModeCount ?? featureFrame?.activeModeCount,
@@ -737,6 +577,7 @@ function blockOverflowedModalDescriptor(
 ) {
   clearBufferNode(runtimeState.modalFieldModeBuffer);
   clearBufferNode(runtimeState.modalFieldColorBuffer);
+  clearBufferNode(runtimeState.modalFieldSpectralBuffer);
   clearBufferNode(runtimeState.modalFieldPhaseBuffer);
   clearBufferNode(runtimeState.modalFieldCoefficientBuffer);
   runtimeState.performanceGovernor = null;
@@ -757,8 +598,6 @@ function blockOverflowedModalDescriptor(
   resetModalBasisCacheRuntimeDiagnostics(runtimeState.modalBasisCache);
   deactivateLiveFieldProjectionCache(runtimeState, "descriptor-overflow");
   setIfChanged(runtimeState.uniforms.uModalFieldModeCount, 0);
-  setIfChanged(runtimeState.uniforms.uTotalSlotAmplitude, 0);
-  setRaymarchStructuralProjectionUniforms(runtimeState.uniforms, null);
   runtimeState.volumeMesh.visible = false;
   runtimeState.idleOverlay.visible = resolveIdleOverlayVisible(
     runtimeState,
@@ -792,10 +631,7 @@ function publishRaymarchRuntimeAuditSnapshot(
   fieldState,
   renderAuthority,
 ) {
-  const shouldBuildRenderProbe =
-    runtimeState.auditEnabled || runtimeState.renderProbeEnabled;
-
-  if (shouldBuildRenderProbe) {
+  if (runtimeState.auditEnabled) {
     const raymarchDebug = buildRaymarchDebugSnapshot(
       runtimeState,
       featureFrame,
@@ -805,11 +641,7 @@ function publishRaymarchRuntimeAuditSnapshot(
     runtimeState.debugSnapshot = featureFrame?.debug
       ? { ...featureFrame.debug, raymarchDebug, ...raymarchDebug }
       : raymarchDebug;
-    if (runtimeState.auditEnabled) {
-      publishAuditSnapshot(runtimeState.debugSnapshot);
-    } else {
-      publishAuditSnapshot(null);
-    }
+    publishAuditSnapshot(runtimeState.debugSnapshot);
   } else {
     runtimeState.debugSnapshot = null;
     publishAuditSnapshot(null);
@@ -897,12 +729,8 @@ function buildRaymarchDebugSnapshot(
     runtimeState,
     activeModeCount,
   );
-  const structuralProjection = resolveRaymarchStructuralProjectionDrive(
-    runtimeState,
-    activeModeCount,
-  );
   const modalCoefficientEnergy = renderAuthority
-    ? clamp01(structuralProjection.projectionEnergyDrive)
+    ? clamp01(totalSlotAmplitude)
     : 0;
   const modalResponseEnergy = renderAuthority
     ? clamp01(
@@ -912,15 +740,6 @@ function buildRaymarchDebugSnapshot(
           0,
       )
     : 0;
-  const modalResponseEvidenceDiagnostics = renderAuthority
-    ? readModalResponseEvidenceDiagnostics(featureFrame)
-    : { sourceCoupledDiagnosticEnergy: 0, resonantDiagnosticEnergy: 0 };
-  const structuralBodyBloomControls = renderAuthority
-    ? deriveStructuralBodyBloomControls(runtimeState, transientEnergy)
-    : {
-        modalStructuralDetailAuthority: 0,
-        structuralBodyBloomSuppression: 0,
-      };
   const modalPhaseAuthority = renderAuthority
     ? (featureFrame?.modalPhaseAuthority ?? 0)
     : 0;
@@ -1076,15 +895,15 @@ function buildRaymarchDebugSnapshot(
       modalBasisCache?.bandwidthRejectedRawModalEnergy,
     0,
   );
-  const modalBasisCacheContributingStructuralModalEnergy = readFiniteNumber(
-    modalBasisCacheDiagnosticDescriptor?.contributingStructuralModalEnergy ??
-      modalBasisCache?.contributingStructuralModalEnergy,
+  const modalBasisCacheContributingPhaseCurrentModalEnergy = readFiniteNumber(
+    modalBasisCacheDiagnosticDescriptor?.contributingPhaseCurrentModalEnergy ??
+      modalBasisCache?.contributingPhaseCurrentModalEnergy,
     0,
   );
-  const modalBasisCacheBandwidthRejectedStructuralModalEnergy =
+  const modalBasisCacheBandwidthRejectedPhaseCurrentModalEnergy =
     readFiniteNumber(
-      modalBasisCacheDiagnosticDescriptor?.bandwidthRejectedStructuralModalEnergy ??
-        modalBasisCache?.bandwidthRejectedStructuralModalEnergy,
+      modalBasisCacheDiagnosticDescriptor?.bandwidthRejectedPhaseCurrentModalEnergy ??
+        modalBasisCache?.bandwidthRejectedPhaseCurrentModalEnergy,
       0,
     );
   const liveSynthesisResolvedRawModalEnergyRatio = readFiniteNumber(
@@ -1092,9 +911,9 @@ function buildRaymarchDebugSnapshot(
       modalBasisCache?.liveSynthesisResolvedRawModalEnergyRatio,
     1,
   );
-  const liveSynthesisResolvedStructuralModalEnergyRatio = readFiniteNumber(
-    modalBasisCacheDiagnosticDescriptor?.liveSynthesisResolvedStructuralModalEnergyRatio ??
-      modalBasisCache?.liveSynthesisResolvedStructuralModalEnergyRatio,
+  const liveSynthesisResolvedPhaseCurrentModalEnergyRatio = readFiniteNumber(
+    modalBasisCacheDiagnosticDescriptor?.liveSynthesisResolvedPhaseCurrentModalEnergyRatio ??
+      modalBasisCache?.liveSynthesisResolvedPhaseCurrentModalEnergyRatio,
     1,
   );
   const liveSynthesisRawGradientEnvelope = readFiniteNumber(
@@ -1102,9 +921,9 @@ function buildRaymarchDebugSnapshot(
       modalBasisCache?.liveSynthesisRawGradientEnvelope,
     0,
   );
-  const liveSynthesisStructuralGradientEnvelope = readFiniteNumber(
-    modalBasisCacheDiagnosticDescriptor?.liveSynthesisStructuralGradientEnvelope ??
-      modalBasisCache?.liveSynthesisStructuralGradientEnvelope,
+  const liveSynthesisPhaseCurrentGradientEnvelope = readFiniteNumber(
+    modalBasisCacheDiagnosticDescriptor?.liveSynthesisPhaseCurrentGradientEnvelope ??
+      modalBasisCache?.liveSynthesisPhaseCurrentGradientEnvelope,
     0,
   );
   const liveSynthesisSupportDiagnostics =
@@ -1188,35 +1007,6 @@ function buildRaymarchDebugSnapshot(
       (1.1 - effectiveBloomThreshold * 0.4) *
       (1 - bloomResponseBias * 0.18),
   );
-  const materialProbePhysicalDensity = clamp01(
-    diagnosticVisibility.supportedPhysicalDensity,
-  );
-  const materialProbeCausticVisibleDensity = clamp01(
-    diagnosticVisibility.observationTransfer?.physicalVisibleDensity,
-  );
-  const materialProbeObservationDensity = clamp01(
-    diagnosticVisibility.observationTransfer?.observationDensity ?? avgDensity,
-  );
-  const materialProbeTransfer = deriveMaterialRadianceTransfer({
-    stabilizedDensity: materialProbeObservationDensity,
-    causticVisibleDensity: materialProbeCausticVisibleDensity,
-    volumeColor: readUniformColorRgb(
-      runtimeState.uniforms.uColor,
-      [0.34, 0.62, 0.9],
-    ),
-    surfaceColor: readUniformColorRgb(
-      runtimeState.uniforms.uSurfaceColor,
-      [0.66, 0.86, 1.0],
-    ),
-    structureAwareEmissionGain: 1,
-  });
-  const materialProbePreBloomRadiance = computeLinearLuminance(
-    materialProbeTransfer.finalRadiance,
-  );
-  const materialProbeBloomAmplification =
-    1 + bloomRisk * Math.max(0, effectiveBloomStrength);
-  const materialProbePostBloomRisk =
-    materialProbePreBloomRadiance * materialProbeBloomAmplification;
   const modalBasisCacheDrawableAuthority =
     runtimeState.modalBasisCacheDrawableAuthority ??
     resolveRaymarchModalBasisCacheDrawableAuthority(
@@ -1252,16 +1042,6 @@ function buildRaymarchDebugSnapshot(
     renderedModalFieldModeCount: renderedModalField.count,
     renderedModalFieldColorWeightMax: renderedModalField.colorWeightMax,
     renderedModalFieldAmplitudeTotal: renderedModalField.amplitudeTotal,
-    structuralProjectionAmplitudeSum: structuralProjection.amplitudeSum,
-    structuralProjectionEnergy: structuralProjection.structuralEnergy,
-    structuralProjectionEffectiveModeCount:
-      structuralProjection.effectiveModeCount,
-    structuralProjectionRmsAmplitude:
-      structuralProjection.rmsStructuralAmplitude,
-    structuralProjectionDrive: structuralProjection.projectionEnergyDrive,
-    structuralProjectionConcentration:
-      structuralProjection.structuralConcentration,
-    structuralProjectionReferenceEnergy: structuralProjection.referenceEnergy,
     modalDescriptorFieldAuthority:
       modalDescriptor?.fieldAuthority ?? "unavailable",
     modalDescriptorOverflow:
@@ -1275,11 +1055,6 @@ function buildRaymarchDebugSnapshot(
     modalDescriptorPhaseAuthorityModeCount:
       modalDescriptor?.diagnostics?.phaseAuthorityModeCount ??
       modalBasisPhaseAuthorityModeCount,
-    modalVarietyAudit: modalDescriptor?.diagnostics?.modalVarietyAudit ?? null,
-    renderQuantityLedgerVersion: RAYMARCH_QUANTITY_LEDGER_VERSION,
-    renderQuantityOwnershipLanes: RAYMARCH_RENDER_QUANTITY_LANES,
-    renderMaterialTransferLanes: RAYMARCH_MATERIAL_TRANSFER_LANES,
-    renderQuantityForbiddenConsumers: RAYMARCH_FORBIDDEN_CONSUMER_SUMMARY,
     dominantFrequency:
       featureFrame?.debug?.dominantFrequency ??
       featureFrame?.debug?.fundamentalFrequency ??
@@ -1298,13 +1073,6 @@ function buildRaymarchDebugSnapshot(
     peakModalFieldAmplitude,
     avgOpacity,
     avgDensity,
-    materialProbePhysicalDensity,
-    materialProbeCausticVisibleDensity,
-    materialProbeSupportVisibleDensity:
-      materialProbeTransfer.supportVisibleDensity,
-    materialProbePreBloomRadiance,
-    materialProbePostBloomRisk,
-    materialProbeBloomAmplification,
     opacityGain,
     earlyExitEnabled: true,
     earlyExitThreshold: EARLY_EXIT_TRANSMITTANCE_EPSILON,
@@ -1324,14 +1092,6 @@ function buildRaymarchDebugSnapshot(
     pulseSignal,
     modalCoefficientEnergy,
     modalResponseEnergy,
-    modalResponseDiagnosticSourceCoupledEnergy:
-      modalResponseEvidenceDiagnostics.sourceCoupledDiagnosticEnergy,
-    modalResponseDiagnosticResonantEnergy:
-      modalResponseEvidenceDiagnostics.resonantDiagnosticEnergy,
-    modalStructuralDetailAuthority:
-      structuralBodyBloomControls.modalStructuralDetailAuthority,
-    structuralBodyBloomSuppression:
-      structuralBodyBloomControls.structuralBodyBloomSuppression,
     observationEnergy: observationTransferDebug.observationEnergy,
     observationReferenceAnchor: observationTransferDebug.observationAnchor,
     observationReferenceSupport: observationTransferDebug.observationSupport,
@@ -1491,12 +1251,12 @@ function buildRaymarchDebugSnapshot(
     modalBasisCacheContributingRawModalEnergy,
     modalBasisCacheBandwidthRejectedModeCount,
     modalBasisCacheBandwidthRejectedRawModalEnergy,
-    modalBasisCacheContributingStructuralModalEnergy,
-    modalBasisCacheBandwidthRejectedStructuralModalEnergy,
+    modalBasisCacheContributingPhaseCurrentModalEnergy,
+    modalBasisCacheBandwidthRejectedPhaseCurrentModalEnergy,
     liveSynthesisResolvedRawModalEnergyRatio,
-    liveSynthesisResolvedStructuralModalEnergyRatio,
+    liveSynthesisResolvedPhaseCurrentModalEnergyRatio,
     liveSynthesisRawGradientEnvelope,
-    liveSynthesisStructuralGradientEnvelope,
+    liveSynthesisPhaseCurrentGradientEnvelope,
     liveSynthesisUnsignedSupportMean,
     liveSynthesisCancellationRatioMean,
     liveSynthesisCancellationRatioMax,
@@ -1549,7 +1309,7 @@ function updateReactiveResponse(
     0,
     Math.round(runtimeState?.uniforms?.uModalFieldModeCount?.value ?? 0),
   );
-  const structuralProjection = resolveRaymarchStructuralProjectionDrive(
+  const uploadedSlotAmplitude = resolveRaymarchTotalSlotAmplitude(
     runtimeState,
     uploadedModeCount,
   );
@@ -1559,7 +1319,7 @@ function updateReactiveResponse(
         featureFrame?.modalResponseRenderEnergy ??
         featureFrame?.debug?.modalResponseEnergy ??
         0,
-      structuralProjection.projectionEnergyDrive,
+      uploadedSlotAmplitude,
     ),
   );
   const reactivity = Math.max(
@@ -1702,10 +1462,6 @@ function updateLaserResponse(runtimeState, featureFrame) {
       bloomResponseSignal * 0.04,
   );
   const bloomStrengthTransientGate = 0.94 + transientEnergy * 0.06;
-  const structuralBodyBloomControls = deriveStructuralBodyBloomControls(
-    runtimeState,
-    transientEnergy,
-  );
 
   setIfChanged(
     uniforms.uThreshold,
@@ -1724,8 +1480,7 @@ function updateLaserResponse(runtimeState, featureFrame) {
     baseBloomStrength *
     (1 + bloomStrengthPulse * BLOOM_STRENGTH_RESPONSE_GAIN) *
     bloomStrengthScale *
-    bloomStrengthTransientGate *
-    structuralBodyBloomControls.bloomStrengthScale;
+    bloomStrengthTransientGate;
   bt.effectiveRadius = Math.max(
     0,
     baseBloomRadius * (1 - bloomStrengthPulse * BLOOM_RADIUS_RESPONSE_GAIN),
@@ -1733,16 +1488,11 @@ function updateLaserResponse(runtimeState, featureFrame) {
   bt.effectiveThreshold = clamp(
     baseBloomThreshold +
       bloomThresholdPulse * BLOOM_THRESHOLD_RESPONSE_GAIN +
-      bloomThresholdOffset +
-      structuralBodyBloomControls.bloomThresholdLift,
+      bloomThresholdOffset,
     0,
     1,
   );
   bt.bloomAllowed = bloomAllowed;
-  bt.modalStructuralDetailAuthority =
-    structuralBodyBloomControls.modalStructuralDetailAuthority;
-  bt.structuralBodyBloomSuppression =
-    structuralBodyBloomControls.structuralBodyBloomSuppression;
 }
 
 function getRaymarchUploadState(runtimeState) {
@@ -1751,6 +1501,7 @@ function getRaymarchUploadState(runtimeState) {
       modalField: null,
       modalFieldPhase: null,
       modalFieldCoefficient: null,
+      modalFieldSpectral: null,
       modalFieldRole: null,
     };
   }
@@ -1761,8 +1512,10 @@ function getRaymarchUploadState(runtimeState) {
 function buildLayerUploadSignature({
   slots,
   colorSlots,
+  spectralSlots,
   layer,
   includeColors,
+  includeSpectral,
 }) {
   const capacity = Math.max(0, Math.floor(layer?.capacity ?? 0));
   const activeCount = Math.min(
@@ -1771,6 +1524,7 @@ function buildLayerUploadSignature({
   );
   let slotHash = FNV_OFFSET_BASIS;
   let colorHash = includeColors ? FNV_OFFSET_BASIS : 0;
+  let spectralHash = includeSpectral ? FNV_OFFSET_BASIS : 0;
 
   for (let slotIndex = 0; slotIndex < activeCount; slotIndex += 1) {
     const sourceOffset = slotIndex * 4;
@@ -1780,14 +1534,20 @@ function buildLayerUploadSignature({
       colorHash = hashUint32(slotIndex, colorHash);
       colorHash = hashSlot4(colorSlots, sourceOffset, colorHash);
     }
+    if (includeSpectral) {
+      spectralHash = hashUint32(slotIndex, spectralHash);
+      spectralHash = hashSlot4(spectralSlots, sourceOffset, spectralHash);
+    }
   }
 
   return {
     capacity,
     activeCount,
     includeColors: Boolean(includeColors),
+    includeSpectral: Boolean(includeSpectral),
     slotHash: slotHash >>> 0,
     colorHash: colorHash >>> 0,
+    spectralHash: spectralHash >>> 0,
   };
 }
 
@@ -1810,29 +1570,49 @@ function layerColorUploadSignatureChanged(previous, next) {
   );
 }
 
+function layerSpectralUploadSignatureChanged(previous, next) {
+  return (
+    !previous ||
+    previous.capacity !== next.capacity ||
+    previous.activeCount !== next.activeCount ||
+    previous.includeSpectral !== next.includeSpectral ||
+    previous.spectralHash !== next.spectralHash
+  );
+}
+
 function applyLayerUploadIfChanged({
   uploadState,
   key,
   slots,
   colorSlots,
+  spectralSlots,
   targetSlots,
   targetColorSlots,
+  targetSpectralSlots,
   modeBufferNode,
   colorBufferNode,
+  spectralBufferNode,
   layer,
   includeColors,
+  includeSpectral,
 }) {
   const signature = buildLayerUploadSignature({
     slots,
     colorSlots,
+    spectralSlots,
     layer,
     includeColors,
+    includeSpectral,
   });
   const previous = uploadState[key]?.signature ?? null;
   const modeChanged = layerModeUploadSignatureChanged(previous, signature);
   const colorChanged = layerColorUploadSignatureChanged(previous, signature);
+  const spectralChanged = layerSpectralUploadSignatureChanged(
+    previous,
+    signature,
+  );
 
-  if (modeChanged || colorChanged) {
+  if (modeChanged || colorChanged || spectralChanged) {
     copyLayerUpload({
       slots,
       colorSlots,
@@ -1840,6 +1620,12 @@ function applyLayerUploadIfChanged({
       targetColorSlots,
       layer,
       includeColors,
+    });
+    copyLayerSpectralUpload({
+      spectralSlots,
+      targetSpectralSlots,
+      layer,
+      includeSpectral,
     });
     if (modeChanged) {
       modeBufferNode.value.needsUpdate = true;
@@ -1850,6 +1636,13 @@ function applyLayerUploadIfChanged({
       (colorChanged || modeChanged)
     ) {
       colorBufferNode.value.needsUpdate = true;
+    }
+    if (
+      includeSpectral &&
+      spectralBufferNode?.value &&
+      (spectralChanged || modeChanged)
+    ) {
+      spectralBufferNode.value.needsUpdate = true;
     }
     uploadState[key] = { signature };
   }
@@ -1945,6 +1738,30 @@ function copyLayerUpload({
   });
 }
 
+function copyLayerSpectralUpload({
+  spectralSlots,
+  targetSpectralSlots,
+  layer,
+  includeSpectral,
+}) {
+  if (!targetSpectralSlots) {
+    return;
+  }
+  const capacity = Math.max(0, Math.floor(layer?.capacity ?? 0));
+  const targetLength = capacity * 4;
+  targetSpectralSlots.fill(0, 0, targetLength);
+  if (!includeSpectral) {
+    return;
+  }
+  for (let slotIndex = 0; slotIndex < capacity; slotIndex += 1) {
+    const offset = slotIndex * 4;
+    targetSpectralSlots[offset] = spectralSlots?.[offset] ?? 0;
+    targetSpectralSlots[offset + 1] = spectralSlots?.[offset + 1] ?? 0;
+    targetSpectralSlots[offset + 2] = spectralSlots?.[offset + 2] ?? 0;
+    targetSpectralSlots[offset + 3] = spectralSlots?.[offset + 3] ?? 0;
+  }
+}
+
 function copyLayerPhaseUpload({
   phaseSlots,
   targetPhaseSlots,
@@ -1963,20 +1780,24 @@ function copyLayerPhaseUpload({
 
 function applyLayerCoefficientUpload({
   modeSlots,
+  phaseSlots,
   targetCoefficientSlots,
   coefficientBufferNode,
   layer,
   capacity,
+  time,
 }) {
   if (!targetCoefficientSlots || !layer) {
     return 0;
   }
 
-  const activeCount = copyCanonicalRaymarchStructuralCoefficients({
+  const activeCount = copyCanonicalRaymarchPhaseCurrentCoefficients({
     modeSlots,
+    phaseSlots,
     targetSlots: targetCoefficientSlots,
     capacity,
     activeCount: layer.uploadedActiveCount,
+    time,
   });
   if (coefficientBufferNode?.value) {
     coefficientBufferNode.value.needsUpdate = activeCount > 0;
@@ -2030,14 +1851,14 @@ function updateModalBasisCache(
     );
   if (descriptorBlockedReason) {
     blockModalBasisCacheForDescriptor(modalBasisCache, descriptorBlockedReason);
-    const drawableAuthority = setModalBasisCacheDrawableAuthority(
+    const authority = setModalBasisCacheDrawableAuthority(
       runtimeState,
       resolveRaymarchModalBasisCacheDrawableAuthority(
         modalBasisCache,
         modalBasisCacheDescriptor,
       ),
     );
-    return drawableAuthority.drawable ? "modal-basis-cached" : "unavailable";
+    return authority.drawable ? "modal-basis-cached" : "unavailable";
   }
 
   const { needsRebuild, reason } = shouldRebuildRaymarchModalBasisCache(
@@ -2061,7 +1882,7 @@ function updateModalBasisCache(
     );
   }
 
-  const drawableAuthority = setModalBasisCacheDrawableAuthority(
+  const authority = setModalBasisCacheDrawableAuthority(
     runtimeState,
     resolveRaymarchModalBasisCacheDrawableAuthority(
       modalBasisCache,
@@ -2069,7 +1890,7 @@ function updateModalBasisCache(
     ),
   );
 
-  if (drawableAuthority.drawable) {
+  if (authority.drawable) {
     return "modal-basis-cached";
   }
   return "unavailable";
@@ -2112,6 +1933,10 @@ function resolveSpectralLightEvaluationMode(
     return deactivateSpectralLightCacheEvaluation(spectralLightCache);
   }
 
+  if ((spectralLightDescriptor?.spectralLightModeCount ?? 0) <= 0) {
+    return deactivateSpectralLightCacheEvaluation(spectralLightCache);
+  }
+
   spectralLightCache.active = true;
 
   const spectralLightUploadReady =
@@ -2131,6 +1956,7 @@ function resolveSpectralLightEvaluationMode(
         {
           modalFieldModeBuffer: runtimeState.modalFieldModeBuffer,
           modalFieldColorBuffer: runtimeState.modalFieldColorBuffer,
+          modalFieldSpectralBuffer: runtimeState.modalFieldSpectralBuffer,
           modalFieldCapacity,
           uniforms: runtimeState.uniforms,
         },
@@ -2203,7 +2029,6 @@ function updateLiveFieldProjectionCache(
       modalBasisAtlasTexture:
         runtimeState.volumeMesh.userData.raymarchModalBasisAtlasTexture,
       modalFieldCoefficientBuffer: runtimeState.modalFieldCoefficientBuffer,
-      modalFieldPhaseBuffer: runtimeState.modalFieldPhaseBuffer,
       modalFieldCapacity,
       uniforms: runtimeState.uniforms,
       schedulerTimeSec: time,
@@ -2228,6 +2053,7 @@ function applyRaymarchRuntimeUploadAuthority({
   modalFieldPhaseCapacity,
   modalFieldModeBuffer,
   modalFieldColorBuffer,
+  modalFieldSpectralBuffer,
   modalFieldPhaseBuffer,
   modalFieldCoefficientBuffer,
   spectralLightEnabled,
@@ -2272,12 +2098,16 @@ function applyRaymarchRuntimeUploadAuthority({
     key: "modalField",
     slots: descriptorSlots.modalFieldSlots,
     colorSlots: descriptorSlots.modalFieldColorSlots,
+    spectralSlots: descriptorSlots.modalFieldSpectralSlots,
     targetSlots: modalFieldModeBuffer.value.array,
     targetColorSlots: modalFieldColorBuffer.value.array,
+    targetSpectralSlots: modalFieldSpectralBuffer?.value?.array ?? null,
     modeBufferNode: modalFieldModeBuffer,
     colorBufferNode: modalFieldColorBuffer,
+    spectralBufferNode: modalFieldSpectralBuffer,
     layer: modalFieldLayer,
     includeColors: spectralLightEnabled,
+    includeSpectral: spectralLightEnabled,
   });
 
   const modalFieldPhaseAuthorityModeCount = applyLayerPhaseUploadIfChanged({
@@ -2293,20 +2123,20 @@ function applyRaymarchRuntimeUploadAuthority({
     modalFieldPhaseAuthorityModeCount;
   applyLayerCoefficientUpload({
     modeSlots: modalFieldModeBuffer?.value?.array,
+    phaseSlots: modalFieldPhaseBuffer?.value?.array,
     targetCoefficientSlots: modalFieldCoefficientBuffer?.value?.array ?? null,
     coefficientBufferNode: modalFieldCoefficientBuffer,
     layer: modalFieldLayer,
     capacity: productUploadCapacity,
+    time,
   });
 
   const modalFieldModeCount = modalFieldLayer.uploadedActiveCount;
-  const structuralProjection = resolveRaymarchStructuralProjectionDrive(
-    runtimeState,
-    modalFieldModeCount,
-  );
   setIfChanged(uniforms.uModalFieldModeCount, modalFieldModeCount);
-  setIfChanged(uniforms.uTotalSlotAmplitude, structuralProjection.amplitudeSum);
-  setRaymarchStructuralProjectionUniforms(uniforms, structuralProjection);
+  setIfChanged(
+    uniforms.uTotalSlotAmplitude,
+    resolveRaymarchTotalSlotAmplitude(runtimeState, modalFieldModeCount),
+  );
 
   const boundaryMode = getRuntimeBoundaryMode(runtimeState);
   const descriptorRadius = runtimeState.uniforms.uRadius?.value ?? 1;
@@ -2343,6 +2173,7 @@ function applyRaymarchRuntimeUploadAuthority({
           resolution:
             runtimeState.modalBasisCache?.resolution ??
             RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
+          time,
         })
       : null,
   );
@@ -2353,6 +2184,7 @@ function applyRaymarchRuntimeUploadAuthority({
       buildRaymarchSpectralLightCacheDescriptor({
         modalFieldSlots: modalFieldModeBuffer?.value?.array,
         modalFieldColorSlots: modalFieldColorBuffer?.value?.array,
+        modalFieldSpectralSlots: modalFieldSpectralBuffer?.value?.array,
         modalFieldCount: modalFieldModeCount,
         boundaryMode,
         cavityGeometry: effectiveCavityGeometry,
@@ -2410,6 +2242,7 @@ export function tickRaymarchRuntime(
   const { uniforms, volumeMesh, idleOverlay } = runtimeState;
   const modalFieldModeBuffer = runtimeState.modalFieldModeBuffer;
   const modalFieldColorBuffer = runtimeState.modalFieldColorBuffer;
+  const modalFieldSpectralBuffer = runtimeState.modalFieldSpectralBuffer;
   const modalFieldPhaseBuffer = runtimeState.modalFieldPhaseBuffer;
   const modalFieldCoefficientBuffer = runtimeState.modalFieldCoefficientBuffer;
   const modalFieldCapacity = inferModalFieldCapacity(
@@ -2461,7 +2294,6 @@ export function tickRaymarchRuntime(
     setIfChanged(uniforms.uTrebleBroadbandEnergy, 0);
     setIfChanged(uniforms.uModeCoherence, 0);
     setIfChanged(uniforms.uTotalSlotAmplitude, 0);
-    setRaymarchStructuralProjectionUniforms(uniforms, null);
     setIfChanged(uniforms.uModalResponseEnergy, 0);
     setIfChanged(uniforms.uKeyTintStrength, 0);
     setIfChanged(uniforms.uKeyMode, 0);
@@ -2533,6 +2365,7 @@ export function tickRaymarchRuntime(
     modalFieldPhaseCapacity,
     modalFieldModeBuffer,
     modalFieldColorBuffer,
+    modalFieldSpectralBuffer,
     modalFieldPhaseBuffer,
     modalFieldCoefficientBuffer,
     spectralLightEnabled,
@@ -2581,12 +2414,10 @@ export function tickRaymarchRuntime(
   );
   setIfChanged(uniforms.uModeCoherence, featureFrame?.modeCoherence ?? 0);
   const activeModalFieldModeCount = uniforms.uModalFieldModeCount?.value ?? 0;
-  const structuralProjection = resolveRaymarchStructuralProjectionDrive(
-    runtimeState,
-    activeModalFieldModeCount,
+  setIfChanged(
+    uniforms.uTotalSlotAmplitude,
+    resolveRaymarchTotalSlotAmplitude(runtimeState, activeModalFieldModeCount),
   );
-  setIfChanged(uniforms.uTotalSlotAmplitude, structuralProjection.amplitudeSum);
-  setRaymarchStructuralProjectionUniforms(uniforms, structuralProjection);
   setIfChanged(
     uniforms.uModalResponseEnergy,
     featureFrame?.modalResponseEnergy ??
@@ -2655,7 +2486,17 @@ export function tickRaymarchRuntime(
 
   const modalBasisCacheDrawable =
     runtimeState.modalBasisCacheDrawableAuthority?.drawable === true;
-  volumeMesh.visible = renderAuthority && modalBasisCacheDrawable;
+  const spectralLightModeCount =
+    runtimeState.currentSpectralLightDescriptor?.spectralLightModeCount ?? 0;
+  const spectralLightCacheDrawable =
+    !spectralLightEnabled ||
+    (spectralLightModeCount > 0 &&
+      volumeMesh.userData?.raymarchSpectralLightEvaluationMode ===
+        RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached &&
+      runtimeState.spectralLightCache?.ready === true &&
+      Boolean(runtimeState.spectralLightCache?.activeDescriptor));
+  volumeMesh.visible =
+    renderAuthority && modalBasisCacheDrawable && spectralLightCacheDrawable;
   idleOverlay.visible = resolveIdleOverlayVisible(
     runtimeState,
     featureFrame,

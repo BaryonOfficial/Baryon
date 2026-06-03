@@ -82,6 +82,7 @@ export function setupRaymarch(
   );
   const modalFieldModeBuffer = createModeBuffer(modalFieldCapacity);
   const modalFieldColorBuffer = createModeBuffer(modalFieldCapacity);
+  const modalFieldSpectralBuffer = createModeBuffer(modalFieldCapacity);
   const modalFieldPhaseBuffer = createModeBuffer(modalFieldCapacity);
   const modalFieldCoefficientBuffer = createModeBuffer(modalFieldCapacity);
   const modalBasisCache = createRaymarchModalBasisCache();
@@ -94,12 +95,12 @@ export function setupRaymarch(
     modalBasisAtlasTexture: modalBasisCache.texture,
     modalLiveFieldTexture: liveFieldProjectionCache.fieldTexture,
     modalLiveSupportTexture: liveFieldProjectionCache.supportTexture,
-    modalPhaseInterferenceTexture:
-      liveFieldProjectionCache.phaseInterferenceTexture,
     modalFieldModeBuffer,
+    modalFieldPhaseBuffer,
     modalFieldCoefficientBuffer,
     modalFieldCapacity: modalBasisCache.liveSynthesisModeCount,
     spectralLightCacheTexture: spectralLightCache.texture,
+    spectralLightCausticTexture: spectralLightCache.causticTexture,
     uniforms,
     cavityGeometry: effectiveCavityGeometry,
   });
@@ -128,6 +129,7 @@ export function setupRaymarch(
     uniforms,
     modalFieldModeBuffer,
     modalFieldColorBuffer,
+    modalFieldSpectralBuffer,
     modalFieldPhaseBuffer,
     modalFieldCoefficientBuffer,
     modalBasisCache,

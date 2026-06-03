@@ -72,6 +72,14 @@ function makeToneFft(peaks, length = FFT_SIZE / 2) {
   return fft;
 }
 
+function maxColorWeight(colorSlots) {
+  let max = 0;
+  for (let offset = 3; offset < (colorSlots?.length ?? 0); offset += 4) {
+    max = Math.max(max, colorSlots[offset] ?? 0);
+  }
+  return max;
+}
+
 function createPreparedInputs(frameTimeMs, overrides = {}) {
   return prepareAudioFeatureFrameInputs({
     analysisSnapshot: createSnapshot({
@@ -960,5 +968,17 @@ describe("audio feature engine snapshots", () => {
     );
     expect(fileAnalysisResult.activeModeCount).toBeGreaterThan(0);
     expect(systemAnalysisResult.activeModeCount).toBeGreaterThan(0);
+    expect(
+      Math.max(
+        maxColorWeight(fileAnalysisResult.sourceCoupledColorSlots),
+        maxColorWeight(fileAnalysisResult.resonantColorSlots),
+      ),
+    ).toBeGreaterThan(0);
+    expect(
+      Math.max(
+        maxColorWeight(systemAnalysisResult.sourceCoupledColorSlots),
+        maxColorWeight(systemAnalysisResult.resonantColorSlots),
+      ),
+    ).toBeGreaterThan(0);
   });
 });

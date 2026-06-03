@@ -3,7 +3,6 @@ import {
   AUDIO_SLOT_CAPACITY,
   BEAT_DEFAULTS,
 } from "../../defaults.js";
-import { createModalFieldContinuityState } from "../../core/modalFieldContinuity.js";
 import { createBlendableLayerState } from "./blendState.js";
 import { createModalExcitationState } from "./modalExcitationState.js";
 
@@ -27,6 +26,7 @@ export function createModalTargetBuild(capacity) {
     slots: createZeroTargetArray(capacity),
     referenceSlots: createZeroTargetArray(capacity),
     colorSlots: createColorSlotArray(capacity),
+    spectralSlots: createColorSlotArray(capacity),
     harmonicSupport: new Float32Array(HARMONIC_SUPPORT_COUNT),
     uniqueModeCount: 0,
     peaks: [],
@@ -152,7 +152,6 @@ export function createAudioFeatureState(capacity = AUDIO_SLOT_CAPACITY) {
       acousticSourceCoupledTarget: createModalTargetBuild(capacity),
       acousticResonantTarget: createModalTargetBuild(capacity),
       modalExcitationState: createModalExcitationState(capacity),
-      modalFieldContinuityState: createModalFieldContinuityState(),
     },
     audit: {
       frame: 0,
@@ -161,6 +160,8 @@ export function createAudioFeatureState(capacity = AUDIO_SLOT_CAPACITY) {
       frozenModeSlots: new Float32Array(capacity * 4),
       frozenSourceCoupledColorSlots: createColorSlotArray(capacity),
       frozenResonantColorSlots: createColorSlotArray(capacity),
+      frozenSourceCoupledSpectralSlots: createColorSlotArray(capacity),
+      frozenResonantSpectralSlots: createColorSlotArray(capacity),
       lastSnapshot: null,
       settings: { ...AUDIT_DEFAULTS },
     },
@@ -175,6 +176,8 @@ export function clearModalStack(state) {
   state.referenceSlots?.fill(0);
   state.colorSlots?.fill(0);
   state.referenceColorSlots?.fill(0);
+  state.spectralSlots?.fill(0);
+  state.referenceSpectralSlots?.fill(0);
   state.phaseSlots?.fill(0);
   state.harmonicSupport?.fill(0);
   state.fundamental = 0;
@@ -235,7 +238,7 @@ export const BLEND_ATTACK = 0.18;
 export const BLEND_TRACKING = 0.28;
 export const BLEND_RELEASE = 0.94;
 export const BLEND_DROP_THRESHOLD = 1e-4;
-export const BLEND_FRESH_ADMISSION_UNLIMITED = 0;
+export const BLEND_MAX_FRESH_PER_FRAME = 2;
 
 function modeKey(u, v, w) {
   return `${u}:${v}:${w}`;
@@ -247,7 +250,7 @@ export function blendModalStack(state, targetSlots, capacity, options = {}) {
   const release = options.release ?? BLEND_RELEASE;
   const trackingOverrides = options.trackingOverrides ?? null;
   const releaseOverrides = options.releaseOverrides ?? null;
-  const freshCap = options.freshCap ?? BLEND_FRESH_ADMISSION_UNLIMITED;
+  const freshCap = options.freshCap ?? BLEND_MAX_FRESH_PER_FRAME;
   const dropThreshold = options.dropThreshold ?? BLEND_DROP_THRESHOLD;
   const emptyTargetRelease = options.emptyTargetRelease;
   const lowSignalReleaseThreshold = options.lowSignalReleaseThreshold ?? 0;
@@ -375,11 +378,23 @@ export function blendColorStack(
   state,
   targetSlots,
   targetColorSlots,
-  capacity,
-  options = {},
+  targetSpectralSlotsOrCapacity,
+  capacityOrOptions,
+  optionsMaybe = {},
 ) {
   if (!state?.slots || !state?.colorSlots || !targetColorSlots) return;
 
+  const hasExplicitSpectralArgument = arguments.length >= 6;
+  const targetSpectralSlots = hasExplicitSpectralArgument
+    ? targetSpectralSlotsOrCapacity
+    : null;
+  const trackSpectralOwner = Boolean(targetSpectralSlots);
+  const capacity = hasExplicitSpectralArgument
+    ? capacityOrOptions
+    : targetSpectralSlotsOrCapacity;
+  const options = hasExplicitSpectralArgument
+    ? optionsMaybe
+    : (capacityOrOptions ?? {});
   const attack = options.attack ?? BLEND_ATTACK;
   const tracking = options.tracking ?? BLEND_TRACKING;
   const release = options.release ?? BLEND_RELEASE;
@@ -404,6 +419,10 @@ export function blendColorStack(
         g: state.colorSlots[offset + 1],
         b: state.colorSlots[offset + 2],
         weight: colorWeight,
+        phase: state.spectralSlots?.[offset] ?? 0,
+        wavelength: state.spectralSlots?.[offset + 1] ?? 0,
+        harmonicConfidence: state.spectralSlots?.[offset + 2] ?? 0,
+        accentEnergy: state.spectralSlots?.[offset + 3] ?? 0,
       },
     );
   }
@@ -431,6 +450,10 @@ export function blendColorStack(
         g: targetColorSlots[offset + 1],
         b: targetColorSlots[offset + 2],
         weight,
+        phase: targetSpectralSlots?.[offset] ?? 0,
+        wavelength: targetSpectralSlots?.[offset + 1] ?? 0,
+        harmonicConfidence: targetSpectralSlots?.[offset + 2] ?? 0,
+        accentEnergy: targetSpectralSlots?.[offset + 3] ?? 0,
       },
     );
   }
@@ -450,18 +473,46 @@ export function blendColorStack(
     const target = targetColorMap.get(key);
     const blendFactor = current && target ? tracking : attack;
     const base = current ?? { r: 0, g: 0, b: 0, weight: 0 };
+    const nextWeight = target
+      ? base.weight + (target.weight - base.weight) * blendFactor
+      : base.weight * release;
     const next = target
       ? {
-          r: base.r + (target.r - base.r) * blendFactor,
-          g: base.g + (target.g - base.g) * blendFactor,
-          b: base.b + (target.b - base.b) * blendFactor,
-          weight: base.weight + (target.weight - base.weight) * blendFactor,
+          r: trackSpectralOwner
+            ? target.r
+            : base.r + (target.r - base.r) * blendFactor,
+          g: trackSpectralOwner
+            ? target.g
+            : base.g + (target.g - base.g) * blendFactor,
+          b: trackSpectralOwner
+            ? target.b
+            : base.b + (target.b - base.b) * blendFactor,
+          weight: nextWeight,
+          phase: target.phase,
+          wavelength: target.wavelength,
+          harmonicConfidence: target.harmonicConfidence,
+          accentEnergy: target.accentEnergy,
         }
-      : {
+      : trackSpectralOwner
+        ? {
+            r: 0,
+            g: 0,
+            b: 0,
+            weight: 0,
+            phase: 0,
+            wavelength: 0,
+            harmonicConfidence: 0,
+            accentEnergy: 0,
+          }
+        : {
           r: base.r,
           g: base.g,
           b: base.b,
-          weight: base.weight * release,
+          weight: nextWeight,
+          phase: base.phase,
+          wavelength: base.wavelength,
+          harmonicConfidence: base.harmonicConfidence,
+          accentEnergy: base.accentEnergy,
         };
 
     survivors.push({
@@ -481,14 +532,22 @@ export function blendColorStack(
   survivors.sort((left, right) => left.offset - right.offset);
 
   state.colorSlots.fill(0);
+  state.spectralSlots?.fill(0);
   for (const survivor of survivors) {
     state.colorSlots[survivor.offset] = survivor.r;
     state.colorSlots[survivor.offset + 1] = survivor.g;
     state.colorSlots[survivor.offset + 2] = survivor.b;
     state.colorSlots[survivor.offset + 3] = survivor.weight;
+    if (state.spectralSlots) {
+      state.spectralSlots[survivor.offset] = survivor.phase;
+      state.spectralSlots[survivor.offset + 1] = survivor.wavelength;
+      state.spectralSlots[survivor.offset + 2] = survivor.harmonicConfidence;
+      state.spectralSlots[survivor.offset + 3] = survivor.accentEnergy;
+    }
   }
 
   state.referenceColorSlots.fill(0);
+  state.referenceSpectralSlots?.fill(0);
   for (let i = 0; i < slotLimit; i++) {
     const offset = i * 4;
     const key = modeKey(
@@ -502,6 +561,12 @@ export function blendColorStack(
     state.referenceColorSlots[offset + 1] = target.g;
     state.referenceColorSlots[offset + 2] = target.b;
     state.referenceColorSlots[offset + 3] = target.weight;
+    if (state.referenceSpectralSlots) {
+      state.referenceSpectralSlots[offset] = target.phase;
+      state.referenceSpectralSlots[offset + 1] = target.wavelength;
+      state.referenceSpectralSlots[offset + 2] = target.harmonicConfidence;
+      state.referenceSpectralSlots[offset + 3] = target.accentEnergy;
+    }
   }
 }
 

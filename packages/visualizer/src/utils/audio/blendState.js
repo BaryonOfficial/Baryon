@@ -10,6 +10,8 @@ export function createBlendableLayerState(capacity) {
     referenceSlots: new Float32Array(capacity * 4),
     colorSlots: createColorSlotArray(capacity),
     referenceColorSlots: createColorSlotArray(capacity),
+    spectralSlots: createColorSlotArray(capacity),
+    referenceSpectralSlots: createColorSlotArray(capacity),
     phaseSlots: new Float32Array(capacity * 4),
     _poolCurrentMap: new Map(),
     _poolTargetMap: new Map(),
