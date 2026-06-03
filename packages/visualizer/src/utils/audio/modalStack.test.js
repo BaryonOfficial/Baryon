@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   BLEND_ATTACK,
   BLEND_DROP_THRESHOLD,
-  BLEND_MAX_FRESH_PER_FRAME,
   BLEND_RELEASE,
   BLEND_TRACKING,
   blendColorStack,
@@ -164,7 +163,7 @@ describe("blendModalStack", () => {
     expect(out).toHaveLength(0);
   });
 
-  it("fresh cap: at most BLEND_MAX_FRESH_PER_FRAME new modes are admitted per call", () => {
+  it("admits all fresh modes by default so topology admission stays downstream", () => {
     const state = makeBlendState(8, []); // empty current
     // 4 fresh modes in target
     const target = makeTargetSlots(8, [
@@ -175,11 +174,11 @@ describe("blendModalStack", () => {
     ]);
     blendModalStack(state, target, 8);
     const out = readSlots(state, 8);
-    expect(out).toHaveLength(BLEND_MAX_FRESH_PER_FRAME);
+    expect(out).toHaveLength(4);
   });
 
-  it("existing modes are not subject to fresh cap", () => {
-    // 3 existing modes + 6 fresh modes; all 3 existing should survive + up to cap fresh
+  it("an explicit helper fresh cap does not affect existing modes", () => {
+    // 3 existing modes + 6 fresh modes; all 3 existing should survive + explicit cap fresh
     const state = makeBlendState(10, [
       { u: 1, v: 1, w: 1, amplitude: 0.8 },
       { u: 2, v: 2, w: 2, amplitude: 0.7 },
@@ -196,10 +195,9 @@ describe("blendModalStack", () => {
       { u: 8, v: 8, w: 8, amplitude: 0.15 }, // fresh
       { u: 9, v: 9, w: 9, amplitude: 0.1 }, // fresh
     ]);
-    blendModalStack(state, target, 10);
+    blendModalStack(state, target, 10, { freshCap: 2 });
     const out = readSlots(state, 10);
-    // 3 existing + capped admitted fresh modes.
-    expect(out).toHaveLength(3 + BLEND_MAX_FRESH_PER_FRAME);
+    expect(out).toHaveLength(5);
   });
 
   it("attack: fresh mode enters at attack rate (from zero)", () => {

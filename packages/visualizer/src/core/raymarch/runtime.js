@@ -572,6 +572,7 @@ function isRaymarchModalBasisDisplayCoherent(runtimeState) {
 function resetRenderAuthorityState(runtimeState) {
   clearBufferNode(runtimeState.modalFieldModeBuffer);
   clearBufferNode(runtimeState.modalFieldColorBuffer);
+  clearBufferNode(runtimeState.modalFieldSpectralBuffer);
   clearBufferNode(runtimeState.modalFieldPhaseBuffer);
   clearBufferNode(runtimeState.modalFieldCoefficientBuffer);
   runtimeState.performanceGovernor = null;
@@ -815,6 +816,7 @@ function buildRuntimeModalDescriptor(
     modalFieldSlots: featureFrame?.modalFieldSlots,
     modalFieldPhaseSlots: featureFrame?.modalFieldPhaseSlots,
     modalFieldColorSlots: featureFrame?.modalFieldColorSlots,
+    modalFieldSpectralSlots: featureFrame?.modalFieldSpectralSlots,
     modalFieldMetadataSlots: featureFrame?.modalFieldMetadataSlots,
     activeModalFieldModeCount:
       sourceDescriptor?.counts?.validModeCount ?? featureFrame?.activeModeCount,
@@ -845,6 +847,7 @@ function blockOverflowedModalDescriptor(
 ) {
   clearBufferNode(runtimeState.modalFieldModeBuffer);
   clearBufferNode(runtimeState.modalFieldColorBuffer);
+  clearBufferNode(runtimeState.modalFieldSpectralBuffer);
   clearBufferNode(runtimeState.modalFieldPhaseBuffer);
   clearBufferNode(runtimeState.modalFieldCoefficientBuffer);
   runtimeState.performanceGovernor = null;
@@ -1887,6 +1890,7 @@ function getRaymarchUploadState(runtimeState) {
       modalField: null,
       modalFieldPhase: null,
       modalFieldCoefficient: null,
+      modalFieldSpectral: null,
       modalFieldRole: null,
     };
   }
@@ -1897,8 +1901,10 @@ function getRaymarchUploadState(runtimeState) {
 function buildLayerUploadSignature({
   slots,
   colorSlots,
+  spectralSlots,
   layer,
   includeColors,
+  includeSpectral,
 }) {
   const capacity = Math.max(0, Math.floor(layer?.capacity ?? 0));
   const activeCount = Math.min(
@@ -1907,6 +1913,7 @@ function buildLayerUploadSignature({
   );
   let slotHash = FNV_OFFSET_BASIS;
   let colorHash = includeColors ? FNV_OFFSET_BASIS : 0;
+  let spectralHash = includeSpectral ? FNV_OFFSET_BASIS : 0;
 
   for (let slotIndex = 0; slotIndex < activeCount; slotIndex += 1) {
     const sourceOffset = slotIndex * 4;
@@ -1916,14 +1923,20 @@ function buildLayerUploadSignature({
       colorHash = hashUint32(slotIndex, colorHash);
       colorHash = hashSlot4(colorSlots, sourceOffset, colorHash);
     }
+    if (includeSpectral) {
+      spectralHash = hashUint32(slotIndex, spectralHash);
+      spectralHash = hashSlot4(spectralSlots, sourceOffset, spectralHash);
+    }
   }
 
   return {
     capacity,
     activeCount,
     includeColors: Boolean(includeColors),
+    includeSpectral: Boolean(includeSpectral),
     slotHash: slotHash >>> 0,
     colorHash: colorHash >>> 0,
+    spectralHash: spectralHash >>> 0,
   };
 }
 
@@ -1946,29 +1959,49 @@ function layerColorUploadSignatureChanged(previous, next) {
   );
 }
 
+function layerSpectralUploadSignatureChanged(previous, next) {
+  return (
+    !previous ||
+    previous.capacity !== next.capacity ||
+    previous.activeCount !== next.activeCount ||
+    previous.includeSpectral !== next.includeSpectral ||
+    previous.spectralHash !== next.spectralHash
+  );
+}
+
 function applyLayerUploadIfChanged({
   uploadState,
   key,
   slots,
   colorSlots,
+  spectralSlots,
   targetSlots,
   targetColorSlots,
+  targetSpectralSlots,
   modeBufferNode,
   colorBufferNode,
+  spectralBufferNode,
   layer,
   includeColors,
+  includeSpectral,
 }) {
   const signature = buildLayerUploadSignature({
     slots,
     colorSlots,
+    spectralSlots,
     layer,
     includeColors,
+    includeSpectral,
   });
   const previous = uploadState[key]?.signature ?? null;
   const modeChanged = layerModeUploadSignatureChanged(previous, signature);
   const colorChanged = layerColorUploadSignatureChanged(previous, signature);
+  const spectralChanged = layerSpectralUploadSignatureChanged(
+    previous,
+    signature,
+  );
 
-  if (modeChanged || colorChanged) {
+  if (modeChanged || colorChanged || spectralChanged) {
     copyLayerUpload({
       slots,
       colorSlots,
@@ -1976,6 +2009,12 @@ function applyLayerUploadIfChanged({
       targetColorSlots,
       layer,
       includeColors,
+    });
+    copyLayerSpectralUpload({
+      spectralSlots,
+      targetSpectralSlots,
+      layer,
+      includeSpectral,
     });
     if (modeChanged) {
       modeBufferNode.value.needsUpdate = true;
@@ -1986,6 +2025,13 @@ function applyLayerUploadIfChanged({
       (colorChanged || modeChanged)
     ) {
       colorBufferNode.value.needsUpdate = true;
+    }
+    if (
+      includeSpectral &&
+      spectralBufferNode?.value &&
+      (spectralChanged || modeChanged)
+    ) {
+      spectralBufferNode.value.needsUpdate = true;
     }
     uploadState[key] = { signature };
   }
@@ -2079,6 +2125,30 @@ function copyLayerUpload({
     capacity: layer.capacity,
     includeColors,
   });
+}
+
+function copyLayerSpectralUpload({
+  spectralSlots,
+  targetSpectralSlots,
+  layer,
+  includeSpectral,
+}) {
+  if (!targetSpectralSlots) {
+    return;
+  }
+  const capacity = Math.max(0, Math.floor(layer?.capacity ?? 0));
+  const targetLength = capacity * 4;
+  targetSpectralSlots.fill(0, 0, targetLength);
+  if (!includeSpectral) {
+    return;
+  }
+  for (let slotIndex = 0; slotIndex < capacity; slotIndex += 1) {
+    const offset = slotIndex * 4;
+    targetSpectralSlots[offset] = spectralSlots?.[offset] ?? 0;
+    targetSpectralSlots[offset + 1] = spectralSlots?.[offset + 1] ?? 0;
+    targetSpectralSlots[offset + 2] = spectralSlots?.[offset + 2] ?? 0;
+    targetSpectralSlots[offset + 3] = spectralSlots?.[offset + 3] ?? 0;
+  }
 }
 
 function copyLayerPhaseUpload({
@@ -2345,6 +2415,10 @@ function resolveSpectralLightEvaluationMode(
     return deactivateSpectralLightCacheEvaluation(spectralLightCache);
   }
 
+  if ((spectralLightDescriptor?.spectralLightModeCount ?? 0) <= 0) {
+    return deactivateSpectralLightCacheEvaluation(spectralLightCache);
+  }
+
   spectralLightCache.active = true;
 
   const spectralLightUploadReady =
@@ -2364,6 +2438,7 @@ function resolveSpectralLightEvaluationMode(
         {
           modalFieldModeBuffer: runtimeState.modalFieldModeBuffer,
           modalFieldColorBuffer: runtimeState.modalFieldColorBuffer,
+          modalFieldSpectralBuffer: runtimeState.modalFieldSpectralBuffer,
           modalFieldCapacity,
           uniforms: runtimeState.uniforms,
           schedulerTimeSec,
@@ -2700,6 +2775,7 @@ function applyRaymarchRuntimeUploadAuthority({
   modalFieldPhaseCapacity,
   modalFieldModeBuffer,
   modalFieldColorBuffer,
+  modalFieldSpectralBuffer,
   modalFieldPhaseBuffer,
   modalFieldCoefficientBuffer,
   spectralLightEnabled,
@@ -2744,12 +2820,16 @@ function applyRaymarchRuntimeUploadAuthority({
     key: "modalField",
     slots: descriptorSlots.modalFieldSlots,
     colorSlots: descriptorSlots.modalFieldColorSlots,
+    spectralSlots: descriptorSlots.modalFieldSpectralSlots,
     targetSlots: modalFieldModeBuffer.value.array,
     targetColorSlots: modalFieldColorBuffer.value.array,
+    targetSpectralSlots: modalFieldSpectralBuffer?.value?.array ?? null,
     modeBufferNode: modalFieldModeBuffer,
     colorBufferNode: modalFieldColorBuffer,
+    spectralBufferNode: modalFieldSpectralBuffer,
     layer: modalFieldLayer,
     includeColors: spectralLightEnabled,
+    includeSpectral: spectralLightEnabled,
   });
 
   const modalFieldPhaseAuthorityModeCount = applyLayerPhaseUploadIfChanged({
@@ -2825,6 +2905,7 @@ function applyRaymarchRuntimeUploadAuthority({
       buildRaymarchSpectralLightCacheDescriptor({
         modalFieldSlots: modalFieldModeBuffer?.value?.array,
         modalFieldColorSlots: modalFieldColorBuffer?.value?.array,
+        modalFieldSpectralSlots: modalFieldSpectralBuffer?.value?.array,
         modalFieldCount: modalFieldModeCount,
         boundaryMode,
         cavityGeometry: effectiveCavityGeometry,
@@ -2883,6 +2964,7 @@ export function tickRaymarchRuntime(
   const { uniforms, volumeMesh, idleOverlay } = runtimeState;
   const modalFieldModeBuffer = runtimeState.modalFieldModeBuffer;
   const modalFieldColorBuffer = runtimeState.modalFieldColorBuffer;
+  const modalFieldSpectralBuffer = runtimeState.modalFieldSpectralBuffer;
   const modalFieldPhaseBuffer = runtimeState.modalFieldPhaseBuffer;
   const modalFieldCoefficientBuffer = runtimeState.modalFieldCoefficientBuffer;
   const modalFieldCapacity = inferModalFieldCapacity(
@@ -3006,6 +3088,7 @@ export function tickRaymarchRuntime(
     modalFieldPhaseCapacity,
     modalFieldModeBuffer,
     modalFieldColorBuffer,
+    modalFieldSpectralBuffer,
     modalFieldPhaseBuffer,
     modalFieldCoefficientBuffer,
     spectralLightEnabled,
@@ -3133,7 +3216,17 @@ export function tickRaymarchRuntime(
   const modalBasisDisplayCoherent =
     modalBasisCacheDrawable &&
     isRaymarchModalBasisDisplayCoherent(runtimeState);
-  volumeMesh.visible = renderAuthority && modalBasisDisplayCoherent;
+  const spectralLightModeCount =
+    runtimeState.currentSpectralLightDescriptor?.spectralLightModeCount ?? 0;
+  const spectralLightCacheDrawable =
+    !spectralLightEnabled ||
+    (spectralLightModeCount > 0 &&
+      volumeMesh.userData?.raymarchSpectralLightEvaluationMode ===
+        RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached &&
+      runtimeState.spectralLightCache?.ready === true &&
+      Boolean(runtimeState.spectralLightCache?.activeDescriptor));
+  volumeMesh.visible =
+    renderAuthority && modalBasisDisplayCoherent && spectralLightCacheDrawable;
   idleOverlay.visible = resolveIdleOverlayVisible(
     runtimeState,
     featureFrame,

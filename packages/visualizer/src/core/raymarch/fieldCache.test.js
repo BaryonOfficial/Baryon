@@ -48,6 +48,17 @@ function resolveModalFieldPhaseSlots(options) {
   ]);
 }
 
+function resolveModalFieldSpectralSlots(options) {
+  if (options.modalFieldSpectralSlots) {
+    return options.modalFieldSpectralSlots;
+  }
+
+  return new Float32Array([
+    ...copySlotPrefix(options.backboneSpectralSlots, options.backboneCount),
+    ...copySlotPrefix(options.detailSpectralSlots, options.detailCount),
+  ]);
+}
+
 function resolveModalFieldColorSlots(options) {
   if (options.modalFieldColorSlots) {
     return options.modalFieldColorSlots;
@@ -71,6 +82,7 @@ function buildRaymarchSpectralLightCacheDescriptor(options) {
     ...options,
     ...resolveModalFieldSlots(options),
     modalFieldColorSlots: resolveModalFieldColorSlots(options),
+    modalFieldSpectralSlots: resolveModalFieldSpectralSlots(options),
   });
 }
 
@@ -79,6 +91,7 @@ function evaluateRaymarchSpectralLightCachePoint(options) {
     ...options,
     ...resolveModalFieldSlots(options),
     modalFieldColorSlots: resolveModalFieldColorSlots(options),
+    modalFieldSpectralSlots: resolveModalFieldSpectralSlots(options),
   });
 }
 
@@ -758,7 +771,7 @@ describe("fieldCache", () => {
     expect(dispose).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps Spectral Light cache compute as raw color metadata", () => {
+  it("keeps Spectral Light cache compute as single-texture owner metadata", () => {
     const source = readFileSync(
       new URL("./fieldCache.js", import.meta.url),
       "utf8",
@@ -782,13 +795,23 @@ describe("fieldCache", () => {
     expect(spectralComputeSource).not.toContain("totalAmplitude");
     expect(spectralComputeSource).not.toContain("localChromaInfluence");
     expect(spectralComputeSource).not.toContain("chromaNormalizer");
-    expect(spectralComputeSource).toContain("const colorSumX = zero.toVar();");
     expect(spectralComputeSource).toContain(
-      "colorSumX.addAssign(localInfluence.mul(colorSlot.x));",
+      "const ownerInfluence = zero.toVar();",
     );
     expect(spectralComputeSource).toContain(
-      "vec4(colorSumX, colorSumY, colorSumZ, colorWeight)",
+      "vec4(ownerColorX, ownerColorY, ownerColorZ, totalInfluence)",
     );
+    expect(spectralComputeSource).toContain(
+      "spectralLightCache.pendingTexture ?? spectralLightCache.texture",
+    );
+    expect(spectralComputeSource).not.toContain(
+      "const secondaryInfluence = zero.toVar();",
+    );
+    expect(spectralComputeSource).not.toContain(
+      "vec4(causticColorX, causticColorY, causticColorZ, ownerInfluence)",
+    );
+    expect(spectralComputeSource).not.toContain("momentX.addAssign");
+    expect(spectralComputeSource).not.toContain("colorSumX");
   });
 
   it("treats phase offsets as live-synthesis state", () => {
@@ -3018,6 +3041,35 @@ describe("fieldCache", () => {
     ).toMatchObject({ needsRebuild: true, reason: "color-slots" });
   });
 
+  it("derives caustic rim color from secondary and tertiary Spectral contributors", () => {
+    const sample = evaluateRaymarchSpectralLightCachePoint({
+      modalFieldSlots: new Float32Array([
+        1, 1, 1, 1.8, 2, 1, 1, 0.7, 3, 1, 1, 0.45,
+      ]),
+      modalFieldColorSlots: new Float32Array([
+        1, 0, 0, 1, 0, 0.12, 1, 1, 0.1, 1, 0, 1,
+      ]),
+      modalFieldSpectralSlots: new Float32Array([
+        0, 1, 0.9, 0.2, 0.33, 0.67, 0.8, 0.45, 0.66, 0.56, 0.7, 0.35,
+      ]),
+      modalFieldCount: 3,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 0,
+      y: 0,
+      z: 0,
+    });
+
+    expect(sample.r).toBeGreaterThan(0.9);
+    expect(sample.g).toBeLessThan(0.08);
+    expect(sample.b).toBeLessThan(0.08);
+    expect(sample.causticContributorCount).toBe(3);
+    expect(sample.causticDiversity).toBeGreaterThan(0.45);
+    expect(sample.causticR).toBeLessThan(0.16);
+    expect(sample.causticG).toBeGreaterThan(0.42);
+    expect(sample.causticB).toBeGreaterThan(0.62);
+  });
+
   it("canonicalizes duplicate modal tuples before resolving Spectral Light freshness", () => {
     const spectralLightCache = createRaymarchSpectralLightCache({
       resolution: 8,
@@ -3102,7 +3154,13 @@ describe("fieldCache", () => {
         splitEquivalentDescriptor,
       ),
     ).toMatchObject({ needsRebuild: false, reason: "unchanged" });
-    expect(splitChangedSample.r).not.toBeCloseTo(compactSample.r, 6);
+    expect(splitChangedSample.colorWeight).toBeCloseTo(
+      compactSample.colorWeight,
+      6,
+    );
+    expect(splitChangedDescriptor.modalFieldColorHash).not.toBe(
+      compactDescriptor.modalFieldColorHash,
+    );
     expect(
       shouldRebuildRaymarchSpectralLightCache(
         spectralLightCache,
@@ -4227,7 +4285,7 @@ describe("fieldCache", () => {
     expect(canceling.b).toBeCloseTo(reinforcing.b, 6);
   });
 
-  it("evaluates cached Spectral Light color as whitepaper linear modal-local mixing", () => {
+  it("selects a dominant Spectral owner instead of averaging complementary modal colors to gray", () => {
     const sample = evaluateRaymarchSpectralLightCachePoint({
       backboneSlots: new Float32Array([
         1, 1, 1, 0.45, 2, 2, 2, 0.35, 3, 3, 3, 0.32,
@@ -4237,6 +4295,20 @@ describe("fieldCache", () => {
         1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1,
       ]),
       detailColorSlots: new Float32Array(0),
+      modalFieldSpectralSlots: new Float32Array([
+        0,
+        700 / 780,
+        0.8,
+        0.1,
+        1 / 3,
+        546 / 780,
+        0.8,
+        0.1,
+        2 / 3,
+        436 / 780,
+        0.8,
+        0.1,
+      ]),
       backboneCount: 3,
       detailCount: 0,
       boundaryMode: "neumann",
@@ -4245,17 +4317,15 @@ describe("fieldCache", () => {
       y: 0,
       z: 0,
     });
-    const spectralColor = {
-      r: sample.r / sample.colorWeight,
-      g: sample.g / sample.colorWeight,
-      b: sample.b / sample.colorWeight,
-    };
     const expectedColorWeight = 0.45 + 0.35 + 0.32;
 
     expect(sample.colorWeight).toBeCloseTo(expectedColorWeight, 6);
-    expect(spectralColor.r).toBeCloseTo(0.45 / expectedColorWeight, 6);
-    expect(spectralColor.g).toBeCloseTo(0.35 / expectedColorWeight, 6);
-    expect(spectralColor.b).toBeCloseTo(0.32 / expectedColorWeight, 6);
+    expect(sample.r).toBeCloseTo(1, 6);
+    expect(sample.g).toBeCloseTo(0, 6);
+    expect(sample.b).toBeCloseTo(0, 6);
+    expect(sample.ownerInfluence).toBeCloseTo(0.45, 6);
+    expect(sample.dominance).toBeCloseTo(0.45 / expectedColorWeight, 6);
+    expect(sample.coherence).toBeLessThan(0.18);
   });
 
   it("preserves partially cancelled Spectral Light color metadata without signed damping", () => {
@@ -4361,9 +4431,13 @@ describe("fieldCache", () => {
       expectedAmplitudeScale,
       5,
     );
-    expect(loud.r / quiet.r).toBeCloseTo(expectedAmplitudeScale, 5);
-    expect(loud.g / quiet.g).toBeCloseTo(expectedAmplitudeScale, 5);
-    expect(loud.b / quiet.b).toBeCloseTo(expectedAmplitudeScale, 5);
+    expect(loud.ownerInfluence / quiet.ownerInfluence).toBeCloseTo(
+      expectedAmplitudeScale,
+      5,
+    );
+    expect(loud.r).toBeCloseTo(quiet.r, 6);
+    expect(loud.g).toBeCloseTo(quiet.g, 6);
+    expect(loud.b).toBeCloseTo(quiet.b, 6);
   });
 });
 

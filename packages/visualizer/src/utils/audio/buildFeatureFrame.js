@@ -64,11 +64,19 @@ import {
   normalizeLiveInputDeviceKind,
 } from "../../core/audio/inputDeviceSemantics.js";
 import { buildCanonicalFullModalDescriptor } from "../../core/modalDescriptor.js";
-import { MODAL_BASIS_ATLAS_PAGE_CAPACITY } from "../../core/modalBudgets.js";
+import {
+  createModalFieldContinuityState,
+  updateModalFieldContinuity,
+} from "../../core/modalFieldContinuity.js";
+import {
+  MODAL_BASIS_ATLAS_PAGE_CAPACITY,
+  MODAL_BASIS_CACHE_RESOLUTION,
+  getModalBasisCacheMaxRepresentableModeIndex,
+} from "../../core/modalBudgets.js";
 import {
   countNonZeroFftBins,
-  deriveHighQSparseResonatorAuthority,
-} from "./highQSparseResonatorAuthority.js";
+  deriveHighQSparseResonatorEvidence,
+} from "./highQSparseResonatorEvidence.js";
 import {
   buildModalEnergyLedger,
   hasProjectedRenderAuthority,
@@ -78,6 +86,9 @@ import {
   collectAudioSourceEvidenceInputs,
   resolveAudioRenderBoundary,
 } from "./audioSourceEvidence.js";
+
+const MODAL_FIELD_CONTINUITY_MAX_BASIS_MODE_ORDER =
+  getModalBasisCacheMaxRepresentableModeIndex(MODAL_BASIS_CACHE_RESOLUTION);
 
 /** @typedef {import("../../core/cavityGeometry.js").CavityGeometry} CavityGeometry */
 
@@ -174,9 +185,8 @@ const EMPTY_MODAL_OBSERVER_VISIBILITY = Object.freeze({
   resonantSlotFloorTotal: 0,
   sourceCoupledSlotFloorTotal: 0,
   ...EMPTY_LOW_Q_SOURCE_COUPLED_VISIBILITY,
-  highQSparseResonatorAuthority: 0,
+  highQSparseResonatorEvidence: 0,
   highQProjectionLoad: 0,
-  highQRetainedVisibilityRejected: false,
 });
 const LIVE_INPUT_ACOUSTIC_INTENT_CONFIGS = Object.freeze({
   ambient: Object.freeze({
@@ -489,6 +499,10 @@ function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
   ) {
     analysisMemory.modalExcitationState = createModalExcitationState(capacity);
   }
+  if (!analysisMemory.modalFieldContinuityState) {
+    analysisMemory.modalFieldContinuityState =
+      createModalFieldContinuityState();
+  }
 
   if (featureState?.analysis) {
     featureState.analysis = analysisMemory;
@@ -518,6 +532,7 @@ function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
     acousticSourceCoupledTarget,
     acousticResonantTarget,
     modalExcitationState: analysisMemory.modalExcitationState,
+    modalFieldContinuityState: analysisMemory.modalFieldContinuityState,
     sourceCoupledState: analysisMemory.sourceCoupledState,
     resonantState: analysisMemory.resonantState,
     bandState: analysisMemory.bandState,
@@ -631,6 +646,16 @@ function getFrameDeltaMs(previousFrameAtMs, currentFrameAtMs) {
   }
 
   return Math.max(1, currentFrameAtMs - previousFrameAtMs);
+}
+
+function getModalFieldContinuityDeltaMs(previousFrameAtMs, currentFrameAtMs) {
+  if (!Number.isFinite(previousFrameAtMs)) {
+    return DEFAULT_FRAME_TIME_MS;
+  }
+  if (!Number.isFinite(currentFrameAtMs)) {
+    return DEFAULT_FRAME_TIME_MS;
+  }
+  return Math.max(0, currentFrameAtMs - previousFrameAtMs);
 }
 
 function computeEmaAlpha(deltaMs, smoothingMs) {
@@ -980,11 +1005,8 @@ function readModalResponseRenderResonantEnergy(
 function hasFeatureFrameRenderAuthority({
   fieldState,
   hasModalField,
-  activeModeCount,
   modalCoefficientEnergy,
   observationEnergy,
-  modalVisibilityEnergy,
-  modalObserverVisibilityEnergy,
 }) {
   if (fieldState === FIELD_STATES.test) {
     return true;
@@ -992,11 +1014,8 @@ function hasFeatureFrameRenderAuthority({
 
   return (
     hasModalField &&
-    (activeModeCount > 0 ||
-      modalCoefficientEnergy > RENDER_ENERGY_EPSILON ||
-      observationEnergy > RENDER_ENERGY_EPSILON ||
-      modalVisibilityEnergy > RENDER_ENERGY_EPSILON ||
-      modalObserverVisibilityEnergy > RENDER_ENERGY_EPSILON)
+    (modalCoefficientEnergy > RENDER_ENERGY_EPSILON ||
+      observationEnergy > RENDER_ENERGY_EPSILON)
   );
 }
 
@@ -1258,18 +1277,14 @@ function buildDebugSummary({
     highQObservedSnr: structuralMetrics?.highQObservedSnr ?? 0,
     highQObservedCoherence: structuralMetrics?.highQObservedCoherence ?? 0,
     highQObservedNoiseFloor: structuralMetrics?.highQObservedNoiseFloor ?? 0,
-    highQSparseResonatorAuthority:
-      modalVisibilitySummary.highQSparseResonatorAuthority ??
-      structuralMetrics?.highQSparseResonatorAuthority ??
+    highQSparseResonatorEvidence:
+      modalVisibilitySummary.highQSparseResonatorEvidence ??
+      structuralMetrics?.highQSparseResonatorEvidence ??
       0,
     highQProjectionLoad:
       modalVisibilitySummary.highQProjectionLoad ??
       structuralMetrics?.highQProjectionLoad ??
       0,
-    highQRetainedVisibilityRejected: Boolean(
-      modalVisibilitySummary.highQRetainedVisibilityRejected ??
-      structuralMetrics?.highQRetainedVisibilityRejected,
-    ),
     modalPhaseAuthority: structuralMetrics?.modalPhaseAuthority ?? 0,
     highQPhaseAuthority: structuralMetrics?.highQPhaseAuthority ?? 0,
     lowQPhaseAuthority: structuralMetrics?.lowQPhaseAuthority ?? 0,
@@ -1531,6 +1546,11 @@ function buildSilentFeatureFrame({
   bandEnergies.fill(0);
   clearModalStack(sourceCoupledState);
   clearModalStack(resonantState);
+  if (featureState?.analysis) {
+    featureState.analysis.modalFieldContinuityState =
+      createModalFieldContinuityState();
+    featureState.analysis.lastModalFieldContinuityFrameAtMs = undefined;
+  }
 
   let silentFft = featureState?.analysis?.fftMagnitudes;
   if (!silentFft?.length) {
@@ -2677,7 +2697,8 @@ function writeModalFieldCandidates({
     targetColorSlots[targetOffset + 3] =
       sourceColorSlots?.[sourceOffset + 3] ?? 0;
 
-    targetSpectralSlots[targetOffset] = sourceSpectralSlots?.[sourceOffset] ?? 0;
+    targetSpectralSlots[targetOffset] =
+      sourceSpectralSlots?.[sourceOffset] ?? 0;
     targetSpectralSlots[targetOffset + 1] =
       sourceSpectralSlots?.[sourceOffset + 1] ?? 0;
     targetSpectralSlots[targetOffset + 2] =
@@ -2870,7 +2891,7 @@ function deriveLowQSourceCoupledVisibilityAuthority({
         directSourceSnrGate,
       )
     : observedSnrGate;
-  const authority = clamp01(
+  const lowQSourceCoupledVisibilityAuthority = clamp01(
     lowQEnergyGate *
       lowQCoherenceGate *
       snrGate *
@@ -2879,14 +2900,17 @@ function deriveLowQSourceCoupledVisibilityAuthority({
   );
 
   return {
-    lowQSourceCoupledVisibilityAuthority: authority,
+    lowQSourceCoupledVisibilityAuthority,
     lowQSourceCoupledVisibilityEnergy:
-      LOW_Q_SOURCE_COUPLED_VISIBILITY_ENERGY_MAX * authority,
+      LOW_Q_SOURCE_COUPLED_VISIBILITY_ENERGY_MAX *
+      lowQSourceCoupledVisibilityAuthority,
     lowQSourceCoupledTopologyFloor:
-      LOW_Q_SOURCE_COUPLED_TOPOLOGY_FLOOR_MAX * authority,
+      LOW_Q_SOURCE_COUPLED_TOPOLOGY_FLOOR_MAX *
+      lowQSourceCoupledVisibilityAuthority,
     lowQSourceCoupledSourceSupport: sourceSupport,
     lowQSourceCoupledVisibilityRejected: Boolean(
-      hasLowQSourceCoupledCandidate && authority <= 0,
+      hasLowQSourceCoupledCandidate &&
+      lowQSourceCoupledVisibilityAuthority <= 0,
     ),
   };
 }
@@ -2915,7 +2939,7 @@ function deriveModalObserverVisibilityComponents({
     structuralMetrics.highQObservedCoherence ?? modeCoherence,
   );
   const highQObservedSnr = clamp01(structuralMetrics.highQObservedSnr ?? 0);
-  const highQAuthority = deriveHighQSparseResonatorAuthority({
+  const highQSparseResonatorEvidence = deriveHighQSparseResonatorEvidence({
     highQObservedSnr,
     highQObservedCoherence,
     highQObservedDrive: structuralMetrics.highQObservedDrive ?? 0,
@@ -2952,7 +2976,7 @@ function deriveModalObserverVisibilityComponents({
       highQSupportGate *
       highQCountGate *
       highQQuality *
-      highQAuthority.highQSparseResonatorAuthority *
+      highQSparseResonatorEvidence.highQSparseResonatorEvidence *
       MODAL_OBSERVER_HIGH_Q_MAX,
   );
 
@@ -3024,7 +3048,7 @@ function deriveModalObserverVisibilityComponents({
     resonantSlotFloorTotal,
     sourceCoupledSlotFloorTotal,
     ...lowQSourceCoupledVisibility,
-    ...highQAuthority,
+    ...highQSparseResonatorEvidence,
   };
 }
 
@@ -3053,9 +3077,8 @@ function deriveModalVisibilityComponents({
     modalObserverTopologyFloor: 0,
     ...EMPTY_LOW_Q_SOURCE_COUPLED_VISIBILITY,
     retainedHighQModalVisibility: 0,
-    highQSparseResonatorAuthority: 0,
+    highQSparseResonatorEvidence: 0,
     highQProjectionLoad: 0,
-    highQRetainedVisibilityRejected: false,
   };
 
   if (hardSilent) {
@@ -3110,8 +3133,8 @@ function deriveModalVisibilityComponents({
   const highQObservedCoherence = clamp01(
     structuralMetrics?.highQObservedCoherence ?? resonatorCoherence,
   );
-  const highQSparseResonatorAuthority = clamp01(
-    observerVisibility.highQSparseResonatorAuthority,
+  const highQSparseResonatorEvidence = clamp01(
+    observerVisibility.highQSparseResonatorEvidence,
   );
   const highQSustainedVisibilityScale = smoothstep(
     0.06,
@@ -3174,10 +3197,10 @@ function deriveModalVisibilityComponents({
     smoothstep(2, 5, highQResonantModeCount) *
     modalQuality *
     highQSustainedVisibilityScale *
-    highQSparseResonatorAuthority;
+    highQSparseResonatorEvidence;
   const retainedHighQObserverSupport =
     MODAL_VISIBILITY_HIGH_Q_OBSERVER_MIN_SUPPORT_WEIGHT +
-    highQSparseResonatorAuthority * 0.08 +
+    highQSparseResonatorEvidence * 0.08 +
     smoothstep(
       MODAL_VISIBILITY_HIGH_Q_OBSERVER_SUPPORT_START,
       MODAL_VISIBILITY_HIGH_Q_OBSERVER_SUPPORT_END,
@@ -3198,7 +3221,7 @@ function deriveModalVisibilityComponents({
     smoothstep(1, 4, highQResonantModeCount) *
     retainedHighQObserverSupport *
     retainedHighQObserverQuality *
-    highQSparseResonatorAuthority;
+    highQSparseResonatorEvidence;
   const retainedHighQModalVisibility = Math.min(
     visibilityEnergyCeiling,
     clamp01(
@@ -3277,10 +3300,8 @@ function deriveModalVisibilityComponents({
     lowQSourceCoupledVisibilityRejected:
       observerVisibility.lowQSourceCoupledVisibilityRejected,
     retainedHighQModalVisibility,
-    highQSparseResonatorAuthority,
+    highQSparseResonatorEvidence,
     highQProjectionLoad: observerVisibility.highQProjectionLoad,
-    highQRetainedVisibilityRejected:
-      observerVisibility.highQRetainedVisibilityRejected,
   };
 }
 
@@ -4067,6 +4088,7 @@ export function prepareAudioFeatureFrameInputs({
     acousticSourceCoupledTarget,
     acousticResonantTarget,
     modalExcitationState,
+    modalFieldContinuityState,
     sourceCoupledState,
     resonantState,
     bandState,
@@ -4190,6 +4212,7 @@ export function prepareAudioFeatureFrameInputs({
       bandEnergies,
       zeroSourceCoupledTargetSlots,
       zeroResonantTargetSlots,
+      modalFieldContinuityState,
       sourceCoupledState,
       resonantState,
       bandState,
@@ -4430,6 +4453,7 @@ export function prepareAudioFeatureFrameInputs({
     acousticSourceCoupledTarget,
     acousticResonantTarget,
     modalExcitationState,
+    modalFieldContinuityState,
     sourceCoupledState,
     resonantState,
     bandState,
@@ -5864,11 +5888,8 @@ export function composeAudioFeatureFrame({
     hasFeatureFrameRenderAuthority({
       fieldState,
       hasModalField,
-      activeModeCount: fieldStateActiveModeCount,
       modalCoefficientEnergy: projectedModalRenderEnergy,
       observationEnergy,
-      modalVisibilityEnergy,
-      modalObserverVisibilityEnergy,
     });
   if (!projectedRenderAuthority) {
     fieldState = FIELD_STATES.idle;
@@ -5934,7 +5955,8 @@ export function composeAudioFeatureFrame({
     renderReferenceModeSlots = preparedInputs.referenceModeSlots;
     renderSourceCoupledColorSlots = preparedInputs.zeroSourceCoupledTargetSlots;
     renderResonantColorSlots = preparedInputs.zeroResonantTargetSlots;
-    renderSourceCoupledSpectralSlots = preparedInputs.zeroSourceCoupledTargetSlots;
+    renderSourceCoupledSpectralSlots =
+      preparedInputs.zeroSourceCoupledTargetSlots;
     renderResonantSpectralSlots = preparedInputs.zeroResonantTargetSlots;
     renderBandEnergies = preparedInputs.bandEnergies;
     activeSourceCoupledModeCount = 0;
@@ -5957,6 +5979,40 @@ export function composeAudioFeatureFrame({
     cavityAcousticScale: preparedInputs.cavityAcousticScale,
     boundaryMode: preparedInputs.boundaryMode,
   });
+  const previousModalFieldContinuityFrameAtMs =
+    preparedInputs.analysisMemory.lastModalFieldContinuityFrameAtMs;
+  const modalFieldContinuityResetToken = `${preparedInputs.analysisSessionKey}|${preparedInputs.analysisInputsSignature}`;
+  const allowImmediateModalFieldBootstrap =
+    !Number.isFinite(previousModalFieldContinuityFrameAtMs) ||
+    (preparedInputs.modalFieldContinuityState?.lastResetToken !== undefined &&
+      preparedInputs.modalFieldContinuityState.lastResetToken !==
+        modalFieldContinuityResetToken);
+  const modalFieldContinuityDeltaMs = getModalFieldContinuityDeltaMs(
+    previousModalFieldContinuityFrameAtMs,
+    preparedInputs.currentFrameAtMs,
+  );
+  preparedInputs.analysisMemory.lastModalFieldContinuityFrameAtMs =
+    preparedInputs.currentFrameAtMs;
+  const modalFieldContinuityResult = updateModalFieldContinuity(
+    preparedInputs.modalFieldContinuityState,
+    {
+      descriptorSource: modalFieldDescriptorSource,
+      deltaTimeSec: modalFieldContinuityDeltaMs / 1000,
+      resetToken: modalFieldContinuityResetToken,
+      renderAuthority,
+      maxVisibleModeCount: Math.min(
+        preparedInputs.capacity,
+        MODAL_BASIS_ATLAS_PAGE_CAPACITY,
+      ),
+      maxBasisModeOrder: MODAL_FIELD_CONTINUITY_MAX_BASIS_MODE_ORDER,
+      allowImmediateBootstrap: allowImmediateModalFieldBootstrap,
+      normalizeCandidateEvidence: true,
+    },
+  );
+  const continuityDescriptorSource =
+    modalFieldContinuityResult.descriptorSource;
+  const modalFieldContinuityDiagnostics =
+    modalFieldContinuityResult.diagnostics;
   const modalDescriptor = buildCanonicalFullModalDescriptor({
     generation: preparedInputs.auditState?.frame ?? 0,
     maxTotalModes: Math.min(
@@ -5964,14 +6020,13 @@ export function composeAudioFeatureFrame({
       AUDIO_DEFAULTS.maxModalFieldDescriptorModes,
     ),
     basisAtlasPageCapacity: MODAL_BASIS_ATLAS_PAGE_CAPACITY,
-    modalFieldSlots: modalFieldDescriptorSource.modalFieldSlots,
-    modalFieldPhaseSlots: modalFieldDescriptorSource.modalFieldPhaseSlots,
-    modalFieldColorSlots: modalFieldDescriptorSource.modalFieldColorSlots,
-    modalFieldSpectralSlots:
-      modalFieldDescriptorSource.modalFieldSpectralSlots,
-    modalFieldMetadataSlots: modalFieldDescriptorSource.modalFieldMetadataSlots,
+    modalFieldSlots: continuityDescriptorSource.modalFieldSlots,
+    modalFieldPhaseSlots: continuityDescriptorSource.modalFieldPhaseSlots,
+    modalFieldColorSlots: continuityDescriptorSource.modalFieldColorSlots,
+    modalFieldSpectralSlots: continuityDescriptorSource.modalFieldSpectralSlots,
+    modalFieldMetadataSlots: continuityDescriptorSource.modalFieldMetadataSlots,
     activeModalFieldModeCount:
-      modalFieldDescriptorSource.activeModalFieldModeCount,
+      continuityDescriptorSource.activeModalFieldModeCount,
     observerCandidateModeCount:
       analysisResult.structuralMetrics?.excitedModeCount,
     observedModalModeCount:
@@ -5979,7 +6034,7 @@ export function composeAudioFeatureFrame({
     phaseAuthorityModeCount:
       analysisResult.structuralMetrics?.modalPhaseCoherentFieldModeCount,
     modeIdentityRetentionRatio:
-      analysisResult.structuralMetrics?.modalPersistence,
+      modalFieldContinuityDiagnostics.modeIdentityRetentionRatio,
   });
 
   let debug = analysisResult.debug;
@@ -6106,6 +6161,7 @@ export function composeAudioFeatureFrame({
     fftMagnitudes: analysisResult.fftMagnitudes,
     activeModeCount,
     activeModalFieldModeCount: modalDescriptor.counts.modalFieldModeCount,
+    modalFieldContinuity: modalFieldContinuityDiagnostics,
     modalDescriptor,
     modalFieldSlots: modalDescriptor.slotViews.modalFieldSlots,
     modalFieldPhaseSlots: modalDescriptor.slotViews.modalFieldPhaseSlots,
@@ -6140,6 +6196,8 @@ export function composeAudioFeatureFrame({
     modalResponseAveragePersistence:
       analysisResult.structuralMetrics?.modalResponseAveragePersistence ?? 0,
     modalResponseRenderEnergy: energyLedger.projectedRenderEnergy,
+    modalResponseRenderSourceCoupledEnergy: modalResponseSourceCoupledEnergy,
+    modalResponseRenderResonantEnergy: modalResponseResonantEnergy,
     modalResponseRenderRawEnergy: renderAuthority
       ? (analysisResult.structuralMetrics?.modalResponseRenderRawEnergy ??
         projectedModalRenderEnergy)

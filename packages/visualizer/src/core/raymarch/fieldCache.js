@@ -254,8 +254,50 @@ function hashCanonicalModalFieldTopology(entries) {
   return hash >>> 0;
 }
 
+function normalizeSpectralPhase(value) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return value - Math.floor(value);
+}
+
+function readSpectralPhase(spectralSlots, offset) {
+  return normalizeSpectralPhase(spectralSlots?.[offset] ?? 0);
+}
+
+function normalizeSpectralRgbPeak(rgb, fallback) {
+  const peak = Math.max(rgb.r, rgb.g, rgb.b);
+  if (!(peak > 1e-9)) {
+    return { ...fallback };
+  }
+
+  return {
+    r: clamp01(rgb.r / peak),
+    g: clamp01(rgb.g / peak),
+    b: clamp01(rgb.b / peak),
+  };
+}
+
+function insertSpectralCausticContributor(top, contributor) {
+  if (!(contributor.influence > 0)) {
+    return;
+  }
+
+  if (contributor.influence > top[0].influence) {
+    top[2] = top[1];
+    top[1] = top[0];
+    top[0] = contributor;
+  } else if (contributor.influence > top[1].influence) {
+    top[2] = top[1];
+    top[1] = contributor;
+  } else if (contributor.influence > top[2].influence) {
+    top[2] = contributor;
+  }
+}
+
 function buildCanonicalSpectralLightColorTopology({
   colorSlots,
+  spectralSlots,
   modalFieldSlots,
   activeCount,
 }) {
@@ -288,12 +330,18 @@ function buildCanonicalSpectralLightColorTopology({
       r: 0,
       g: 0,
       b: 0,
+      phaseX: 0,
+      phaseY: 0,
     };
+    const phase = readSpectralPhase(spectralSlots, offset);
+    const phaseRad = phase * Math.PI * 2;
     entry.amplitude += amplitude;
     entry.colorInfluence += colorInfluence;
     entry.r += colorInfluence * clamp01(colorSlots?.[offset] ?? 0);
     entry.g += colorInfluence * clamp01(colorSlots?.[offset + 1] ?? 0);
     entry.b += colorInfluence * clamp01(colorSlots?.[offset + 2] ?? 0);
+    entry.phaseX += colorInfluence * Math.cos(phaseRad);
+    entry.phaseY += colorInfluence * Math.sin(phaseRad);
     if (!entriesByKey.has(key)) {
       entriesByKey.set(key, entry);
     }
@@ -333,6 +381,8 @@ function buildCanonicalSpectralLightColorTopology({
         clamp01(entry.colorInfluence / entry.amplitude) *
           FIELD_CACHE_COLOR_QUANTIZATION,
       ),
+      getFloat32Bits(entry.phaseX / entry.colorInfluence),
+      getFloat32Bits(entry.phaseY / entry.colorInfluence),
     ];
   });
 
@@ -506,7 +556,7 @@ function createRaymarchCacheRequestUniformSnapshots(sourceUniforms) {
 
 function snapshotRaymarchCacheRebuildOptions(
   options,
-  { includeColor = false, includePhase = false } = {},
+  { includeColor = false, includePhase = false, includeSpectral = false } = {},
 ) {
   const modalFieldCapacity = normalizeComputeNodeCapacity(
     options?.modalFieldCapacity,
@@ -530,6 +580,12 @@ function snapshotRaymarchCacheRebuildOptions(
           modalFieldCapacity,
         )
       : null,
+    modalFieldSpectralBuffer: includeSpectral
+      ? createRaymarchCacheRequestVec4BufferSnapshot(
+          options?.modalFieldSpectralBuffer,
+          modalFieldCapacity,
+        )
+      : null,
     uniforms: createRaymarchCacheRequestUniformSnapshots(options?.uniforms),
   };
 }
@@ -538,6 +594,7 @@ function createRaymarchCacheComputeInputs({
   modalFieldCapacity,
   includeColor = false,
   includePhase = false,
+  includeSpectral = false,
 }) {
   return {
     modalFieldModeBuffer: createRaymarchCacheVec4Buffer(modalFieldCapacity),
@@ -545,6 +602,9 @@ function createRaymarchCacheComputeInputs({
       ? createRaymarchCacheVec4Buffer(modalFieldCapacity)
       : null,
     modalFieldPhaseBuffer: includePhase
+      ? createRaymarchCacheVec4Buffer(modalFieldCapacity)
+      : null,
+    modalFieldSpectralBuffer: includeSpectral
       ? createRaymarchCacheVec4Buffer(modalFieldCapacity)
       : null,
     uniforms: createRaymarchCacheUniformSnapshots(),
@@ -558,10 +618,12 @@ function getOrUpdateRaymarchCacheComputeInputs(
     modalFieldModeBuffer,
     modalFieldColorBuffer = null,
     modalFieldPhaseBuffer = null,
+    modalFieldSpectralBuffer = null,
     modalFieldCapacity,
     uniforms,
     includeColor = false,
     includePhase = false,
+    includeSpectral = false,
   },
 ) {
   if (!cache.computeInputsByKey) {
@@ -574,6 +636,7 @@ function getOrUpdateRaymarchCacheComputeInputs(
       modalFieldCapacity,
       includeColor,
       includePhase,
+      includeSpectral,
     });
     cache.computeInputsByKey[nodeKey] = inputs;
   }
@@ -594,6 +657,13 @@ function getOrUpdateRaymarchCacheComputeInputs(
     copyRaymarchCacheVec4BufferSnapshot({
       sourceBuffer: modalFieldPhaseBuffer,
       targetBuffer: inputs.modalFieldPhaseBuffer,
+      modalFieldCapacity,
+    });
+  }
+  if (includeSpectral) {
+    copyRaymarchCacheVec4BufferSnapshot({
+      sourceBuffer: modalFieldSpectralBuffer,
+      targetBuffer: inputs.modalFieldSpectralBuffer,
       modalFieldCapacity,
     });
   }
@@ -1486,6 +1556,7 @@ export function disposeRaymarchFieldCache(fieldCache) {
       inputs?.modalFieldModeBuffer?.dispose?.();
       inputs?.modalFieldColorBuffer?.dispose?.();
       inputs?.modalFieldPhaseBuffer?.dispose?.();
+      inputs?.modalFieldSpectralBuffer?.dispose?.();
       Object.values(inputs?.uniforms ?? {}).forEach((uniformNode) => {
         uniformNode?.dispose?.();
       });
@@ -2066,6 +2137,7 @@ export function buildModalBasisAuditDiagnostics({
 export function buildRaymarchSpectralLightCacheDescriptor({
   modalFieldSlots,
   modalFieldColorSlots,
+  modalFieldSpectralSlots,
   modalFieldCount,
   boundaryMode,
   cavityGeometry = "rectangular",
@@ -2084,6 +2156,7 @@ export function buildRaymarchSpectralLightCacheDescriptor({
   });
   const spectralLightColorTopology = buildCanonicalSpectralLightColorTopology({
     colorSlots: modalFieldColorSlots,
+    spectralSlots: modalFieldSpectralSlots,
     modalFieldSlots,
     activeCount: normalizedUploadedModalFieldCount,
   });
@@ -2103,6 +2176,7 @@ export function buildRaymarchSpectralLightCacheDescriptor({
 function accumulateSpectralLightLayerAtPoint({
   slots,
   colorSlots,
+  spectralSlots,
   activeCount,
   weight,
   x,
@@ -2112,10 +2186,20 @@ function accumulateSpectralLightLayerAtPoint({
   boundaryMode,
   cavityGeometry,
 }) {
-  let colorWeight = 0;
-  let colorR = 0;
-  let colorG = 0;
-  let colorB = 0;
+  let totalInfluence = 0;
+  let ownerInfluence = 0;
+  let ownerR = 0;
+  let ownerG = 0;
+  let ownerB = 0;
+  let ownerPhase = 0;
+  let ownerWavelength = 0;
+  let momentX = 0;
+  let momentY = 0;
+  const topContributors = [
+    { influence: 0, r: 0, g: 0, b: 0 },
+    { influence: 0, r: 0, g: 0, b: 0 },
+    { influence: 0, r: 0, g: 0, b: 0 },
+  ];
   const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
 
@@ -2139,17 +2223,70 @@ function accumulateSpectralLightLayerAtPoint({
     const contribution = amplitude * family.field;
     const localInfluence =
       Math.abs(contribution) * (colorSlots?.[offset + 3] ?? 0);
-    colorWeight += localInfluence;
-    colorR += localInfluence * (colorSlots?.[offset] ?? 0);
-    colorG += localInfluence * (colorSlots?.[offset + 1] ?? 0);
-    colorB += localInfluence * (colorSlots?.[offset + 2] ?? 0);
+    const phase = readSpectralPhase(spectralSlots, offset);
+    const phaseRad = phase * Math.PI * 2;
+    const contributor = {
+      influence: localInfluence,
+      r: clamp01(colorSlots?.[offset] ?? 0),
+      g: clamp01(colorSlots?.[offset + 1] ?? 0),
+      b: clamp01(colorSlots?.[offset + 2] ?? 0),
+    };
+    totalInfluence += localInfluence;
+    momentX += localInfluence * Math.cos(phaseRad);
+    momentY += localInfluence * Math.sin(phaseRad);
+    insertSpectralCausticContributor(topContributors, contributor);
+    if (localInfluence > ownerInfluence) {
+      ownerInfluence = localInfluence;
+      ownerR = contributor.r;
+      ownerG = contributor.g;
+      ownerB = contributor.b;
+      ownerPhase = phase;
+      ownerWavelength = spectralSlots?.[offset + 1] ?? 0;
+    }
   }
+  const influenceDenominator = Math.max(totalInfluence, 1e-9);
+  const secondary = topContributors[1];
+  const tertiary = topContributors[2];
+  const causticInfluence = secondary.influence + tertiary.influence;
+  const causticContributorCount =
+    (topContributors[0].influence > 0 ? 1 : 0) +
+    (secondary.influence > 0 ? 1 : 0) +
+    (tertiary.influence > 0 ? 1 : 0);
+  const causticColor =
+    causticInfluence > 1e-9
+      ? normalizeSpectralRgbPeak(
+          {
+            r:
+              secondary.r * secondary.influence +
+              tertiary.r * tertiary.influence,
+            g:
+              secondary.g * secondary.influence +
+              tertiary.g * tertiary.influence,
+            b:
+              secondary.b * secondary.influence +
+              tertiary.b * tertiary.influence,
+          },
+          { r: ownerR, g: ownerG, b: ownerB },
+        )
+      : { r: ownerR, g: ownerG, b: ownerB };
 
   return {
-    colorWeight,
-    colorR,
-    colorG,
-    colorB,
+    colorWeight: totalInfluence,
+    colorR: ownerR,
+    colorG: ownerG,
+    colorB: ownerB,
+    ownerInfluence,
+    momentX,
+    momentY,
+    coherence: Math.hypot(momentX, momentY) / influenceDenominator,
+    dominance: ownerInfluence / influenceDenominator,
+    ownerPhase,
+    ownerWavelength,
+    causticR: causticColor.r,
+    causticG: causticColor.g,
+    causticB: causticColor.b,
+    causticDiversity: causticInfluence / influenceDenominator,
+    causticContributorCount,
   };
 }
 
@@ -2525,6 +2662,7 @@ export function evaluateRaymarchPhaseInterferenceContrastPoint({
 export function evaluateRaymarchSpectralLightCachePoint({
   modalFieldSlots,
   modalFieldColorSlots,
+  modalFieldSpectralSlots,
   modalFieldCount,
   boundaryMode,
   cavityGeometry = "rectangular",
@@ -2539,6 +2677,7 @@ export function evaluateRaymarchSpectralLightCachePoint({
   const modalField = accumulateSpectralLightLayerAtPoint({
     slots: modalFieldSlots,
     colorSlots: modalFieldColorSlots,
+    spectralSlots: modalFieldSpectralSlots,
     activeCount: modalFieldCount,
     weight: 1,
     x,
@@ -2555,6 +2694,18 @@ export function evaluateRaymarchSpectralLightCachePoint({
     g: modalField.colorG,
     b: modalField.colorB,
     colorWeight,
+    ownerInfluence: modalField.ownerInfluence,
+    momentX: modalField.momentX,
+    momentY: modalField.momentY,
+    coherence: modalField.coherence,
+    dominance: modalField.dominance,
+    ownerPhase: modalField.ownerPhase,
+    ownerWavelength: modalField.ownerWavelength,
+    causticR: modalField.causticR,
+    causticG: modalField.causticG,
+    causticB: modalField.causticB,
+    causticDiversity: modalField.causticDiversity,
+    causticContributorCount: modalField.causticContributorCount,
   };
 }
 
@@ -2649,10 +2800,11 @@ function createSpectralLightComputeKernel({
         .mul(uRadius)
         .toVar();
       const scale = float(Math.PI).div(uRadius.max(float(1e-4)));
-      const colorWeight = zero.toVar();
-      const colorSumX = zero.toVar();
-      const colorSumY = zero.toVar();
-      const colorSumZ = zero.toVar();
+      const totalInfluence = zero.toVar();
+      const ownerInfluence = zero.toVar();
+      const ownerColorX = zero.toVar();
+      const ownerColorY = zero.toVar();
+      const ownerColorZ = zero.toVar();
 
       Loop(
         {
@@ -2676,12 +2828,17 @@ function createSpectralLightComputeKernel({
               boundaryMode,
             });
             const colorSlot = modalFieldColorBuffer.element(i);
-            const contribution = amplitude.mul(family.field).toVar();
-            const localInfluence = abs(contribution).mul(colorSlot.w).toVar();
-            colorWeight.addAssign(localInfluence);
-            colorSumX.addAssign(localInfluence.mul(colorSlot.x));
-            colorSumY.addAssign(localInfluence.mul(colorSlot.y));
-            colorSumZ.addAssign(localInfluence.mul(colorSlot.z));
+            const contribution = zero.toVar();
+            contribution.addAssign(amplitude.mul(family.field));
+            const localInfluence = zero.toVar();
+            localInfluence.addAssign(abs(contribution).mul(colorSlot.w));
+            totalInfluence.addAssign(localInfluence);
+            If(localInfluence.greaterThan(ownerInfluence), () => {
+              ownerInfluence.assign(localInfluence);
+              ownerColorX.assign(colorSlot.x);
+              ownerColorY.assign(colorSlot.y);
+              ownerColorZ.assign(colorSlot.z);
+            });
           });
         },
       );
@@ -2689,7 +2846,7 @@ function createSpectralLightComputeKernel({
       textureStore(
         texture,
         uvec3(voxelCoord),
-        vec4(colorSumX, colorSumY, colorSumZ, colorWeight),
+        vec4(ownerColorX, ownerColorY, ownerColorZ, totalInfluence),
       ).toWriteOnly();
     });
   })().compute(
@@ -2982,6 +3139,7 @@ function getOrCreateRaymarchSpectralLightCacheComputeNode(
   {
     modalFieldModeBuffer,
     modalFieldColorBuffer,
+    modalFieldSpectralBuffer,
     modalFieldCapacity,
     uniforms,
     boundaryMode,
@@ -3009,9 +3167,11 @@ function getOrCreateRaymarchSpectralLightCacheComputeNode(
     {
       modalFieldModeBuffer,
       modalFieldColorBuffer,
+      modalFieldSpectralBuffer,
       modalFieldCapacity: normalizedModalFieldCapacity,
       uniforms,
       includeColor: true,
+      includeSpectral: true,
     },
   );
   const cachedNode = spectralLightCache.computeNodesByKey?.[nodeKey];
@@ -3462,6 +3622,7 @@ export function enqueueRaymarchSpectralLightCacheRebuild(
   const {
     modalFieldModeBuffer,
     modalFieldColorBuffer,
+    modalFieldSpectralBuffer,
     modalFieldCapacity,
     uniforms,
   } = options;
@@ -3482,6 +3643,7 @@ export function enqueueRaymarchSpectralLightCacheRebuild(
         renderer,
         options: snapshotRaymarchCacheRebuildOptions(options, {
           includeColor: true,
+          includeSpectral: true,
         }),
       },
       spectralLightDescriptorsEqual,
@@ -3497,6 +3659,7 @@ export function enqueueRaymarchSpectralLightCacheRebuild(
         renderer,
         options: snapshotRaymarchCacheRebuildOptions(options, {
           includeColor: true,
+          includeSpectral: true,
         }),
       },
       spectralLightDescriptorsEqual,
@@ -3512,6 +3675,7 @@ export function enqueueRaymarchSpectralLightCacheRebuild(
     {
       modalFieldModeBuffer,
       modalFieldColorBuffer,
+      modalFieldSpectralBuffer,
       modalFieldCapacity,
       uniforms,
       boundaryMode: descriptor.boundaryMode,

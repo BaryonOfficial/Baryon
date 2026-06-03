@@ -286,6 +286,9 @@ async function readLiveInputAuditState(page) {
       liveInputHardSilenceActive: snapshot.liveInputHardSilenceActive ?? false,
       liveInputPolicy: snapshot.liveInputPolicy ?? null,
       fieldState: snapshot.raymarchDebug?.fieldState ?? null,
+      volumeVisible: snapshot.raymarchDebug?.volumeVisible ?? false,
+      renderedModalFieldColorWeightMax:
+        snapshot.raymarchDebug?.renderedModalFieldColorWeightMax ?? 0,
       idleOverlayVisible: snapshot.raymarchDebug?.idleOverlayVisible ?? false,
     };
   });
@@ -974,6 +977,8 @@ test.describe("Baryon control smoke", () => {
     await page.goto("/");
     await waitForControlSurface(page);
     await setControl(page, "auditEnabled", true);
+    await setControl(page, "colorMode", "spectral");
+    await setControl(page, "spectralMix", 1);
 
     await setFakeLiveInputScene(page, "ambient");
     await startFakeLiveInput(page, { deviceType: "system" });
@@ -986,7 +991,14 @@ test.describe("Baryon control smoke", () => {
         analysisSourceUsed: "system",
         fieldState: "active",
         liveInputActive: true,
+        volumeVisible: true,
       });
+    await expect
+      .poll(async () => {
+        const state = await readLiveInputAuditState(page);
+        return state.renderedModalFieldColorWeightMax > 0;
+      })
+      .toBe(true);
 
     await setFakeLiveInputScene(page, "silent");
 
@@ -1718,6 +1730,8 @@ test.describe("Baryon control smoke", () => {
     await page.goto("/");
     await waitForControlSurface(page);
     await setControl(page, "auditEnabled", true);
+    await setControl(page, "colorMode", "spectral");
+    await setControl(page, "spectralMix", 1);
 
     await page.locator('input[type="file"]').setInputFiles({
       name: "smoke-tone.wav",
@@ -1737,6 +1751,11 @@ test.describe("Baryon control smoke", () => {
             window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
           modeSlotCount:
             window.__baryonAuditSnapshot?.raymarchDebug?.modeSlotCount ?? 0,
+          volumeVisible:
+            window.__baryonAuditSnapshot?.raymarchDebug?.volumeVisible ?? false,
+          renderedModalFieldColorWeightMax:
+            window.__baryonAuditSnapshot?.raymarchDebug
+              ?.renderedModalFieldColorWeightMax ?? 0,
         })),
       )
       .toEqual({
@@ -1744,7 +1763,18 @@ test.describe("Baryon control smoke", () => {
         analysisSourceUsed: "file",
         fieldState: expect.not.stringMatching(/^idle$/),
         modeSlotCount: expect.any(Number),
+        volumeVisible: true,
+        renderedModalFieldColorWeightMax: expect.any(Number),
       });
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window.__baryonAuditSnapshot?.raymarchDebug
+              ?.renderedModalFieldColorWeightMax ?? 0) > 0,
+        ),
+      )
+      .toBe(true);
     await expect(page.getByTestId("camera-controls")).toBeVisible();
     await expect(page.getByTestId("camera-controls")).toContainText("Camera");
 

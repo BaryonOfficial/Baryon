@@ -95,12 +95,12 @@ export function setupRaymarch(
     modalBasisAtlasTexture: modalBasisCache.texture,
     modalLiveFieldTexture: liveFieldProjectionCache.fieldTexture,
     modalLiveSupportTexture: liveFieldProjectionCache.supportTexture,
+    modalPhaseInterferenceTexture:
+      liveFieldProjectionCache.phaseInterferenceTexture,
     modalFieldModeBuffer,
-    modalFieldPhaseBuffer,
     modalFieldCoefficientBuffer,
     modalFieldCapacity: modalBasisCache.liveSynthesisModeCount,
     spectralLightCacheTexture: spectralLightCache.texture,
-    spectralLightCausticTexture: spectralLightCache.causticTexture,
     uniforms,
     cavityGeometry: effectiveCavityGeometry,
   });

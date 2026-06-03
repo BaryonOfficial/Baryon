@@ -92,6 +92,12 @@ function createRuntimeState({ withFieldCache = false } = {}) {
         needsUpdate: false,
       },
     },
+    modalFieldSpectralBuffer: {
+      value: {
+        array: new Float32Array(64),
+        needsUpdate: false,
+      },
+    },
     modalFieldPhaseBuffer: {
       value: {
         array: new Float32Array(64),
@@ -341,10 +347,12 @@ function appendMetadataSlots({
   targetSlots,
   targetPhaseSlots,
   targetColorSlots,
+  targetSpectralSlots,
   targetMetadataSlots,
   sourceSlots,
   sourcePhaseSlots,
   sourceColorSlots,
+  sourceSpectralSlots,
   writeIndex,
 }) {
   let written = writeIndex;
@@ -358,6 +366,10 @@ function appendMetadataSlots({
     );
     targetColorSlots.set(
       sourceColorSlots?.slice(offset, offset + 4) ?? new Float32Array(4),
+      targetOffset,
+    );
+    targetSpectralSlots.set(
+      sourceSpectralSlots?.slice(offset, offset + 4) ?? new Float32Array(4),
       targetOffset,
     );
     const u = sourceSlots[offset] ?? 0;
@@ -397,25 +409,30 @@ function withUnifiedModalFields(frame) {
   const modalFieldSlots = new Float32Array(candidateCount * 4);
   const modalFieldPhaseSlots = new Float32Array(candidateCount * 4);
   const modalFieldColorSlots = new Float32Array(candidateCount * 4);
+  const modalFieldSpectralSlots = new Float32Array(candidateCount * 4);
   const modalFieldMetadataSlots = new Float32Array(candidateCount * 4);
   let writeIndex = appendMetadataSlots({
     targetSlots: modalFieldSlots,
     targetPhaseSlots: modalFieldPhaseSlots,
     targetColorSlots: modalFieldColorSlots,
+    targetSpectralSlots: modalFieldSpectralSlots,
     targetMetadataSlots: modalFieldMetadataSlots,
     sourceSlots: frame.backboneSlots,
     sourcePhaseSlots: frame.backbonePhaseSlots,
     sourceColorSlots: frame.backboneColorSlots,
+    sourceSpectralSlots: frame.backboneSpectralSlots,
     writeIndex: 0,
   });
   writeIndex = appendMetadataSlots({
     targetSlots: modalFieldSlots,
     targetPhaseSlots: modalFieldPhaseSlots,
     targetColorSlots: modalFieldColorSlots,
+    targetSpectralSlots: modalFieldSpectralSlots,
     targetMetadataSlots: modalFieldMetadataSlots,
     sourceSlots: frame.detailSlots,
     sourcePhaseSlots: frame.detailPhaseSlots,
     sourceColorSlots: frame.detailColorSlots,
+    sourceSpectralSlots: frame.detailSpectralSlots,
     writeIndex,
   });
   frame.activeBackboneModeCount = activeBackboneModeCount;
@@ -431,6 +448,7 @@ function withUnifiedModalFields(frame) {
   frame.modalFieldSlots = modalFieldSlots;
   frame.modalFieldPhaseSlots = modalFieldPhaseSlots;
   frame.modalFieldColorSlots = modalFieldColorSlots;
+  frame.modalFieldSpectralSlots = modalFieldSpectralSlots;
   frame.modalFieldMetadataSlots = modalFieldMetadataSlots;
   return frame;
 }
@@ -785,6 +803,12 @@ describe("tickRaymarchRuntime", () => {
         1, 0.1, 0.1, 0.9, 0.8, 0.2, 0.1, 0.7,
       ]),
       detailColorSlots: new Float32Array([0.2, 0.5, 1, 0.5, 0.7, 0.2, 1, 0.45]),
+      backboneSpectralSlots: new Float32Array([
+        0.12, 0.91, 0.82, 0.14, 0.38, 0.72, 0.74, 0.2,
+      ]),
+      detailSpectralSlots: new Float32Array([
+        0.61, 0.64, 0.55, 0.3, 0.83, 0.58, 0.46, 0.34,
+      ]),
       backbonePhaseSlots: new Float32Array([
         0.1, 0.2, 0.7, 0.5, -0.2, 0.1, 0.6, 0.4,
       ]),
@@ -846,6 +870,15 @@ describe("tickRaymarchRuntime", () => {
       ).map((value) => Number(value.toFixed(6))),
     ).toEqual([3, 4, 6, 0.8, 1, 3, 7, 0.6, 4, 5, 5, 0.55, 2, 2, 6, 0.4]);
     expect(runtimeState.modalFieldColorBuffer.value.array[10]).toBeCloseTo(1);
+    expect(
+      Array.from(
+        runtimeState.modalFieldSpectralBuffer.value.array.slice(0, 16),
+      ).map((value) => Number(value.toFixed(6))),
+    ).toEqual([
+      0.12, 0.91, 0.82, 0.14, 0.38, 0.72, 0.74, 0.2, 0.61, 0.64, 0.55, 0.3,
+      0.83, 0.58, 0.46, 0.34,
+    ]);
+    expect(runtimeState.modalFieldSpectralBuffer.value.needsUpdate).toBe(true);
     expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(4);
     expect(runtimeState.uniforms.uTransientEnergy.value).toBe(0.7);
     expect(runtimeState.uniforms.uSpectralCentroid.value).toBe(0.42);
@@ -1186,8 +1219,8 @@ describe("tickRaymarchRuntime", () => {
       detailPhaseSlots: new Float32Array([
         -0.4, -0.21, 0.8, 0.64, 0.9, 0.6, 0.1, 0.01,
       ]),
-      backboneColorSlots: new Float32Array(32),
-      detailColorSlots: new Float32Array(32),
+      backboneColorSlots: makeColorSlots(8),
+      detailColorSlots: makeColorSlots(8),
       bandEnergies: new Float32Array(4),
       transientEnergy: 0.1,
       spectralCentroid: 0.2,
@@ -1440,8 +1473,8 @@ describe("tickRaymarchRuntime", () => {
       detailPhaseSlots: new Float32Array([
         0.6, 6928.9, 0.82, 0.64, -1.2, 7106.3, 0.78, 0.52,
       ]),
-      backboneColorSlots: new Float32Array(32),
-      detailColorSlots: new Float32Array(32),
+      backboneColorSlots: makeColorSlots(8),
+      detailColorSlots: makeColorSlots(8),
       modalPhaseAuthority: 1,
     });
     const advancedCarrierFrame = {
@@ -2171,8 +2204,8 @@ describe("tickRaymarchRuntime", () => {
         2, 2, 3, 0.8, 2, 3, 3, 0.75, 3, 3, 4, 0.7, 3, 4, 4, 0.65, 4, 4, 5, 0.6,
         4, 5, 5, 0.55, 5, 5, 6, 0.5, 5, 6, 6, 0.45,
       ]),
-      backboneColorSlots: new Float32Array(32),
-      detailColorSlots: new Float32Array(32),
+      backboneColorSlots: makeColorSlots(8),
+      detailColorSlots: makeColorSlots(8),
       bandEnergies: new Float32Array([0.5, 0.45, 0.4, 0.35]),
       transientEnergy: 0.72,
       spectralCentroid: 0.56,
@@ -2475,6 +2508,7 @@ describe("tickRaymarchRuntime", () => {
 
   it("keeps a committed live field visible while structural modal slots rebuild", () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
+    runtimeState.uniforms.uSpectralMix.value = 0;
     const renderer = {
       computeAsync: vi.fn(async () => undefined),
     };
@@ -2562,7 +2596,7 @@ describe("tickRaymarchRuntime", () => {
     }
   });
 
-  it("keeps cached Spectral Light evaluation while color rebuild is still pending", async () => {
+  it("keeps cached Spectral Light output visible while color rebuild is pending", async () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     let spectralLightResolve;
     const warmRenderer = {
@@ -2590,8 +2624,8 @@ describe("tickRaymarchRuntime", () => {
         2, 2, 3, 0.8, 2, 3, 3, 0.75, 3, 3, 4, 0.7, 3, 4, 4, 0.65, 4, 4, 5, 0.6,
         4, 5, 5, 0.55, 5, 5, 6, 0.5, 5, 6, 6, 0.45,
       ]),
-      backboneColorSlots: new Float32Array(32),
-      detailColorSlots: new Float32Array(32),
+      backboneColorSlots: makeColorSlots(8),
+      detailColorSlots: makeColorSlots(8),
       bandEnergies: new Float32Array([0.5, 0.45, 0.4, 0.35]),
       transientEnergy: 0.72,
       spectralCentroid: 0.56,
@@ -2636,6 +2670,7 @@ describe("tickRaymarchRuntime", () => {
       expect(
         runtimeState.volumeMesh.userData.raymarchSpectralLightEvaluationMode,
       ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached);
+      expect(runtimeState.volumeMesh.visible).toBe(true);
       expect(runtimeState.spectralLightCache.rebuildPending).toBe(true);
       expect(runtimeState.spectralLightCache.ready).toBe(true);
 
@@ -2654,6 +2689,7 @@ describe("tickRaymarchRuntime", () => {
         runtimeState.volumeMesh.userData.raymarchSpectralLightEvaluationMode,
       ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached);
       expect(runtimeState.spectralLightCache.ready).toBe(true);
+      expect(runtimeState.volumeMesh.visible).toBe(true);
     } finally {
       globalThis.window = originalWindow;
     }
@@ -4047,6 +4083,113 @@ describe("tickRaymarchRuntime", () => {
         );
       },
     );
+  });
+
+  it("does not show the static material while initial Spectral Light cache is pending", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 0.65;
+    let resolveSpectral;
+    const renderer = {
+      computeAsync: vi.fn((node) => {
+        if (node?.id === "spectral") {
+          return new Promise((resolve) => {
+            resolveSpectral = resolve;
+          });
+        }
+        return Promise.resolve();
+      }),
+    };
+    const frame = createActiveFeatureFrame({
+      backboneSlots: new Float32Array([1, 1, 1, 0.4]),
+      detailSlots: new Float32Array([2, 2, 2, 0.3]),
+      backboneColorSlots: new Float32Array([1, 0.1, 0.05, 0.8]),
+      detailColorSlots: new Float32Array([0.05, 0.6, 1, 0.7]),
+    });
+
+    tickRaymarchRuntime(runtimeState, frame, 1, 1 / 60, renderer);
+    await flushMicrotasks(5);
+    tickRaymarchRuntime(runtimeState, frame, 1.016, 1 / 60, renderer);
+
+    expect(runtimeState.modalBasisCache.ready).toBe(true);
+    expect(runtimeState.spectralLightCache.ready).toBe(false);
+    expect(runtimeState.spectralLightCache.rebuildPending).toBe(true);
+    expect(
+      runtimeState.volumeMesh.userData.raymarchSpectralLightEvaluationMode,
+    ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off);
+    expect(runtimeState.volumeMesh.visible).toBe(false);
+
+    resolveSpectral();
+    await flushMicrotasks(5);
+    tickRaymarchRuntime(runtimeState, frame, 1.032, 1 / 60, renderer);
+
+    expect(runtimeState.spectralLightCache.ready).toBe(true);
+    expect(
+      runtimeState.volumeMesh.userData.raymarchSpectralLightEvaluationMode,
+    ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached);
+    expect(runtimeState.volumeMesh.visible).toBe(true);
+  });
+
+  it("does not show a neutral fallback when Spectral Light has no promoted color modes", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 1;
+    const renderer = { computeAsync: vi.fn(() => Promise.resolve()) };
+    const frame = createActiveFeatureFrame({
+      backboneSlots: new Float32Array([1, 1, 1, 0.4]),
+      detailSlots: new Float32Array([2, 2, 2, 0.3]),
+      backboneColorSlots: new Float32Array([0, 0, 0, 0]),
+      detailColorSlots: new Float32Array([0, 0, 0, 0]),
+    });
+
+    tickRaymarchRuntime(runtimeState, frame, 1, 1 / 60, renderer);
+    await flushMicrotasks(5);
+    tickRaymarchRuntime(runtimeState, frame, 1.016, 1 / 60, renderer);
+
+    expect(
+      runtimeState.currentSpectralLightDescriptor?.spectralLightModeCount,
+    ).toBe(0);
+    expect(runtimeState.spectralLightCache.ready).toBe(false);
+    expect(runtimeState.spectralLightCache.activeDescriptor).toBeNull();
+    expect(
+      runtimeState.volumeMesh.userData.raymarchSpectralLightEvaluationMode,
+    ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off);
+    expect(runtimeState.volumeMesh.visible).toBe(false);
+  });
+
+  it("keeps Spectral Light visible for weak but nonzero color confidence", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 1;
+    const renderer = { computeAsync: vi.fn(() => Promise.resolve()) };
+    const weakColorWeight = 0.025;
+    const frame = createActiveFeatureFrame({
+      backboneSlots: new Float32Array([1, 1, 1, 0.4]),
+      detailSlots: new Float32Array([2, 2, 2, 0.3]),
+      backboneColorSlots: new Float32Array([0.2, 0.4, 0.7, weakColorWeight]),
+      detailColorSlots: new Float32Array([
+        0.7,
+        0.4,
+        0.2,
+        weakColorWeight * 0.75,
+      ]),
+    });
+
+    tickRaymarchRuntime(runtimeState, frame, 1, 1 / 60, renderer);
+    await flushMicrotasks(5);
+    tickRaymarchRuntime(runtimeState, frame, 1.016, 1 / 60, renderer);
+
+    expect(
+      runtimeState.currentSpectralLightDescriptor?.spectralLightModeCount,
+    ).toBe(2);
+    expect(runtimeState.spectralLightCache.ready).toBe(true);
+    expect(
+      runtimeState.volumeMesh.userData.raymarchSpectralLightEvaluationMode,
+    ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached);
+    expect(
+      runtimeState.debugSnapshot.renderedModalFieldColorWeightMax,
+    ).toBeCloseTo(weakColorWeight);
+    expect(runtimeState.volumeMesh.visible).toBe(true);
   });
 
   it("builds the governor inline from the published integrator budget", () => {

@@ -17,9 +17,8 @@ const TOPOLOGY_REPLACE_MAX_FRACTION = 0.4;
 const STRUCTURAL_ADMISSION_COMPLIANCE_EXPONENT = 2;
 const STRUCTURAL_ADMISSION_MIN_COMPLIANCE = 0.12;
 const DETAIL_ADMISSION_MAX_FRACTION = 0.25;
-const DEFAULT_MAX_BASIS_MODE_ORDER = getModalBasisCacheMaxRepresentableModeIndex(
-  MODAL_BASIS_CACHE_RESOLUTION,
-);
+const DEFAULT_MAX_BASIS_MODE_ORDER =
+  getModalBasisCacheMaxRepresentableModeIndex(MODAL_BASIS_CACHE_RESOLUTION);
 
 function clamp01(value) {
   if (!Number.isFinite(value)) return 0;
@@ -133,6 +132,10 @@ function readCandidateEntries(
     const slot = cloneSlotQuad(descriptorSource.modalFieldSlots, offset);
     const phase = cloneSlotQuad(descriptorSource.modalFieldPhaseSlots, offset);
     const color = cloneSlotQuad(descriptorSource.modalFieldColorSlots, offset);
+    const spectral = cloneSlotQuad(
+      descriptorSource.modalFieldSpectralSlots,
+      offset,
+    );
     const metadata = cloneSlotQuad(
       descriptorSource.modalFieldMetadataSlots,
       offset,
@@ -152,9 +155,12 @@ function readCandidateEntries(
     const evidenceScore = clamp01(
       Math.max(coefficient, observedSupport, relativeEvidence),
     );
-    const basisRepresentable = getModeOrder(mode) <= normalizedMaxBasisModeOrder;
-    const structuralAdmissionCompliance =
-      deriveStructuralAdmissionCompliance(mode, normalizedMaxBasisModeOrder);
+    const basisRepresentable =
+      getModeOrder(mode) <= normalizedMaxBasisModeOrder;
+    const structuralAdmissionCompliance = deriveStructuralAdmissionCompliance(
+      mode,
+      normalizedMaxBasisModeOrder,
+    );
     const structuralAdmissionScore = basisRepresentable
       ? clamp01(evidenceScore * structuralAdmissionCompliance)
       : 0;
@@ -177,6 +183,7 @@ function readCandidateEntries(
         ],
         phase,
         color,
+        spectral,
         metadata,
       },
     });
@@ -270,6 +277,7 @@ function muteRecordLivePayload(record) {
   const [u, v, w] = record.mode ?? [0, 0, 0];
   const phase = record.payload?.phase ?? [0, 0, 0, 0];
   const color = record.payload?.color ?? [0, 0, 0, 0];
+  const spectral = record.payload?.spectral ?? [0, 0, 0, 0];
   const metadata = record.payload?.metadata ?? [0, 0, 0, 0];
   record.lastCoefficientSnapshot = 0;
   record.lastStoredEnergySnapshot = 0;
@@ -277,6 +285,7 @@ function muteRecordLivePayload(record) {
     slot: [u, v, w, 0],
     phase: [phase[0] ?? 0, phase[1] ?? 0, 0, 0],
     color: [color[0] ?? 0, color[1] ?? 0, color[2] ?? 0, 0],
+    spectral: [spectral[0] ?? 0, spectral[1] ?? 0, spectral[2] ?? 0, 0],
     metadata: [metadata[0] ?? 0, metadata[1] ?? 0, metadata[2] ?? 0, 0],
   };
 }
@@ -484,40 +493,37 @@ function selectReplacementPairs({
   const usedTargetKeys = new Set();
 
   for (const candidate of candidates) {
-    const target = targets.find(
-      (record) => {
-        if (usedTargetKeys.has(record.modeKey)) {
-          return false;
-        }
+    const target = targets.find((record) => {
+      if (usedTargetKeys.has(record.modeKey)) {
+        return false;
+      }
 
-        const candidateRole = getAdmissionRole(candidate);
-        const targetRole = getAdmissionRole(record);
-        if (targetRole === "structural" && candidateRole !== "structural") {
-          return false;
-        }
+      const candidateRole = getAdmissionRole(candidate);
+      const targetRole = getAdmissionRole(record);
+      if (targetRole === "structural" && candidateRole !== "structural") {
+        return false;
+      }
 
-        const evidenceReplacement =
-          candidate.evidenceScore >
-          Math.max(
-            record.evidenceScore + TOPOLOGY_REPLACE_EVIDENCE_MARGIN,
-            record.evidenceScore * TOPOLOGY_REPLACE_EVIDENCE_RATIO,
-          );
+      const evidenceReplacement =
+        candidate.evidenceScore >
+        Math.max(
+          record.evidenceScore + TOPOLOGY_REPLACE_EVIDENCE_MARGIN,
+          record.evidenceScore * TOPOLOGY_REPLACE_EVIDENCE_RATIO,
+        );
 
-        if (candidateRole === "detail" && targetRole === "detail") {
-          return evidenceReplacement;
-        }
+      if (candidateRole === "detail" && targetRole === "detail") {
+        return evidenceReplacement;
+      }
 
-        const structuralReplacement =
-          getStructuralAdmissionScore(candidate) >
-          Math.max(
-            getStructuralAdmissionScore(record) +
-              TOPOLOGY_REPLACE_EVIDENCE_MARGIN,
-            getStructuralAdmissionScore(record) *
-              TOPOLOGY_REPLACE_EVIDENCE_RATIO,
-          );
-        return structuralReplacement || evidenceReplacement;
-      },
-    );
+      const structuralReplacement =
+        getStructuralAdmissionScore(candidate) >
+        Math.max(
+          getStructuralAdmissionScore(record) +
+            TOPOLOGY_REPLACE_EVIDENCE_MARGIN,
+          getStructuralAdmissionScore(record) * TOPOLOGY_REPLACE_EVIDENCE_RATIO,
+        );
+      return structuralReplacement || evidenceReplacement;
+    });
     if (!target) {
       continue;
     }
@@ -535,6 +541,7 @@ function writeDescriptorSource(records) {
   const modalFieldSlots = new Float32Array(records.length * 4);
   const modalFieldPhaseSlots = new Float32Array(records.length * 4);
   const modalFieldColorSlots = new Float32Array(records.length * 4);
+  const modalFieldSpectralSlots = new Float32Array(records.length * 4);
   const modalFieldMetadataSlots = new Float32Array(records.length * 4);
 
   records.forEach((record, index) => {
@@ -542,6 +549,7 @@ function writeDescriptorSource(records) {
     modalFieldSlots.set(record.payload.slot, offset);
     modalFieldPhaseSlots.set(record.payload.phase, offset);
     modalFieldColorSlots.set(record.payload.color, offset);
+    modalFieldSpectralSlots.set(record.payload.spectral, offset);
     modalFieldMetadataSlots.set(record.payload.metadata, offset);
   });
 
@@ -549,6 +557,7 @@ function writeDescriptorSource(records) {
     modalFieldSlots,
     modalFieldPhaseSlots,
     modalFieldColorSlots,
+    modalFieldSpectralSlots,
     modalFieldMetadataSlots,
     activeModalFieldModeCount: records.length,
   };
@@ -640,6 +649,7 @@ function buildDormantResult({
  *     modalFieldSlots?: Float32Array | number[],
  *     modalFieldPhaseSlots?: Float32Array | number[],
  *     modalFieldColorSlots?: Float32Array | number[],
+ *     modalFieldSpectralSlots?: Float32Array | number[],
  *     modalFieldMetadataSlots?: Float32Array | number[],
  *     activeModalFieldModeCount?: number,
  *   },
@@ -714,9 +724,7 @@ export function updateModalFieldContinuity(
     }
 
     if (!record.basisEligible) {
-      if (
-        entry.evidenceScore >= TOPOLOGY_ADMIT_EVIDENCE
-      ) {
+      if (entry.evidenceScore >= TOPOLOGY_ADMIT_EVIDENCE) {
         record.qualifyingEvidenceSec += resolvedDeltaTimeSec;
       } else {
         record.qualifyingEvidenceSec = 0;

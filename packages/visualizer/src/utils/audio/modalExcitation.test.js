@@ -725,7 +725,9 @@ function expectCanonicalObservedModeEntries(state) {
 }
 
 function expectObservedDisplayContinuityEntries(state) {
-  const continuityEntries = Array.from(state.observedModes?.values?.() ?? []).filter(
+  const continuityEntries = Array.from(
+    state.observedModes?.values?.() ?? [],
+  ).filter(
     (entry) =>
       entry.resonantDisplayContinuity === true ||
       entry.sourceCoupledDisplayContinuity === true,
@@ -1257,10 +1259,16 @@ describe("modal excitation structural state", () => {
       performanceNow: () => 3,
     });
 
+    const slots = structural.candidateForcingSlotsSource;
     const colors = structural.sourceCoupledColorSlotsSource;
     let staleGreenWeight = 0;
     for (let offset = 0; offset < colors.length; offset += 4) {
-      if (colors[offset + 1] === 1 && colors[offset + 3] > staleGreenWeight) {
+      if (
+        slots[offset] === 8 &&
+        slots[offset + 1] === 8 &&
+        slots[offset + 2] === 8 &&
+        colors[offset + 3] > staleGreenWeight
+      ) {
         staleGreenWeight = colors[offset + 3];
       }
     }
@@ -2115,12 +2123,12 @@ describe("modal excitation structural state", () => {
     ).filter((entry) => entry.layer === "resonant" && entry.phaseAuthority > 0);
 
     expectObservedDisplayContinuityEntries(state);
-    expect(structural.structuralMetrics.modalPhaseAuthority).toBeGreaterThanOrEqual(
-      0,
-    );
-    expect(structural.structuralMetrics.highQPhaseAuthority).toBeGreaterThanOrEqual(
-      0,
-    );
+    expect(
+      structural.structuralMetrics.modalPhaseAuthority,
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      structural.structuralMetrics.highQPhaseAuthority,
+    ).toBeGreaterThanOrEqual(0);
     expect(
       structural.structuralMetrics.lowQPhaseAuthority,
     ).toBeGreaterThanOrEqual(0);

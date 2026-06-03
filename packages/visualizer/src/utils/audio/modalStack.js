@@ -3,6 +3,7 @@ import {
   AUDIO_SLOT_CAPACITY,
   BEAT_DEFAULTS,
 } from "../../defaults.js";
+import { createModalFieldContinuityState } from "../../core/modalFieldContinuity.js";
 import { createBlendableLayerState } from "./blendState.js";
 import { createModalExcitationState } from "./modalExcitationState.js";
 
@@ -152,6 +153,7 @@ export function createAudioFeatureState(capacity = AUDIO_SLOT_CAPACITY) {
       acousticSourceCoupledTarget: createModalTargetBuild(capacity),
       acousticResonantTarget: createModalTargetBuild(capacity),
       modalExcitationState: createModalExcitationState(capacity),
+      modalFieldContinuityState: createModalFieldContinuityState(),
     },
     audit: {
       frame: 0,
@@ -238,7 +240,7 @@ export const BLEND_ATTACK = 0.18;
 export const BLEND_TRACKING = 0.28;
 export const BLEND_RELEASE = 0.94;
 export const BLEND_DROP_THRESHOLD = 1e-4;
-export const BLEND_MAX_FRESH_PER_FRAME = 2;
+export const BLEND_FRESH_ADMISSION_UNLIMITED = 0;
 
 function modeKey(u, v, w) {
   return `${u}:${v}:${w}`;
@@ -250,7 +252,7 @@ export function blendModalStack(state, targetSlots, capacity, options = {}) {
   const release = options.release ?? BLEND_RELEASE;
   const trackingOverrides = options.trackingOverrides ?? null;
   const releaseOverrides = options.releaseOverrides ?? null;
-  const freshCap = options.freshCap ?? BLEND_MAX_FRESH_PER_FRAME;
+  const freshCap = options.freshCap ?? BLEND_FRESH_ADMISSION_UNLIMITED;
   const dropThreshold = options.dropThreshold ?? BLEND_DROP_THRESHOLD;
   const emptyTargetRelease = options.emptyTargetRelease;
   const lowSignalReleaseThreshold = options.lowSignalReleaseThreshold ?? 0;
@@ -505,15 +507,15 @@ export function blendColorStack(
             accentEnergy: 0,
           }
         : {
-          r: base.r,
-          g: base.g,
-          b: base.b,
-          weight: nextWeight,
-          phase: base.phase,
-          wavelength: base.wavelength,
-          harmonicConfidence: base.harmonicConfidence,
-          accentEnergy: base.accentEnergy,
-        };
+            r: base.r,
+            g: base.g,
+            b: base.b,
+            weight: nextWeight,
+            phase: base.phase,
+            wavelength: base.wavelength,
+            harmonicConfidence: base.harmonicConfidence,
+            accentEnergy: base.accentEnergy,
+          };
 
     survivors.push({
       offset,

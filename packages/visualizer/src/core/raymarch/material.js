@@ -217,7 +217,7 @@ function normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) {
  *   modalPhaseInterferenceTexture?: any,
  *   modalFieldModeBuffer?: any,
  *   modalFieldCoefficientBuffer?: any,
- *   modalFieldCapacity?: number
+ *   modalFieldCapacity?: number,
  * }} BaryonVolumeMaterial
  */
 
@@ -1508,7 +1508,7 @@ function createScatteringNode({
         );
       let volumeColor;
       if (cachedSpectralLightEnabled) {
-        const spectralCoreColor = colorSum.div(colorWeight.max(float(1e-4)));
+        const spectralCoreColor = colorSum;
         const spectralCoreLuminance = dot(
           spectralCoreColor,
           vec3(0.2126, 0.7152, 0.0722),
