@@ -18,7 +18,6 @@ import {
   uint,
   max,
   sin,
-  sqrt,
   vec3,
   vec4,
 } from "three/tsl";
@@ -493,11 +492,7 @@ function createRaymarchCacheRequestUniformSnapshots(sourceUniforms) {
       value: readUniformNumber(sourceUniforms, "uTotalSlotAmplitude", 0),
     },
     uStructuralProjectionDrive: {
-      value: readUniformNumber(
-        sourceUniforms,
-        "uStructuralProjectionDrive",
-        0,
-      ),
+      value: readUniformNumber(sourceUniforms, "uStructuralProjectionDrive", 0),
     },
     uStructuralProjectionConcentration: {
       value: readUniformNumber(
@@ -776,9 +771,7 @@ export function deriveStructuralProjectionDrive({
     ? Math.sqrt(structuralEnergy / Math.max(effectiveModeCount, 1))
     : 0;
   const projectionEnergyDrive = hasStructuralEnergy
-    ? clamp01(
-        structuralEnergy / (structuralEnergy + projectionReferenceEnergy),
-      )
+    ? clamp01(structuralEnergy / (structuralEnergy + projectionReferenceEnergy))
     : 0;
 
   return {
@@ -1434,7 +1427,7 @@ export function createRaymarchLiveFieldProjectionCache({
   const normalizedResolution = normalizeModalBasisCacheResolution(resolution);
   const fieldTexture = createCacheTexture(normalizedResolution);
   const supportTexture = createCacheTexture(normalizedResolution);
-  const phaseResponseTexture = createCacheTexture(normalizedResolution);
+  const phaseInterferenceTexture = createCacheTexture(normalizedResolution);
 
   return {
     ...createCacheState({
@@ -1445,7 +1438,7 @@ export function createRaymarchLiveFieldProjectionCache({
     semantic: "frame-current-modal-field-projection",
     fieldTexture,
     supportTexture,
-    phaseResponseTexture,
+    phaseInterferenceTexture,
     lastComputedAtSec: null,
     lastComputeReason: "uninitialized",
   };
@@ -1492,7 +1485,7 @@ export function disposeRaymarchLiveFieldProjectionCache(
 ) {
   disposeRaymarchFieldCache(liveFieldProjectionCache);
   liveFieldProjectionCache?.supportTexture?.dispose?.();
-  liveFieldProjectionCache?.phaseResponseTexture?.dispose?.();
+  liveFieldProjectionCache?.phaseInterferenceTexture?.dispose?.();
 }
 
 export function disposeRaymarchSpectralLightCache(spectralLightCache) {
@@ -2236,7 +2229,33 @@ function getPhaseProjectionWeight(phaseSlots, offset) {
   );
 }
 
-function accumulatePhaseProjectionResponseAtPoint({
+function getSignedInterferenceContrast({
+  phaseCoherentEnergy,
+  independentPhaseEnergy,
+  maxConstructivePhaseEnergy,
+}) {
+  const energyDelta = phaseCoherentEnergy - independentPhaseEnergy;
+  if (Math.abs(energyDelta) <= STRUCTURAL_PROJECTION_EPSILON) {
+    return 0;
+  }
+
+  if (energyDelta > 0) {
+    return clamp01(
+      energyDelta /
+        Math.max(
+          STRUCTURAL_PROJECTION_EPSILON,
+          maxConstructivePhaseEnergy - independentPhaseEnergy,
+        ),
+    );
+  }
+
+  return -clamp01(
+    -energyDelta /
+      Math.max(STRUCTURAL_PROJECTION_EPSILON, independentPhaseEnergy),
+  );
+}
+
+function accumulatePhaseInterferenceContrastAtPoint({
   slots,
   phaseSlots,
   activeCount,
@@ -2251,10 +2270,11 @@ function accumulatePhaseProjectionResponseAtPoint({
 }) {
   let phaseReal = 0;
   let phaseImag = 0;
-  let independentProjectedMagnitude = 0;
+  let independentPhaseEnergy = 0;
+  let maxConstructivePhaseMagnitude = 0;
   let structuralSupport = 0;
   let structuralWeight = 0;
-  let phaseWeightSum = 0;
+  let phaseAuthorityWeightedSupport = 0;
   let phaseAuthorityModeCount = 0;
   const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
   const time = Number.isFinite(phaseEvaluationTimeSec)
@@ -2293,38 +2313,44 @@ function accumulatePhaseProjectionResponseAtPoint({
     }
 
     phaseAuthorityModeCount += 1;
-    phaseWeightSum += amplitude * phaseWeight;
+    phaseAuthorityWeightedSupport += structuralMagnitude * phaseWeight;
     const phase = normalizePhaseRad(
       (phaseSlots?.[offset] ?? 0) + (phaseSlots?.[offset + 1] ?? 0) * time,
     );
-    const phaseMagnitude = structuralContribution * phaseWeight;
-    phaseReal += phaseMagnitude * Math.cos(phase);
-    phaseImag += phaseMagnitude * Math.sin(phase);
-    independentProjectedMagnitude += Math.abs(phaseMagnitude);
+    const phaseContribution = structuralContribution * phaseWeight;
+    phaseReal += phaseContribution * Math.cos(phase);
+    phaseImag += phaseContribution * Math.sin(phase);
+    independentPhaseEnergy += phaseContribution * phaseContribution;
+    maxConstructivePhaseMagnitude += Math.abs(phaseContribution);
   }
 
   const supportDenominator = Math.max(
     MODAL_BASIS_CACHE_ENERGY_EPSILON,
     structuralSupport,
   );
-  const phaseMagnitude = Math.hypot(phaseReal, phaseImag);
-  const phaseResponse = clamp01(phaseMagnitude / supportDenominator);
-  const independentResponse = clamp01(
-    independentProjectedMagnitude / supportDenominator,
+  const phaseCoherentEnergy = phaseReal * phaseReal + phaseImag * phaseImag;
+  const maxConstructivePhaseEnergy =
+    maxConstructivePhaseMagnitude * maxConstructivePhaseMagnitude;
+  const phaseInterferenceContrast = getSignedInterferenceContrast({
+    phaseCoherentEnergy,
+    independentPhaseEnergy,
+    maxConstructivePhaseEnergy,
+  });
+  const phaseInterferenceAuthority = clamp01(
+    phaseAuthorityWeightedSupport / supportDenominator,
   );
 
   return {
-    phaseResponse,
-    phaseEnergyResponse: phaseResponse * phaseResponse,
-    independentProjectedEnergy: independentResponse * independentResponse,
+    phaseInterferenceContrast,
+    phaseInterferenceAuthority,
+    phaseCoherentEnergy,
+    independentPhaseEnergy,
+    maxConstructivePhaseEnergy,
     structuralSupport:
       structuralSupport /
       Math.max(MODAL_BASIS_CACHE_ENERGY_EPSILON, structuralWeight),
     unnormalizedStructuralSupport: structuralSupport,
     phaseAuthorityModeCount,
-    phaseAuthority:
-      phaseWeightSum /
-      Math.max(MODAL_BASIS_CACHE_ENERGY_EPSILON, structuralWeight),
     phaseReal,
     phaseImag,
   };
@@ -2424,7 +2450,7 @@ export function evaluateRaymarchLiveSynthesisFieldPoint({
   };
 }
 
-export function evaluateRaymarchPhaseProjectionResponsePoint({
+export function evaluateRaymarchPhaseInterferenceContrastPoint({
   modalFieldSlots,
   modalFieldPhaseSlots,
   modalFieldCount,
@@ -2441,7 +2467,7 @@ export function evaluateRaymarchPhaseProjectionResponsePoint({
   const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
   const normalizedResolution = normalizeModalBasisCacheResolution(resolution);
 
-  return accumulatePhaseProjectionResponseAtPoint({
+  return accumulatePhaseInterferenceContrastAtPoint({
     slots: modalFieldSlots,
     phaseSlots: modalFieldPhaseSlots,
     activeCount: modalFieldCount,
@@ -2739,7 +2765,7 @@ function createLiveFieldProjectionComputeKernel({
   modalFieldCapacity,
   uniforms,
 }) {
-  const { resolution, fieldTexture, supportTexture, phaseResponseTexture } =
+  const { resolution, fieldTexture, supportTexture, phaseInterferenceTexture } =
     liveFieldProjectionCache;
   const modalFieldActiveCount = int(uniforms.uModalFieldModeCount);
   const resolutionUint = uint(resolution);
@@ -2769,9 +2795,11 @@ function createLiveFieldProjectionComputeKernel({
       const gradYSum = zero.toVar();
       const gradZSum = zero.toVar();
       const supportSum = zero.toVar();
-      const phaseResponseSumReal = zero.toVar();
-      const phaseResponseSumImag = zero.toVar();
-      const phaseResponseAuthoritySum = zero.toVar();
+      const phaseInterferenceSumReal = zero.toVar();
+      const phaseInterferenceSumImag = zero.toVar();
+      const independentPhaseEnergySum = zero.toVar();
+      const maxConstructivePhaseMagnitudeSum = zero.toVar();
+      const phaseInterferenceAuthoritySum = zero.toVar();
 
       Loop(
         {
@@ -2798,37 +2826,79 @@ function createLiveFieldProjectionComputeKernel({
             gradZSum.addAssign(coefficient.mul(basisSample.w));
             supportSum.addAssign(abs(coefficient).mul(abs(basisSample.x)));
             const phaseSlot = modalFieldPhaseBuffer.element(i);
-            const phaseWeight = clamp(
-              phaseSlot.z.mul(phaseSlot.w),
-              zero,
-              one,
-            );
+            const phaseWeight = clamp(phaseSlot.z.mul(phaseSlot.w), zero, one);
             const phase = phaseSlot.x.add(phaseSlot.y.mul(uniforms.uTime));
             const weightedPhaseContribution =
               structuralContribution.mul(phaseWeight);
-            phaseResponseSumReal.addAssign(
+            phaseInterferenceSumReal.addAssign(
               weightedPhaseContribution.mul(cos(phase)),
             );
-            phaseResponseSumImag.addAssign(
+            phaseInterferenceSumImag.addAssign(
               weightedPhaseContribution.mul(sin(phase)),
             );
-            phaseResponseAuthoritySum.addAssign(
-              abs(coefficient).mul(phaseWeight),
+            independentPhaseEnergySum.addAssign(
+              weightedPhaseContribution.mul(weightedPhaseContribution),
+            );
+            maxConstructivePhaseMagnitudeSum.addAssign(
+              abs(weightedPhaseContribution),
+            );
+            phaseInterferenceAuthoritySum.addAssign(
+              abs(structuralContribution).mul(phaseWeight),
             );
           });
         },
       );
 
       const amplitudeNorm = max(uniforms.uTotalSlotAmplitude, float(0.01));
-      const phaseResponseMagnitude = sqrt(
-        phaseResponseSumReal
-          .mul(phaseResponseSumReal)
-          .add(phaseResponseSumImag.mul(phaseResponseSumImag)),
+      const supportEnergyNorm = max(
+        supportSum.mul(supportSum),
+        float(STRUCTURAL_PROJECTION_EPSILON),
       );
-      const phaseResponse = clamp(
-        phaseResponseMagnitude.div(
+      const phaseCoherentEnergy = phaseInterferenceSumReal
+        .mul(phaseInterferenceSumReal)
+        .add(phaseInterferenceSumImag.mul(phaseInterferenceSumImag));
+      const maxConstructivePhaseEnergy = maxConstructivePhaseMagnitudeSum.mul(
+        maxConstructivePhaseMagnitudeSum,
+      );
+      const phaseEnergyDelta = phaseCoherentEnergy.sub(
+        independentPhaseEnergySum,
+      );
+      const constructiveContrast = clamp(
+        phaseEnergyDelta.div(
+          max(
+            maxConstructivePhaseEnergy.sub(independentPhaseEnergySum),
+            float(STRUCTURAL_PROJECTION_EPSILON),
+          ),
+        ),
+        zero,
+        one,
+      );
+      const destructiveContrast = clamp(
+        phaseEnergyDelta.div(
+          max(independentPhaseEnergySum, float(STRUCTURAL_PROJECTION_EPSILON)),
+        ),
+        float(-1.0),
+        zero,
+      );
+      const phaseInterferenceContrast = clamp(
+        constructiveContrast.add(destructiveContrast),
+        float(-1.0),
+        one,
+      );
+      const phaseInterferenceAuthority = clamp(
+        phaseInterferenceAuthoritySum.div(
           max(supportSum, float(MODAL_BASIS_CACHE_ENERGY_EPSILON)),
         ),
+        zero,
+        one,
+      );
+      const phaseCoherentEnergyNorm = clamp(
+        phaseCoherentEnergy.div(supportEnergyNorm),
+        zero,
+        one,
+      );
+      const independentPhaseEnergyNorm = clamp(
+        independentPhaseEnergySum.div(supportEnergyNorm),
         zero,
         one,
       );
@@ -2848,13 +2918,13 @@ function createLiveFieldProjectionComputeKernel({
         vec4(supportSum.div(amplitudeNorm), zero, zero, one),
       ).toWriteOnly();
       textureStore(
-        phaseResponseTexture,
+        phaseInterferenceTexture,
         voxelCoord,
         vec4(
-          phaseResponse,
-          phaseResponse.mul(phaseResponse),
-          phaseResponseAuthoritySum.div(amplitudeNorm),
-          one,
+          phaseInterferenceContrast,
+          phaseCoherentEnergyNorm,
+          phaseInterferenceAuthority,
+          independentPhaseEnergyNorm,
         ),
       ).toWriteOnly();
     });

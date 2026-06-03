@@ -151,86 +151,114 @@ describe("live synthesis cancellation ratio", () => {
   });
 });
 
-describe("phase projection response", () => {
-  it("projects coherent phase after summing so opposed modes cancel without deleting structural support", () => {
-    const modalFieldSlots = new Float32Array([
-      1, 1, 1, 1,
-      1, 1, 1, 1,
-    ]);
-    const alignedPhaseSlots = new Float32Array([
-      0, 0, 1, 1,
-      0, 0, 1, 1,
-    ]);
-    const opposedPhaseSlots = new Float32Array([
-      0, 0, 1, 1,
-      Math.PI, 0, 1, 1,
-    ]);
+describe("phase interference contrast", () => {
+  it("keeps one phase-authoritative mode neutral against its independent baseline", () => {
+    const response =
+      raymarchFieldCache.evaluateRaymarchPhaseInterferenceContrastPoint({
+        modalFieldSlots: new Float32Array([1, 1, 1, 1]),
+        modalFieldPhaseSlots: new Float32Array([0, 0, 1, 1]),
+        modalFieldCount: 1,
+        boundaryMode: "neumann",
+        radius: 3,
+        phaseEvaluationTimeSec: 0,
+        x: 0,
+        y: 0,
+        z: 0,
+      });
 
-    const aligned = raymarchFieldCache.evaluateRaymarchPhaseProjectionResponsePoint({
-      modalFieldSlots,
-      modalFieldPhaseSlots: alignedPhaseSlots,
-      modalFieldCount: 2,
-      boundaryMode: "neumann",
-      radius: 3,
-      phaseEvaluationTimeSec: 0,
-      x: 0,
-      y: 0,
-      z: 0,
-    });
-    const opposed = raymarchFieldCache.evaluateRaymarchPhaseProjectionResponsePoint({
-      modalFieldSlots,
-      modalFieldPhaseSlots: opposedPhaseSlots,
-      modalFieldCount: 2,
-      boundaryMode: "neumann",
-      radius: 3,
-      phaseEvaluationTimeSec: 0,
-      x: 0,
-      y: 0,
-      z: 0,
-    });
+    expect(response.phaseInterferenceContrast).toBeCloseTo(0, 6);
+    expect(response.phaseInterferenceContrast).not.toBeCloseTo(0.5, 6);
+    expect(response.phaseInterferenceAuthority).toBeGreaterThan(0.9);
+    expect(response.phaseCoherentEnergy).toBeGreaterThan(0);
+    expect(response.phaseCoherentEnergy).toBeCloseTo(
+      response.independentPhaseEnergy,
+      6,
+    );
+    expect(response.maxConstructivePhaseEnergy).toBeCloseTo(
+      response.independentPhaseEnergy,
+      6,
+    );
+    expect(response.structuralSupport).toBeGreaterThan(0.9);
+  });
 
-    expect(aligned.phaseResponse).toBeGreaterThan(0.9);
-    expect(opposed.phaseResponse).toBeLessThan(0.05);
+  it("projects coherent phase as signed interference without deleting structural support", () => {
+    const modalFieldSlots = new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]);
+    const alignedPhaseSlots = new Float32Array([0, 0, 1, 1, 0, 0, 1, 1]);
+    const opposedPhaseSlots = new Float32Array([0, 0, 1, 1, Math.PI, 0, 1, 1]);
+
+    const aligned =
+      raymarchFieldCache.evaluateRaymarchPhaseInterferenceContrastPoint({
+        modalFieldSlots,
+        modalFieldPhaseSlots: alignedPhaseSlots,
+        modalFieldCount: 2,
+        boundaryMode: "neumann",
+        radius: 3,
+        phaseEvaluationTimeSec: 0,
+        x: 0,
+        y: 0,
+        z: 0,
+      });
+    const opposed =
+      raymarchFieldCache.evaluateRaymarchPhaseInterferenceContrastPoint({
+        modalFieldSlots,
+        modalFieldPhaseSlots: opposedPhaseSlots,
+        modalFieldCount: 2,
+        boundaryMode: "neumann",
+        radius: 3,
+        phaseEvaluationTimeSec: 0,
+        x: 0,
+        y: 0,
+        z: 0,
+      });
+
+    expect(aligned.phaseInterferenceContrast).toBeGreaterThan(0.95);
+    expect(opposed.phaseInterferenceContrast).toBeLessThan(-0.95);
     expect(opposed.structuralSupport).toBeGreaterThan(0.9);
-    expect(opposed.independentProjectedEnergy).toBeGreaterThan(
-      opposed.phaseEnergyResponse,
+    expect(opposed.independentPhaseEnergy).toBeGreaterThan(0);
+    expect(opposed.phaseCoherentEnergy).toBeLessThan(
+      opposed.independentPhaseEnergy,
     );
   });
 
   it("uses explicit evaluation time for clock-only phase motion and repeats deterministically", () => {
-    const modalFieldSlots = new Float32Array([
-      1, 1, 1, 1,
-      1, 1, 1, 1,
-    ]);
+    const modalFieldSlots = new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]);
     const modalFieldPhaseSlots = new Float32Array([
-      0, 0, 1, 1,
-      0, Math.PI, 1, 1,
+      0,
+      0,
+      1,
+      1,
+      0,
+      Math.PI,
+      1,
+      1,
     ]);
 
-    const atZero = raymarchFieldCache.evaluateRaymarchPhaseProjectionResponsePoint({
-      modalFieldSlots,
-      modalFieldPhaseSlots,
-      modalFieldCount: 2,
-      boundaryMode: "neumann",
-      radius: 3,
-      phaseEvaluationTimeSec: 0,
-      x: 0,
-      y: 0,
-      z: 0,
-    });
-    const atOne = raymarchFieldCache.evaluateRaymarchPhaseProjectionResponsePoint({
-      modalFieldSlots,
-      modalFieldPhaseSlots,
-      modalFieldCount: 2,
-      boundaryMode: "neumann",
-      radius: 3,
-      phaseEvaluationTimeSec: 1,
-      x: 0,
-      y: 0,
-      z: 0,
-    });
+    const atZero =
+      raymarchFieldCache.evaluateRaymarchPhaseInterferenceContrastPoint({
+        modalFieldSlots,
+        modalFieldPhaseSlots,
+        modalFieldCount: 2,
+        boundaryMode: "neumann",
+        radius: 3,
+        phaseEvaluationTimeSec: 0,
+        x: 0,
+        y: 0,
+        z: 0,
+      });
+    const atOne =
+      raymarchFieldCache.evaluateRaymarchPhaseInterferenceContrastPoint({
+        modalFieldSlots,
+        modalFieldPhaseSlots,
+        modalFieldCount: 2,
+        boundaryMode: "neumann",
+        radius: 3,
+        phaseEvaluationTimeSec: 1,
+        x: 0,
+        y: 0,
+        z: 0,
+      });
     const atOneRepeat =
-      raymarchFieldCache.evaluateRaymarchPhaseProjectionResponsePoint({
+      raymarchFieldCache.evaluateRaymarchPhaseInterferenceContrastPoint({
         modalFieldSlots,
         modalFieldPhaseSlots,
         modalFieldCount: 2,
@@ -242,35 +270,51 @@ describe("phase projection response", () => {
         z: 0,
       });
 
-    expect(atZero.phaseResponse).toBeGreaterThan(0.9);
-    expect(atOne.phaseResponse).toBeLessThan(0.05);
+    expect(atZero.phaseInterferenceContrast).toBeGreaterThan(0.95);
+    expect(atOne.phaseInterferenceContrast).toBeLessThan(-0.95);
     expect(atOneRepeat).toEqual(atOne);
   });
 
-  it("suppresses response from low-coherence phase evidence while preserving structural support", () => {
-    const modalFieldSlots = new Float32Array([
-      1, 1, 1, 1,
-      1, 1, 1, 1,
-    ]);
-    const weakPhaseSlots = new Float32Array([
-      0, 0, 0.02, 1,
-      0, 0, 0.02, 1,
-    ]);
+  it("gates low-coherence phase evidence with authority while preserving structural support", () => {
+    const modalFieldSlots = new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]);
+    const weakPhaseSlots = new Float32Array([0, 0, 0.02, 1, 0, 0, 0.02, 1]);
 
-    const response = raymarchFieldCache.evaluateRaymarchPhaseProjectionResponsePoint({
-      modalFieldSlots,
-      modalFieldPhaseSlots: weakPhaseSlots,
-      modalFieldCount: 2,
-      boundaryMode: "neumann",
-      radius: 3,
-      phaseEvaluationTimeSec: 0,
-      x: 0,
-      y: 0,
-      z: 0,
-    });
+    const response =
+      raymarchFieldCache.evaluateRaymarchPhaseInterferenceContrastPoint({
+        modalFieldSlots,
+        modalFieldPhaseSlots: weakPhaseSlots,
+        modalFieldCount: 2,
+        boundaryMode: "neumann",
+        radius: 3,
+        phaseEvaluationTimeSec: 0,
+        x: 0,
+        y: 0,
+        z: 0,
+      });
 
     expect(response.phaseAuthorityModeCount).toBe(2);
-    expect(response.phaseResponse).toBeLessThan(0.05);
+    expect(response.phaseInterferenceAuthority).toBeLessThan(0.05);
+    expect(response.structuralSupport).toBeGreaterThan(0.9);
+  });
+
+  it("keeps zero phase authority identity-equivalent in the contrast owner", () => {
+    const response =
+      raymarchFieldCache.evaluateRaymarchPhaseInterferenceContrastPoint({
+        modalFieldSlots: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]),
+        modalFieldPhaseSlots: new Float32Array([0, 0, 0, 0, Math.PI, 0, 0, 0]),
+        modalFieldCount: 2,
+        boundaryMode: "neumann",
+        radius: 3,
+        phaseEvaluationTimeSec: 0,
+        x: 0,
+        y: 0,
+        z: 0,
+      });
+
+    expect(response.phaseInterferenceAuthority).toBe(0);
+    expect(response.phaseInterferenceContrast).toBe(0);
+    expect(response.phaseCoherentEnergy).toBe(0);
+    expect(response.independentPhaseEnergy).toBe(0);
     expect(response.structuralSupport).toBeGreaterThan(0.9);
   });
 });
@@ -683,26 +727,31 @@ describe("fieldCache", () => {
     expect(computeSource).toContain(".mul(invCapacity)");
     expect(computeSource).toContain("fieldSum.addAssign");
     expect(computeSource).toContain("supportSum.addAssign");
-    expect(computeSource).toContain("phaseResponseTexture");
+    expect(computeSource).toContain("phaseInterferenceTexture");
     expect(computeSource).toContain("modalFieldPhaseBuffer.element(i)");
-    expect(computeSource).toContain("phaseResponseSumReal");
-    expect(computeSource).toContain("phaseResponseSumImag");
-    expect(computeSource).toContain("phaseResponseMagnitude");
+    expect(computeSource).toContain("phaseInterferenceSumReal");
+    expect(computeSource).toContain("phaseInterferenceSumImag");
+    expect(computeSource).toContain("independentPhaseEnergySum");
+    expect(computeSource).toContain("maxConstructivePhaseMagnitudeSum");
+    expect(computeSource).toContain("phaseInterferenceContrast");
+    expect(computeSource).not.toContain("phaseResponseTexture");
+    expect(computeSource).not.toContain("phaseResponseMagnitude");
     expect(computeSource).toContain("textureStore(");
     expect(computeSource).toContain("supportTexture");
     expect(computeSource).not.toContain("evaluateModeNode({");
   });
 
-  it("creates and disposes a named phase-response carrier with the live projection cache", () => {
+  it("creates and disposes a named phase-interference carrier with the live projection cache", () => {
     const cache = raymarchFieldCache.createRaymarchLiveFieldProjectionCache({
       resolution: 8,
     });
     const dispose = vi.fn();
-    cache.phaseResponseTexture.dispose = dispose;
+    cache.phaseInterferenceTexture.dispose = dispose;
 
-    expect(cache.phaseResponseTexture).toBeTruthy();
-    expect(cache.phaseResponseTexture).not.toBe(cache.fieldTexture);
-    expect(cache.phaseResponseTexture).not.toBe(cache.supportTexture);
+    expect(cache.phaseInterferenceTexture).toBeTruthy();
+    expect(cache.phaseInterferenceTexture).not.toBe(cache.fieldTexture);
+    expect(cache.phaseInterferenceTexture).not.toBe(cache.supportTexture);
+    expect(cache).not.toHaveProperty("phaseResponseTexture");
 
     raymarchFieldCache.disposeRaymarchLiveFieldProjectionCache(cache);
 

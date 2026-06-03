@@ -188,7 +188,10 @@ describe("raymarch volume material", () => {
       "const whiteEmissionRidgeEvidence =",
     );
     const colorBranchStart = expectSourceIndex(source, "let volumeColor;");
-    const whiteEmissionBlock = source.slice(whiteEmissionStart, colorBranchStart);
+    const whiteEmissionBlock = source.slice(
+      whiteEmissionStart,
+      colorBranchStart,
+    );
 
     expect(structuralConcentrationStart).toBeLessThan(whiteEmissionStart);
     expect(causticRidgeAuthorityStart).toBeLessThan(whiteEmissionStart);
@@ -236,11 +239,16 @@ describe("raymarch volume material", () => {
     );
     const highlightBlock = source.slice(highlightStart, stabilizedDensityStart);
     const hotCoreBlock = source.slice(hotCoreStart, hotCoreMixStart);
-    const whiteEmissionBlock = source.slice(whiteEmissionStart, colorBranchStart);
+    const whiteEmissionBlock = source.slice(
+      whiteEmissionStart,
+      colorBranchStart,
+    );
     const finalTransferBlock = source.slice(supportSplitStart, returnStart);
     const floorContract = getRaymarchQuantityContract("observedDensityFloor");
     const visibleContract = getRaymarchQuantityContract("visibleDensity");
-    const supportContract = getRaymarchQuantityContract("supportVisibleDensity");
+    const supportContract = getRaymarchQuantityContract(
+      "supportVisibleDensity",
+    );
     const cancellationContract = getRaymarchQuantityContract(
       "cancellationSuppression",
     );
@@ -799,7 +807,9 @@ describe("raymarch volume material", () => {
     expect(finalRadianceBlock).toContain("supportRevealColor");
     expect(finalRadianceBlock).toContain("uSurfaceColor.mul");
     expect(finalRadianceBlock).toContain("PHOTOGRAPHIC_DARK_BODY_RATIO");
-    expect(finalRadianceBlock).not.toContain("volumeColor.mul(stabilizedDensity)");
+    expect(finalRadianceBlock).not.toContain(
+      "volumeColor.mul(stabilizedDensity)",
+    );
   });
 
   it("samples only the canonical modal basis atlas texture for field ownership", () => {
@@ -904,14 +914,14 @@ describe("raymarch volume material", () => {
     expect(source).not.toContain("uDetailModeCount");
   });
 
-  it("isolates phase projection to the named spatial response carrier", () => {
+  it("isolates phase projection to the named spatial interference carrier", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
       "utf8",
     );
     const carrierStart = expectSourceIndex(
       source,
-      "function samplePhaseProjectionResponseCarrierNode",
+      "function samplePhaseInterferenceCarrierNode",
     );
     const scatteringStart = expectSourceIndex(
       source,
@@ -919,11 +929,11 @@ describe("raymarch volume material", () => {
     );
     const phaseTransferStart = expectSourceIndex(
       source,
-      "const phaseProjectionTransfer =",
+      "const phaseInterferenceTransfer =",
     );
     const carrierUseStart = expectSourceIndex(
       source,
-      "const phaseProjectionCarrier =",
+      "const phaseInterferenceCarrier =",
     );
     const carrierBlock = source.slice(carrierStart, scatteringStart);
     const carrierUseBlock = source.slice(carrierUseStart, phaseTransferStart);
@@ -932,26 +942,29 @@ describe("raymarch volume material", () => {
       source.indexOf("const opticalFocus =", phaseTransferStart),
     );
 
-    expect(carrierBlock).toContain("modalPhaseResponseTexture");
-    expect(carrierBlock).toContain("texture3D(modalPhaseResponseTexture)");
-    expect(carrierBlock).toContain("responseSample.x");
-    expect(carrierBlock).toContain("responseSample.z");
-    expect(carrierUseBlock).toContain("response: float(0.5)");
+    expect(carrierBlock).toContain("modalPhaseInterferenceTexture");
+    expect(carrierBlock).toContain("texture3D(modalPhaseInterferenceTexture)");
+    expect(carrierBlock).toContain("interferenceSample.x");
+    expect(carrierBlock).toContain("interferenceSample.z");
+    expect(carrierBlock).toContain("float(-1.0)");
+    expect(carrierUseBlock).toContain("contrast: float(0.0)");
     expect(carrierUseBlock).toContain("authority: float(0.0)");
-    expect(carrierUseBlock).toContain("const phaseProjectionCarrierAuthority =");
+    expect(carrierUseBlock).toContain("const phaseInterferenceAuthority =");
     expect(carrierUseBlock).toContain("uLiveFieldCacheActive");
     expect(carrierUseBlock).toContain(
-      ".mul(phaseProjectionCarrier.authority)",
+      ".mul(phaseInterferenceCarrier.authority)",
     );
-    expect(carrierUseBlock).toContain("phaseProjectionCarrier.response");
-    expect(carrierUseBlock).toContain("phaseProjectionCarrierAuthority");
+    expect(carrierUseBlock).toContain("phaseInterferenceCarrier.contrast");
+    expect(carrierUseBlock).toContain("phaseInterferenceAuthority");
     expect(transferBlock).toContain("uPhaseProjectionMix");
     expect(transferBlock).toContain("uPhaseProjectionStrength");
-    expect(transferBlock).toContain("phaseProjectionResponse");
+    expect(transferBlock).toContain("phaseInterferenceContrast");
+    expect(transferBlock).not.toContain("sub(float(0.5))");
     expect(source).toContain("uLiveFieldCacheActive");
     expect(source).not.toContain("modalFieldPhaseBuffer");
     expect(source).not.toContain("cos(phase)");
     expect(source).not.toContain("phaseCurrentCoefficient");
+    expect(source).not.toContain("phaseProjectionResponse");
   });
 
   it("keeps Spectral Light photographic accents above the blandness floor", () => {
@@ -1663,7 +1676,7 @@ describe("raymarch volume material", () => {
     expect(mesh.userData).not.toHaveProperty("raymarchDetailPhaseBuffer");
   });
 
-  it("binds the phase-response texture without exposing raw phase slots to material", () => {
+  it("binds the phase-interference texture without exposing raw phase slots to material", () => {
     const liveFieldProjectionCache = createRaymarchLiveFieldProjectionCache({
       resolution: 8,
     });
@@ -1672,17 +1685,21 @@ describe("raymarch volume material", () => {
       radius: 3,
       modalLiveFieldTexture: liveFieldProjectionCache.fieldTexture,
       modalLiveSupportTexture: liveFieldProjectionCache.supportTexture,
-      modalPhaseResponseTexture:
-        liveFieldProjectionCache.phaseResponseTexture,
+      modalPhaseInterferenceTexture:
+        liveFieldProjectionCache.phaseInterferenceTexture,
       uniforms,
     });
 
-    expect(mesh.userData.raymarchModalPhaseResponseTexture).toBe(
-      liveFieldProjectionCache.phaseResponseTexture,
+    expect(mesh.userData.raymarchModalPhaseInterferenceTexture).toBe(
+      liveFieldProjectionCache.phaseInterferenceTexture,
     );
-    expect(mesh.material.modalPhaseResponseTexture).toBe(
-      liveFieldProjectionCache.phaseResponseTexture,
+    expect(mesh.material.modalPhaseInterferenceTexture).toBe(
+      liveFieldProjectionCache.phaseInterferenceTexture,
     );
+    expect(mesh.userData).not.toHaveProperty(
+      "raymarchModalPhaseResponseTexture",
+    );
+    expect(mesh.material).not.toHaveProperty("modalPhaseResponseTexture");
     expect(mesh.userData).not.toHaveProperty("raymarchModalFieldPhaseBuffer");
     expect(mesh.material).not.toHaveProperty("modalFieldPhaseBuffer");
   });
