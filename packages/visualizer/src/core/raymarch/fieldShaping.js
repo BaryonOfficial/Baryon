@@ -138,6 +138,10 @@ function multiplyColor(color, scalar) {
   return color.map((channel) => channel * scalar);
 }
 
+function clampColor(color, minValue, maxValue) {
+  return color.map((channel) => Math.min(maxValue, Math.max(minValue, channel)));
+}
+
 function addColor(left, right) {
   return left.map((channel, index) => channel + (right[index] ?? 0));
 }
@@ -1296,8 +1300,9 @@ export function deriveMaterialRadianceTransfer({
     safeStabilizedDensity - safeCausticVisibleDensity,
     0,
   );
-  const supportRevealColor = multiplyColor(
-    resolvedSurfaceColor,
+  const supportRevealColor = clampColor(
+    multiplyColor(resolvedSurfaceColor, PHOTOGRAPHIC_DARK_BODY_RATIO),
+    0,
     PHOTOGRAPHIC_DARK_BODY_RATIO,
   );
   const causticRadianceContribution = multiplyColor(
@@ -1308,9 +1313,9 @@ export function deriveMaterialRadianceTransfer({
     supportRevealColor,
     supportVisibleDensity,
   );
-  const finalRadiance = multiplyColor(
-    addColor(causticRadianceContribution, supportRevealContribution),
-    safeGain,
+  const finalRadiance = addColor(
+    multiplyColor(causticRadianceContribution, safeGain),
+    supportRevealContribution,
   );
 
   return {

@@ -15,9 +15,14 @@ import {
 import { createVisualizationUniforms } from "../visualizationUniforms.js";
 import { raymarchOpacityNode } from "./SafeVolumetricLightingModel.js";
 import {
+  createRaymarchLiveFieldProjectionCache,
   createRaymarchModalBasisCache,
   createRaymarchSpectralLightCache,
 } from "./fieldCache.js";
+import {
+  auditRaymarchSourceSurface,
+  getRaymarchQuantityContract,
+} from "./quantityLedger.js";
 
 function makeMeshUniforms(overrides = {}) {
   const base = createVisualizationUniforms({
@@ -31,49 +36,6 @@ function expectSourceIndex(source, needle) {
   const index = source.indexOf(needle);
   expect(index).toBeGreaterThanOrEqual(0);
   return index;
-}
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function estimateSpectralDisplayPeak(luminance) {
-  const exposure = clamp(
-    RAYMARCH_SPECTRAL_LIGHT_TUNING.hueExposureTarget /
-      Math.max(luminance, 0.12),
-    RAYMARCH_SPECTRAL_LIGHT_TUNING.hueExposureMin,
-    RAYMARCH_SPECTRAL_LIGHT_TUNING.hueExposureMax,
-  );
-  return (
-    exposure /
-    (1 + exposure * RAYMARCH_SPECTRAL_LIGHT_TUNING.gamutCompression)
-  );
-}
-
-function estimateJudgeableMixedSpectralRadiance() {
-  const diversity = 0.45;
-  const corePeak = estimateSpectralDisplayPeak(0.2126);
-  const causticPeak = estimateSpectralDisplayPeak(0.0722);
-  const body =
-    corePeak *
-    RAYMARCH_SPECTRAL_LIGHT_TUNING.spectralBodyRadiance *
-    (1 - diversity * RAYMARCH_SPECTRAL_LIGHT_TUNING.bodyDiversitySuppression) *
-    0.9 *
-    RAYMARCH_SPECTRAL_LIGHT_TUNING.contourShadow;
-  const core =
-    corePeak * 0.55 * RAYMARCH_SPECTRAL_LIGHT_TUNING.coreCausticGain;
-  const rim =
-    causticPeak *
-    0.38 *
-    RAYMARCH_SPECTRAL_LIGHT_TUNING.rimCausticGain *
-    (1 + diversity * RAYMARCH_SPECTRAL_LIGHT_TUNING.diversityRimGain);
-  const interference =
-    causticPeak * 0.2 * RAYMARCH_SPECTRAL_LIGHT_TUNING.interferenceAccentGain;
-  const lowLight =
-    (corePeak + causticPeak * diversity) *
-    RAYMARCH_SPECTRAL_LIGHT_TUNING.chromaticLowLightFloor;
-
-  return (body + core + rim + interference + lowLight) * 0.9;
 }
 
 describe("raymarch volume material", () => {
@@ -99,6 +61,17 @@ describe("raymarch volume material", () => {
     expect(source).not.toMatch(/const\s+structure\s*=/);
     expect(source).not.toMatch(
       /smoothstep\(\s*[^,\n]+(?:Min|Floor)[^,]*,\s*[^,\n]+(?:Max|Ceiling)[^,]*,\s*normalizedGradMagnitude/s,
+    );
+  });
+
+  it("keeps modal evidence taxonomy out of shader transfer ownership", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).not.toMatch(
+      /sourceCoupled|modalResponseRender|modalResponseDiagnostic|resonant/i,
     );
   });
 
@@ -163,6 +136,176 @@ describe("raymarch volume material", () => {
     expect(observationEnergyBlock).toContain("observationEnergy).pow");
     expect(observationEnergyBlock).toContain("observationResponse");
     expect(observationEnergyBlock).not.toContain("phaseCoherentFieldEnergy");
+  });
+
+  it("uses structural projection drive instead of raw amplitude sum for modal observation energy", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const coefficientStart = expectSourceIndex(
+      source,
+      "const modalCoefficientEnergy =",
+    );
+    const excitationGateStart = expectSourceIndex(
+      source.slice(coefficientStart),
+      "// Excitation gate:",
+    );
+    const coefficientBlock = source.slice(
+      coefficientStart,
+      coefficientStart + excitationGateStart,
+    );
+    const amplitudeNormStart = expectSourceIndex(
+      source,
+      "const amplitudeNorm =",
+    );
+    const modalFieldCountStart = expectSourceIndex(
+      source,
+      "const modalFieldCount =",
+    );
+    const excitationInputStart = expectSourceIndex(
+      source,
+      "const excitationInput =",
+    );
+    const latchedFogStart = expectSourceIndex(source, "const latchedFogMask =");
+    const amplitudeNormBlock = source.slice(
+      amplitudeNormStart,
+      modalFieldCountStart,
+    );
+    const excitationBlock = source.slice(excitationInputStart, latchedFogStart);
+
+    expect(coefficientBlock).toContain("uStructuralProjectionDrive");
+    expect(coefficientBlock).not.toContain("uTotalSlotAmplitude");
+    expect(amplitudeNormBlock).toContain("uTotalSlotAmplitude");
+    expect(excitationBlock).toContain("uStructureSignal");
+    expect(excitationBlock).toContain("uModalResponseEnergy");
+    expect(excitationBlock).toContain("modalCoefficientEnergy");
+    expect(excitationBlock).toContain("uModeCoherence");
+    expect(excitationBlock).toContain("excitationModalAuthority");
+    expect(excitationBlock).not.toContain("uAverageAmplitude");
+  });
+
+  it("uses structural and local field evidence to suppress diffuse white emission", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const structuralConcentrationStart = expectSourceIndex(
+      source,
+      "const structuralConcentration =",
+    );
+    const causticRidgeAuthorityStart = expectSourceIndex(
+      source,
+      "const causticRidgeAuthority =",
+    );
+    const whiteEmissionStart = expectSourceIndex(
+      source,
+      "const whiteEmissionRidgeEvidence =",
+    );
+    const colorBranchStart = expectSourceIndex(source, "let volumeColor;");
+    const whiteEmissionBlock = source.slice(
+      whiteEmissionStart,
+      colorBranchStart,
+    );
+
+    expect(structuralConcentrationStart).toBeLessThan(whiteEmissionStart);
+    expect(causticRidgeAuthorityStart).toBeLessThan(whiteEmissionStart);
+    expect(whiteEmissionBlock).toContain("whiteEmissionRidgeEvidence");
+    expect(whiteEmissionBlock).toContain("whiteEmissionLocalEvidence");
+    expect(whiteEmissionBlock).toContain("structuralConcentration");
+    expect(whiteEmissionBlock).toContain("ridgeConcentration");
+    expect(whiteEmissionBlock).toContain("causticRidgeAuthority");
+    expect(whiteEmissionBlock).toContain("photographicFocus");
+    expect(whiteEmissionBlock).toContain(
+      "photographicFocus.mul(whiteEmissionRidgeEvidence)",
+    );
+    expect(whiteEmissionBlock).not.toContain(
+      "max(ridgeConcentration, photographicFocus)",
+    );
+    expect(whiteEmissionBlock).not.toContain("cancellationSuppression");
+    expect(whiteEmissionBlock).toContain("whiteEmissionFieldCrowding");
+    expect(whiteEmissionBlock).toContain(".mul(whiteEmissionFieldAuthority)");
+  });
+
+  it("mirrors quantity-ledger forbidden consumers in shader transfer lanes", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    for (const surfaceName of [
+      "materialObservationCore",
+      "materialHighlightAuthority",
+      "materialHotCoreAuthority",
+      "materialWhiteEmissionAuthority",
+    ]) {
+      expect(auditRaymarchSourceSurface(surfaceName, source).file).toBe(
+        "material.js",
+      );
+    }
+    const highlightStart = expectSourceIndex(source, "const highlightMask =");
+    const stabilizedDensityStart = expectSourceIndex(
+      source,
+      "const stabilizedDensity = observationDensity;",
+    );
+    const hotCoreStart = expectSourceIndex(source, "const hotCoreInput =");
+    const hotCoreMixStart = expectSourceIndex(source, "const hotCoreMix =");
+    const whiteEmissionStart = expectSourceIndex(
+      source,
+      "const whiteEmissionRidgeEvidence =",
+    );
+    const colorBranchStart = expectSourceIndex(source, "let volumeColor;");
+    const supportSplitStart = expectSourceIndex(
+      source,
+      "const supportVisibleDensity =",
+    );
+    const returnStart = expectSourceIndex(
+      source,
+      "return causticRadianceContribution",
+    );
+    const highlightBlock = source.slice(highlightStart, stabilizedDensityStart);
+    const hotCoreBlock = source.slice(hotCoreStart, hotCoreMixStart);
+    const whiteEmissionBlock = source.slice(
+      whiteEmissionStart,
+      colorBranchStart,
+    );
+    const finalTransferBlock = source.slice(supportSplitStart, returnStart);
+    const floorContract = getRaymarchQuantityContract("observedDensityFloor");
+    const observationContract = getRaymarchQuantityContract("observationDensity");
+    const supportContract = getRaymarchQuantityContract(
+      "supportVisibleDensity",
+    );
+    const cancellationContract = getRaymarchQuantityContract(
+      "cancellationSuppression",
+    );
+
+    expect(floorContract.forbiddenConsumers).toEqual(
+      expect.arrayContaining(["highlightMask", "whiteEmissionFieldAuthority"]),
+    );
+    expect(observationContract.forbiddenConsumers).toEqual(
+      expect.arrayContaining(["highlightMask", "hotCoreInput"]),
+    );
+    expect(supportContract.forbiddenConsumers).toEqual(
+      expect.arrayContaining(["causticRadianceContribution"]),
+    );
+    expect(cancellationContract.forbiddenConsumers).toEqual(
+      expect.arrayContaining(["whiteEmissionFieldAuthority"]),
+    );
+    expect(highlightBlock).toContain("causticVisibleDensity");
+    expect(highlightBlock).not.toContain("visibleDensity");
+    expect(highlightBlock).not.toContain("observedDensityFloor");
+    expect(hotCoreBlock).toContain("photographicLaserCausticRadiance");
+    expect(hotCoreBlock).not.toContain("visibleDensity");
+    expect(hotCoreBlock).not.toContain("observedDensityFloor");
+    expect(whiteEmissionBlock).not.toContain("cancellationSuppression");
+    expect(finalTransferBlock).toContain(
+      "causticRadianceContribution = volumeColor.mul",
+    );
+    expect(finalTransferBlock).toContain(
+      "supportRevealContribution = supportRevealColor.mul",
+    );
+    expect(finalTransferBlock).not.toContain(
+      "causticRadianceContribution = volumeColor.mul(stabilizedDensity)",
+    );
   });
 
   it("keeps rim compression out of modal observation support", () => {
@@ -571,18 +714,21 @@ describe("raymarch volume material", () => {
       source,
       "const cancellationSuppression =",
     );
-    const densityStart = expectSourceIndex(source, "const density =");
+    const densityStart = expectSourceIndex(
+      source,
+      "const observationInputDensity =",
+    );
     const observationTransferStart = expectSourceIndex(
       source,
       "const observationTransfer = deriveObservationTransferNode(",
     );
     const stabilizedDensityStart = expectSourceIndex(
       source,
-      "const stabilizedDensity = visibleDensity;",
+      "const stabilizedDensity = observationDensity;",
     );
     const finalRadianceStart = expectSourceIndex(
       source,
-      "return volumeColor.mul(stabilizedDensity).mul(structureAwareEmissionGain);",
+      "return causticRadianceContribution",
     );
     const finalRadianceBlock = source.slice(
       stabilizedDensityStart,
@@ -597,18 +743,30 @@ describe("raymarch volume material", () => {
     expect(finalRadianceBlock).not.toContain("effectiveCancellationRatio");
   });
 
-  it("lets observation-rescued density participate in optical highlight readout", () => {
+  it("keeps body and observation-rescued density out of optical highlight readout", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
       "utf8",
+    );
+    const physicalCausticDensityStart = expectSourceIndex(
+      source,
+      "const physicalCausticDensity = clamp(",
+    );
+    const densityStart = expectSourceIndex(
+      source,
+      "const observationInputDensity = clamp(",
     );
     const observationTransferStart = expectSourceIndex(
       source,
       "const observationTransfer = deriveObservationTransferNode(",
     );
-    const visibleDensityStart = expectSourceIndex(
+    const observationDensityStart = expectSourceIndex(
       source,
-      "const { visibleDensity } = observationTransfer;",
+      "const { observationDensity } = observationTransfer;",
+    );
+    const causticVisibleDensityStart = expectSourceIndex(
+      source,
+      "const causticVisibleDensity = physicalCausticDensity.mul(",
     );
     const highlightMaskStart = expectSourceIndex(
       source,
@@ -616,17 +774,82 @@ describe("raymarch volume material", () => {
     );
     const stabilizedDensityStart = expectSourceIndex(
       source,
-      "const stabilizedDensity = visibleDensity;",
+      "const stabilizedDensity = observationDensity;",
     );
     const highlightMaskBlock = source.slice(
       highlightMaskStart,
       stabilizedDensityStart,
     );
+    const physicalCausticDensityBlock = source.slice(
+      physicalCausticDensityStart,
+      densityStart,
+    );
+    const densityBlock = source.slice(densityStart, observationTransferStart);
 
-    expect(visibleDensityStart).toBeGreaterThan(observationTransferStart);
-    expect(highlightMaskStart).toBeGreaterThan(visibleDensityStart);
-    expect(highlightMaskBlock).toContain("visibleDensity");
-    expect(highlightMaskBlock).not.toContain("physicalVisibleDensity");
+    expect(physicalCausticDensityStart).toBeLessThan(densityStart);
+    expect(physicalCausticDensityBlock).toContain(
+      "photographicLaserCausticRadiance",
+    );
+    expect(physicalCausticDensityBlock).not.toContain(
+      "photographicBodyContribution",
+    );
+    expect(densityBlock).toContain("photographicBodyContribution");
+    expect(observationDensityStart).toBeGreaterThan(observationTransferStart);
+    expect(causticVisibleDensityStart).toBeGreaterThan(observationDensityStart);
+    expect(highlightMaskStart).toBeGreaterThan(causticVisibleDensityStart);
+    expect(highlightMaskBlock).toContain("causticVisibleDensity");
+    expect(highlightMaskBlock).not.toContain("visibleDensity");
+    expect(highlightMaskBlock).not.toContain("observedDensityFloor");
+  });
+
+  it("keeps support density from inheriting full caustic radiance", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const stabilizedDensityStart = expectSourceIndex(
+      source,
+      "const stabilizedDensity = observationDensity;",
+    );
+    const supportDensityStart = expectSourceIndex(
+      source,
+      "const supportVisibleDensity = max(",
+    );
+    const causticRadianceStart = expectSourceIndex(
+      source,
+      "const causticRadianceContribution = volumeColor.mul(",
+    );
+    const supportRevealStart = expectSourceIndex(
+      source,
+      "const supportRevealContribution = supportRevealColor.mul(",
+    );
+    const finalRadianceStart = expectSourceIndex(
+      source,
+      "return causticRadianceContribution",
+    );
+    const finalRadianceBlock = source.slice(
+      supportDensityStart,
+      finalRadianceStart + 220,
+    );
+
+    expect(supportDensityStart).toBeGreaterThan(stabilizedDensityStart);
+    expect(causticRadianceStart).toBeGreaterThan(supportDensityStart);
+    expect(supportRevealStart).toBeGreaterThan(causticRadianceStart);
+    expect(finalRadianceBlock).toContain("supportRevealColor");
+    expect(finalRadianceBlock).toContain("uSurfaceColor.mul");
+    expect(finalRadianceBlock).toContain("PHOTOGRAPHIC_DARK_BODY_RATIO");
+    expect(finalRadianceBlock).toContain(
+      "vec3(PHOTOGRAPHIC_DARK_BODY_RATIO)",
+    );
+    expect(finalRadianceBlock).toContain(
+      "causticRadianceContribution\n        .mul(structureAwareEmissionGain)\n        .add(supportRevealContribution)",
+    );
+    expect(finalRadianceBlock).not.toContain(
+      "volumeColor.mul(stabilizedDensity)",
+    );
+    expect(finalRadianceBlock).not.toContain(
+      ".add(supportRevealContribution)\n        .mul(structureAwareEmissionGain)",
+    );
   });
 
   it("samples only the canonical modal basis atlas texture for field ownership", () => {
@@ -695,6 +918,8 @@ describe("raymarch volume material", () => {
     expect(synthesizeBlock).toContain(
       "greaterThan(cancellationSupportEpsilon)",
     );
+    expect(synthesizeBlock).not.toContain("modalFieldPhaseBuffer");
+    expect(synthesizeBlock).not.toContain("uTime");
     expect(synthesizeBlock).not.toContain(
       "normalizedUnsignedSupport.max(float(1e-4))",
     );
@@ -708,11 +933,17 @@ describe("raymarch volume material", () => {
 
     expect(source).toContain("modalFieldModeBuffer");
     expect(source).not.toContain("modalFieldColorBuffer");
-    expect(source).toContain("modalFieldPhaseBuffer");
+    expect(source).not.toContain("modalFieldPhaseBuffer");
     expect(source).toContain("modalFieldCoefficientBuffer");
     expect(source).toContain("modalFieldCapacity");
     expect(source).not.toContain("evaluateModeNode({");
-    expect(source).toContain("cos(phase)");
+    expect(source).not.toContain("cos(phase)");
+    expect(source).not.toContain(
+      "modalFieldCoefficientBuffer || modalFieldPhaseBuffer",
+    );
+    expect(source).not.toContain(
+      "!modalFieldCoefficientBuffer && !modalFieldPhaseBuffer",
+    );
     expect(source).not.toContain("phaseCurrentCoefficient");
     expect(source).toContain("unsignedSupport.addAssign");
     expect(source).toContain("uModalFieldModeCount");
@@ -723,21 +954,68 @@ describe("raymarch volume material", () => {
     expect(source).not.toContain("uDetailModeCount");
   });
 
-  it("keeps Spectral caustic gains in a restrained light-through-field range", () => {
+  it("isolates phase projection to the named spatial interference carrier", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const carrierStart = expectSourceIndex(
+      source,
+      "function samplePhaseInterferenceCarrierNode",
+    );
+    const scatteringStart = expectSourceIndex(
+      source,
+      "function createScatteringNode({",
+    );
+    const phaseTransferStart = expectSourceIndex(
+      source,
+      "const phaseInterferenceTransfer =",
+    );
+    const carrierUseStart = expectSourceIndex(
+      source,
+      "const phaseInterferenceCarrier =",
+    );
+    const carrierBlock = source.slice(carrierStart, scatteringStart);
+    const carrierUseBlock = source.slice(carrierUseStart, phaseTransferStart);
+    const transferBlock = source.slice(
+      phaseTransferStart,
+      source.indexOf("const opticalFocus =", phaseTransferStart),
+    );
+
+    expect(carrierBlock).toContain("modalPhaseInterferenceTexture");
+    expect(carrierBlock).toContain("texture3D(modalPhaseInterferenceTexture)");
+    expect(carrierBlock).toContain("interferenceSample.x");
+    expect(carrierBlock).toContain("interferenceSample.z");
+    expect(carrierBlock).toContain("float(-1.0)");
+    expect(carrierUseBlock).toContain("contrast: float(0.0)");
+    expect(carrierUseBlock).toContain("authority: float(0.0)");
+    expect(carrierUseBlock).toContain("const phaseInterferenceAuthority =");
+    expect(carrierUseBlock).toContain("uLiveFieldCacheActive");
+    expect(carrierUseBlock).toContain(
+      ".mul(phaseInterferenceCarrier.authority)",
+    );
+    expect(carrierUseBlock).toContain("phaseInterferenceCarrier.contrast");
+    expect(carrierUseBlock).toContain("phaseInterferenceAuthority");
+    expect(transferBlock).toContain("uPhaseProjectionMix");
+    expect(transferBlock).toContain("uPhaseProjectionStrength");
+    expect(transferBlock).toContain("phaseInterferenceContrast");
+    expect(transferBlock).not.toContain("sub(float(0.5))");
+    expect(source).toContain("uLiveFieldCacheActive");
+    expect(source).not.toContain("modalFieldPhaseBuffer");
+    expect(source).not.toContain("cos(phase)");
+    expect(source).not.toContain("phaseCurrentCoefficient");
+    expect(source).not.toContain("phaseProjectionResponse");
+  });
+
+  it("keeps Spectral Light photographic accents above the blandness floor", () => {
     expect(RAYMARCH_SPECTRAL_LIGHT_TUNING.contourShadow).toBeGreaterThan(0.95);
 
     const accentRanges = [
-      ["spectralBodyRadiance", 0.14, 0.3],
-      ["coreCausticGain", 0.62, 1.05],
-      ["rimCausticGain", 1.35, 2.1],
-      ["interferenceAccentGain", 0.32, 0.72],
-      ["diversityRimGain", 0.45, 0.95],
-      ["bodyDiversitySuppression", 0.35, 0.8],
-      ["hueExposureTarget", 0.58, 0.8],
-      ["hueExposureMin", 0.9, 1.2],
-      ["hueExposureMax", 2.0, 2.65],
-      ["gamutCompression", 0.2, 0.38],
-      ["chromaticLowLightFloor", 0.045, 0.085],
+      ["baseRadianceLift", 0.3, 0.55],
+      ["hotCoreSurfacePull", 0.22, 0.4],
+      ["holographicAccentMix", 0.055, 0.09],
+      ["holographicAccentColorPull", 0.3, 0.5],
+      ["whiteEmissionLift", 0.028, 0.045],
     ];
 
     for (const [name, min, max] of accentRanges) {
@@ -747,145 +1025,56 @@ describe("raymarch volume material", () => {
 
     expect(
       RAYMARCH_SPECTRAL_LIGHT_TUNING.cachedPresenceEnd,
-    ).toBeLessThanOrEqual(0.012);
-    expect(RAYMARCH_SPECTRAL_LIGHT_TUNING).not.toHaveProperty(
-      "uncoloredNeutralLift",
-    );
-    expect(RAYMARCH_SPECTRAL_LIGHT_TUNING).not.toHaveProperty(
-      "hotCoreSurfacePull",
-    );
-    expect(RAYMARCH_SPECTRAL_LIGHT_TUNING).not.toHaveProperty(
-      "holographicAccentColorPull",
-    );
-    expect(RAYMARCH_SPECTRAL_LIGHT_TUNING).not.toHaveProperty(
-      "whiteEmissionLift",
-    );
-    expect(RAYMARCH_SPECTRAL_LIGHT_TUNING).not.toHaveProperty(
-      "filmGamutCompression",
-    );
-    expect(RAYMARCH_SPECTRAL_LIGHT_TUNING).not.toHaveProperty(
-      "filmChromaMin",
-    );
+    ).toBeLessThanOrEqual(0.07);
+    expect(
+      RAYMARCH_SPECTRAL_LIGHT_TUNING.uncoloredNeutralLift,
+    ).toBeLessThanOrEqual(0.04);
   });
 
-  it("keeps mixed Spectral caustics bright enough to judge without neutral rescue", () => {
+  it("keeps Spectral Light chroma from owning display luminance", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
       "utf8",
     );
-    const spectralBranchStart = expectSourceIndex(
+    const spectralVolumeStart = expectSourceIndex(
       source,
-      "let volumeColor;\n      if (cachedSpectralLightEnabled) {",
+      "const spectralLightVolumeColor =",
     );
-    const staticBranchStart = expectSourceIndex(
+    const tintedRadianceStart = expectSourceIndex(
       source,
-      "} else {\n        // Modal coherence warms color; rapid change cools it.",
+      "const spectralLightTintedRadiance =",
     );
-    const branch = source.slice(spectralBranchStart, staticBranchStart);
-
-    expect(estimateJudgeableMixedSpectralRadiance()).toBeGreaterThanOrEqual(
-      1.75,
-    );
-    expect(branch).not.toContain("uColor");
-    expect(branch).not.toContain("uSurfaceColor");
-    expect(branch).not.toContain("vec3(1.0)");
-    expect(branch).not.toContain("whiteEmissionLift");
-    expect(branch).not.toContain("uncoloredNeutralLift");
-  });
-
-  it("renders Spectral as caustic core and rim light instead of owner body paint", () => {
-    const source = readFileSync(
-      new URL("./material.js", import.meta.url),
-      "utf8",
-    );
-    const branchStart = expectSourceIndex(
+    const baseRadianceStart = expectSourceIndex(
       source,
-      "let volumeColor;\n      if (cachedSpectralLightEnabled) {",
-    );
-    const staticBranchStart = expectSourceIndex(
-      source,
-      "} else {\n        // Modal coherence warms color; rapid change cools it.",
-    );
-    const branch = source.slice(branchStart, staticBranchStart);
-
-    expect(branch).toContain("const spectralCoreColor = spectralOwnerColor;");
-    expect(branch).toContain("const spectralCausticAccentColor =");
-    expect(branch).toContain("const spectralLightDiversity =");
-    expect(branch).toContain("const spectralDarkStructureColor =");
-    expect(branch).toContain("const spectralCoreCausticRadiance =");
-    expect(branch).toContain("const spectralCausticRimRadiance =");
-    expect(branch).toContain("const spectralInterferenceRadiance =");
-    expect(branch).toContain("rimCausticGain");
-    expect(branch).toContain("diversityRimGain");
-    expect(branch).toContain("chromaticLowLightFloor");
-    expect(branch).not.toContain("const spectralColor = spectralOwnerColor;");
-    expect(branch).not.toContain("spectralFilm");
-    expect(branch).not.toContain("spectralLightVolumeColor = spectralDisplayColor");
-    expect(branch).not.toContain("uColor");
-    expect(branch).not.toContain("uSurfaceColor");
-  });
-
-  it("keeps Spectral Light luminance independent from static color", () => {
-    const source = readFileSync(
-      new URL("./material.js", import.meta.url),
-      "utf8",
-    );
-    const spectralCoreDisplayStart = expectSourceIndex(
-      source,
-      "const spectralCoreDisplayColor =",
-    );
-    const darkStructureStart = expectSourceIndex(
-      source,
-      "const spectralDarkStructureColor =",
-    );
-    const rimRadianceStart = expectSourceIndex(
-      source,
-      "const spectralCausticRimRadiance =",
+      "const spectralLightBaseRadiance = uColor.mul(",
     );
     const volumeColorStart = expectSourceIndex(
       source,
-      "volumeColor = spectralCausticVolumeColor.mul(",
+      "volumeColor = spectralLightTintedRadiance.add(",
     );
     const finalDensityStart = expectSourceIndex(
       source,
-      "return volumeColor.mul(stabilizedDensity)",
+      "return causticRadianceContribution",
     );
 
-    expect(darkStructureStart).toBeGreaterThan(spectralCoreDisplayStart);
-    expect(rimRadianceStart).toBeGreaterThan(darkStructureStart);
-    expect(volumeColorStart).toBeGreaterThan(rimRadianceStart);
+    expect(tintedRadianceStart).toBeGreaterThan(spectralVolumeStart);
+    expect(baseRadianceStart).toBeGreaterThan(tintedRadianceStart);
+    expect(volumeColorStart).toBeGreaterThan(baseRadianceStart);
     expect(finalDensityStart).toBeGreaterThan(volumeColorStart);
 
-    const spectralBodySuppressionStart = expectSourceIndex(
-      source,
-      "const spectralBodySuppression =",
+    const tintedRadianceBlock = source.slice(
+      tintedRadianceStart,
+      baseRadianceStart,
     );
-    const spectralBranchBlock = source.slice(
-      spectralCoreDisplayStart,
-      volumeColorStart,
-    );
-    const spectralRadianceFormationBlock = source.slice(
-      spectralBodySuppressionStart,
-      volumeColorStart,
-    );
+    const baseRadianceBlock = source.slice(baseRadianceStart, volumeColorStart);
 
-    expect(spectralBranchBlock).toContain("spectralDarkStructureColor");
-    expect(spectralBranchBlock).toContain("spectralCoreCausticRadiance");
-    expect(spectralBranchBlock).toContain("spectralCausticRimRadiance");
-    expect(spectralBranchBlock).toContain("spectralInterferenceRadiance");
-    expect(spectralBranchBlock).not.toContain("uColor");
-    expect(spectralBranchBlock).not.toContain("uSurfaceColor");
-    expect(spectralBranchBlock).not.toContain("baseRadianceLift");
-    expect(spectralBranchBlock).not.toContain("spectralLightUncoloredColor");
-    expect(spectralBranchBlock).not.toContain("uncoloredNeutralLift");
-    expect(spectralBranchBlock).not.toContain("holographicAccentColor");
-    expect(spectralBranchBlock).not.toContain("deriveHighlightTargetNode");
-    expect(spectralBranchBlock).not.toContain("vec3(1.0)");
-    expect(spectralBranchBlock).not.toContain("spectralLightWhiteEmissionMix");
-    expect(spectralRadianceFormationBlock).not.toContain("spectralLightWeight");
-    expect(spectralBranchBlock).toContain("spectralBodyRadiance");
-    expect(spectralBranchBlock).toContain("rimCausticGain");
-    expect(spectralBranchBlock).toContain("interferenceAccentGain");
+    expect(tintedRadianceBlock).toContain("spectralLightWeight");
+    expect(tintedRadianceBlock).toContain("spectralLightVolumeColor");
+    expect(baseRadianceBlock).toContain("uColor.mul");
+    expect(baseRadianceBlock).toContain("baseRadianceLift");
+    expect(source.slice(volumeColorStart, finalDensityStart)).toContain(
+      "spectralLightBaseRadiance",
+    );
     expect(source).not.toContain("spectralLightEnabled.greaterThan");
   });
 
@@ -902,13 +1091,13 @@ describe("raymarch volume material", () => {
       source,
       "const spectralLightWeight =",
     );
-    const spectralBodySuppressionStart = expectSourceIndex(
+    const spectralContourColorStart = expectSourceIndex(
       source,
-      "const spectralBodySuppression =",
+      "const spectralLightContourColor =",
     );
     const spectralWeightBlock = source.slice(
       spectralWeightStart,
-      spectralBodySuppressionStart,
+      spectralContourColorStart,
     );
 
     expect(spectralWeightStart).toBeGreaterThan(spectralPresenceStart);
@@ -928,98 +1117,61 @@ describe("raymarch volume material", () => {
       source,
       "const spectralLightWeight =",
     );
-    const causticVolumeStart = expectSourceIndex(
+    const contourColorStart = expectSourceIndex(
       source,
-      "const spectralCausticVolumeColor =",
+      "const spectralLightContourColor =",
     );
-    const volumeColorStart = expectSourceIndex(
+    const tintedRadianceStart = expectSourceIndex(
       source,
-      "volumeColor = spectralCausticVolumeColor.mul(",
+      "const spectralLightTintedRadiance =",
     );
-    const causticBlock = source.slice(spectralWeightStart, volumeColorStart);
+    const contourBlock = source.slice(contourColorStart, tintedRadianceStart);
 
-    expect(causticVolumeStart).toBeGreaterThan(spectralWeightStart);
-    expect(volumeColorStart).toBeGreaterThan(causticVolumeStart);
-    expect(causticBlock).not.toContain("uSurfaceColor");
-    expect(causticBlock).not.toContain("holographicAccentColor");
-    expect(causticBlock).not.toContain("deriveHighlightTargetNode");
+    expect(contourColorStart).toBeGreaterThan(spectralWeightStart);
+    expect(tintedRadianceStart).toBeGreaterThan(contourColorStart);
+    expect(contourBlock).toContain("spectralColor.mul(");
+    expect(contourBlock).toContain("spectralColor,");
+    expect(contourBlock).not.toContain("spectralLightWeight");
     expect(source).toContain(
-      "volumeColor = spectralCausticVolumeColor.mul(",
+      "const spectralLightTintedRadiance = mix(\n          spectralLightUncoloredColor,\n          spectralLightVolumeColor,\n          spectralLightWeight,",
     );
-    expect(source).toContain("spectralLightWeight.mul(");
-    expect(source).not.toContain("spectralLightUncoloredColor");
   });
 
-  it("uses dominant core ownership plus top-K caustic accent transfer", () => {
+  it("uses whitepaper linear modal-local Spectral Light mixing", () => {
     const source = readFileSync(
       new URL("./fieldCache.js", import.meta.url),
       "utf8",
     );
-    const materialSource = readFileSync(
-      new URL("./material.js", import.meta.url),
-      "utf8",
-    );
     const influenceStart = expectSourceIndex(
       source,
-      "localInfluence.addAssign(abs(contribution).mul(colorSlot.w));",
+      "const localInfluence = abs(contribution).mul(colorSlot.w).toVar();",
     );
-    const totalInfluenceStart = expectSourceIndex(
+    const colorWeightStart = expectSourceIndex(
       source,
-      "totalInfluence.addAssign(localInfluence);",
+      "colorWeight.addAssign(localInfluence);",
     );
-    const ownerStart = expectSourceIndex(
+    const colorSumStart = expectSourceIndex(
       source,
-      "ownerInfluence.assign(localInfluence);",
+      "colorSumX.addAssign(localInfluence.mul(colorSlot.x));",
     );
-    const ownerTextureStoreStart = expectSourceIndex(
+    const textureStoreStart = expectSourceIndex(
       source,
-      "vec4(ownerColorX, ownerColorY, ownerColorZ, totalInfluence)",
-    );
-    const causticTextureStoreStart = expectSourceIndex(
-      source,
-      "vec4(causticColorX, causticColorY, causticColorZ, ownerInfluence)",
+      "vec4(colorSumX, colorSumY, colorSumZ, colorWeight)",
     );
 
     expect(influenceStart).toBeGreaterThan(0);
-    expect(totalInfluenceStart).toBeGreaterThan(influenceStart);
-    expect(ownerStart).toBeGreaterThan(totalInfluenceStart);
-    expect(ownerStart).toBeLessThan(ownerTextureStoreStart);
-    expect(causticTextureStoreStart).toBeGreaterThan(ownerTextureStoreStart);
-    expect(source).toContain("secondaryInfluence.assign");
-    expect(source).toContain("tertiaryInfluence.assign");
-    expect(source).toContain("causticColorPeak");
-    expect(materialSource).toContain(
-      "const spectralCoreColor = spectralOwnerColor;",
-    );
-    expect(materialSource).toContain("const spectralLightDominance =");
-    expect(materialSource).toContain("const spectralLightDiversity =");
-    expect(materialSource).toContain("const spectralCausticAccentColor =");
-    expect(materialSource).toContain("const spectralCoreExposure =");
-    expect(materialSource).toContain("const spectralCausticExposure =");
-    expect(materialSource).toContain("const spectralCausticRimRadiance =");
-    expect(materialSource).toContain(".mul(spectralCoreExposure)");
-    expect(materialSource).toContain(".mul(spectralCausticExposure)");
-    expect(materialSource).not.toContain("colorSum.div");
-    expect(materialSource).not.toContain("spectralMomentX");
-    expect(source).not.toContain("colorSumX");
+    expect(colorWeightStart).toBeGreaterThan(influenceStart);
+    expect(colorSumStart).toBeGreaterThan(colorWeightStart);
+    expect(colorSumStart).toBeLessThan(textureStoreStart);
+    expect(source).not.toContain("colorChromaSum");
+    expect(source).not.toContain("colorChromaWeight");
+    expect(source).not.toContain("chromaInfluence");
   });
 
-  it("routes white emission through the adaptive highlight target only in static color", () => {
+  it("routes white emission through the adaptive highlight target", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
       "utf8",
-    );
-    const spectralBranchStart = expectSourceIndex(
-      source,
-      "let volumeColor;\n      if (cachedSpectralLightEnabled) {",
-    );
-    const staticBranchStart = expectSourceIndex(
-      source,
-      "} else {\n        // Modal coherence warms color; rapid change cools it.",
-    );
-    const spectralBranchBlock = source.slice(
-      spectralBranchStart,
-      staticBranchStart,
     );
 
     expect(source).toContain(
@@ -1027,17 +1179,24 @@ describe("raymarch volume material", () => {
     );
     expect(source).toContain("STATIC_HIGHLIGHT_SURFACE_PULL_SCALE");
     expect(source).toContain("staticWhiteEmissionMix");
-    expect(source).not.toContain("spectralLightWhiteEmissionMix");
+    expect(source).toContain("spectralLightWhiteEmissionMix");
     expect(source).toContain(`deriveHighlightTargetNode(
           staticHolographicColor,
           uSurfaceColor,
           staticWhiteEmissionMix,
           float(STATIC_HIGHLIGHT_SURFACE_PULL_SCALE),
         )`);
-    expect(spectralBranchBlock).not.toContain("deriveHighlightTargetNode");
-    expect(spectralBranchBlock).not.toContain("vec3(1.0)");
+    expect(source).toContain(`deriveHighlightTargetNode(
+          spectralLightHolographicColor,
+          uSurfaceColor,
+          spectralLightWhiteEmissionMix,
+        )`);
     expect(source).not.toContain(`const staticHolographicLaserColor = mix(
         staticHolographicColor,
+        vec3(1.0),`);
+    expect(source).not
+      .toContain(`const spectralLightHolographicLaserColor = mix(
+            spectralLightHolographicColor,
         vec3(1.0),`);
   });
 
@@ -1103,7 +1262,10 @@ describe("raymarch volume material", () => {
       source,
       "const photographicRadianceScale =",
     );
-    const densityStart = expectSourceIndex(source, "const density = clamp(");
+    const densityStart = expectSourceIndex(
+      source,
+      "const observationInputDensity = clamp(",
+    );
     const photographicRadianceScaleBlock = source.slice(
       photographicRadianceScaleStart,
       photographicLaserStart,
@@ -1312,7 +1474,9 @@ describe("raymarch volume material", () => {
     expect(opticalMeasurementBlock).toContain(
       "assignAtlasOpticalConvergenceAuthority();",
     );
-    expect(source).not.toContain("function sampleLiveFieldProjectionNormalNode");
+    expect(source).not.toContain(
+      "function sampleLiveFieldProjectionNormalNode",
+    );
     expect(source).not.toContain(
       "function deriveLiveFieldProjectionConvergenceAuthorityNode",
     );
@@ -1322,6 +1486,20 @@ describe("raymarch volume material", () => {
     expect(opticalMeasurementBlock).not.toContain(
       "deriveLiveFieldProjectionConvergenceAuthorityNode",
     );
+  });
+
+  it("precomputes basis-atlas page reciprocals outside live modal loops", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("const atlasZ = float(basisSlot).add(basisUv.z)");
+    expect(source).toContain("atlasZ.mul(float(invLiveSynthesisModeCount))");
+    expect(source).toContain(
+      "const invLiveSynthesisModeCount = 1 / normalizedLiveSynthesisModeCount",
+    );
+    expect(source).toContain("invLiveSynthesisModeCount,");
   });
 
   it("keeps the optical measurement pass off the spherical startup path", () => {
@@ -1390,7 +1568,10 @@ describe("raymarch volume material", () => {
       source,
       "const photographicLaserCausticRadiance =",
     );
-    const densityStart = expectSourceIndex(source, "const density = clamp(");
+    const densityStart = expectSourceIndex(
+      source,
+      "const observationInputDensity = clamp(",
+    );
     const blackfieldGateBlock = source.slice(
       blackfieldGateStart,
       photographicBodyStart,
@@ -1447,7 +1628,10 @@ describe("raymarch volume material", () => {
       new URL("./material.js", import.meta.url),
       "utf8",
     );
-    const densityStart = expectSourceIndex(source, "const density = clamp(");
+    const densityStart = expectSourceIndex(
+      source,
+      "const observationInputDensity = clamp(",
+    );
     const fringeStart = expectSourceIndex(
       source,
       "const photographicFringeWeight =",
@@ -1468,7 +1652,7 @@ describe("raymarch volume material", () => {
     );
     const spectralColorStart = expectSourceIndex(
       source,
-      "const spectralCoreColor =",
+      "const spectralColor =",
     );
     const fringeBlock = source.slice(fringeStart, hotCoreInputStart);
     const hotCoreBlock = source.slice(hotCoreInputStart, holographicMixStart);
@@ -1535,8 +1719,38 @@ describe("raymarch volume material", () => {
     expect(uniforms.uObservationDensityFloor.value).toBeCloseTo(0.22);
     expect(uniforms.uObservationContourSupportScale.value).toBeCloseTo(0.035);
     expect(uniforms.uModalResponseEnergy.value).toBe(0);
+    expect(uniforms.uPhaseProjectionMix.value).toBe(0);
+    expect(uniforms.uPhaseProjectionStrength.value).toBe(0);
     expect(mesh.userData).not.toHaveProperty("raymarchBackbonePhaseBuffer");
     expect(mesh.userData).not.toHaveProperty("raymarchDetailPhaseBuffer");
+  });
+
+  it("binds the phase-interference texture without exposing raw phase slots to material", () => {
+    const liveFieldProjectionCache = createRaymarchLiveFieldProjectionCache({
+      resolution: 8,
+    });
+    const uniforms = makeMeshUniforms();
+    const mesh = createRaymarchVolumeMesh({
+      radius: 3,
+      modalLiveFieldTexture: liveFieldProjectionCache.fieldTexture,
+      modalLiveSupportTexture: liveFieldProjectionCache.supportTexture,
+      modalPhaseInterferenceTexture:
+        liveFieldProjectionCache.phaseInterferenceTexture,
+      uniforms,
+    });
+
+    expect(mesh.userData.raymarchModalPhaseInterferenceTexture).toBe(
+      liveFieldProjectionCache.phaseInterferenceTexture,
+    );
+    expect(mesh.material.modalPhaseInterferenceTexture).toBe(
+      liveFieldProjectionCache.phaseInterferenceTexture,
+    );
+    expect(mesh.userData).not.toHaveProperty(
+      "raymarchModalPhaseResponseTexture",
+    );
+    expect(mesh.material).not.toHaveProperty("modalPhaseResponseTexture");
+    expect(mesh.userData).not.toHaveProperty("raymarchModalFieldPhaseBuffer");
+    expect(mesh.material).not.toHaveProperty("modalFieldPhaseBuffer");
   });
 
   it("binds the canonical modal-basis atlas texture on the cache-only material", () => {
@@ -1585,7 +1799,6 @@ describe("raymarch volume material", () => {
       radius: 3,
       modalBasisAtlasTexture: modalBasisCache.texture,
       spectralLightCacheTexture: spectralLightCache.texture,
-      spectralLightCausticTexture: spectralLightCache.causticTexture,
       uniforms: makeMeshUniforms(),
     });
     const materialCache = getRaymarchMaterialCache(mesh);
@@ -1637,7 +1850,6 @@ describe("raymarch volume material", () => {
       radius: 3,
       modalBasisAtlasTexture: modalBasisCache.texture,
       spectralLightCacheTexture: spectralLightCache.texture,
-      spectralLightCausticTexture: spectralLightCache.causticTexture,
       uniforms: makeMeshUniforms(),
     });
     const materialCache = getRaymarchMaterialCache(mesh);
@@ -1675,7 +1887,6 @@ describe("raymarch volume material", () => {
       radius: 3,
       modalBasisAtlasTexture: modalBasisCache.texture,
       spectralLightCacheTexture: spectralLightCache.texture,
-      spectralLightCausticTexture: spectralLightCache.causticTexture,
       uniforms: makeMeshUniforms(),
     });
 

@@ -2188,8 +2188,57 @@ describe("field shaping", () => {
       1 * PHOTOGRAPHIC_DARK_BODY_RATIO * 0.3,
     );
     expect(mixed.finalRadiance[0]).toBeCloseTo(
-      (0.9 * 0.2 + 1 * PHOTOGRAPHIC_DARK_BODY_RATIO * 0.3) * 0.8,
+      0.9 * 0.2 * 0.8 + 1 * PHOTOGRAPHIC_DARK_BODY_RATIO * 0.3,
     );
+  });
+
+  it("keeps support reveal outside structure-aware emission gain", () => {
+    const dimmed = deriveMaterialRadianceTransfer({
+      stabilizedDensity: 0.6,
+      causticVisibleDensity: 0,
+      volumeColor: [1, 1, 1],
+      surfaceColor: [0.8, 0.9, 1],
+      structureAwareEmissionGain: 0.34,
+    });
+    const undimmed = deriveMaterialRadianceTransfer({
+      stabilizedDensity: 0.6,
+      causticVisibleDensity: 0,
+      volumeColor: [1, 1, 1],
+      surfaceColor: [0.8, 0.9, 1],
+      structureAwareEmissionGain: 1,
+    });
+    const caustic = deriveMaterialRadianceTransfer({
+      stabilizedDensity: 0.6,
+      causticVisibleDensity: 0.4,
+      volumeColor: [1, 0.8, 0.6],
+      surfaceColor: [0.8, 0.9, 1],
+      structureAwareEmissionGain: 0.5,
+    });
+
+    expect(dimmed.supportVisibleDensity).toBeCloseTo(0.6);
+    expect(dimmed.causticRadianceContribution).toEqual([0, 0, 0]);
+    expect(dimmed.finalRadiance).toEqual(undimmed.finalRadiance);
+    expect(caustic.finalRadiance[0]).toBeCloseTo(
+      1 * 0.4 * 0.5 + 0.8 * PHOTOGRAPHIC_DARK_BODY_RATIO * 0.2,
+    );
+  });
+
+  it("caps support reveal color before overbright surface color can become bloom authority", () => {
+    const support = deriveMaterialRadianceTransfer({
+      stabilizedDensity: 0.8,
+      causticVisibleDensity: 0,
+      volumeColor: [1, 1, 1],
+      surfaceColor: [3.5, 2.4, 1.6],
+      structureAwareEmissionGain: 1,
+    });
+
+    expect(Math.max(...support.supportRevealColor)).toBeLessThanOrEqual(
+      PHOTOGRAPHIC_DARK_BODY_RATIO,
+    );
+    expect(Math.max(...support.supportRevealContribution)).toBeLessThanOrEqual(
+      PHOTOGRAPHIC_DARK_BODY_RATIO * support.supportVisibleDensity,
+    );
+    expect(support.causticRadianceContribution).toEqual([0, 0, 0]);
   });
 
   it("reduces crowded white-emission mix before highlights desaturate", () => {

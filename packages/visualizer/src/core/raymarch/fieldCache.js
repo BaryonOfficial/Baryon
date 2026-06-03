@@ -5,6 +5,8 @@ import {
   If,
   Loop,
   abs,
+  clamp,
+  cos,
   float,
   globalId,
   int,
@@ -15,6 +17,7 @@ import {
   uvec3,
   uint,
   max,
+  sin,
   vec3,
   vec4,
 } from "three/tsl";
@@ -22,17 +25,20 @@ import { BOUNDARY_MODES, normalizeBoundaryMode } from "../modeFamily.js";
 import { normalizeCavityGeometry } from "../cavityGeometry.js";
 import { getModalGeometryBackend } from "../modalGeometryBackend.js";
 import { buildRaymarchModalBasisPhaseSignature } from "./phaseSlotSemantics.js";
+import { normalizePhaseRad } from "../../utils/audio/modalPhaseSlots.js";
 
 export const RAYMARCH_FIELD_CACHE_RESOLUTION = 64;
 export const RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION =
   RAYMARCH_FIELD_CACHE_RESOLUTION;
-export const RAYMARCH_MODAL_BASIS_CACHE_CAPACITY = 12;
+export const RAYMARCH_MODAL_BASIS_CACHE_CAPACITY = 20;
 export const RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT =
   RAYMARCH_MODAL_BASIS_CACHE_CAPACITY;
 export const RAYMARCH_BASIS_ATLAS_PACKING = "z-slice-pages-v1";
 const FIELD_CACHE_COMPUTE_WORKGROUP_SIZE = Object.freeze([8, 8, 4]);
 const FIELD_CACHE_COLOR_QUANTIZATION = 32;
 export const MODAL_BASIS_CACHE_ENERGY_EPSILON = 0.01;
+export const STRUCTURAL_PROJECTION_REFERENCE_ENERGY = 0.01;
+const STRUCTURAL_PROJECTION_EPSILON = 1e-12;
 
 export function deriveLiveSynthesisCancellationRatio(field, unsignedSupport) {
   if (!(unsignedSupport > MODAL_BASIS_CACHE_ENERGY_EPSILON)) {
@@ -248,50 +254,8 @@ function hashCanonicalModalFieldTopology(entries) {
   return hash >>> 0;
 }
 
-function normalizeSpectralPhase(value) {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-  return value - Math.floor(value);
-}
-
-function readSpectralPhase(spectralSlots, offset) {
-  return normalizeSpectralPhase(spectralSlots?.[offset] ?? 0);
-}
-
-function normalizeSpectralRgbPeak(rgb, fallback) {
-  const peak = Math.max(rgb.r, rgb.g, rgb.b);
-  if (!(peak > 1e-9)) {
-    return { ...fallback };
-  }
-
-  return {
-    r: clamp01(rgb.r / peak),
-    g: clamp01(rgb.g / peak),
-    b: clamp01(rgb.b / peak),
-  };
-}
-
-function insertSpectralCausticContributor(top, contributor) {
-  if (!(contributor.influence > 0)) {
-    return;
-  }
-
-  if (contributor.influence > top[0].influence) {
-    top[2] = top[1];
-    top[1] = top[0];
-    top[0] = contributor;
-  } else if (contributor.influence > top[1].influence) {
-    top[2] = top[1];
-    top[1] = contributor;
-  } else if (contributor.influence > top[2].influence) {
-    top[2] = contributor;
-  }
-}
-
 function buildCanonicalSpectralLightColorTopology({
   colorSlots,
-  spectralSlots,
   modalFieldSlots,
   activeCount,
 }) {
@@ -324,18 +288,12 @@ function buildCanonicalSpectralLightColorTopology({
       r: 0,
       g: 0,
       b: 0,
-      phaseX: 0,
-      phaseY: 0,
     };
-    const phase = readSpectralPhase(spectralSlots, offset);
-    const phaseRad = phase * Math.PI * 2;
     entry.amplitude += amplitude;
     entry.colorInfluence += colorInfluence;
     entry.r += colorInfluence * clamp01(colorSlots?.[offset] ?? 0);
     entry.g += colorInfluence * clamp01(colorSlots?.[offset + 1] ?? 0);
     entry.b += colorInfluence * clamp01(colorSlots?.[offset + 2] ?? 0);
-    entry.phaseX += colorInfluence * Math.cos(phaseRad);
-    entry.phaseY += colorInfluence * Math.sin(phaseRad);
     if (!entriesByKey.has(key)) {
       entriesByKey.set(key, entry);
     }
@@ -375,8 +333,6 @@ function buildCanonicalSpectralLightColorTopology({
         clamp01(entry.colorInfluence / entry.amplitude) *
           FIELD_CACHE_COLOR_QUANTIZATION,
       ),
-      getFloat32Bits(entry.phaseX / entry.colorInfluence),
-      getFloat32Bits(entry.phaseY / entry.colorInfluence),
     ];
   });
 
@@ -449,6 +405,8 @@ function createRaymarchCacheUniformSnapshots() {
     uTime: uniform(0),
     uModalFieldModeCount: uniform(0),
     uTotalSlotAmplitude: uniform(0),
+    uStructuralProjectionDrive: uniform(0),
+    uStructuralProjectionConcentration: uniform(0),
   };
 }
 
@@ -496,6 +454,16 @@ function updateRaymarchCacheUniformSnapshots(targetUniforms, sourceUniforms) {
     "uTotalSlotAmplitude",
     0,
   );
+  targetUniforms.uStructuralProjectionDrive.value = readUniformNumber(
+    sourceUniforms,
+    "uStructuralProjectionDrive",
+    0,
+  );
+  targetUniforms.uStructuralProjectionConcentration.value = readUniformNumber(
+    sourceUniforms,
+    "uStructuralProjectionConcentration",
+    0,
+  );
 }
 
 function createRaymarchCacheRequestVec4BufferSnapshot(
@@ -523,12 +491,22 @@ function createRaymarchCacheRequestUniformSnapshots(sourceUniforms) {
     uTotalSlotAmplitude: {
       value: readUniformNumber(sourceUniforms, "uTotalSlotAmplitude", 0),
     },
+    uStructuralProjectionDrive: {
+      value: readUniformNumber(sourceUniforms, "uStructuralProjectionDrive", 0),
+    },
+    uStructuralProjectionConcentration: {
+      value: readUniformNumber(
+        sourceUniforms,
+        "uStructuralProjectionConcentration",
+        0,
+      ),
+    },
   };
 }
 
 function snapshotRaymarchCacheRebuildOptions(
   options,
-  { includeColor = false, includePhase = false, includeSpectral = false } = {},
+  { includeColor = false, includePhase = false } = {},
 ) {
   const modalFieldCapacity = normalizeComputeNodeCapacity(
     options?.modalFieldCapacity,
@@ -552,12 +530,6 @@ function snapshotRaymarchCacheRebuildOptions(
           modalFieldCapacity,
         )
       : null,
-    modalFieldSpectralBuffer: includeSpectral
-      ? createRaymarchCacheRequestVec4BufferSnapshot(
-          options?.modalFieldSpectralBuffer,
-          modalFieldCapacity,
-        )
-      : null,
     uniforms: createRaymarchCacheRequestUniformSnapshots(options?.uniforms),
   };
 }
@@ -566,7 +538,6 @@ function createRaymarchCacheComputeInputs({
   modalFieldCapacity,
   includeColor = false,
   includePhase = false,
-  includeSpectral = false,
 }) {
   return {
     modalFieldModeBuffer: createRaymarchCacheVec4Buffer(modalFieldCapacity),
@@ -574,9 +545,6 @@ function createRaymarchCacheComputeInputs({
       ? createRaymarchCacheVec4Buffer(modalFieldCapacity)
       : null,
     modalFieldPhaseBuffer: includePhase
-      ? createRaymarchCacheVec4Buffer(modalFieldCapacity)
-      : null,
-    modalFieldSpectralBuffer: includeSpectral
       ? createRaymarchCacheVec4Buffer(modalFieldCapacity)
       : null,
     uniforms: createRaymarchCacheUniformSnapshots(),
@@ -590,12 +558,10 @@ function getOrUpdateRaymarchCacheComputeInputs(
     modalFieldModeBuffer,
     modalFieldColorBuffer = null,
     modalFieldPhaseBuffer = null,
-    modalFieldSpectralBuffer = null,
     modalFieldCapacity,
     uniforms,
     includeColor = false,
     includePhase = false,
-    includeSpectral = false,
   },
 ) {
   if (!cache.computeInputsByKey) {
@@ -608,7 +574,6 @@ function getOrUpdateRaymarchCacheComputeInputs(
       modalFieldCapacity,
       includeColor,
       includePhase,
-      includeSpectral,
     });
     cache.computeInputsByKey[nodeKey] = inputs;
   }
@@ -629,13 +594,6 @@ function getOrUpdateRaymarchCacheComputeInputs(
     copyRaymarchCacheVec4BufferSnapshot({
       sourceBuffer: modalFieldPhaseBuffer,
       targetBuffer: inputs.modalFieldPhaseBuffer,
-      modalFieldCapacity,
-    });
-  }
-  if (includeSpectral) {
-    copyRaymarchCacheVec4BufferSnapshot({
-      sourceBuffer: modalFieldSpectralBuffer,
-      targetBuffer: inputs.modalFieldSpectralBuffer,
       modalFieldCapacity,
     });
   }
@@ -750,6 +708,81 @@ export function sumLiveSynthesisRepresentableUploadWeight({
   }
 
   return totalWeight;
+}
+
+export function deriveStructuralProjectionDrive({
+  modalFieldSlots,
+  activeCount,
+  resolution = RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
+  referenceEnergy = STRUCTURAL_PROJECTION_REFERENCE_ENERGY,
+}) {
+  const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
+  const normalizedResolution = normalizeModalBasisCacheResolution(resolution);
+  const projectionReferenceEnergy =
+    Number.isFinite(referenceEnergy) && referenceEnergy > 0
+      ? referenceEnergy
+      : STRUCTURAL_PROJECTION_REFERENCE_ENERGY;
+
+  if (!modalFieldSlots || clampedActiveCount <= 0) {
+    return {
+      amplitudeSum: 0,
+      structuralEnergy: 0,
+      effectiveModeCount: 0,
+      rmsStructuralAmplitude: 0,
+      projectionEnergyDrive: 0,
+      structuralConcentration: 0,
+      referenceEnergy: projectionReferenceEnergy,
+    };
+  }
+
+  let amplitudeSum = 0;
+  let structuralEnergy = 0;
+  for (let slotIndex = 0; slotIndex < clampedActiveCount; slotIndex += 1) {
+    const offset = slotIndex * 4;
+    const amplitude = Math.max(0, modalFieldSlots[offset + 3] ?? 0);
+    if (!(amplitude > 0)) {
+      continue;
+    }
+    if (
+      !isBasisPageSlotRepresentable({
+        slots: modalFieldSlots,
+        offset,
+        resolution: normalizedResolution,
+      })
+    ) {
+      continue;
+    }
+    amplitudeSum += amplitude;
+    structuralEnergy += amplitude * amplitude;
+  }
+
+  const hasStructuralEnergy = structuralEnergy > STRUCTURAL_PROJECTION_EPSILON;
+  const hasAmplitudeSum = amplitudeSum > STRUCTURAL_PROJECTION_EPSILON;
+  const amplitudeSumSquared = amplitudeSum * amplitudeSum;
+  const effectiveModeCount =
+    hasStructuralEnergy && hasAmplitudeSum
+      ? amplitudeSumSquared / structuralEnergy
+      : 0;
+  const structuralConcentration =
+    hasStructuralEnergy && hasAmplitudeSum
+      ? clamp01(structuralEnergy / amplitudeSumSquared)
+      : 0;
+  const rmsStructuralAmplitude = hasStructuralEnergy
+    ? Math.sqrt(structuralEnergy / Math.max(effectiveModeCount, 1))
+    : 0;
+  const projectionEnergyDrive = hasStructuralEnergy
+    ? clamp01(structuralEnergy / (structuralEnergy + projectionReferenceEnergy))
+    : 0;
+
+  return {
+    amplitudeSum,
+    structuralEnergy,
+    effectiveModeCount,
+    rmsStructuralAmplitude,
+    projectionEnergyDrive,
+    structuralConcentration,
+    referenceEnergy: projectionReferenceEnergy,
+  };
 }
 
 function isBasisPageSlotContributing({ slots, offset, resolution }) {
@@ -923,25 +956,7 @@ function countZeroAmplitudeModalSlots(slots, activeCount) {
   return zeroAmplitudeSkippedModeCount;
 }
 
-function getModalBasisPhaseScale({ phaseSlots, offset, time }) {
-  const beta = Math.min(
-    1,
-    Math.max(
-      0,
-      (phaseSlots?.[offset + 2] ?? 0) * (phaseSlots?.[offset + 3] ?? 0),
-    ),
-  );
-  const phase =
-    (phaseSlots?.[offset] ?? 0) + (phaseSlots?.[offset + 1] ?? 0) * time;
-  return 1 - beta + beta * Math.cos(phase);
-}
-
-function collectCanonicalLiveSynthesisDiagnosticTerms({
-  slots,
-  phaseSlots,
-  activeCount,
-  time = 0,
-}) {
+function collectCanonicalLiveSynthesisDiagnosticTerms({ slots, activeCount }) {
   const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
   const entriesByKey = new Map();
 
@@ -961,11 +976,10 @@ function collectCanonicalLiveSynthesisDiagnosticTerms({
       v,
       w,
       amplitude: 0,
-      phaseCurrentCoefficient: 0,
+      structuralCoefficient: 0,
     };
     entry.amplitude += amplitude;
-    entry.phaseCurrentCoefficient +=
-      amplitude * getModalBasisPhaseScale({ phaseSlots, offset, time });
+    entry.structuralCoefficient += amplitude;
     if (!entriesByKey.has(key)) {
       entriesByKey.set(key, entry);
     }
@@ -976,20 +990,16 @@ function collectCanonicalLiveSynthesisDiagnosticTerms({
 
 function summarizeLiveSynthesisDiagnostics({
   slots,
-  phaseSlots,
   activeCount,
   resolution,
   scale,
   boundaryMode,
-  time = 0,
 }) {
   const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
   const basisScale = getModalBasisGradientBasisScale(scale, boundaryMode);
   const canonicalTerms = collectCanonicalLiveSynthesisDiagnosticTerms({
     slots,
-    phaseSlots,
     activeCount: clampedActiveCount,
-    time,
   });
   let contributingBasisPageModeCount = 0;
   const zeroAmplitudeSkippedModeCount = countZeroAmplitudeModalSlots(
@@ -999,15 +1009,15 @@ function summarizeLiveSynthesisDiagnostics({
   let bandwidthRejectedModeCount = 0;
   let contributingRawModalEnergy = 0;
   let bandwidthRejectedRawModalEnergy = 0;
-  let contributingPhaseCurrentModalEnergy = 0;
-  let bandwidthRejectedPhaseCurrentModalEnergy = 0;
+  let contributingStructuralModalEnergy = 0;
+  let bandwidthRejectedStructuralModalEnergy = 0;
   let rawGradientEnvelopeNumerator = 0;
-  let phaseCurrentGradientEnvelopeNumerator = 0;
+  let structuralGradientEnvelopeNumerator = 0;
 
   for (const term of canonicalTerms) {
     const modalEnergy = term.amplitude * term.amplitude;
-    const phaseCurrentModalEnergy =
-      term.phaseCurrentCoefficient * term.phaseCurrentCoefficient;
+    const structuralModalEnergy =
+      term.structuralCoefficient * term.structuralCoefficient;
 
     if (
       getModalBasisCacheMaxRepresentableModeIndex(resolution) <
@@ -1015,27 +1025,26 @@ function summarizeLiveSynthesisDiagnostics({
     ) {
       bandwidthRejectedModeCount += 1;
       bandwidthRejectedRawModalEnergy += modalEnergy;
-      bandwidthRejectedPhaseCurrentModalEnergy += phaseCurrentModalEnergy;
+      bandwidthRejectedStructuralModalEnergy += structuralModalEnergy;
       continue;
     }
 
     contributingBasisPageModeCount += 1;
     contributingRawModalEnergy += modalEnergy;
-    contributingPhaseCurrentModalEnergy += phaseCurrentModalEnergy;
+    contributingStructuralModalEnergy += structuralModalEnergy;
     const gradientBound = getModalBasisTermGradientBound({
       term,
       basisScale,
     });
     rawGradientEnvelopeNumerator += modalEnergy * gradientBound;
-    phaseCurrentGradientEnvelopeNumerator +=
-      phaseCurrentModalEnergy * gradientBound;
+    structuralGradientEnvelopeNumerator +=
+      structuralModalEnergy * gradientBound;
   }
 
   const totalRepresentedModalEnergy =
     contributingRawModalEnergy + bandwidthRejectedRawModalEnergy;
-  const totalRepresentedPhaseCurrentModalEnergy =
-    contributingPhaseCurrentModalEnergy +
-    bandwidthRejectedPhaseCurrentModalEnergy;
+  const totalRepresentedStructuralModalEnergy =
+    contributingStructuralModalEnergy + bandwidthRejectedStructuralModalEnergy;
 
   return {
     modalBasisCacheMaxRepresentableModeIndex:
@@ -1045,25 +1054,25 @@ function summarizeLiveSynthesisDiagnostics({
     bandwidthRejectedModeCount,
     contributingRawModalEnergy,
     bandwidthRejectedRawModalEnergy,
-    contributingPhaseCurrentModalEnergy,
-    bandwidthRejectedPhaseCurrentModalEnergy,
+    contributingStructuralModalEnergy,
+    bandwidthRejectedStructuralModalEnergy,
     liveSynthesisResolvedRawModalEnergyRatio:
       totalRepresentedModalEnergy > MODAL_BASIS_CACHE_ENERGY_EPSILON
         ? contributingRawModalEnergy / totalRepresentedModalEnergy
         : 1,
-    liveSynthesisResolvedPhaseCurrentModalEnergyRatio:
-      totalRepresentedPhaseCurrentModalEnergy > MODAL_BASIS_CACHE_ENERGY_EPSILON
-        ? contributingPhaseCurrentModalEnergy /
-          totalRepresentedPhaseCurrentModalEnergy
+    liveSynthesisResolvedStructuralModalEnergyRatio:
+      totalRepresentedStructuralModalEnergy > MODAL_BASIS_CACHE_ENERGY_EPSILON
+        ? contributingStructuralModalEnergy /
+          totalRepresentedStructuralModalEnergy
         : 1,
     liveSynthesisRawGradientEnvelope:
       rawGradientEnvelopeNumerator /
       Math.max(MODAL_BASIS_CACHE_ENERGY_EPSILON, contributingRawModalEnergy),
-    liveSynthesisPhaseCurrentGradientEnvelope:
-      phaseCurrentGradientEnvelopeNumerator /
+    liveSynthesisStructuralGradientEnvelope:
+      structuralGradientEnvelopeNumerator /
       Math.max(
         MODAL_BASIS_CACHE_ENERGY_EPSILON,
-        contributingPhaseCurrentModalEnergy,
+        contributingStructuralModalEnergy,
       ),
   };
 }
@@ -1078,7 +1087,6 @@ function evaluateRaymarchModalBasisSupportSample({
   x,
   y,
   z,
-  time,
   resolution,
 }) {
   const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
@@ -1091,7 +1099,6 @@ function evaluateRaymarchModalBasisSupportSample({
     x,
     y,
     z,
-    time,
     resolution: normalizedResolution,
     scale: getModalBasisFieldScale(radius),
     boundaryMode: normalizedBoundaryMode,
@@ -1121,7 +1128,6 @@ function summarizeLiveSynthesisSupportDiagnostics({
   cavityGeometry,
   radius,
   resolution,
-  time = 0,
 }) {
   const sampleRadius = Math.max(Math.abs(radius), 1e-4);
   const diagnosticSamplePoints =
@@ -1148,7 +1154,6 @@ function summarizeLiveSynthesisSupportDiagnostics({
       x: x * sampleRadius,
       y: y * sampleRadius,
       z: z * sampleRadius,
-      time,
       resolution,
     });
 
@@ -1401,12 +1406,12 @@ export function createRaymarchModalBasisCache({
     contributingRawModalEnergy: 0,
     bandwidthRejectedModeCount: 0,
     bandwidthRejectedRawModalEnergy: 0,
-    contributingPhaseCurrentModalEnergy: 0,
-    bandwidthRejectedPhaseCurrentModalEnergy: 0,
+    contributingStructuralModalEnergy: 0,
+    bandwidthRejectedStructuralModalEnergy: 0,
     liveSynthesisResolvedRawModalEnergyRatio: 1,
-    liveSynthesisResolvedPhaseCurrentModalEnergyRatio: 1,
+    liveSynthesisResolvedStructuralModalEnergyRatio: 1,
     liveSynthesisRawGradientEnvelope: 0,
-    liveSynthesisPhaseCurrentGradientEnvelope: 0,
+    liveSynthesisStructuralGradientEnvelope: 0,
     liveSynthesisUnsignedSupportMean: 0,
     liveSynthesisCancellationRatioMean: 0,
     liveSynthesisCancellationRatioMax: 0,
@@ -1422,6 +1427,7 @@ export function createRaymarchLiveFieldProjectionCache({
   const normalizedResolution = normalizeModalBasisCacheResolution(resolution);
   const fieldTexture = createCacheTexture(normalizedResolution);
   const supportTexture = createCacheTexture(normalizedResolution);
+  const phaseInterferenceTexture = createCacheTexture(normalizedResolution);
 
   return {
     ...createCacheState({
@@ -1432,6 +1438,7 @@ export function createRaymarchLiveFieldProjectionCache({
     semantic: "frame-current-modal-field-projection",
     fieldTexture,
     supportTexture,
+    phaseInterferenceTexture,
     lastComputedAtSec: null,
     lastComputeReason: "uninitialized",
   };
@@ -1442,28 +1449,16 @@ export function createRaymarchSpectralLightCache({
 } = {}) {
   const normalizedResolution = Math.max(8, Math.round(resolution));
   const texture = createCacheTexture(normalizedResolution);
-  const causticTexture = createCacheTexture(normalizedResolution);
 
-  return {
-    ...createCacheState({
-      resolution: normalizedResolution,
-      texture,
-      mode: "off",
-    }),
-    ownerTexture: texture,
-    causticTexture,
-    semantic: "spectral-light-owner-caustic-cache",
-  };
+  return createCacheState({
+    resolution: normalizedResolution,
+    texture,
+    mode: "off",
+  });
 }
 
 export function disposeRaymarchFieldCache(fieldCache) {
   fieldCache?.texture?.dispose?.();
-  if (
-    fieldCache?.ownerTexture &&
-    fieldCache.ownerTexture !== fieldCache.texture
-  ) {
-    fieldCache.ownerTexture.dispose?.();
-  }
   if (fieldCache?.computeNodesByKey) {
     Object.values(fieldCache.computeNodesByKey).forEach((node) => {
       node?.dispose?.();
@@ -1474,7 +1469,6 @@ export function disposeRaymarchFieldCache(fieldCache) {
       inputs?.modalFieldModeBuffer?.dispose?.();
       inputs?.modalFieldColorBuffer?.dispose?.();
       inputs?.modalFieldPhaseBuffer?.dispose?.();
-      inputs?.modalFieldSpectralBuffer?.dispose?.();
       Object.values(inputs?.uniforms ?? {}).forEach((uniformNode) => {
         uniformNode?.dispose?.();
       });
@@ -1491,11 +1485,11 @@ export function disposeRaymarchLiveFieldProjectionCache(
 ) {
   disposeRaymarchFieldCache(liveFieldProjectionCache);
   liveFieldProjectionCache?.supportTexture?.dispose?.();
+  liveFieldProjectionCache?.phaseInterferenceTexture?.dispose?.();
 }
 
 export function disposeRaymarchSpectralLightCache(spectralLightCache) {
   disposeRaymarchFieldCache(spectralLightCache);
-  spectralLightCache?.causticTexture?.dispose?.();
 }
 
 function createCacheTexture(width, height = width, depth = width) {
@@ -1924,12 +1918,10 @@ export function buildRaymarchModalBasisCacheDescriptor({
   );
   const liveSynthesisDiagnostics = summarizeLiveSynthesisDiagnostics({
     slots: modalFieldSlots,
-    phaseSlots: modalFieldPhaseSlots,
     activeCount: modalFieldCount,
     resolution: normalizedResolution,
     scale: modalBasisFieldScale,
     boundaryMode,
-    time,
   });
 
   const descriptor = {
@@ -2019,7 +2011,6 @@ export function buildModalBasisAuditDiagnostics({
   cavityGeometry = "rectangular",
   radius = 1,
   resolution = RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
-  time = 0,
 }) {
   return summarizeLiveSynthesisSupportDiagnostics({
     modalFieldSlots,
@@ -2029,14 +2020,12 @@ export function buildModalBasisAuditDiagnostics({
     cavityGeometry,
     radius: Number.isFinite(radius) ? radius : 1,
     resolution: normalizeModalBasisCacheResolution(resolution),
-    time,
   });
 }
 
 export function buildRaymarchSpectralLightCacheDescriptor({
   modalFieldSlots,
   modalFieldColorSlots,
-  modalFieldSpectralSlots,
   modalFieldCount,
   boundaryMode,
   cavityGeometry = "rectangular",
@@ -2055,7 +2044,6 @@ export function buildRaymarchSpectralLightCacheDescriptor({
   });
   const spectralLightColorTopology = buildCanonicalSpectralLightColorTopology({
     colorSlots: modalFieldColorSlots,
-    spectralSlots: modalFieldSpectralSlots,
     modalFieldSlots,
     activeCount: normalizedUploadedModalFieldCount,
   });
@@ -2075,7 +2063,6 @@ export function buildRaymarchSpectralLightCacheDescriptor({
 function accumulateSpectralLightLayerAtPoint({
   slots,
   colorSlots,
-  spectralSlots,
   activeCount,
   weight,
   x,
@@ -2085,20 +2072,10 @@ function accumulateSpectralLightLayerAtPoint({
   boundaryMode,
   cavityGeometry,
 }) {
-  let totalInfluence = 0;
-  let ownerInfluence = 0;
-  let ownerR = 0;
-  let ownerG = 0;
-  let ownerB = 0;
-  let ownerPhase = 0;
-  let ownerWavelength = 0;
-  let momentX = 0;
-  let momentY = 0;
-  const topContributors = [
-    { influence: 0, r: 0, g: 0, b: 0 },
-    { influence: 0, r: 0, g: 0, b: 0 },
-    { influence: 0, r: 0, g: 0, b: 0 },
-  ];
+  let colorWeight = 0;
+  let colorR = 0;
+  let colorG = 0;
+  let colorB = 0;
   const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
 
@@ -2122,64 +2099,17 @@ function accumulateSpectralLightLayerAtPoint({
     const contribution = amplitude * family.field;
     const localInfluence =
       Math.abs(contribution) * (colorSlots?.[offset + 3] ?? 0);
-    const phase = readSpectralPhase(spectralSlots, offset);
-    const phaseRad = phase * Math.PI * 2;
-    const contributor = {
-      influence: localInfluence,
-      r: clamp01(colorSlots?.[offset] ?? 0),
-      g: clamp01(colorSlots?.[offset + 1] ?? 0),
-      b: clamp01(colorSlots?.[offset + 2] ?? 0),
-    };
-    totalInfluence += localInfluence;
-    momentX += localInfluence * Math.cos(phaseRad);
-    momentY += localInfluence * Math.sin(phaseRad);
-    insertSpectralCausticContributor(topContributors, contributor);
-    if (localInfluence > ownerInfluence) {
-      ownerInfluence = localInfluence;
-      ownerR = contributor.r;
-      ownerG = contributor.g;
-      ownerB = contributor.b;
-      ownerPhase = phase;
-      ownerWavelength = spectralSlots?.[offset + 1] ?? 0;
-    }
+    colorWeight += localInfluence;
+    colorR += localInfluence * (colorSlots?.[offset] ?? 0);
+    colorG += localInfluence * (colorSlots?.[offset + 1] ?? 0);
+    colorB += localInfluence * (colorSlots?.[offset + 2] ?? 0);
   }
-  const influenceDenominator = Math.max(totalInfluence, 1e-9);
-  const secondary = topContributors[1];
-  const tertiary = topContributors[2];
-  const causticInfluence = secondary.influence + tertiary.influence;
-  const causticContributorCount =
-    (topContributors[0].influence > 0 ? 1 : 0) +
-    (secondary.influence > 0 ? 1 : 0) +
-    (tertiary.influence > 0 ? 1 : 0);
-  const causticColor =
-    causticInfluence > 1e-9
-      ? normalizeSpectralRgbPeak(
-          {
-            r: secondary.r * secondary.influence + tertiary.r * tertiary.influence,
-            g: secondary.g * secondary.influence + tertiary.g * tertiary.influence,
-            b: secondary.b * secondary.influence + tertiary.b * tertiary.influence,
-          },
-          { r: ownerR, g: ownerG, b: ownerB },
-        )
-      : { r: ownerR, g: ownerG, b: ownerB };
 
   return {
-    colorWeight: totalInfluence,
-    colorR: ownerR,
-    colorG: ownerG,
-    colorB: ownerB,
-    ownerInfluence,
-    momentX,
-    momentY,
-    coherence: Math.hypot(momentX, momentY) / influenceDenominator,
-    dominance: ownerInfluence / influenceDenominator,
-    ownerPhase,
-    ownerWavelength,
-    causticR: causticColor.r,
-    causticG: causticColor.g,
-    causticB: causticColor.b,
-    causticDiversity: causticInfluence / influenceDenominator,
-    causticContributorCount,
+    colorWeight,
+    colorR,
+    colorG,
+    colorB,
   };
 }
 
@@ -2230,7 +2160,6 @@ function accumulateLiveSynthesisFieldAtPoint({
   x,
   y,
   z,
-  time,
   resolution,
   scale,
   boundaryMode,
@@ -2241,7 +2170,7 @@ function accumulateLiveSynthesisFieldAtPoint({
   let gradY = 0;
   let gradZ = 0;
   let unsignedSupport = 0;
-  let authoritySum = 0;
+  let phaseAuthorityWeightedAmplitudeSum = 0;
   let totalWeight = 0;
   const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
@@ -2263,10 +2192,8 @@ function accumulateLiveSynthesisFieldAtPoint({
         (phaseSlots?.[offset + 2] ?? 0) * (phaseSlots?.[offset + 3] ?? 0),
       ),
     );
-    authoritySum += amplitude * beta;
-    const phase =
-      (phaseSlots?.[offset] ?? 0) + (phaseSlots?.[offset + 1] ?? 0) * time;
-    const coefficient = amplitude * (1 - beta + beta * Math.cos(phase));
+    phaseAuthorityWeightedAmplitudeSum += amplitude * beta;
+    const coefficient = amplitude;
     const family = geometryBackend.evaluateMode({
       u: slots[offset] ?? 0,
       v: slots[offset + 1] ?? 0,
@@ -2277,12 +2204,12 @@ function accumulateLiveSynthesisFieldAtPoint({
       scale,
       boundaryMode,
     });
-    const phaseCurrentContribution = coefficient * family.field;
-    field += phaseCurrentContribution;
+    const structuralContribution = coefficient * family.field;
+    field += structuralContribution;
     gradX += coefficient * family.gradX;
     gradY += coefficient * family.gradY;
     gradZ += coefficient * family.gradZ;
-    unsignedSupport += Math.abs(phaseCurrentContribution);
+    unsignedSupport += Math.abs(structuralContribution);
   }
 
   return {
@@ -2291,8 +2218,141 @@ function accumulateLiveSynthesisFieldAtPoint({
     gradY,
     gradZ,
     unsignedSupport,
-    authoritySum,
+    phaseAuthorityWeightedAmplitudeSum,
     totalWeight,
+  };
+}
+
+function getPhaseProjectionWeight(phaseSlots, offset) {
+  return clamp01(
+    (phaseSlots?.[offset + 2] ?? 0) * (phaseSlots?.[offset + 3] ?? 0),
+  );
+}
+
+function getSignedInterferenceContrast({
+  phaseCoherentEnergy,
+  independentPhaseEnergy,
+  maxConstructivePhaseEnergy,
+}) {
+  const energyDelta = phaseCoherentEnergy - independentPhaseEnergy;
+  if (Math.abs(energyDelta) <= STRUCTURAL_PROJECTION_EPSILON) {
+    return 0;
+  }
+
+  if (energyDelta > 0) {
+    return clamp01(
+      energyDelta /
+        Math.max(
+          STRUCTURAL_PROJECTION_EPSILON,
+          maxConstructivePhaseEnergy - independentPhaseEnergy,
+        ),
+    );
+  }
+
+  return -clamp01(
+    -energyDelta /
+      Math.max(STRUCTURAL_PROJECTION_EPSILON, independentPhaseEnergy),
+  );
+}
+
+function accumulatePhaseInterferenceContrastAtPoint({
+  slots,
+  phaseSlots,
+  activeCount,
+  phaseEvaluationTimeSec,
+  x,
+  y,
+  z,
+  resolution,
+  scale,
+  boundaryMode,
+  cavityGeometry,
+}) {
+  let phaseReal = 0;
+  let phaseImag = 0;
+  let independentPhaseEnergy = 0;
+  let maxConstructivePhaseMagnitude = 0;
+  let structuralSupport = 0;
+  let structuralWeight = 0;
+  let phaseAuthorityWeightedSupport = 0;
+  let phaseAuthorityModeCount = 0;
+  const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
+  const time = Number.isFinite(phaseEvaluationTimeSec)
+    ? phaseEvaluationTimeSec
+    : 0;
+  const geometryBackend = getModalGeometryBackend(cavityGeometry);
+
+  for (let slotIndex = 0; slotIndex < clampedActiveCount; slotIndex += 1) {
+    const offset = slotIndex * 4;
+    const amplitude = Math.max(0, slots?.[offset + 3] ?? 0);
+    if (!(amplitude > 0)) {
+      continue;
+    }
+    if (!isBasisPageSlotRepresentable({ slots, offset, resolution })) {
+      continue;
+    }
+
+    const family = geometryBackend.evaluateMode({
+      u: slots[offset] ?? 0,
+      v: slots[offset + 1] ?? 0,
+      w: slots[offset + 2] ?? 0,
+      x,
+      y,
+      z,
+      scale,
+      boundaryMode,
+    });
+    const structuralContribution = amplitude * family.field;
+    const structuralMagnitude = Math.abs(structuralContribution);
+    structuralSupport += structuralMagnitude;
+    structuralWeight += amplitude;
+
+    const phaseWeight = getPhaseProjectionWeight(phaseSlots, offset);
+    if (!(phaseWeight > 1e-4)) {
+      continue;
+    }
+
+    phaseAuthorityModeCount += 1;
+    phaseAuthorityWeightedSupport += structuralMagnitude * phaseWeight;
+    const phase = normalizePhaseRad(
+      (phaseSlots?.[offset] ?? 0) + (phaseSlots?.[offset + 1] ?? 0) * time,
+    );
+    const phaseContribution = structuralContribution * phaseWeight;
+    phaseReal += phaseContribution * Math.cos(phase);
+    phaseImag += phaseContribution * Math.sin(phase);
+    independentPhaseEnergy += phaseContribution * phaseContribution;
+    maxConstructivePhaseMagnitude += Math.abs(phaseContribution);
+  }
+
+  const supportDenominator = Math.max(
+    MODAL_BASIS_CACHE_ENERGY_EPSILON,
+    structuralSupport,
+  );
+  const phaseCoherentEnergy = phaseReal * phaseReal + phaseImag * phaseImag;
+  const maxConstructivePhaseEnergy =
+    maxConstructivePhaseMagnitude * maxConstructivePhaseMagnitude;
+  const phaseInterferenceContrast = getSignedInterferenceContrast({
+    phaseCoherentEnergy,
+    independentPhaseEnergy,
+    maxConstructivePhaseEnergy,
+  });
+  const phaseInterferenceAuthority = clamp01(
+    phaseAuthorityWeightedSupport / supportDenominator,
+  );
+
+  return {
+    phaseInterferenceContrast,
+    phaseInterferenceAuthority,
+    phaseCoherentEnergy,
+    independentPhaseEnergy,
+    maxConstructivePhaseEnergy,
+    structuralSupport:
+      structuralSupport /
+      Math.max(MODAL_BASIS_CACHE_ENERGY_EPSILON, structuralWeight),
+    unnormalizedStructuralSupport: structuralSupport,
+    phaseAuthorityModeCount,
+    phaseReal,
+    phaseImag,
   };
 }
 
@@ -2306,7 +2366,6 @@ export function evaluateRaymarchLiveSynthesisFieldPoint({
   x = 0,
   y = 0,
   z = 0,
-  time = 0,
   resolution = RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
 }) {
   const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
@@ -2320,7 +2379,6 @@ export function evaluateRaymarchLiveSynthesisFieldPoint({
     x,
     y,
     z,
-    time,
     resolution: normalizedResolution,
     scale,
     boundaryMode: normalizedBoundaryMode,
@@ -2332,12 +2390,10 @@ export function evaluateRaymarchLiveSynthesisFieldPoint({
   );
   const liveSynthesisDiagnostics = summarizeLiveSynthesisDiagnostics({
     slots: modalFieldSlots,
-    phaseSlots: modalFieldPhaseSlots,
     activeCount: modalFieldCount,
     resolution: normalizedResolution,
     scale,
     boundaryMode: normalizedBoundaryMode,
-    time,
   });
   const totalRepresentedModalEnergy =
     liveSynthesisDiagnostics.contributingRawModalEnergy +
@@ -2360,7 +2416,7 @@ export function evaluateRaymarchLiveSynthesisFieldPoint({
       1,
       Math.max(
         0,
-        modalField.authoritySum /
+        modalField.phaseAuthorityWeightedAmplitudeSum /
           Math.max(MODAL_BASIS_CACHE_ENERGY_EPSILON, modalField.totalWeight),
       ),
     ),
@@ -2376,28 +2432,59 @@ export function evaluateRaymarchLiveSynthesisFieldPoint({
       liveSynthesisDiagnostics.bandwidthRejectedModeCount,
     bandwidthRejectedRawModalEnergy:
       liveSynthesisDiagnostics.bandwidthRejectedRawModalEnergy,
-    contributingPhaseCurrentModalEnergy:
-      liveSynthesisDiagnostics.contributingPhaseCurrentModalEnergy,
-    bandwidthRejectedPhaseCurrentModalEnergy:
-      liveSynthesisDiagnostics.bandwidthRejectedPhaseCurrentModalEnergy,
+    contributingStructuralModalEnergy:
+      liveSynthesisDiagnostics.contributingStructuralModalEnergy,
+    bandwidthRejectedStructuralModalEnergy:
+      liveSynthesisDiagnostics.bandwidthRejectedStructuralModalEnergy,
     liveSynthesisResolvedRawModalEnergyRatio:
       totalRepresentedModalEnergy > MODAL_BASIS_CACHE_ENERGY_EPSILON
         ? liveSynthesisDiagnostics.contributingRawModalEnergy /
           totalRepresentedModalEnergy
         : 1,
-    liveSynthesisResolvedPhaseCurrentModalEnergyRatio:
-      liveSynthesisDiagnostics.liveSynthesisResolvedPhaseCurrentModalEnergyRatio,
+    liveSynthesisResolvedStructuralModalEnergyRatio:
+      liveSynthesisDiagnostics.liveSynthesisResolvedStructuralModalEnergyRatio,
     liveSynthesisRawGradientEnvelope:
       liveSynthesisDiagnostics.liveSynthesisRawGradientEnvelope,
-    liveSynthesisPhaseCurrentGradientEnvelope:
-      liveSynthesisDiagnostics.liveSynthesisPhaseCurrentGradientEnvelope,
+    liveSynthesisStructuralGradientEnvelope:
+      liveSynthesisDiagnostics.liveSynthesisStructuralGradientEnvelope,
   };
+}
+
+export function evaluateRaymarchPhaseInterferenceContrastPoint({
+  modalFieldSlots,
+  modalFieldPhaseSlots,
+  modalFieldCount,
+  boundaryMode,
+  cavityGeometry = "rectangular",
+  radius = 1,
+  x = 0,
+  y = 0,
+  z = 0,
+  resolution = RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
+  phaseEvaluationTimeSec,
+}) {
+  const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
+  const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
+  const normalizedResolution = normalizeModalBasisCacheResolution(resolution);
+
+  return accumulatePhaseInterferenceContrastAtPoint({
+    slots: modalFieldSlots,
+    phaseSlots: modalFieldPhaseSlots,
+    activeCount: modalFieldCount,
+    phaseEvaluationTimeSec,
+    x,
+    y,
+    z,
+    resolution: normalizedResolution,
+    scale: getModalBasisFieldScale(radius),
+    boundaryMode: normalizedBoundaryMode,
+    cavityGeometry: normalizedCavityGeometry,
+  });
 }
 
 export function evaluateRaymarchSpectralLightCachePoint({
   modalFieldSlots,
   modalFieldColorSlots,
-  modalFieldSpectralSlots,
   modalFieldCount,
   boundaryMode,
   cavityGeometry = "rectangular",
@@ -2412,7 +2499,6 @@ export function evaluateRaymarchSpectralLightCachePoint({
   const modalField = accumulateSpectralLightLayerAtPoint({
     slots: modalFieldSlots,
     colorSlots: modalFieldColorSlots,
-    spectralSlots: modalFieldSpectralSlots,
     activeCount: modalFieldCount,
     weight: 1,
     x,
@@ -2429,18 +2515,6 @@ export function evaluateRaymarchSpectralLightCachePoint({
     g: modalField.colorG,
     b: modalField.colorB,
     colorWeight,
-    ownerInfluence: modalField.ownerInfluence,
-    momentX: modalField.momentX,
-    momentY: modalField.momentY,
-    coherence: modalField.coherence,
-    dominance: modalField.dominance,
-    ownerPhase: modalField.ownerPhase,
-    ownerWavelength: modalField.ownerWavelength,
-    causticR: modalField.causticR,
-    causticG: modalField.causticG,
-    causticB: modalField.causticB,
-    causticDiversity: modalField.causticDiversity,
-    causticContributorCount: modalField.causticContributorCount,
   };
 }
 
@@ -2493,7 +2567,7 @@ function createSpectralLightComputeKernel({
   boundaryMode,
   cavityGeometry,
 }) {
-  const { resolution, texture, causticTexture } = spectralLightCache;
+  const { resolution, texture } = spectralLightCache;
   const uRadius = uniforms.uRadius;
   const modalFieldActiveCount = int(uniforms.uModalFieldModeCount);
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
@@ -2533,19 +2607,10 @@ function createSpectralLightComputeKernel({
         .mul(uRadius)
         .toVar();
       const scale = float(Math.PI).div(uRadius.max(float(1e-4)));
-      const totalInfluence = zero.toVar();
-      const ownerInfluence = zero.toVar();
-      const ownerColorX = zero.toVar();
-      const ownerColorY = zero.toVar();
-      const ownerColorZ = zero.toVar();
-      const secondaryInfluence = zero.toVar();
-      const secondaryColorX = zero.toVar();
-      const secondaryColorY = zero.toVar();
-      const secondaryColorZ = zero.toVar();
-      const tertiaryInfluence = zero.toVar();
-      const tertiaryColorX = zero.toVar();
-      const tertiaryColorY = zero.toVar();
-      const tertiaryColorZ = zero.toVar();
+      const colorWeight = zero.toVar();
+      const colorSumX = zero.toVar();
+      const colorSumY = zero.toVar();
+      const colorSumZ = zero.toVar();
 
       Loop(
         {
@@ -2569,82 +2634,20 @@ function createSpectralLightComputeKernel({
               boundaryMode,
             });
             const colorSlot = modalFieldColorBuffer.element(i);
-            const contribution = zero.toVar();
-            contribution.addAssign(amplitude.mul(family.field));
-            const localInfluence = zero.toVar();
-            localInfluence.addAssign(abs(contribution).mul(colorSlot.w));
-            totalInfluence.addAssign(localInfluence);
-            If(localInfluence.greaterThan(ownerInfluence), () => {
-              tertiaryInfluence.assign(secondaryInfluence);
-              tertiaryColorX.assign(secondaryColorX);
-              tertiaryColorY.assign(secondaryColorY);
-              tertiaryColorZ.assign(secondaryColorZ);
-              secondaryInfluence.assign(ownerInfluence);
-              secondaryColorX.assign(ownerColorX);
-              secondaryColorY.assign(ownerColorY);
-              secondaryColorZ.assign(ownerColorZ);
-              ownerInfluence.assign(localInfluence);
-              ownerColorX.assign(colorSlot.x);
-              ownerColorY.assign(colorSlot.y);
-              ownerColorZ.assign(colorSlot.z);
-            }).Else(() => {
-              If(localInfluence.greaterThan(secondaryInfluence), () => {
-                tertiaryInfluence.assign(secondaryInfluence);
-                tertiaryColorX.assign(secondaryColorX);
-                tertiaryColorY.assign(secondaryColorY);
-                tertiaryColorZ.assign(secondaryColorZ);
-                secondaryInfluence.assign(localInfluence);
-                secondaryColorX.assign(colorSlot.x);
-                secondaryColorY.assign(colorSlot.y);
-                secondaryColorZ.assign(colorSlot.z);
-              }).Else(() => {
-                If(localInfluence.greaterThan(tertiaryInfluence), () => {
-                  tertiaryInfluence.assign(localInfluence);
-                  tertiaryColorX.assign(colorSlot.x);
-                  tertiaryColorY.assign(colorSlot.y);
-                  tertiaryColorZ.assign(colorSlot.z);
-                });
-              });
-            });
+            const contribution = amplitude.mul(family.field).toVar();
+            const localInfluence = abs(contribution).mul(colorSlot.w).toVar();
+            colorWeight.addAssign(localInfluence);
+            colorSumX.addAssign(localInfluence.mul(colorSlot.x));
+            colorSumY.addAssign(localInfluence.mul(colorSlot.y));
+            colorSumZ.addAssign(localInfluence.mul(colorSlot.z));
           });
         },
       );
 
-      const causticColorX = zero.toVar();
-      const causticColorY = zero.toVar();
-      const causticColorZ = zero.toVar();
-      causticColorX.assign(ownerColorX);
-      causticColorY.assign(ownerColorY);
-      causticColorZ.assign(ownerColorZ);
-      const causticInfluence = secondaryInfluence.add(tertiaryInfluence);
-      If(causticInfluence.greaterThan(float(1e-6)), () => {
-        const causticAdditiveX = secondaryColorX
-          .mul(secondaryInfluence)
-          .add(tertiaryColorX.mul(tertiaryInfluence));
-        const causticAdditiveY = secondaryColorY
-          .mul(secondaryInfluence)
-          .add(tertiaryColorY.mul(tertiaryInfluence));
-        const causticAdditiveZ = secondaryColorZ
-          .mul(secondaryInfluence)
-          .add(tertiaryColorZ.mul(tertiaryInfluence));
-        const causticColorPeak = max(
-          max(causticAdditiveX, causticAdditiveY),
-          causticAdditiveZ,
-        ).max(float(1e-4));
-        causticColorX.assign(causticAdditiveX.div(causticColorPeak));
-        causticColorY.assign(causticAdditiveY.div(causticColorPeak));
-        causticColorZ.assign(causticAdditiveZ.div(causticColorPeak));
-      });
-
       textureStore(
         texture,
         uvec3(voxelCoord),
-        vec4(ownerColorX, ownerColorY, ownerColorZ, totalInfluence),
-      ).toWriteOnly();
-      textureStore(
-        causticTexture,
-        uvec3(voxelCoord),
-        vec4(causticColorX, causticColorY, causticColorZ, ownerInfluence),
+        vec4(colorSumX, colorSumY, colorSumZ, colorWeight),
       ).toWriteOnly();
     });
   })().compute(
@@ -2758,10 +2761,11 @@ function createLiveFieldProjectionComputeKernel({
   liveFieldProjectionCache,
   modalBasisAtlasTexture,
   modalFieldCoefficientBuffer,
+  modalFieldPhaseBuffer,
   modalFieldCapacity,
   uniforms,
 }) {
-  const { resolution, fieldTexture, supportTexture } =
+  const { resolution, fieldTexture, supportTexture, phaseInterferenceTexture } =
     liveFieldProjectionCache;
   const modalFieldActiveCount = int(uniforms.uModalFieldModeCount);
   const resolutionUint = uint(resolution);
@@ -2770,6 +2774,8 @@ function createLiveFieldProjectionComputeKernel({
   const half = float(0.5);
   const zero = float(0.0);
   const one = float(1.0);
+  const invResolution = one.div(resolutionFloat);
+  const invCapacity = one.div(float(normalizedCapacity));
 
   return Fn(() => {
     const voxelCoord = uvec3(globalId);
@@ -2780,15 +2786,20 @@ function createLiveFieldProjectionComputeKernel({
 
     If(inBounds, () => {
       const basisUv = vec3(
-        float(voxelCoord.x).add(half).div(resolutionFloat),
-        float(voxelCoord.y).add(half).div(resolutionFloat),
-        float(voxelCoord.z).add(half).div(resolutionFloat),
+        float(voxelCoord.x).add(half).mul(invResolution),
+        float(voxelCoord.y).add(half).mul(invResolution),
+        float(voxelCoord.z).add(half).mul(invResolution),
       );
       const fieldSum = zero.toVar();
       const gradXSum = zero.toVar();
       const gradYSum = zero.toVar();
       const gradZSum = zero.toVar();
       const supportSum = zero.toVar();
+      const phaseInterferenceSumReal = zero.toVar();
+      const phaseInterferenceSumImag = zero.toVar();
+      const independentPhaseEnergySum = zero.toVar();
+      const maxConstructivePhaseMagnitudeSum = zero.toVar();
+      const phaseInterferenceAuthoritySum = zero.toVar();
 
       Loop(
         {
@@ -2803,21 +2814,94 @@ function createLiveFieldProjectionComputeKernel({
             const atlasUv = vec3(
               basisUv.x,
               basisUv.y,
-              float(i).add(basisUv.z).div(float(normalizedCapacity)),
+              float(i).add(basisUv.z).mul(invCapacity),
             );
             const basisSample = texture3D(modalBasisAtlasTexture).sample(
               atlasUv,
             );
-            fieldSum.addAssign(coefficient.mul(basisSample.x));
+            const structuralContribution = coefficient.mul(basisSample.x);
+            fieldSum.addAssign(structuralContribution);
             gradXSum.addAssign(coefficient.mul(basisSample.y));
             gradYSum.addAssign(coefficient.mul(basisSample.z));
             gradZSum.addAssign(coefficient.mul(basisSample.w));
             supportSum.addAssign(abs(coefficient).mul(abs(basisSample.x)));
+            const phaseSlot = modalFieldPhaseBuffer.element(i);
+            const phaseWeight = clamp(phaseSlot.z.mul(phaseSlot.w), zero, one);
+            const phase = phaseSlot.x.add(phaseSlot.y.mul(uniforms.uTime));
+            const weightedPhaseContribution =
+              structuralContribution.mul(phaseWeight);
+            phaseInterferenceSumReal.addAssign(
+              weightedPhaseContribution.mul(cos(phase)),
+            );
+            phaseInterferenceSumImag.addAssign(
+              weightedPhaseContribution.mul(sin(phase)),
+            );
+            independentPhaseEnergySum.addAssign(
+              weightedPhaseContribution.mul(weightedPhaseContribution),
+            );
+            maxConstructivePhaseMagnitudeSum.addAssign(
+              abs(weightedPhaseContribution),
+            );
+            phaseInterferenceAuthoritySum.addAssign(
+              abs(structuralContribution).mul(phaseWeight),
+            );
           });
         },
       );
 
       const amplitudeNorm = max(uniforms.uTotalSlotAmplitude, float(0.01));
+      const supportEnergyNorm = max(
+        supportSum.mul(supportSum),
+        float(STRUCTURAL_PROJECTION_EPSILON),
+      );
+      const phaseCoherentEnergy = phaseInterferenceSumReal
+        .mul(phaseInterferenceSumReal)
+        .add(phaseInterferenceSumImag.mul(phaseInterferenceSumImag));
+      const maxConstructivePhaseEnergy = maxConstructivePhaseMagnitudeSum.mul(
+        maxConstructivePhaseMagnitudeSum,
+      );
+      const phaseEnergyDelta = phaseCoherentEnergy.sub(
+        independentPhaseEnergySum,
+      );
+      const constructiveContrast = clamp(
+        phaseEnergyDelta.div(
+          max(
+            maxConstructivePhaseEnergy.sub(independentPhaseEnergySum),
+            float(STRUCTURAL_PROJECTION_EPSILON),
+          ),
+        ),
+        zero,
+        one,
+      );
+      const destructiveContrast = clamp(
+        phaseEnergyDelta.div(
+          max(independentPhaseEnergySum, float(STRUCTURAL_PROJECTION_EPSILON)),
+        ),
+        float(-1.0),
+        zero,
+      );
+      const phaseInterferenceContrast = clamp(
+        constructiveContrast.add(destructiveContrast),
+        float(-1.0),
+        one,
+      );
+      const phaseInterferenceAuthority = clamp(
+        phaseInterferenceAuthoritySum.div(
+          max(supportSum, float(MODAL_BASIS_CACHE_ENERGY_EPSILON)),
+        ),
+        zero,
+        one,
+      );
+      const phaseCoherentEnergyNorm = clamp(
+        phaseCoherentEnergy.div(supportEnergyNorm),
+        zero,
+        one,
+      );
+      const independentPhaseEnergyNorm = clamp(
+        independentPhaseEnergySum.div(supportEnergyNorm),
+        zero,
+        one,
+      );
       textureStore(
         fieldTexture,
         voxelCoord,
@@ -2833,6 +2917,16 @@ function createLiveFieldProjectionComputeKernel({
         voxelCoord,
         vec4(supportSum.div(amplitudeNorm), zero, zero, one),
       ).toWriteOnly();
+      textureStore(
+        phaseInterferenceTexture,
+        voxelCoord,
+        vec4(
+          phaseInterferenceContrast,
+          phaseCoherentEnergyNorm,
+          phaseInterferenceAuthority,
+          independentPhaseEnergyNorm,
+        ),
+      ).toWriteOnly();
     });
   })().compute(
     liveFieldProjectionCache.dispatchSize,
@@ -2845,7 +2939,6 @@ function getOrCreateRaymarchSpectralLightCacheComputeNode(
   {
     modalFieldModeBuffer,
     modalFieldColorBuffer,
-    modalFieldSpectralBuffer,
     modalFieldCapacity,
     uniforms,
     boundaryMode,
@@ -2871,11 +2964,9 @@ function getOrCreateRaymarchSpectralLightCacheComputeNode(
     {
       modalFieldModeBuffer,
       modalFieldColorBuffer,
-      modalFieldSpectralBuffer,
       modalFieldCapacity: normalizedModalFieldCapacity,
       uniforms,
       includeColor: true,
-      includeSpectral: true,
     },
   );
   const cachedNode = spectralLightCache.computeNodesByKey?.[nodeKey];
@@ -2951,6 +3042,7 @@ function getOrCreateRaymarchLiveFieldProjectionCacheComputeNode(
   {
     modalBasisAtlasTexture,
     modalFieldCoefficientBuffer,
+    modalFieldPhaseBuffer,
     modalFieldCapacity,
     uniforms,
   },
@@ -2958,7 +3050,8 @@ function getOrCreateRaymarchLiveFieldProjectionCacheComputeNode(
   if (
     !liveFieldProjectionCache ||
     !modalBasisAtlasTexture ||
-    !modalFieldCoefficientBuffer
+    !modalFieldCoefficientBuffer ||
+    !modalFieldPhaseBuffer
   ) {
     return null;
   }
@@ -2978,6 +3071,7 @@ function getOrCreateRaymarchLiveFieldProjectionCacheComputeNode(
     liveFieldProjectionCache,
     modalBasisAtlasTexture,
     modalFieldCoefficientBuffer,
+    modalFieldPhaseBuffer,
     modalFieldCapacity: normalizedModalFieldCapacity,
     uniforms,
   });
@@ -2991,6 +3085,7 @@ export function computeRaymarchLiveFieldProjectionCache(
   {
     modalBasisAtlasTexture,
     modalFieldCoefficientBuffer,
+    modalFieldPhaseBuffer,
     modalFieldCapacity,
     uniforms,
     schedulerTimeSec = null,
@@ -3018,6 +3113,7 @@ export function computeRaymarchLiveFieldProjectionCache(
     {
       modalBasisAtlasTexture,
       modalFieldCoefficientBuffer,
+      modalFieldPhaseBuffer,
       modalFieldCapacity,
       uniforms,
     },
@@ -3045,9 +3141,7 @@ export function computeRaymarchLiveFieldProjectionCache(
   liveFieldProjectionCache.ready = true;
   liveFieldProjectionCache.backend = "compute";
   liveFieldProjectionCache.lastError = null;
-  liveFieldProjectionCache.lastComputedAtSec = Number.isFinite(
-    schedulerTimeSec,
-  )
+  liveFieldProjectionCache.lastComputedAtSec = Number.isFinite(schedulerTimeSec)
     ? schedulerTimeSec
     : getCacheSchedulerTimeSec({ uniforms });
   liveFieldProjectionCache.lastComputeReason = "frame-current";
@@ -3108,7 +3202,6 @@ export function enqueueRaymarchSpectralLightCacheRebuild(
   const {
     modalFieldModeBuffer,
     modalFieldColorBuffer,
-    modalFieldSpectralBuffer,
     modalFieldCapacity,
     uniforms,
   } = options;
@@ -3129,7 +3222,6 @@ export function enqueueRaymarchSpectralLightCacheRebuild(
         renderer,
         options: snapshotRaymarchCacheRebuildOptions(options, {
           includeColor: true,
-          includeSpectral: true,
         }),
       },
       spectralLightDescriptorsEqual,
@@ -3145,7 +3237,6 @@ export function enqueueRaymarchSpectralLightCacheRebuild(
     {
       modalFieldModeBuffer,
       modalFieldColorBuffer,
-      modalFieldSpectralBuffer,
       modalFieldCapacity,
       uniforms,
       boundaryMode: descriptor.boundaryMode,
@@ -3296,18 +3387,18 @@ export function enqueueRaymarchModalBasisCacheRebuild(
         descriptor.bandwidthRejectedModeCount ?? 0;
       modalBasisCache.bandwidthRejectedRawModalEnergy =
         descriptor.bandwidthRejectedRawModalEnergy ?? 0;
-      modalBasisCache.contributingPhaseCurrentModalEnergy =
-        descriptor.contributingPhaseCurrentModalEnergy ?? 0;
-      modalBasisCache.bandwidthRejectedPhaseCurrentModalEnergy =
-        descriptor.bandwidthRejectedPhaseCurrentModalEnergy ?? 0;
+      modalBasisCache.contributingStructuralModalEnergy =
+        descriptor.contributingStructuralModalEnergy ?? 0;
+      modalBasisCache.bandwidthRejectedStructuralModalEnergy =
+        descriptor.bandwidthRejectedStructuralModalEnergy ?? 0;
       modalBasisCache.liveSynthesisResolvedRawModalEnergyRatio =
         descriptor.liveSynthesisResolvedRawModalEnergyRatio ?? 1;
-      modalBasisCache.liveSynthesisResolvedPhaseCurrentModalEnergyRatio =
-        descriptor.liveSynthesisResolvedPhaseCurrentModalEnergyRatio ?? 1;
+      modalBasisCache.liveSynthesisResolvedStructuralModalEnergyRatio =
+        descriptor.liveSynthesisResolvedStructuralModalEnergyRatio ?? 1;
       modalBasisCache.liveSynthesisRawGradientEnvelope =
         descriptor.liveSynthesisRawGradientEnvelope ?? 0;
-      modalBasisCache.liveSynthesisPhaseCurrentGradientEnvelope =
-        descriptor.liveSynthesisPhaseCurrentGradientEnvelope ?? 0;
+      modalBasisCache.liveSynthesisStructuralGradientEnvelope =
+        descriptor.liveSynthesisStructuralGradientEnvelope ?? 0;
       dispatchQueuedRaymarchModalBasisCacheRebuild(modalBasisCache);
     },
     (error) => {
