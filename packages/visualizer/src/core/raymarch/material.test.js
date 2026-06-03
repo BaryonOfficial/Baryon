@@ -15,6 +15,7 @@ import {
 import { createVisualizationUniforms } from "../visualizationUniforms.js";
 import { raymarchOpacityNode } from "./SafeVolumetricLightingModel.js";
 import {
+  createRaymarchLiveFieldProjectionCache,
   createRaymarchModalBasisCache,
   createRaymarchSpectralLightCache,
 } from "./fieldCache.js";
@@ -903,6 +904,56 @@ describe("raymarch volume material", () => {
     expect(source).not.toContain("uDetailModeCount");
   });
 
+  it("isolates phase projection to the named spatial response carrier", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const carrierStart = expectSourceIndex(
+      source,
+      "function samplePhaseProjectionResponseCarrierNode",
+    );
+    const scatteringStart = expectSourceIndex(
+      source,
+      "function createScatteringNode({",
+    );
+    const phaseTransferStart = expectSourceIndex(
+      source,
+      "const phaseProjectionTransfer =",
+    );
+    const carrierUseStart = expectSourceIndex(
+      source,
+      "const phaseProjectionCarrier =",
+    );
+    const carrierBlock = source.slice(carrierStart, scatteringStart);
+    const carrierUseBlock = source.slice(carrierUseStart, phaseTransferStart);
+    const transferBlock = source.slice(
+      phaseTransferStart,
+      source.indexOf("const opticalFocus =", phaseTransferStart),
+    );
+
+    expect(carrierBlock).toContain("modalPhaseResponseTexture");
+    expect(carrierBlock).toContain("texture3D(modalPhaseResponseTexture)");
+    expect(carrierBlock).toContain("responseSample.x");
+    expect(carrierBlock).toContain("responseSample.z");
+    expect(carrierUseBlock).toContain("response: float(0.5)");
+    expect(carrierUseBlock).toContain("authority: float(0.0)");
+    expect(carrierUseBlock).toContain("const phaseProjectionCarrierAuthority =");
+    expect(carrierUseBlock).toContain("uLiveFieldCacheActive");
+    expect(carrierUseBlock).toContain(
+      ".mul(phaseProjectionCarrier.authority)",
+    );
+    expect(carrierUseBlock).toContain("phaseProjectionCarrier.response");
+    expect(carrierUseBlock).toContain("phaseProjectionCarrierAuthority");
+    expect(transferBlock).toContain("uPhaseProjectionMix");
+    expect(transferBlock).toContain("uPhaseProjectionStrength");
+    expect(transferBlock).toContain("phaseProjectionResponse");
+    expect(source).toContain("uLiveFieldCacheActive");
+    expect(source).not.toContain("modalFieldPhaseBuffer");
+    expect(source).not.toContain("cos(phase)");
+    expect(source).not.toContain("phaseCurrentCoefficient");
+  });
+
   it("keeps Spectral Light photographic accents above the blandness floor", () => {
     expect(RAYMARCH_SPECTRAL_LIGHT_TUNING.contourShadow).toBeGreaterThan(0.95);
 
@@ -1606,8 +1657,34 @@ describe("raymarch volume material", () => {
     expect(uniforms.uObservationDensityFloor.value).toBeCloseTo(0.22);
     expect(uniforms.uObservationContourSupportScale.value).toBeCloseTo(0.035);
     expect(uniforms.uModalResponseEnergy.value).toBe(0);
+    expect(uniforms.uPhaseProjectionMix.value).toBe(0);
+    expect(uniforms.uPhaseProjectionStrength.value).toBe(0);
     expect(mesh.userData).not.toHaveProperty("raymarchBackbonePhaseBuffer");
     expect(mesh.userData).not.toHaveProperty("raymarchDetailPhaseBuffer");
+  });
+
+  it("binds the phase-response texture without exposing raw phase slots to material", () => {
+    const liveFieldProjectionCache = createRaymarchLiveFieldProjectionCache({
+      resolution: 8,
+    });
+    const uniforms = makeMeshUniforms();
+    const mesh = createRaymarchVolumeMesh({
+      radius: 3,
+      modalLiveFieldTexture: liveFieldProjectionCache.fieldTexture,
+      modalLiveSupportTexture: liveFieldProjectionCache.supportTexture,
+      modalPhaseResponseTexture:
+        liveFieldProjectionCache.phaseResponseTexture,
+      uniforms,
+    });
+
+    expect(mesh.userData.raymarchModalPhaseResponseTexture).toBe(
+      liveFieldProjectionCache.phaseResponseTexture,
+    );
+    expect(mesh.material.modalPhaseResponseTexture).toBe(
+      liveFieldProjectionCache.phaseResponseTexture,
+    );
+    expect(mesh.userData).not.toHaveProperty("raymarchModalFieldPhaseBuffer");
+    expect(mesh.material).not.toHaveProperty("modalFieldPhaseBuffer");
   });
 
   it("binds the canonical modal-basis atlas texture on the cache-only material", () => {

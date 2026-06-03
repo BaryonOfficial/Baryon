@@ -94,6 +94,7 @@ export function setupRaymarch(
     modalBasisAtlasTexture: modalBasisCache.texture,
     modalLiveFieldTexture: liveFieldProjectionCache.fieldTexture,
     modalLiveSupportTexture: liveFieldProjectionCache.supportTexture,
+    modalPhaseResponseTexture: liveFieldProjectionCache.phaseResponseTexture,
     modalFieldModeBuffer,
     modalFieldCoefficientBuffer,
     modalFieldCapacity: modalBasisCache.liveSynthesisModeCount,

@@ -2201,6 +2201,7 @@ function updateLiveFieldProjectionCache(
       modalBasisAtlasTexture:
         runtimeState.volumeMesh.userData.raymarchModalBasisAtlasTexture,
       modalFieldCoefficientBuffer: runtimeState.modalFieldCoefficientBuffer,
+      modalFieldPhaseBuffer: runtimeState.modalFieldPhaseBuffer,
       modalFieldCapacity,
       uniforms: runtimeState.uniforms,
       schedulerTimeSec: time,

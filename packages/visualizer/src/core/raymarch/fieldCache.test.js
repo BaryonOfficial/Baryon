@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildCanonicalFullModalDescriptor } from "../modalDescriptor.js";
 import * as raymarchFieldCache from "./fieldCache.js";
 import {
@@ -148,6 +148,130 @@ describe("live synthesis cancellation ratio", () => {
     expect(sample.unsignedSupport).toBeLessThan(
       raymarchFieldCache.MODAL_BASIS_CACHE_ENERGY_EPSILON,
     );
+  });
+});
+
+describe("phase projection response", () => {
+  it("projects coherent phase after summing so opposed modes cancel without deleting structural support", () => {
+    const modalFieldSlots = new Float32Array([
+      1, 1, 1, 1,
+      1, 1, 1, 1,
+    ]);
+    const alignedPhaseSlots = new Float32Array([
+      0, 0, 1, 1,
+      0, 0, 1, 1,
+    ]);
+    const opposedPhaseSlots = new Float32Array([
+      0, 0, 1, 1,
+      Math.PI, 0, 1, 1,
+    ]);
+
+    const aligned = raymarchFieldCache.evaluateRaymarchPhaseProjectionResponsePoint({
+      modalFieldSlots,
+      modalFieldPhaseSlots: alignedPhaseSlots,
+      modalFieldCount: 2,
+      boundaryMode: "neumann",
+      radius: 3,
+      phaseEvaluationTimeSec: 0,
+      x: 0,
+      y: 0,
+      z: 0,
+    });
+    const opposed = raymarchFieldCache.evaluateRaymarchPhaseProjectionResponsePoint({
+      modalFieldSlots,
+      modalFieldPhaseSlots: opposedPhaseSlots,
+      modalFieldCount: 2,
+      boundaryMode: "neumann",
+      radius: 3,
+      phaseEvaluationTimeSec: 0,
+      x: 0,
+      y: 0,
+      z: 0,
+    });
+
+    expect(aligned.phaseResponse).toBeGreaterThan(0.9);
+    expect(opposed.phaseResponse).toBeLessThan(0.05);
+    expect(opposed.structuralSupport).toBeGreaterThan(0.9);
+    expect(opposed.independentProjectedEnergy).toBeGreaterThan(
+      opposed.phaseEnergyResponse,
+    );
+  });
+
+  it("uses explicit evaluation time for clock-only phase motion and repeats deterministically", () => {
+    const modalFieldSlots = new Float32Array([
+      1, 1, 1, 1,
+      1, 1, 1, 1,
+    ]);
+    const modalFieldPhaseSlots = new Float32Array([
+      0, 0, 1, 1,
+      0, Math.PI, 1, 1,
+    ]);
+
+    const atZero = raymarchFieldCache.evaluateRaymarchPhaseProjectionResponsePoint({
+      modalFieldSlots,
+      modalFieldPhaseSlots,
+      modalFieldCount: 2,
+      boundaryMode: "neumann",
+      radius: 3,
+      phaseEvaluationTimeSec: 0,
+      x: 0,
+      y: 0,
+      z: 0,
+    });
+    const atOne = raymarchFieldCache.evaluateRaymarchPhaseProjectionResponsePoint({
+      modalFieldSlots,
+      modalFieldPhaseSlots,
+      modalFieldCount: 2,
+      boundaryMode: "neumann",
+      radius: 3,
+      phaseEvaluationTimeSec: 1,
+      x: 0,
+      y: 0,
+      z: 0,
+    });
+    const atOneRepeat =
+      raymarchFieldCache.evaluateRaymarchPhaseProjectionResponsePoint({
+        modalFieldSlots,
+        modalFieldPhaseSlots,
+        modalFieldCount: 2,
+        boundaryMode: "neumann",
+        radius: 3,
+        phaseEvaluationTimeSec: 1,
+        x: 0,
+        y: 0,
+        z: 0,
+      });
+
+    expect(atZero.phaseResponse).toBeGreaterThan(0.9);
+    expect(atOne.phaseResponse).toBeLessThan(0.05);
+    expect(atOneRepeat).toEqual(atOne);
+  });
+
+  it("suppresses response from low-coherence phase evidence while preserving structural support", () => {
+    const modalFieldSlots = new Float32Array([
+      1, 1, 1, 1,
+      1, 1, 1, 1,
+    ]);
+    const weakPhaseSlots = new Float32Array([
+      0, 0, 0.02, 1,
+      0, 0, 0.02, 1,
+    ]);
+
+    const response = raymarchFieldCache.evaluateRaymarchPhaseProjectionResponsePoint({
+      modalFieldSlots,
+      modalFieldPhaseSlots: weakPhaseSlots,
+      modalFieldCount: 2,
+      boundaryMode: "neumann",
+      radius: 3,
+      phaseEvaluationTimeSec: 0,
+      x: 0,
+      y: 0,
+      z: 0,
+    });
+
+    expect(response.phaseAuthorityModeCount).toBe(2);
+    expect(response.phaseResponse).toBeLessThan(0.05);
+    expect(response.structuralSupport).toBeGreaterThan(0.9);
   });
 });
 
@@ -559,10 +683,30 @@ describe("fieldCache", () => {
     expect(computeSource).toContain(".mul(invCapacity)");
     expect(computeSource).toContain("fieldSum.addAssign");
     expect(computeSource).toContain("supportSum.addAssign");
+    expect(computeSource).toContain("phaseResponseTexture");
+    expect(computeSource).toContain("modalFieldPhaseBuffer.element(i)");
+    expect(computeSource).toContain("phaseResponseSumReal");
+    expect(computeSource).toContain("phaseResponseSumImag");
+    expect(computeSource).toContain("phaseResponseMagnitude");
     expect(computeSource).toContain("textureStore(");
     expect(computeSource).toContain("supportTexture");
     expect(computeSource).not.toContain("evaluateModeNode({");
-    expect(computeSource).not.toContain("modalFieldPhaseBuffer");
+  });
+
+  it("creates and disposes a named phase-response carrier with the live projection cache", () => {
+    const cache = raymarchFieldCache.createRaymarchLiveFieldProjectionCache({
+      resolution: 8,
+    });
+    const dispose = vi.fn();
+    cache.phaseResponseTexture.dispose = dispose;
+
+    expect(cache.phaseResponseTexture).toBeTruthy();
+    expect(cache.phaseResponseTexture).not.toBe(cache.fieldTexture);
+    expect(cache.phaseResponseTexture).not.toBe(cache.supportTexture);
+
+    raymarchFieldCache.disposeRaymarchLiveFieldProjectionCache(cache);
+
+    expect(dispose).toHaveBeenCalledTimes(1);
   });
 
   it("keeps Spectral Light cache compute as raw color metadata", () => {

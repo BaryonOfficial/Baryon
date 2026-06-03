@@ -71,6 +71,8 @@ export function createVisualizationUniforms(parameters) {
     uStructuralProjectionDrive: uniform(0.0),
     uStructuralProjectionConcentration: uniform(0.0),
     uModalResponseEnergy: uniform(0.0),
+    uPhaseProjectionMix: uniform(0.0),
+    uPhaseProjectionStrength: uniform(0.0),
     uLiveFieldCacheActive: uniform(0.0),
     uObservationDensityFadeStart: uniform(
       observationParameters.densityFadeStart,

@@ -209,6 +209,7 @@ function normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) {
  *   modalBasisAtlasTexture?: any,
  *   modalLiveFieldTexture?: any,
  *   modalLiveSupportTexture?: any,
+ *   modalPhaseResponseTexture?: any,
  *   modalFieldModeBuffer?: any,
  *   modalFieldCoefficientBuffer?: any,
  *   modalFieldCapacity?: number
@@ -290,6 +291,17 @@ function sampleLiveFieldProjectionCacheNode({
     gradient: vec3(fieldSample.y, fieldSample.z, fieldSample.w),
     unsignedSupport: normalizedUnsignedSupport,
     cancellationRatio,
+  };
+}
+
+function samplePhaseProjectionResponseCarrierNode({
+  basisUv,
+  modalPhaseResponseTexture,
+}) {
+  const responseSample = texture3D(modalPhaseResponseTexture).sample(basisUv);
+  return {
+    response: clamp(responseSample.x, float(0.0), float(1.0)),
+    authority: clamp(responseSample.z, float(0.0), float(1.0)),
   };
 }
 
@@ -529,6 +541,7 @@ function createScatteringNode({
   modalBasisAtlasTexture = null,
   modalLiveFieldTexture = null,
   modalLiveSupportTexture = null,
+  modalPhaseResponseTexture = null,
   modalFieldModeBuffer = null,
   modalFieldCoefficientBuffer = null,
   liveSynthesisModeCount = RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
@@ -571,6 +584,8 @@ function createScatteringNode({
     uStructuralProjectionDrive,
     uStructuralProjectionConcentration,
     uModalResponseEnergy,
+    uPhaseProjectionMix,
+    uPhaseProjectionStrength,
     uLiveFieldCacheActive,
     uObservationDensityFadeStart,
     uObservationDensityFadeEnd,
@@ -752,6 +767,25 @@ function createScatteringNode({
         localPosition,
         uRadius,
       });
+      const phaseProjectionCarrier = modalPhaseResponseTexture
+        ? samplePhaseProjectionResponseCarrierNode({
+            basisUv,
+            modalPhaseResponseTexture,
+          })
+        : {
+            response: float(0.5),
+            authority: float(0.0),
+          };
+      const phaseProjectionCarrierAuthority = smoothstep(
+        float(0.5),
+        float(1.0),
+        uLiveFieldCacheActive,
+      ).mul(phaseProjectionCarrier.authority);
+      const phaseProjectionResponse = mix(
+        float(0.5),
+        phaseProjectionCarrier.response,
+        phaseProjectionCarrierAuthority,
+      );
       const assignLiveFieldSample = (liveFieldSample) => {
         field.assign(liveFieldSample.field);
         gradX.assign(liveFieldSample.gradient.x);
@@ -1096,9 +1130,18 @@ function createScatteringNode({
         float(0.0),
         float(1.0),
       );
+      const phaseProjectionTransfer = clamp(
+        float(1.0).add(
+          clamp(uPhaseProjectionMix, float(0.0), float(1.0))
+            .mul(clamp(uPhaseProjectionStrength, float(0.0), float(0.25)))
+            .mul(phaseProjectionResponse.sub(float(0.5))),
+        ),
+        float(0.875),
+        float(1.125),
+      );
       const opticalFocus = /** @type {any} */ (opticalFocusAuthority).pow(
         float(OPTICAL_FOCUS_POWER),
-      );
+      ).mul(phaseProjectionTransfer);
       const opticalNegativeSpaceGate = smoothstep(
         float(OPTICAL_SPACE_GATE_START),
         float(OPTICAL_SPACE_GATE_END),
@@ -1693,6 +1736,7 @@ export function createRaymarchVolumeMesh({
   modalBasisAtlasTexture = null,
   modalLiveFieldTexture = null,
   modalLiveSupportTexture = null,
+  modalPhaseResponseTexture = null,
   modalFieldModeBuffer = null,
   modalFieldCoefficientBuffer = null,
   modalFieldCapacity = RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
@@ -1723,6 +1767,7 @@ export function createRaymarchVolumeMesh({
       modalBasisAtlasTexture,
       modalLiveFieldTexture,
       modalLiveSupportTexture,
+      modalPhaseResponseTexture,
       modalFieldModeBuffer,
       modalFieldCoefficientBuffer,
       liveSynthesisModeCount: modalFieldCapacity,
@@ -1737,6 +1782,7 @@ export function createRaymarchVolumeMesh({
     material.modalBasisAtlasTexture = modalBasisAtlasTexture;
     material.modalLiveFieldTexture = modalLiveFieldTexture;
     material.modalLiveSupportTexture = modalLiveSupportTexture;
+    material.modalPhaseResponseTexture = modalPhaseResponseTexture;
     material.modalFieldModeBuffer = modalFieldModeBuffer;
     material.modalFieldCoefficientBuffer = modalFieldCoefficientBuffer;
     material.modalFieldCapacity = modalFieldCapacity;
@@ -1771,6 +1817,7 @@ export function createRaymarchVolumeMesh({
   mesh.userData.raymarchModalBasisAtlasTexture = modalBasisAtlasTexture;
   mesh.userData.raymarchModalLiveFieldTexture = modalLiveFieldTexture;
   mesh.userData.raymarchModalLiveSupportTexture = modalLiveSupportTexture;
+  mesh.userData.raymarchModalPhaseResponseTexture = modalPhaseResponseTexture;
   mesh.userData.raymarchModalFieldModeBuffer = modalFieldModeBuffer;
   mesh.userData.raymarchModalFieldCoefficientBuffer =
     modalFieldCoefficientBuffer;

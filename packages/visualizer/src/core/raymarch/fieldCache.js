@@ -5,6 +5,8 @@ import {
   If,
   Loop,
   abs,
+  clamp,
+  cos,
   float,
   globalId,
   int,
@@ -15,6 +17,8 @@ import {
   uvec3,
   uint,
   max,
+  sin,
+  sqrt,
   vec3,
   vec4,
 } from "three/tsl";
@@ -22,6 +26,7 @@ import { BOUNDARY_MODES, normalizeBoundaryMode } from "../modeFamily.js";
 import { normalizeCavityGeometry } from "../cavityGeometry.js";
 import { getModalGeometryBackend } from "../modalGeometryBackend.js";
 import { buildRaymarchModalBasisPhaseSignature } from "./phaseSlotSemantics.js";
+import { normalizePhaseRad } from "../../utils/audio/modalPhaseSlots.js";
 
 export const RAYMARCH_FIELD_CACHE_RESOLUTION = 64;
 export const RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION =
@@ -1429,6 +1434,7 @@ export function createRaymarchLiveFieldProjectionCache({
   const normalizedResolution = normalizeModalBasisCacheResolution(resolution);
   const fieldTexture = createCacheTexture(normalizedResolution);
   const supportTexture = createCacheTexture(normalizedResolution);
+  const phaseResponseTexture = createCacheTexture(normalizedResolution);
 
   return {
     ...createCacheState({
@@ -1439,6 +1445,7 @@ export function createRaymarchLiveFieldProjectionCache({
     semantic: "frame-current-modal-field-projection",
     fieldTexture,
     supportTexture,
+    phaseResponseTexture,
     lastComputedAtSec: null,
     lastComputeReason: "uninitialized",
   };
@@ -1485,6 +1492,7 @@ export function disposeRaymarchLiveFieldProjectionCache(
 ) {
   disposeRaymarchFieldCache(liveFieldProjectionCache);
   liveFieldProjectionCache?.supportTexture?.dispose?.();
+  liveFieldProjectionCache?.phaseResponseTexture?.dispose?.();
 }
 
 export function disposeRaymarchSpectralLightCache(spectralLightCache) {
@@ -2222,6 +2230,106 @@ function accumulateLiveSynthesisFieldAtPoint({
   };
 }
 
+function getPhaseProjectionWeight(phaseSlots, offset) {
+  return clamp01(
+    (phaseSlots?.[offset + 2] ?? 0) * (phaseSlots?.[offset + 3] ?? 0),
+  );
+}
+
+function accumulatePhaseProjectionResponseAtPoint({
+  slots,
+  phaseSlots,
+  activeCount,
+  phaseEvaluationTimeSec,
+  x,
+  y,
+  z,
+  resolution,
+  scale,
+  boundaryMode,
+  cavityGeometry,
+}) {
+  let phaseReal = 0;
+  let phaseImag = 0;
+  let independentProjectedMagnitude = 0;
+  let structuralSupport = 0;
+  let structuralWeight = 0;
+  let phaseWeightSum = 0;
+  let phaseAuthorityModeCount = 0;
+  const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
+  const time = Number.isFinite(phaseEvaluationTimeSec)
+    ? phaseEvaluationTimeSec
+    : 0;
+  const geometryBackend = getModalGeometryBackend(cavityGeometry);
+
+  for (let slotIndex = 0; slotIndex < clampedActiveCount; slotIndex += 1) {
+    const offset = slotIndex * 4;
+    const amplitude = Math.max(0, slots?.[offset + 3] ?? 0);
+    if (!(amplitude > 0)) {
+      continue;
+    }
+    if (!isBasisPageSlotRepresentable({ slots, offset, resolution })) {
+      continue;
+    }
+
+    const family = geometryBackend.evaluateMode({
+      u: slots[offset] ?? 0,
+      v: slots[offset + 1] ?? 0,
+      w: slots[offset + 2] ?? 0,
+      x,
+      y,
+      z,
+      scale,
+      boundaryMode,
+    });
+    const structuralContribution = amplitude * family.field;
+    const structuralMagnitude = Math.abs(structuralContribution);
+    structuralSupport += structuralMagnitude;
+    structuralWeight += amplitude;
+
+    const phaseWeight = getPhaseProjectionWeight(phaseSlots, offset);
+    if (!(phaseWeight > 1e-4)) {
+      continue;
+    }
+
+    phaseAuthorityModeCount += 1;
+    phaseWeightSum += amplitude * phaseWeight;
+    const phase = normalizePhaseRad(
+      (phaseSlots?.[offset] ?? 0) + (phaseSlots?.[offset + 1] ?? 0) * time,
+    );
+    const phaseMagnitude = structuralContribution * phaseWeight;
+    phaseReal += phaseMagnitude * Math.cos(phase);
+    phaseImag += phaseMagnitude * Math.sin(phase);
+    independentProjectedMagnitude += Math.abs(phaseMagnitude);
+  }
+
+  const supportDenominator = Math.max(
+    MODAL_BASIS_CACHE_ENERGY_EPSILON,
+    structuralSupport,
+  );
+  const phaseMagnitude = Math.hypot(phaseReal, phaseImag);
+  const phaseResponse = clamp01(phaseMagnitude / supportDenominator);
+  const independentResponse = clamp01(
+    independentProjectedMagnitude / supportDenominator,
+  );
+
+  return {
+    phaseResponse,
+    phaseEnergyResponse: phaseResponse * phaseResponse,
+    independentProjectedEnergy: independentResponse * independentResponse,
+    structuralSupport:
+      structuralSupport /
+      Math.max(MODAL_BASIS_CACHE_ENERGY_EPSILON, structuralWeight),
+    unnormalizedStructuralSupport: structuralSupport,
+    phaseAuthorityModeCount,
+    phaseAuthority:
+      phaseWeightSum /
+      Math.max(MODAL_BASIS_CACHE_ENERGY_EPSILON, structuralWeight),
+    phaseReal,
+    phaseImag,
+  };
+}
+
 export function evaluateRaymarchLiveSynthesisFieldPoint({
   modalFieldSlots,
   modalFieldPhaseSlots,
@@ -2314,6 +2422,38 @@ export function evaluateRaymarchLiveSynthesisFieldPoint({
     liveSynthesisStructuralGradientEnvelope:
       liveSynthesisDiagnostics.liveSynthesisStructuralGradientEnvelope,
   };
+}
+
+export function evaluateRaymarchPhaseProjectionResponsePoint({
+  modalFieldSlots,
+  modalFieldPhaseSlots,
+  modalFieldCount,
+  boundaryMode,
+  cavityGeometry = "rectangular",
+  radius = 1,
+  x = 0,
+  y = 0,
+  z = 0,
+  resolution = RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
+  phaseEvaluationTimeSec,
+}) {
+  const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
+  const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
+  const normalizedResolution = normalizeModalBasisCacheResolution(resolution);
+
+  return accumulatePhaseProjectionResponseAtPoint({
+    slots: modalFieldSlots,
+    phaseSlots: modalFieldPhaseSlots,
+    activeCount: modalFieldCount,
+    phaseEvaluationTimeSec,
+    x,
+    y,
+    z,
+    resolution: normalizedResolution,
+    scale: getModalBasisFieldScale(radius),
+    boundaryMode: normalizedBoundaryMode,
+    cavityGeometry: normalizedCavityGeometry,
+  });
 }
 
 export function evaluateRaymarchSpectralLightCachePoint({
@@ -2595,10 +2735,12 @@ function createLiveFieldProjectionComputeKernel({
   liveFieldProjectionCache,
   modalBasisAtlasTexture,
   modalFieldCoefficientBuffer,
+  modalFieldPhaseBuffer,
   modalFieldCapacity,
   uniforms,
 }) {
-  const { resolution, fieldTexture, supportTexture } = liveFieldProjectionCache;
+  const { resolution, fieldTexture, supportTexture, phaseResponseTexture } =
+    liveFieldProjectionCache;
   const modalFieldActiveCount = int(uniforms.uModalFieldModeCount);
   const resolutionUint = uint(resolution);
   const resolutionFloat = float(resolution);
@@ -2627,6 +2769,9 @@ function createLiveFieldProjectionComputeKernel({
       const gradYSum = zero.toVar();
       const gradZSum = zero.toVar();
       const supportSum = zero.toVar();
+      const phaseResponseSumReal = zero.toVar();
+      const phaseResponseSumImag = zero.toVar();
+      const phaseResponseAuthoritySum = zero.toVar();
 
       Loop(
         {
@@ -2646,16 +2791,47 @@ function createLiveFieldProjectionComputeKernel({
             const basisSample = texture3D(modalBasisAtlasTexture).sample(
               atlasUv,
             );
-            fieldSum.addAssign(coefficient.mul(basisSample.x));
+            const structuralContribution = coefficient.mul(basisSample.x);
+            fieldSum.addAssign(structuralContribution);
             gradXSum.addAssign(coefficient.mul(basisSample.y));
             gradYSum.addAssign(coefficient.mul(basisSample.z));
             gradZSum.addAssign(coefficient.mul(basisSample.w));
             supportSum.addAssign(abs(coefficient).mul(abs(basisSample.x)));
+            const phaseSlot = modalFieldPhaseBuffer.element(i);
+            const phaseWeight = clamp(
+              phaseSlot.z.mul(phaseSlot.w),
+              zero,
+              one,
+            );
+            const phase = phaseSlot.x.add(phaseSlot.y.mul(uniforms.uTime));
+            const weightedPhaseContribution =
+              structuralContribution.mul(phaseWeight);
+            phaseResponseSumReal.addAssign(
+              weightedPhaseContribution.mul(cos(phase)),
+            );
+            phaseResponseSumImag.addAssign(
+              weightedPhaseContribution.mul(sin(phase)),
+            );
+            phaseResponseAuthoritySum.addAssign(
+              abs(coefficient).mul(phaseWeight),
+            );
           });
         },
       );
 
       const amplitudeNorm = max(uniforms.uTotalSlotAmplitude, float(0.01));
+      const phaseResponseMagnitude = sqrt(
+        phaseResponseSumReal
+          .mul(phaseResponseSumReal)
+          .add(phaseResponseSumImag.mul(phaseResponseSumImag)),
+      );
+      const phaseResponse = clamp(
+        phaseResponseMagnitude.div(
+          max(supportSum, float(MODAL_BASIS_CACHE_ENERGY_EPSILON)),
+        ),
+        zero,
+        one,
+      );
       textureStore(
         fieldTexture,
         voxelCoord,
@@ -2670,6 +2846,16 @@ function createLiveFieldProjectionComputeKernel({
         supportTexture,
         voxelCoord,
         vec4(supportSum.div(amplitudeNorm), zero, zero, one),
+      ).toWriteOnly();
+      textureStore(
+        phaseResponseTexture,
+        voxelCoord,
+        vec4(
+          phaseResponse,
+          phaseResponse.mul(phaseResponse),
+          phaseResponseAuthoritySum.div(amplitudeNorm),
+          one,
+        ),
       ).toWriteOnly();
     });
   })().compute(
@@ -2786,6 +2972,7 @@ function getOrCreateRaymarchLiveFieldProjectionCacheComputeNode(
   {
     modalBasisAtlasTexture,
     modalFieldCoefficientBuffer,
+    modalFieldPhaseBuffer,
     modalFieldCapacity,
     uniforms,
   },
@@ -2793,7 +2980,8 @@ function getOrCreateRaymarchLiveFieldProjectionCacheComputeNode(
   if (
     !liveFieldProjectionCache ||
     !modalBasisAtlasTexture ||
-    !modalFieldCoefficientBuffer
+    !modalFieldCoefficientBuffer ||
+    !modalFieldPhaseBuffer
   ) {
     return null;
   }
@@ -2813,6 +3001,7 @@ function getOrCreateRaymarchLiveFieldProjectionCacheComputeNode(
     liveFieldProjectionCache,
     modalBasisAtlasTexture,
     modalFieldCoefficientBuffer,
+    modalFieldPhaseBuffer,
     modalFieldCapacity: normalizedModalFieldCapacity,
     uniforms,
   });
@@ -2826,6 +3015,7 @@ export function computeRaymarchLiveFieldProjectionCache(
   {
     modalBasisAtlasTexture,
     modalFieldCoefficientBuffer,
+    modalFieldPhaseBuffer,
     modalFieldCapacity,
     uniforms,
     schedulerTimeSec = null,
@@ -2853,6 +3043,7 @@ export function computeRaymarchLiveFieldProjectionCache(
     {
       modalBasisAtlasTexture,
       modalFieldCoefficientBuffer,
+      modalFieldPhaseBuffer,
       modalFieldCapacity,
       uniforms,
     },
