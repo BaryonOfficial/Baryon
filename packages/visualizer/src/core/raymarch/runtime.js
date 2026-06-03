@@ -195,20 +195,20 @@ function computeLinearLuminance(rgb) {
   );
 }
 
-function hasModalResponseRenderComponents(featureFrame) {
+function hasModalResponseDiagnosticComponents(featureFrame) {
   return (
     Number.isFinite(featureFrame?.modalResponseRenderSourceCoupledEnergy) ||
     Number.isFinite(featureFrame?.modalResponseRenderResonantEnergy)
   );
 }
 
-function readModalResponseRenderComponents(featureFrame) {
+function readModalResponseEvidenceDiagnostics(featureFrame) {
   return {
-    hasComponents: hasModalResponseRenderComponents(featureFrame),
-    sourceCoupledEnergy: clamp01(
+    hasComponents: hasModalResponseDiagnosticComponents(featureFrame),
+    sourceCoupledDiagnosticEnergy: clamp01(
       readFiniteNumber(featureFrame?.modalResponseRenderSourceCoupledEnergy, 0),
     ),
-    resonantEnergy: clamp01(
+    resonantDiagnosticEnergy: clamp01(
       readFiniteNumber(featureFrame?.modalResponseRenderResonantEnergy, 0),
     ),
   };
@@ -911,9 +911,9 @@ function buildRaymarchDebugSnapshot(
           0,
       )
     : 0;
-  const modalResponseRenderComponents = renderAuthority
-    ? readModalResponseRenderComponents(featureFrame)
-    : { sourceCoupledEnergy: 0, resonantEnergy: 0 };
+  const modalResponseEvidenceDiagnostics = renderAuthority
+    ? readModalResponseEvidenceDiagnostics(featureFrame)
+    : { sourceCoupledDiagnosticEnergy: 0, resonantDiagnosticEnergy: 0 };
   const structuralBodyBloomControls = renderAuthority
     ? deriveStructuralBodyBloomControls(runtimeState, transientEnergy)
     : {
@@ -1322,10 +1322,10 @@ function buildRaymarchDebugSnapshot(
     pulseSignal,
     modalCoefficientEnergy,
     modalResponseEnergy,
-    modalResponseRenderSourceCoupledEnergy:
-      modalResponseRenderComponents.sourceCoupledEnergy,
-    modalResponseRenderResonantEnergy:
-      modalResponseRenderComponents.resonantEnergy,
+    modalResponseDiagnosticSourceCoupledEnergy:
+      modalResponseEvidenceDiagnostics.sourceCoupledDiagnosticEnergy,
+    modalResponseDiagnosticResonantEnergy:
+      modalResponseEvidenceDiagnostics.resonantDiagnosticEnergy,
     modalStructuralDetailAuthority:
       structuralBodyBloomControls.modalStructuralDetailAuthority,
     structuralBodyBloomSuppression:

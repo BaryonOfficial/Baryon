@@ -292,6 +292,14 @@ function seedRuntimeCacheNodes(runtimeState) {
   }
 }
 
+function expectSourceBlock(source, startNeedle, endNeedle) {
+  const start = source.indexOf(startNeedle);
+  expect(start).toBeGreaterThanOrEqual(0);
+  const end = source.indexOf(endNeedle, start + startNeedle.length);
+  expect(end).toBeGreaterThan(start);
+  return source.slice(start, end);
+}
+
 function countActiveSlots(slots) {
   let count = 0;
   for (let offset = 3; offset < (slots?.length ?? 0); offset += 4) {
@@ -477,6 +485,23 @@ describe("tickRaymarchRuntime", () => {
     expect(source).not.toContain("DISPLAY_RADIANCE_DEFAULTS");
     expect(source).not.toMatch(
       /display(?:Bloom|Highlight|Radiance).*(?:responseEnvelope|accentEnvelope|bloomResponseSignal)/s,
+    );
+  });
+
+  it("keeps source and resonance evidence labels out of laser response ownership", () => {
+    const source = readFileSync(
+      new URL("./runtime.js", import.meta.url),
+      "utf8",
+    );
+    const laserResponseBlock = expectSourceBlock(
+      source,
+      "function updateLaserResponse",
+      "function getRaymarchUploadState",
+    );
+
+    expect(laserResponseBlock).toContain("deriveStructuralBodyBloomControls");
+    expect(laserResponseBlock).not.toMatch(
+      /sourceCoupled|resonant|modalResponseRender/i,
     );
   });
 

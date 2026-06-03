@@ -60,6 +60,17 @@ describe("raymarch volume material", () => {
     );
   });
 
+  it("keeps modal evidence taxonomy out of shader transfer ownership", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).not.toMatch(
+      /sourceCoupled|modalResponseRender|modalResponseDiagnostic|resonant/i,
+    );
+  });
+
   it("uses observation transfer as the only shader density visibility lane", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
