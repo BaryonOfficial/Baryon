@@ -4008,36 +4008,41 @@ describe("tickRaymarchRuntime", () => {
     );
   });
 
-  it("prevents source-coupled-dominant retained tails from driving bloom washout", () => {
+  it("uses unified modal bandwidth, not evidence labels, to guard bloom washout", () => {
     const detailedRuntimeState = createRuntimeState();
-    const sourceCoupledRuntimeState = createRuntimeState();
+    const broadBodyRuntimeState = createRuntimeState();
     const debugOnlyAuthorityRuntimeState = createRuntimeState();
+    const sharedEvidenceLabels = {
+      modalResponseRenderSourceCoupledEnergy: 0.32,
+      modalResponseRenderResonantEnergy: 0.01,
+    };
     const detailedFrame = createActiveFeatureFrame({
       averageAmplitude: 32,
       transientEnergy: 0.08,
       spectralFlux: 0.06,
       changeSignal: 0.12,
       pulseSignal: 0.08,
-      modalResponseRenderSourceCoupledEnergy: 0.22,
-      modalResponseRenderResonantEnergy: 0.18,
+      backboneSlots: new Float32Array([3, 4, 6, 0.72]),
+      detailSlots: new Float32Array([14, 12, 11, 0.68]),
+      ...sharedEvidenceLabels,
       debug: {
         highQPhaseAuthority: 0.55,
         projectionHighQProtection: 0.42,
       },
     });
-    const sourceCoupledDominantFrame = createActiveFeatureFrame({
+    const broadBodyFrame = createActiveFeatureFrame({
       averageAmplitude: 32,
       transientEnergy: 0.08,
       spectralFlux: 0.06,
       changeSignal: 0.12,
       pulseSignal: 0.08,
+      backboneSlots: new Float32Array([3, 4, 6, 0.72]),
       detailSlots: new Float32Array(32),
-      modalResponseRenderSourceCoupledEnergy: 0.32,
-      modalResponseRenderResonantEnergy: 0.01,
+      ...sharedEvidenceLabels,
       debug: {},
     });
     const debugOnlyAuthorityFrame = createActiveFeatureFrame({
-      ...sourceCoupledDominantFrame,
+      ...broadBodyFrame,
       debug: {
         highQPhaseAuthority: 1,
         projectionHighQProtection: 1,
@@ -4045,12 +4050,7 @@ describe("tickRaymarchRuntime", () => {
     });
 
     tickRaymarchRuntime(detailedRuntimeState, detailedFrame, 1, 1 / 60);
-    tickRaymarchRuntime(
-      sourceCoupledRuntimeState,
-      sourceCoupledDominantFrame,
-      1,
-      1 / 60,
-    );
+    tickRaymarchRuntime(broadBodyRuntimeState, broadBodyFrame, 1, 1 / 60);
     tickRaymarchRuntime(
       debugOnlyAuthorityRuntimeState,
       debugOnlyAuthorityFrame,
@@ -4059,27 +4059,24 @@ describe("tickRaymarchRuntime", () => {
     );
 
     expect(
-      sourceCoupledRuntimeState.debugSnapshot.raymarchDebug
-        .modalResonantDetailAuthority,
+      broadBodyRuntimeState.debugSnapshot.raymarchDebug
+        .modalStructuralDetailAuthority,
     ).toBeLessThan(
       detailedRuntimeState.debugSnapshot.raymarchDebug
-        .modalResonantDetailAuthority,
+        .modalStructuralDetailAuthority,
     );
     expect(
       debugOnlyAuthorityRuntimeState.debugSnapshot.raymarchDebug
-        .modalSourceCoupledDominantBloomSuppression,
+        .structuralBodyBloomSuppression,
     ).toBeCloseTo(
-      sourceCoupledRuntimeState.debugSnapshot.raymarchDebug
-        .modalSourceCoupledDominantBloomSuppression,
+      broadBodyRuntimeState.debugSnapshot.raymarchDebug
+        .structuralBodyBloomSuppression,
+    );
+    expect(broadBodyRuntimeState.bloomTuning.effectiveStrength).toBeLessThan(
+      detailedRuntimeState.bloomTuning.effectiveStrength,
     );
     expect(
-      sourceCoupledRuntimeState.bloomTuning.effectiveStrength,
-    ).toBeLessThan(detailedRuntimeState.bloomTuning.effectiveStrength);
-    expect(sourceCoupledRuntimeState.bloomTuning.effectiveRadius).toBeLessThan(
-      detailedRuntimeState.bloomTuning.effectiveRadius,
-    );
-    expect(
-      sourceCoupledRuntimeState.bloomTuning.effectiveThreshold,
+      broadBodyRuntimeState.bloomTuning.effectiveThreshold,
     ).toBeGreaterThan(detailedRuntimeState.bloomTuning.effectiveThreshold);
   });
 

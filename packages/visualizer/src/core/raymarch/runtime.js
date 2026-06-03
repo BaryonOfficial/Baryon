@@ -8,6 +8,7 @@ import { buildCanonicalFullModalDescriptor } from "../modalDescriptor.js";
 import {
   MODAL_BASIS_ATLAS_PAGE_CAPACITY,
   MODAL_BASIS_CACHE_RESOLUTION,
+  getModalBasisCacheMaxRepresentableModeIndex,
 } from "../modalBudgets.js";
 import { getBoundaryModeFromValue } from "../modeFamily.js";
 import { hasRenderAuthority } from "../renderAuthorityContract.js";
@@ -86,9 +87,8 @@ const THRESHOLD_RESPONSE_REDUCTION = 0.42;
 const BLOOM_STRENGTH_RESPONSE_GAIN = 0.18;
 const BLOOM_RADIUS_RESPONSE_GAIN = 0.16;
 const BLOOM_THRESHOLD_RESPONSE_GAIN = 0.08;
-const SOURCE_COUPLED_BLOOM_STRENGTH_SUPPRESSION_MAX = 0.55;
-const SOURCE_COUPLED_BLOOM_RADIUS_SUPPRESSION_MAX = 0.42;
-const SOURCE_COUPLED_BLOOM_THRESHOLD_LIFT_MAX = 0.08;
+const STRUCTURAL_BODY_BLOOM_STRENGTH_SUPPRESSION_MAX = 0.55;
+const STRUCTURAL_BODY_BLOOM_THRESHOLD_LIFT_MAX = 0.08;
 // Smoothing for the loudness-aware visibility drive that feeds the observation
 // transfer's exposure compensation. Slow enough that the gate does not pump on
 // beats, fast enough to follow quiet/loud passages.
@@ -105,6 +105,14 @@ function clamp(value, min, max) {
 
 function clamp01(value) {
   return clamp(value, 0, 1);
+}
+
+function smoothstep(edge0, edge1, value) {
+  if (edge0 === edge1) {
+    return value >= edge1 ? 1 : 0;
+  }
+  const t = clamp01((value - edge0) / (edge1 - edge0));
+  return t * t * (3 - 2 * t);
 }
 
 function damp(current, target, smoothing, deltaTime) {
@@ -206,69 +214,81 @@ function readModalResponseRenderComponents(featureFrame) {
   };
 }
 
-function deriveModalResonantDetailAuthority(featureFrame) {
-  const { hasComponents, sourceCoupledEnergy, resonantEnergy } =
-    readModalResponseRenderComponents(featureFrame);
-  if (!hasComponents) {
+function deriveModalStructuralDetailAuthority(runtimeState, activeCount) {
+  const slots = runtimeState?.modalFieldModeBuffer?.value?.array;
+  const slotCount = Math.min(
+    Math.max(0, Math.floor(activeCount ?? 0)),
+    Math.floor((slots?.length ?? 0) / 4),
+  );
+  if (!slots || slotCount <= 0) {
     return 1;
   }
 
-  const totalEnergy = sourceCoupledEnergy + resonantEnergy;
-  if (!(totalEnergy > 1e-6)) {
-    return 1;
+  const maxRepresentableModeOrder = Math.max(
+    1,
+    getModalBasisCacheMaxRepresentableModeIndex(
+      runtimeState?.modalBasisCache?.resolution ?? MODAL_BASIS_CACHE_RESOLUTION,
+    ),
+  );
+  let structuralEnergy = 0;
+  let weightedDetail = 0;
+  for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
+    const offset = slotIndex * 4;
+    const amplitude = Math.max(0, slots[offset + 3] ?? 0);
+    if (!(amplitude > 0)) {
+      continue;
+    }
+    const u = readFiniteNumber(slots[offset], 0);
+    const v = readFiniteNumber(slots[offset + 1], 0);
+    const w = readFiniteNumber(slots[offset + 2], 0);
+    if (
+      Math.max(Math.abs(u), Math.abs(v), Math.abs(w)) >
+      maxRepresentableModeOrder
+    ) {
+      continue;
+    }
+    const modalEnergy = amplitude * amplitude;
+    const modalBandwidth = clamp01(
+      Math.hypot(u, v, w) / maxRepresentableModeOrder,
+    );
+    structuralEnergy += modalEnergy;
+    weightedDetail += modalEnergy * modalBandwidth;
   }
 
-  return clamp01((resonantEnergy / totalEnergy) * 2.4);
+  return structuralEnergy > 1e-9
+    ? clamp01(weightedDetail / structuralEnergy)
+    : 1;
 }
 
-function deriveSourceCoupledDominantBloomControls(
-  featureFrame,
-  transientEnergy = 0,
-) {
-  const { hasComponents, sourceCoupledEnergy, resonantEnergy } =
-    readModalResponseRenderComponents(featureFrame);
-  const modalResonantDetailAuthority =
-    deriveModalResonantDetailAuthority(featureFrame);
-  if (!hasComponents) {
-    return {
-      modalResponseRenderSourceCoupledEnergy: sourceCoupledEnergy,
-      modalResponseRenderResonantEnergy: resonantEnergy,
-      modalResonantDetailAuthority,
-      sourceCoupledDominantBloomSuppression: 0,
-      bloomStrengthScale: 1,
-      bloomRadiusScale: 1,
-      bloomThresholdLift: 0,
-    };
-  }
-
-  const totalEnergy = sourceCoupledEnergy + resonantEnergy;
-  const sourceCoupledDominance =
-    totalEnergy > 1e-6
-      ? clamp01((sourceCoupledEnergy - resonantEnergy * 1.5) / totalEnergy)
-      : 0;
-  const transientRelief = 1 - clamp01(transientEnergy);
-  const sourceCoupledDominantBloomSuppression = clamp01(
-    sourceCoupledDominance *
-      (1 - modalResonantDetailAuthority) *
+function deriveStructuralBodyBloomControls(runtimeState, transientEnergy = 0) {
+  const activeModeCount = Math.max(
+    0,
+    Math.floor(runtimeState?.uniforms?.uModalFieldModeCount?.value ?? 0),
+  );
+  const structuralProjection = resolveRaymarchStructuralProjectionDrive(
+    runtimeState,
+    activeModeCount,
+  );
+  const modalStructuralDetailAuthority = deriveModalStructuralDetailAuthority(
+    runtimeState,
+    activeModeCount,
+  );
+  const transientRelief = 1 - smoothstep(0.04, 0.32, clamp01(transientEnergy));
+  const structuralBodyBloomSuppression = clamp01(
+    structuralProjection.projectionEnergyDrive *
+      (1 - modalStructuralDetailAuthority) *
       transientRelief,
   );
 
   return {
-    modalResponseRenderSourceCoupledEnergy: sourceCoupledEnergy,
-    modalResponseRenderResonantEnergy: resonantEnergy,
-    modalResonantDetailAuthority,
-    sourceCoupledDominantBloomSuppression,
+    modalStructuralDetailAuthority,
+    structuralBodyBloomSuppression,
     bloomStrengthScale:
       1 -
-      sourceCoupledDominantBloomSuppression *
-        SOURCE_COUPLED_BLOOM_STRENGTH_SUPPRESSION_MAX,
-    bloomRadiusScale:
-      1 -
-      sourceCoupledDominantBloomSuppression *
-        SOURCE_COUPLED_BLOOM_RADIUS_SUPPRESSION_MAX,
+      structuralBodyBloomSuppression *
+        STRUCTURAL_BODY_BLOOM_STRENGTH_SUPPRESSION_MAX,
     bloomThresholdLift:
-      sourceCoupledDominantBloomSuppression *
-      SOURCE_COUPLED_BLOOM_THRESHOLD_LIFT_MAX,
+      structuralBodyBloomSuppression * STRUCTURAL_BODY_BLOOM_THRESHOLD_LIFT_MAX,
   };
 }
 
@@ -894,11 +914,11 @@ function buildRaymarchDebugSnapshot(
   const modalResponseRenderComponents = renderAuthority
     ? readModalResponseRenderComponents(featureFrame)
     : { sourceCoupledEnergy: 0, resonantEnergy: 0 };
-  const sourceCoupledDominantBloomControls = renderAuthority
-    ? deriveSourceCoupledDominantBloomControls(featureFrame, transientEnergy)
+  const structuralBodyBloomControls = renderAuthority
+    ? deriveStructuralBodyBloomControls(runtimeState, transientEnergy)
     : {
-        modalResonantDetailAuthority: 0,
-        sourceCoupledDominantBloomSuppression: 0,
+        modalStructuralDetailAuthority: 0,
+        structuralBodyBloomSuppression: 0,
       };
   const modalPhaseAuthority = renderAuthority
     ? (featureFrame?.modalPhaseAuthority ?? 0)
@@ -1306,10 +1326,10 @@ function buildRaymarchDebugSnapshot(
       modalResponseRenderComponents.sourceCoupledEnergy,
     modalResponseRenderResonantEnergy:
       modalResponseRenderComponents.resonantEnergy,
-    modalResonantDetailAuthority:
-      sourceCoupledDominantBloomControls.modalResonantDetailAuthority,
-    modalSourceCoupledDominantBloomSuppression:
-      sourceCoupledDominantBloomControls.sourceCoupledDominantBloomSuppression,
+    modalStructuralDetailAuthority:
+      structuralBodyBloomControls.modalStructuralDetailAuthority,
+    structuralBodyBloomSuppression:
+      structuralBodyBloomControls.structuralBodyBloomSuppression,
     observationEnergy: observationTransferDebug.observationEnergy,
     observationReferenceAnchor: observationTransferDebug.observationAnchor,
     observationReferenceSupport: observationTransferDebug.observationSupport,
@@ -1680,8 +1700,10 @@ function updateLaserResponse(runtimeState, featureFrame) {
       bloomResponseSignal * 0.04,
   );
   const bloomStrengthTransientGate = 0.94 + transientEnergy * 0.06;
-  const sourceCoupledDominantBloomControls =
-    deriveSourceCoupledDominantBloomControls(featureFrame, transientEnergy);
+  const structuralBodyBloomControls = deriveStructuralBodyBloomControls(
+    runtimeState,
+    transientEnergy,
+  );
 
   setIfChanged(
     uniforms.uThreshold,
@@ -1701,26 +1723,24 @@ function updateLaserResponse(runtimeState, featureFrame) {
     (1 + bloomStrengthPulse * BLOOM_STRENGTH_RESPONSE_GAIN) *
     bloomStrengthScale *
     bloomStrengthTransientGate *
-    sourceCoupledDominantBloomControls.bloomStrengthScale;
+    structuralBodyBloomControls.bloomStrengthScale;
   bt.effectiveRadius = Math.max(
     0,
-    baseBloomRadius *
-      (1 - bloomStrengthPulse * BLOOM_RADIUS_RESPONSE_GAIN) *
-      sourceCoupledDominantBloomControls.bloomRadiusScale,
+    baseBloomRadius * (1 - bloomStrengthPulse * BLOOM_RADIUS_RESPONSE_GAIN),
   );
   bt.effectiveThreshold = clamp(
     baseBloomThreshold +
       bloomThresholdPulse * BLOOM_THRESHOLD_RESPONSE_GAIN +
       bloomThresholdOffset +
-      sourceCoupledDominantBloomControls.bloomThresholdLift,
+      structuralBodyBloomControls.bloomThresholdLift,
     0,
     1,
   );
   bt.bloomAllowed = bloomAllowed;
-  bt.modalResonantDetailAuthority =
-    sourceCoupledDominantBloomControls.modalResonantDetailAuthority;
-  bt.modalSourceCoupledDominantBloomSuppression =
-    sourceCoupledDominantBloomControls.sourceCoupledDominantBloomSuppression;
+  bt.modalStructuralDetailAuthority =
+    structuralBodyBloomControls.modalStructuralDetailAuthority;
+  bt.structuralBodyBloomSuppression =
+    structuralBodyBloomControls.structuralBodyBloomSuppression;
 }
 
 function getRaymarchUploadState(runtimeState) {
