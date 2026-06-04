@@ -370,6 +370,40 @@ describe("blendColorStack", () => {
     expect(state.colorSlots[11]).toBe(0);
   });
 
+  it("mixes duplicate Spectral target colors while keeping owner metadata", () => {
+    const state = {
+      ...makeState([0.8]),
+      slots: new Float32Array([2, 2, 2, 0.8]),
+      colorSlots: new Float32Array(4),
+      spectralSlots: new Float32Array(4),
+      referenceColorSlots: new Float32Array(4),
+      referenceSpectralSlots: new Float32Array(4),
+    };
+    const targetSlots = new Float32Array([
+      2, 2, 2, 0.4, 2, 2, 2, 0.3,
+    ]);
+    const targetColors = new Float32Array([1, 0, 0, 0.5, 0, 1, 1, 1]);
+    const targetSpectralSlots = new Float32Array([
+      0, 1, 0.7, 0.1, 0.5, 0.7, 0.9, 0.4,
+    ]);
+
+    blendColorStack(state, targetSlots, targetColors, targetSpectralSlots, 1, {
+      attack: 1,
+      tracking: 1,
+      release: 1,
+      maxActiveSlots: 1,
+    });
+
+    expect(state.colorSlots[0]).toBeCloseTo(0.4, 6);
+    expect(state.colorSlots[1]).toBeCloseTo(0.6, 6);
+    expect(state.colorSlots[2]).toBeCloseTo(0.6, 6);
+    expect(state.colorSlots[3]).toBeCloseTo(0.5 / 0.7, 6);
+    expect(state.spectralSlots[0]).toBeCloseTo(0.5, 6);
+    expect(state.spectralSlots[1]).toBeCloseTo(0.7, 6);
+    expect(state.spectralSlots[2]).toBeCloseTo(0.9, 6);
+    expect(state.spectralSlots[3]).toBeCloseTo(0.4, 6);
+  });
+
   it("keeps Spectral owner color and phase coupled while smoothing weight", () => {
     const state = {
       ...makeState([0.8]),

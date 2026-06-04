@@ -332,6 +332,7 @@ function createPreparedInputs({
   radius = 3,
   featureState = createAudioFeatureState(status.capacity),
   includeSpectralLight = true,
+  auditSettings = undefined,
 }) {
   return prepareAudioFeatureFrameInputs({
     featureState,
@@ -351,6 +352,7 @@ function createPreparedInputs({
     status,
     frameTimeMs,
     includeSpectralLight,
+    auditSettings,
   });
 }
 
@@ -777,6 +779,40 @@ describe("modal excitation structural state", () => {
     }
 
     return createPreparedInputs(options);
+  }
+
+  function collectWeightedColorSlots(slots, minWeight = 0.05) {
+    const colors = [];
+    for (let offset = 0; offset < slots.length; offset += 4) {
+      const weight = slots[offset + 3] ?? 0;
+      if (weight < minWeight) {
+        continue;
+      }
+      colors.push({
+        r: slots[offset] ?? 0,
+        g: slots[offset + 1] ?? 0,
+        b: slots[offset + 2] ?? 0,
+        weight,
+      });
+    }
+    return colors;
+  }
+
+  function maxColorDistance(colors) {
+    let maxDistance = 0;
+    for (let left = 0; left < colors.length; left += 1) {
+      for (let right = left + 1; right < colors.length; right += 1) {
+        maxDistance = Math.max(
+          maxDistance,
+          Math.hypot(
+            colors[left].r - colors[right].r,
+            colors[left].g - colors[right].g,
+            colors[left].b - colors[right].b,
+          ),
+        );
+      }
+    }
+    return maxDistance;
   }
 
   beforeEach(() => {
@@ -1236,6 +1272,37 @@ describe("modal excitation structural state", () => {
       expect(component.phase).toBeGreaterThanOrEqual(0);
       expect(component.wavelengthNm).toBeGreaterThanOrEqual(380);
     }
+  });
+
+  it("keeps injected-tone Spectral Light colors owned by modal frequencies", () => {
+    const state = createModalExcitationState(16);
+    const preparedInputs = createLineFeedPreparedInputs({
+      frameTimeMs: 0,
+      fftMagnitudes: new Float32Array(BIN_COUNT),
+      timeData: null,
+      auditSettings: {
+        injectTestTone: true,
+        testToneHz: 330,
+        testToneAmplitude: 0.5,
+        freezeModeSlots: false,
+        enabled: false,
+      },
+    });
+    preparedInputs.modalExcitationState = state;
+    const fastSignal = updateAudioFeatureFastSignalState(preparedInputs);
+    const structural = buildModalExcitationStructuralState({
+      preparedInputs,
+      fastSignalState: fastSignal,
+      existingState: state,
+      performanceNow: () => 0,
+    });
+
+    const colors = collectWeightedColorSlots(
+      structural.sourceCoupledColorSlotsSource,
+    ).concat(collectWeightedColorSlots(structural.resonantColorSlotsSource));
+
+    expect(colors.length).toBeGreaterThanOrEqual(3);
+    expect(maxColorDistance(colors)).toBeGreaterThan(0.25);
   });
 
   it("clears stale blended colors when Spectral Light turns back on", () => {

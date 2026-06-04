@@ -35,7 +35,6 @@ export const RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT =
   RAYMARCH_MODAL_BASIS_CACHE_CAPACITY;
 export const RAYMARCH_BASIS_ATLAS_PACKING = "z-slice-pages-v1";
 const FIELD_CACHE_COMPUTE_WORKGROUP_SIZE = Object.freeze([8, 8, 4]);
-const FIELD_CACHE_COLOR_QUANTIZATION = 32;
 export const MODAL_BASIS_CACHE_ENERGY_EPSILON = 0.01;
 export const STRUCTURAL_PROJECTION_REFERENCE_ENERGY = 0.01;
 const STRUCTURAL_PROJECTION_EPSILON = 1e-12;
@@ -254,172 +253,6 @@ function hashCanonicalModalFieldTopology(entries) {
   return hash >>> 0;
 }
 
-function normalizeSpectralPhase(value) {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-  return value - Math.floor(value);
-}
-
-function readSpectralPhase(spectralSlots, offset) {
-  return normalizeSpectralPhase(spectralSlots?.[offset] ?? 0);
-}
-
-function normalizeSpectralRgbPeak(rgb, fallback) {
-  const peak = Math.max(rgb.r, rgb.g, rgb.b);
-  if (!(peak > 1e-9)) {
-    return { ...fallback };
-  }
-
-  return {
-    r: clamp01(rgb.r / peak),
-    g: clamp01(rgb.g / peak),
-    b: clamp01(rgb.b / peak),
-  };
-}
-
-function insertSpectralCausticContributor(top, contributor) {
-  if (!(contributor.influence > 0)) {
-    return;
-  }
-
-  if (contributor.influence > top[0].influence) {
-    top[2] = top[1];
-    top[1] = top[0];
-    top[0] = contributor;
-  } else if (contributor.influence > top[1].influence) {
-    top[2] = top[1];
-    top[1] = contributor;
-  } else if (contributor.influence > top[2].influence) {
-    top[2] = contributor;
-  }
-}
-
-function buildCanonicalSpectralLightColorTopology({
-  colorSlots,
-  spectralSlots,
-  modalFieldSlots,
-  activeCount,
-}) {
-  const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
-  const entriesByKey = new Map();
-
-  for (let slotIndex = 0; slotIndex < clampedActiveCount; slotIndex += 1) {
-    const offset = slotIndex * 4;
-    const amplitude = Math.max(0, modalFieldSlots?.[offset + 3] ?? 0);
-    if (!(amplitude > 0)) {
-      continue;
-    }
-
-    const colorWeight = clamp01(colorSlots?.[offset + 3] ?? 0);
-    const colorInfluence = amplitude * colorWeight;
-    if (!(colorInfluence > 0)) {
-      continue;
-    }
-
-    const u = readModalFieldCoordinate(modalFieldSlots, offset, 0);
-    const v = readModalFieldCoordinate(modalFieldSlots, offset, 1);
-    const w = readModalFieldCoordinate(modalFieldSlots, offset, 2);
-    const key = getModalFieldIdentityKey(u, v, w);
-    const entry = entriesByKey.get(key) ?? {
-      u,
-      v,
-      w,
-      amplitude: 0,
-      colorInfluence: 0,
-      r: 0,
-      g: 0,
-      b: 0,
-      phaseX: 0,
-      phaseY: 0,
-    };
-    const phase = readSpectralPhase(spectralSlots, offset);
-    const phaseRad = phase * Math.PI * 2;
-    entry.amplitude += amplitude;
-    entry.colorInfluence += colorInfluence;
-    entry.r += colorInfluence * clamp01(colorSlots?.[offset] ?? 0);
-    entry.g += colorInfluence * clamp01(colorSlots?.[offset + 1] ?? 0);
-    entry.b += colorInfluence * clamp01(colorSlots?.[offset + 2] ?? 0);
-    entry.phaseX += colorInfluence * Math.cos(phaseRad);
-    entry.phaseY += colorInfluence * Math.sin(phaseRad);
-    if (!entriesByKey.has(key)) {
-      entriesByKey.set(key, entry);
-    }
-  }
-
-  const spectralLightContributionTotal = Math.max(
-    MODAL_BASIS_CACHE_ENERGY_EPSILON,
-    Array.from(entriesByKey.values()).reduce(
-      (total, entry) => total + entry.amplitude,
-      0,
-    ),
-  );
-  const entries = Array.from(entriesByKey.values()).map((entry) => {
-    const supportKey = getModalFieldRelativeSupportKeyForAmplitude(
-      entry.amplitude,
-      spectralLightContributionTotal,
-    );
-
-    return [
-      getFloat32Bits(entry.u),
-      getFloat32Bits(entry.v),
-      getFloat32Bits(entry.w),
-      supportKey,
-      Math.round(
-        clamp01(entry.r / entry.colorInfluence) *
-          FIELD_CACHE_COLOR_QUANTIZATION,
-      ),
-      Math.round(
-        clamp01(entry.g / entry.colorInfluence) *
-          FIELD_CACHE_COLOR_QUANTIZATION,
-      ),
-      Math.round(
-        clamp01(entry.b / entry.colorInfluence) *
-          FIELD_CACHE_COLOR_QUANTIZATION,
-      ),
-      Math.round(
-        clamp01(entry.colorInfluence / entry.amplitude) *
-          FIELD_CACHE_COLOR_QUANTIZATION,
-      ),
-      getFloat32Bits(entry.phaseX / entry.colorInfluence),
-      getFloat32Bits(entry.phaseY / entry.colorInfluence),
-    ];
-  });
-
-  entries.sort((left, right) => {
-    for (let index = 0; index < left.length; index += 1) {
-      if (left[index] !== right[index]) {
-        return left[index] - right[index];
-      }
-    }
-    return 0;
-  });
-
-  return entries;
-}
-
-function hashSpectralLightModeTopology(entries) {
-  let hash = FNV_OFFSET_BASIS;
-  for (const entry of entries) {
-    for (let index = 0; index < 4; index += 1) {
-      hash = hashUint32(entry[index], hash);
-    }
-  }
-
-  return hash >>> 0;
-}
-
-function hashSpectralLightColorTopology(entries) {
-  let hash = FNV_OFFSET_BASIS;
-  for (const entry of entries) {
-    for (const value of entry) {
-      hash = hashUint32(value, hash);
-    }
-  }
-
-  return hash >>> 0;
-}
-
 function clamp01(value) {
   return Math.min(1, Math.max(0, value));
 }
@@ -556,7 +389,7 @@ function createRaymarchCacheRequestUniformSnapshots(sourceUniforms) {
 
 function snapshotRaymarchCacheRebuildOptions(
   options,
-  { includeColor = false, includePhase = false, includeSpectral = false } = {},
+  { includePhase = false } = {},
 ) {
   const modalFieldCapacity = normalizeComputeNodeCapacity(
     options?.modalFieldCapacity,
@@ -568,21 +401,9 @@ function snapshotRaymarchCacheRebuildOptions(
       options?.modalFieldModeBuffer,
       modalFieldCapacity,
     ),
-    modalFieldColorBuffer: includeColor
-      ? createRaymarchCacheRequestVec4BufferSnapshot(
-          options?.modalFieldColorBuffer,
-          modalFieldCapacity,
-        )
-      : null,
     modalFieldPhaseBuffer: includePhase
       ? createRaymarchCacheRequestVec4BufferSnapshot(
           options?.modalFieldPhaseBuffer,
-          modalFieldCapacity,
-        )
-      : null,
-    modalFieldSpectralBuffer: includeSpectral
-      ? createRaymarchCacheRequestVec4BufferSnapshot(
-          options?.modalFieldSpectralBuffer,
           modalFieldCapacity,
         )
       : null,
@@ -592,19 +413,11 @@ function snapshotRaymarchCacheRebuildOptions(
 
 function createRaymarchCacheComputeInputs({
   modalFieldCapacity,
-  includeColor = false,
   includePhase = false,
-  includeSpectral = false,
 }) {
   return {
     modalFieldModeBuffer: createRaymarchCacheVec4Buffer(modalFieldCapacity),
-    modalFieldColorBuffer: includeColor
-      ? createRaymarchCacheVec4Buffer(modalFieldCapacity)
-      : null,
     modalFieldPhaseBuffer: includePhase
-      ? createRaymarchCacheVec4Buffer(modalFieldCapacity)
-      : null,
-    modalFieldSpectralBuffer: includeSpectral
       ? createRaymarchCacheVec4Buffer(modalFieldCapacity)
       : null,
     uniforms: createRaymarchCacheUniformSnapshots(),
@@ -616,14 +429,10 @@ function getOrUpdateRaymarchCacheComputeInputs(
   nodeKey,
   {
     modalFieldModeBuffer,
-    modalFieldColorBuffer = null,
     modalFieldPhaseBuffer = null,
-    modalFieldSpectralBuffer = null,
     modalFieldCapacity,
     uniforms,
-    includeColor = false,
     includePhase = false,
-    includeSpectral = false,
   },
 ) {
   if (!cache.computeInputsByKey) {
@@ -634,9 +443,7 @@ function getOrUpdateRaymarchCacheComputeInputs(
   if (!inputs) {
     inputs = createRaymarchCacheComputeInputs({
       modalFieldCapacity,
-      includeColor,
       includePhase,
-      includeSpectral,
     });
     cache.computeInputsByKey[nodeKey] = inputs;
   }
@@ -646,24 +453,10 @@ function getOrUpdateRaymarchCacheComputeInputs(
     targetBuffer: inputs.modalFieldModeBuffer,
     modalFieldCapacity,
   });
-  if (includeColor) {
-    copyRaymarchCacheVec4BufferSnapshot({
-      sourceBuffer: modalFieldColorBuffer,
-      targetBuffer: inputs.modalFieldColorBuffer,
-      modalFieldCapacity,
-    });
-  }
   if (includePhase) {
     copyRaymarchCacheVec4BufferSnapshot({
       sourceBuffer: modalFieldPhaseBuffer,
       targetBuffer: inputs.modalFieldPhaseBuffer,
-      modalFieldCapacity,
-    });
-  }
-  if (includeSpectral) {
-    copyRaymarchCacheVec4BufferSnapshot({
-      sourceBuffer: modalFieldSpectralBuffer,
-      targetBuffer: inputs.modalFieldSpectralBuffer,
       modalFieldCapacity,
     });
   }
@@ -1272,18 +1065,6 @@ function fieldDescriptorBaseEqual(left, right) {
   );
 }
 
-export function spectralLightDescriptorsEqual(left, right) {
-  if (!fieldDescriptorBaseEqual(left, right)) {
-    return false;
-  }
-
-  return (
-    left.spectralLightModeCount === right.spectralLightModeCount &&
-    left.spectralLightModeHash === right.spectralLightModeHash &&
-    left.modalFieldColorHash === right.modalFieldColorHash
-  );
-}
-
 function modalBasisCacheDescriptorsEqual(left, right) {
   return resolveModalBasisCacheRebuildReason(left, right) == null;
 }
@@ -1316,35 +1097,6 @@ function resolveFieldDescriptorBaseRebuildReason(
   }
   if (previousDescriptor.radius !== nextDescriptor.radius) {
     return "radius";
-  }
-
-  return null;
-}
-
-function resolveSpectralLightRebuildReason(previousDescriptor, nextDescriptor) {
-  const baseReason = resolveFieldDescriptorBaseRebuildReason(
-    previousDescriptor,
-    nextDescriptor,
-  );
-  if (baseReason) {
-    return baseReason;
-  }
-  if (
-    previousDescriptor.spectralLightModeCount !==
-      nextDescriptor.spectralLightModeCount ||
-    previousDescriptor.spectralLightModeHash !==
-      nextDescriptor.spectralLightModeHash
-  ) {
-    const modalFieldShapeUnchanged =
-      previousDescriptor.modalFieldCount === nextDescriptor.modalFieldCount &&
-      previousDescriptor.modalFieldHash === nextDescriptor.modalFieldHash;
-    return modalFieldShapeUnchanged ? "color-slots" : "modal-identity";
-  }
-  if (
-    previousDescriptor.modalFieldColorHash !==
-    nextDescriptor.modalFieldColorHash
-  ) {
-    return "color-slots";
   }
 
   return null;
@@ -1520,24 +1272,6 @@ export function createRaymarchLiveFieldProjectionCache({
   };
 }
 
-export function createRaymarchSpectralLightCache({
-  resolution = RAYMARCH_FIELD_CACHE_RESOLUTION,
-} = {}) {
-  const normalizedResolution = Math.max(8, Math.round(resolution));
-  const texture = createCacheTexture(normalizedResolution);
-  const pendingTexture = createCacheTexture(normalizedResolution);
-
-  return {
-    ...createCacheState({
-      resolution: normalizedResolution,
-      texture,
-      mode: "off",
-    }),
-    semantic: "spectral-light-cache",
-    pendingTexture,
-  };
-}
-
 export function disposeRaymarchFieldCache(fieldCache) {
   fieldCache?.texture?.dispose?.();
   if (
@@ -1554,9 +1288,7 @@ export function disposeRaymarchFieldCache(fieldCache) {
   if (fieldCache?.computeInputsByKey) {
     Object.values(fieldCache.computeInputsByKey).forEach((inputs) => {
       inputs?.modalFieldModeBuffer?.dispose?.();
-      inputs?.modalFieldColorBuffer?.dispose?.();
       inputs?.modalFieldPhaseBuffer?.dispose?.();
-      inputs?.modalFieldSpectralBuffer?.dispose?.();
       Object.values(inputs?.uniforms ?? {}).forEach((uniformNode) => {
         uniformNode?.dispose?.();
       });
@@ -1574,10 +1306,6 @@ export function disposeRaymarchLiveFieldProjectionCache(
   disposeRaymarchFieldCache(liveFieldProjectionCache);
   liveFieldProjectionCache?.supportTexture?.dispose?.();
   liveFieldProjectionCache?.phaseInterferenceTexture?.dispose?.();
-}
-
-export function disposeRaymarchSpectralLightCache(spectralLightCache) {
-  disposeRaymarchFieldCache(spectralLightCache);
 }
 
 function createCacheTexture(width, height = width, depth = width) {
@@ -2134,168 +1862,6 @@ export function buildModalBasisAuditDiagnostics({
   });
 }
 
-export function buildRaymarchSpectralLightCacheDescriptor({
-  modalFieldSlots,
-  modalFieldColorSlots,
-  modalFieldSpectralSlots,
-  modalFieldCount,
-  boundaryMode,
-  cavityGeometry = "rectangular",
-  radius = 1,
-}) {
-  const normalizedUploadedModalFieldCount = Math.max(
-    0,
-    Math.round(modalFieldCount || 0),
-  );
-  const fieldDescriptor = buildRaymarchFieldCacheDescriptor({
-    modalFieldSlots,
-    modalFieldCount: normalizedUploadedModalFieldCount,
-    boundaryMode,
-    cavityGeometry,
-    radius,
-  });
-  const spectralLightColorTopology = buildCanonicalSpectralLightColorTopology({
-    colorSlots: modalFieldColorSlots,
-    spectralSlots: modalFieldSpectralSlots,
-    modalFieldSlots,
-    activeCount: normalizedUploadedModalFieldCount,
-  });
-
-  return {
-    ...fieldDescriptor,
-    spectralLightModeCount: spectralLightColorTopology.length,
-    spectralLightModeHash: hashSpectralLightModeTopology(
-      spectralLightColorTopology,
-    ),
-    modalFieldColorHash: hashSpectralLightColorTopology(
-      spectralLightColorTopology,
-    ),
-  };
-}
-
-function accumulateSpectralLightLayerAtPoint({
-  slots,
-  colorSlots,
-  spectralSlots,
-  activeCount,
-  weight,
-  x,
-  y,
-  z,
-  scale,
-  boundaryMode,
-  cavityGeometry,
-}) {
-  let totalInfluence = 0;
-  let ownerInfluence = 0;
-  let ownerR = 0;
-  let ownerG = 0;
-  let ownerB = 0;
-  let ownerPhase = 0;
-  let ownerWavelength = 0;
-  let colorSumR = 0;
-  let colorSumG = 0;
-  let colorSumB = 0;
-  let momentX = 0;
-  let momentY = 0;
-  const topContributors = [
-    { influence: 0, r: 0, g: 0, b: 0 },
-    { influence: 0, r: 0, g: 0, b: 0 },
-    { influence: 0, r: 0, g: 0, b: 0 },
-  ];
-  const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
-  const geometryBackend = getModalGeometryBackend(cavityGeometry);
-
-  for (let slotIndex = 0; slotIndex < clampedActiveCount; slotIndex += 1) {
-    const offset = slotIndex * 4;
-    const amplitude = (slots?.[offset + 3] ?? 0) * weight;
-    if (!(amplitude > 0)) {
-      continue;
-    }
-
-    const family = geometryBackend.evaluateMode({
-      u: slots[offset] ?? 0,
-      v: slots[offset + 1] ?? 0,
-      w: slots[offset + 2] ?? 0,
-      x,
-      y,
-      z,
-      scale,
-      boundaryMode,
-    });
-    const contribution = amplitude * family.field;
-    const localInfluence =
-      Math.abs(contribution) * (colorSlots?.[offset + 3] ?? 0);
-    const phase = readSpectralPhase(spectralSlots, offset);
-    const phaseRad = phase * Math.PI * 2;
-    const contributor = {
-      influence: localInfluence,
-      r: clamp01(colorSlots?.[offset] ?? 0),
-      g: clamp01(colorSlots?.[offset + 1] ?? 0),
-      b: clamp01(colorSlots?.[offset + 2] ?? 0),
-    };
-    totalInfluence += localInfluence;
-    colorSumR += localInfluence * contributor.r;
-    colorSumG += localInfluence * contributor.g;
-    colorSumB += localInfluence * contributor.b;
-    momentX += localInfluence * Math.cos(phaseRad);
-    momentY += localInfluence * Math.sin(phaseRad);
-    insertSpectralCausticContributor(topContributors, contributor);
-    if (localInfluence > ownerInfluence) {
-      ownerInfluence = localInfluence;
-      ownerR = contributor.r;
-      ownerG = contributor.g;
-      ownerB = contributor.b;
-      ownerPhase = phase;
-      ownerWavelength = spectralSlots?.[offset + 1] ?? 0;
-    }
-  }
-  const influenceDenominator = Math.max(totalInfluence, 1e-9);
-  const secondary = topContributors[1];
-  const tertiary = topContributors[2];
-  const causticInfluence = secondary.influence + tertiary.influence;
-  const causticContributorCount =
-    (topContributors[0].influence > 0 ? 1 : 0) +
-    (secondary.influence > 0 ? 1 : 0) +
-    (tertiary.influence > 0 ? 1 : 0);
-  const causticColor =
-    causticInfluence > 1e-9
-      ? normalizeSpectralRgbPeak(
-          {
-            r:
-              secondary.r * secondary.influence +
-              tertiary.r * tertiary.influence,
-            g:
-              secondary.g * secondary.influence +
-              tertiary.g * tertiary.influence,
-            b:
-              secondary.b * secondary.influence +
-              tertiary.b * tertiary.influence,
-          },
-          { r: ownerR, g: ownerG, b: ownerB },
-        )
-      : { r: ownerR, g: ownerG, b: ownerB };
-
-  return {
-    colorWeight: totalInfluence,
-    colorR: colorSumR / influenceDenominator,
-    colorG: colorSumG / influenceDenominator,
-    colorB: colorSumB / influenceDenominator,
-    ownerInfluence,
-    momentX,
-    momentY,
-    coherence: Math.hypot(momentX, momentY) / influenceDenominator,
-    dominance: ownerInfluence / influenceDenominator,
-    ownerPhase,
-    ownerWavelength,
-    causticR: causticColor.r,
-    causticG: causticColor.g,
-    causticB: causticColor.b,
-    causticDiversity: causticInfluence / influenceDenominator,
-    causticContributorCount,
-  };
-}
-
 function accumulateSignedPotentialLayerAtPoint({
   slots,
   activeCount,
@@ -2665,56 +2231,6 @@ export function evaluateRaymarchPhaseInterferenceContrastPoint({
   });
 }
 
-export function evaluateRaymarchSpectralLightCachePoint({
-  modalFieldSlots,
-  modalFieldColorSlots,
-  modalFieldSpectralSlots,
-  modalFieldCount,
-  boundaryMode,
-  cavityGeometry = "rectangular",
-  radius = 1,
-  x = 0,
-  y = 0,
-  z = 0,
-}) {
-  const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
-  const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
-  const scale = Math.PI / Math.max(radius, 1e-4);
-  const modalField = accumulateSpectralLightLayerAtPoint({
-    slots: modalFieldSlots,
-    colorSlots: modalFieldColorSlots,
-    spectralSlots: modalFieldSpectralSlots,
-    activeCount: modalFieldCount,
-    weight: 1,
-    x,
-    y,
-    z,
-    scale,
-    boundaryMode: normalizedBoundaryMode,
-    cavityGeometry: normalizedCavityGeometry,
-  });
-  const colorWeight = modalField.colorWeight;
-
-  return {
-    r: modalField.colorR,
-    g: modalField.colorG,
-    b: modalField.colorB,
-    colorWeight,
-    ownerInfluence: modalField.ownerInfluence,
-    momentX: modalField.momentX,
-    momentY: modalField.momentY,
-    coherence: modalField.coherence,
-    dominance: modalField.dominance,
-    ownerPhase: modalField.ownerPhase,
-    ownerWavelength: modalField.ownerWavelength,
-    causticR: modalField.causticR,
-    causticG: modalField.causticG,
-    causticB: modalField.causticB,
-    causticDiversity: modalField.causticDiversity,
-    causticContributorCount: modalField.causticContributorCount,
-  };
-}
-
 export function evaluateRaymarchSignedPotentialAtPoint({
   modalFieldSlots,
   modalFieldCount,
@@ -2753,114 +2269,6 @@ export function evaluateRaymarchSignedPotentialAtPoint({
       ),
     ),
   };
-}
-
-function createSpectralLightComputeKernel({
-  spectralLightCache,
-  modalFieldModeBuffer,
-  modalFieldColorBuffer,
-  modalFieldCapacity,
-  uniforms,
-  boundaryMode,
-  cavityGeometry,
-}) {
-  const { resolution } = spectralLightCache;
-  const texture =
-    spectralLightCache.pendingTexture ?? spectralLightCache.texture;
-  const uRadius = uniforms.uRadius;
-  const modalFieldActiveCount = int(uniforms.uModalFieldModeCount);
-  const geometryBackend = getModalGeometryBackend(cavityGeometry);
-  const resolutionUint = uint(resolution);
-  const resolutionFloat = float(resolution);
-  const half = float(0.5);
-  const two = float(2.0);
-  const zero = float(0.0);
-
-  return Fn(() => {
-    const voxelCoord = uvec3(globalId);
-    const inBounds = voxelCoord.x
-      .lessThan(resolutionUint)
-      .and(voxelCoord.y.lessThan(resolutionUint))
-      .and(voxelCoord.z.lessThan(resolutionUint));
-
-    If(inBounds, () => {
-      const xCoord = float(voxelCoord.x)
-        .add(half)
-        .div(resolutionFloat)
-        .mul(two)
-        .sub(float(1.0))
-        .mul(uRadius)
-        .toVar();
-      const yCoord = float(voxelCoord.y)
-        .add(half)
-        .div(resolutionFloat)
-        .mul(two)
-        .sub(float(1.0))
-        .mul(uRadius)
-        .toVar();
-      const zCoord = float(voxelCoord.z)
-        .add(half)
-        .div(resolutionFloat)
-        .mul(two)
-        .sub(float(1.0))
-        .mul(uRadius)
-        .toVar();
-      const scale = float(Math.PI).div(uRadius.max(float(1e-4)));
-      const totalInfluence = zero.toVar();
-      const colorSumX = zero.toVar();
-      const colorSumY = zero.toVar();
-      const colorSumZ = zero.toVar();
-
-      Loop(
-        {
-          start: int(0),
-          end: int(modalFieldCapacity),
-          type: "int",
-          condition: "<",
-        },
-        ({ i }) => {
-          If(i.greaterThanEqual(modalFieldActiveCount), () => {}).Else(() => {
-            const slot = modalFieldModeBuffer.element(i);
-            const amplitude = slot.w.toVar();
-            const family = geometryBackend.evaluateModeNode({
-              u: slot.x,
-              v: slot.y,
-              w: slot.z,
-              xCoord,
-              yCoord,
-              zCoord,
-              scale,
-              boundaryMode,
-            });
-            const colorSlot = modalFieldColorBuffer.element(i);
-            const contribution = zero.toVar();
-            contribution.addAssign(amplitude.mul(family.field));
-            const localInfluence = zero.toVar();
-            localInfluence.addAssign(abs(contribution).mul(colorSlot.w));
-            totalInfluence.addAssign(localInfluence);
-            colorSumX.addAssign(localInfluence.mul(colorSlot.x));
-            colorSumY.addAssign(localInfluence.mul(colorSlot.y));
-            colorSumZ.addAssign(localInfluence.mul(colorSlot.z));
-          });
-        },
-      );
-      const colorNormalizer = max(totalInfluence, float(1e-9));
-
-      textureStore(
-        texture,
-        uvec3(voxelCoord),
-        vec4(
-          colorSumX.div(colorNormalizer),
-          colorSumY.div(colorNormalizer),
-          colorSumZ.div(colorNormalizer),
-          totalInfluence,
-        ),
-      ).toWriteOnly();
-    });
-  })().compute(
-    spectralLightCache.dispatchSize,
-    Array.from(FIELD_CACHE_COMPUTE_WORKGROUP_SIZE),
-  );
 }
 
 function createModalBasisCacheComputeKernel({
@@ -3142,78 +2550,6 @@ function createLiveFieldProjectionComputeKernel({
   );
 }
 
-function getOrCreateRaymarchSpectralLightCacheComputeNode(
-  spectralLightCache,
-  {
-    modalFieldModeBuffer,
-    modalFieldColorBuffer,
-    modalFieldSpectralBuffer,
-    modalFieldCapacity,
-    uniforms,
-    boundaryMode,
-    cavityGeometry,
-  },
-) {
-  if (!spectralLightCache) {
-    return null;
-  }
-
-  const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
-  const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
-  const normalizedModalFieldCapacity =
-    normalizeComputeNodeCapacity(modalFieldCapacity);
-  const nodeKey = buildRaymarchComputeNodeCacheKey({
-    boundaryMode: normalizedBoundaryMode,
-    cavityGeometry: normalizedCavityGeometry,
-    modalFieldCapacity: normalizedModalFieldCapacity,
-  });
-  const targetTexture =
-    spectralLightCache.pendingTexture ?? spectralLightCache.texture;
-  const computeInputs = getOrUpdateRaymarchCacheComputeInputs(
-    spectralLightCache,
-    nodeKey,
-    {
-      modalFieldModeBuffer,
-      modalFieldColorBuffer,
-      modalFieldSpectralBuffer,
-      modalFieldCapacity: normalizedModalFieldCapacity,
-      uniforms,
-      includeColor: true,
-      includeSpectral: true,
-    },
-  );
-  const cachedNode = spectralLightCache.computeNodesByKey?.[nodeKey];
-  if (cachedNode) {
-    const cachedTargetTexture =
-      /** @type {{ raymarchSpectralLightTargetTexture?: unknown }} */ (
-        cachedNode
-      ).raymarchSpectralLightTargetTexture;
-    if (cachedTargetTexture && cachedTargetTexture !== targetTexture) {
-      cachedNode.dispose?.();
-      delete spectralLightCache.computeNodesByKey[nodeKey];
-    } else {
-      return cachedNode;
-    }
-  }
-
-  const computeNode = createSpectralLightComputeKernel({
-    spectralLightCache,
-    modalFieldModeBuffer: computeInputs.modalFieldModeBuffer,
-    modalFieldColorBuffer: computeInputs.modalFieldColorBuffer,
-    modalFieldCapacity: normalizedModalFieldCapacity,
-    uniforms: computeInputs.uniforms,
-    boundaryMode: normalizedBoundaryMode,
-    cavityGeometry: normalizedCavityGeometry,
-  });
-  if (computeNode && typeof computeNode === "object") {
-    /** @type {{ raymarchSpectralLightTargetTexture?: unknown }} */ (
-      computeNode
-    ).raymarchSpectralLightTargetTexture = targetTexture;
-  }
-  spectralLightCache.computeNodesByKey[nodeKey] = computeNode;
-  return computeNode;
-}
-
 function getOrCreateRaymarchModalBasisCacheComputeNode(
   modalBasisCache,
   {
@@ -3390,105 +2726,6 @@ export function computeRaymarchLiveFieldProjectionCache(
   return { computed: true, reason: "frame-current" };
 }
 
-function dispatchQueuedRaymarchSpectralLightCacheRebuild(spectralLightCache) {
-  const queued = takeQueuedCacheRebuild(spectralLightCache);
-  if (
-    !queued.descriptor ||
-    !queued.request ||
-    spectralLightDescriptorsEqual(
-      spectralLightCache.activeDescriptor,
-      queued.descriptor,
-    )
-  ) {
-    return;
-  }
-
-  enqueueRaymarchSpectralLightCacheRebuild(
-    spectralLightCache,
-    queued.request.renderer,
-    queued.descriptor,
-    queued.rebuildReason ?? "queued",
-    queued.request.options,
-  );
-}
-
-function applyCommittedSpectralLightDescriptor(spectralLightCache, descriptor) {
-  spectralLightCache.activeDescriptor = descriptor;
-  spectralLightCache.ready = true;
-  spectralLightCache.rebuildPending = false;
-  spectralLightCache.activeCacheBuiltAtSec =
-    spectralLightCache.pendingCacheBuiltAtSec;
-  spectralLightCache.pendingCacheBuiltAtSec = null;
-  spectralLightCache.pendingDescriptor = null;
-  spectralLightCache.pendingReady = false;
-  spectralLightCache.lastError = null;
-  spectralLightCache.backend = "compute";
-  spectralLightCache.rebuildCount += 1;
-  spectralLightCache.lastRebuildReason =
-    spectralLightCache.pendingRebuildReason ??
-    spectralLightCache.lastRebuildReason;
-  spectralLightCache.pendingRebuildReason = null;
-}
-
-export function isRaymarchSpectralLightCachePendingReadyForDescriptor(
-  spectralLightCache,
-  descriptor,
-) {
-  return Boolean(
-    spectralLightCache?.pendingReady === true &&
-    spectralLightDescriptorsEqual(
-      spectralLightCache.pendingDescriptor,
-      descriptor,
-    ),
-  );
-}
-
-export function commitRaymarchSpectralLightCachePendingDescriptor(
-  spectralLightCache,
-) {
-  if (
-    !spectralLightCache?.pendingReady ||
-    !spectralLightCache.pendingDescriptor ||
-    !spectralLightCache.pendingTexture
-  ) {
-    return { committed: false, reason: "pending-unavailable" };
-  }
-
-  const descriptor = spectralLightCache.pendingDescriptor;
-  applyCommittedSpectralLightDescriptor(spectralLightCache, descriptor);
-  dispatchQueuedRaymarchSpectralLightCacheRebuild(spectralLightCache);
-  return {
-    committed: true,
-    descriptor,
-    texture: spectralLightCache.texture,
-  };
-}
-
-export function discardRaymarchSpectralLightCachePendingDescriptor(
-  spectralLightCache,
-) {
-  if (
-    !spectralLightCache?.pendingReady ||
-    !spectralLightCache.pendingDescriptor
-  ) {
-    return { discarded: false, reason: "pending-unavailable" };
-  }
-
-  const descriptor = spectralLightCache.pendingDescriptor;
-  spectralLightCache.ready = Boolean(spectralLightCache.activeDescriptor);
-  spectralLightCache.rebuildPending = false;
-  spectralLightCache.pendingDescriptor = null;
-  spectralLightCache.pendingReady = false;
-  spectralLightCache.pendingCacheBuiltAtSec = null;
-  spectralLightCache.pendingRebuildReason = null;
-  spectralLightCache.lastRebuildReason = "pending-discarded";
-  dispatchQueuedRaymarchSpectralLightCacheRebuild(spectralLightCache);
-  return {
-    discarded: true,
-    descriptor,
-  };
-}
-
 function dispatchQueuedRaymarchModalBasisCacheRebuild(modalBasisCache) {
   const queued = takeQueuedCacheRebuild(modalBasisCache);
   if (
@@ -3616,119 +2853,6 @@ export function discardRaymarchModalBasisCachePendingDescriptor(
   dispatchQueuedRaymarchModalBasisCacheRebuild(modalBasisCache);
   return {
     discarded: true,
-    descriptor,
-  };
-}
-
-export function enqueueRaymarchSpectralLightCacheRebuild(
-  spectralLightCache,
-  renderer,
-  descriptor,
-  rebuildReason,
-  options,
-) {
-  const {
-    modalFieldModeBuffer,
-    modalFieldColorBuffer,
-    modalFieldSpectralBuffer,
-    modalFieldCapacity,
-    uniforms,
-  } = options;
-  if (!spectralLightCache) {
-    return { enqueued: false, reason: "unavailable" };
-  }
-
-  if (spectralLightCache.backend === "unavailable") {
-    return { enqueued: false, reason: "unavailable" };
-  }
-
-  if (spectralLightCache.pendingReady) {
-    return queueLatestCacheRebuild(
-      spectralLightCache,
-      descriptor,
-      rebuildReason,
-      {
-        renderer,
-        options: snapshotRaymarchCacheRebuildOptions(options, {
-          includeColor: true,
-          includeSpectral: true,
-        }),
-      },
-      spectralLightDescriptorsEqual,
-    );
-  }
-
-  if (spectralLightCache.rebuildPending) {
-    return queueLatestCacheRebuild(
-      spectralLightCache,
-      descriptor,
-      rebuildReason,
-      {
-        renderer,
-        options: snapshotRaymarchCacheRebuildOptions(options, {
-          includeColor: true,
-          includeSpectral: true,
-        }),
-      },
-      spectralLightDescriptorsEqual,
-    );
-  }
-
-  if (!renderer || typeof renderer.computeAsync !== "function") {
-    return { enqueued: false, reason: "renderer-unavailable" };
-  }
-
-  const computeNode = getOrCreateRaymarchSpectralLightCacheComputeNode(
-    spectralLightCache,
-    {
-      modalFieldModeBuffer,
-      modalFieldColorBuffer,
-      modalFieldSpectralBuffer,
-      modalFieldCapacity,
-      uniforms,
-      boundaryMode: descriptor.boundaryMode,
-      cavityGeometry: descriptor.cavityGeometry,
-    },
-  );
-  if (!computeNode) {
-    return { enqueued: false, reason: "unavailable" };
-  }
-
-  const rebuildGeneration = beginCacheRebuild(spectralLightCache, descriptor);
-  const pendingCacheBuiltAtSec = getCacheSchedulerTimeSec(options);
-  const submission = submitRaymarchCacheCompute(renderer, computeNode).then(
-    () => {
-      if (
-        !isCurrentRaymarchCacheGeneration(spectralLightCache, rebuildGeneration)
-      ) {
-        return;
-      }
-      spectralLightCache.rebuildPending = false;
-      spectralLightCache.pendingReady = true;
-      spectralLightCache.pendingCacheBuiltAtSec = pendingCacheBuiltAtSec;
-      spectralLightCache.pendingRebuildReason = rebuildReason;
-      spectralLightCache.lastError = null;
-      spectralLightCache.backend = "compute";
-      spectralLightCache.lastRebuildReason = "pending-ready";
-    },
-    (error) => {
-      if (
-        !isCurrentRaymarchCacheGeneration(spectralLightCache, rebuildGeneration)
-      ) {
-        return;
-      }
-      markCacheBackendUnavailable(
-        spectralLightCache,
-        error instanceof Error ? error.message : String(error),
-      );
-    },
-  );
-
-  void submission;
-
-  return {
-    enqueued: true,
-    reason: rebuildReason,
     descriptor,
   };
 }
@@ -3907,64 +3031,6 @@ export function isRaymarchModalBasisCacheReadyForDescriptor(
     !modalBasisCache?.rebuildPending &&
     modalBasisCacheDescriptorsEqual(
       modalBasisCache.activeDescriptor,
-      descriptor,
-    ),
-  );
-}
-
-export function shouldRebuildRaymarchSpectralLightCache(
-  spectralLightCache,
-  descriptor,
-) {
-  if (!spectralLightCache) {
-    return { needsRebuild: false, reason: "unavailable" };
-  }
-
-  if (spectralLightCache.pendingReady) {
-    const pendingReadyReason = resolveSpectralLightRebuildReason(
-      spectralLightCache.pendingDescriptor,
-      descriptor,
-    );
-    return {
-      needsRebuild: Boolean(pendingReadyReason),
-      reason: pendingReadyReason ?? "pending-ready",
-    };
-  }
-
-  if (spectralLightCache.rebuildPending) {
-    const rebuildReason = resolveSpectralLightRebuildReason(
-      spectralLightCache.queuedDescriptor ??
-        spectralLightCache.pendingDescriptor ??
-        spectralLightCache.activeDescriptor,
-      descriptor,
-    );
-
-    return {
-      needsRebuild: Boolean(rebuildReason),
-      reason: rebuildReason ?? "pending",
-    };
-  }
-
-  const rebuildReason = resolveSpectralLightRebuildReason(
-    spectralLightCache.activeDescriptor,
-    descriptor,
-  );
-
-  return {
-    needsRebuild: Boolean(rebuildReason),
-    reason: rebuildReason ?? "unchanged",
-  };
-}
-
-export function isRaymarchSpectralLightCacheReadyForDescriptor(
-  spectralLightCache,
-  descriptor,
-) {
-  return Boolean(
-    spectralLightCache?.ready &&
-    !spectralLightCache?.rebuildPending &&
-    spectralLightDescriptorsEqual(
-      spectralLightCache.activeDescriptor,
       descriptor,
     ),
   );

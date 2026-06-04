@@ -2645,6 +2645,7 @@ test("resolveFeatureFrame seeds the first live frame locally while worker analys
   };
   const { args } = createResolveFeatureFrameHarness({
     featureEngine,
+    spectralLightEnabled: false,
     status: {
       isPlaying: false,
       isLiveInputActive: true,
@@ -2738,6 +2739,7 @@ test("resolveFeatureFrame preserves the last active live frame during worker war
   };
   const { args } = createResolveFeatureFrameHarness({
     featureEngine,
+    spectralLightEnabled: false,
     status: {
       isPlaying: false,
       isLiveInputActive: true,
@@ -2776,6 +2778,95 @@ test("resolveFeatureFrame preserves the last active live frame during worker war
   );
   expect(args.runtimeDiagnostics.modalFreshness.frameSemanticFresh).toBe(false);
   expect(args.runtimeDiagnostics.modalFreshness.frameSemanticReused).toBe(true);
+});
+
+test("resolveFeatureFrame refreshes a preserved live frame when Spectral Light turns on", () => {
+  const featureEngine = {
+    enqueueTransportFrame() {},
+    readLatestSnapshot() {
+      return null;
+    },
+    getStatus() {
+      return null;
+    },
+  };
+  const staticLiveFrame = {
+    fieldState: "active",
+    renderAuthority: true,
+    spectralLightRequested: false,
+    modalFieldColorSlots: new Float32Array([0, 0, 0, 0]),
+    energyLedger: {
+      projectedRenderEnergy: 0.08,
+      renderEnergyEpsilon: 1e-6,
+    },
+    sourceEvidence: {
+      sourceBoundaryState: "live",
+      currentSourceEvidence: true,
+    },
+  };
+  const spectralLiveFrame = {
+    fieldState: "active",
+    renderAuthority: true,
+    spectralLightRequested: true,
+    modalFieldColorSlots: new Float32Array([0.1, 0.8, 1, 0.9]),
+    energyLedger: {
+      projectedRenderEnergy: 0.08,
+      renderEnergyEpsilon: 1e-6,
+    },
+    sourceEvidence: {
+      sourceBoundaryState: "live",
+      currentSourceEvidence: true,
+    },
+  };
+  const { args } = createResolveFeatureFrameHarness({
+    featureEngine,
+    spectralLightEnabled: true,
+    status: {
+      isPlaying: false,
+      isLiveInputActive: true,
+      playbackSessionId: null,
+    },
+    renderLoopRefs: {
+      frameCacheRefs: {
+        lastLiveFrameRef: { current: staticLiveFrame },
+        lastActiveFrameRef: { current: null },
+        lastIdleFrameRef: { current: null },
+        analysisSchedulerRef: { current: null },
+      },
+    },
+  });
+  const runHeavyFeatureAnalysis = vi.fn(() => ({
+    spectralLightRequested: true,
+  }));
+  const composeFeatureFrame = vi.fn(() => spectralLiveFrame);
+
+  const result = resolveFeatureFrame(args, {
+    prepareFeatureFrame() {
+      return {
+        currentFrameAtMs: 1000,
+        analysisSessionKey: "live:device-1",
+        analysisInputsSignature: '"spectral-on"',
+        shouldBuildSpectralLight: true,
+        silentFeatureFrame: null,
+      };
+    },
+    runHeavyFeatureAnalysis,
+    composeFeatureFrame,
+  });
+
+  expect(result.effectiveFrame).toBe(spectralLiveFrame);
+  expect(runHeavyFeatureAnalysis).toHaveBeenCalledTimes(1);
+  expect(composeFeatureFrame).toHaveBeenCalledTimes(1);
+  expect(args.renderLoopRefs.frameCacheRefs.lastLiveFrameRef.current).toBe(
+    spectralLiveFrame,
+  );
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
+    "local-heavy-analysis",
+  );
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticFresh).toBe(true);
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticReused).toBe(
+    false,
+  );
 });
 
 test("resolveFeatureFrame does not reuse stale live cache without current source evidence", () => {

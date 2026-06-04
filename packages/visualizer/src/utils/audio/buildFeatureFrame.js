@@ -6151,6 +6151,7 @@ export function composeAudioFeatureFrame({
     fieldState,
     hasModalField,
     renderAuthority,
+    spectralLightRequested: preparedInputs.shouldBuildSpectralLight === true,
     energyLedger,
     projectedRenderEnergy: energyLedger.projectedRenderEnergy,
     sourceEvidence: resolvedSourceEvidence,

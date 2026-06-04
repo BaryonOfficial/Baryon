@@ -727,6 +727,24 @@ function shouldBootstrapActiveFeatureFrame({
   );
 }
 
+function hasSpectralLightFeatureFrameRequest(featureFrame) {
+  return featureFrame?.spectralLightRequested === true;
+}
+
+function shouldRefreshSpectralLightFeatureFrame({
+  spectralLightEnabled,
+  status,
+  controls,
+  lastLiveFrame,
+}) {
+  return (
+    spectralLightEnabled === true &&
+    hasAudioSourceRenderIntent({ status, controls }) &&
+    isRenderAuthorizedFeatureFrame(lastLiveFrame) &&
+    !hasSpectralLightFeatureFrameRequest(lastLiveFrame)
+  );
+}
+
 function hasAudioSourceRenderIntent({ status, controls }) {
   return Boolean(
     status?.isPlaying || status?.isLiveInputActive || controls?.injectTestTone,
@@ -2289,12 +2307,20 @@ export function resolveFeatureFrame(
               lastLiveFrame: lastLiveFrameRef.current,
               lastActiveFrame: lastActiveFrameRef.current,
             });
+            const shouldRefreshSpectralLight =
+              shouldRefreshSpectralLightFeatureFrame({
+                spectralLightEnabled,
+                status,
+                controls,
+                lastLiveFrame: lastLiveFrameRef.current,
+              });
 
             if (
               shouldRefreshProgramSnapshot ||
               shouldComposeInactiveSource ||
               shouldSeedLiveWarmup ||
-              shouldBootstrapActive
+              shouldBootstrapActive ||
+              shouldRefreshSpectralLight
             ) {
               const heavyAnalysisStartedAt = getRenderLoopWallTimeMs();
               const analysisResult = runHeavyFeatureAnalysis(preparedInputs);
@@ -2317,6 +2343,8 @@ export function resolveFeatureFrame(
                 frameSemanticSource = "live-warmup";
               } else if (shouldBootstrapActive) {
                 frameSemanticSource = "bootstrap-fallback";
+              } else if (shouldRefreshSpectralLight) {
+                frameSemanticSource = "local-heavy-analysis";
               } else {
                 frameSemanticSource = "local-heavy-analysis";
               }

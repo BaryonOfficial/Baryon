@@ -398,6 +398,10 @@ function mergeAdmissionEntries(entries) {
         ...entry,
         coefficient: entry.coefficient,
         colorWeightNumerator: entry.colorWeight * entry.coefficient,
+        spectralColorNumeratorR: entry.colorR * spectralInfluence,
+        spectralColorNumeratorG: entry.colorG * spectralInfluence,
+        spectralColorNumeratorB: entry.colorB * spectralInfluence,
+        spectralColorInfluence: spectralInfluence,
         spectralOwnerInfluence: spectralInfluence,
         spectralOwnerColorR: entry.colorR,
         spectralOwnerColorG: entry.colorG,
@@ -421,6 +425,10 @@ function mergeAdmissionEntries(entries) {
       existing.phaseCoherence = entry.phaseCoherence;
     }
     existing.colorWeightNumerator += entry.colorWeight * entry.coefficient;
+    existing.spectralColorNumeratorR += entry.colorR * spectralInfluence;
+    existing.spectralColorNumeratorG += entry.colorG * spectralInfluence;
+    existing.spectralColorNumeratorB += entry.colorB * spectralInfluence;
+    existing.spectralColorInfluence += spectralInfluence;
     if (spectralInfluence > existing.spectralOwnerInfluence) {
       existing.spectralOwnerInfluence = spectralInfluence;
       existing.spectralOwnerColorR = entry.colorR;
@@ -445,11 +453,12 @@ function mergeAdmissionEntries(entries) {
   return Array.from(merged.values()).map((entry) => {
     const coefficientDenom = Math.max(entry.coefficient, 1e-9);
     const colorWeight = entry.colorWeightNumerator / coefficientDenom;
+    const spectralColorDenom = Math.max(entry.spectralColorInfluence, 1e-9);
     return {
       ...entry,
-      colorR: entry.spectralOwnerColorR,
-      colorG: entry.spectralOwnerColorG,
-      colorB: entry.spectralOwnerColorB,
+      colorR: entry.spectralColorNumeratorR / spectralColorDenom,
+      colorG: entry.spectralColorNumeratorG / spectralColorDenom,
+      colorB: entry.spectralColorNumeratorB / spectralColorDenom,
       colorWeight,
       spectralPhase: entry.spectralOwnerPhase,
       spectralWavelength: entry.spectralOwnerWavelength,

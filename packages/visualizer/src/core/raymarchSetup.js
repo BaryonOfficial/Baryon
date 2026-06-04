@@ -16,7 +16,6 @@ import {
 } from "./raymarch/material.js";
 import {
   createRaymarchLiveFieldProjectionCache,
-  createRaymarchSpectralLightCache,
   createRaymarchModalBasisCache,
 } from "./raymarch/fieldCache.js";
 import { estimateProjectedSphereStats } from "./raymarch/intersection.js";
@@ -89,7 +88,6 @@ export function setupRaymarch(
   const liveFieldProjectionCache = createRaymarchLiveFieldProjectionCache({
     resolution: modalBasisCache.resolution,
   });
-  const spectralLightCache = createRaymarchSpectralLightCache();
   const volumeMesh = createRaymarchVolumeMesh({
     radius: parameters.radius,
     modalBasisAtlasTexture: modalBasisCache.texture,
@@ -100,7 +98,6 @@ export function setupRaymarch(
     modalFieldModeBuffer,
     modalFieldCoefficientBuffer,
     modalFieldCapacity: modalBasisCache.liveSynthesisModeCount,
-    spectralLightCacheTexture: spectralLightCache.texture,
     uniforms,
     cavityGeometry: effectiveCavityGeometry,
   });
@@ -134,7 +131,6 @@ export function setupRaymarch(
     modalFieldCoefficientBuffer,
     modalBasisCache,
     liveFieldProjectionCache,
-    spectralLightCache,
     modalFieldCapacity,
     requestedCavityGeometry,
     effectiveCavityGeometry,

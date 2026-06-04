@@ -422,6 +422,34 @@ function averageWeightedColorSlots(...slotArrays) {
     : { r: 0, g: 0, b: 0, weight: 0 };
 }
 
+function collectWeightedColorSlotTriples(slots, minWeight = 0.05) {
+  const colors = [];
+  for (let index = 0; index < slots.length; index += 4) {
+    const weight = slots[index + 3] ?? 0;
+    if (weight < minWeight) continue;
+    colors.push({
+      r: slots[index] ?? 0,
+      g: slots[index + 1] ?? 0,
+      b: slots[index + 2] ?? 0,
+      weight,
+    });
+  }
+  return colors;
+}
+
+function maxColorDistance(colors) {
+  let maxDistance = 0;
+  for (let left = 0; left < colors.length; left += 1) {
+    for (let right = left + 1; right < colors.length; right += 1) {
+      const dr = colors[left].r - colors[right].r;
+      const dg = colors[left].g - colors[right].g;
+      const db = colors[left].b - colors[right].b;
+      maxDistance = Math.max(maxDistance, Math.hypot(dr, dg, db));
+    }
+  }
+  return maxDistance;
+}
+
 function makeLoopbackLiveStatus(overrides = {}) {
   return createStatus({
     audioInputMode: "live",
@@ -2832,8 +2860,46 @@ describe("Spectral Light feature frame outputs", () => {
     expect(spectralSlots[offset + 2]).toBeGreaterThan(0);
   });
 
-  it("keeps injected warm tones red at the modal color-slot boundary", () => {
-    for (const testToneHz of [220, 440]) {
+  it("preserves multiple Spectral color families through the render-facing modal slots", () => {
+    const featureState = createAudioFeatureState();
+    let frame = null;
+
+    for (let frameIndex = 0; frameIndex < 8; frameIndex += 1) {
+      frame = buildAudioFeatureFrame({
+        analysisSnapshot: createSnapshot({
+          fftMagnitudes: makeFft([
+            [220, 0.95],
+            [330, 0.82],
+            [528, 0.74],
+            [660, 0.58],
+            [880, 0.46],
+          ]),
+          timeData: makeMixedTimeData({
+            partials: [
+              [220, 0.95],
+              [330, 0.82],
+              [528, 0.74],
+              [660, 0.58],
+              [880, 0.46],
+            ],
+            amplitudeScale: 0.72,
+          }),
+        }),
+        featureState,
+        radius: 3,
+        status: makeActiveStatus(),
+        frameTimeMs: frameIndex * 33,
+      });
+    }
+
+    const colors = collectWeightedColorSlotTriples(frame.modalFieldColorSlots);
+
+    expect(colors.length).toBeGreaterThanOrEqual(2);
+    expect(maxColorDistance(colors)).toBeGreaterThan(0.28);
+  });
+
+  it("keeps injected tones distributed across modal Spectral colors", () => {
+    for (const testToneHz of [220, 440, 528]) {
       const featureState = createAudioFeatureState();
       let frame = null;
 
@@ -2852,19 +2918,18 @@ describe("Spectral Light feature frame outputs", () => {
         });
       }
 
-      const color = averageWeightedColorSlots(
-        frame.modalFieldColorSlots,
+      const colors = collectWeightedColorSlotTriples(
         frame.modalFieldColorSlots,
       );
+      const color = averageWeightedColorSlots(frame.modalFieldColorSlots);
 
+      expect(colors.length).toBeGreaterThanOrEqual(3);
+      expect(maxColorDistance(colors)).toBeGreaterThan(0.25);
       expect(color.weight).toBeGreaterThan(0.5);
-      expect(color.r).toBeGreaterThan(0.84);
-      expect(color.g).toBeLessThan(0.08);
-      expect(color.b).toBeLessThan(0.15);
     }
   });
 
-  it("keeps the 528 Hz Spectral Light test tone in the green-cyan family", () => {
+  it("does not let injected tone frequency collapse modal colors", () => {
     const featureState = createAudioFeatureState();
     let frame = null;
 
@@ -2883,15 +2948,14 @@ describe("Spectral Light feature frame outputs", () => {
       });
     }
 
-    const color = averageWeightedColorSlots(
-      frame.modalFieldColorSlots,
+    const colors = collectWeightedColorSlotTriples(
       frame.modalFieldColorSlots,
     );
 
-    expect(color.weight).toBeGreaterThan(0.5);
-    expect(color.g).toBeGreaterThan(0.84);
-    expect(color.b).toBeGreaterThan(0.28);
-    expect(color.r).toBeLessThan(0.08);
+    expect(colors.length).toBeGreaterThanOrEqual(3);
+    expect(
+      new Set(colors.map(({ r, g, b }) => `${r}:${g}:${b}`)).size,
+    ).toBeGreaterThan(1);
   });
 
   it("skips Spectral Light color work when the render path does not need it", () => {
@@ -2958,6 +3022,8 @@ describe("Spectral Light feature frame outputs", () => {
     expect(staticFrame.modalFieldColorSlots.some((value) => value > 0)).toBe(
       false,
     );
+    expect(spectralFrame.spectralLightRequested).toBe(true);
+    expect(staticFrame.spectralLightRequested).toBe(false);
   });
 
   it("freezes Spectral Light color slots alongside frozen modal slots", () => {

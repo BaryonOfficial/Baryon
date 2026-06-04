@@ -1088,18 +1088,12 @@ function remapReferenceToBlendedOrder(
   }
 }
 
-function resolveEntrySpectralLightFrequency(entry, colorContext = {}) {
-  const auditToneFrequencyHz = colorContext.auditToneFrequencyHz ?? 0;
-  return Number.isFinite(auditToneFrequencyHz) && auditToneFrequencyHz > 0
-    ? auditToneFrequencyHz
-    : entry.naturalFrequencyHz;
+function resolveEntrySpectralLightFrequency(entry) {
+  return entry.naturalFrequencyHz;
 }
 
 function createEntrySpectralLightComponent(entry, colorContext = {}) {
-  const colorFrequencyHz = resolveEntrySpectralLightFrequency(
-    entry,
-    colorContext,
-  );
+  const colorFrequencyHz = resolveEntrySpectralLightFrequency(entry);
   const strength = clamp01(
     (entry.displayProjectionAmplitude ?? entry.amplitude ?? 0) * 0.58 +
       (entry.currentDriveEnergy ?? entry.driveEnergy ?? 0) * 0.28 +

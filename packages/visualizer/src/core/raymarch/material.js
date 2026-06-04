@@ -155,22 +155,6 @@ const STATIC_SURFACE_TINT_SCALE = 0.18;
 const STATIC_HIGHLIGHT_SURFACE_PULL_SCALE = 0.2;
 const OPTICAL_CONVERGENCE_MEASUREMENT_EPSILON = 1e-4;
 
-export const RAYMARCH_SPECTRAL_LIGHT_TUNING = Object.freeze({
-  spectralBodyRadiance: 0.22,
-  contourShadow: 0.97,
-  coreCausticGain: 0.86,
-  rimCausticGain: 1.78,
-  interferenceAccentGain: 0.56,
-  structuralRimGain: 0.72,
-  bodyAccentSuppression: 0.58,
-  cachedPresenceEnd: 0.0035,
-  hueExposureTarget: 0.68,
-  hueExposureMin: 1.0,
-  hueExposureMax: 2.35,
-  gamutCompression: 0.28,
-  chromaticLowLightFloor: 0.064,
-});
-
 export const RAYMARCH_BOUNDARY_TUNING = Object.freeze({
   dirichletBeamDensity: 0.64,
   dirichletHotCore: 0.08,
@@ -178,20 +162,13 @@ export const RAYMARCH_BOUNDARY_TUNING = Object.freeze({
   dirichletWhiteEmission: 0.04,
 });
 
-/** @type {{ off: string; cached: string }} */
+/** @type {{ off: string }} */
 export const RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES = Object.freeze({
   off: "off",
-  cached: "cached",
 });
 
-function normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) {
-  switch (spectralLightEvaluationMode) {
-    case RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached:
-      return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached;
-    case RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off:
-    default:
-      return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off;
-  }
+function normalizeSpectralLightEvaluationMode(_spectralLightEvaluationMode) {
+  return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off;
 }
 
 /**
@@ -210,7 +187,6 @@ function normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) {
  *   opacityGainNode?: any,
  *   offsetNode?: any | ((args: { startPosLocal: any, rayDirLocal: any, radiusNode: any }) => any),
  *   spectralLightEvaluationMode?: string,
- *   spectralLightCacheTexture?: any,
  *   modalBasisAtlasTexture?: any,
  *   modalLiveFieldTexture?: any,
  *   modalLiveSupportTexture?: any,
@@ -552,8 +528,6 @@ function createScatteringNode({
   modalFieldModeBuffer = null,
   modalFieldCoefficientBuffer = null,
   liveSynthesisModeCount = RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
-  spectralLightCacheTexture = null,
-  spectralLightEvaluationMode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
 }) {
   const {
     uRadius,
@@ -760,12 +734,6 @@ function createScatteringNode({
       const gradZ = float(0.0).toVar();
       const effectiveUnsignedSupport = float(0.0).toVar();
       const effectiveCancellationRatio = float(0.0).toVar();
-      const colorSum = vec3(0.0).toVar();
-      const colorWeight = float(0.0).toVar();
-      const cachedSpectralLightEnabled =
-        spectralLightEvaluationMode ===
-          RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached &&
-        Boolean(spectralLightCacheTexture);
       const basisUv = getBasisLocalUvNode({
         localPosition,
         uRadius,
@@ -827,14 +795,6 @@ function createScatteringNode({
         });
       } else if (canSynthesizeLiveField) {
         assignSynthesizedLiveField();
-      }
-
-      if (cachedSpectralLightEnabled) {
-        const cachedSpectralLightSample = texture3D(
-          spectralLightCacheTexture,
-        ).sample(basisUv);
-        colorSum.assign(cachedSpectralLightSample.xyz);
-        colorWeight.assign(cachedSpectralLightSample.w);
       }
 
       const liveField = field;
@@ -1505,192 +1465,72 @@ function createScatteringNode({
               float(WHITE_EMISSION_CROWDING_REDUCTION),
             ),
           ),
-        );
-      let volumeColor;
-      if (cachedSpectralLightEnabled) {
-        const spectralCoreColor = colorSum;
-        const spectralCoreLuminance = dot(
-          spectralCoreColor,
-          vec3(0.2126, 0.7152, 0.0722),
-        );
-        const spectralCoreExposure = clamp(
-          float(RAYMARCH_SPECTRAL_LIGHT_TUNING.hueExposureTarget).div(
-            max(spectralCoreLuminance, float(0.12)),
-          ),
-          float(RAYMARCH_SPECTRAL_LIGHT_TUNING.hueExposureMin),
-          float(RAYMARCH_SPECTRAL_LIGHT_TUNING.hueExposureMax),
-        );
-        const spectralCoreCompression = float(1.0).div(
-          float(1.0).add(
-            spectralCoreExposure.mul(
-              float(RAYMARCH_SPECTRAL_LIGHT_TUNING.gamutCompression),
-            ),
-          ),
-        );
-        const spectralCoreDisplayColor = spectralCoreColor
-          .mul(spectralCoreExposure)
-          .mul(spectralCoreCompression);
-        const spectralLightPresenceEnd = float(
-          RAYMARCH_SPECTRAL_LIGHT_TUNING.cachedPresenceEnd,
-        );
-        const spectralLightPresence = smoothstep(
-          float(0.0),
-          spectralLightPresenceEnd,
-          colorWeight,
-        );
-        const spectralLightWeight = clamp(
-          uSpectralMix.mul(spectralLightPresence),
-          float(0.0),
-          float(1.0),
-        );
-        const spectralCacheAccent = clamp(
-          contourAccent
-            .mul(float(0.46))
-            .add(holographicColorMix.mul(float(0.34)))
-            .add(
-              crowdedWhiteEmissionMix
-                .mul(boundaryWhiteEmission)
-                .mul(float(0.2)),
-            ),
-          float(0.0),
-          float(1.0),
-        );
-        const spectralBodySuppression = float(1.0).sub(
-          spectralCacheAccent.mul(
-            float(RAYMARCH_SPECTRAL_LIGHT_TUNING.bodyAccentSuppression),
-          ),
-        );
-        const spectralDarkStructureColor = spectralCoreDisplayColor
-          .mul(float(RAYMARCH_SPECTRAL_LIGHT_TUNING.spectralBodyRadiance))
-          .mul(spectralBodySuppression)
-          .mul(mix(float(0.72), float(1.0), activeMask))
-          .mul(
-            mix(
-              float(RAYMARCH_SPECTRAL_LIGHT_TUNING.contourShadow),
-              float(1.0),
-              contourAccent,
-            ),
-          );
-        const spectralCoreCausticMask = clamp(
-          crowdedHotCoreMix
-            .mul(boundarySurfacePull)
-            .add(contourAccent.mul(float(0.18))),
-          float(0.0),
-          float(1.0),
-        );
-        const spectralCoreCausticRadiance = spectralCoreDisplayColor
-          .mul(spectralCoreCausticMask)
-          .mul(float(RAYMARCH_SPECTRAL_LIGHT_TUNING.coreCausticGain));
-        const spectralCausticRimMask = clamp(
-          contourAccent
-            .mul(float(0.64))
-            .add(holographicColorMix.mul(float(0.24)))
-            .add(
-              crowdedWhiteEmissionMix
-                .mul(boundaryWhiteEmission)
-                .mul(float(0.16)),
-            )
-            .mul(localGradientEvidence.mul(float(0.72)).add(float(0.28))),
-          float(0.0),
-          float(1.0),
-        );
-        const spectralCausticRimRadiance = spectralCoreDisplayColor
-          .mul(spectralCausticRimMask)
-          .mul(float(RAYMARCH_SPECTRAL_LIGHT_TUNING.rimCausticGain))
-          .mul(
-            float(1.0).add(
-              spectralCacheAccent.mul(
-                float(RAYMARCH_SPECTRAL_LIGHT_TUNING.structuralRimGain),
-              ),
-            ),
-          );
-        const spectralInterferenceMask = clamp(
-          holographicColorMix.mul(spectralCacheAccent),
-          float(0.0),
-          float(1.0),
-        );
-        const spectralInterferenceRadiance = spectralCoreDisplayColor
-          .mul(spectralInterferenceMask)
-          .mul(float(RAYMARCH_SPECTRAL_LIGHT_TUNING.interferenceAccentGain));
-        const spectralChromaticLowLight = spectralCoreColor
-          .mul(float(RAYMARCH_SPECTRAL_LIGHT_TUNING.chromaticLowLightFloor))
-          .mul(spectralLightPresence);
-        const spectralCausticVolumeColor = spectralDarkStructureColor
-          .add(spectralCoreCausticRadiance)
-          .add(spectralCausticRimRadiance)
-          .add(spectralInterferenceRadiance)
-          .add(spectralChromaticLowLight);
-        volumeColor = spectralCausticVolumeColor.mul(
-          spectralLightWeight.mul(mix(float(0.9), float(1.0), activeMask)),
-        );
-      } else {
-        // Modal coherence warms color; rapid change cools it.
-        // spectralColorBiasHintOffset is pre-computed above the Fn.
-        const spectralColorBias = clamp(
-          contourMix
-            .add(uSpectralCentroid.mul(0.25))
-            .add(uTransientEnergy.mul(0.1))
-            .add(spectralColorBiasHintOffset)
-            .mul(float(COLOR_BIAS_SCALE)),
-          float(0.0),
-          float(1.0),
-        );
-        const staticBaseColor = mix(
-          uColor,
-          uSurfaceColor,
-          spectralColorBias.mul(float(STATIC_SURFACE_TINT_SCALE)),
-        );
-        const staticContourColor = mix(
-          staticBaseColor,
-          uSurfaceColor,
-          /** @type {any} */ (
-            contourAccent.mul(float(STATIC_SURFACE_TINT_SCALE))
-          ),
-        );
-        const staticLaserColor = mix(
-          staticContourColor,
-          uSurfaceColor,
-          crowdedHotCoreMix
-            .mul(float(0.72))
-            .mul(boundarySurfacePull.mul(float(STATIC_SURFACE_TINT_SCALE))),
-        );
-        const staticHolographicColor = mix(
-          staticLaserColor,
-          holographicAccentColor,
-          /** @type {any} */ (
-            holographicColorMix.mul(float(STATIC_SURFACE_TINT_SCALE))
-          ),
-        );
-        const staticWhiteEmissionMix = crowdedWhiteEmissionMix
-          .mul(float(0.45))
-          .mul(boundaryWhiteEmission);
-        const staticHolographicLaserColor = deriveHighlightTargetNode(
-          staticHolographicColor,
-          uSurfaceColor,
-          staticWhiteEmissionMix,
-          float(STATIC_HIGHLIGHT_SURFACE_PULL_SCALE),
-        );
-        volumeColor = mix(
-          staticHolographicLaserColor.mul(float(0.9)),
-          staticHolographicLaserColor,
-          activeMask,
-        );
-      }
-
-      const supportVisibleDensity = max(
-        stabilizedDensity.sub(causticVisibleDensity),
+      );
+      // Modal coherence warms color; rapid change cools it.
+      // spectralColorBiasHintOffset is pre-computed above the Fn.
+      const spectralColorBias = clamp(
+        contourMix
+          .add(uSpectralCentroid.mul(0.25))
+          .add(uTransientEnergy.mul(0.1))
+          .add(spectralColorBiasHintOffset)
+          .mul(float(COLOR_BIAS_SCALE)),
         float(0.0),
+        float(1.0),
+      );
+      const staticBaseColor = mix(
+        uColor,
+        uSurfaceColor,
+        spectralColorBias.mul(float(STATIC_SURFACE_TINT_SCALE)),
+      );
+      const staticContourColor = mix(
+        staticBaseColor,
+        uSurfaceColor,
+        /** @type {any} */ (contourAccent.mul(float(STATIC_SURFACE_TINT_SCALE))),
+      );
+      const staticLaserColor = mix(
+        staticContourColor,
+        uSurfaceColor,
+        crowdedHotCoreMix
+          .mul(float(0.72))
+          .mul(boundarySurfacePull.mul(float(STATIC_SURFACE_TINT_SCALE))),
+      );
+      const staticHolographicColor = mix(
+        staticLaserColor,
+        holographicAccentColor,
+        /** @type {any} */ (
+          holographicColorMix.mul(float(STATIC_SURFACE_TINT_SCALE))
+        ),
+      );
+      const staticWhiteEmissionMix = crowdedWhiteEmissionMix
+        .mul(float(0.45))
+        .mul(boundaryWhiteEmission);
+      const staticHolographicLaserColor = deriveHighlightTargetNode(
+        staticHolographicColor,
+        uSurfaceColor,
+        staticWhiteEmissionMix,
+        float(STATIC_HIGHLIGHT_SURFACE_PULL_SCALE),
+      );
+      const volumeColor = mix(
+        staticHolographicLaserColor.mul(float(0.9)),
+        staticHolographicLaserColor,
+        activeMask,
       );
       const supportRevealColor = clamp(
         uSurfaceColor.mul(float(PHOTOGRAPHIC_DARK_BODY_RATIO)),
         vec3(0.0),
         vec3(PHOTOGRAPHIC_DARK_BODY_RATIO),
       );
+
+      const supportVisibleDensity = max(
+        stabilizedDensity.sub(causticVisibleDensity),
+        float(0.0),
+      );
+      const supportRevealDensity = supportVisibleDensity;
       const causticRadianceContribution = volumeColor.mul(
         causticVisibleDensity,
       );
       const supportRevealContribution = supportRevealColor.mul(
-        supportVisibleDensity,
+        supportRevealDensity,
       );
       return causticRadianceContribution
         .mul(structureAwareEmissionGain)
@@ -1792,7 +1632,6 @@ export function createRaymarchVolumeMesh({
   modalFieldModeBuffer = null,
   modalFieldCoefficientBuffer = null,
   modalFieldCapacity = RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
-  spectralLightCacheTexture = null,
   uniforms,
   cavityGeometry = "rectangular",
 }) {
@@ -1807,7 +1646,6 @@ export function createRaymarchVolumeMesh({
     modalFieldModeBuffer,
     modalFieldCoefficientBuffer,
     modalFieldCapacity,
-    spectralLightCacheTexture,
   };
   const createMaterialForBoundaryMode = (
     boundaryMode,
@@ -1835,12 +1673,6 @@ export function createRaymarchVolumeMesh({
       modalFieldCoefficientBuffer:
         modalResourceBindings.modalFieldCoefficientBuffer,
       liveSynthesisModeCount: modalResourceBindings.modalFieldCapacity,
-      spectralLightCacheTexture:
-        spectralLightEvaluationMode ===
-        RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached
-          ? modalResourceBindings.spectralLightCacheTexture
-          : null,
-      spectralLightEvaluationMode,
     });
     material.spectralLightEvaluationMode = spectralLightEvaluationMode;
     material.modalBasisAtlasTexture =
@@ -1855,11 +1687,6 @@ export function createRaymarchVolumeMesh({
     material.modalFieldCoefficientBuffer =
       modalResourceBindings.modalFieldCoefficientBuffer;
     material.modalFieldCapacity = modalResourceBindings.modalFieldCapacity;
-    material.spectralLightCacheTexture =
-      spectralLightEvaluationMode ===
-      RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached
-        ? modalResourceBindings.spectralLightCacheTexture
-        : null;
     return material;
   };
   const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
@@ -1897,7 +1724,6 @@ export function createRaymarchVolumeMesh({
   mesh.userData.raymarchModalFieldCoefficientBuffer =
     modalFieldCoefficientBuffer;
   mesh.userData.raymarchModalFieldCapacity = modalFieldCapacity;
-  mesh.userData.raymarchSpectralLightCacheTexture = spectralLightCacheTexture;
   mesh.userData.raymarchModalResourceBindings = modalResourceBindings;
   mesh.userData.raymarchCavityGeometry = normalizedCavityGeometry;
   mesh.frustumCulled = false;

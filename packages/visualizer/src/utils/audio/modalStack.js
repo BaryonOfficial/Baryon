@@ -434,30 +434,62 @@ export function blendColorStack(
   const targetLimit = Math.min(
     targetSlots.length / 4,
     targetColorSlots.length / 4,
-    capacity,
   );
   for (let i = 0; i < targetLimit; i++) {
     const offset = i * 4;
     const amplitude = targetSlots[offset + 3] ?? 0;
     const weight = targetColorSlots[offset + 3] ?? 0;
     if (amplitude <= 0 && weight <= 0) continue;
-    targetColorMap.set(
-      modeKey(
-        targetSlots[offset],
-        targetSlots[offset + 1],
-        targetSlots[offset + 2],
-      ),
-      {
-        r: targetColorSlots[offset],
-        g: targetColorSlots[offset + 1],
-        b: targetColorSlots[offset + 2],
-        weight,
+    const key = modeKey(
+      targetSlots[offset],
+      targetSlots[offset + 1],
+      targetSlots[offset + 2],
+    );
+    const influence = Math.max(0, amplitude) * Math.max(0, weight);
+    const existing = targetColorMap.get(key);
+    if (existing) {
+      existing.amplitude += Math.max(0, amplitude);
+      existing.colorInfluence += influence;
+      existing.colorR += targetColorSlots[offset] * influence;
+      existing.colorG += targetColorSlots[offset + 1] * influence;
+      existing.colorB += targetColorSlots[offset + 2] * influence;
+      existing.weightNumerator += weight * Math.max(0, amplitude);
+      if (influence > existing.ownerInfluence) {
+        existing.ownerInfluence = influence;
+        existing.phase = targetSpectralSlots?.[offset] ?? 0;
+        existing.wavelength = targetSpectralSlots?.[offset + 1] ?? 0;
+        existing.harmonicConfidence = targetSpectralSlots?.[offset + 2] ?? 0;
+        existing.accentEnergy = targetSpectralSlots?.[offset + 3] ?? 0;
+      }
+    } else {
+      targetColorMap.set(key, {
+        amplitude: Math.max(0, amplitude),
+        colorInfluence: influence,
+        colorR: targetColorSlots[offset] * influence,
+        colorG: targetColorSlots[offset + 1] * influence,
+        colorB: targetColorSlots[offset + 2] * influence,
+        weightNumerator: weight * Math.max(0, amplitude),
+        ownerInfluence: influence,
         phase: targetSpectralSlots?.[offset] ?? 0,
         wavelength: targetSpectralSlots?.[offset + 1] ?? 0,
         harmonicConfidence: targetSpectralSlots?.[offset + 2] ?? 0,
         accentEnergy: targetSpectralSlots?.[offset + 3] ?? 0,
-      },
-    );
+      });
+    }
+  }
+  for (const [key, target] of targetColorMap) {
+    const colorDenom = Math.max(target.colorInfluence, 1e-9);
+    const amplitudeDenom = Math.max(target.amplitude, 1e-9);
+    targetColorMap.set(key, {
+      r: target.colorR / colorDenom,
+      g: target.colorG / colorDenom,
+      b: target.colorB / colorDenom,
+      weight: target.weightNumerator / amplitudeDenom,
+      phase: target.phase,
+      wavelength: target.wavelength,
+      harmonicConfidence: target.harmonicConfidence,
+      accentEnergy: target.accentEnergy,
+    });
   }
 
   const survivors = [];

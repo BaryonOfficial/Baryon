@@ -24,25 +24,46 @@ async function collectFiles(dir) {
 }
 
 describe("Spectral Light render contract", () => {
-  it("keeps renderer color sourced from modal color slots without global fallback tint", async () => {
+  it("keeps pre-lane Spectral unavailable instead of routing through the old RGB cache", async () => {
+    const raymarchSetup = await readFile(
+      resolve(currentDir, "raymarchSetup.js"),
+      "utf8",
+    );
+    const raymarchRuntime = await readFile(
+      resolve(currentDir, "raymarch/runtime.js"),
+      "utf8",
+    );
     const raymarchMaterial = await readFile(
       resolve(currentDir, "raymarch/material.js"),
       "utf8",
     );
-    for (const source of [raymarchMaterial]) {
-      expect(source).toContain("const spectralCoreColor = colorSum;");
-      expect(source).toContain("spectralCacheAccent");
-      expect(source).toContain("spectralCausticRimRadiance");
-      expect(source).toContain("spectralInterferenceRadiance");
-      expect(source).toContain("spectralLightWeight");
-      expect(source).not.toContain("spectralLightCausticTexture");
-      expect(source).not.toContain("colorSum.div");
-      expect(source).not.toContain("FallbackColor");
-      expect(source).not.toContain("tonalFallback");
-      expect(source).not.toContain("uKeyTint");
-      expect(source).not.toContain("spectralFilm");
-      expect(source).not.toContain(legacyColorTerm);
-    }
+
+    expect(raymarchSetup).not.toContain("createRaymarchSpectralLightCache");
+    expect(raymarchSetup).not.toContain("spectralLightCache:");
+    expect(raymarchSetup).not.toContain("spectralLightCacheTexture");
+    expect(raymarchSetup).not.toContain("spectralLightCausticTexture");
+
+    expect(raymarchRuntime).not.toContain(
+      "buildRaymarchSpectralLightCacheDescriptor",
+    );
+    expect(raymarchRuntime).not.toContain(
+      "enqueueRaymarchSpectralLightCacheRebuild",
+    );
+    expect(raymarchRuntime).not.toContain("spectralLightCache");
+    expect(raymarchRuntime).toContain(
+      'spectralLightImplementationState: "pending-lane-architecture"',
+    );
+
+    expect(raymarchMaterial).not.toContain("RAYMARCH_SPECTRAL_LIGHT_TUNING");
+    expect(raymarchMaterial).not.toContain("cachedSpectralLightEnabled");
+    expect(raymarchMaterial).not.toContain("spectralLightCacheTexture");
+    expect(raymarchMaterial).not.toContain("spectralLightCausticTexture");
+    expect(raymarchMaterial).not.toContain("colorSum.div");
+    expect(raymarchMaterial).not.toContain("FallbackColor");
+    expect(raymarchMaterial).not.toContain("tonalFallback");
+    expect(raymarchMaterial).not.toContain("uKeyTint");
+    expect(raymarchMaterial).not.toContain("spectralFilm");
+    expect(raymarchMaterial).not.toContain(legacyColorTerm);
   });
 
   it("confines legacy color-mode terminology to persistence migration", async () => {

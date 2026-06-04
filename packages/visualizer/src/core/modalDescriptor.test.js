@@ -355,7 +355,7 @@ describe("buildCanonicalFullModalDescriptor", () => {
     expect(descriptor.slotViews.modalFieldMetadataSlots[3]).toBeCloseTo(0.9, 6);
   });
 
-  it("keeps duplicate Spectral mode keys owner-first instead of averaging RGB", () => {
+  it("mixes duplicate Spectral mode key colors while keeping owner metadata", () => {
     const descriptor = buildCanonicalFullModalDescriptor({
       maxTotalModes: 3,
       modalFieldSlots: makeSlots([
@@ -377,9 +377,9 @@ describe("buildCanonicalFullModalDescriptor", () => {
     const spectralSlots = descriptor.slotViews.modalFieldSpectralSlots;
 
     expect(descriptor.counts.modalFieldModeCount).toBe(1);
-    expect(colorSlots[0]).toBeCloseTo(0, 6);
-    expect(colorSlots[1]).toBeCloseTo(1, 6);
-    expect(colorSlots[2]).toBeCloseTo(1, 6);
+    expect(colorSlots[0]).toBeCloseTo((1 * 0.5 * 0.4) / 0.5, 6);
+    expect(colorSlots[1]).toBeCloseTo((1 * 1 * 0.3) / 0.5, 6);
+    expect(colorSlots[2]).toBeCloseTo((1 * 1 * 0.3) / 0.5, 6);
     expect(colorSlots[3]).toBeCloseTo((0.5 * 0.4 + 1 * 0.3) / 0.7, 6);
     expect(spectralSlots[0]).toBeCloseTo(0.5, 6);
     expect(spectralSlots[1]).toBeCloseTo(0.7, 6);
