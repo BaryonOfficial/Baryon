@@ -129,7 +129,7 @@ function getModalBasisPhaseMotionContribution(phaseSlots, offset, time = 0) {
   const phase =
     getOwnedPhaseOffsetRad(phaseSlots, offset) +
     (phaseSlots?.[offset + 1] ?? 0) * (Number.isFinite(time) ? time : 0);
-  return 1 - beta + beta * Math.cos(phase);
+  return 1 - beta + beta * Math.cos(normalizePhaseRad(phase));
 }
 
 export function getModalBasisStructuralCoefficient(modeSlots, offset) {
@@ -269,6 +269,7 @@ export function copyCanonicalRaymarchPhaseSlots({
   sourceSlots,
   targetSlots,
   capacity,
+  phaseEvaluationTimeSec = 0,
 }) {
   if (!targetSlots) {
     return 0;
@@ -279,12 +280,19 @@ export function copyCanonicalRaymarchPhaseSlots({
   const resolvedCapacity = Math.max(0, Math.floor(capacity ?? 0));
   const sourceSlotCount = Math.floor((sourceSlots?.length ?? 0) / 4);
   const slotLimit = Math.min(resolvedCapacity, sourceSlotCount);
+  const time = Number.isFinite(phaseEvaluationTimeSec)
+    ? phaseEvaluationTimeSec
+    : 0;
 
   for (let slotIndex = 0; slotIndex < resolvedCapacity; slotIndex += 1) {
     const offset = slotIndex * 4;
     if (slotIndex < slotLimit) {
-      targetSlots[offset] = getOwnedPhaseOffsetRad(sourceSlots, offset);
-      targetSlots[offset + 1] = sourceSlots?.[offset + 1] ?? 0;
+      const phaseVelocityRadPerSec = sourceSlots?.[offset + 1] ?? 0;
+      targetSlots[offset] = normalizePhaseRad(
+        getOwnedPhaseOffsetRad(sourceSlots, offset) +
+          phaseVelocityRadPerSec * time,
+      );
+      targetSlots[offset + 1] = phaseVelocityRadPerSec;
       targetSlots[offset + 2] = sourceSlots?.[offset + 2] ?? 0;
       targetSlots[offset + 3] = sourceSlots?.[offset + 3] ?? 0;
     }

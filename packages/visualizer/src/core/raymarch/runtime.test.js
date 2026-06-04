@@ -32,6 +32,7 @@ import {
   deriveStepCompensation,
   STEP_REFERENCE,
 } from "./stepStability.js";
+import { normalizePhaseRad } from "../../utils/audio/modalPhaseSlots.js";
 
 function createRuntimeState({ withFieldCache = false } = {}) {
   const modalBasisCache = withFieldCache
@@ -186,6 +187,7 @@ function createRuntimeState({ withFieldCache = false } = {}) {
       uStructuralProjectionDrive: { value: 0 },
       uStructuralProjectionConcentration: { value: 0 },
       uModalResponseEnergy: { value: 0 },
+      uPhaseEvaluationTime: { value: 0 },
       uLiveFieldCacheActive: { value: 0 },
       uObservationDensityFadeStart: { value: 0 },
       uObservationDensityFadeEnd: { value: 0 },
@@ -1340,11 +1342,13 @@ describe("tickRaymarchRuntime", () => {
       runtimeState.currentModalBasisCacheDescriptor.liveModalPhaseHash,
     ).not.toBe(modalBasisCacheDescriptor.liveModalPhaseHash);
     expect(runtimeState.modalFieldPhaseBuffer.value.needsUpdate).toBe(true);
-    expect(
-      Array.from(
-        runtimeState.modalFieldPhaseBuffer.value.array.slice(0, 16),
-      ).some((value) => Math.abs(value - 1.2) < 1e-6),
-    ).toBe(true);
+    expect(runtimeState.modalFieldPhaseBuffer.value.array[0]).toBeCloseTo(
+      normalizePhaseRad(
+        featureFrame.backbonePhaseSlots[0] +
+          featureFrame.backbonePhaseSlots[1] * 3,
+      ),
+      5,
+    );
     expectNoSpectralLightCache(runtimeState);
     expect(runtimeState.currentSpectralLightDescriptor).toBeNull();
     expect(runtimeState.debugSnapshot.raymarchDebug.modalBasisCacheReady).toBe(
@@ -1580,11 +1584,13 @@ describe("tickRaymarchRuntime", () => {
     expect(
       runtimeState.currentModalBasisCacheDescriptor.liveModalPhaseHash,
     ).not.toBe(activeDescriptor.liveModalPhaseHash);
-    expect(
-      Array.from(
-        runtimeState.modalFieldPhaseBuffer.value.array.slice(0, 16),
-      ).some((value) => Math.abs(value - 2.1) < 1e-6),
-    ).toBe(true);
+    expect(runtimeState.modalFieldPhaseBuffer.value.array[4]).toBeCloseTo(
+      normalizePhaseRad(
+        advancedCarrierFrame.backbonePhaseSlots[4] +
+          advancedCarrierFrame.backbonePhaseSlots[5] * 3.033,
+      ),
+      5,
+    );
   });
 
   it("keeps modal-basis cache freshness and structural coefficients independent of clock-only phase motion", async () => {
@@ -3314,6 +3320,64 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.uniforms.uAverageAmplitude.value).toBe(96);
     expect(runtimeState.uniforms.uTransientEnergy.value).toBe(0.91);
     expect(runtimeState.uniforms.uSpectralFlux.value).toBe(0.52);
+  });
+
+  it("rebases phase uploads to a bounded evaluation clock for long-running sessions", () => {
+    const runtimeState = createRuntimeState();
+    const phaseOffset = 0.45;
+    const phaseVelocity = 0.6;
+    const longRunningTime = 1_000_000;
+    const makeFrame = () =>
+      createActiveFeatureFrame({
+        backbonePhaseSlots: new Float32Array([
+          phaseOffset,
+          phaseVelocity,
+          0.8,
+          0.9,
+        ]),
+        detailSlots: new Float32Array(0),
+        detailColorSlots: new Float32Array(0),
+        detailPhaseSlots: new Float32Array(0),
+        modalPhaseAuthority: 0.8,
+      });
+    const expectedPhaseAt = (time) => {
+      const phaseSlots = makeFrame().backbonePhaseSlots;
+      return normalizePhaseRad(phaseSlots[0] + phaseSlots[1] * time);
+    };
+
+    tickRaymarchRuntime(runtimeState, makeFrame(), longRunningTime, 1 / 60);
+
+    const phaseBuffer = runtimeState.modalFieldPhaseBuffer.value.array;
+    expect(runtimeState.modalPhaseEvaluationEpochSec).toBe(longRunningTime);
+    expect(runtimeState.uniforms.uPhaseEvaluationTime.value).toBe(0);
+    expect(phaseBuffer[0]).toBeCloseTo(expectedPhaseAt(longRunningTime), 5);
+    expect(phaseBuffer[1]).toBeCloseTo(phaseVelocity, 6);
+    expect(Math.abs(phaseBuffer[0])).toBeLessThanOrEqual(Math.PI);
+
+    runtimeState.modalFieldPhaseBuffer.value.needsUpdate = false;
+    tickRaymarchRuntime(runtimeState, makeFrame(), longRunningTime + 5, 1 / 60);
+
+    expect(runtimeState.modalFieldPhaseBuffer.value.needsUpdate).toBe(false);
+    expect(runtimeState.modalPhaseEvaluationEpochSec).toBe(longRunningTime);
+    expect(runtimeState.uniforms.uPhaseEvaluationTime.value).toBeCloseTo(5, 6);
+
+    tickRaymarchRuntime(
+      runtimeState,
+      makeFrame(),
+      longRunningTime + 31,
+      1 / 60,
+    );
+
+    expect(runtimeState.modalFieldPhaseBuffer.value.needsUpdate).toBe(true);
+    expect(runtimeState.modalPhaseEvaluationEpochSec).toBe(
+      longRunningTime + 31,
+    );
+    expect(runtimeState.uniforms.uPhaseEvaluationTime.value).toBe(0);
+    expect(phaseBuffer[0]).toBeCloseTo(
+      expectedPhaseAt(longRunningTime + 31),
+      5,
+    );
+    expect(Math.abs(phaseBuffer[0])).toBeLessThanOrEqual(Math.PI);
   });
 
   it("uploads again when a reused source slot array changes values", () => {

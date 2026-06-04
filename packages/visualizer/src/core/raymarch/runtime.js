@@ -94,6 +94,7 @@ const STRUCTURAL_BODY_BLOOM_THRESHOLD_LIFT_MAX = 0.08;
 const VISIBILITY_DRIVE_DAMP_LAMBDA = 3;
 const EARLY_EXIT_TRANSMITTANCE_EPSILON = 5e-3;
 const MATERIAL_OUTPUT_VISIBLE_EPSILON = 1e-5;
+const PHASE_EVALUATION_CLOCK_REBASE_INTERVAL_SEC = 30;
 const FNV_OFFSET_BASIS = 2166136261;
 const FNV_PRIME = 16777619;
 const HASH_FLOAT_VIEW = new Float32Array(1);
@@ -681,6 +682,8 @@ function resetRenderAuthorityState(runtimeState) {
   runtimeState.visibilityDriveEnvelope = 0;
   runtimeState.spectralLightBuffersUploaded = false;
   runtimeState.modalBasisPhaseAuthorityModeCount = 0;
+  runtimeState.modalPhaseEvaluationEpochSec = null;
+  setIfChanged(runtimeState.uniforms.uPhaseEvaluationTime, 0);
   runtimeState.currentModalDescriptor = null;
   runtimeState.currentModalBasisCacheDescriptor = null;
   runtimeState.currentSpectralLightDescriptor = null;
@@ -965,6 +968,8 @@ function blockOverflowedModalDescriptor(
   runtimeState.visibilityDriveEnvelope = 0;
   runtimeState.spectralLightBuffersUploaded = false;
   runtimeState.modalBasisPhaseAuthorityModeCount = 0;
+  runtimeState.modalPhaseEvaluationEpochSec = null;
+  setIfChanged(runtimeState.uniforms.uPhaseEvaluationTime, 0);
   runtimeState.currentModalBasisCacheDescriptor = null;
   runtimeState.currentSpectralLightDescriptor = null;
   runtimeState.activeModalRenderPacket = null;
@@ -2219,7 +2224,35 @@ function phaseUploadSignatureEquals(previous, next) {
   );
 }
 
+function resolvePhaseEvaluationSourceTimeSec(time) {
+  return Number.isFinite(time) ? time : 0;
+}
+
+function resolvePhaseEvaluationClockSec(runtimeState, time) {
+  const sourceTime = resolvePhaseEvaluationSourceTimeSec(time);
+  const epoch = runtimeState?.modalPhaseEvaluationEpochSec;
+  if (!Number.isFinite(epoch)) {
+    return 0;
+  }
+  return Math.max(0, sourceTime - epoch);
+}
+
+function shouldRebasePhaseEvaluationClock(runtimeState, time) {
+  const sourceTime = resolvePhaseEvaluationSourceTimeSec(time);
+  const epoch = runtimeState?.modalPhaseEvaluationEpochSec;
+  if (!Number.isFinite(epoch)) {
+    return true;
+  }
+  const elapsed = sourceTime - epoch;
+  return (
+    !Number.isFinite(elapsed) ||
+    elapsed < 0 ||
+    elapsed >= PHASE_EVALUATION_CLOCK_REBASE_INTERVAL_SEC
+  );
+}
+
 function applyLayerPhaseUploadIfChanged({
+  runtimeState,
   uploadState,
   key,
   phaseSlots,
@@ -2227,9 +2260,13 @@ function applyLayerPhaseUploadIfChanged({
   phaseBufferNode,
   layer,
   capacity,
+  time,
 }) {
   if (!targetPhaseSlots || !layer) {
     uploadState[key] = null;
+    if (runtimeState) {
+      runtimeState.modalPhaseEvaluationEpochSec = null;
+    }
     return 0;
   }
 
@@ -2239,16 +2276,22 @@ function applyLayerPhaseUploadIfChanged({
     capacity,
   });
   const previous = uploadState[key]?.signature ?? null;
-  if (phaseUploadSignatureEquals(previous, signature)) {
+  const rebaseRequired = shouldRebasePhaseEvaluationClock(runtimeState, time);
+  if (phaseUploadSignatureEquals(previous, signature) && !rebaseRequired) {
     return uploadState[key]?.activeCount ?? 0;
   }
 
+  const phaseEvaluationTimeSec = resolvePhaseEvaluationSourceTimeSec(time);
   const activeCount = copyLayerPhaseUpload({
     phaseSlots,
     targetPhaseSlots,
     layer,
     capacity,
+    phaseEvaluationTimeSec,
   });
+  if (runtimeState) {
+    runtimeState.modalPhaseEvaluationEpochSec = phaseEvaluationTimeSec;
+  }
   if (phaseBufferNode?.value) {
     phaseBufferNode.value.needsUpdate = activeCount > 0;
   }
@@ -2326,6 +2369,7 @@ function copyLayerPhaseUpload({
   targetPhaseSlots,
   layer,
   capacity,
+  phaseEvaluationTimeSec,
 }) {
   if (!targetPhaseSlots || !layer) {
     return 0;
@@ -2334,6 +2378,7 @@ function copyLayerPhaseUpload({
     sourceSlots: phaseSlots,
     targetSlots: targetPhaseSlots,
     capacity,
+    phaseEvaluationTimeSec,
   });
 }
 
@@ -3156,6 +3201,7 @@ function applyRaymarchRuntimeUploadAuthority({
   });
 
   const modalFieldPhaseAuthorityModeCount = applyLayerPhaseUploadIfChanged({
+    runtimeState,
     uploadState,
     key: "modalFieldPhase",
     phaseSlots: descriptorSlots.modalFieldPhaseSlots,
@@ -3163,7 +3209,12 @@ function applyRaymarchRuntimeUploadAuthority({
     phaseBufferNode: modalFieldPhaseBuffer,
     layer: modalFieldLayer,
     capacity: Math.min(modalFieldPhaseCapacity, productUploadCapacity),
+    time,
   });
+  setIfChanged(
+    uniforms.uPhaseEvaluationTime,
+    resolvePhaseEvaluationClockSec(runtimeState, time),
+  );
   runtimeState.modalBasisPhaseAuthorityModeCount =
     modalFieldPhaseAuthorityModeCount;
   applyLayerCoefficientUpload({
