@@ -1,3 +1,13 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+overrides:
+
+allowBuilds:
+  "@ast-grep/cli": true
+  electron: true
+  esbuild: true
+  fs-xattr: true
+  macos-alias: true
+  sharp: true
