@@ -132,7 +132,7 @@ describe("modal field continuity", () => {
     expect(released.diagnostics.removedModeKeys).toEqual(["3:2:1"]);
   });
 
-  it("retains missing topology with zero live coefficient until release", () => {
+  it("decays missing topology payload until release", () => {
     const state = createModalFieldContinuityState();
     const loud = {
       mode: [3, 2, 1],
@@ -153,14 +153,29 @@ describe("modal field continuity", () => {
 
     expect(readModeKeys(retained.descriptorSource)).toEqual(["3:2:1"]);
     expect(retained.diagnostics.releasingModeKeys).toEqual(["3:2:1"]);
-    expect(retained.descriptorSource.modalFieldSlots[3]).toBe(0);
-    expect(retained.descriptorSource.modalFieldPhaseSlots[2]).toBe(0);
-    expect(retained.descriptorSource.modalFieldPhaseSlots[3]).toBe(0);
-    expect(retained.descriptorSource.modalFieldColorSlots[3]).toBe(0);
-    expect(retained.descriptorSource.modalFieldMetadataSlots[3]).toBe(0);
+    expect(retained.descriptorSource.modalFieldSlots[3]).toBeGreaterThan(0.3);
+    expect(retained.descriptorSource.modalFieldSlots[3]).toBeLessThan(0.45);
+    expect(retained.descriptorSource.modalFieldPhaseSlots[2]).toBeGreaterThan(
+      0,
+    );
+    expect(retained.descriptorSource.modalFieldPhaseSlots[3]).toBeGreaterThan(
+      0,
+    );
+    expect(retained.descriptorSource.modalFieldColorSlots[3]).toBeGreaterThan(
+      0,
+    );
+    expect(retained.descriptorSource.modalFieldMetadataSlots[3]).toBeGreaterThan(
+      0,
+    );
+
+    const released = update(state, [], {
+      deltaTimeSec: TOPOLOGY_RELEASE_SECONDS,
+    });
+    expect(released.descriptorSource.activeModalFieldModeCount).toBe(0);
+    expect(released.diagnostics.removedModeKeys).toEqual(["3:2:1"]);
   });
 
-  it("retains Spectral lane buffers directly while muting live packet emission", () => {
+  it("retains Spectral lane buffers while decaying live packet weights", () => {
     const state = createModalFieldContinuityState();
     const loud = {
       mode: [4, 2, 1],
@@ -203,10 +218,22 @@ describe("modal field continuity", () => {
       0.06,
       6,
     );
-    expect(retained.descriptorSource.modalFieldSpectralMeta[2]).toBe(0);
-    expect(retained.descriptorSource.modalFieldSpectralMeta[3]).toBe(0);
+    expect(retained.descriptorSource.modalFieldSpectralMeta[2]).toBeGreaterThan(
+      0,
+    );
+    expect(retained.descriptorSource.modalFieldSpectralMeta[2]).toBeLessThan(
+      0.8,
+    );
+    expect(retained.descriptorSource.modalFieldSpectralMeta[3]).toBeGreaterThan(
+      0,
+    );
+    expect(retained.descriptorSource.modalFieldSpectralMeta[3]).toBeLessThan(
+      0.5,
+    );
     expect(retained.descriptorSource.modalFieldColorSlots[0]).toBe(1);
-    expect(retained.descriptorSource.modalFieldColorSlots[3]).toBe(0);
+    expect(retained.descriptorSource.modalFieldColorSlots[3]).toBeGreaterThan(
+      0,
+    );
   });
 
   it("caps basis-visible admission to the modal basis page budget", () => {

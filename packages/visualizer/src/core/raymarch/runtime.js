@@ -74,7 +74,6 @@ const EMPTY_BAND_ENERGIES = Object.freeze([0, 0, 0, 0]);
 const RESPONSE_ATTACK = 7;
 const RESPONSE_RELEASE = 3.6;
 const RESPONSE_IDLE_RELEASE = 5.5;
-const RHYTHMIC_RELEASE_RATE_GAIN = 2.5;
 const DECAY_RELEASE_ENERGY_END = 0.22;
 const DECAY_RELEASE_CHANGE_END = 0.12;
 const DECAY_RELEASE_STRUCTURE_END = 0.42;
@@ -492,6 +491,10 @@ const LIVE_FIELD_PROJECTION_STALE_WITHOUT_COMMITTED_REASON =
   "modal-basis-cache-stale-without-live-field";
 const MODAL_BASIS_DISPLAY_LIVE_FIELD_INACTIVE_REASON =
   "modal-basis-cache-live-field-inactive";
+const SPECTRAL_LANE_CACHE_CURRENT_RETAINED_REASON =
+  "spectral-lane-cache-current-retained";
+const SPECTRAL_LANE_EMPTY_PACKET_RETAINED_REASON =
+  "spectral-lane-empty-packet-retained";
 
 function hasCommittedLiveFieldProjectionCache(runtimeState) {
   const liveFieldProjectionCache = runtimeState?.liveFieldProjectionCache;
@@ -1022,12 +1025,7 @@ function buildRaymarchDebugSnapshot(
     ? clamp01(structuralProjection.projectionEnergyDrive)
     : 0;
   const modalResponseEnergy = renderAuthority
-    ? clamp01(
-        featureFrame?.modalResponseEnergy ??
-          featureFrame?.modalResponseRenderEnergy ??
-          featureFrame?.debug?.modalResponseEnergy ??
-          0,
-      )
+    ? clamp01(readRuntimeModalResponseEnergy(runtimeState, featureFrame))
     : 0;
   const modalResponseEvidenceDiagnostics = renderAuthority
     ? readModalResponseEvidenceDiagnostics(featureFrame)
@@ -1703,10 +1701,7 @@ function updateReactiveResponse(
   );
   const modalResponseEnergy = clamp01(
     Math.max(
-      featureFrame?.modalResponseEnergy ??
-        featureFrame?.modalResponseRenderEnergy ??
-        featureFrame?.debug?.modalResponseEnergy ??
-        0,
+      readRuntimeModalResponseEnergy(runtimeState, featureFrame),
       structuralProjection.projectionEnergyDrive,
     ),
   );
@@ -1726,7 +1721,6 @@ function updateReactiveResponse(
   }
 
   const presentationSignalScale = 1;
-  const rhythmicDensity = clamp01(featureFrame?.rhythmicDensity ?? 0);
   const gatedStructureSignal = clamp01(
     structureSignal * reactivity * presentationSignalScale,
   );
@@ -1764,10 +1758,7 @@ function updateReactiveResponse(
     envelopeTarget > (runtimeState.responseEnvelope ?? 0)
       ? RESPONSE_ATTACK
       : renderAuthority
-        ? RESPONSE_RELEASE *
-          (1 +
-            rhythmicDensity * RHYTHMIC_RELEASE_RATE_GAIN +
-            decayReleaseMask * DECAY_RELEASE_RATE_GAIN)
+        ? RESPONSE_RELEASE * (1 + decayReleaseMask * DECAY_RELEASE_RATE_GAIN)
         : RESPONSE_IDLE_RELEASE,
     deltaTime,
   );
@@ -2414,7 +2405,6 @@ function buildRuntimeSpectralLaneCacheDescriptor(
     modalBasisCacheDescriptor?.identityPageAssignmentHash ?? 0,
     hash,
   );
-  hash = hashUint32(modalBasisCacheDescriptor?.liveModalPhaseHash ?? 0, hash);
   hash = hashUint32(modalBasisCacheDescriptor?.resolution ?? 0, hash);
   const descriptorSpectralLaneHash =
     runtimeState?.currentModalDescriptor?.diagnostics?.spectralLaneHash ?? 0;
@@ -2479,6 +2469,56 @@ function buildRuntimeSpectralLaneCacheDescriptor(
   };
 }
 
+function retainSpectralLaneCache(spectralLaneCache, reason) {
+  spectralLaneCache.active = true;
+  spectralLaneCache.lastComputeReason = reason;
+  return { computed: false, reason };
+}
+
+function spectralLaneDescriptorsShareModalBasis(a, b) {
+  return Boolean(
+    a &&
+      b &&
+      a.modalFieldCount === b.modalFieldCount &&
+      a.modalBasisIdentityHash === b.modalBasisIdentityHash &&
+      a.identityPageAssignmentHash === b.identityPageAssignmentHash &&
+      a.resolution === b.resolution,
+  );
+}
+
+function shouldRetainCommittedSpectralLaneCache(
+  spectralLaneCache,
+  nextDescriptor,
+) {
+  if (spectralLaneCache?.ready !== true || !nextDescriptor) {
+    return false;
+  }
+  const committedDescriptor =
+    spectralLaneCache.descriptor ?? spectralLaneCache.activeDescriptor ?? null;
+  if (committedDescriptor?.hash === nextDescriptor.hash) {
+    return true;
+  }
+  return Boolean(
+    nextDescriptor.spectralLaneActivePacketCount === 0 &&
+      nextDescriptor.spectralLaneRadianceInputTotal <= 1e-8 &&
+      (committedDescriptor?.spectralLaneActivePacketCount ?? 0) > 0 &&
+      (committedDescriptor?.spectralLaneRadianceInputTotal ?? 0) > 1e-8 &&
+      spectralLaneDescriptorsShareModalBasis(
+        committedDescriptor,
+        nextDescriptor,
+      ),
+  );
+}
+
+function resolveSpectralLaneRetentionReason(spectralLaneCache, nextDescriptor) {
+  const committedDescriptor =
+    spectralLaneCache?.descriptor ?? spectralLaneCache?.activeDescriptor ?? null;
+  if (committedDescriptor?.hash === nextDescriptor?.hash) {
+    return SPECTRAL_LANE_CACHE_CURRENT_RETAINED_REASON;
+  }
+  return SPECTRAL_LANE_EMPTY_PACKET_RETAINED_REASON;
+}
+
 function deactivateSpectralLaneCache(runtimeState, reason) {
   const spectralLaneCache = runtimeState?.spectralLaneCache;
   if (spectralLaneCache) {
@@ -2537,6 +2577,12 @@ function updateSpectralLaneCache(
     modalBasisCacheDescriptor,
     { modalFieldCapacity },
   );
+  if (shouldRetainCommittedSpectralLaneCache(spectralLaneCache, descriptor)) {
+    return retainSpectralLaneCache(
+      spectralLaneCache,
+      resolveSpectralLaneRetentionReason(spectralLaneCache, descriptor),
+    );
+  }
   return computeRaymarchSpectralLaneCache(spectralLaneCache, renderer, {
     descriptor,
     modalBasisAtlasTexture,
@@ -2681,6 +2727,27 @@ function readModalResponseEnergy(featureFrame) {
   );
 }
 
+function readRetainedModalRenderPacket(runtimeState) {
+  return runtimeState?.modalRenderPacketRetained &&
+    runtimeState?.activeModalRenderPacket
+    ? runtimeState.activeModalRenderPacket
+    : null;
+}
+
+function readRuntimeModalResponseEnergy(runtimeState, featureFrame) {
+  const currentModalResponseEnergy = readModalResponseEnergy(featureFrame);
+  const retainedModalResponseEnergy =
+    readRetainedModalRenderPacket(runtimeState)?.modalResponseEnergy ?? 0;
+  return Math.max(currentModalResponseEnergy, retainedModalResponseEnergy);
+}
+
+function deriveRuntimeObservationVisibilityDrive(runtimeState, featureFrame) {
+  const currentVisibilityDrive = deriveObservationVisibilityDrive(featureFrame);
+  const retainedVisibilityDrive =
+    readRetainedModalRenderPacket(runtimeState)?.visibilityDrive ?? 0;
+  return Math.max(currentVisibilityDrive, retainedVisibilityDrive);
+}
+
 function snapshotActiveModalRenderPacket(runtimeState, featureFrame) {
   const activeModeCount = Math.max(
     0,
@@ -2727,6 +2794,7 @@ function snapshotActiveModalRenderPacket(runtimeState, featureFrame) {
     structuralProjectionConcentration:
       runtimeState.uniforms?.uStructuralProjectionConcentration?.value ?? 0,
     modalResponseEnergy: readModalResponseEnergy(featureFrame),
+    visibilityDrive: deriveObservationVisibilityDrive(featureFrame),
     performanceGovernor: runtimeState.performanceGovernor ?? null,
     spectralLightBuffersUploaded:
       runtimeState.spectralLightBuffersUploaded === true,
@@ -3271,14 +3339,9 @@ export function tickRaymarchRuntime(
   );
   setIfChanged(uniforms.uTotalSlotAmplitude, structuralProjection.amplitudeSum);
   setRaymarchStructuralProjectionUniforms(uniforms, structuralProjection);
-  const retainedModalResponseEnergy =
-    runtimeState.modalRenderPacketRetained &&
-    runtimeState.activeModalRenderPacket
-      ? runtimeState.activeModalRenderPacket.modalResponseEnergy
-      : null;
   setIfChanged(
     uniforms.uModalResponseEnergy,
-    retainedModalResponseEnergy ?? readModalResponseEnergy(featureFrame),
+    readRuntimeModalResponseEnergy(runtimeState, featureFrame),
   );
 
   // Key tonic hue — EMA with circular shortest-path wrapping
@@ -3303,7 +3366,7 @@ export function tickRaymarchRuntime(
   updateLaserResponse(runtimeState, featureFrame);
   runtimeState.visibilityDriveEnvelope = damp(
     runtimeState.visibilityDriveEnvelope ?? 0,
-    deriveObservationVisibilityDrive(featureFrame),
+    deriveRuntimeObservationVisibilityDrive(runtimeState, featureFrame),
     VISIBILITY_DRIVE_DAMP_LAMBDA,
     deltaTime,
   );

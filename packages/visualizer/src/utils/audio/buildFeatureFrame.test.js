@@ -1166,6 +1166,48 @@ describe("buildAudioFeatureFrame modal contract", () => {
     expect(resumed.modalFieldContinuity.admittedModeKeys).toEqual(["10:3:1"]);
   });
 
+  it("holds visible modal continuity through a live-source empty projection frame", () => {
+    const featureState = createAudioFeatureState();
+    const bootstrapped = buildManualModalContinuityFrame({
+      featureState,
+      frameTimeMs: 0,
+      candidateForcingSlots: makeModeSlots([[9, 3, 1, 0.42]]),
+      sourceCoupledPhaseSlots: makePhaseSlots([[0.1, 0.2, 0.8, 0.9]]),
+    });
+
+    const held = buildManualModalContinuityFrame({
+      featureState,
+      frameTimeMs: 16,
+      candidateForcingSlots: makeModeSlots([]),
+      structuralMetrics: makeModalFieldContinuityStructuralMetrics({
+        modalResponseEnergy: 0.42,
+        modalResponseSourceCoupledEnergy: 0.34,
+        modalResponseResonantEnergy: 0.08,
+        modalResponseRenderEnergy: 0,
+        modalResponseRenderSourceCoupledEnergy: 0,
+        modalResponseRenderResonantEnergy: 0,
+        currentSignalEnergy: 0.36,
+        currentSignalAmplitude: 0.34,
+        excitedModeCount: 0,
+        observedModalModeCount: 0,
+      }),
+    });
+
+    expect(bootstrapped.renderAuthority).toBe(true);
+    expect(held.sourceEvidence.currentSourceEvidence).toBe(true);
+    expect(held.energyLedger.sourceBoundaryState).toBe("live");
+    expect(held.renderAuthority).toBe(true);
+    expect(held.energyLedger.projectedRenderEnergy).toBeGreaterThan(
+      DEFAULT_RENDER_ENERGY_EPSILON,
+    );
+    expect(readModeKeys(held.modalFieldSlots)).toEqual(["9:3:1"]);
+    expect(held.modalFieldContinuity.releasingModeKeys).toEqual(["9:3:1"]);
+    expect(sumSlotAmplitudes(held.modalFieldSlots)).toBeGreaterThan(0.3);
+    expect(sumSlotAmplitudes(held.modalFieldSlots)).toBeLessThan(
+      sumSlotAmplitudes(bootstrapped.modalFieldSlots),
+    );
+  });
+
   it("does not keep low-Q background bass active from observer authority alone", () => {
     const originalSourceCoupledSlots = makeModeSlots([
       [1, 1, 1, 0.0006],

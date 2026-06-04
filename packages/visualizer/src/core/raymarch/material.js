@@ -409,17 +409,29 @@ function projectSpectralLaneRadianceToRgbNode({
   );
   const broadSpectrumExposureCompression = mix(
     float(1.0),
-    float(0.68),
+    float(0.84),
     entropy,
   );
-  const dominanceGain = mix(float(0.86), float(1.12), dominance);
-  const radianceGain = smoothstep(float(0.0), float(0.015), total);
+  const dominanceGain = mix(float(0.98), float(1.14), dominance);
+  const rawRadianceGain = smoothstep(float(0.0), float(0.009), total);
+  const spectralReadabilityPresence = smoothstep(
+    float(0.00018),
+    float(0.0028),
+    total,
+  );
+  const spectralReadabilityFloor = spectralReadabilityPresence
+    .mul(mix(float(0.54), float(0.42), dominance))
+    .mul(mix(float(1.0), float(0.94), entropy));
+  const spectralReadabilityGain = max(
+    rawRadianceGain,
+    spectralReadabilityFloor,
+  );
 
   return clamp(
     chromaPreservedRgb
       .mul(dominanceGain)
       .mul(broadSpectrumExposureCompression)
-      .mul(radianceGain),
+      .mul(spectralReadabilityGain),
     vec3(0.0),
     vec3(1.18),
   );

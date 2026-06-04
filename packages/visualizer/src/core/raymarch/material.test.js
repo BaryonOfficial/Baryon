@@ -959,6 +959,27 @@ describe("raymarch volume material", () => {
     expect(projectionBlock).toContain("broadSpectrumExposureCompression");
   });
 
+  it("keeps meaningful low-radiance Spectral lanes visible without static rescue", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const projectionBlock = expectSourceBlock(
+      source,
+      "function projectSpectralLaneRadianceToRgbNode",
+      "function sampleSpectralLaneCacheNode",
+    );
+
+    expect(projectionBlock).toContain("rawRadianceGain");
+    expect(projectionBlock).toContain("spectralReadabilityFloor");
+    expect(projectionBlock).toContain("spectralReadabilityGain");
+    expect(projectionBlock).not.toContain(
+      "smoothstep(float(0.0), float(0.015), total)",
+    );
+    expect(projectionBlock).not.toContain("uColor");
+    expect(projectionBlock).not.toContain("uSurfaceColor");
+  });
+
   it("samples only the canonical modal basis atlas texture for field ownership", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),

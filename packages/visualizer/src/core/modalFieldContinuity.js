@@ -14,6 +14,7 @@ export const STRUCTURAL_ADMISSION_REFERENCE_MODE_ORDER_FRACTION = 0.25;
 const TOPOLOGY_REPLACE_EVIDENCE_MARGIN = 0.08;
 const TOPOLOGY_REPLACE_EVIDENCE_RATIO = 1.35;
 const TOPOLOGY_REPLACE_MAX_FRACTION = 0.4;
+const RETAINED_PAYLOAD_DROP_RATIO = 0.85;
 const STRUCTURAL_ADMISSION_COMPLIANCE_EXPONENT = 2;
 const STRUCTURAL_ADMISSION_MIN_COMPLIANCE = 0.12;
 const DETAIL_ADMISSION_MAX_FRACTION = 0.25;
@@ -223,6 +224,7 @@ function createRecord(entry, nowSec) {
     basisRepresentable: entry.basisRepresentable,
     candidateIndex: entry.candidateIndex,
     payload: entry.payload,
+    lastRenderablePayload: entry.payload,
   };
 }
 
@@ -243,6 +245,22 @@ export function createModalFieldContinuityState() {
     lastResetToken: undefined,
     diagnostics: null,
   };
+}
+
+export function hasVisibleModalFieldContinuityPayload(state) {
+  if (!state?.visibleModeKeys?.length || !state?.recordsByModeKey) {
+    return false;
+  }
+
+  return state.visibleModeKeys.some((modeKey) => {
+    const record = state.recordsByModeKey.get(modeKey);
+    const coefficient =
+      record?.lastRenderablePayload?.slot?.[3] ??
+      record?.payload?.slot?.[3] ??
+      record?.lastCoefficientSnapshot ??
+      0;
+    return record?.basisEligible === true && coefficient > 0;
+  });
 }
 
 function canReassignBasis(state, nowSec) {
@@ -281,28 +299,111 @@ function updateRecordSnapshot(record, entry, nowSec) {
   record.basisRepresentable = entry.basisRepresentable;
   record.candidateIndex = entry.candidateIndex;
   record.payload = entry.payload;
+  record.lastRenderablePayload = entry.payload;
 }
 
-function muteRecordLivePayload(record) {
+function updateRecordEvidence(record, entry, nowSec) {
+  record.mode = entry.mode;
+  record.evidenceScore = entry.evidenceScore;
+  record.lastObservedAtSec = nowSec;
+  record.structuralAdmissionScore = entry.structuralAdmissionScore;
+  record.structuralAdmissionCompliance = entry.structuralAdmissionCompliance;
+  record.basisRepresentable = entry.basisRepresentable;
+  record.candidateIndex = entry.candidateIndex;
+}
+
+function scalePayloadValue(value, scale) {
+  return Math.max(0, (Number.isFinite(value) ? value : 0) * scale);
+}
+
+function shouldRetainRenderablePayloadForRelease(record, entry) {
+  if (
+    !record?.basisEligible ||
+    entry.evidenceScore >= TOPOLOGY_RELEASE_EVIDENCE
+  ) {
+    return false;
+  }
+
+  const previousCoefficient = Math.max(
+    0,
+    record.lastRenderablePayload?.slot?.[3] ??
+      record.payload?.slot?.[3] ??
+      record.lastCoefficientSnapshot ??
+      0,
+  );
+  const currentCoefficient = Math.max(0, entry.payload?.slot?.[3] ?? 0);
+  return (
+    previousCoefficient > 0 &&
+    currentCoefficient < previousCoefficient * RETAINED_PAYLOAD_DROP_RATIO
+  );
+}
+
+function decayRecordLivePayload(record) {
+  const releaseScale = clamp01(
+    1 -
+      record.lowEvidenceSec /
+        Math.max(TOPOLOGY_RELEASE_SECONDS, Number.EPSILON),
+  );
+  const sourcePayload =
+    record.lastRenderablePayload ?? record.payload ?? {
+      slot: [
+        record.mode?.[0] ?? 0,
+        record.mode?.[1] ?? 0,
+        record.mode?.[2] ?? 0,
+        0,
+      ],
+    };
   const [u, v, w] = record.mode ?? [0, 0, 0];
-  const phase = record.payload?.phase ?? [0, 0, 0, 0];
-  const color = record.payload?.color ?? [0, 0, 0, 0];
-  const spectral = record.payload?.spectral ?? [0, 0, 0, 0];
-  const spectralLaneA = record.payload?.spectralLaneA ?? [0, 0, 0, 0];
-  const spectralLaneB = record.payload?.spectralLaneB ?? [0, 0, 0, 0];
-  const spectralMeta = record.payload?.spectralMeta ?? [0, 0, 0, 0];
-  const metadata = record.payload?.metadata ?? [0, 0, 0, 0];
-  record.lastCoefficientSnapshot = 0;
-  record.lastStoredEnergySnapshot = 0;
+  const slot = sourcePayload.slot ?? [
+    u,
+    v,
+    w,
+    record.lastCoefficientSnapshot ?? 0,
+  ];
+  const phase = sourcePayload.phase ?? [0, 0, 0, 0];
+  const color = sourcePayload.color ?? [0, 0, 0, 0];
+  const spectral = sourcePayload.spectral ?? [0, 0, 0, 0];
+  const spectralLaneA = sourcePayload.spectralLaneA ?? [0, 0, 0, 0];
+  const spectralLaneB = sourcePayload.spectralLaneB ?? [0, 0, 0, 0];
+  const spectralMeta = sourcePayload.spectralMeta ?? [0, 0, 0, 0];
+  const metadata = sourcePayload.metadata ?? [0, 0, 0, 0];
+  const coefficient = scalePayloadValue(slot[3], releaseScale);
+  record.lastCoefficientSnapshot = coefficient;
+  record.lastStoredEnergySnapshot = coefficient * coefficient;
   record.payload = {
-    slot: [u, v, w, 0],
-    phase: [phase[0] ?? 0, phase[1] ?? 0, 0, 0],
-    color: [color[0] ?? 0, color[1] ?? 0, color[2] ?? 0, 0],
-    spectral: [spectral[0] ?? 0, spectral[1] ?? 0, spectral[2] ?? 0, 0],
+    slot: [u, v, w, coefficient],
+    phase: [
+      phase[0] ?? 0,
+      phase[1] ?? 0,
+      scalePayloadValue(phase[2], releaseScale),
+      scalePayloadValue(phase[3], releaseScale),
+    ],
+    color: [
+      color[0] ?? 0,
+      color[1] ?? 0,
+      color[2] ?? 0,
+      scalePayloadValue(color[3], releaseScale),
+    ],
+    spectral: [
+      spectral[0] ?? 0,
+      spectral[1] ?? 0,
+      spectral[2] ?? 0,
+      scalePayloadValue(spectral[3], releaseScale),
+    ],
     spectralLaneA,
     spectralLaneB,
-    spectralMeta: [spectralMeta[0] ?? 0, spectralMeta[1] ?? 0, 0, 0],
-    metadata: [metadata[0] ?? 0, metadata[1] ?? 0, metadata[2] ?? 0, 0],
+    spectralMeta: [
+      spectralMeta[0] ?? 0,
+      spectralMeta[1] ?? 0,
+      scalePayloadValue(spectralMeta[2], releaseScale),
+      scalePayloadValue(spectralMeta[3], releaseScale),
+    ],
+    metadata: [
+      metadata[0] ?? 0,
+      metadata[1] ?? 0,
+      metadata[2] ?? 0,
+      scalePayloadValue(metadata[3], releaseScale),
+    ],
   };
 }
 
@@ -744,7 +845,13 @@ export function updateModalFieldContinuity(
       state.recordsByModeKey.set(entry.modeKey, record);
     }
 
-    updateRecordSnapshot(record, entry, nowSec);
+    const retainRenderablePayloadForRelease =
+      shouldRetainRenderablePayloadForRelease(record, entry);
+    if (retainRenderablePayloadForRelease) {
+      updateRecordEvidence(record, entry, nowSec);
+    } else {
+      updateRecordSnapshot(record, entry, nowSec);
+    }
 
     if (entry.evidenceScore >= TOPOLOGY_RELEASE_EVIDENCE) {
       record.lowEvidenceSec = 0;
@@ -754,6 +861,9 @@ export function updateModalFieldContinuity(
       }
     } else {
       updateLowEvidenceRecord(record, resolvedDeltaTimeSec, nowSec);
+      if (retainRenderablePayloadForRelease) {
+        decayRecordLivePayload(record);
+      }
     }
 
     if (!record.basisEligible) {
@@ -843,8 +953,8 @@ export function updateModalFieldContinuity(
       continue;
     }
 
-    muteRecordLivePayload(record);
     updateLowEvidenceRecord(record, resolvedDeltaTimeSec, nowSec);
+    decayRecordLivePayload(record);
     if (
       record.lowEvidenceSec >= TOPOLOGY_RELEASE_SECONDS &&
       canReassignBasis(state, nowSec)

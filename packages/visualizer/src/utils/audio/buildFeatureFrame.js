@@ -66,6 +66,7 @@ import {
 import { buildCanonicalFullModalDescriptor } from "../../core/modalDescriptor.js";
 import {
   createModalFieldContinuityState,
+  hasVisibleModalFieldContinuityPayload,
   updateModalFieldContinuity,
 } from "../../core/modalFieldContinuity.js";
 import {
@@ -80,6 +81,7 @@ import {
 import {
   buildModalEnergyLedger,
   hasProjectedRenderAuthority,
+  sumProjectedSlotEnergy,
 } from "./modalEnergyLedger.js";
 import {
   buildAudioSourceEvidenceFrame,
@@ -5990,7 +5992,7 @@ export function composeAudioFeatureFrame({
     modalResponse: analysisResult.structuralMetrics,
   });
   analysisResult.sourceEvidence = resolvedSourceEvidence;
-  const energyLedger = buildModalEnergyLedger({
+  let energyLedger = buildModalEnergyLedger({
     sourceEnergy: resolvedSourceEvidence.sourceEnergy,
     renderBoundaryState:
       resolvedSourceEvidence.renderBoundaryState ??
@@ -6092,12 +6094,24 @@ export function composeAudioFeatureFrame({
     hasModalField = false;
     renderAuthority = false;
   }
+  const modalProjectionContinuityHold =
+    !renderAuthority &&
+    resolvedSourceEvidence.currentSourceEvidence === true &&
+    energyLedger.renderBoundaryState === "live" &&
+    energyLedger.storedModalEnergy > energyLedger.renderEnergyEpsilon &&
+    hasVisibleModalFieldContinuityPayload(
+      preparedInputs.modalFieldContinuityState,
+    );
+  if (modalProjectionContinuityHold) {
+    fieldState = FIELD_STATES.decay;
+    hasModalField = true;
+  }
   const sourceMode =
     fieldState === FIELD_STATES.idle &&
     !preparedInputs.resolvedAuditSettings.injectTestTone
       ? "silent"
       : analysisResult.sourceMode;
-  const modalPhaseAuthority = renderAuthority
+  let modalPhaseAuthority = renderAuthority
     ? clamp01(analysisResult.structuralMetrics?.modalPhaseAuthority ?? 0)
     : 0;
   let renderSourceCoupledSlots = analysisResult.candidateForcingSlots;
@@ -6141,7 +6155,7 @@ export function composeAudioFeatureFrame({
     );
   }
 
-  if (!renderAuthority) {
+  if (!renderAuthority && !modalProjectionContinuityHold) {
     preparedInputs.modeSlots.fill(0);
     preparedInputs.referenceModeSlots.fill(0);
     preparedInputs.sourceCoupledColorSlots.fill(0);
@@ -6214,7 +6228,7 @@ export function composeAudioFeatureFrame({
       descriptorSource: modalFieldDescriptorSource,
       deltaTimeSec: modalFieldContinuityDeltaMs / 1000,
       resetToken: modalFieldContinuityResetToken,
-      renderAuthority,
+      renderAuthority: renderAuthority || modalProjectionContinuityHold,
       maxVisibleModeCount: Math.min(
         preparedInputs.capacity,
         MODAL_BASIS_ATLAS_PAGE_CAPACITY,
@@ -6228,6 +6242,76 @@ export function composeAudioFeatureFrame({
     modalFieldContinuityResult.descriptorSource;
   const modalFieldContinuityDiagnostics =
     modalFieldContinuityResult.diagnostics;
+  if (modalProjectionContinuityHold) {
+    const heldProjectedRenderEnergy = sumProjectedSlotEnergy(
+      continuityDescriptorSource.modalFieldSlots,
+      continuityDescriptorSource.activeModalFieldModeCount,
+    );
+    if (heldProjectedRenderEnergy > energyLedger.renderEnergyEpsilon) {
+      const storedSourceCoupledEnergy = clamp01(
+        energyLedger.storedModalSourceCoupledEnergy ?? 0,
+      );
+      const storedResonantEnergy = clamp01(
+        energyLedger.storedModalResonantEnergy ?? 0,
+      );
+      const storedLayerEnergy =
+        storedSourceCoupledEnergy + storedResonantEnergy;
+      const sourceCoupledShare =
+        storedLayerEnergy > 0
+          ? storedSourceCoupledEnergy / storedLayerEnergy
+          : 1;
+      const resonantShare =
+        storedLayerEnergy > 0
+          ? storedResonantEnergy / storedLayerEnergy
+          : 0;
+
+      projectedModalRenderEnergy = heldProjectedRenderEnergy;
+      modalResponseSourceCoupledEnergy =
+        heldProjectedRenderEnergy * sourceCoupledShare;
+      modalResponseResonantEnergy =
+        heldProjectedRenderEnergy * resonantShare;
+      observationEnergy = deriveModalObservationEnergy(
+        projectedModalRenderEnergy,
+        modalResponseEnergy,
+      );
+      renderAuthority = true;
+      fieldState = FIELD_STATES.decay;
+      hasModalField = true;
+      activeModeCount = Math.max(
+        activeModeCount,
+        continuityDescriptorSource.activeModalFieldModeCount,
+      );
+      modalPhaseAuthority = Math.max(
+        modalPhaseAuthority,
+        clamp01(analysisResult.structuralMetrics?.modalPhaseAuthority ?? 0),
+      );
+      energyLedger = {
+        ...energyLedger,
+        projectedRenderEnergy: heldProjectedRenderEnergy,
+        rawProjectedRenderEnergy: Math.max(
+          energyLedger.rawProjectedRenderEnergy ?? 0,
+          heldProjectedRenderEnergy,
+        ),
+        projectedSourceCoupledEnergy: modalResponseSourceCoupledEnergy,
+        projectedResonantEnergy: modalResponseResonantEnergy,
+        projectedEnergyScale: 1,
+        renderAuthority: true,
+      };
+      if (analysisResult.structuralMetrics) {
+        analysisResult.structuralMetrics.energyLedger = energyLedger;
+        analysisResult.structuralMetrics.modalResponseRenderEnergy =
+          heldProjectedRenderEnergy;
+        analysisResult.structuralMetrics.modalResponseRenderSourceCoupledEnergy =
+          modalResponseSourceCoupledEnergy;
+        analysisResult.structuralMetrics.modalResponseRenderResonantEnergy =
+          modalResponseResonantEnergy;
+      }
+    } else {
+      fieldState = FIELD_STATES.idle;
+      hasModalField = false;
+      renderAuthority = false;
+    }
+  }
   const modalDescriptor = buildCanonicalFullModalDescriptor({
     generation: preparedInputs.auditState?.frame ?? 0,
     maxTotalModes: Math.min(
