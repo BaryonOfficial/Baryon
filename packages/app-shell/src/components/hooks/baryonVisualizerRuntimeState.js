@@ -490,6 +490,11 @@ export function createRuntimeDiagnostics() {
       targetFps: 60,
       targetFrameTimeMs: 1000 / 60,
       activeModeCount: 0,
+      visibilityGateState: "unavailable",
+      visibilityGateBlockedReason: "raymarch-debug-missing",
+      spectralLightEnabled: false,
+      spectralLightLaneDrawable: false,
+      materialOutputVisible: false,
       observationEnergy: 0,
       observationReferenceAnchor: 0,
       observationReferenceSupport: 0,
@@ -655,6 +660,23 @@ export function updateObservationTransferRenderDiagnostics(
     raymarchDebug.materialProbeBloomAmplification,
     1,
   );
+  renderDiagnostics.visibilityGateState = readString(
+    raymarchDebug.visibilityGateState,
+    renderDiagnostics.visibilityGateState ?? "unavailable",
+  );
+  renderDiagnostics.visibilityGateBlockedReason =
+    raymarchDebug.visibilityGateBlockedReason === null
+      ? null
+      : readString(
+          raymarchDebug.visibilityGateBlockedReason,
+          renderDiagnostics.visibilityGateBlockedReason ?? null,
+        );
+  renderDiagnostics.spectralLightEnabled =
+    raymarchDebug.spectralLightEnabled === true;
+  renderDiagnostics.spectralLightLaneDrawable =
+    raymarchDebug.spectralLightLaneDrawable === true;
+  renderDiagnostics.materialOutputVisible =
+    raymarchDebug.materialOutputVisible === true;
   renderDiagnostics.renderQuantityLedgerVersion = readString(
     raymarchDebug.renderQuantityLedgerVersion,
     renderDiagnostics.renderQuantityLedgerVersion ?? null,
@@ -1024,6 +1046,20 @@ function buildRuntimePerfSnapshot(runtimeDiagnostics) {
       targetFrameTimeMs:
         runtimeDiagnostics?.render?.targetFrameTimeMs ?? 1000 / 60,
       activeModeCount: runtimeDiagnostics?.render?.activeModeCount ?? 0,
+      visibilityGateState:
+        runtimeDiagnostics?.render?.visibilityGateState ?? "unavailable",
+      visibilityGateBlockedReason: Object.prototype.hasOwnProperty.call(
+        runtimeDiagnostics?.render ?? {},
+        "visibilityGateBlockedReason",
+      )
+        ? runtimeDiagnostics.render.visibilityGateBlockedReason
+        : "raymarch-debug-missing",
+      spectralLightEnabled:
+        runtimeDiagnostics?.render?.spectralLightEnabled ?? false,
+      spectralLightLaneDrawable:
+        runtimeDiagnostics?.render?.spectralLightLaneDrawable ?? false,
+      materialOutputVisible:
+        runtimeDiagnostics?.render?.materialOutputVisible ?? false,
       observationEnergy: runtimeDiagnostics?.render?.observationEnergy ?? 0,
       observationReferenceAnchor:
         runtimeDiagnostics?.render?.observationReferenceAnchor ?? 0,

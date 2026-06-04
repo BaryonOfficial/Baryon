@@ -172,6 +172,11 @@ test("publishes observation transfer raymarch diagnostics in render perf snapsho
         materialProbePreBloomRadiance: 0.21,
         materialProbePostBloomRisk: 0.34,
         materialProbeBloomAmplification: 1.62,
+        visibilityGateState: "visible",
+        visibilityGateBlockedReason: null,
+        spectralLightEnabled: true,
+        spectralLightLaneDrawable: true,
+        materialOutputVisible: true,
         renderQuantityLedgerVersion: RAYMARCH_QUANTITY_LEDGER_VERSION,
         renderQuantityForbiddenConsumers: {
           observedDensityFloor: [
@@ -203,6 +208,11 @@ test("publishes observation transfer raymarch diagnostics in render perf snapsho
     expect(snapshot.render.materialProbePreBloomRadiance).toBe(0.21);
     expect(snapshot.render.materialProbePostBloomRisk).toBe(0.34);
     expect(snapshot.render.materialProbeBloomAmplification).toBe(1.62);
+    expect(snapshot.render.visibilityGateState).toBe("visible");
+    expect(snapshot.render.visibilityGateBlockedReason).toBeNull();
+    expect(snapshot.render.spectralLightEnabled).toBe(true);
+    expect(snapshot.render.spectralLightLaneDrawable).toBe(true);
+    expect(snapshot.render.materialOutputVisible).toBe(true);
     expect(snapshot.render.renderProbeSchemaVersion).toBe(
       RENDER_PROBE_SCHEMA_VERSION,
     );
@@ -217,6 +227,12 @@ test("publishes observation transfer raymarch diagnostics in render perf snapsho
         available: true,
         status: "available",
         unavailableReason: null,
+      },
+      state: {
+        visibilityGateState: "visible",
+        visibilityGateBlockedReason: null,
+        spectralLightEnabled: true,
+        spectralLightLaneDrawable: true,
       },
       material: {
         materialProbePhysicalDensity: 0.42,

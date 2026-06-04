@@ -132,6 +132,19 @@ describe("raymarch quantity ownership ledger", () => {
     }
   });
 
+  it("keeps Spectral packet quality metadata out of lane-radiance ownership", () => {
+    const contract = RAYMARCH_QUANTITY_LEDGER.spectralLaneRadiance;
+    const transforms = contract.transforms.join(" ");
+
+    expect(contract.represents).toContain("modal structural support");
+    expect(contract.represents).toContain("not extinguishing radiance gates");
+    expect(transforms).not.toContain("display-energy scaling");
+    expect(transforms).not.toContain("spectral confidence gating");
+    expect(transforms).toContain(
+      "support-weighted spectral confidence diagnostics",
+    );
+  });
+
   it("declares executable source-surface audits for material and probe consumers", () => {
     expect(RAYMARCH_RENDER_SURFACE_AUDITS).toEqual(
       expect.objectContaining({
@@ -173,9 +186,7 @@ describe("raymarch quantity ownership ledger", () => {
         modalObservationSourcePolicyConsumer: expect.objectContaining({
           file: "modalObservedScoring.js",
           owner: "sourceBoundaryModalObservationPolicy",
-          forbiddenTokens: expect.arrayContaining([
-            "analysisClass === \"file\"",
-          ]),
+          forbiddenTokens: expect.arrayContaining(['analysisClass === "file"']),
         }),
         modalProjectionDisplayScore: expect.objectContaining({
           file: "modalExcitation.js",
@@ -207,7 +218,10 @@ describe("raymarch quantity ownership ledger", () => {
             "dominance",
             "entropy",
           ]),
-          forbiddenTokens: expect.arrayContaining(["colorSum.div"]),
+          forbiddenTokens: expect.arrayContaining([
+            "colorSum.div",
+            "displayEnergy",
+          ]),
         }),
         materialSpectralLaneProjection: expect.objectContaining({
           file: "material.js",
@@ -385,8 +399,8 @@ describe("raymarch quantity ownership ledger", () => {
     expect(RAYMARCH_FORBIDDEN_CONSUMER_SUMMARY.cancellationSuppression).toEqual(
       expect.arrayContaining(["whiteEmissionFieldAuthority"]),
     );
-    expect(RAYMARCH_FORBIDDEN_CONSUMER_SUMMARY.physicalCausticDensity).not.toContain(
-      "highlightMask",
-    );
+    expect(
+      RAYMARCH_FORBIDDEN_CONSUMER_SUMMARY.physicalCausticDensity,
+    ).not.toContain("highlightMask");
   });
 });

@@ -85,6 +85,27 @@ function formatModalBasisCacheState({
   return "idle";
 }
 
+function formatVisibilityGateState(value) {
+  switch (value) {
+    case "visible":
+      return "visible";
+    case "render-authority-off":
+      return "no authority";
+    case "modal-basis-not-drawable":
+      return "basis gated";
+    case "modal-basis-display-incoherent":
+      return "basis incoherent";
+    case "spectral-lane-not-drawable":
+      return "spectral gated";
+    case "material-output-near-black":
+      return "material black";
+    case "volume-hidden":
+      return "volume hidden";
+    default:
+      return "n/a";
+  }
+}
+
 function selectDebugSnapshot(snapshot) {
   if (!snapshot) return null;
   return snapshot.raymarchDebug ?? snapshot;
@@ -120,11 +141,13 @@ const DEBUG_METRIC_TOOLTIPS = {
   Density: "Average body density in the raymarched field this frame.",
   Exit: "Estimated early-exit ratio in the raymarch. Higher values usually mean more rays are terminating sooner.",
   Volume: "Whether the volumetric field is currently considered visible.",
+  Gate: "Which runtime gate owns a hidden or near-black raymarch frame: render authority, modal basis, Spectral lane cache, volume visibility, or material output.",
   Rendered: "Canonical modal-field slots uploaded from the descriptor.",
   Desc: "Current canonical descriptor field authority.",
   Overflow:
     "Whether the observer produced more valid modes than descriptor capacity.",
   Chroma: "Maximum Spectral Light color weight uploaded for the modal field.",
+  Lane: "Spectral lane-cache radiance input currently drawable by the material. This is the canonical Spectral packet signal, separate from legacy modal color-slot Chroma.",
   Flux: "Weighted spectral-flux contribution to Change. Higher values mean more fresh frequency-bin motion.",
   Hit: "Weighted transient-energy contribution to Change. Higher values mean stronger attacks and onsets.",
   "Slot Δ": "Weighted average slot-amplitude delta contribution to Change.",
@@ -409,6 +432,10 @@ export default function ParticleDebugOverlay({
     { label: "Exit", value: formatNumber(debugSnapshot.earlyExitRatio) },
     { label: "Volume", value: String(debugSnapshot.volumeVisible) },
     {
+      label: "Gate",
+      value: formatVisibilityGateState(debugSnapshot.visibilityGateState),
+    },
+    {
       label: "Rendered",
       value: debugSnapshot.renderedModalFieldModeCount ?? "n/a",
     },
@@ -423,6 +450,10 @@ export default function ParticleDebugOverlay({
     {
       label: "Chroma",
       value: formatNumber(debugSnapshot.renderedModalFieldColorWeightMax, 2),
+    },
+    {
+      label: "Lane",
+      value: formatNumber(debugSnapshot.spectralLaneCacheRadianceInputTotal, 3),
     },
     {
       label: "Basis cache",

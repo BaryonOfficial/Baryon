@@ -372,21 +372,11 @@ describe("spectral lane radiance accumulation", () => {
   it("accumulates lane radiance and reports total dominance and entropy", () => {
     const result = raymarchFieldCache.accumulateSpectralLaneRadianceAtPoint({
       point: [0.2, 0.25, 0.25],
-      modalFieldSlots: new Float32Array([
-        1, 1, 1, 0.8,
-        2, 1, 1, 0.6,
-      ]),
-      modalFieldSpectralLaneA: new Float32Array([
-        1, 0, 0, 0,
-        0, 0, 1, 0,
-      ]),
-      modalFieldSpectralLaneB: new Float32Array([
-        0, 0, 0, 0,
-        0, 0, 0, 0,
-      ]),
+      modalFieldSlots: new Float32Array([1, 1, 1, 0.8, 2, 1, 1, 0.6]),
+      modalFieldSpectralLaneA: new Float32Array([1, 0, 0, 0, 0, 0, 1, 0]),
+      modalFieldSpectralLaneB: new Float32Array([0, 0, 0, 0, 0, 0, 0, 0]),
       modalFieldSpectralMeta: new Float32Array([
-        0.1, 0.04, 0.9, 0.5,
-        0.4, 0.08, 0.75, 0.4,
+        0.1, 0.04, 0.9, 0.5, 0.4, 0.08, 0.75, 0.4,
       ]),
       activeCount: 2,
       cavityGeometry: "rectangular",
@@ -419,16 +409,44 @@ describe("spectral lane radiance accumulation", () => {
       modalFieldSpectralLaneA: new Float32Array([1, 0, 0, 0]),
       modalFieldSpectralLaneB: new Float32Array([0, 0, 0, 0]),
     });
-    const violetLane = raymarchFieldCache.accumulateSpectralLaneRadianceAtPoint({
-      ...commonOptions,
-      modalFieldSpectralLaneA: new Float32Array([0, 0, 0, 0]),
-      modalFieldSpectralLaneB: new Float32Array([0, 0, 1, 0]),
-    });
+    const violetLane = raymarchFieldCache.accumulateSpectralLaneRadianceAtPoint(
+      {
+        ...commonOptions,
+        modalFieldSpectralLaneA: new Float32Array([0, 0, 0, 0]),
+        modalFieldSpectralLaneB: new Float32Array([0, 0, 1, 0]),
+      },
+    );
 
     expect(redLane.total).toBeGreaterThan(0);
     expect(violetLane.total).toBeCloseTo(redLane.total, 8);
     expect(redLane.lanes[0]).toBeCloseTo(redLane.total, 8);
     expect(violetLane.lanes[6]).toBeCloseTo(violetLane.total, 8);
+  });
+
+  it("does not let packet confidence or display energy extinguish lane radiance", () => {
+    const commonOptions = {
+      point: [0.2, 0.25, 0.25],
+      modalFieldSlots: new Float32Array([1, 1, 1, 0.8]),
+      modalFieldSpectralLaneA: new Float32Array([0.25, 0.75, 0, 0]),
+      modalFieldSpectralLaneB: new Float32Array([0, 0, 0, 0]),
+      activeCount: 1,
+      cavityGeometry: "rectangular",
+    };
+    const confidentPacket =
+      raymarchFieldCache.accumulateSpectralLaneRadianceAtPoint({
+        ...commonOptions,
+        modalFieldSpectralMeta: new Float32Array([0.1, 0.04, 0.9, 0.7]),
+      });
+    const lowQualityPacket =
+      raymarchFieldCache.accumulateSpectralLaneRadianceAtPoint({
+        ...commonOptions,
+        modalFieldSpectralMeta: new Float32Array([0.1, 0.04, 0, 0]),
+      });
+
+    expect(confidentPacket.total).toBeGreaterThan(0);
+    expect(lowQualityPacket.total).toBeCloseTo(confidentPacket.total, 8);
+    expect(lowQualityPacket.lanes[0]).toBeCloseTo(confidentPacket.lanes[0], 8);
+    expect(lowQualityPacket.lanes[1]).toBeCloseTo(confidentPacket.lanes[1], 8);
   });
 
   it("creates a lane texture cache with separate lane and stats textures", () => {
@@ -443,9 +461,7 @@ describe("spectral lane radiance accumulation", () => {
     expect(cache.spectralLaneTextureB).toBeTruthy();
     expect(cache.spectralLaneStatsTexture).toBeTruthy();
     expect(cache.spectralLaneTextureA).not.toBe(cache.spectralLaneTextureB);
-    expect(cache.spectralLaneStatsTexture).not.toBe(
-      cache.spectralLaneTextureA,
-    );
+    expect(cache.spectralLaneStatsTexture).not.toBe(cache.spectralLaneTextureA);
   });
 
   it("builds a GPU lane-radiance cache from modal basis pages and spectral lane buffers", () => {
@@ -469,11 +485,18 @@ describe("spectral lane radiance accumulation", () => {
     expect(computeSource).toContain("modalFieldSpectralLaneABuffer.element(i)");
     expect(computeSource).toContain("modalFieldSpectralLaneBBuffer.element(i)");
     expect(computeSource).toContain("modalFieldSpectralMetaBuffer.element(i)");
+    expect(computeSource).toContain(
+      "packetConfidenceSum.addAssign(spectralConfidence.mul(modalSupport))",
+    );
     expect(computeSource).toContain("spectralLaneTextureA,");
     expect(computeSource).toContain("spectralLaneTextureB,");
     expect(computeSource).toContain("spectralLaneStatsTexture,");
     expect(computeSource).toContain("dominance");
     expect(computeSource).toContain("entropy");
+    expect(computeSource).not.toContain("displayEnergy");
+    expect(computeSource).not.toContain(
+      "const spectralSupport = modalSupport\n              .mul",
+    );
     expect(computeSource).not.toContain("modalFieldColorBuffer");
     expect(computeSource).not.toContain("cachedSpectralLightEnabled");
     expect(computeSource).not.toContain("spectralLightCacheTexture");
@@ -847,6 +870,10 @@ describe("fieldCache", () => {
     expect(computeSource).toContain("independentPhaseEnergySum");
     expect(computeSource).toContain("maxConstructivePhaseMagnitudeSum");
     expect(computeSource).toContain("phaseInterferenceContrast");
+    expect(computeSource).toContain("uPhaseEvaluationTime");
+    expect(computeSource).toContain("const rawPhase =");
+    expect(computeSource).toContain("fract(rawPhase.mul(invTwoPi).add(half))");
+    expect(computeSource).not.toContain("phaseSlot.y.mul(uniforms.uTime)");
     expect(computeSource).not.toContain("phaseResponseTexture");
     expect(computeSource).not.toContain("phaseResponseMagnitude");
     expect(computeSource).toContain("textureStore(");

@@ -381,10 +381,7 @@ function projectSpectralLaneRadianceToRgbNode({
     .add(laneRgbNode6.mul(laneB.z))
     .add(laneRgbNode7.mul(laneB.w))
     .toVar();
-  const spectralPeak = max(
-    max(spectralRgb.x, spectralRgb.y),
-    spectralRgb.z,
-  );
+  const spectralPeak = max(max(spectralRgb.x, spectralRgb.y), spectralRgb.z);
   const normalizedSpectralRgb = spectralRgb.div(max(spectralPeak, float(1e-4)));
   const broadSpectrumChromaAnchor = clamp(
     entropy.mul(float(1.0).sub(dominance)).mul(float(0.72)),
@@ -414,12 +411,10 @@ function projectSpectralLaneRadianceToRgbNode({
   );
   const dominanceGain = mix(float(0.98), float(1.14), dominance);
   const rawRadianceGain = smoothstep(float(0.0), float(0.009), total);
-  const spectralReadabilityPresence = smoothstep(
-    float(0.00018),
-    float(0.0028),
-    total,
-  );
-  const spectralReadabilityFloor = spectralReadabilityPresence
+  const spectralReadabilityPresent = total
+    .greaterThan(float(1e-7))
+    .select(float(1.0), float(0.0));
+  const spectralReadabilityFloor = spectralReadabilityPresent
     .mul(mix(float(0.54), float(0.42), dominance))
     .mul(mix(float(1.0), float(0.94), entropy));
   const spectralReadabilityGain = max(
@@ -901,9 +896,9 @@ function createScatteringNode({
   const spectralLaneTransferEnabled = Boolean(
     normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) ===
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.laneCache &&
-      spectralLaneTextureA &&
-      spectralLaneTextureB &&
-      spectralLaneStatsTexture,
+    spectralLaneTextureA &&
+    spectralLaneTextureB &&
+    spectralLaneStatsTexture,
   );
 
   return Fn(
@@ -1657,7 +1652,7 @@ function createScatteringNode({
               float(WHITE_EMISSION_CROWDING_REDUCTION),
             ),
           ),
-      );
+        );
       // Modal coherence warms color; rapid change cools it.
       // spectralColorBiasHintOffset is pre-computed above the Fn.
       const spectralColorBias = clamp(
@@ -1677,7 +1672,9 @@ function createScatteringNode({
       const staticContourColor = mix(
         staticBaseColor,
         uSurfaceColor,
-        /** @type {any} */ (contourAccent.mul(float(STATIC_SURFACE_TINT_SCALE))),
+        /** @type {any} */ (
+          contourAccent.mul(float(STATIC_SURFACE_TINT_SCALE))
+        ),
       );
       const staticLaserColor = mix(
         staticContourColor,
@@ -1725,13 +1722,11 @@ function createScatteringNode({
           spectralLaneTextureB,
           spectralLaneStatsTexture,
         });
-        const spectralCausticRadianceContribution = spectralLaneTransfer.rgb
-          .mul(causticVisibleDensity)
-          .mul(spectralLaneTransfer.authority);
+        const spectralCausticRadianceContribution =
+          spectralLaneTransfer.rgb.mul(causticVisibleDensity);
         const spectralSupportRevealContribution = spectralLaneTransfer.rgb
           .mul(float(PHOTOGRAPHIC_DARK_BODY_RATIO))
-          .mul(supportRevealDensity)
-          .mul(spectralLaneTransfer.authority);
+          .mul(supportRevealDensity);
 
         return spectralCausticRadianceContribution
           .mul(structureAwareEmissionGain)
@@ -1740,9 +1735,8 @@ function createScatteringNode({
       const causticRadianceContribution = volumeColor.mul(
         causticVisibleDensity,
       );
-      const supportRevealContribution = supportRevealColor.mul(
-        supportRevealDensity,
-      );
+      const supportRevealContribution =
+        supportRevealColor.mul(supportRevealDensity);
       return causticRadianceContribution
         .mul(structureAwareEmissionGain)
         .add(supportRevealContribution);
@@ -1889,8 +1883,7 @@ export function createRaymarchVolumeMesh({
         modalResourceBindings.modalPhaseInterferenceTexture,
       spectralLaneTextureA: modalResourceBindings.spectralLaneTextureA,
       spectralLaneTextureB: modalResourceBindings.spectralLaneTextureB,
-      spectralLaneStatsTexture:
-        modalResourceBindings.spectralLaneStatsTexture,
+      spectralLaneStatsTexture: modalResourceBindings.spectralLaneStatsTexture,
       spectralLightEvaluationMode,
       modalFieldModeBuffer: modalResourceBindings.modalFieldModeBuffer,
       modalFieldCoefficientBuffer:
@@ -1906,10 +1899,8 @@ export function createRaymarchVolumeMesh({
       modalResourceBindings.modalLiveSupportTexture;
     material.modalPhaseInterferenceTexture =
       modalResourceBindings.modalPhaseInterferenceTexture;
-    material.spectralLaneTextureA =
-      modalResourceBindings.spectralLaneTextureA;
-    material.spectralLaneTextureB =
-      modalResourceBindings.spectralLaneTextureB;
+    material.spectralLaneTextureA = modalResourceBindings.spectralLaneTextureA;
+    material.spectralLaneTextureB = modalResourceBindings.spectralLaneTextureB;
     material.spectralLaneStatsTexture =
       modalResourceBindings.spectralLaneStatsTexture;
     material.modalFieldModeBuffer = modalResourceBindings.modalFieldModeBuffer;

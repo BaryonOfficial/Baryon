@@ -400,30 +400,35 @@ describe("buildCanonicalFullModalDescriptor", () => {
       Array.from(shifted.slotViews.modalFieldColorSlots),
     );
     expect(Array.from(base.slotViews.modalFieldSpectralLaneA)).toEqual([
-      1,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
+      1, 0, 0, 0, 0, 0, 0, 0,
     ]);
     expect(Array.from(shifted.slotViews.modalFieldSpectralLaneA)).toEqual([
-      0,
-      1,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
+      0, 1, 0, 0, 0, 0, 0, 0,
     ]);
     expect(base.diagnostics.spectralLaneHash).toBeTypeOf("number");
     expect(shifted.diagnostics.spectralLaneHash).toBeTypeOf("number");
     expect(base.diagnostics.spectralLaneHash).not.toBe(
       shifted.diagnostics.spectralLaneHash,
     );
+  });
+
+  it("preserves Spectral lane packets when quality metadata is zero", () => {
+    const descriptor = buildCanonicalFullModalDescriptor({
+      maxTotalModes: 2,
+      modalFieldSlots: makeSlots([[2, 2, 2, 0.7]]),
+      modalFieldColorSlots: makeColorSlots([[0.5, 0.5, 0.5, 1]]),
+      modalFieldSpectralLaneA: makePackedSlots([[0.25, 0.75, 0, 0]]),
+      modalFieldSpectralLaneB: makePackedSlots([[0, 0, 0, 0]]),
+      modalFieldSpectralMeta: makePackedSlots([[0.6, 0.04, 0, 0]]),
+      activeModalFieldModeCount: 1,
+    });
+
+    expect(Array.from(descriptor.slotViews.modalFieldSpectralLaneA)).toEqual([
+      0.25, 0.75, 0, 0, 0, 0, 0, 0,
+    ]);
+    expect(descriptor.slotViews.modalFieldSpectralMeta[0]).toBeCloseTo(0.6, 6);
+    expect(descriptor.slotViews.modalFieldSpectralMeta[2]).toBe(0);
+    expect(descriptor.slotViews.modalFieldSpectralMeta[3]).toBe(0);
   });
 
   it("compacts when upstream continuity releases an earlier mode", () => {

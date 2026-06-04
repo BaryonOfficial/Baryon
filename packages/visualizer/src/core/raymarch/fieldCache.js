@@ -8,6 +8,7 @@ import {
   clamp,
   cos,
   float,
+  fract,
   globalId,
   int,
   instancedArray,
@@ -371,6 +372,9 @@ function createRaymarchCacheRequestUniformSnapshots(sourceUniforms) {
   return {
     uRadius: { value: readUniformNumber(sourceUniforms, "uRadius", 1) },
     uTime: { value: readUniformNumber(sourceUniforms, "uTime", 0) },
+    uPhaseEvaluationTime: {
+      value: readUniformNumber(sourceUniforms, "uPhaseEvaluationTime", 0),
+    },
     uModalFieldModeCount: {
       value: readUniformNumber(sourceUniforms, "uModalFieldModeCount", 0),
     },
@@ -2000,7 +2004,6 @@ function accumulateLiveSynthesisFieldAtPoint({
  *   modalFieldSlots?: Float32Array | number[] | null,
  *   modalFieldSpectralLaneA?: Float32Array | number[] | null,
  *   modalFieldSpectralLaneB?: Float32Array | number[] | null,
- *   modalFieldSpectralMeta?: Float32Array | number[] | null,
  *   activeCount?: number,
  *   boundaryMode?: string,
  *   cavityGeometry?: string,
@@ -2017,7 +2020,6 @@ export function accumulateSpectralLaneRadianceAtPoint({
   modalFieldSlots,
   modalFieldSpectralLaneA,
   modalFieldSpectralLaneB,
-  modalFieldSpectralMeta,
   activeCount,
   boundaryMode,
   cavityGeometry = "rectangular",
@@ -2055,15 +2057,6 @@ export function accumulateSpectralLaneRadianceAtPoint({
     ) {
       continue;
     }
-    const displayEnergy = Math.max(0, modalFieldSpectralMeta?.[offset + 3] ?? 0);
-    const spectralConfidence = Math.max(
-      0,
-      modalFieldSpectralMeta?.[offset + 2] ?? 0,
-    );
-    if (!(displayEnergy > 0) || !(spectralConfidence > 0)) {
-      continue;
-    }
-
     const family = geometryBackend.evaluateMode({
       u: modalFieldSlots?.[offset] ?? 0,
       v: modalFieldSlots?.[offset + 1] ?? 0,
@@ -2074,10 +2067,7 @@ export function accumulateSpectralLaneRadianceAtPoint({
       scale,
       boundaryMode: normalizedBoundaryMode,
     });
-    const support =
-      Math.abs(coefficient * (family?.field ?? 0)) ** gamma *
-      displayEnergy *
-      spectralConfidence;
+    const support = Math.abs(coefficient * (family?.field ?? 0)) ** gamma;
     if (!(support > 0)) {
       continue;
     }
@@ -2543,6 +2533,8 @@ function createLiveFieldProjectionComputeKernel({
   const half = float(0.5);
   const zero = float(0.0);
   const one = float(1.0);
+  const twoPi = float(Math.PI * 2);
+  const invTwoPi = float(1 / (Math.PI * 2));
   const invResolution = one.div(resolutionFloat);
   const invCapacity = one.div(float(normalizedCapacity));
 
@@ -2596,7 +2588,12 @@ function createLiveFieldProjectionComputeKernel({
             supportSum.addAssign(abs(coefficient).mul(abs(basisSample.x)));
             const phaseSlot = modalFieldPhaseBuffer.element(i);
             const phaseWeight = clamp(phaseSlot.z.mul(phaseSlot.w), zero, one);
-            const phase = phaseSlot.x.add(phaseSlot.y.mul(uniforms.uTime));
+            const rawPhase = phaseSlot.x.add(
+              phaseSlot.y.mul(uniforms.uPhaseEvaluationTime),
+            );
+            const phase = fract(rawPhase.mul(invTwoPi).add(half))
+              .sub(half)
+              .mul(twoPi);
             const weightedPhaseContribution =
               structuralContribution.mul(phaseWeight);
             phaseInterferenceSumReal.addAssign(
@@ -2777,11 +2774,8 @@ function createSpectralLaneCacheComputeKernel({
             const laneB = modalFieldSpectralLaneBBuffer.element(i);
             const meta = modalFieldSpectralMetaBuffer.element(i);
             const spectralConfidence = clamp(meta.z, zero, one);
-            const displayEnergy = max(meta.w, zero);
             const modalSupport = abs(coefficient).mul(abs(basisSample.x));
-            const spectralSupport = modalSupport
-              .mul(displayEnergy)
-              .mul(spectralConfidence);
+            const spectralSupport = modalSupport;
 
             packetConfidenceSum.addAssign(spectralConfidence.mul(modalSupport));
             packetSupportSum.addAssign(modalSupport);
@@ -2864,10 +2858,9 @@ function createSpectralLaneCacheComputeKernel({
           zero,
         )
         .toVar();
-      const spectralConfidence =
-        packetSupportSum
-          .greaterThan(laneEpsilon)
-          .select(packetConfidenceSum.div(packetSupportSum), zero);
+      const spectralConfidence = packetSupportSum
+        .greaterThan(laneEpsilon)
+        .select(packetConfidenceSum.div(packetSupportSum), zero);
 
       textureStore(
         spectralLaneTextureA,

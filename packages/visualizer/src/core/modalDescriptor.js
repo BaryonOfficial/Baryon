@@ -161,6 +161,15 @@ function divideOrFallback(numerator, denominator, fallback = 0) {
   return denominator > 0 ? numerator / denominator : fallback;
 }
 
+function getSpectralLanePacketMass(laneA, laneB) {
+  let mass = 0;
+  for (let laneIndex = 0; laneIndex < 4; laneIndex += 1) {
+    mass += Math.max(0, laneA?.[laneIndex] ?? 0);
+    mass += Math.max(0, laneB?.[laneIndex] ?? 0);
+  }
+  return mass;
+}
+
 function buildModalVarietyAudit({
   slotAssignments,
   rejectedEntries,
@@ -422,8 +431,7 @@ function mergeAdmissionEntries(entries) {
       Math.max(0, entry.colorWeight) * entry.coefficient;
     const spectralPacketInfluence =
       Math.max(0, entry.coefficient) *
-      Math.max(0, entry.spectralMeta?.[2] ?? 0) *
-      Math.max(0, entry.spectralMeta?.[3] ?? 0);
+      getSpectralLanePacketMass(entry.spectralLaneA, entry.spectralLaneB);
     if (!existing) {
       merged.set(entry.modeKey, {
         ...entry,

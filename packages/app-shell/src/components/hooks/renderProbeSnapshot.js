@@ -123,6 +123,21 @@ export function buildRenderProbeSnapshot({
           raymarchDebug.uploadedModeSlotCount ??
           raymarchDebug.modeSlotCount,
       ),
+      visibilityGateState: readString(
+        render.visibilityGateState ?? raymarchDebug.visibilityGateState,
+        available ? "unknown" : "unavailable",
+      ),
+      visibilityGateBlockedReason: readString(
+        render.visibilityGateBlockedReason ??
+          raymarchDebug.visibilityGateBlockedReason,
+      ),
+      spectralLightEnabled: readBoolean(
+        render.spectralLightEnabled ?? raymarchDebug.spectralLightEnabled,
+      ),
+      spectralLightLaneDrawable: readBoolean(
+        render.spectralLightLaneDrawable ??
+          raymarchDebug.spectralLightLaneDrawable,
+      ),
       totalSlotAmplitude: readFiniteNumber(
         runtimeState?.uniforms?.uTotalSlotAmplitude?.value ??
           raymarchDebug.totalSlotAmplitude ??

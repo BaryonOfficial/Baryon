@@ -312,8 +312,9 @@ describe("raymarch volume material", () => {
     expect(finalTransferBlock).toContain(
       "causticRadianceContribution = volumeColor.mul",
     );
+    expect(finalTransferBlock).toContain("supportRevealContribution =");
     expect(finalTransferBlock).toContain(
-      "supportRevealContribution = supportRevealColor.mul",
+      "supportRevealColor.mul(supportRevealDensity)",
     );
     expect(finalTransferBlock).not.toContain(
       "causticRadianceContribution = volumeColor.mul(stabilizedDensity)",
@@ -833,7 +834,7 @@ describe("raymarch volume material", () => {
     );
     const supportRevealStart = expectSourceIndex(
       source,
-      "const supportRevealContribution = supportRevealColor.mul(",
+      "const supportRevealContribution =",
     );
     const finalRadianceStart = expectSourceIndex(
       source,
@@ -912,9 +913,7 @@ describe("raymarch volume material", () => {
     expect(laneTransferBlock).toContain(
       "texture3D(spectralLaneStatsTexture).sample",
     );
-    expect(laneTransferBlock).toContain(
-      "projectSpectralLaneRadianceToRgbNode",
-    );
+    expect(laneTransferBlock).toContain("projectSpectralLaneRadianceToRgbNode");
     expect(source).toContain("SPECTRAL_LIGHT_LANE_DISPLAY_RGB");
     expect(laneTransferBlock).toContain("dominance");
     expect(laneTransferBlock).toContain("entropy");
@@ -926,17 +925,16 @@ describe("raymarch volume material", () => {
     expect(scatteringSignature).toContain("spectralLaneTextureA");
     expect(scatteringSignature).toContain("spectralLaneTextureB");
     expect(scatteringSignature).toContain("spectralLaneStatsTexture");
-    expect(materialBindingBlock).toContain(
-      "spectralLightEvaluationMode",
-    );
+    expect(materialBindingBlock).toContain("spectralLightEvaluationMode");
     expect(materialBindingBlock).toContain(
       "spectralLaneTextureA: modalResourceBindings.spectralLaneTextureA",
     );
     expect(materialBindingBlock).toContain(
       "spectralLaneTextureB: modalResourceBindings.spectralLaneTextureB",
     );
+    expect(materialBindingBlock).toContain("spectralLaneStatsTexture:");
     expect(materialBindingBlock).toContain(
-      "spectralLaneStatsTexture:\n        modalResourceBindings.spectralLaneStatsTexture",
+      "modalResourceBindings.spectralLaneStatsTexture",
     );
   });
 
@@ -971,13 +969,44 @@ describe("raymarch volume material", () => {
     );
 
     expect(projectionBlock).toContain("rawRadianceGain");
+    expect(projectionBlock).toContain("spectralReadabilityPresent");
     expect(projectionBlock).toContain("spectralReadabilityFloor");
     expect(projectionBlock).toContain("spectralReadabilityGain");
+    expect(projectionBlock).toContain("total");
+    expect(projectionBlock).toContain(".greaterThan(float(1e-7))");
+    expect(projectionBlock).toContain(".select(float(1.0), float(0.0))");
     expect(projectionBlock).not.toContain(
       "smoothstep(float(0.0), float(0.015), total)",
     );
+    expect(projectionBlock).not.toContain(
+      "smoothstep(\n    float(0.00018),\n    float(0.0028),\n    total,\n  )",
+    );
     expect(projectionBlock).not.toContain("uColor");
     expect(projectionBlock).not.toContain("uSurfaceColor");
+  });
+
+  it("does not fall back to static color inside Spectral lane transfer", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const spectralBranch = expectSourceBlock(
+      source,
+      "if (spectralLaneTransferEnabled) {",
+      "const causticRadianceContribution = volumeColor.mul(",
+    );
+
+    expect(spectralBranch).toContain(
+      "const spectralCausticRadianceContribution =",
+    );
+    expect(spectralBranch).toContain("spectralLaneTransfer.rgb");
+    expect(spectralBranch).toContain(".mul(causticVisibleDensity)");
+    expect(spectralBranch).not.toContain(
+      ".mul(spectralLaneTransfer.authority)",
+    );
+    expect(spectralBranch).not.toContain("volumeColor");
+    expect(spectralBranch).not.toContain("supportRevealColor");
+    expect(spectralBranch).not.toContain("const spectralCausticColor = mix(");
   });
 
   it("samples only the canonical modal basis atlas texture for field ownership", () => {

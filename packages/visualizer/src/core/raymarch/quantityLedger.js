@@ -1,5 +1,4 @@
-export const RAYMARCH_QUANTITY_LEDGER_VERSION =
-  "raymarch-render-quantity-v2";
+export const RAYMARCH_QUANTITY_LEDGER_VERSION = "raymarch-render-quantity-v2";
 
 function freezeStringArray(values = []) {
   return Object.freeze([...values]);
@@ -80,7 +79,11 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
       "modal response",
       "modal energy ledger",
     ],
-    allowedConsumers: ["storedModalEnergy", "projectedRenderEnergy", "diagnostics"],
+    allowedConsumers: [
+      "storedModalEnergy",
+      "projectedRenderEnergy",
+      "diagnostics",
+    ],
     forbiddenConsumers: [
       "modalIdentityTopology",
       "phaseState",
@@ -92,8 +95,10 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
     quantity: "sourceBoundaryModalObservationPolicy",
     lane: "audio-evidence",
     surface: "pipeline",
-    represents: "source-class weak-signal suppression policy before modal observation",
-    deepOwner: "audioSourceEvidence.js derives policy from source class and source metrics",
+    represents:
+      "source-class weak-signal suppression policy before modal observation",
+    deepOwner:
+      "audioSourceEvidence.js derives policy from source class and source metrics",
     transforms: ["source-boundary classification", "metric thresholding"],
     allowedConsumerPath: [
       "audio evidence",
@@ -114,8 +119,10 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
     quantity: "storedModalEnergy",
     lane: "modal-response",
     surface: "pipeline",
-    represents: "retained modal response energy before render-boundary projection",
-    deepOwner: "modalResponse.js computes retained response; modalEnergyLedger.js reads it",
+    represents:
+      "retained modal response energy before render-boundary projection",
+    deepOwner:
+      "modalResponse.js computes retained response; modalEnergyLedger.js reads it",
     transforms: ["modal response integration", "damping", "clamp01"],
     allowedConsumerPath: ["modal response", "projected render energy"],
     allowedConsumers: ["projectedRenderEnergy", "diagnostics"],
@@ -131,9 +138,14 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
     quantity: "projectedRenderEnergy",
     lane: "projection",
     surface: "pipeline",
-    represents: "bounded render-facing energy after source/render boundary caps",
+    represents:
+      "bounded render-facing energy after source/render boundary caps",
     deepOwner: "modalEnergyLedger.js",
-    transforms: ["slot amplitude square", "boundary suppression", "stored-energy cap"],
+    transforms: [
+      "slot amplitude square",
+      "boundary suppression",
+      "stored-energy cap",
+    ],
     allowedConsumerPath: [
       "modal energy ledger",
       "feature frame render authority",
@@ -156,9 +168,15 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
     quantity: "modalAmplitudeCoefficient",
     lane: "canonical-descriptor",
     surface: "pipeline",
-    represents: "nonnegative modal coefficient/amplitude uploaded for field synthesis",
-    deepOwner: "buildFeatureFrame.js publishes slots; modalDescriptor.js canonicalizes them",
-    transforms: ["projected energy scale", "continuity admission", "descriptor merge"],
+    represents:
+      "nonnegative modal coefficient/amplitude uploaded for field synthesis",
+    deepOwner:
+      "buildFeatureFrame.js publishes slots; modalDescriptor.js canonicalizes them",
+    transforms: [
+      "projected energy scale",
+      "continuity admission",
+      "descriptor merge",
+    ],
     allowedConsumerPath: [
       "canonical modal descriptor",
       "runtime coefficient upload",
@@ -171,15 +189,24 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
       "structuralProjectionDrive",
       "diagnostics",
     ],
-    forbiddenConsumers: ["modalIdentityTopology", "phaseState", "displayCompression"],
+    forbiddenConsumers: [
+      "modalIdentityTopology",
+      "phaseState",
+      "displayCompression",
+    ],
   }),
   modalIdentityTopology: createQuantityContract({
     quantity: "modalIdentityTopology",
     lane: "canonical-descriptor",
     surface: "pipeline",
     represents: "canonical modal tuple identity and basis-cache topology",
-    deepOwner: "modalDescriptor.js and fieldCache.js basis identity descriptors",
-    transforms: ["descriptor admission", "stable slot assignment", "basis page assignment"],
+    deepOwner:
+      "modalDescriptor.js and fieldCache.js basis identity descriptors",
+    transforms: [
+      "descriptor admission",
+      "stable slot assignment",
+      "basis page assignment",
+    ],
     allowedConsumerPath: [
       "canonical modal descriptor",
       "runtime upload authority",
@@ -202,9 +229,14 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
     quantity: "runtimeUploadAuthority",
     lane: "runtime-upload",
     surface: "pipeline",
-    represents: "single writer authority for live GPU buffers and cache submissions",
+    represents:
+      "single writer authority for live GPU buffers and cache submissions",
     deepOwner: "runtime.js applyRaymarchRuntimeUploadAuthority",
-    transforms: ["capacity selection", "buffer upload", "cache descriptor publication"],
+    transforms: [
+      "capacity selection",
+      "buffer upload",
+      "cache descriptor publication",
+    ],
     allowedConsumerPath: [
       "runtime upload authority",
       "live buffers",
@@ -228,7 +260,8 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
     lane: "phase",
     surface: "pipeline",
     represents: "phase offset and angular velocity for live phase motion",
-    deepOwner: "modalPhaseSlots.js publishes phase slots; runtime.js uploads them",
+    deepOwner:
+      "modalPhaseSlots.js publishes phase slots; runtime.js uploads them",
     transforms: ["unwrap", "velocity clamp", "time evaluation"],
     allowedConsumerPath: [
       "phase slots",
@@ -251,8 +284,10 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
     quantity: "phaseAuthorityCoherence",
     lane: "phase",
     surface: "pipeline",
-    represents: "bounded confidence that phase state may affect interference transfer",
-    deepOwner: "modalPhaseSlots.js and fieldCache.js phase interference projection",
+    represents:
+      "bounded confidence that phase state may affect interference transfer",
+    deepOwner:
+      "modalPhaseSlots.js and fieldCache.js phase interference projection",
     transforms: ["coherence times authority", "support weighting", "clamp01"],
     allowedConsumerPath: [
       "phase authority/coherence",
@@ -279,7 +314,11 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
     represents: "signed modal field after coefficient-weighted basis summation",
     deepOwner: "fieldCache.js and material.js live field synthesis",
     transforms: ["basis evaluation", "coefficient weighting", "normalization"],
-    allowedConsumerPath: ["live buffers", "field/support carriers", "material transfer"],
+    allowedConsumerPath: [
+      "live buffers",
+      "field/support carriers",
+      "material transfer",
+    ],
     allowedConsumers: [
       "cancellation",
       "causticRidgeAuthority",
@@ -313,7 +352,8 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
     quantity: "cancellation",
     lane: "field",
     surface: "pipeline",
-    represents: "destructive-interference ratio derived from signed field and support",
+    represents:
+      "destructive-interference ratio derived from signed field and support",
     deepOwner: "fieldCache.js deriveLiveSynthesisCancellationRatio",
     transforms: ["abs signed field over unsigned support", "clamp01"],
     allowedConsumerPath: ["field/support carriers", "material transfer"],
@@ -344,7 +384,11 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
       "phase interference carrier",
       "material optical focus transfer",
     ],
-    allowedConsumers: ["phaseInterferenceTransfer", "opticalFocus", "diagnostics"],
+    allowedConsumers: [
+      "phaseInterferenceTransfer",
+      "opticalFocus",
+      "diagnostics",
+    ],
     forbiddenConsumers: [
       "modalIdentityTopology",
       "modalAmplitudeCoefficient",
@@ -355,8 +399,10 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
     quantity: "observationDensity",
     lane: "observation",
     surface: "material-transfer",
-    represents: "post-observation density including physical density or support floor",
-    deepOwner: "observationTransfer.js and material.js deriveObservationTransferNode",
+    represents:
+      "post-observation density including physical density or support floor",
+    deepOwner:
+      "observationTransfer.js and material.js deriveObservationTransferNode",
     transforms: ["physical visible density", "observed density floor", "max"],
     allowedConsumerPath: ["material transfer", "support reveal", "opacity"],
     allowedConsumers: [
@@ -376,10 +422,20 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
     quantity: "causticRidgeAuthority",
     lane: "caustic",
     surface: "pipeline",
-    represents: "local ridge/caustic authority from field, gradient, and shell focus",
+    represents:
+      "local ridge/caustic authority from field, gradient, and shell focus",
     deepOwner: "material.js material transfer",
-    transforms: ["local support", "gradient evidence", "shell focus", "edge fade"],
-    allowedConsumerPath: ["material transfer", "caustic radiance", "white emission evidence"],
+    transforms: [
+      "local support",
+      "gradient evidence",
+      "shell focus",
+      "edge fade",
+    ],
+    allowedConsumerPath: [
+      "material transfer",
+      "caustic radiance",
+      "white emission evidence",
+    ],
     allowedConsumers: [
       "physicalCausticDensity",
       "causticVisibleDensity",
@@ -396,10 +452,19 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
     quantity: "displayCompression",
     lane: "display",
     surface: "pipeline",
-    represents: "post-material scene-referred luminance and bloom headroom compression",
+    represents:
+      "post-material scene-referred luminance and bloom headroom compression",
     deepOwner: "displayRadiance.js and outputPipeline.js",
-    transforms: ["luminance shoulder", "channel ceiling", "bloom headroom scale"],
-    allowedConsumerPath: ["material radiance", "display compression", "final output"],
+    transforms: [
+      "luminance shoulder",
+      "channel ceiling",
+      "bloom headroom scale",
+    ],
+    allowedConsumerPath: [
+      "material radiance",
+      "display compression",
+      "final output",
+    ],
     allowedConsumers: ["finalOutput", "displayDiagnostics"],
     forbiddenConsumers: [
       "sourceEnergy",
@@ -469,11 +534,7 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
       "projectedRenderEnergy",
     ],
     requiredEvidenceByConsumer: {
-      spectralLaneRadiance: [
-        "displayProjectionAmplitude",
-        "spectralConfidence",
-        "laneDistribution",
-      ],
+      spectralLaneRadiance: ["laneDistribution", "modal coefficient"],
     },
   }),
   spectralLaneRadiance: createQuantityContract({
@@ -481,15 +542,14 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
     lane: "spectral",
     surface: "field-cache",
     represents:
-      "nonnegative local spectral lane radiance after modal support, display energy, and spectral confidence are applied",
+      "nonnegative local spectral lane radiance after modal structural support and lane distribution are applied; display energy and spectral confidence remain packet metadata, not extinguishing radiance gates",
     deepOwner: "fieldCache.js spectral lane cache compute",
     transforms: [
       "basis support sampling",
       "modal coefficient weighting",
-      "display-energy scaling",
-      "spectral confidence gating",
       "lane radiance accumulation",
       "dominance and entropy diagnostics",
+      "support-weighted spectral confidence diagnostics",
     ],
     allowedConsumerPath: [
       "spectral lane cache",
@@ -528,11 +588,7 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
       "scene radiance",
       "display compression",
     ],
-    allowedConsumers: [
-      "finalRadiance",
-      "displayCompression",
-      "diagnostics",
-    ],
+    allowedConsumers: ["finalRadiance", "displayCompression", "diagnostics"],
     forbiddenConsumers: [
       "spectralLanePacket",
       "spectralLaneRadiance",
@@ -596,7 +652,8 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
   materialExcitationGate: createQuantityContract({
     quantity: "materialExcitationGate",
     lane: "material",
-    represents: "material transfer excitation gate from modal/field descriptors",
+    represents:
+      "material transfer excitation gate from modal/field descriptors",
     deepOwner: "material.js createScatteringNode excitation transfer",
     transforms: [
       "structure signal",
@@ -639,7 +696,8 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
     quantity: "visibleDensity",
     lane: "observation",
     surface: "boundary-transfer",
-    represents: "post-observation density including physical density or support floor",
+    represents:
+      "post-observation density including physical density or support floor",
     deepOwner:
       "observationTransfer.js return-shape boundary; material core consumes observationDensity",
     transforms: ["max physicalVisibleDensity observedDensityFloor"],
@@ -718,10 +776,7 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
       "hotCoreInput",
       "causticRadianceContribution",
     ],
-    forbiddenConsumers: [
-      "supportRevealContribution",
-      "observedDensityFloor",
-    ],
+    forbiddenConsumers: ["supportRevealContribution", "observedDensityFloor"],
   }),
   photographicLaserCausticRadiance: createQuantityContract({
     quantity: "photographicLaserCausticRadiance",
@@ -739,7 +794,8 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
   supportVisibleDensity: createQuantityContract({
     quantity: "supportVisibleDensity",
     lane: "support",
-    represents: "non-caustic support/floor density used only for dark structure reveal",
+    represents:
+      "non-caustic support/floor density used only for dark structure reveal",
     transforms: ["stabilized density minus caustic visible density"],
     allowedConsumers: ["supportRevealContribution", "opacity"],
     forbiddenConsumers: [
@@ -766,7 +822,8 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
   cancellationSuppression: createQuantityContract({
     quantity: "cancellationSuppression",
     lane: "caustic",
-    represents: "radiance suppression from signed cancellation, where one means no loss",
+    represents:
+      "radiance suppression from signed cancellation, where one means no loss",
     transforms: ["live synthesis cancellation ratio", "unsigned support"],
     allowedConsumers: [
       "signedRadianceAuthority",
@@ -850,7 +907,7 @@ export const RAYMARCH_RENDER_SURFACE_AUDITS = Object.freeze({
     startToken: "function deriveModalObservationPolicy({",
     endToken: "export function collectAudioSourceEvidenceInputs",
     requiredTokens: [
-      "analysisClass === \"file\"",
+      'analysisClass === "file"',
       "suppressWeakSpectralFallbackDrive",
       "suppressWeakResonantDrive",
     ],
@@ -864,7 +921,7 @@ export const RAYMARCH_RENDER_SURFACE_AUDITS = Object.freeze({
     endToken: "const spectralExcess =",
     requiredTokens: ["sourceBoundarySuppressWeakSpectralFallbackDrive"],
     forbiddenTokens: [
-      "analysisClass === \"file\"",
+      'analysisClass === "file"',
       "avgAmplitude < 10",
       "analyserRms < 0.025",
     ],
@@ -915,6 +972,7 @@ export const RAYMARCH_RENDER_SURFACE_AUDITS = Object.freeze({
     ],
     forbiddenTokens: [
       "colorSum.div",
+      "displayEnergy",
       "modalFieldColorBuffer",
       "spectralLightCacheTexture",
       "cachedSpectralLightEnabled",
