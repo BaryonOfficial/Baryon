@@ -42,17 +42,15 @@ function makeColorSlots(entries) {
   return slots;
 }
 
-function makeSpectralSlots(entries) {
+function makePackedSlots(entries) {
   const slots = new Float32Array(entries.length * 4);
-  entries.forEach(
-    ([phase, wavelength, harmonicConfidence, accentEnergy], index) => {
-      const offset = index * 4;
-      slots[offset] = phase;
-      slots[offset + 1] = wavelength;
-      slots[offset + 2] = harmonicConfidence;
-      slots[offset + 3] = accentEnergy;
-    },
-  );
+  entries.forEach(([x, y, z, w], index) => {
+    const offset = index * 4;
+    slots[offset] = x;
+    slots[offset + 1] = y;
+    slots[offset + 2] = z;
+    slots[offset + 3] = w;
+  });
   return slots;
 }
 
@@ -355,7 +353,7 @@ describe("buildCanonicalFullModalDescriptor", () => {
     expect(descriptor.slotViews.modalFieldMetadataSlots[3]).toBeCloseTo(0.9, 6);
   });
 
-  it("mixes duplicate Spectral mode key colors while keeping owner metadata", () => {
+  it("mixes duplicate Spectral mode key colors without legacy spectral slots", () => {
     const descriptor = buildCanonicalFullModalDescriptor({
       maxTotalModes: 3,
       modalFieldSlots: makeSlots([
@@ -366,25 +364,66 @@ describe("buildCanonicalFullModalDescriptor", () => {
         [1, 0, 0, 0.5],
         [0, 1, 1, 1],
       ]),
-      modalFieldSpectralSlots: makeSpectralSlots([
-        [0, 1, 0.7, 0.1],
-        [0.5, 0.7, 0.9, 0.4],
-      ]),
       activeModalFieldModeCount: 2,
     });
 
     const colorSlots = descriptor.slotViews.modalFieldColorSlots;
-    const spectralSlots = descriptor.slotViews.modalFieldSpectralSlots;
 
     expect(descriptor.counts.modalFieldModeCount).toBe(1);
     expect(colorSlots[0]).toBeCloseTo((1 * 0.5 * 0.4) / 0.5, 6);
     expect(colorSlots[1]).toBeCloseTo((1 * 1 * 0.3) / 0.5, 6);
     expect(colorSlots[2]).toBeCloseTo((1 * 1 * 0.3) / 0.5, 6);
     expect(colorSlots[3]).toBeCloseTo((0.5 * 0.4 + 1 * 0.3) / 0.7, 6);
-    expect(spectralSlots[0]).toBeCloseTo(0.5, 6);
-    expect(spectralSlots[1]).toBeCloseTo(0.7, 6);
-    expect(spectralSlots[2]).toBeCloseTo(0.9, 6);
-    expect(spectralSlots[3]).toBeCloseTo(0.4, 6);
+  });
+
+  it("hashes Spectral lane identity and preserves lane slot views independent of RGB", () => {
+    const base = buildCanonicalFullModalDescriptor({
+      maxTotalModes: 2,
+      modalFieldSlots: makeSlots([[2, 2, 2, 0.7]]),
+      modalFieldColorSlots: makeColorSlots([[0.5, 0.5, 0.5, 1]]),
+      modalFieldSpectralLaneA: makePackedSlots([[1, 0, 0, 0]]),
+      modalFieldSpectralLaneB: makePackedSlots([[0, 0, 0, 0]]),
+      modalFieldSpectralMeta: makePackedSlots([[0.1, 0.04, 0.8, 0.5]]),
+      activeModalFieldModeCount: 1,
+    });
+    const shifted = buildCanonicalFullModalDescriptor({
+      maxTotalModes: 2,
+      modalFieldSlots: makeSlots([[2, 2, 2, 0.7]]),
+      modalFieldColorSlots: makeColorSlots([[0.5, 0.5, 0.5, 1]]),
+      modalFieldSpectralLaneA: makePackedSlots([[0, 1, 0, 0]]),
+      modalFieldSpectralLaneB: makePackedSlots([[0, 0, 0, 0]]),
+      modalFieldSpectralMeta: makePackedSlots([[0.6, 0.04, 0.8, 0.5]]),
+      activeModalFieldModeCount: 1,
+    });
+
+    expect(Array.from(base.slotViews.modalFieldColorSlots)).toEqual(
+      Array.from(shifted.slotViews.modalFieldColorSlots),
+    );
+    expect(Array.from(base.slotViews.modalFieldSpectralLaneA)).toEqual([
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+    ]);
+    expect(Array.from(shifted.slotViews.modalFieldSpectralLaneA)).toEqual([
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+    ]);
+    expect(base.diagnostics.spectralLaneHash).toBeTypeOf("number");
+    expect(shifted.diagnostics.spectralLaneHash).toBeTypeOf("number");
+    expect(base.diagnostics.spectralLaneHash).not.toBe(
+      shifted.diagnostics.spectralLaneHash,
+    );
   });
 
   it("compacts when upstream continuity releases an earlier mode", () => {

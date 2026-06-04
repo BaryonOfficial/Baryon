@@ -337,7 +337,9 @@ function ensureTargetBuildField(container, key, capacity) {
   value.slots = ensureArrayField(value, "slots", slotLength);
   value.referenceSlots = ensureArrayField(value, "referenceSlots", slotLength);
   value.colorSlots = ensureArrayField(value, "colorSlots", slotLength);
-  value.spectralSlots = ensureArrayField(value, "spectralSlots", slotLength);
+  value.spectralLaneA = ensureArrayField(value, "spectralLaneA", slotLength);
+  value.spectralLaneB = ensureArrayField(value, "spectralLaneB", slotLength);
+  value.spectralMeta = ensureArrayField(value, "spectralMeta", slotLength);
   value.harmonicSupport = ensureArrayField(
     value,
     "harmonicSupport",
@@ -397,14 +399,34 @@ function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
     "resonantColorSlots",
     slotLength,
   );
-  const sourceCoupledSpectralSlots = ensureArrayField(
+  const sourceCoupledSpectralLaneA = ensureArrayField(
     analysisMemory,
-    "sourceCoupledSpectralSlots",
+    "sourceCoupledSpectralLaneA",
     slotLength,
   );
-  const resonantSpectralSlots = ensureArrayField(
+  const sourceCoupledSpectralLaneB = ensureArrayField(
     analysisMemory,
-    "resonantSpectralSlots",
+    "sourceCoupledSpectralLaneB",
+    slotLength,
+  );
+  const sourceCoupledSpectralMeta = ensureArrayField(
+    analysisMemory,
+    "sourceCoupledSpectralMeta",
+    slotLength,
+  );
+  const resonantSpectralLaneA = ensureArrayField(
+    analysisMemory,
+    "resonantSpectralLaneA",
+    slotLength,
+  );
+  const resonantSpectralLaneB = ensureArrayField(
+    analysisMemory,
+    "resonantSpectralLaneB",
+    slotLength,
+  );
+  const resonantSpectralMeta = ensureArrayField(
+    analysisMemory,
+    "resonantSpectralMeta",
     slotLength,
   );
   const referenceSourceCoupledSlots = ensureArrayField(
@@ -517,8 +539,12 @@ function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
     signalModeSlots,
     sourceCoupledColorSlots,
     resonantColorSlots,
-    sourceCoupledSpectralSlots,
-    resonantSpectralSlots,
+    sourceCoupledSpectralLaneA,
+    sourceCoupledSpectralLaneB,
+    sourceCoupledSpectralMeta,
+    resonantSpectralLaneA,
+    resonantSpectralLaneB,
+    resonantSpectralMeta,
     referenceSourceCoupledSlots,
     referenceResonantSlots,
     referenceModeSlots,
@@ -836,8 +862,12 @@ function emptyFrozenLayers(auditState) {
   auditState.frozenModeSlots.fill(0);
   auditState.frozenSourceCoupledColorSlots.fill(0);
   auditState.frozenResonantColorSlots.fill(0);
-  auditState.frozenSourceCoupledSpectralSlots?.fill(0);
-  auditState.frozenResonantSpectralSlots?.fill(0);
+  auditState.frozenSourceCoupledSpectralLaneA?.fill(0);
+  auditState.frozenSourceCoupledSpectralLaneB?.fill(0);
+  auditState.frozenSourceCoupledSpectralMeta?.fill(0);
+  auditState.frozenResonantSpectralLaneA?.fill(0);
+  auditState.frozenResonantSpectralLaneB?.fill(0);
+  auditState.frozenResonantSpectralMeta?.fill(0);
 }
 
 function shouldBuildResonantedDebug(auditSettings) {
@@ -1390,8 +1420,6 @@ function buildZeroDebugSnapshot({
   modeSlots,
   sourceCoupledColorSlots,
   resonantColorSlots,
-  sourceCoupledSpectralSlots,
-  resonantSpectralSlots,
   structuralMetrics = null,
   auditSettings,
   requestedCavityGeometry = /** @type {CavityGeometry} */ (
@@ -1446,13 +1474,10 @@ function buildZeroDebugSnapshot({
     referenceModeSlots: Array.from(referenceModeSlots),
     modalFieldSlots: Array.from(modeSlots),
     modalFieldColorSlots: Array.from(sourceCoupledColorSlots),
-    modalFieldSpectralSlots: Array.from(sourceCoupledSpectralSlots),
     candidateForcingSlots: Array.from(candidateForcingSlots),
     candidateResponseSlots: Array.from(candidateResponseSlots),
     sourceCoupledColorSlots: Array.from(sourceCoupledColorSlots),
     resonantColorSlots: Array.from(resonantColorSlots),
-    sourceCoupledSpectralSlots: Array.from(sourceCoupledSpectralSlots),
-    resonantSpectralSlots: Array.from(resonantSpectralSlots),
     bandEnergies: Array.from(bandEnergies),
     slotAmplitudeDeltas: Array.from(new Float32Array(MAX_STACK_SLOTS)),
   };
@@ -1465,7 +1490,9 @@ function buildZeroDebugSnapshot({
  *   modalFieldSlots?: Float32Array | number[],
  *   modalFieldPhaseSlots?: Float32Array | number[],
  *   modalFieldColorSlots?: Float32Array | number[],
- *   modalFieldSpectralSlots?: Float32Array | number[],
+ *   modalFieldSpectralLaneA?: Float32Array | number[],
+ *   modalFieldSpectralLaneB?: Float32Array | number[],
+ *   modalFieldSpectralMeta?: Float32Array | number[],
  *   modalFieldMetadataSlots?: Float32Array | number[],
  * }} [options]
  */
@@ -1475,14 +1502,18 @@ function buildEmptyModalFieldDescriptor({
   modalFieldSlots,
   modalFieldPhaseSlots,
   modalFieldColorSlots,
-  modalFieldSpectralSlots,
+  modalFieldSpectralLaneA,
+  modalFieldSpectralLaneB,
+  modalFieldSpectralMeta,
   modalFieldMetadataSlots,
 } = {}) {
   const slotLength = Math.max(
     modalFieldSlots?.length ?? 0,
     modalFieldPhaseSlots?.length ?? 0,
     modalFieldColorSlots?.length ?? 0,
-    modalFieldSpectralSlots?.length ?? 0,
+    modalFieldSpectralLaneA?.length ?? 0,
+    modalFieldSpectralLaneB?.length ?? 0,
+    modalFieldSpectralMeta?.length ?? 0,
     modalFieldMetadataSlots?.length ?? 0,
   );
   const emptySlots = new Float32Array(slotLength);
@@ -1494,7 +1525,9 @@ function buildEmptyModalFieldDescriptor({
     modalFieldSlots: modalFieldSlots ?? emptySlots,
     modalFieldPhaseSlots: modalFieldPhaseSlots ?? emptySlots,
     modalFieldColorSlots: modalFieldColorSlots ?? emptySlots,
-    modalFieldSpectralSlots: modalFieldSpectralSlots ?? emptySlots,
+    modalFieldSpectralLaneA: modalFieldSpectralLaneA ?? emptySlots,
+    modalFieldSpectralLaneB: modalFieldSpectralLaneB ?? emptySlots,
+    modalFieldSpectralMeta: modalFieldSpectralMeta ?? emptySlots,
     modalFieldMetadataSlots: modalFieldMetadataSlots ?? emptySlots,
     activeModalFieldModeCount: 0,
     observerCandidateModeCount: 0,
@@ -1519,8 +1552,12 @@ function buildSilentFeatureFrame({
   referenceModeSlots,
   sourceCoupledColorSlots,
   resonantColorSlots,
-  sourceCoupledSpectralSlots,
-  resonantSpectralSlots,
+  sourceCoupledSpectralLaneA,
+  sourceCoupledSpectralLaneB,
+  sourceCoupledSpectralMeta,
+  resonantSpectralLaneA,
+  resonantSpectralLaneB,
+  resonantSpectralMeta,
   bandEnergies,
   sourceCoupledState,
   resonantState,
@@ -1541,8 +1578,12 @@ function buildSilentFeatureFrame({
   referenceModeSlots.fill(0);
   sourceCoupledColorSlots.fill(0);
   resonantColorSlots.fill(0);
-  sourceCoupledSpectralSlots.fill(0);
-  resonantSpectralSlots.fill(0);
+  sourceCoupledSpectralLaneA.fill(0);
+  sourceCoupledSpectralLaneB.fill(0);
+  sourceCoupledSpectralMeta.fill(0);
+  resonantSpectralLaneA.fill(0);
+  resonantSpectralLaneB.fill(0);
+  resonantSpectralMeta.fill(0);
   bandEnergies.fill(0);
   clearModalStack(sourceCoupledState);
   clearModalStack(resonantState);
@@ -1571,7 +1612,9 @@ function buildSilentFeatureFrame({
     modalFieldSlots: modeSlots,
     modalFieldPhaseSlots: sourceCoupledPhaseSlots,
     modalFieldColorSlots: sourceCoupledColorSlots,
-    modalFieldSpectralSlots: sourceCoupledSpectralSlots,
+    modalFieldSpectralLaneA: sourceCoupledSpectralLaneA,
+    modalFieldSpectralLaneB: sourceCoupledSpectralLaneB,
+    modalFieldSpectralMeta: sourceCoupledSpectralMeta,
     modalFieldMetadataSlots: new Float32Array(modeSlots.length),
   });
   const energyLedger = buildModalEnergyLedger({
@@ -1604,7 +1647,9 @@ function buildSilentFeatureFrame({
     modalFieldSlots: modalDescriptor.slotViews.modalFieldSlots,
     modalFieldPhaseSlots: modalDescriptor.slotViews.modalFieldPhaseSlots,
     modalFieldColorSlots: modalDescriptor.slotViews.modalFieldColorSlots,
-    modalFieldSpectralSlots: modalDescriptor.slotViews.modalFieldSpectralSlots,
+    modalFieldSpectralLaneA: modalDescriptor.slotViews.modalFieldSpectralLaneA,
+    modalFieldSpectralLaneB: modalDescriptor.slotViews.modalFieldSpectralLaneB,
+    modalFieldSpectralMeta: modalDescriptor.slotViews.modalFieldSpectralMeta,
     modalFieldMetadataSlots: modalDescriptor.slotViews.modalFieldMetadataSlots,
     bandEnergies,
     transientEnergy: 0,
@@ -1653,8 +1698,6 @@ function buildSilentFeatureFrame({
       modeSlots,
       sourceCoupledColorSlots,
       resonantColorSlots,
-      sourceCoupledSpectralSlots,
-      resonantSpectralSlots,
       structuralMetrics: { energyLedger },
       auditSettings,
       requestedCavityGeometry,
@@ -2647,13 +2690,17 @@ function writeModalFieldCandidates({
   targetSlots,
   targetPhaseSlots,
   targetColorSlots,
-  targetSpectralSlots,
+  targetSpectralLaneA,
+  targetSpectralLaneB,
+  targetSpectralMeta,
   targetMetadataSlots,
   writeIndex,
   sourceSlots,
   sourcePhaseSlots,
   sourceColorSlots,
-  sourceSpectralSlots,
+  sourceSpectralLaneA,
+  sourceSpectralLaneB,
+  sourceSpectralMeta,
   sourceMetadataSlots,
   validCount,
   frequencyOptions,
@@ -2697,14 +2744,31 @@ function writeModalFieldCandidates({
     targetColorSlots[targetOffset + 3] =
       sourceColorSlots?.[sourceOffset + 3] ?? 0;
 
-    targetSpectralSlots[targetOffset] =
-      sourceSpectralSlots?.[sourceOffset] ?? 0;
-    targetSpectralSlots[targetOffset + 1] =
-      sourceSpectralSlots?.[sourceOffset + 1] ?? 0;
-    targetSpectralSlots[targetOffset + 2] =
-      sourceSpectralSlots?.[sourceOffset + 2] ?? 0;
-    targetSpectralSlots[targetOffset + 3] =
-      sourceSpectralSlots?.[sourceOffset + 3] ?? 0;
+    targetSpectralLaneA[targetOffset] =
+      sourceSpectralLaneA?.[sourceOffset] ?? 0;
+    targetSpectralLaneA[targetOffset + 1] =
+      sourceSpectralLaneA?.[sourceOffset + 1] ?? 0;
+    targetSpectralLaneA[targetOffset + 2] =
+      sourceSpectralLaneA?.[sourceOffset + 2] ?? 0;
+    targetSpectralLaneA[targetOffset + 3] =
+      sourceSpectralLaneA?.[sourceOffset + 3] ?? 0;
+
+    targetSpectralLaneB[targetOffset] =
+      sourceSpectralLaneB?.[sourceOffset] ?? 0;
+    targetSpectralLaneB[targetOffset + 1] =
+      sourceSpectralLaneB?.[sourceOffset + 1] ?? 0;
+    targetSpectralLaneB[targetOffset + 2] =
+      sourceSpectralLaneB?.[sourceOffset + 2] ?? 0;
+    targetSpectralLaneB[targetOffset + 3] =
+      sourceSpectralLaneB?.[sourceOffset + 3] ?? 0;
+
+    targetSpectralMeta[targetOffset] = sourceSpectralMeta?.[sourceOffset] ?? 0;
+    targetSpectralMeta[targetOffset + 1] =
+      sourceSpectralMeta?.[sourceOffset + 1] ?? 0;
+    targetSpectralMeta[targetOffset + 2] =
+      sourceSpectralMeta?.[sourceOffset + 2] ?? 0;
+    targetSpectralMeta[targetOffset + 3] =
+      sourceSpectralMeta?.[sourceOffset + 3] ?? 0;
 
     const metadata = buildModalFieldMetadataSlot({
       sourceSlots,
@@ -2730,8 +2794,12 @@ function buildModalFieldDescriptorSource({
   resonantPhaseSlots,
   sourceCoupledColorSlots,
   resonantColorSlots,
-  sourceCoupledSpectralSlots,
-  resonantSpectralSlots,
+  sourceCoupledSpectralLaneA,
+  sourceCoupledSpectralLaneB,
+  sourceCoupledSpectralMeta,
+  resonantSpectralLaneA,
+  resonantSpectralLaneB,
+  resonantSpectralMeta,
   sourceCoupledMetadataSlots = null,
   resonantMetadataSlots = null,
   activeSourceCoupledModeCount,
@@ -2747,7 +2815,9 @@ function buildModalFieldDescriptorSource({
   const modalFieldSlots = new Float32Array(slotLength);
   const modalFieldPhaseSlots = new Float32Array(slotLength);
   const modalFieldColorSlots = new Float32Array(slotLength);
-  const modalFieldSpectralSlots = new Float32Array(slotLength);
+  const modalFieldSpectralLaneA = new Float32Array(slotLength);
+  const modalFieldSpectralLaneB = new Float32Array(slotLength);
+  const modalFieldSpectralMeta = new Float32Array(slotLength);
   const modalFieldMetadataSlots = new Float32Array(slotLength);
   const frequencyOptions = buildModalFieldFrequencyOptions({
     radius,
@@ -2760,13 +2830,17 @@ function buildModalFieldDescriptorSource({
     targetSlots: modalFieldSlots,
     targetPhaseSlots: modalFieldPhaseSlots,
     targetColorSlots: modalFieldColorSlots,
-    targetSpectralSlots: modalFieldSpectralSlots,
+    targetSpectralLaneA: modalFieldSpectralLaneA,
+    targetSpectralLaneB: modalFieldSpectralLaneB,
+    targetSpectralMeta: modalFieldSpectralMeta,
     targetMetadataSlots: modalFieldMetadataSlots,
     writeIndex: activeModalFieldModeCount,
     sourceSlots: candidateForcingSlots,
     sourcePhaseSlots: sourceCoupledPhaseSlots,
     sourceColorSlots: sourceCoupledColorSlots,
-    sourceSpectralSlots: sourceCoupledSpectralSlots,
+    sourceSpectralLaneA: sourceCoupledSpectralLaneA,
+    sourceSpectralLaneB: sourceCoupledSpectralLaneB,
+    sourceSpectralMeta: sourceCoupledSpectralMeta,
     sourceMetadataSlots: sourceCoupledMetadataSlots,
     validCount: activeSourceCoupledModeCount,
     frequencyOptions,
@@ -2775,13 +2849,17 @@ function buildModalFieldDescriptorSource({
     targetSlots: modalFieldSlots,
     targetPhaseSlots: modalFieldPhaseSlots,
     targetColorSlots: modalFieldColorSlots,
-    targetSpectralSlots: modalFieldSpectralSlots,
+    targetSpectralLaneA: modalFieldSpectralLaneA,
+    targetSpectralLaneB: modalFieldSpectralLaneB,
+    targetSpectralMeta: modalFieldSpectralMeta,
     targetMetadataSlots: modalFieldMetadataSlots,
     writeIndex: activeModalFieldModeCount,
     sourceSlots: candidateResponseSlots,
     sourcePhaseSlots: resonantPhaseSlots,
     sourceColorSlots: resonantColorSlots,
-    sourceSpectralSlots: resonantSpectralSlots,
+    sourceSpectralLaneA: resonantSpectralLaneA,
+    sourceSpectralLaneB: resonantSpectralLaneB,
+    sourceSpectralMeta: resonantSpectralMeta,
     sourceMetadataSlots: resonantMetadataSlots,
     validCount: activeResonantModeCount,
     frequencyOptions,
@@ -2791,7 +2869,9 @@ function buildModalFieldDescriptorSource({
     modalFieldSlots,
     modalFieldPhaseSlots,
     modalFieldColorSlots,
-    modalFieldSpectralSlots,
+    modalFieldSpectralLaneA,
+    modalFieldSpectralLaneB,
+    modalFieldSpectralMeta,
     modalFieldMetadataSlots,
     activeModalFieldModeCount,
   };
@@ -4073,8 +4153,12 @@ export function prepareAudioFeatureFrameInputs({
     signalModeSlots,
     sourceCoupledColorSlots,
     resonantColorSlots,
-    sourceCoupledSpectralSlots,
-    resonantSpectralSlots,
+    sourceCoupledSpectralLaneA,
+    sourceCoupledSpectralLaneB,
+    sourceCoupledSpectralMeta,
+    resonantSpectralLaneA,
+    resonantSpectralLaneB,
+    resonantSpectralMeta,
     referenceSourceCoupledSlots,
     referenceResonantSlots,
     referenceModeSlots,
@@ -4276,8 +4360,12 @@ export function prepareAudioFeatureFrameInputs({
         modeSlots,
         sourceCoupledColorSlots,
         resonantColorSlots,
-        sourceCoupledSpectralSlots,
-        resonantSpectralSlots,
+        sourceCoupledSpectralLaneA,
+        sourceCoupledSpectralLaneB,
+        sourceCoupledSpectralMeta,
+        resonantSpectralLaneA,
+        resonantSpectralLaneB,
+        resonantSpectralMeta,
         referenceModeSlots,
         bandEnergies,
         sourceCoupledState,
@@ -4438,8 +4526,12 @@ export function prepareAudioFeatureFrameInputs({
     signalModeSlots,
     sourceCoupledColorSlots,
     resonantColorSlots,
-    sourceCoupledSpectralSlots,
-    resonantSpectralSlots,
+    sourceCoupledSpectralLaneA,
+    sourceCoupledSpectralLaneB,
+    sourceCoupledSpectralMeta,
+    resonantSpectralLaneA,
+    resonantSpectralLaneB,
+    resonantSpectralMeta,
     referenceSourceCoupledSlots,
     referenceResonantSlots,
     referenceModeSlots,
@@ -4700,17 +4792,41 @@ function resolveStructuralProjectionSources(preparedInputs, structuralState) {
       : (structuralState?.resonantColorSlotsSource ??
         preparedInputs.resonantState.colorSlots)
     : null;
-  const sourceCoupledSpectralSlotsSource = shouldBuildSpectralLight
+  const sourceCoupledSpectralLaneASource = shouldBuildSpectralLight
     ? hasFrozenProjection
-      ? auditState.frozenSourceCoupledSpectralSlots
-      : (structuralState?.sourceCoupledSpectralSlotsSource ??
-        preparedInputs.sourceCoupledState.spectralSlots)
+      ? auditState.frozenSourceCoupledSpectralLaneA
+      : (structuralState?.sourceCoupledSpectralLaneASource ??
+        preparedInputs.sourceCoupledState.spectralLaneA)
     : null;
-  const resonantSpectralSlotsSource = shouldBuildSpectralLight
+  const sourceCoupledSpectralLaneBSource = shouldBuildSpectralLight
     ? hasFrozenProjection
-      ? auditState.frozenResonantSpectralSlots
-      : (structuralState?.resonantSpectralSlotsSource ??
-        preparedInputs.resonantState.spectralSlots)
+      ? auditState.frozenSourceCoupledSpectralLaneB
+      : (structuralState?.sourceCoupledSpectralLaneBSource ??
+        preparedInputs.sourceCoupledState.spectralLaneB)
+    : null;
+  const sourceCoupledSpectralMetaSource = shouldBuildSpectralLight
+    ? hasFrozenProjection
+      ? auditState.frozenSourceCoupledSpectralMeta
+      : (structuralState?.sourceCoupledSpectralMetaSource ??
+        preparedInputs.sourceCoupledState.spectralMeta)
+    : null;
+  const resonantSpectralLaneASource = shouldBuildSpectralLight
+    ? hasFrozenProjection
+      ? auditState.frozenResonantSpectralLaneA
+      : (structuralState?.resonantSpectralLaneASource ??
+        preparedInputs.resonantState.spectralLaneA)
+    : null;
+  const resonantSpectralLaneBSource = shouldBuildSpectralLight
+    ? hasFrozenProjection
+      ? auditState.frozenResonantSpectralLaneB
+      : (structuralState?.resonantSpectralLaneBSource ??
+        preparedInputs.resonantState.spectralLaneB)
+    : null;
+  const resonantSpectralMetaSource = shouldBuildSpectralLight
+    ? hasFrozenProjection
+      ? auditState.frozenResonantSpectralMeta
+      : (structuralState?.resonantSpectralMetaSource ??
+        preparedInputs.resonantState.spectralMeta)
     : null;
   const referenceSourceCoupledSlotsSource =
     structuralState?.referenceSourceCoupledSlotsSource ??
@@ -4736,8 +4852,12 @@ function resolveStructuralProjectionSources(preparedInputs, structuralState) {
     referenceResonantSlotsSource,
     sourceCoupledColorSlotsSource,
     resonantColorSlotsSource,
-    sourceCoupledSpectralSlotsSource,
-    resonantSpectralSlotsSource,
+    sourceCoupledSpectralLaneASource,
+    sourceCoupledSpectralLaneBSource,
+    sourceCoupledSpectralMetaSource,
+    resonantSpectralLaneASource,
+    resonantSpectralLaneBSource,
+    resonantSpectralMetaSource,
     activeSourceCoupledModeCount,
     activeResonantModeCount,
     activeModeCount: activeSourceCoupledModeCount + activeResonantModeCount,
@@ -4822,20 +4942,6 @@ function buildStructuralFingerprint({
             projectionSources.resonantColorSlotsSource,
             preparedInputs.capacity,
           ),
-    sourceCoupledSpectralSignature:
-      fogSuppressed || !projectionSources.sourceCoupledSpectralSlotsSource
-        ? 0
-        : computeColorSignature(
-            projectionSources.sourceCoupledSpectralSlotsSource,
-            preparedInputs.capacity,
-          ),
-    resonantSpectralSignature:
-      fogSuppressed || !projectionSources.resonantSpectralSlotsSource
-        ? 0
-        : computeColorSignature(
-            projectionSources.resonantSpectralSlotsSource,
-            preparedInputs.capacity,
-          ),
   };
 }
 
@@ -4852,8 +4958,12 @@ function materializeAudioFeatureStructuralSnapshot(
     modeSlots,
     sourceCoupledColorSlots,
     resonantColorSlots,
-    sourceCoupledSpectralSlots,
-    resonantSpectralSlots,
+    sourceCoupledSpectralLaneA,
+    sourceCoupledSpectralLaneB,
+    sourceCoupledSpectralMeta,
+    resonantSpectralLaneA,
+    resonantSpectralLaneB,
+    resonantSpectralMeta,
     referenceSourceCoupledSlots,
     referenceResonantSlots,
     referenceModeSlots,
@@ -4918,18 +5028,38 @@ function materializeAudioFeatureStructuralSnapshot(
     sourceCoupledColorSlots.fill(0);
     resonantColorSlots.fill(0);
   }
-  if (projectionSources.sourceCoupledSpectralSlotsSource) {
+  if (projectionSources.sourceCoupledSpectralLaneASource) {
     copyFloatArray(
-      sourceCoupledSpectralSlots,
-      projectionSources.sourceCoupledSpectralSlotsSource,
+      sourceCoupledSpectralLaneA,
+      projectionSources.sourceCoupledSpectralLaneASource,
     );
     copyFloatArray(
-      resonantSpectralSlots,
-      projectionSources.resonantSpectralSlotsSource,
+      sourceCoupledSpectralLaneB,
+      projectionSources.sourceCoupledSpectralLaneBSource,
+    );
+    copyFloatArray(
+      sourceCoupledSpectralMeta,
+      projectionSources.sourceCoupledSpectralMetaSource,
+    );
+    copyFloatArray(
+      resonantSpectralLaneA,
+      projectionSources.resonantSpectralLaneASource,
+    );
+    copyFloatArray(
+      resonantSpectralLaneB,
+      projectionSources.resonantSpectralLaneBSource,
+    );
+    copyFloatArray(
+      resonantSpectralMeta,
+      projectionSources.resonantSpectralMetaSource,
     );
   } else {
-    sourceCoupledSpectralSlots.fill(0);
-    resonantSpectralSlots.fill(0);
+    sourceCoupledSpectralLaneA.fill(0);
+    sourceCoupledSpectralLaneB.fill(0);
+    sourceCoupledSpectralMeta.fill(0);
+    resonantSpectralLaneA.fill(0);
+    resonantSpectralLaneB.fill(0);
+    resonantSpectralMeta.fill(0);
   }
 
   let returnedSourceCoupledSlots = candidateForcingSlots;
@@ -4939,8 +5069,12 @@ function materializeAudioFeatureStructuralSnapshot(
   let returnedModeSlots = modeSlots;
   let returnedSourceCoupledColorSlots = sourceCoupledColorSlots;
   let returnedResonantColorSlots = resonantColorSlots;
-  let returnedSourceCoupledSpectralSlots = sourceCoupledSpectralSlots;
-  let returnedResonantSpectralSlots = resonantSpectralSlots;
+  let returnedSourceCoupledSpectralLaneA = sourceCoupledSpectralLaneA;
+  let returnedSourceCoupledSpectralLaneB = sourceCoupledSpectralLaneB;
+  let returnedSourceCoupledSpectralMeta = sourceCoupledSpectralMeta;
+  let returnedResonantSpectralLaneA = resonantSpectralLaneA;
+  let returnedResonantSpectralLaneB = resonantSpectralLaneB;
+  let returnedResonantSpectralMeta = resonantSpectralMeta;
 
   if (projectionSources.freezeModeSlots && auditState) {
     if (!projectionSources.hasFrozenProjection) {
@@ -4949,10 +5083,18 @@ function materializeAudioFeatureStructuralSnapshot(
       auditState.frozenModeSlots.set(modeSlots);
       auditState.frozenSourceCoupledColorSlots.set(sourceCoupledColorSlots);
       auditState.frozenResonantColorSlots.set(resonantColorSlots);
-      auditState.frozenSourceCoupledSpectralSlots.set(
-        sourceCoupledSpectralSlots,
+      auditState.frozenSourceCoupledSpectralLaneA?.set(
+        sourceCoupledSpectralLaneA,
       );
-      auditState.frozenResonantSpectralSlots.set(resonantSpectralSlots);
+      auditState.frozenSourceCoupledSpectralLaneB?.set(
+        sourceCoupledSpectralLaneB,
+      );
+      auditState.frozenSourceCoupledSpectralMeta?.set(
+        sourceCoupledSpectralMeta,
+      );
+      auditState.frozenResonantSpectralLaneA?.set(resonantSpectralLaneA);
+      auditState.frozenResonantSpectralLaneB?.set(resonantSpectralLaneB);
+      auditState.frozenResonantSpectralMeta?.set(resonantSpectralMeta);
     }
     returnedSourceCoupledSlots = auditState.frozenSourceCoupledSlots;
     returnedResonantSlots = auditState.frozenResonantSlots;
@@ -4961,9 +5103,15 @@ function materializeAudioFeatureStructuralSnapshot(
     returnedModeSlots = auditState.frozenModeSlots;
     returnedSourceCoupledColorSlots = auditState.frozenSourceCoupledColorSlots;
     returnedResonantColorSlots = auditState.frozenResonantColorSlots;
-    returnedSourceCoupledSpectralSlots =
-      auditState.frozenSourceCoupledSpectralSlots;
-    returnedResonantSpectralSlots = auditState.frozenResonantSpectralSlots;
+    returnedSourceCoupledSpectralLaneA =
+      auditState.frozenSourceCoupledSpectralLaneA;
+    returnedSourceCoupledSpectralLaneB =
+      auditState.frozenSourceCoupledSpectralLaneB;
+    returnedSourceCoupledSpectralMeta =
+      auditState.frozenSourceCoupledSpectralMeta;
+    returnedResonantSpectralLaneA = auditState.frozenResonantSpectralLaneA;
+    returnedResonantSpectralLaneB = auditState.frozenResonantSpectralLaneB;
+    returnedResonantSpectralMeta = auditState.frozenResonantSpectralMeta;
   } else if (auditState) {
     emptyFrozenLayers(auditState);
   }
@@ -4981,8 +5129,12 @@ function materializeAudioFeatureStructuralSnapshot(
     returnedModeSlots.fill(0);
     returnedSourceCoupledColorSlots.fill(0);
     returnedResonantColorSlots.fill(0);
-    returnedSourceCoupledSpectralSlots.fill(0);
-    returnedResonantSpectralSlots.fill(0);
+    returnedSourceCoupledSpectralLaneA?.fill(0);
+    returnedSourceCoupledSpectralLaneB?.fill(0);
+    returnedSourceCoupledSpectralMeta?.fill(0);
+    returnedResonantSpectralLaneA?.fill(0);
+    returnedResonantSpectralLaneB?.fill(0);
+    returnedResonantSpectralMeta?.fill(0);
     activeSourceCoupledModeCount = 0;
     activeResonantModeCount = 0;
     activeModeCount = 0;
@@ -4997,8 +5149,12 @@ function materializeAudioFeatureStructuralSnapshot(
     referenceModeSlots,
     sourceCoupledColorSlots: returnedSourceCoupledColorSlots,
     resonantColorSlots: returnedResonantColorSlots,
-    sourceCoupledSpectralSlots: returnedSourceCoupledSpectralSlots,
-    resonantSpectralSlots: returnedResonantSpectralSlots,
+    sourceCoupledSpectralLaneA: returnedSourceCoupledSpectralLaneA,
+    sourceCoupledSpectralLaneB: returnedSourceCoupledSpectralLaneB,
+    sourceCoupledSpectralMeta: returnedSourceCoupledSpectralMeta,
+    resonantSpectralLaneA: returnedResonantSpectralLaneA,
+    resonantSpectralLaneB: returnedResonantSpectralLaneB,
+    resonantSpectralMeta: returnedResonantSpectralMeta,
     activeSourceCoupledModeCount,
     activeResonantModeCount,
     activeModeCount,
@@ -5175,6 +5331,24 @@ function readCurrentStructuralState(
       resonantColorSlots:
         previousAnalysisResult?.resonantColorSlots ??
         preparedInputs.resonantColorSlots,
+      sourceCoupledSpectralLaneA:
+        previousAnalysisResult?.sourceCoupledSpectralLaneA ??
+        preparedInputs.sourceCoupledSpectralLaneA,
+      sourceCoupledSpectralLaneB:
+        previousAnalysisResult?.sourceCoupledSpectralLaneB ??
+        preparedInputs.sourceCoupledSpectralLaneB,
+      sourceCoupledSpectralMeta:
+        previousAnalysisResult?.sourceCoupledSpectralMeta ??
+        preparedInputs.sourceCoupledSpectralMeta,
+      resonantSpectralLaneA:
+        previousAnalysisResult?.resonantSpectralLaneA ??
+        preparedInputs.resonantSpectralLaneA,
+      resonantSpectralLaneB:
+        previousAnalysisResult?.resonantSpectralLaneB ??
+        preparedInputs.resonantSpectralLaneB,
+      resonantSpectralMeta:
+        previousAnalysisResult?.resonantSpectralMeta ??
+        preparedInputs.resonantSpectralMeta,
       structuralFingerprint:
         previousStructuralState.structuralFingerprint ??
         previousAnalysisResult?.structuralFingerprint ??
@@ -5202,6 +5376,24 @@ function readCurrentStructuralState(
       : null,
     resonantColorSlotsSource: preparedInputs.shouldBuildSpectralLight
       ? preparedInputs.resonantState.colorSlots
+      : null,
+    sourceCoupledSpectralLaneASource: preparedInputs.shouldBuildSpectralLight
+      ? preparedInputs.sourceCoupledState.spectralLaneA
+      : null,
+    sourceCoupledSpectralLaneBSource: preparedInputs.shouldBuildSpectralLight
+      ? preparedInputs.sourceCoupledState.spectralLaneB
+      : null,
+    sourceCoupledSpectralMetaSource: preparedInputs.shouldBuildSpectralLight
+      ? preparedInputs.sourceCoupledState.spectralMeta
+      : null,
+    resonantSpectralLaneASource: preparedInputs.shouldBuildSpectralLight
+      ? preparedInputs.resonantState.spectralLaneA
+      : null,
+    resonantSpectralLaneBSource: preparedInputs.shouldBuildSpectralLight
+      ? preparedInputs.resonantState.spectralLaneB
+      : null,
+    resonantSpectralMetaSource: preparedInputs.shouldBuildSpectralLight
+      ? preparedInputs.resonantState.spectralMeta
       : null,
     freezeModeSlots: Boolean(
       preparedInputs.resolvedAuditSettings.freezeModeSlots,
@@ -5339,8 +5531,12 @@ export function buildCurrentAudioFeatureAnalysisResult({
     activeResonantModeCount: resolvedStructural.activeResonantModeCount,
     sourceCoupledColorSlots: resolvedStructural.sourceCoupledColorSlots,
     resonantColorSlots: resolvedStructural.resonantColorSlots,
-    sourceCoupledSpectralSlots: resolvedStructural.sourceCoupledSpectralSlots,
-    resonantSpectralSlots: resolvedStructural.resonantSpectralSlots,
+    sourceCoupledSpectralLaneA: resolvedStructural.sourceCoupledSpectralLaneA,
+    sourceCoupledSpectralLaneB: resolvedStructural.sourceCoupledSpectralLaneB,
+    sourceCoupledSpectralMeta: resolvedStructural.sourceCoupledSpectralMeta,
+    resonantSpectralLaneA: resolvedStructural.resonantSpectralLaneA,
+    resonantSpectralLaneB: resolvedStructural.resonantSpectralLaneB,
+    resonantSpectralMeta: resolvedStructural.resonantSpectralMeta,
     bandEnergies: fastSignalState.bandEnergies,
     spectralBandEnergies: fastSignalState.spectralBandEnergies,
     trebleBroadbandEnergy: fastSignalState.trebleBroadbandEnergy,
@@ -5912,9 +6108,15 @@ export function composeAudioFeatureFrame({
   let renderReferenceModeSlots = analysisResult.referenceModeSlots;
   let renderSourceCoupledColorSlots = analysisResult.sourceCoupledColorSlots;
   let renderResonantColorSlots = analysisResult.resonantColorSlots;
-  let renderSourceCoupledSpectralSlots =
-    analysisResult.sourceCoupledSpectralSlots;
-  let renderResonantSpectralSlots = analysisResult.resonantSpectralSlots;
+  let renderSourceCoupledSpectralLaneA =
+    analysisResult.sourceCoupledSpectralLaneA;
+  let renderSourceCoupledSpectralLaneB =
+    analysisResult.sourceCoupledSpectralLaneB;
+  let renderSourceCoupledSpectralMeta =
+    analysisResult.sourceCoupledSpectralMeta;
+  let renderResonantSpectralLaneA = analysisResult.resonantSpectralLaneA;
+  let renderResonantSpectralLaneB = analysisResult.resonantSpectralLaneB;
+  let renderResonantSpectralMeta = analysisResult.resonantSpectralMeta;
   let renderBandEnergies = analysisResult.bandEnergies;
   let activeSourceCoupledModeCount =
     analysisResult.activeSourceCoupledModeCount;
@@ -5944,8 +6146,12 @@ export function composeAudioFeatureFrame({
     preparedInputs.referenceModeSlots.fill(0);
     preparedInputs.sourceCoupledColorSlots.fill(0);
     preparedInputs.resonantColorSlots.fill(0);
-    preparedInputs.sourceCoupledSpectralSlots.fill(0);
-    preparedInputs.resonantSpectralSlots.fill(0);
+    preparedInputs.sourceCoupledSpectralLaneA.fill(0);
+    preparedInputs.sourceCoupledSpectralLaneB.fill(0);
+    preparedInputs.sourceCoupledSpectralMeta.fill(0);
+    preparedInputs.resonantSpectralLaneA.fill(0);
+    preparedInputs.resonantSpectralLaneB.fill(0);
+    preparedInputs.resonantSpectralMeta.fill(0);
     preparedInputs.bandEnergies.fill(0);
     renderSourceCoupledSlots = preparedInputs.zeroSourceCoupledTargetSlots;
     renderResonantSlots = preparedInputs.zeroResonantTargetSlots;
@@ -5955,9 +6161,14 @@ export function composeAudioFeatureFrame({
     renderReferenceModeSlots = preparedInputs.referenceModeSlots;
     renderSourceCoupledColorSlots = preparedInputs.zeroSourceCoupledTargetSlots;
     renderResonantColorSlots = preparedInputs.zeroResonantTargetSlots;
-    renderSourceCoupledSpectralSlots =
+    renderSourceCoupledSpectralLaneA =
       preparedInputs.zeroSourceCoupledTargetSlots;
-    renderResonantSpectralSlots = preparedInputs.zeroResonantTargetSlots;
+    renderSourceCoupledSpectralLaneB =
+      preparedInputs.zeroSourceCoupledTargetSlots;
+    renderSourceCoupledSpectralMeta = preparedInputs.zeroSourceCoupledTargetSlots;
+    renderResonantSpectralLaneA = preparedInputs.zeroResonantTargetSlots;
+    renderResonantSpectralLaneB = preparedInputs.zeroResonantTargetSlots;
+    renderResonantSpectralMeta = preparedInputs.zeroResonantTargetSlots;
     renderBandEnergies = preparedInputs.bandEnergies;
     activeSourceCoupledModeCount = 0;
     activeResonantModeCount = 0;
@@ -5971,8 +6182,12 @@ export function composeAudioFeatureFrame({
     resonantPhaseSlots: renderResonantPhaseSlots,
     sourceCoupledColorSlots: renderSourceCoupledColorSlots,
     resonantColorSlots: renderResonantColorSlots,
-    sourceCoupledSpectralSlots: renderSourceCoupledSpectralSlots,
-    resonantSpectralSlots: renderResonantSpectralSlots,
+    sourceCoupledSpectralLaneA: renderSourceCoupledSpectralLaneA,
+    sourceCoupledSpectralLaneB: renderSourceCoupledSpectralLaneB,
+    sourceCoupledSpectralMeta: renderSourceCoupledSpectralMeta,
+    resonantSpectralLaneA: renderResonantSpectralLaneA,
+    resonantSpectralLaneB: renderResonantSpectralLaneB,
+    resonantSpectralMeta: renderResonantSpectralMeta,
     activeSourceCoupledModeCount,
     activeResonantModeCount,
     radius: preparedInputs.radius,
@@ -6023,7 +6238,11 @@ export function composeAudioFeatureFrame({
     modalFieldSlots: continuityDescriptorSource.modalFieldSlots,
     modalFieldPhaseSlots: continuityDescriptorSource.modalFieldPhaseSlots,
     modalFieldColorSlots: continuityDescriptorSource.modalFieldColorSlots,
-    modalFieldSpectralSlots: continuityDescriptorSource.modalFieldSpectralSlots,
+    modalFieldSpectralLaneA:
+      continuityDescriptorSource.modalFieldSpectralLaneA,
+    modalFieldSpectralLaneB:
+      continuityDescriptorSource.modalFieldSpectralLaneB,
+    modalFieldSpectralMeta: continuityDescriptorSource.modalFieldSpectralMeta,
     modalFieldMetadataSlots: continuityDescriptorSource.modalFieldMetadataSlots,
     activeModalFieldModeCount:
       continuityDescriptorSource.activeModalFieldModeCount,
@@ -6167,7 +6386,9 @@ export function composeAudioFeatureFrame({
     modalFieldSlots: modalDescriptor.slotViews.modalFieldSlots,
     modalFieldPhaseSlots: modalDescriptor.slotViews.modalFieldPhaseSlots,
     modalFieldColorSlots: modalDescriptor.slotViews.modalFieldColorSlots,
-    modalFieldSpectralSlots: modalDescriptor.slotViews.modalFieldSpectralSlots,
+    modalFieldSpectralLaneA: modalDescriptor.slotViews.modalFieldSpectralLaneA,
+    modalFieldSpectralLaneB: modalDescriptor.slotViews.modalFieldSpectralLaneB,
+    modalFieldSpectralMeta: modalDescriptor.slotViews.modalFieldSpectralMeta,
     modalFieldMetadataSlots: modalDescriptor.slotViews.modalFieldMetadataSlots,
     bandEnergies: renderBandEnergies,
     spectralBandEnergies: analysisResult.spectralBandEnergies,

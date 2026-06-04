@@ -2,9 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   SPECTRAL_CIE_1931_2DEG_5NM,
   SPECTRAL_CIE_STEP_NM,
+  SPECTRAL_LIGHT_LANE_CENTERS,
+  SPECTRAL_LIGHT_LANE_COUNT,
+  SPECTRAL_LIGHT_LANE_DISPLAY_RGB,
   SPECTRAL_VISIBLE_RED_NM,
   SPECTRAL_VISIBLE_VIOLET_NM,
   compressLinearSrgbToGamut,
+  createSpectralLightLaneDisplayMatrix,
+  createSpectralLightLaneDistribution,
   createEqualEnergySpectralLightColor,
   createSpectralLightColor,
   foldAudioFrequencyToSpectralPhase,
@@ -59,6 +64,58 @@ describe("Spectral Light color science", () => {
     expect(lowA.wavelengthNm).toBeCloseTo(highA.wavelengthNm, 10);
     expect(channelDelta(lowA.rgb, highA.rgb)).toBeLessThan(1e-9);
     expect(lowA.weight).toBeCloseTo(highA.weight, 12);
+  });
+
+  it("folds octaves to the same normalized spectral lane distribution", () => {
+    const lowDistribution = createSpectralLightLaneDistribution({
+      phase: foldAudioFrequencyToSpectralPhase(440),
+    });
+    const highDistribution = createSpectralLightLaneDistribution({
+      phase: foldAudioFrequencyToSpectralPhase(880),
+    });
+    const laneTotal = lowDistribution.reduce((total, lane) => total + lane, 0);
+    const activeLaneCount = lowDistribution.filter((lane) => lane > 0.001).length;
+
+    expect(SPECTRAL_LIGHT_LANE_COUNT).toBe(8);
+    expect(lowDistribution).toBeInstanceOf(Float32Array);
+    expect(lowDistribution).toHaveLength(SPECTRAL_LIGHT_LANE_COUNT);
+    expect(laneTotal).toBeCloseTo(1, 6);
+    expect(activeLaneCount).toBeGreaterThan(1);
+    for (let index = 0; index < SPECTRAL_LIGHT_LANE_COUNT; index += 1) {
+      expect(lowDistribution[index]).toBeCloseTo(highDistribution[index], 12);
+    }
+  });
+
+  it("exports CIE-derived lane centers and display matrix for material transfer", () => {
+    const matrix = createSpectralLightLaneDisplayMatrix();
+
+    expect(SPECTRAL_LIGHT_LANE_CENTERS).toHaveLength(
+      SPECTRAL_LIGHT_LANE_COUNT,
+    );
+    expect(SPECTRAL_LIGHT_LANE_DISPLAY_RGB).toHaveLength(
+      SPECTRAL_LIGHT_LANE_COUNT,
+    );
+    expect(matrix).toEqual(SPECTRAL_LIGHT_LANE_DISPLAY_RGB);
+
+    for (let lane = 0; lane < SPECTRAL_LIGHT_LANE_COUNT; lane += 1) {
+      const center = SPECTRAL_LIGHT_LANE_CENTERS[lane];
+      const rgb = SPECTRAL_LIGHT_LANE_DISPLAY_RGB[lane];
+      expect(center.lane).toBe(lane);
+      expect(center.phase).toBeCloseTo(
+        (lane + 0.5) / SPECTRAL_LIGHT_LANE_COUNT,
+        12,
+      );
+      expect(center.wavelengthNm).toBeGreaterThanOrEqual(
+        SPECTRAL_VISIBLE_VIOLET_NM,
+      );
+      expect(center.wavelengthNm).toBeLessThanOrEqual(SPECTRAL_VISIBLE_RED_NM);
+      expect(Number.isFinite(center.xyz.x)).toBe(true);
+      expect(Number.isFinite(center.xyz.y)).toBe(true);
+      expect(Number.isFinite(center.xyz.z)).toBe(true);
+      expect(center.xyz.y).toBeGreaterThanOrEqual(0);
+      expect(Math.max(rgb.r, rgb.g, rgb.b)).toBeCloseTo(1, 6);
+      expect(Math.min(rgb.r, rgb.g, rgb.b)).toBeGreaterThanOrEqual(0);
+    }
   });
 
   it("keeps common musical notes chromatic instead of compressing them to white", () => {

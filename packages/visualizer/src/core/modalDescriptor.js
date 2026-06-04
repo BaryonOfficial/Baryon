@@ -3,9 +3,35 @@ import {
   MODAL_BASIS_CACHE_RESOLUTION,
   getModalBasisCacheMaxRepresentableModeIndex,
 } from "./modalBudgets.js";
+import {
+  normalizeSpectralLanePacket,
+  readPackedQuad,
+} from "../utils/audio/spectralLanePacket.js";
+
+const FNV_OFFSET_BASIS = 2166136261;
+const FNV_PRIME = 16777619;
+const FLOAT32_BITS_VALUE = new Float32Array(1);
+const FLOAT32_BITS_VIEW = new Uint32Array(FLOAT32_BITS_VALUE.buffer);
 
 function clamp01(value) {
   return Math.min(1, Math.max(0, value));
+}
+
+function hashUint32(value, hash) {
+  return Math.imul(hash ^ (value >>> 0), FNV_PRIME) >>> 0;
+}
+
+function hashFloat32(value, hash) {
+  FLOAT32_BITS_VALUE[0] = Math.fround(Number.isFinite(value) ? value : 0);
+  return hashUint32(FLOAT32_BITS_VIEW[0], hash);
+}
+
+function hashPackedQuad(values, hash) {
+  let nextHash = hash;
+  nextHash = hashFloat32(values?.[0] ?? 0, nextHash);
+  nextHash = hashFloat32(values?.[1] ?? 0, nextHash);
+  nextHash = hashFloat32(values?.[2] ?? 0, nextHash);
+  return hashFloat32(values?.[3] ?? 0, nextHash);
 }
 
 function deriveStructuralAdmissionDiagnostics(
@@ -344,7 +370,9 @@ function buildAdmissionEntries({
   slots,
   phaseSlots,
   colorSlots,
-  spectralSlots,
+  spectralLaneA,
+  spectralLaneB,
+  spectralMeta,
   metadataSlots,
   validCount,
 }) {
@@ -372,10 +400,9 @@ function buildAdmissionEntries({
       colorG: colorSlots?.[offset + 1] ?? 0,
       colorB: colorSlots?.[offset + 2] ?? 0,
       colorWeight: colorSlots?.[offset + 3] ?? 0,
-      spectralPhase: spectralSlots?.[offset] ?? 0,
-      spectralWavelength: spectralSlots?.[offset + 1] ?? 0,
-      spectralHarmonicConfidence: spectralSlots?.[offset + 2] ?? 0,
-      spectralAccentEnergy: spectralSlots?.[offset + 3] ?? 0,
+      spectralLaneA: readPackedQuad(spectralLaneA, offset),
+      spectralLaneB: readPackedQuad(spectralLaneB, offset),
+      spectralMeta: readPackedQuad(spectralMeta, offset),
       naturalFrequencyHz: readFiniteNonNegative(metadataSlots?.[offset]),
       qualityFactor: readFiniteNonNegative(metadataSlots?.[offset + 1]),
       dampingRatio: readFiniteNonNegative(metadataSlots?.[offset + 2]),
@@ -393,6 +420,10 @@ function mergeAdmissionEntries(entries) {
     const existing = merged.get(entry.modeKey);
     const spectralInfluence =
       Math.max(0, entry.colorWeight) * entry.coefficient;
+    const spectralPacketInfluence =
+      Math.max(0, entry.coefficient) *
+      Math.max(0, entry.spectralMeta?.[2] ?? 0) *
+      Math.max(0, entry.spectralMeta?.[3] ?? 0);
     if (!existing) {
       merged.set(entry.modeKey, {
         ...entry,
@@ -406,10 +437,15 @@ function mergeAdmissionEntries(entries) {
         spectralOwnerColorR: entry.colorR,
         spectralOwnerColorG: entry.colorG,
         spectralOwnerColorB: entry.colorB,
-        spectralOwnerPhase: entry.spectralPhase,
-        spectralOwnerWavelength: entry.spectralWavelength,
-        spectralOwnerHarmonicConfidence: entry.spectralHarmonicConfidence,
-        spectralOwnerAccentEnergy: entry.spectralAccentEnergy,
+        spectralPacketInfluence,
+        spectralLaneNumeratorA: entry.spectralLaneA.map(
+          (value) => value * spectralPacketInfluence,
+        ),
+        spectralLaneNumeratorB: entry.spectralLaneB.map(
+          (value) => value * spectralPacketInfluence,
+        ),
+        spectralMetaOwnerInfluence: spectralPacketInfluence,
+        spectralOwnerMeta: entry.spectralMeta,
         naturalFrequencyNumerator: entry.naturalFrequencyHz * entry.coefficient,
         qualityFactorNumerator: entry.qualityFactor * entry.coefficient,
         dampingRatioNumerator: entry.dampingRatio * entry.coefficient,
@@ -429,16 +465,22 @@ function mergeAdmissionEntries(entries) {
     existing.spectralColorNumeratorG += entry.colorG * spectralInfluence;
     existing.spectralColorNumeratorB += entry.colorB * spectralInfluence;
     existing.spectralColorInfluence += spectralInfluence;
+    existing.spectralPacketInfluence += spectralPacketInfluence;
+    for (let laneIndex = 0; laneIndex < 4; laneIndex += 1) {
+      existing.spectralLaneNumeratorA[laneIndex] +=
+        entry.spectralLaneA[laneIndex] * spectralPacketInfluence;
+      existing.spectralLaneNumeratorB[laneIndex] +=
+        entry.spectralLaneB[laneIndex] * spectralPacketInfluence;
+    }
     if (spectralInfluence > existing.spectralOwnerInfluence) {
       existing.spectralOwnerInfluence = spectralInfluence;
       existing.spectralOwnerColorR = entry.colorR;
       existing.spectralOwnerColorG = entry.colorG;
       existing.spectralOwnerColorB = entry.colorB;
-      existing.spectralOwnerPhase = entry.spectralPhase;
-      existing.spectralOwnerWavelength = entry.spectralWavelength;
-      existing.spectralOwnerHarmonicConfidence =
-        entry.spectralHarmonicConfidence;
-      existing.spectralOwnerAccentEnergy = entry.spectralAccentEnergy;
+    }
+    if (spectralPacketInfluence > existing.spectralMetaOwnerInfluence) {
+      existing.spectralMetaOwnerInfluence = spectralPacketInfluence;
+      existing.spectralOwnerMeta = entry.spectralMeta;
     }
     existing.naturalFrequencyNumerator +=
       entry.naturalFrequencyHz * entry.coefficient;
@@ -454,16 +496,33 @@ function mergeAdmissionEntries(entries) {
     const coefficientDenom = Math.max(entry.coefficient, 1e-9);
     const colorWeight = entry.colorWeightNumerator / coefficientDenom;
     const spectralColorDenom = Math.max(entry.spectralColorInfluence, 1e-9);
+    const spectralPacketDenom = Math.max(entry.spectralPacketInfluence, 1e-9);
+    const normalizedLanes =
+      entry.spectralPacketInfluence > 0
+        ? normalizeSpectralLanePacket(
+            entry.spectralLaneNumeratorA.map(
+              (value) => value / spectralPacketDenom,
+            ),
+            entry.spectralLaneNumeratorB.map(
+              (value) => value / spectralPacketDenom,
+            ),
+          )
+        : {
+            laneA: [0, 0, 0, 0],
+            laneB: [0, 0, 0, 0],
+          };
     return {
       ...entry,
       colorR: entry.spectralColorNumeratorR / spectralColorDenom,
       colorG: entry.spectralColorNumeratorG / spectralColorDenom,
       colorB: entry.spectralColorNumeratorB / spectralColorDenom,
       colorWeight,
-      spectralPhase: entry.spectralOwnerPhase,
-      spectralWavelength: entry.spectralOwnerWavelength,
-      spectralHarmonicConfidence: entry.spectralOwnerHarmonicConfidence,
-      spectralAccentEnergy: entry.spectralOwnerAccentEnergy,
+      spectralLaneA: normalizedLanes.laneA,
+      spectralLaneB: normalizedLanes.laneB,
+      spectralMeta:
+        entry.spectralPacketInfluence > 0
+          ? entry.spectralOwnerMeta
+          : [0, 0, 0, 0],
       naturalFrequencyHz: entry.naturalFrequencyNumerator / coefficientDenom,
       qualityFactor: entry.qualityFactorNumerator / coefficientDenom,
       dampingRatio: entry.dampingRatioNumerator / coefficientDenom,
@@ -490,7 +549,9 @@ function writeUnifiedModalSlotViewsFromAssignments(assignments, capacity) {
   const slots = new Float32Array(capacity * 4);
   const phaseSlots = new Float32Array(capacity * 4);
   const colorSlots = new Float32Array(capacity * 4);
-  const spectralSlots = new Float32Array(capacity * 4);
+  const spectralLaneA = new Float32Array(capacity * 4);
+  const spectralLaneB = new Float32Array(capacity * 4);
+  const spectralMeta = new Float32Array(capacity * 4);
   const metadataSlots = new Float32Array(capacity * 4);
 
   for (let slotIndex = 0; slotIndex < capacity; slotIndex += 1) {
@@ -514,10 +575,20 @@ function writeUnifiedModalSlotViewsFromAssignments(assignments, capacity) {
     colorSlots[offset + 2] = entry.colorB;
     colorSlots[offset + 3] = entry.colorWeight;
 
-    spectralSlots[offset] = entry.spectralPhase;
-    spectralSlots[offset + 1] = entry.spectralWavelength;
-    spectralSlots[offset + 2] = entry.spectralHarmonicConfidence;
-    spectralSlots[offset + 3] = entry.spectralAccentEnergy;
+    spectralLaneA[offset] = entry.spectralLaneA?.[0] ?? 0;
+    spectralLaneA[offset + 1] = entry.spectralLaneA?.[1] ?? 0;
+    spectralLaneA[offset + 2] = entry.spectralLaneA?.[2] ?? 0;
+    spectralLaneA[offset + 3] = entry.spectralLaneA?.[3] ?? 0;
+
+    spectralLaneB[offset] = entry.spectralLaneB?.[0] ?? 0;
+    spectralLaneB[offset + 1] = entry.spectralLaneB?.[1] ?? 0;
+    spectralLaneB[offset + 2] = entry.spectralLaneB?.[2] ?? 0;
+    spectralLaneB[offset + 3] = entry.spectralLaneB?.[3] ?? 0;
+
+    spectralMeta[offset] = entry.spectralMeta?.[0] ?? 0;
+    spectralMeta[offset + 1] = entry.spectralMeta?.[1] ?? 0;
+    spectralMeta[offset + 2] = entry.spectralMeta?.[2] ?? 0;
+    spectralMeta[offset + 3] = entry.spectralMeta?.[3] ?? 0;
 
     metadataSlots[offset] = entry.naturalFrequencyHz;
     metadataSlots[offset + 1] = entry.qualityFactor;
@@ -529,7 +600,9 @@ function writeUnifiedModalSlotViewsFromAssignments(assignments, capacity) {
     modalFieldSlots: slots,
     modalFieldPhaseSlots: phaseSlots,
     modalFieldColorSlots: colorSlots,
-    modalFieldSpectralSlots: spectralSlots,
+    modalFieldSpectralLaneA: spectralLaneA,
+    modalFieldSpectralLaneB: spectralLaneB,
+    modalFieldSpectralMeta: spectralMeta,
     modalFieldMetadataSlots: metadataSlots,
   };
 }
@@ -543,6 +616,27 @@ function countOccupiedSlotSpan(assignments) {
   return 0;
 }
 
+function buildSpectralLaneDescriptorHash(slotAssignments) {
+  let hash = FNV_OFFSET_BASIS;
+  hash = hashUint32(slotAssignments.length, hash);
+  for (let slotIndex = 0; slotIndex < slotAssignments.length; slotIndex += 1) {
+    const entry = slotAssignments[slotIndex];
+    hash = hashUint32(slotIndex, hash);
+    if (!entry) {
+      hash = hashUint32(0, hash);
+      continue;
+    }
+    hash = hashUint32(1, hash);
+    hash = hashFloat32(entry.u, hash);
+    hash = hashFloat32(entry.v, hash);
+    hash = hashFloat32(entry.w, hash);
+    hash = hashPackedQuad(entry.spectralLaneA, hash);
+    hash = hashPackedQuad(entry.spectralLaneB, hash);
+    hash = hashPackedQuad(entry.spectralMeta, hash);
+  }
+  return hash >>> 0;
+}
+
 /**
  * @param {{
  *   generation?: number,
@@ -550,7 +644,9 @@ function countOccupiedSlotSpan(assignments) {
  *   modalFieldSlots?: Float32Array | number[],
  *   modalFieldPhaseSlots?: Float32Array | number[],
  *   modalFieldColorSlots?: Float32Array | number[] | null,
- *   modalFieldSpectralSlots?: Float32Array | number[] | null,
+ *   modalFieldSpectralLaneA?: Float32Array | number[] | null,
+ *   modalFieldSpectralLaneB?: Float32Array | number[] | null,
+ *   modalFieldSpectralMeta?: Float32Array | number[] | null,
  *   modalFieldMetadataSlots?: Float32Array | number[] | null,
  *   activeModalFieldModeCount?: number,
  *   observerCandidateModeCount?: number,
@@ -567,7 +663,9 @@ export function buildCanonicalFullModalDescriptor({
   modalFieldSlots,
   modalFieldPhaseSlots,
   modalFieldColorSlots = null,
-  modalFieldSpectralSlots = null,
+  modalFieldSpectralLaneA = null,
+  modalFieldSpectralLaneB = null,
+  modalFieldSpectralMeta = null,
   modalFieldMetadataSlots = null,
   activeModalFieldModeCount,
   observerCandidateModeCount,
@@ -590,7 +688,9 @@ export function buildCanonicalFullModalDescriptor({
     slots: modalFieldSlots,
     phaseSlots: modalFieldPhaseSlots,
     colorSlots: modalFieldColorSlots,
-    spectralSlots: modalFieldSpectralSlots,
+    spectralLaneA: modalFieldSpectralLaneA,
+    spectralLaneB: modalFieldSpectralLaneB,
+    spectralMeta: modalFieldSpectralMeta,
     metadataSlots: modalFieldMetadataSlots,
     validCount: validModeCount,
   });
@@ -639,6 +739,7 @@ export function buildCanonicalFullModalDescriptor({
     slotAssignments,
     totalCapacity,
   );
+  const spectralLaneHash = buildSpectralLaneDescriptorHash(slotAssignments);
   const resolvedPhaseAuthorityModeCount = Number.isFinite(
     phaseAuthorityModeCount,
   )
@@ -710,6 +811,7 @@ export function buildCanonicalFullModalDescriptor({
         structuralAdmission.spatialBandwidthRejectedCount,
       basisAtlasPageCapacity: structuralAdmission.basisAtlasPageCapacity,
       maxRepresentableModeIndex: structuralAdmission.maxRepresentableModeIndex,
+      spectralLaneHash,
       modalVarietyAudit,
       rejectionReasons,
     },

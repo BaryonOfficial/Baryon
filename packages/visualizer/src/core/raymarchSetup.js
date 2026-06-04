@@ -17,6 +17,7 @@ import {
 import {
   createRaymarchLiveFieldProjectionCache,
   createRaymarchModalBasisCache,
+  createRaymarchSpectralLaneCache,
 } from "./raymarch/fieldCache.js";
 import { estimateProjectedSphereStats } from "./raymarch/intersection.js";
 import { RAYMARCH_DEFAULTS } from "../defaults.js";
@@ -81,11 +82,16 @@ export function setupRaymarch(
   );
   const modalFieldModeBuffer = createModeBuffer(modalFieldCapacity);
   const modalFieldColorBuffer = createModeBuffer(modalFieldCapacity);
-  const modalFieldSpectralBuffer = createModeBuffer(modalFieldCapacity);
+  const modalFieldSpectralLaneABuffer = createModeBuffer(modalFieldCapacity);
+  const modalFieldSpectralLaneBBuffer = createModeBuffer(modalFieldCapacity);
+  const modalFieldSpectralMetaBuffer = createModeBuffer(modalFieldCapacity);
   const modalFieldPhaseBuffer = createModeBuffer(modalFieldCapacity);
   const modalFieldCoefficientBuffer = createModeBuffer(modalFieldCapacity);
   const modalBasisCache = createRaymarchModalBasisCache();
   const liveFieldProjectionCache = createRaymarchLiveFieldProjectionCache({
+    resolution: modalBasisCache.resolution,
+  });
+  const spectralLaneCache = createRaymarchSpectralLaneCache({
     resolution: modalBasisCache.resolution,
   });
   const volumeMesh = createRaymarchVolumeMesh({
@@ -95,6 +101,9 @@ export function setupRaymarch(
     modalLiveSupportTexture: liveFieldProjectionCache.supportTexture,
     modalPhaseInterferenceTexture:
       liveFieldProjectionCache.phaseInterferenceTexture,
+    spectralLaneTextureA: spectralLaneCache.spectralLaneTextureA,
+    spectralLaneTextureB: spectralLaneCache.spectralLaneTextureB,
+    spectralLaneStatsTexture: spectralLaneCache.spectralLaneStatsTexture,
     modalFieldModeBuffer,
     modalFieldCoefficientBuffer,
     modalFieldCapacity: modalBasisCache.liveSynthesisModeCount,
@@ -126,11 +135,14 @@ export function setupRaymarch(
     uniforms,
     modalFieldModeBuffer,
     modalFieldColorBuffer,
-    modalFieldSpectralBuffer,
+    modalFieldSpectralLaneABuffer,
+    modalFieldSpectralLaneBBuffer,
+    modalFieldSpectralMetaBuffer,
     modalFieldPhaseBuffer,
     modalFieldCoefficientBuffer,
     modalBasisCache,
     liveFieldProjectionCache,
+    spectralLaneCache,
     modalFieldCapacity,
     requestedCavityGeometry,
     effectiveCavityGeometry,

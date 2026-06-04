@@ -36,6 +36,13 @@ function expectSourceIndex(source, needle) {
   return index;
 }
 
+function expectSourceBlock(source, startNeedle, endNeedle) {
+  const start = expectSourceIndex(source, startNeedle);
+  const end = source.indexOf(endNeedle, start + startNeedle.length);
+  expect(end).toBeGreaterThan(start);
+  return source.slice(start, end);
+}
+
 describe("raymarch volume material", () => {
   it("does not expose a product-controlled structure gradient window", () => {
     const source = readFileSync(
@@ -858,7 +865,10 @@ describe("raymarch volume material", () => {
       "utf8",
     );
 
-    expect(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES).toEqual({ off: "off" });
+    expect(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES).toEqual({
+      off: "off",
+      laneCache: "lane-cache",
+    });
     expect(source).not.toContain("RAYMARCH_SPECTRAL_LIGHT_TUNING");
     expect(source).not.toContain("cachedSpectralLightEnabled");
     expect(source).not.toContain("spectralLightCacheTexture");
@@ -870,6 +880,83 @@ describe("raymarch volume material", () => {
     expect(source).toContain(
       "const supportRevealDensity = supportVisibleDensity;",
     );
+  });
+
+  it("projects Spectral lane textures to display radiance inside the material", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const laneTransferBlock = expectSourceBlock(
+      source,
+      "function sampleSpectralLaneCacheNode",
+      "function createScatteringNode",
+    );
+    const scatteringSignature = expectSourceBlock(
+      source,
+      "function createScatteringNode",
+      "const normalizedBoundaryMode",
+    );
+    const materialBindingBlock = expectSourceBlock(
+      source,
+      "material.scatteringNode = createScatteringNode({",
+      "});\n    material.spectralLightEvaluationMode",
+    );
+
+    expect(laneTransferBlock).toContain(
+      "texture3D(spectralLaneTextureA).sample",
+    );
+    expect(laneTransferBlock).toContain(
+      "texture3D(spectralLaneTextureB).sample",
+    );
+    expect(laneTransferBlock).toContain(
+      "texture3D(spectralLaneStatsTexture).sample",
+    );
+    expect(laneTransferBlock).toContain(
+      "projectSpectralLaneRadianceToRgbNode",
+    );
+    expect(source).toContain("SPECTRAL_LIGHT_LANE_DISPLAY_RGB");
+    expect(laneTransferBlock).toContain("dominance");
+    expect(laneTransferBlock).toContain("entropy");
+    expect(laneTransferBlock).not.toContain("uColor");
+    expect(laneTransferBlock).not.toContain("uSurfaceColor");
+    expect(laneTransferBlock).not.toContain("modalFieldColorBuffer");
+    expect(laneTransferBlock).not.toContain("spectralLightCacheTexture");
+    expect(scatteringSignature).toContain("spectralLightEvaluationMode");
+    expect(scatteringSignature).toContain("spectralLaneTextureA");
+    expect(scatteringSignature).toContain("spectralLaneTextureB");
+    expect(scatteringSignature).toContain("spectralLaneStatsTexture");
+    expect(materialBindingBlock).toContain(
+      "spectralLightEvaluationMode",
+    );
+    expect(materialBindingBlock).toContain(
+      "spectralLaneTextureA: modalResourceBindings.spectralLaneTextureA",
+    );
+    expect(materialBindingBlock).toContain(
+      "spectralLaneTextureB: modalResourceBindings.spectralLaneTextureB",
+    );
+    expect(materialBindingBlock).toContain(
+      "spectralLaneStatsTexture:\n        modalResourceBindings.spectralLaneStatsTexture",
+    );
+  });
+
+  it("keeps broad Spectral lane mixtures chromatic instead of whitening entropy", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const projectionBlock = expectSourceBlock(
+      source,
+      "function projectSpectralLaneRadianceToRgbNode",
+      "function sampleSpectralLaneCacheNode",
+    );
+
+    expect(projectionBlock).not.toContain("broadSpectrumWhite");
+    expect(projectionBlock).not.toContain("entropyWhiteMix");
+    expect(projectionBlock).not.toContain("vec3(1.0)");
+    expect(projectionBlock).toContain("dominantLaneRgb");
+    expect(projectionBlock).toContain("broadSpectrumChromaAnchor");
+    expect(projectionBlock).toContain("broadSpectrumExposureCompression");
   });
 
   it("samples only the canonical modal basis atlas texture for field ownership", () => {
@@ -1612,6 +1699,40 @@ describe("raymarch volume material", () => {
     expect(mesh.material).not.toHaveProperty("modalPhaseResponseTexture");
     expect(mesh.userData).not.toHaveProperty("raymarchModalFieldPhaseBuffer");
     expect(mesh.material).not.toHaveProperty("modalFieldPhaseBuffer");
+  });
+
+  it("binds Spectral lane textures for lane-cache material transfer", () => {
+    const uniforms = makeMeshUniforms();
+    const spectralLaneTextureA = {};
+    const spectralLaneTextureB = {};
+    const spectralLaneStatsTexture = {};
+    const mesh = createRaymarchVolumeMesh({
+      radius: 3,
+      uniforms,
+      spectralLaneTextureA,
+      spectralLaneTextureB,
+      spectralLaneStatsTexture,
+      spectralLightEvaluationMode: "lane-cache",
+    });
+
+    expect(mesh.userData.raymarchSpectralLightEvaluationMode).toBe(
+      "lane-cache",
+    );
+    expect(mesh.userData.raymarchSpectralLaneTextureA).toBe(
+      spectralLaneTextureA,
+    );
+    expect(mesh.userData.raymarchSpectralLaneTextureB).toBe(
+      spectralLaneTextureB,
+    );
+    expect(mesh.userData.raymarchSpectralLaneStatsTexture).toBe(
+      spectralLaneStatsTexture,
+    );
+    expect(mesh.material.spectralLightEvaluationMode).toBe("lane-cache");
+    expect(mesh.material.spectralLaneTextureA).toBe(spectralLaneTextureA);
+    expect(mesh.material.spectralLaneTextureB).toBe(spectralLaneTextureB);
+    expect(mesh.material.spectralLaneStatsTexture).toBe(
+      spectralLaneStatsTexture,
+    );
   });
 
   it("binds the canonical modal-basis atlas texture on the cache-only material", () => {

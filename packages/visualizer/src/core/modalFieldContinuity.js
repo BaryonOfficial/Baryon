@@ -132,8 +132,16 @@ function readCandidateEntries(
     const slot = cloneSlotQuad(descriptorSource.modalFieldSlots, offset);
     const phase = cloneSlotQuad(descriptorSource.modalFieldPhaseSlots, offset);
     const color = cloneSlotQuad(descriptorSource.modalFieldColorSlots, offset);
-    const spectral = cloneSlotQuad(
-      descriptorSource.modalFieldSpectralSlots,
+    const spectralLaneA = cloneSlotQuad(
+      descriptorSource.modalFieldSpectralLaneA,
+      offset,
+    );
+    const spectralLaneB = cloneSlotQuad(
+      descriptorSource.modalFieldSpectralLaneB,
+      offset,
+    );
+    const spectralMeta = cloneSlotQuad(
+      descriptorSource.modalFieldSpectralMeta,
       offset,
     );
     const metadata = cloneSlotQuad(
@@ -183,7 +191,9 @@ function readCandidateEntries(
         ],
         phase,
         color,
-        spectral,
+        spectralLaneA,
+        spectralLaneB,
+        spectralMeta,
         metadata,
       },
     });
@@ -278,6 +288,9 @@ function muteRecordLivePayload(record) {
   const phase = record.payload?.phase ?? [0, 0, 0, 0];
   const color = record.payload?.color ?? [0, 0, 0, 0];
   const spectral = record.payload?.spectral ?? [0, 0, 0, 0];
+  const spectralLaneA = record.payload?.spectralLaneA ?? [0, 0, 0, 0];
+  const spectralLaneB = record.payload?.spectralLaneB ?? [0, 0, 0, 0];
+  const spectralMeta = record.payload?.spectralMeta ?? [0, 0, 0, 0];
   const metadata = record.payload?.metadata ?? [0, 0, 0, 0];
   record.lastCoefficientSnapshot = 0;
   record.lastStoredEnergySnapshot = 0;
@@ -286,6 +299,9 @@ function muteRecordLivePayload(record) {
     phase: [phase[0] ?? 0, phase[1] ?? 0, 0, 0],
     color: [color[0] ?? 0, color[1] ?? 0, color[2] ?? 0, 0],
     spectral: [spectral[0] ?? 0, spectral[1] ?? 0, spectral[2] ?? 0, 0],
+    spectralLaneA,
+    spectralLaneB,
+    spectralMeta: [spectralMeta[0] ?? 0, spectralMeta[1] ?? 0, 0, 0],
     metadata: [metadata[0] ?? 0, metadata[1] ?? 0, metadata[2] ?? 0, 0],
   };
 }
@@ -541,7 +557,9 @@ function writeDescriptorSource(records) {
   const modalFieldSlots = new Float32Array(records.length * 4);
   const modalFieldPhaseSlots = new Float32Array(records.length * 4);
   const modalFieldColorSlots = new Float32Array(records.length * 4);
-  const modalFieldSpectralSlots = new Float32Array(records.length * 4);
+  const modalFieldSpectralLaneA = new Float32Array(records.length * 4);
+  const modalFieldSpectralLaneB = new Float32Array(records.length * 4);
+  const modalFieldSpectralMeta = new Float32Array(records.length * 4);
   const modalFieldMetadataSlots = new Float32Array(records.length * 4);
 
   records.forEach((record, index) => {
@@ -549,7 +567,18 @@ function writeDescriptorSource(records) {
     modalFieldSlots.set(record.payload.slot, offset);
     modalFieldPhaseSlots.set(record.payload.phase, offset);
     modalFieldColorSlots.set(record.payload.color, offset);
-    modalFieldSpectralSlots.set(record.payload.spectral, offset);
+    modalFieldSpectralLaneA.set(
+      record.payload.spectralLaneA ?? [0, 0, 0, 0],
+      offset,
+    );
+    modalFieldSpectralLaneB.set(
+      record.payload.spectralLaneB ?? [0, 0, 0, 0],
+      offset,
+    );
+    modalFieldSpectralMeta.set(
+      record.payload.spectralMeta ?? [0, 0, 0, 0],
+      offset,
+    );
     modalFieldMetadataSlots.set(record.payload.metadata, offset);
   });
 
@@ -557,7 +586,9 @@ function writeDescriptorSource(records) {
     modalFieldSlots,
     modalFieldPhaseSlots,
     modalFieldColorSlots,
-    modalFieldSpectralSlots,
+    modalFieldSpectralLaneA,
+    modalFieldSpectralLaneB,
+    modalFieldSpectralMeta,
     modalFieldMetadataSlots,
     activeModalFieldModeCount: records.length,
   };
@@ -649,7 +680,9 @@ function buildDormantResult({
  *     modalFieldSlots?: Float32Array | number[],
  *     modalFieldPhaseSlots?: Float32Array | number[],
  *     modalFieldColorSlots?: Float32Array | number[],
- *     modalFieldSpectralSlots?: Float32Array | number[],
+ *     modalFieldSpectralLaneA?: Float32Array | number[],
+ *     modalFieldSpectralLaneB?: Float32Array | number[],
+ *     modalFieldSpectralMeta?: Float32Array | number[],
  *     modalFieldMetadataSlots?: Float32Array | number[],
  *     activeModalFieldModeCount?: number,
  *   },

@@ -2828,7 +2828,7 @@ describe("Spectral Light feature frame outputs", () => {
     });
   });
 
-  it("preserves Spectral Light phase metadata beside modal color slots", () => {
+  it("publishes normalized Spectral lane buffers beside modal color debug projections", () => {
     const featureState = createAudioFeatureState();
     const frame = buildAudioFeatureFrame({
       analysisSnapshot: createSnapshot({
@@ -2843,21 +2843,36 @@ describe("Spectral Light feature frame outputs", () => {
       radius: 3,
       status: makeActiveStatus(),
     });
-    const colorSlots = frame.modalFieldColorSlots;
-    const spectralSlots = frame.modalFieldSpectralSlots;
-    const firstWeightedOffset = Array.from(colorSlots).findIndex(
+    const laneA = frame.modalFieldSpectralLaneA;
+    const laneB = frame.modalFieldSpectralLaneB;
+    const meta = frame.modalFieldSpectralMeta;
+    const firstEnergyOffset = Array.from(meta).findIndex(
       (value, index) => index % 4 === 3 && value > 0,
     );
-    const offset = firstWeightedOffset - 3;
+    const offset = firstEnergyOffset - 3;
 
-    expect(spectralSlots).toBeInstanceOf(Float32Array);
-    expect(spectralSlots.length).toBe(colorSlots.length);
+    expect(laneA).toBeInstanceOf(Float32Array);
+    expect(laneB).toBeInstanceOf(Float32Array);
+    expect(meta).toBeInstanceOf(Float32Array);
+    expect(laneA.length).toBe(frame.modalFieldColorSlots.length);
+    expect(laneB.length).toBe(frame.modalFieldColorSlots.length);
+    expect(meta.length).toBe(frame.modalFieldColorSlots.length);
     expect(offset).toBeGreaterThanOrEqual(0);
-    expect(spectralSlots[offset]).toBeGreaterThanOrEqual(0);
-    expect(spectralSlots[offset]).toBeLessThan(1);
-    expect(spectralSlots[offset + 1]).toBeGreaterThan(0);
-    expect(spectralSlots[offset + 1]).toBeLessThanOrEqual(1);
-    expect(spectralSlots[offset + 2]).toBeGreaterThan(0);
+    expect(meta[offset]).toBeGreaterThanOrEqual(0);
+    expect(meta[offset]).toBeLessThan(1);
+    expect(meta[offset + 1]).toBeGreaterThan(0);
+    expect(meta[offset + 2]).toBeGreaterThan(0);
+    expect(meta[offset + 3]).toBeGreaterThan(0);
+    expect(
+      laneA[offset] +
+        laneA[offset + 1] +
+        laneA[offset + 2] +
+        laneA[offset + 3] +
+        laneB[offset] +
+        laneB[offset + 1] +
+        laneB[offset + 2] +
+        laneB[offset + 3],
+    ).toBeCloseTo(1, 5);
   });
 
   it("preserves multiple Spectral color families through the render-facing modal slots", () => {

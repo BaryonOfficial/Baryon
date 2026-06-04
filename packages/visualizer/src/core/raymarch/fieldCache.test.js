@@ -368,6 +368,170 @@ describe("structural projection drive", () => {
   });
 });
 
+describe("spectral lane radiance accumulation", () => {
+  it("accumulates lane radiance and reports total dominance and entropy", () => {
+    const result = raymarchFieldCache.accumulateSpectralLaneRadianceAtPoint({
+      point: [0.2, 0.25, 0.25],
+      modalFieldSlots: new Float32Array([
+        1, 1, 1, 0.8,
+        2, 1, 1, 0.6,
+      ]),
+      modalFieldSpectralLaneA: new Float32Array([
+        1, 0, 0, 0,
+        0, 0, 1, 0,
+      ]),
+      modalFieldSpectralLaneB: new Float32Array([
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+      ]),
+      modalFieldSpectralMeta: new Float32Array([
+        0.1, 0.04, 0.9, 0.5,
+        0.4, 0.08, 0.75, 0.4,
+      ]),
+      activeCount: 2,
+      cavityGeometry: "rectangular",
+    });
+
+    expect(result.lanes).toHaveLength(8);
+    expect(result.lanes[0]).toBeGreaterThan(0);
+    expect(result.lanes[2]).toBeGreaterThan(0);
+    expect(result.lanes[1]).toBe(0);
+    expect(result.total).toBeCloseTo(
+      result.lanes.reduce((total, value) => total + value, 0),
+      6,
+    );
+    expect(result.dominance).toBeGreaterThan(0.5);
+    expect(result.dominance).toBeLessThan(1);
+    expect(result.entropy).toBeGreaterThan(0);
+    expect(result.entropy).toBeLessThan(1);
+  });
+
+  it("preserves total radiance for equal-energy packets with different lanes", () => {
+    const commonOptions = {
+      point: [0.2, 0.25, 0.25],
+      modalFieldSlots: new Float32Array([1, 1, 1, 0.8]),
+      modalFieldSpectralMeta: new Float32Array([0.1, 0.04, 0.9, 0.7]),
+      activeCount: 1,
+      cavityGeometry: "rectangular",
+    };
+    const redLane = raymarchFieldCache.accumulateSpectralLaneRadianceAtPoint({
+      ...commonOptions,
+      modalFieldSpectralLaneA: new Float32Array([1, 0, 0, 0]),
+      modalFieldSpectralLaneB: new Float32Array([0, 0, 0, 0]),
+    });
+    const violetLane = raymarchFieldCache.accumulateSpectralLaneRadianceAtPoint({
+      ...commonOptions,
+      modalFieldSpectralLaneA: new Float32Array([0, 0, 0, 0]),
+      modalFieldSpectralLaneB: new Float32Array([0, 0, 1, 0]),
+    });
+
+    expect(redLane.total).toBeGreaterThan(0);
+    expect(violetLane.total).toBeCloseTo(redLane.total, 8);
+    expect(redLane.lanes[0]).toBeCloseTo(redLane.total, 8);
+    expect(violetLane.lanes[6]).toBeCloseTo(violetLane.total, 8);
+  });
+
+  it("creates a lane texture cache with separate lane and stats textures", () => {
+    const cache = raymarchFieldCache.createRaymarchSpectralLaneCache({
+      resolution: 8,
+    });
+
+    expect(cache.ready).toBe(false);
+    expect(cache.mode).toBe("spectral-lane-cache");
+    expect(cache.resolution).toBe(8);
+    expect(cache.spectralLaneTextureA).toBeTruthy();
+    expect(cache.spectralLaneTextureB).toBeTruthy();
+    expect(cache.spectralLaneStatsTexture).toBeTruthy();
+    expect(cache.spectralLaneTextureA).not.toBe(cache.spectralLaneTextureB);
+    expect(cache.spectralLaneStatsTexture).not.toBe(
+      cache.spectralLaneTextureA,
+    );
+  });
+
+  it("builds a GPU lane-radiance cache from modal basis pages and spectral lane buffers", () => {
+    const source = readFileSync(
+      new URL("./fieldCache.js", import.meta.url),
+      "utf8",
+    );
+    const computeStart = source.indexOf(
+      "function createSpectralLaneCacheComputeKernel",
+    );
+    const computeEnd = source.indexOf(
+      "function getOrCreateRaymarchModalBasisCacheComputeNode",
+      computeStart,
+    );
+    const computeSource = source.slice(computeStart, computeEnd);
+
+    expect(computeStart).toBeGreaterThan(-1);
+    expect(computeEnd).toBeGreaterThan(computeStart);
+    expect(computeSource).toContain("texture3D(modalBasisAtlasTexture).sample");
+    expect(computeSource).toContain("modalFieldCoefficientBuffer.element(i)");
+    expect(computeSource).toContain("modalFieldSpectralLaneABuffer.element(i)");
+    expect(computeSource).toContain("modalFieldSpectralLaneBBuffer.element(i)");
+    expect(computeSource).toContain("modalFieldSpectralMetaBuffer.element(i)");
+    expect(computeSource).toContain("spectralLaneTextureA,");
+    expect(computeSource).toContain("spectralLaneTextureB,");
+    expect(computeSource).toContain("spectralLaneStatsTexture,");
+    expect(computeSource).toContain("dominance");
+    expect(computeSource).toContain("entropy");
+    expect(computeSource).not.toContain("modalFieldColorBuffer");
+    expect(computeSource).not.toContain("cachedSpectralLightEnabled");
+    expect(computeSource).not.toContain("spectralLightCacheTexture");
+  });
+
+  it("computes a drawable spectral lane cache without RGB fallback state", () => {
+    const cache = raymarchFieldCache.createRaymarchSpectralLaneCache({
+      resolution: 8,
+    });
+    const renderer = { compute: vi.fn() };
+    const descriptor = {
+      semantic: "spectral-lane-cache",
+      hash: 123,
+      modalFieldCount: 1,
+      spectralLaneHash: 456,
+    };
+
+    const result = raymarchFieldCache.computeRaymarchSpectralLaneCache(
+      cache,
+      renderer,
+      {
+        descriptor,
+        modalBasisAtlasTexture: {},
+        modalFieldCoefficientBuffer: { value: { array: new Float32Array(4) } },
+        modalFieldSpectralLaneABuffer: {
+          value: { array: new Float32Array([1, 0, 0, 0]) },
+        },
+        modalFieldSpectralLaneBBuffer: {
+          value: { array: new Float32Array(4) },
+        },
+        modalFieldSpectralMetaBuffer: {
+          value: { array: new Float32Array([0.1, 0.05, 0.9, 0.7]) },
+        },
+        modalFieldCapacity: 1,
+        uniforms: {
+          uModalFieldModeCount: { value: 1 },
+          uTime: { value: 2 },
+        },
+        schedulerTimeSec: 2,
+      },
+    );
+
+    expect(result).toMatchObject({
+      computed: true,
+      reason: "frame-current",
+      descriptor,
+    });
+    expect(renderer.compute).toHaveBeenCalledTimes(1);
+    expect(cache.ready).toBe(true);
+    expect(cache.active).toBe(true);
+    expect(cache.descriptor).toBe(descriptor);
+    expect(cache.activeCacheBuiltAtSec).toBe(2);
+    expect(cache.lastComputeReason).toBe("frame-current");
+    expect(cache).not.toHaveProperty("spectralLightCacheTexture");
+    expect(cache).not.toHaveProperty("cachedSpectralLightEnabled");
+  });
+});
+
 function resolveModalFieldRebuildOptions(options) {
   const modeBuffer =
     options.modalFieldModeBuffer ?? options.backboneModeBuffer ?? null;

@@ -2795,6 +2795,9 @@ test("resolveFeatureFrame refreshes a preserved live frame when Spectral Light t
     renderAuthority: true,
     spectralLightRequested: false,
     modalFieldColorSlots: new Float32Array([0, 0, 0, 0]),
+    modalFieldSpectralLaneA: new Float32Array([0, 0, 0, 0]),
+    modalFieldSpectralLaneB: new Float32Array([0, 0, 0, 0]),
+    modalFieldSpectralMeta: new Float32Array([0, 0, 0, 0]),
     energyLedger: {
       projectedRenderEnergy: 0.08,
       renderEnergyEpsilon: 1e-6,
@@ -2809,6 +2812,9 @@ test("resolveFeatureFrame refreshes a preserved live frame when Spectral Light t
     renderAuthority: true,
     spectralLightRequested: true,
     modalFieldColorSlots: new Float32Array([0.1, 0.8, 1, 0.9]),
+    modalFieldSpectralLaneA: new Float32Array([0.1, 0.7, 0.2, 0]),
+    modalFieldSpectralLaneB: new Float32Array([0, 0, 0, 0]),
+    modalFieldSpectralMeta: new Float32Array([0.2, 0.05, 0.9, 0.6]),
     energyLedger: {
       projectedRenderEnergy: 0.08,
       renderEnergyEpsilon: 1e-6,
@@ -2855,6 +2861,8 @@ test("resolveFeatureFrame refreshes a preserved live frame when Spectral Light t
   });
 
   expect(result.effectiveFrame).toBe(spectralLiveFrame);
+  expect(result.effectiveFrame.modalFieldSpectralLaneA[1]).toBeGreaterThan(0);
+  expect(result.effectiveFrame.modalFieldSpectralMeta[3]).toBeGreaterThan(0);
   expect(runHeavyFeatureAnalysis).toHaveBeenCalledTimes(1);
   expect(composeFeatureFrame).toHaveBeenCalledTimes(1);
   expect(args.renderLoopRefs.frameCacheRefs.lastLiveFrameRef.current).toBe(

@@ -6,6 +6,7 @@ import sharp from "sharp";
 
 const ACTIVE_LUMINANCE_THRESHOLD = 0.004;
 const ACTIVE_GRADIENT_HOTSPOT_THRESHOLD = 0.12;
+const HUE_FAMILY_COUNT = 8;
 const OPTICAL_MEASUREMENT_CONTROLS = Object.freeze({
   raymarchSteps: 104,
   zeroPointPrecision: 0.018,
@@ -162,6 +163,8 @@ async function readCanvasLuminanceMetrics(page, artifactPath = null) {
   let nearWhiteCount = 0;
   let brightLowSaturationCount = 0;
   let centralSampleCount = 0;
+  let chromaticPixelCount = 0;
+  const hueFamilyCounts = new Array(HUE_FAMILY_COUNT).fill(0);
   const gridValues = [];
   const centralNonblack = [];
   let gridWidth = 0;
@@ -191,12 +194,38 @@ async function readCanvasLuminanceMetrics(page, artifactPath = null) {
       const brightness = (maxChannel / 255) * alpha;
       const saturation =
         maxChannel > 0 ? (maxChannel - minChannel) / maxChannel : 0;
+      const isNonblack = value > ACTIVE_LUMINANCE_THRESHOLD;
+      if (isNonblack && saturation >= 0.18 && brightness >= 0.055) {
+        const red = data[index] / 255;
+        const green = data[index + 1] / 255;
+        const blue = data[index + 2] / 255;
+        const normalizedMax = Math.max(red, green, blue);
+        const normalizedMin = Math.min(red, green, blue);
+        const chroma = normalizedMax - normalizedMin;
+        let hue = 0;
+        if (chroma > 0) {
+          if (normalizedMax === red) {
+            hue = ((green - blue) / chroma) % 6;
+          } else if (normalizedMax === green) {
+            hue = (blue - red) / chroma + 2;
+          } else {
+            hue = (red - green) / chroma + 4;
+          }
+          hue /= 6;
+          if (hue < 0) {
+            hue += 1;
+          }
+        }
+        const familyIndex =
+          Math.floor(hue * HUE_FAMILY_COUNT) % HUE_FAMILY_COUNT;
+        hueFamilyCounts[familyIndex] += 1;
+        chromaticPixelCount += 1;
+      }
       const isCentral =
         x >= width * 0.15 &&
         x <= width * 0.85 &&
         y >= height * 0.15 &&
         y <= height * 0.85;
-      const isNonblack = value > ACTIVE_LUMINANCE_THRESHOLD;
       luminance.push(value);
       gridValues.push(value);
       centralNonblack.push(isCentral && isNonblack);
@@ -315,6 +344,17 @@ async function readCanvasLuminanceMetrics(page, artifactPath = null) {
   const activePixelShare = nonblackCount / luminance.length;
   const activeGradientCoverage = activePixelShare * gradientHotspotRatio;
   const fineLatticePressure = activeGradientP95 * activeGradientCoverage;
+  const visibleHueFamilyThreshold = Math.max(
+    3,
+    Math.floor(chromaticPixelCount * 0.06),
+  );
+  const visibleHueFamilyCount = hueFamilyCounts.filter(
+    (count) => count >= visibleHueFamilyThreshold,
+  ).length;
+  const dominantHueFamilyRatio =
+    chromaticPixelCount === 0
+      ? 0
+      : Math.max(...hueFamilyCounts) / chromaticPixelCount;
 
   const metrics = {
     p50,
@@ -336,6 +376,9 @@ async function readCanvasLuminanceMetrics(page, artifactPath = null) {
     activeGradientCoverage,
     fineLatticePressure,
     contrastRatio: p98 / Math.max(p50, 1e-4),
+    chromaticPixelRatio: chromaticPixelCount / luminance.length,
+    visibleHueFamilyCount,
+    dominantHueFamilyRatio,
   };
 
   if (artifactPath) {
@@ -477,7 +520,7 @@ test.describe("laser cymatic optical measurement visual audit", () => {
     expect(metrics.centralConnectedNonblackRatio).toBeGreaterThan(0.01);
   });
 
-  test("dense polyphonic fixture remains structured and temporally stable", async ({
+  test("dense polyphonic fixture keeps spectral lane cache active with multiple hue families", async ({
     page,
     browserName,
   }, testInfo) => {
@@ -522,6 +565,58 @@ test.describe("laser cymatic optical measurement visual audit", () => {
         modeSlotCount: expect.any(Number),
       });
 
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const controls = window.__baryonControls?.getState?.() ?? {};
+            const debug = window.__baryonAuditSnapshot?.raymarchDebug ?? {};
+            return {
+              colorMode: controls.colorMode ?? null,
+              spectralLightEvaluationMode:
+                debug.spectralLightEvaluationMode ?? null,
+              spectralLightImplementationState:
+                debug.spectralLightImplementationState ?? null,
+              spectralLaneCacheReady:
+                debug.spectralLaneCacheReady ?? false,
+              spectralLaneCacheActive:
+                debug.spectralLaneCacheActive ?? false,
+              spectralLaneCacheComputedAtSec:
+                debug.spectralLaneCacheComputedAtSec ?? null,
+              spectralLaneCacheBuiltAtSec:
+                debug.spectralLaneCacheBuiltAtSec ?? null,
+            };
+          }),
+        { timeout: 15_000 },
+      )
+      .toMatchObject({
+        colorMode: "spectral",
+        spectralLightEvaluationMode: "lane-cache",
+        spectralLightImplementationState: "lane-cache-radiance",
+        spectralLaneCacheReady: true,
+        spectralLaneCacheActive: true,
+        spectralLaneCacheComputedAtSec: expect.any(Number),
+        spectralLaneCacheBuiltAtSec: expect.any(Number),
+      });
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            window.__baryonAuditSnapshot?.raymarchDebug
+              ?.spectralLaneCacheRadianceInputTotal ?? 0,
+        ),
+      )
+      .toBeGreaterThan(0);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            window.__baryonAuditSnapshot?.raymarchDebug
+              ?.spectralLaneCacheActivePacketCount ?? 0,
+        ),
+      )
+      .toBeGreaterThan(0);
+
     const frames = [];
     for (let index = 0; index < 8; index += 1) {
       frames.push(
@@ -548,6 +643,9 @@ test.describe("laser cymatic optical measurement visual audit", () => {
     expect(firstFrame.nearWhitePixelRatio).toBeLessThan(0.24);
     expect(firstFrame.brightLowSaturationPixelRatio).toBeLessThan(0.34);
     expect(firstFrame.centralConnectedNonblackRatio).toBeGreaterThan(0.01);
+    expect(firstFrame.chromaticPixelRatio).toBeGreaterThan(0.001);
+    expect(firstFrame.visibleHueFamilyCount).toBeGreaterThanOrEqual(2);
+    expect(firstFrame.dominantHueFamilyRatio).toBeLessThan(0.92);
     expect(
       coefficientOfVariation(frames.map((frame) => frame.p98)),
     ).toBeLessThan(0.18);

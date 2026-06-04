@@ -34,6 +34,7 @@ import {
   RAYMARCH_BOUNDARY_START,
 } from "./intersection.js";
 import { deriveHighlightTargetNode } from "../../render/displayRadiance.js";
+import { SPECTRAL_LIGHT_LANE_DISPLAY_RGB } from "../../utils/audio/spectralLight.js";
 import {
   BOUNDARY_CONTOUR_ACCENT_WEIGHT,
   AIR_BAND_WEIGHT,
@@ -162,13 +163,19 @@ export const RAYMARCH_BOUNDARY_TUNING = Object.freeze({
   dirichletWhiteEmission: 0.04,
 });
 
-/** @type {{ off: string }} */
+/** @type {{ off: string, laneCache: string }} */
 export const RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES = Object.freeze({
   off: "off",
+  laneCache: "lane-cache",
 });
 
 function normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) {
-  void spectralLightEvaluationMode;
+  if (
+    spectralLightEvaluationMode ===
+    RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.laneCache
+  ) {
+    return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.laneCache;
+  }
   return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off;
 }
 
@@ -192,6 +199,9 @@ function normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) {
  *   modalLiveFieldTexture?: any,
  *   modalLiveSupportTexture?: any,
  *   modalPhaseInterferenceTexture?: any,
+ *   spectralLaneTextureA?: any,
+ *   spectralLaneTextureB?: any,
+ *   spectralLaneStatsTexture?: any,
  *   modalFieldModeBuffer?: any,
  *   modalFieldCoefficientBuffer?: any,
  *   modalFieldCapacity?: number,
@@ -286,6 +296,165 @@ function samplePhaseInterferenceCarrierNode({
   return {
     contrast: clamp(interferenceSample.x, float(-1.0), float(1.0)),
     authority: clamp(interferenceSample.z, float(0.0), float(1.0)),
+  };
+}
+
+function projectSpectralLaneRadianceToRgbNode({
+  laneA,
+  laneB,
+  total,
+  dominance,
+  entropy,
+}) {
+  const laneRgb0 = SPECTRAL_LIGHT_LANE_DISPLAY_RGB[0];
+  const laneRgb1 = SPECTRAL_LIGHT_LANE_DISPLAY_RGB[1];
+  const laneRgb2 = SPECTRAL_LIGHT_LANE_DISPLAY_RGB[2];
+  const laneRgb3 = SPECTRAL_LIGHT_LANE_DISPLAY_RGB[3];
+  const laneRgb4 = SPECTRAL_LIGHT_LANE_DISPLAY_RGB[4];
+  const laneRgb5 = SPECTRAL_LIGHT_LANE_DISPLAY_RGB[5];
+  const laneRgb6 = SPECTRAL_LIGHT_LANE_DISPLAY_RGB[6];
+  const laneRgb7 = SPECTRAL_LIGHT_LANE_DISPLAY_RGB[7];
+  const laneRgbNode0 = vec3(
+    float(laneRgb0.r),
+    float(laneRgb0.g),
+    float(laneRgb0.b),
+  );
+  const laneRgbNode1 = vec3(
+    float(laneRgb1.r),
+    float(laneRgb1.g),
+    float(laneRgb1.b),
+  );
+  const laneRgbNode2 = vec3(
+    float(laneRgb2.r),
+    float(laneRgb2.g),
+    float(laneRgb2.b),
+  );
+  const laneRgbNode3 = vec3(
+    float(laneRgb3.r),
+    float(laneRgb3.g),
+    float(laneRgb3.b),
+  );
+  const laneRgbNode4 = vec3(
+    float(laneRgb4.r),
+    float(laneRgb4.g),
+    float(laneRgb4.b),
+  );
+  const laneRgbNode5 = vec3(
+    float(laneRgb5.r),
+    float(laneRgb5.g),
+    float(laneRgb5.b),
+  );
+  const laneRgbNode6 = vec3(
+    float(laneRgb6.r),
+    float(laneRgb6.g),
+    float(laneRgb6.b),
+  );
+  const laneRgbNode7 = vec3(
+    float(laneRgb7.r),
+    float(laneRgb7.g),
+    float(laneRgb7.b),
+  );
+  const dominantLaneWeight = max(laneA.x, float(0.0)).toVar();
+  const dominantLaneRgb = laneRgbNode0.toVar();
+  const assignDominantLane = (laneWeight, laneRgbNode) => {
+    const candidateWeight = max(laneWeight, float(0.0));
+    If(candidateWeight.greaterThan(dominantLaneWeight), () => {
+      dominantLaneWeight.assign(candidateWeight);
+      dominantLaneRgb.assign(laneRgbNode);
+    });
+  };
+  assignDominantLane(laneA.y, laneRgbNode1);
+  assignDominantLane(laneA.z, laneRgbNode2);
+  assignDominantLane(laneA.w, laneRgbNode3);
+  assignDominantLane(laneB.x, laneRgbNode4);
+  assignDominantLane(laneB.y, laneRgbNode5);
+  assignDominantLane(laneB.z, laneRgbNode6);
+  assignDominantLane(laneB.w, laneRgbNode7);
+
+  const spectralRgb = laneRgbNode0
+    .mul(laneA.x)
+    .add(laneRgbNode1.mul(laneA.y))
+    .add(laneRgbNode2.mul(laneA.z))
+    .add(laneRgbNode3.mul(laneA.w))
+    .add(laneRgbNode4.mul(laneB.x))
+    .add(laneRgbNode5.mul(laneB.y))
+    .add(laneRgbNode6.mul(laneB.z))
+    .add(laneRgbNode7.mul(laneB.w))
+    .toVar();
+  const spectralPeak = max(
+    max(spectralRgb.x, spectralRgb.y),
+    spectralRgb.z,
+  );
+  const normalizedSpectralRgb = spectralRgb.div(max(spectralPeak, float(1e-4)));
+  const broadSpectrumChromaAnchor = clamp(
+    entropy.mul(float(1.0).sub(dominance)).mul(float(0.72)),
+    float(0.0),
+    float(0.72),
+  );
+  const chromaticSpectralRgb = mix(
+    normalizedSpectralRgb,
+    dominantLaneRgb,
+    broadSpectrumChromaAnchor,
+  );
+  const spectralLuminance = dot(
+    chromaticSpectralRgb,
+    vec3(float(0.2126), float(0.7152), float(0.0722)),
+  );
+  const spectralChroma = chromaticSpectralRgb.sub(vec3(spectralLuminance));
+  const chromaGain = mix(float(1.12), float(1.68), entropy);
+  const chromaPreservedRgb = clamp(
+    vec3(spectralLuminance).add(spectralChroma.mul(chromaGain)),
+    vec3(0.0),
+    vec3(1.18),
+  );
+  const broadSpectrumExposureCompression = mix(
+    float(1.0),
+    float(0.68),
+    entropy,
+  );
+  const dominanceGain = mix(float(0.86), float(1.12), dominance);
+  const radianceGain = smoothstep(float(0.0), float(0.015), total);
+
+  return clamp(
+    chromaPreservedRgb
+      .mul(dominanceGain)
+      .mul(broadSpectrumExposureCompression)
+      .mul(radianceGain),
+    vec3(0.0),
+    vec3(1.18),
+  );
+}
+
+function sampleSpectralLaneCacheNode({
+  basisUv,
+  spectralLaneTextureA,
+  spectralLaneTextureB,
+  spectralLaneStatsTexture,
+}) {
+  const laneA = texture3D(spectralLaneTextureA).sample(basisUv);
+  const laneB = texture3D(spectralLaneTextureB).sample(basisUv);
+  const stats = texture3D(spectralLaneStatsTexture).sample(basisUv);
+  const total = max(stats.x, float(0.0));
+  const dominance = clamp(stats.y, float(0.0), float(1.0));
+  const entropy = clamp(stats.z, float(0.0), float(1.0));
+  const confidence = clamp(stats.w, float(0.0), float(1.0));
+  const authority = smoothstep(float(0.0), float(0.0015), total).mul(
+    confidence,
+  );
+
+  return {
+    rgb: projectSpectralLaneRadianceToRgbNode({
+      laneA,
+      laneB,
+      total,
+      dominance,
+      entropy,
+    }),
+    total,
+    dominance,
+    entropy,
+    confidence,
+    authority,
   };
 }
 
@@ -526,6 +695,10 @@ function createScatteringNode({
   modalLiveFieldTexture = null,
   modalLiveSupportTexture = null,
   modalPhaseInterferenceTexture = null,
+  spectralLaneTextureA = null,
+  spectralLaneTextureB = null,
+  spectralLaneStatsTexture = null,
+  spectralLightEvaluationMode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
   modalFieldModeBuffer = null,
   modalFieldCoefficientBuffer = null,
   liveSynthesisModeCount = RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
@@ -712,6 +885,13 @@ function createScatteringNode({
     uTrebleBroadbandEnergy
       .mul(float(1.0).sub(uModeCoherence))
       .mul(float(INCOHERENT_TREBLE_BODY_SUPPRESSION_MAX)),
+  );
+  const spectralLaneTransferEnabled = Boolean(
+    normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) ===
+      RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.laneCache &&
+      spectralLaneTextureA &&
+      spectralLaneTextureB &&
+      spectralLaneStatsTexture,
   );
 
   return Fn(
@@ -1526,6 +1706,25 @@ function createScatteringNode({
         float(0.0),
       );
       const supportRevealDensity = supportVisibleDensity;
+      if (spectralLaneTransferEnabled) {
+        const spectralLaneTransfer = sampleSpectralLaneCacheNode({
+          basisUv,
+          spectralLaneTextureA,
+          spectralLaneTextureB,
+          spectralLaneStatsTexture,
+        });
+        const spectralCausticRadianceContribution = spectralLaneTransfer.rgb
+          .mul(causticVisibleDensity)
+          .mul(spectralLaneTransfer.authority);
+        const spectralSupportRevealContribution = spectralLaneTransfer.rgb
+          .mul(float(PHOTOGRAPHIC_DARK_BODY_RATIO))
+          .mul(supportRevealDensity)
+          .mul(spectralLaneTransfer.authority);
+
+        return spectralCausticRadianceContribution
+          .mul(structureAwareEmissionGain)
+          .add(spectralSupportRevealContribution);
+      }
       const causticRadianceContribution = volumeColor.mul(
         causticVisibleDensity,
       );
@@ -1629,11 +1828,15 @@ export function createRaymarchVolumeMesh({
   modalLiveFieldTexture = null,
   modalLiveSupportTexture = null,
   modalPhaseInterferenceTexture = null,
+  spectralLaneTextureA = null,
+  spectralLaneTextureB = null,
+  spectralLaneStatsTexture = null,
   modalFieldModeBuffer = null,
   modalFieldCoefficientBuffer = null,
   modalFieldCapacity = RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
   uniforms,
   cavityGeometry = "rectangular",
+  spectralLightEvaluationMode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
 }) {
   // SphereGeometry: TRAA vertex velocities match the sphere surface during rotation.
   const geometry = new THREE.SphereGeometry(radius * 1.01, 32, 32);
@@ -1643,6 +1846,9 @@ export function createRaymarchVolumeMesh({
     modalLiveFieldTexture,
     modalLiveSupportTexture,
     modalPhaseInterferenceTexture,
+    spectralLaneTextureA,
+    spectralLaneTextureB,
+    spectralLaneStatsTexture,
     modalFieldModeBuffer,
     modalFieldCoefficientBuffer,
     modalFieldCapacity,
@@ -1669,6 +1875,11 @@ export function createRaymarchVolumeMesh({
       modalLiveSupportTexture: modalResourceBindings.modalLiveSupportTexture,
       modalPhaseInterferenceTexture:
         modalResourceBindings.modalPhaseInterferenceTexture,
+      spectralLaneTextureA: modalResourceBindings.spectralLaneTextureA,
+      spectralLaneTextureB: modalResourceBindings.spectralLaneTextureB,
+      spectralLaneStatsTexture:
+        modalResourceBindings.spectralLaneStatsTexture,
+      spectralLightEvaluationMode,
       modalFieldModeBuffer: modalResourceBindings.modalFieldModeBuffer,
       modalFieldCoefficientBuffer:
         modalResourceBindings.modalFieldCoefficientBuffer,
@@ -1683,6 +1894,12 @@ export function createRaymarchVolumeMesh({
       modalResourceBindings.modalLiveSupportTexture;
     material.modalPhaseInterferenceTexture =
       modalResourceBindings.modalPhaseInterferenceTexture;
+    material.spectralLaneTextureA =
+      modalResourceBindings.spectralLaneTextureA;
+    material.spectralLaneTextureB =
+      modalResourceBindings.spectralLaneTextureB;
+    material.spectralLaneStatsTexture =
+      modalResourceBindings.spectralLaneStatsTexture;
     material.modalFieldModeBuffer = modalResourceBindings.modalFieldModeBuffer;
     material.modalFieldCoefficientBuffer =
       modalResourceBindings.modalFieldCoefficientBuffer;
@@ -1691,7 +1908,7 @@ export function createRaymarchVolumeMesh({
   };
   const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
   const initialSpectralLightEvaluationMode =
-    RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off;
+    normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode);
   const materialCache = {
     [BOUNDARY_MODES.dirichlet]: {
       [initialSpectralLightEvaluationMode]: createMaterialForBoundaryMode(
@@ -1720,6 +1937,9 @@ export function createRaymarchVolumeMesh({
   mesh.userData.raymarchModalLiveSupportTexture = modalLiveSupportTexture;
   mesh.userData.raymarchModalPhaseInterferenceTexture =
     modalPhaseInterferenceTexture;
+  mesh.userData.raymarchSpectralLaneTextureA = spectralLaneTextureA;
+  mesh.userData.raymarchSpectralLaneTextureB = spectralLaneTextureB;
+  mesh.userData.raymarchSpectralLaneStatsTexture = spectralLaneStatsTexture;
   mesh.userData.raymarchModalFieldModeBuffer = modalFieldModeBuffer;
   mesh.userData.raymarchModalFieldCoefficientBuffer =
     modalFieldCoefficientBuffer;

@@ -13,6 +13,9 @@ function makeDescriptorSource(entries) {
   const modalFieldSlots = new Float32Array(entries.length * 4);
   const modalFieldPhaseSlots = new Float32Array(entries.length * 4);
   const modalFieldColorSlots = new Float32Array(entries.length * 4);
+  const modalFieldSpectralLaneA = new Float32Array(entries.length * 4);
+  const modalFieldSpectralLaneB = new Float32Array(entries.length * 4);
+  const modalFieldSpectralMeta = new Float32Array(entries.length * 4);
   const modalFieldMetadataSlots = new Float32Array(entries.length * 4);
 
   entries.forEach((entry, index) => {
@@ -33,6 +36,10 @@ function makeDescriptorSource(entries) {
     modalFieldColorSlots[offset + 2] = entry.colorB ?? 0;
     modalFieldColorSlots[offset + 3] = entry.colorWeight ?? 0;
 
+    modalFieldSpectralLaneA.set(entry.spectralLaneA ?? [0, 0, 0, 0], offset);
+    modalFieldSpectralLaneB.set(entry.spectralLaneB ?? [0, 0, 0, 0], offset);
+    modalFieldSpectralMeta.set(entry.spectralMeta ?? [0, 0, 0, 0], offset);
+
     modalFieldMetadataSlots[offset] = entry.naturalFrequencyHz ?? 0;
     modalFieldMetadataSlots[offset + 1] = entry.qualityFactor ?? 0;
     modalFieldMetadataSlots[offset + 2] = entry.dampingRatio ?? 0;
@@ -43,6 +50,9 @@ function makeDescriptorSource(entries) {
     modalFieldSlots,
     modalFieldPhaseSlots,
     modalFieldColorSlots,
+    modalFieldSpectralLaneA,
+    modalFieldSpectralLaneB,
+    modalFieldSpectralMeta,
     modalFieldMetadataSlots,
     activeModalFieldModeCount: entries.length,
   };
@@ -148,6 +158,55 @@ describe("modal field continuity", () => {
     expect(retained.descriptorSource.modalFieldPhaseSlots[3]).toBe(0);
     expect(retained.descriptorSource.modalFieldColorSlots[3]).toBe(0);
     expect(retained.descriptorSource.modalFieldMetadataSlots[3]).toBe(0);
+  });
+
+  it("retains Spectral lane buffers directly while muting live packet emission", () => {
+    const state = createModalFieldContinuityState();
+    const loud = {
+      mode: [4, 2, 1],
+      coefficient: 0.5,
+      colorR: 1,
+      colorG: 0,
+      colorB: 0,
+      colorWeight: 0.9,
+      spectralPhase: 0.25,
+      spectralWavelength: 530,
+      spectralHarmonicConfidence: 0.8,
+      spectralAccentEnergy: 0.4,
+      spectralLaneA: [0, 1, 0, 0],
+      spectralLaneB: [0, 0, 0, 0],
+      spectralMeta: [0.25, 0.06, 0.8, 0.5],
+      observedSupport: 0.5,
+    };
+    update(state, [loud], { deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS });
+
+    const retained = update(state, [], { deltaTimeSec: DT });
+
+    expect(readModeKeys(retained.descriptorSource)).toEqual(["4:2:1"]);
+    expect(Array.from(retained.descriptorSource.modalFieldSpectralLaneA)).toEqual([
+      0,
+      1,
+      0,
+      0,
+    ]);
+    expect(Array.from(retained.descriptorSource.modalFieldSpectralLaneB)).toEqual([
+      0,
+      0,
+      0,
+      0,
+    ]);
+    expect(retained.descriptorSource.modalFieldSpectralMeta[0]).toBeCloseTo(
+      0.25,
+      6,
+    );
+    expect(retained.descriptorSource.modalFieldSpectralMeta[1]).toBeCloseTo(
+      0.06,
+      6,
+    );
+    expect(retained.descriptorSource.modalFieldSpectralMeta[2]).toBe(0);
+    expect(retained.descriptorSource.modalFieldSpectralMeta[3]).toBe(0);
+    expect(retained.descriptorSource.modalFieldColorSlots[0]).toBe(1);
+    expect(retained.descriptorSource.modalFieldColorSlots[3]).toBe(0);
   });
 
   it("caps basis-visible admission to the modal basis page budget", () => {

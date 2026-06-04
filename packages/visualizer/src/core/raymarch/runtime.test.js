@@ -11,6 +11,7 @@ import {
   buildRaymarchModalBasisCacheDescriptor,
   createRaymarchLiveFieldProjectionCache,
   createRaymarchModalBasisCache,
+  createRaymarchSpectralLaneCache,
   RAYMARCH_MODAL_BASIS_CACHE_CAPACITY,
   STRUCTURAL_PROJECTION_REFERENCE_ENERGY,
   resolveRaymarchModalBasisCacheDrawableAuthority,
@@ -38,6 +39,9 @@ function createRuntimeState({ withFieldCache = false } = {}) {
     : null;
   const liveFieldProjectionCache = withFieldCache
     ? createRaymarchLiveFieldProjectionCache({ resolution: 16 })
+    : null;
+  const spectralLaneCache = withFieldCache
+    ? createRaymarchSpectralLaneCache({ resolution: 16 })
     : null;
   const materialCache = withFieldCache
     ? {
@@ -72,7 +76,19 @@ function createRuntimeState({ withFieldCache = false } = {}) {
         needsUpdate: false,
       },
     },
-    modalFieldSpectralBuffer: {
+    modalFieldSpectralLaneABuffer: {
+      value: {
+        array: new Float32Array(64),
+        needsUpdate: false,
+      },
+    },
+    modalFieldSpectralLaneBBuffer: {
+      value: {
+        array: new Float32Array(64),
+        needsUpdate: false,
+      },
+    },
+    modalFieldSpectralMetaBuffer: {
       value: {
         array: new Float32Array(64),
         needsUpdate: false,
@@ -248,6 +264,7 @@ function createRuntimeState({ withFieldCache = false } = {}) {
     auditEnabled: true,
     modalBasisCache,
     liveFieldProjectionCache,
+    spectralLaneCache,
     requestedCavityGeometry: "rectangular",
     effectiveCavityGeometry: "rectangular",
     debugSnapshot: null,
@@ -310,12 +327,10 @@ function appendMetadataSlots({
   targetSlots,
   targetPhaseSlots,
   targetColorSlots,
-  targetSpectralSlots,
   targetMetadataSlots,
   sourceSlots,
   sourcePhaseSlots,
   sourceColorSlots,
-  sourceSpectralSlots,
   writeIndex,
 }) {
   let written = writeIndex;
@@ -329,10 +344,6 @@ function appendMetadataSlots({
     );
     targetColorSlots.set(
       sourceColorSlots?.slice(offset, offset + 4) ?? new Float32Array(4),
-      targetOffset,
-    );
-    targetSpectralSlots.set(
-      sourceSpectralSlots?.slice(offset, offset + 4) ?? new Float32Array(4),
       targetOffset,
     );
     const u = sourceSlots[offset] ?? 0;
@@ -372,30 +383,25 @@ function withUnifiedModalFields(frame) {
   const modalFieldSlots = new Float32Array(candidateCount * 4);
   const modalFieldPhaseSlots = new Float32Array(candidateCount * 4);
   const modalFieldColorSlots = new Float32Array(candidateCount * 4);
-  const modalFieldSpectralSlots = new Float32Array(candidateCount * 4);
   const modalFieldMetadataSlots = new Float32Array(candidateCount * 4);
   let writeIndex = appendMetadataSlots({
     targetSlots: modalFieldSlots,
     targetPhaseSlots: modalFieldPhaseSlots,
     targetColorSlots: modalFieldColorSlots,
-    targetSpectralSlots: modalFieldSpectralSlots,
     targetMetadataSlots: modalFieldMetadataSlots,
     sourceSlots: frame.backboneSlots,
     sourcePhaseSlots: frame.backbonePhaseSlots,
     sourceColorSlots: frame.backboneColorSlots,
-    sourceSpectralSlots: frame.backboneSpectralSlots,
     writeIndex: 0,
   });
   writeIndex = appendMetadataSlots({
     targetSlots: modalFieldSlots,
     targetPhaseSlots: modalFieldPhaseSlots,
     targetColorSlots: modalFieldColorSlots,
-    targetSpectralSlots: modalFieldSpectralSlots,
     targetMetadataSlots: modalFieldMetadataSlots,
     sourceSlots: frame.detailSlots,
     sourcePhaseSlots: frame.detailPhaseSlots,
     sourceColorSlots: frame.detailColorSlots,
-    sourceSpectralSlots: frame.detailSpectralSlots,
     writeIndex,
   });
   frame.activeBackboneModeCount = activeBackboneModeCount;
@@ -411,7 +417,6 @@ function withUnifiedModalFields(frame) {
   frame.modalFieldSlots = modalFieldSlots;
   frame.modalFieldPhaseSlots = modalFieldPhaseSlots;
   frame.modalFieldColorSlots = modalFieldColorSlots;
-  frame.modalFieldSpectralSlots = modalFieldSpectralSlots;
   frame.modalFieldMetadataSlots = modalFieldMetadataSlots;
   return frame;
 }
@@ -766,12 +771,6 @@ describe("tickRaymarchRuntime", () => {
         1, 0.1, 0.1, 0.9, 0.8, 0.2, 0.1, 0.7,
       ]),
       detailColorSlots: new Float32Array([0.2, 0.5, 1, 0.5, 0.7, 0.2, 1, 0.45]),
-      backboneSpectralSlots: new Float32Array([
-        0.12, 0.91, 0.82, 0.14, 0.38, 0.72, 0.74, 0.2,
-      ]),
-      detailSpectralSlots: new Float32Array([
-        0.61, 0.64, 0.55, 0.3, 0.83, 0.58, 0.46, 0.34,
-      ]),
       backbonePhaseSlots: new Float32Array([
         0.1, 0.2, 0.7, 0.5, -0.2, 0.1, 0.6, 0.4,
       ]),
@@ -833,15 +832,6 @@ describe("tickRaymarchRuntime", () => {
       ).map((value) => Number(value.toFixed(6))),
     ).toEqual([3, 4, 6, 0.8, 1, 3, 7, 0.6, 4, 5, 5, 0.55, 2, 2, 6, 0.4]);
     expect(runtimeState.modalFieldColorBuffer.value.array[10]).toBeCloseTo(1);
-    expect(
-      Array.from(
-        runtimeState.modalFieldSpectralBuffer.value.array.slice(0, 16),
-      ).map((value) => Number(value.toFixed(6))),
-    ).toEqual([
-      0.12, 0.91, 0.82, 0.14, 0.38, 0.72, 0.74, 0.2, 0.61, 0.64, 0.55, 0.3,
-      0.83, 0.58, 0.46, 0.34,
-    ]);
-    expect(runtimeState.modalFieldSpectralBuffer.value.needsUpdate).toBe(true);
     expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(4);
     expect(runtimeState.uniforms.uTransientEnergy.value).toBe(0.7);
     expect(runtimeState.uniforms.uSpectralCentroid.value).toBe(0.42);
@@ -1163,6 +1153,97 @@ describe("tickRaymarchRuntime", () => {
     expect(
       runtimeState.debugSnapshot.raymarchDebug.holographicReferenceStrength,
     ).toBeGreaterThan(0);
+  });
+
+  it("uploads Spectral lane packet buffers independently of modal color projections", () => {
+    const runtimeState = createRuntimeState();
+    const featureFrame = {
+      fieldState: "active",
+      renderAuthority: true,
+      hasModalField: true,
+      activeModeCount: 2,
+      activeModalFieldModeCount: 2,
+      averageAmplitude: 0.7,
+      modalResponseEnergy: 0.5,
+      modalFieldSlots: new Float32Array([1, 2, 3, 0.8, 2, 3, 4, 0.6]),
+      modalFieldPhaseSlots: new Float32Array(8),
+      modalFieldColorSlots: new Float32Array([
+        0.2, 0.2, 0.2, 0.4, 0.2, 0.2, 0.2, 0.4,
+      ]),
+      modalFieldSpectralLaneA: new Float32Array([
+        0.7, 0.2, 0.1, 0, 0.05, 0.1, 0.65, 0.2,
+      ]),
+      modalFieldSpectralLaneB: new Float32Array([0, 0, 0, 0, 0, 0, 0, 0]),
+      modalFieldSpectralMeta: new Float32Array([
+        0.1, 0.04, 0.9, 0.55, 0.6, 0.08, 0.7, 0.35,
+      ]),
+      modalFieldMetadataSlots: new Float32Array(8),
+    };
+
+    tickRaymarchRuntime(runtimeState, featureFrame, 13.25, 1 / 60);
+
+    expect(
+      Array.from(
+        runtimeState.modalFieldSpectralLaneABuffer.value.array.slice(0, 8),
+      ).map((value) => Number(value.toFixed(6))),
+    ).toEqual([0.7, 0.2, 0.1, 0, 0.05, 0.1, 0.65, 0.2]);
+    expect(
+      Array.from(
+        runtimeState.modalFieldSpectralLaneBBuffer.value.array.slice(0, 8),
+      ).map((value) => Number(value.toFixed(6))),
+    ).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(
+      Array.from(
+        runtimeState.modalFieldSpectralMetaBuffer.value.array.slice(0, 8),
+      ).map((value) => Number(value.toFixed(6))),
+    ).toEqual([0.1, 0.04, 0.9, 0.55, 0.6, 0.08, 0.7, 0.35]);
+    expect(runtimeState.modalFieldSpectralLaneABuffer.value.needsUpdate).toBe(
+      true,
+    );
+    expect(runtimeState.modalFieldSpectralLaneBBuffer.value.needsUpdate).toBe(
+      true,
+    );
+    expect(runtimeState.modalFieldSpectralMetaBuffer.value.needsUpdate).toBe(
+      true,
+    );
+  });
+
+  it("does not invalidate Spectral lane packet uploads from color slot changes", () => {
+    const runtimeState = createRuntimeState();
+    const featureFrame = {
+      fieldState: "active",
+      renderAuthority: true,
+      hasModalField: true,
+      activeModeCount: 1,
+      activeModalFieldModeCount: 1,
+      averageAmplitude: 0.7,
+      modalResponseEnergy: 0.5,
+      modalFieldSlots: new Float32Array([1, 2, 3, 0.8]),
+      modalFieldPhaseSlots: new Float32Array(4),
+      modalFieldColorSlots: new Float32Array([0.2, 0.2, 0.2, 0.4]),
+      modalFieldSpectralLaneA: new Float32Array([0.7, 0.2, 0.1, 0]),
+      modalFieldSpectralLaneB: new Float32Array([0, 0, 0, 0]),
+      modalFieldSpectralMeta: new Float32Array([0.1, 0.04, 0.9, 0.55]),
+      modalFieldMetadataSlots: new Float32Array(4),
+    };
+
+    tickRaymarchRuntime(runtimeState, featureFrame, 13.25, 1 / 60);
+    runtimeState.modalFieldSpectralLaneABuffer.value.needsUpdate = false;
+    runtimeState.modalFieldSpectralLaneBBuffer.value.needsUpdate = false;
+    runtimeState.modalFieldSpectralMetaBuffer.value.needsUpdate = false;
+
+    featureFrame.modalFieldColorSlots = new Float32Array([0.9, 0.1, 0.2, 0.8]);
+    tickRaymarchRuntime(runtimeState, featureFrame, 13.25 + 1 / 60, 1 / 60);
+
+    expect(runtimeState.modalFieldSpectralLaneABuffer.value.needsUpdate).toBe(
+      false,
+    );
+    expect(runtimeState.modalFieldSpectralLaneBBuffer.value.needsUpdate).toBe(
+      false,
+    );
+    expect(runtimeState.modalFieldSpectralMetaBuffer.value.needsUpdate).toBe(
+      false,
+    );
   });
 
   it("streams phase changes live without rebuilding modal-basis or Spectral Light caches", async () => {
@@ -2525,7 +2606,7 @@ describe("tickRaymarchRuntime", () => {
     }
   });
 
-  it("keeps Spectral requests fail-closed before the lane renderer exists", async () => {
+  it("keeps Spectral requests fail-closed before the lane cache is drawable", async () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     seedRuntimeCacheNodes(runtimeState);
     runtimeState.uniforms.uSpectralMix.value = 0.65;
@@ -2560,7 +2641,7 @@ describe("tickRaymarchRuntime", () => {
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
     );
     expect(runtimeState.debugSnapshot.spectralLightImplementationState).toBe(
-      "pending-lane-architecture",
+      "lane-cache-unavailable",
     );
 
     tickRaymarchRuntime(runtimeState, colorChangedFrame, 3, 1 / 60, renderer);
@@ -3811,7 +3892,293 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.detailColorBuffer.value.needsUpdate).toBe(false);
   });
 
-  it("keeps Spectral selection fail-closed before lane implementation", async () => {
+  it("does not trust a premarked spectral lane cache before the modal basis is drawable", () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 0.85;
+    runtimeState.spectralLaneCache = {
+      ready: true,
+      spectralLaneTextureA: {},
+      spectralLaneTextureB: {},
+      spectralLaneStatsTexture: {},
+      descriptor: { semantic: "spectral-lane-cache", hash: 1234 },
+    };
+
+    tickRaymarchRuntime(
+      runtimeState,
+      {
+        fieldState: "active",
+        renderAuthority: true,
+        averageAmplitude: 48,
+        modalFieldSlots: new Float32Array([3, 4, 6, 0.8]),
+        modalFieldPhaseSlots: new Float32Array(4),
+        modalFieldColorSlots: new Float32Array([9, 9, 9, 1]),
+        modalFieldSpectralLaneA: new Float32Array([1, 0, 0, 0]),
+        modalFieldSpectralLaneB: new Float32Array(4),
+        modalFieldSpectralMeta: new Float32Array([0.1, 0.04, 0.9, 0.5]),
+        modalFieldMetadataSlots: new Float32Array(4),
+        activeModeCount: 1,
+        activeModalFieldModeCount: 1,
+        modalResponseEnergy: 0.5,
+      },
+      1,
+      1 / 60,
+      { computeAsync: async () => undefined },
+    );
+
+    expect(
+      runtimeState.volumeMesh.userData.raymarchSpectralLightEvaluationMode,
+    ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off);
+    expect(runtimeState.currentSpectralLightDescriptor).toBeNull();
+    expect(runtimeState.spectralLightBuffersUploaded).toBe(false);
+  });
+
+  it("computes the spectral lane cache from uploaded lane buffers once the modal basis atlas is drawable", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 0.85;
+    runtimeState.liveFieldProjectionCache.computeNodesByKey[
+      "live-field-projection:capacity=16"
+    ] = { id: "live-field" };
+    runtimeState.spectralLaneCache.computeNodesByKey[
+      "spectral-lane-cache:capacity=16"
+    ] = { id: "spectral-lane" };
+    const computeCalls = [];
+    const renderer = {
+      compute: vi.fn((node) => {
+        computeCalls.push(node?.id ?? null);
+      }),
+      computeAsync: vi.fn(async (node) => {
+        computeCalls.push(node?.id ?? null);
+      }),
+    };
+    const frame = {
+      fieldState: "active",
+      renderAuthority: true,
+      averageAmplitude: 48,
+      modalFieldSlots: new Float32Array([3, 4, 6, 0.8]),
+      modalFieldPhaseSlots: new Float32Array([0, 0, 1, 1]),
+      modalFieldColorSlots: new Float32Array([9, 9, 9, 1]),
+      modalFieldSpectralLaneA: new Float32Array([0.2, 0.8, 0, 0]),
+      modalFieldSpectralLaneB: new Float32Array([0, 0, 0, 0]),
+      modalFieldSpectralMeta: new Float32Array([0.18, 0.04, 0.9, 0.7]),
+      modalFieldMetadataSlots: new Float32Array(4),
+      activeModeCount: 1,
+      activeModalFieldModeCount: 1,
+      modalResponseEnergy: 0.5,
+    };
+
+    tickRaymarchRuntime(runtimeState, frame, 1, 1 / 60, renderer);
+    await flushMicrotasks();
+    tickRaymarchRuntime(runtimeState, frame, 1 + 1 / 60, 1 / 60, renderer);
+
+    expect(computeCalls).toContain("field");
+    expect(computeCalls).toContain("spectral-lane");
+    expect(runtimeState.spectralLaneCache.ready).toBe(true);
+    expect(runtimeState.spectralLaneCache.descriptor).toMatchObject({
+      semantic: "spectral-lane-cache",
+      modalFieldCount: 1,
+    });
+    expect(
+      runtimeState.spectralLaneCache.descriptor.spectralLaneRadianceInputTotal,
+    ).toBeGreaterThan(0);
+    expect(runtimeState.currentSpectralLightDescriptor).toBe(
+      runtimeState.spectralLaneCache.descriptor,
+    );
+    expect(runtimeState.spectralLightBuffersUploaded).toBe(true);
+    expect(
+      runtimeState.volumeMesh.userData.raymarchSpectralLightEvaluationMode,
+    ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.laneCache);
+    expect(runtimeState.debugSnapshot.spectralLightEvaluationMode).toBe(
+      RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.laneCache,
+    );
+    expect(runtimeState.volumeMesh.visible).toBe(true);
+    expect(runtimeState.debugSnapshot.spectralLightImplementationState).toBe(
+      "lane-cache-radiance",
+    );
+    expect(runtimeState.debugSnapshot.spectralLaneCacheReady).toBe(true);
+    expect(runtimeState.debugSnapshot.spectralLaneCacheActive).toBe(true);
+    expect(runtimeState.debugSnapshot.spectralLaneCacheLastComputeReason).toBe(
+      "frame-current",
+    );
+    expect(runtimeState.debugSnapshot.spectralLaneCacheDescriptorHash).toBe(
+      runtimeState.spectralLaneCache.descriptor.hash,
+    );
+    expect(runtimeState.debugSnapshot.spectralLaneCacheModalFieldCount).toBe(1);
+    expect(runtimeState.debugSnapshot.spectralLaneCacheSpectralLaneHash).toBe(
+      runtimeState.spectralLaneCache.descriptor.spectralLaneHash,
+    );
+    expect(
+      runtimeState.debugSnapshot.spectralLaneCacheRadianceInputTotal,
+    ).toBeGreaterThan(0);
+  });
+
+  it("retains Spectral lane packet buffers while the modal basis rebuilds", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 0.85;
+    runtimeState.liveFieldProjectionCache.computeNodesByKey[
+      "live-field-projection:capacity=16"
+    ] = { id: "live-field" };
+    runtimeState.spectralLaneCache.computeNodesByKey[
+      "spectral-lane-cache:capacity=16"
+    ] = { id: "spectral-lane" };
+    const renderer = {
+      compute: vi.fn(),
+      computeAsync: vi.fn(async () => undefined),
+    };
+    const activeFrame = {
+      fieldState: "active",
+      renderAuthority: true,
+      averageAmplitude: 48,
+      modalFieldSlots: new Float32Array([3, 4, 6, 0.8]),
+      modalFieldPhaseSlots: new Float32Array([0.1, 0.2, 1, 1]),
+      modalFieldColorSlots: new Float32Array([9, 9, 9, 1]),
+      modalFieldSpectralLaneA: new Float32Array([0.15, 0.75, 0.1, 0]),
+      modalFieldSpectralLaneB: new Float32Array([0, 0, 0, 0]),
+      modalFieldSpectralMeta: new Float32Array([0.22, 0.04, 0.95, 0.8]),
+      modalFieldMetadataSlots: new Float32Array(4),
+      activeModeCount: 1,
+      activeModalFieldModeCount: 1,
+      modalResponseEnergy: 0.5,
+    };
+    const rebuildingFrame = {
+      fieldState: "active",
+      renderAuthority: true,
+      averageAmplitude: 48,
+      modalFieldSlots: new Float32Array([5, 7, 8, 0.7]),
+      modalFieldPhaseSlots: new Float32Array([0.3, 0.4, 1, 1]),
+      modalFieldColorSlots: new Float32Array([0, 0, 0, 1]),
+      modalFieldSpectralLaneA: new Float32Array([0, 0, 0, 0]),
+      modalFieldSpectralLaneB: new Float32Array([0, 0, 0, 0]),
+      modalFieldSpectralMeta: new Float32Array([0, 0, 0, 0]),
+      modalFieldMetadataSlots: new Float32Array(4),
+      activeModeCount: 1,
+      activeModalFieldModeCount: 1,
+      modalResponseEnergy: 0.5,
+    };
+
+    tickRaymarchRuntime(runtimeState, activeFrame, 1, 1 / 60, renderer);
+    await flushMicrotasks();
+    tickRaymarchRuntime(runtimeState, activeFrame, 1 + 1 / 60, 1 / 60, renderer);
+
+    const committedLaneA = Array.from(
+      runtimeState.modalFieldSpectralLaneABuffer.value.array.slice(0, 4),
+    );
+    const committedLaneB = Array.from(
+      runtimeState.modalFieldSpectralLaneBBuffer.value.array.slice(0, 4),
+    );
+    const committedMeta = Array.from(
+      runtimeState.modalFieldSpectralMetaBuffer.value.array.slice(0, 4),
+    );
+    expect(runtimeState.activeModalRenderPacket).toBeTruthy();
+    expect(runtimeState.spectralLaneCache.ready).toBe(true);
+
+    tickRaymarchRuntime(runtimeState, rebuildingFrame, 2, 1 / 60, renderer);
+
+    expect(
+      runtimeState.debugSnapshot.modalBasisCacheStaleWhileRebuilding,
+    ).toBe(true);
+    expect(runtimeState.modalRenderPacketRetained).toBeTruthy();
+    expect(
+      Array.from(
+        runtimeState.modalFieldSpectralLaneABuffer.value.array.slice(0, 4),
+      ),
+    ).toEqual(committedLaneA);
+    expect(
+      Array.from(
+        runtimeState.modalFieldSpectralLaneBBuffer.value.array.slice(0, 4),
+      ),
+    ).toEqual(committedLaneB);
+    expect(
+      Array.from(
+        runtimeState.modalFieldSpectralMetaBuffer.value.array.slice(0, 4),
+      ),
+    ).toEqual(committedMeta);
+    expect(
+      runtimeState.volumeMesh.userData.raymarchSpectralLightEvaluationMode,
+    ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.laneCache);
+    expect(runtimeState.debugSnapshot.spectralLaneCacheLastComputeReason).toBe(
+      "modal-basis-cache-stale-retained",
+    );
+  });
+
+  it("zeros Spectral lane contribution under silence", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 0.85;
+    runtimeState.liveFieldProjectionCache.computeNodesByKey[
+      "live-field-projection:capacity=16"
+    ] = { id: "live-field" };
+    runtimeState.spectralLaneCache.computeNodesByKey[
+      "spectral-lane-cache:capacity=16"
+    ] = { id: "spectral-lane" };
+    const renderer = {
+      compute: vi.fn(),
+      computeAsync: vi.fn(async () => undefined),
+    };
+    const activeFrame = {
+      fieldState: "active",
+      renderAuthority: true,
+      averageAmplitude: 48,
+      modalFieldSlots: new Float32Array([3, 4, 6, 0.8]),
+      modalFieldPhaseSlots: new Float32Array([0, 0, 1, 1]),
+      modalFieldColorSlots: new Float32Array([9, 9, 9, 1]),
+      modalFieldSpectralLaneA: new Float32Array([1, 0, 0, 0]),
+      modalFieldSpectralLaneB: new Float32Array(4),
+      modalFieldSpectralMeta: new Float32Array([0.18, 0.04, 0.9, 0.7]),
+      modalFieldMetadataSlots: new Float32Array(4),
+      activeModeCount: 1,
+      activeModalFieldModeCount: 1,
+      modalResponseEnergy: 0.5,
+    };
+    const silentFrame = {
+      fieldState: "idle",
+      renderAuthority: false,
+      averageAmplitude: 0,
+      modalFieldSlots: new Float32Array(0),
+      modalFieldPhaseSlots: new Float32Array(0),
+      modalFieldColorSlots: new Float32Array(0),
+      modalFieldSpectralLaneA: new Float32Array(0),
+      modalFieldSpectralLaneB: new Float32Array(0),
+      modalFieldSpectralMeta: new Float32Array(0),
+      modalFieldMetadataSlots: new Float32Array(0),
+      activeModeCount: 0,
+      activeModalFieldModeCount: 0,
+      modalResponseEnergy: 0,
+      energyLedger: {
+        projectedRenderEnergy: 0,
+        renderEnergyEpsilon: 1e-6,
+      },
+    };
+
+    tickRaymarchRuntime(runtimeState, activeFrame, 1, 1 / 60, renderer);
+    await flushMicrotasks();
+    tickRaymarchRuntime(runtimeState, activeFrame, 1 + 1 / 60, 1 / 60, renderer);
+
+    expect(runtimeState.spectralLaneCache.ready).toBe(true);
+    expect(
+      runtimeState.debugSnapshot.spectralLaneCacheRadianceInputTotal,
+    ).toBeGreaterThan(0);
+
+    tickRaymarchRuntime(runtimeState, silentFrame, 2, 1 / 60, renderer);
+
+    expect(runtimeState.currentSpectralLightDescriptor).toBeNull();
+    expect(runtimeState.spectralLightBuffersUploaded).toBe(false);
+    expect(runtimeState.spectralLaneCache.ready).toBe(false);
+    expect(runtimeState.spectralLaneCache.active).toBe(false);
+    expect(
+      runtimeState.volumeMesh.userData.raymarchSpectralLightEvaluationMode,
+    ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off);
+    expect(runtimeState.debugSnapshot.spectralLaneCacheActivePacketCount).toBe(
+      0,
+    );
+    expect(runtimeState.debugSnapshot.spectralLaneCacheRadianceInputTotal).toBe(
+      0,
+    );
+  });
+
+  it("keeps Spectral selection fail-closed when the lane cache is unavailable", async () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     seedRuntimeCacheNodes(runtimeState);
     runtimeState.uniforms.uSpectralMix.value = 0;
@@ -3853,10 +4220,9 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.currentSpectralLightDescriptor).toBeNull();
     expect(runtimeState.spectralLightBuffersUploaded).toBe(false);
     expect(runtimeState.modalFieldColorBuffer.value.needsUpdate).toBe(true);
-    expect(runtimeState.modalFieldSpectralBuffer.value.needsUpdate).toBe(true);
     expect(runtimeState.volumeMesh.visible).toBe(false);
     expect(runtimeState.debugSnapshot.spectralLightImplementationState).toBe(
-      "pending-lane-architecture",
+      "lane-cache-unavailable",
     );
 
     runtimeState.uniforms.uSpectralMix.value = 0;

@@ -19,9 +19,11 @@ import {
   clearQueuedRaymarchCacheRebuild,
   commitRaymarchModalBasisCachePendingDescriptor,
   computeRaymarchLiveFieldProjectionCache,
+  computeRaymarchSpectralLaneCache,
   discardRaymarchModalBasisCachePendingDescriptor,
   disposeRaymarchLiveFieldProjectionCache,
   disposeRaymarchModalBasisCache,
+  disposeRaymarchSpectralLaneCache,
   enqueueRaymarchModalBasisCacheRebuild,
   getRaymarchModalBasisCacheDescriptorStaleReason,
   isRaymarchModalBasisCachePendingReadyForDescriptor,
@@ -563,7 +565,9 @@ function isRaymarchModalBasisDisplayCoherent(runtimeState) {
 function resetRenderAuthorityState(runtimeState) {
   clearBufferNode(runtimeState.modalFieldModeBuffer);
   clearBufferNode(runtimeState.modalFieldColorBuffer);
-  clearBufferNode(runtimeState.modalFieldSpectralBuffer);
+  clearBufferNode(runtimeState.modalFieldSpectralLaneABuffer);
+  clearBufferNode(runtimeState.modalFieldSpectralLaneBBuffer);
+  clearBufferNode(runtimeState.modalFieldSpectralMetaBuffer);
   clearBufferNode(runtimeState.modalFieldPhaseBuffer);
   clearBufferNode(runtimeState.modalFieldCoefficientBuffer);
   runtimeState.performanceGovernor = null;
@@ -584,8 +588,17 @@ function resetRenderAuthorityState(runtimeState) {
   resetRaymarchUploadState(runtimeState);
   resetCacheActivity(runtimeState.modalBasisCache);
   resetCacheActivity(runtimeState.liveFieldProjectionCache);
+  resetCacheActivity(runtimeState.spectralLaneCache);
+  if (runtimeState.spectralLaneCache) {
+    runtimeState.spectralLaneCache.descriptor = null;
+    runtimeState.spectralLaneCache.activeDescriptor = null;
+  }
   resetModalBasisCacheRuntimeDiagnostics(runtimeState.modalBasisCache);
   deactivateLiveFieldProjectionCache(runtimeState, "render-authority-reset");
+  setRaymarchSpectralLightEvaluationMode(
+    runtimeState.volumeMesh,
+    RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
+  );
   runtimeState.renderAuthorityResetApplied = true;
 }
 
@@ -806,7 +819,9 @@ function buildRuntimeModalDescriptor(
     modalFieldSlots: featureFrame?.modalFieldSlots,
     modalFieldPhaseSlots: featureFrame?.modalFieldPhaseSlots,
     modalFieldColorSlots: featureFrame?.modalFieldColorSlots,
-    modalFieldSpectralSlots: featureFrame?.modalFieldSpectralSlots,
+    modalFieldSpectralLaneA: featureFrame?.modalFieldSpectralLaneA,
+    modalFieldSpectralLaneB: featureFrame?.modalFieldSpectralLaneB,
+    modalFieldSpectralMeta: featureFrame?.modalFieldSpectralMeta,
     modalFieldMetadataSlots: featureFrame?.modalFieldMetadataSlots,
     activeModalFieldModeCount:
       sourceDescriptor?.counts?.validModeCount ?? featureFrame?.activeModeCount,
@@ -837,7 +852,6 @@ function blockOverflowedModalDescriptor(
 ) {
   clearBufferNode(runtimeState.modalFieldModeBuffer);
   clearBufferNode(runtimeState.modalFieldColorBuffer);
-  clearBufferNode(runtimeState.modalFieldSpectralBuffer);
   clearBufferNode(runtimeState.modalFieldPhaseBuffer);
   clearBufferNode(runtimeState.modalFieldCoefficientBuffer);
   runtimeState.performanceGovernor = null;
@@ -856,6 +870,7 @@ function blockOverflowedModalDescriptor(
   resetRaymarchUploadState(runtimeState);
   resetCacheActivity(runtimeState.modalBasisCache);
   resetCacheActivity(runtimeState.liveFieldProjectionCache);
+  resetCacheActivity(runtimeState.spectralLaneCache);
   resetModalBasisCacheRuntimeDiagnostics(runtimeState.modalBasisCache);
   deactivateLiveFieldProjectionCache(runtimeState, "descriptor-overflow");
   setIfChanged(runtimeState.uniforms.uModalFieldModeCount, 0);
@@ -1083,6 +1098,7 @@ function buildRaymarchDebugSnapshot(
   const modalBasisCache = runtimeState.modalBasisCache ?? null;
   const liveFieldProjectionCache =
     runtimeState.liveFieldProjectionCache ?? null;
+  const spectralLaneCache = runtimeState.spectralLaneCache ?? null;
   const modalBasisCacheDescriptor =
     runtimeState.currentModalBasisCacheDescriptor ?? null;
   const basisIdentity = readModalBasisIdentity(
@@ -1547,7 +1563,32 @@ function buildRaymarchDebugSnapshot(
     spectralLightEvaluationMode:
       runtimeState.volumeMesh?.userData?.raymarchSpectralLightEvaluationMode ??
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
-    spectralLightImplementationState: "pending-lane-architecture",
+    spectralLightImplementationState:
+      runtimeState.volumeMesh?.userData?.raymarchSpectralLightEvaluationMode ===
+      RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.laneCache
+        ? "lane-cache-radiance"
+        : "lane-cache-unavailable",
+    spectralLaneCacheActive: spectralLaneCache?.active ?? false,
+    spectralLaneCacheReady: spectralLaneCache?.ready ?? false,
+    spectralLaneCacheBackend: spectralLaneCache?.backend ?? "compute",
+    spectralLaneCacheLastComputeReason:
+      spectralLaneCache?.lastComputeReason ?? "uninitialized",
+    spectralLaneCacheLastError: spectralLaneCache?.lastError ?? null,
+    spectralLaneCacheComputedAtSec:
+      spectralLaneCache?.lastComputedAtSec ?? null,
+    spectralLaneCacheBuiltAtSec:
+      spectralLaneCache?.activeCacheBuiltAtSec ?? null,
+    spectralLaneCacheResolution: spectralLaneCache?.resolution ?? null,
+    spectralLaneCacheDescriptorHash:
+      spectralLaneCache?.descriptor?.hash ?? null,
+    spectralLaneCacheModalFieldCount:
+      spectralLaneCache?.descriptor?.modalFieldCount ?? 0,
+    spectralLaneCacheSpectralLaneHash:
+      spectralLaneCache?.descriptor?.spectralLaneHash ?? null,
+    spectralLaneCacheActivePacketCount:
+      spectralLaneCache?.descriptor?.spectralLaneActivePacketCount ?? 0,
+    spectralLaneCacheRadianceInputTotal:
+      spectralLaneCache?.descriptor?.spectralLaneRadianceInputTotal ?? 0,
     modalBasisCacheActive: modalBasisCache?.active ?? false,
     modalBasisCacheResolution: basisIdentity.resolution,
     modalBasisCacheRebuildCount: modalBasisCache?.rebuildCount ?? 0,
@@ -1858,7 +1899,9 @@ function getRaymarchUploadState(runtimeState) {
       modalField: null,
       modalFieldPhase: null,
       modalFieldCoefficient: null,
-      modalFieldSpectral: null,
+      modalFieldSpectralLaneA: null,
+      modalFieldSpectralLaneB: null,
+      modalFieldSpectralMeta: null,
       modalFieldRole: null,
     };
   }
@@ -1869,7 +1912,9 @@ function getRaymarchUploadState(runtimeState) {
 function buildLayerUploadSignature({
   slots,
   colorSlots,
-  spectralSlots,
+  spectralLaneA,
+  spectralLaneB,
+  spectralMeta,
   layer,
   includeColors,
   includeSpectral,
@@ -1893,7 +1938,9 @@ function buildLayerUploadSignature({
     }
     if (includeSpectral) {
       spectralHash = hashUint32(slotIndex, spectralHash);
-      spectralHash = hashSlot4(spectralSlots, sourceOffset, spectralHash);
+      spectralHash = hashSlot4(spectralLaneA, sourceOffset, spectralHash);
+      spectralHash = hashSlot4(spectralLaneB, sourceOffset, spectralHash);
+      spectralHash = hashSlot4(spectralMeta, sourceOffset, spectralHash);
     }
   }
 
@@ -1942,13 +1989,19 @@ function applyLayerUploadIfChanged({
   key,
   slots,
   colorSlots,
-  spectralSlots,
+  spectralLaneA,
+  spectralLaneB,
+  spectralMeta,
   targetSlots,
   targetColorSlots,
-  targetSpectralSlots,
+  targetSpectralLaneA,
+  targetSpectralLaneB,
+  targetSpectralMeta,
   modeBufferNode,
   colorBufferNode,
-  spectralBufferNode,
+  spectralLaneABufferNode,
+  spectralLaneBBufferNode,
+  spectralMetaBufferNode,
   layer,
   includeColors,
   includeSpectral,
@@ -1956,7 +2009,9 @@ function applyLayerUploadIfChanged({
   const signature = buildLayerUploadSignature({
     slots,
     colorSlots,
-    spectralSlots,
+    spectralLaneA,
+    spectralLaneB,
+    spectralMeta,
     layer,
     includeColors,
     includeSpectral,
@@ -1979,8 +2034,12 @@ function applyLayerUploadIfChanged({
       includeColors,
     });
     copyLayerSpectralUpload({
-      spectralSlots,
-      targetSpectralSlots,
+      spectralLaneA,
+      spectralLaneB,
+      spectralMeta,
+      targetSpectralLaneA,
+      targetSpectralLaneB,
+      targetSpectralMeta,
       layer,
       includeSpectral,
     });
@@ -1994,12 +2053,16 @@ function applyLayerUploadIfChanged({
     ) {
       colorBufferNode.value.needsUpdate = true;
     }
-    if (
-      includeSpectral &&
-      spectralBufferNode?.value &&
-      (spectralChanged || modeChanged)
-    ) {
-      spectralBufferNode.value.needsUpdate = true;
+    if (includeSpectral && (spectralChanged || modeChanged)) {
+      if (spectralLaneABufferNode?.value) {
+        spectralLaneABufferNode.value.needsUpdate = true;
+      }
+      if (spectralLaneBBufferNode?.value) {
+        spectralLaneBBufferNode.value.needsUpdate = true;
+      }
+      if (spectralMetaBufferNode?.value) {
+        spectralMetaBufferNode.value.needsUpdate = true;
+      }
     }
     uploadState[key] = { signature };
   }
@@ -2096,26 +2159,46 @@ function copyLayerUpload({
 }
 
 function copyLayerSpectralUpload({
-  spectralSlots,
-  targetSpectralSlots,
+  spectralLaneA,
+  spectralLaneB,
+  spectralMeta,
+  targetSpectralLaneA,
+  targetSpectralLaneB,
+  targetSpectralMeta,
   layer,
   includeSpectral,
 }) {
-  if (!targetSpectralSlots) {
+  if (!targetSpectralLaneA && !targetSpectralLaneB && !targetSpectralMeta) {
     return;
   }
   const capacity = Math.max(0, Math.floor(layer?.capacity ?? 0));
   const targetLength = capacity * 4;
-  targetSpectralSlots.fill(0, 0, targetLength);
+  targetSpectralLaneA?.fill(0, 0, targetLength);
+  targetSpectralLaneB?.fill(0, 0, targetLength);
+  targetSpectralMeta?.fill(0, 0, targetLength);
   if (!includeSpectral) {
     return;
   }
   for (let slotIndex = 0; slotIndex < capacity; slotIndex += 1) {
     const offset = slotIndex * 4;
-    targetSpectralSlots[offset] = spectralSlots?.[offset] ?? 0;
-    targetSpectralSlots[offset + 1] = spectralSlots?.[offset + 1] ?? 0;
-    targetSpectralSlots[offset + 2] = spectralSlots?.[offset + 2] ?? 0;
-    targetSpectralSlots[offset + 3] = spectralSlots?.[offset + 3] ?? 0;
+    if (targetSpectralLaneA) {
+      targetSpectralLaneA[offset] = spectralLaneA?.[offset] ?? 0;
+      targetSpectralLaneA[offset + 1] = spectralLaneA?.[offset + 1] ?? 0;
+      targetSpectralLaneA[offset + 2] = spectralLaneA?.[offset + 2] ?? 0;
+      targetSpectralLaneA[offset + 3] = spectralLaneA?.[offset + 3] ?? 0;
+    }
+    if (targetSpectralLaneB) {
+      targetSpectralLaneB[offset] = spectralLaneB?.[offset] ?? 0;
+      targetSpectralLaneB[offset + 1] = spectralLaneB?.[offset + 1] ?? 0;
+      targetSpectralLaneB[offset + 2] = spectralLaneB?.[offset + 2] ?? 0;
+      targetSpectralLaneB[offset + 3] = spectralLaneB?.[offset + 3] ?? 0;
+    }
+    if (targetSpectralMeta) {
+      targetSpectralMeta[offset] = spectralMeta?.[offset] ?? 0;
+      targetSpectralMeta[offset + 1] = spectralMeta?.[offset + 1] ?? 0;
+      targetSpectralMeta[offset + 2] = spectralMeta?.[offset + 2] ?? 0;
+      targetSpectralMeta[offset + 3] = spectralMeta?.[offset + 3] ?? 0;
+    }
   }
 }
 
@@ -2315,11 +2398,176 @@ function copyPendingCacheTextureToActive(renderer, cache) {
   return true;
 }
 
+function buildRuntimeSpectralLaneCacheDescriptor(
+  runtimeState,
+  modalBasisCacheDescriptor,
+  { modalFieldCapacity },
+) {
+  const activeCount = Math.min(
+    Math.max(0, Math.floor(runtimeState?.uniforms?.uModalFieldModeCount?.value ?? 0)),
+    Math.max(0, Math.floor(modalFieldCapacity ?? 0)),
+  );
+  let hash = FNV_OFFSET_BASIS;
+  hash = hashUint32(activeCount, hash);
+  hash = hashUint32(modalBasisCacheDescriptor?.identitySetHash ?? 0, hash);
+  hash = hashUint32(
+    modalBasisCacheDescriptor?.identityPageAssignmentHash ?? 0,
+    hash,
+  );
+  hash = hashUint32(modalBasisCacheDescriptor?.liveModalPhaseHash ?? 0, hash);
+  hash = hashUint32(modalBasisCacheDescriptor?.resolution ?? 0, hash);
+  const descriptorSpectralLaneHash =
+    runtimeState?.currentModalDescriptor?.diagnostics?.spectralLaneHash ?? 0;
+  hash = hashUint32(descriptorSpectralLaneHash, hash);
+
+  const coefficientSlots =
+    runtimeState?.modalFieldCoefficientBuffer?.value?.array ?? null;
+  const spectralLaneA =
+    runtimeState?.modalFieldSpectralLaneABuffer?.value?.array ?? null;
+  const spectralLaneB =
+    runtimeState?.modalFieldSpectralLaneBBuffer?.value?.array ?? null;
+  const spectralMeta =
+    runtimeState?.modalFieldSpectralMetaBuffer?.value?.array ?? null;
+  let spectralLaneRadianceInputTotal = 0;
+  let spectralLaneActivePacketCount = 0;
+
+  for (let slotIndex = 0; slotIndex < activeCount; slotIndex += 1) {
+    const offset = slotIndex * 4;
+    hash = hashUint32(slotIndex, hash);
+    hash = hashSlot4(coefficientSlots, offset, hash);
+
+    const coefficient = Math.max(0, coefficientSlots?.[offset] ?? 0);
+    const spectralConfidence = Math.min(
+      1,
+      Math.max(0, spectralMeta?.[offset + 2] ?? 0),
+    );
+    const displayEnergy = Math.max(0, spectralMeta?.[offset + 3] ?? 0);
+    const laneMass =
+      Math.max(0, spectralLaneA?.[offset] ?? 0) +
+      Math.max(0, spectralLaneA?.[offset + 1] ?? 0) +
+      Math.max(0, spectralLaneA?.[offset + 2] ?? 0) +
+      Math.max(0, spectralLaneA?.[offset + 3] ?? 0) +
+      Math.max(0, spectralLaneB?.[offset] ?? 0) +
+      Math.max(0, spectralLaneB?.[offset + 1] ?? 0) +
+      Math.max(0, spectralLaneB?.[offset + 2] ?? 0) +
+      Math.max(0, spectralLaneB?.[offset + 3] ?? 0);
+    const packetRadianceInput =
+      coefficient * displayEnergy * spectralConfidence * laneMass;
+    if (packetRadianceInput > 1e-8) {
+      spectralLaneActivePacketCount += 1;
+      spectralLaneRadianceInputTotal += packetRadianceInput;
+    }
+  }
+
+  return {
+    semantic: "spectral-lane-cache",
+    modalFieldCount: activeCount,
+    resolution:
+      runtimeState?.spectralLaneCache?.resolution ??
+      modalBasisCacheDescriptor?.resolution ??
+      null,
+    modalBasisIdentityHash:
+      modalBasisCacheDescriptor?.identitySetHash ?? null,
+    identityPageAssignmentHash:
+      modalBasisCacheDescriptor?.identityPageAssignmentHash ?? null,
+    liveModalPhaseHash: modalBasisCacheDescriptor?.liveModalPhaseHash ?? null,
+    descriptorSpectralLaneHash,
+    spectralLaneHash: hash >>> 0,
+    spectralLaneActivePacketCount,
+    spectralLaneRadianceInputTotal,
+    hash: hash >>> 0,
+  };
+}
+
+function deactivateSpectralLaneCache(runtimeState, reason) {
+  const spectralLaneCache = runtimeState?.spectralLaneCache;
+  if (spectralLaneCache) {
+    spectralLaneCache.active = false;
+    spectralLaneCache.ready = false;
+    spectralLaneCache.lastComputeReason = reason;
+  }
+  runtimeState.currentSpectralLightDescriptor = null;
+  runtimeState.spectralLightBuffersUploaded = false;
+  return { computed: false, reason };
+}
+
+function updateSpectralLaneCache(
+  runtimeState,
+  renderer,
+  { spectralLightEnabled, modalBasisCacheDescriptor, modalFieldCapacity, schedulerTimeSec },
+) {
+  const spectralLaneCache = runtimeState?.spectralLaneCache;
+  if (!spectralLightEnabled) {
+    return deactivateSpectralLaneCache(runtimeState, "spectral-disabled");
+  }
+  if (!spectralLaneCache) {
+    return deactivateSpectralLaneCache(runtimeState, "cache-unavailable");
+  }
+
+  const modalBasisAuthority =
+    runtimeState.modalBasisCacheDrawableAuthority ??
+    resolveRaymarchModalBasisCacheDrawableAuthority(
+      runtimeState.modalBasisCache,
+      modalBasisCacheDescriptor,
+    );
+  if (modalBasisAuthority?.staleWhileRebuilding === true) {
+    if (spectralLaneCache.ready === true) {
+      spectralLaneCache.active = true;
+      spectralLaneCache.lastComputeReason = "modal-basis-cache-stale-retained";
+      return { computed: false, reason: spectralLaneCache.lastComputeReason };
+    }
+    return deactivateSpectralLaneCache(
+      runtimeState,
+      "modal-basis-cache-stale-without-committed",
+    );
+  }
+  if (modalBasisAuthority?.drawable !== true) {
+    return deactivateSpectralLaneCache(
+      runtimeState,
+      modalBasisAuthority?.blockedReason ?? "modal-basis-cache-not-drawable",
+    );
+  }
+
+  const modalBasisAtlasTexture =
+    runtimeState.volumeMesh?.userData?.raymarchModalBasisAtlasTexture ??
+    runtimeState.modalBasisCache?.texture ??
+    null;
+  const descriptor = buildRuntimeSpectralLaneCacheDescriptor(
+    runtimeState,
+    modalBasisCacheDescriptor,
+    { modalFieldCapacity },
+  );
+  return computeRaymarchSpectralLaneCache(spectralLaneCache, renderer, {
+    descriptor,
+    modalBasisAtlasTexture,
+    modalFieldCoefficientBuffer: runtimeState.modalFieldCoefficientBuffer,
+    modalFieldSpectralLaneABuffer: runtimeState.modalFieldSpectralLaneABuffer,
+    modalFieldSpectralLaneBBuffer: runtimeState.modalFieldSpectralLaneBBuffer,
+    modalFieldSpectralMetaBuffer: runtimeState.modalFieldSpectralMetaBuffer,
+    modalFieldCapacity,
+    uniforms: runtimeState.uniforms,
+    schedulerTimeSec,
+  });
+}
+
 function resolveSpectralLightEvaluationMode(
   runtimeState,
   { spectralLightEnabled },
 ) {
-  void spectralLightEnabled;
+  const spectralLaneCache = runtimeState.spectralLaneCache ?? null;
+  const laneCacheDrawable = Boolean(
+    spectralLightEnabled &&
+      spectralLaneCache?.ready === true &&
+      spectralLaneCache.spectralLaneTextureA &&
+      spectralLaneCache.spectralLaneTextureB &&
+      spectralLaneCache.spectralLaneStatsTexture,
+  );
+  if (laneCacheDrawable) {
+    runtimeState.currentSpectralLightDescriptor =
+      spectralLaneCache.descriptor ?? null;
+    runtimeState.spectralLightBuffersUploaded = true;
+    return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.laneCache;
+  }
   runtimeState.currentSpectralLightDescriptor = null;
   runtimeState.spectralLightBuffersUploaded = false;
   return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off;
@@ -2343,6 +2591,12 @@ function updateRaymarchEvaluationModes(
     renderer,
     modalBasisCacheDescriptor,
   );
+  updateSpectralLaneCache(runtimeState, renderer, {
+    spectralLightEnabled,
+    modalBasisCacheDescriptor,
+    modalFieldCapacity: capacities.modalFieldCapacity,
+    schedulerTimeSec: capacities.schedulerTimeSec,
+  });
 
   const spectralLightEvaluationMode = resolveSpectralLightEvaluationMode(
     runtimeState,
@@ -2449,6 +2703,15 @@ function snapshotActiveModalRenderPacket(runtimeState, featureFrame) {
     modalFieldColorBuffer: snapshotBufferArray(
       runtimeState.modalFieldColorBuffer,
     ),
+    modalFieldSpectralLaneABuffer: snapshotBufferArray(
+      runtimeState.modalFieldSpectralLaneABuffer,
+    ),
+    modalFieldSpectralLaneBBuffer: snapshotBufferArray(
+      runtimeState.modalFieldSpectralLaneBBuffer,
+    ),
+    modalFieldSpectralMetaBuffer: snapshotBufferArray(
+      runtimeState.modalFieldSpectralMetaBuffer,
+    ),
     modalFieldPhaseBuffer: snapshotBufferArray(
       runtimeState.modalFieldPhaseBuffer,
     ),
@@ -2485,6 +2748,18 @@ function restoreActiveModalRenderPacket(runtimeState, packet) {
   restoreBufferArray(
     runtimeState.modalFieldColorBuffer,
     packet.modalFieldColorBuffer,
+  );
+  restoreBufferArray(
+    runtimeState.modalFieldSpectralLaneABuffer,
+    packet.modalFieldSpectralLaneABuffer,
+  );
+  restoreBufferArray(
+    runtimeState.modalFieldSpectralLaneBBuffer,
+    packet.modalFieldSpectralLaneBBuffer,
+  );
+  restoreBufferArray(
+    runtimeState.modalFieldSpectralMetaBuffer,
+    packet.modalFieldSpectralMetaBuffer,
   );
   restoreBufferArray(
     runtimeState.modalFieldPhaseBuffer,
@@ -2632,7 +2907,9 @@ function applyRaymarchRuntimeUploadAuthority({
   modalFieldPhaseCapacity,
   modalFieldModeBuffer,
   modalFieldColorBuffer,
-  modalFieldSpectralBuffer,
+  modalFieldSpectralLaneABuffer,
+  modalFieldSpectralLaneBBuffer,
+  modalFieldSpectralMetaBuffer,
   modalFieldPhaseBuffer,
   modalFieldCoefficientBuffer,
   spectralLightEnabled,
@@ -2677,13 +2954,21 @@ function applyRaymarchRuntimeUploadAuthority({
     key: "modalField",
     slots: descriptorSlots.modalFieldSlots,
     colorSlots: descriptorSlots.modalFieldColorSlots,
-    spectralSlots: descriptorSlots.modalFieldSpectralSlots,
+    spectralLaneA: descriptorSlots.modalFieldSpectralLaneA,
+    spectralLaneB: descriptorSlots.modalFieldSpectralLaneB,
+    spectralMeta: descriptorSlots.modalFieldSpectralMeta,
     targetSlots: modalFieldModeBuffer.value.array,
     targetColorSlots: modalFieldColorBuffer.value.array,
-    targetSpectralSlots: modalFieldSpectralBuffer?.value?.array ?? null,
+    targetSpectralLaneA:
+      modalFieldSpectralLaneABuffer?.value?.array ?? null,
+    targetSpectralLaneB:
+      modalFieldSpectralLaneBBuffer?.value?.array ?? null,
+    targetSpectralMeta: modalFieldSpectralMetaBuffer?.value?.array ?? null,
     modeBufferNode: modalFieldModeBuffer,
     colorBufferNode: modalFieldColorBuffer,
-    spectralBufferNode: modalFieldSpectralBuffer,
+    spectralLaneABufferNode: modalFieldSpectralLaneABuffer,
+    spectralLaneBBufferNode: modalFieldSpectralLaneBBuffer,
+    spectralMetaBufferNode: modalFieldSpectralMetaBuffer,
     layer: modalFieldLayer,
     includeColors: spectralLightEnabled,
     includeSpectral: spectralLightEnabled,
@@ -2800,7 +3085,12 @@ export function tickRaymarchRuntime(
   const { uniforms, volumeMesh, idleOverlay } = runtimeState;
   const modalFieldModeBuffer = runtimeState.modalFieldModeBuffer;
   const modalFieldColorBuffer = runtimeState.modalFieldColorBuffer;
-  const modalFieldSpectralBuffer = runtimeState.modalFieldSpectralBuffer;
+  const modalFieldSpectralLaneABuffer =
+    runtimeState.modalFieldSpectralLaneABuffer;
+  const modalFieldSpectralLaneBBuffer =
+    runtimeState.modalFieldSpectralLaneBBuffer;
+  const modalFieldSpectralMetaBuffer =
+    runtimeState.modalFieldSpectralMetaBuffer;
   const modalFieldPhaseBuffer = runtimeState.modalFieldPhaseBuffer;
   const modalFieldCoefficientBuffer = runtimeState.modalFieldCoefficientBuffer;
   const modalFieldCapacity = inferModalFieldCapacity(
@@ -2924,7 +3214,9 @@ export function tickRaymarchRuntime(
     modalFieldPhaseCapacity,
     modalFieldModeBuffer,
     modalFieldColorBuffer,
-    modalFieldSpectralBuffer,
+    modalFieldSpectralLaneABuffer,
+    modalFieldSpectralLaneBBuffer,
+    modalFieldSpectralMetaBuffer,
     modalFieldPhaseBuffer,
     modalFieldCoefficientBuffer,
     spectralLightEnabled,
@@ -3052,7 +3344,10 @@ export function tickRaymarchRuntime(
   const modalBasisDisplayCoherent =
     modalBasisCacheDrawable &&
     isRaymarchModalBasisDisplayCoherent(runtimeState);
-  const spectralLightLaneDrawable = !spectralLightEnabled;
+  const spectralLightLaneDrawable =
+    !spectralLightEnabled ||
+    runtimeState.volumeMesh?.userData?.raymarchSpectralLightEvaluationMode ===
+      RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.laneCache;
   volumeMesh.visible =
     renderAuthority && modalBasisDisplayCoherent && spectralLightLaneDrawable;
   idleOverlay.visible = resolveIdleOverlayVisible(
@@ -3073,6 +3368,7 @@ export function disposeRaymarchRuntime(runtimeState) {
   disposeRaymarchLiveFieldProjectionCache(
     runtimeState?.liveFieldProjectionCache,
   );
+  disposeRaymarchSpectralLaneCache(runtimeState?.spectralLaneCache);
   runtimeState?.points?.traverse?.((child) => {
     child.geometry?.dispose?.();
     const materialCache = child.userData?.raymarchMaterialCache;

@@ -26,6 +26,7 @@ const RAYMARCH_AUDIT_SOURCE_URL_BY_FILE = Object.freeze({
     "../../utils/audio/modalObservedScoring.js",
     import.meta.url,
   ),
+  "fieldCache.js": new URL("./fieldCache.js", import.meta.url),
   "material.js": new URL("./material.js", import.meta.url),
   "runtime.js": new URL("./runtime.js", import.meta.url),
 });
@@ -56,6 +57,11 @@ describe("raymarch quantity ownership ledger", () => {
           "displayProjectionAmplitude",
         ]),
         material: expect.arrayContaining(["materialExcitationGate"]),
+        spectral: expect.arrayContaining([
+          "spectralLanePacket",
+          "spectralLaneRadiance",
+          "spectralDisplayProjection",
+        ]),
       }),
     );
     expect(RAYMARCH_MATERIAL_TRANSFER_LANES).toEqual(
@@ -75,6 +81,7 @@ describe("raymarch quantity ownership ledger", () => {
         support: expect.arrayContaining(["supportVisibleDensity"]),
         body: expect.arrayContaining(["photographicBodyContribution"]),
         emission: expect.arrayContaining(["whiteEmissionFieldAuthority"]),
+        spectral: expect.arrayContaining(["spectralDisplayProjection"]),
       }),
     );
 
@@ -109,6 +116,9 @@ describe("raymarch quantity ownership ledger", () => {
       "cancellationSuppression",
       "photographicFocus",
       "whiteEmissionFieldAuthority",
+      "spectralLanePacket",
+      "spectralLaneRadiance",
+      "spectralDisplayProjection",
     ]) {
       const contract = RAYMARCH_QUANTITY_LEDGER[quantityName];
       expect(contract, quantityName).toBeTruthy();
@@ -176,6 +186,40 @@ describe("raymarch quantity ownership ledger", () => {
           file: "material.js",
           owner: "materialExcitationGate",
           forbiddenTokens: expect.arrayContaining(["uAverageAmplitude"]),
+        }),
+        spectralLanePacketPublisher: expect.objectContaining({
+          file: "modalExcitation.js",
+          owner: "spectralLanePacket",
+          requiredTokens: expect.arrayContaining([
+            "displayEnergy",
+            "spectralConfidence",
+            "spectralSpread",
+            "laneDistribution",
+          ]),
+          forbiddenTokens: expect.arrayContaining(["projectedRenderEnergy"]),
+        }),
+        spectralLaneRadianceCache: expect.objectContaining({
+          file: "fieldCache.js",
+          owner: "spectralLaneRadiance",
+          requiredTokens: expect.arrayContaining([
+            "modalFieldSpectralLaneABuffer",
+            "spectralLaneStatsTexture",
+            "dominance",
+            "entropy",
+          ]),
+          forbiddenTokens: expect.arrayContaining(["colorSum.div"]),
+        }),
+        materialSpectralLaneProjection: expect.objectContaining({
+          file: "material.js",
+          owner: "spectralDisplayProjection",
+          requiredTokens: expect.arrayContaining([
+            "sampleSpectralLaneCacheNode",
+            "projectSpectralLaneRadianceToRgbNode",
+          ]),
+          forbiddenTokens: expect.arrayContaining([
+            "modalFieldColorBuffer",
+            "spectralLightCacheTexture",
+          ]),
         }),
       }),
     );

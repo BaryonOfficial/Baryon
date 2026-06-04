@@ -370,24 +370,19 @@ describe("blendColorStack", () => {
     expect(state.colorSlots[11]).toBe(0);
   });
 
-  it("mixes duplicate Spectral target colors while keeping owner metadata", () => {
+  it("mixes duplicate Spectral target colors without legacy spectral slots", () => {
     const state = {
       ...makeState([0.8]),
       slots: new Float32Array([2, 2, 2, 0.8]),
       colorSlots: new Float32Array(4),
-      spectralSlots: new Float32Array(4),
       referenceColorSlots: new Float32Array(4),
-      referenceSpectralSlots: new Float32Array(4),
     };
     const targetSlots = new Float32Array([
       2, 2, 2, 0.4, 2, 2, 2, 0.3,
     ]);
     const targetColors = new Float32Array([1, 0, 0, 0.5, 0, 1, 1, 1]);
-    const targetSpectralSlots = new Float32Array([
-      0, 1, 0.7, 0.1, 0.5, 0.7, 0.9, 0.4,
-    ]);
 
-    blendColorStack(state, targetSlots, targetColors, targetSpectralSlots, 1, {
+    blendColorStack(state, targetSlots, targetColors, 1, {
       attack: 1,
       tracking: 1,
       release: 1,
@@ -398,30 +393,87 @@ describe("blendColorStack", () => {
     expect(state.colorSlots[1]).toBeCloseTo(0.6, 6);
     expect(state.colorSlots[2]).toBeCloseTo(0.6, 6);
     expect(state.colorSlots[3]).toBeCloseTo(0.5 / 0.7, 6);
-    expect(state.spectralSlots[0]).toBeCloseTo(0.5, 6);
-    expect(state.spectralSlots[1]).toBeCloseTo(0.7, 6);
-    expect(state.spectralSlots[2]).toBeCloseTo(0.9, 6);
-    expect(state.spectralSlots[3]).toBeCloseTo(0.4, 6);
   });
 
-  it("keeps Spectral owner color and phase coupled while smoothing weight", () => {
+  it("blends duplicate Spectral lane packets by modal identity without reading RGB", () => {
+    const state = {
+      ...makeState([0.8]),
+      slots: new Float32Array([2, 2, 2, 0.8]),
+      colorSlots: new Float32Array(4),
+      spectralLaneA: new Float32Array(4),
+      spectralLaneB: new Float32Array(4),
+      spectralMeta: new Float32Array(4),
+      referenceColorSlots: new Float32Array(4),
+      referenceSpectralLaneA: new Float32Array(4),
+      referenceSpectralLaneB: new Float32Array(4),
+      referenceSpectralMeta: new Float32Array(4),
+    };
+    const targetSlots = new Float32Array([
+      2, 2, 2, 0.4, 2, 2, 2, 0.6,
+    ]);
+    const targetColors = new Float32Array([
+      0.5, 0.5, 0.5, 1, 0.5, 0.5, 0.5, 1,
+    ]);
+    const targetSpectralLaneA = new Float32Array([
+      1, 0, 0, 0, 0, 1, 0, 0,
+    ]);
+    const targetSpectralLaneB = new Float32Array(8);
+    const targetSpectralMeta = new Float32Array([
+      0.1, 0.04, 0.5, 0.5, 0.8, 0.04, 1, 0.5,
+    ]);
+
+    blendColorStack(state, targetSlots, targetColors, 1, {
+      attack: 1,
+      tracking: 1,
+      release: 1,
+      maxActiveSlots: 1,
+      targetSpectralLaneA,
+      targetSpectralLaneB,
+      targetSpectralMeta,
+    });
+
+    expect(state.colorSlots[0]).toBeCloseTo(0.5, 6);
+    expect(state.colorSlots[1]).toBeCloseTo(0.5, 6);
+    expect(state.colorSlots[2]).toBeCloseTo(0.5, 6);
+    expect(state.spectralLaneA[0]).toBeCloseTo(0.25, 6);
+    expect(state.spectralLaneA[1]).toBeCloseTo(0.75, 6);
+    expect(state.spectralLaneA[2]).toBeCloseTo(0, 6);
+    expect(state.spectralLaneA[3]).toBeCloseTo(0, 6);
+    expect(state.spectralLaneB[0]).toBeCloseTo(0, 6);
+    expect(state.spectralMeta[0]).toBeCloseTo(0.8, 6);
+    expect(state.spectralMeta[2]).toBeCloseTo(1, 6);
+    expect(state.spectralMeta[3]).toBeCloseTo(0.5, 6);
+    expect(state.referenceSpectralLaneA[0]).toBeCloseTo(0.25, 6);
+    expect(state.referenceSpectralLaneA[1]).toBeCloseTo(0.75, 6);
+  });
+
+  it("keeps Spectral packet owner color and meta coupled while smoothing weight", () => {
     const state = {
       ...makeState([0.8]),
       slots: new Float32Array([1, 1, 1, 0.8]),
       colorSlots: new Float32Array([1, 0, 0, 1]),
-      spectralSlots: new Float32Array([0, 1, 0.7, 0.1]),
+      spectralLaneA: new Float32Array([1, 0, 0, 0]),
+      spectralLaneB: new Float32Array(4),
+      spectralMeta: new Float32Array([0, 0.04, 0.7, 0.1]),
       referenceColorSlots: new Float32Array(4),
-      referenceSpectralSlots: new Float32Array(4),
+      referenceSpectralLaneA: new Float32Array(4),
+      referenceSpectralLaneB: new Float32Array(4),
+      referenceSpectralMeta: new Float32Array(4),
     };
     const targetSlots = new Float32Array([1, 1, 1, 0.8]);
     const targetColors = new Float32Array([0, 1, 1, 0.5]);
-    const targetSpectralSlots = new Float32Array([0.5, 0.7, 0.9, 0.4]);
+    const targetSpectralLaneA = new Float32Array([0, 1, 0, 0]);
+    const targetSpectralLaneB = new Float32Array(4);
+    const targetSpectralMeta = new Float32Array([0.5, 0.07, 0.9, 0.4]);
 
-    blendColorStack(state, targetSlots, targetColors, targetSpectralSlots, 1, {
+    blendColorStack(state, targetSlots, targetColors, 1, {
       attack: 1,
       tracking: 0.5,
       release: 1,
       maxActiveSlots: 1,
+      targetSpectralLaneA,
+      targetSpectralLaneB,
+      targetSpectralMeta,
     });
 
     expect(Array.from(state.colorSlots)).toEqual([
@@ -430,10 +482,12 @@ describe("blendColorStack", () => {
       1,
       expect.closeTo(0.75, 6),
     ]);
-    expect(state.spectralSlots[0]).toBeCloseTo(0.5, 6);
-    expect(state.spectralSlots[1]).toBeCloseTo(0.7, 6);
-    expect(state.spectralSlots[2]).toBeCloseTo(0.9, 6);
-    expect(state.spectralSlots[3]).toBeCloseTo(0.4, 6);
+    expect(state.spectralLaneA[0]).toBeCloseTo(0, 6);
+    expect(state.spectralLaneA[1]).toBeCloseTo(1, 6);
+    expect(state.spectralMeta[0]).toBeCloseTo(0.5, 6);
+    expect(state.spectralMeta[1]).toBeCloseTo(0.07, 6);
+    expect(state.spectralMeta[2]).toBeCloseTo(0.9, 6);
+    expect(state.spectralMeta[3]).toBeCloseTo(0.4, 6);
   });
 });
 

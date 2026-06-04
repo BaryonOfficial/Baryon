@@ -6,6 +6,11 @@ import {
 import { createModalFieldContinuityState } from "../../core/modalFieldContinuity.js";
 import { createBlendableLayerState } from "./blendState.js";
 import { createModalExcitationState } from "./modalExcitationState.js";
+import {
+  normalizeSpectralLanePacket,
+  readPackedQuad,
+  writePackedQuad,
+} from "./spectralLanePacket.js";
 
 /** @type {number} */
 export const MAX_STACK_SLOTS = AUDIO_SLOT_CAPACITY;
@@ -27,7 +32,9 @@ export function createModalTargetBuild(capacity) {
     slots: createZeroTargetArray(capacity),
     referenceSlots: createZeroTargetArray(capacity),
     colorSlots: createColorSlotArray(capacity),
-    spectralSlots: createColorSlotArray(capacity),
+    spectralLaneA: createColorSlotArray(capacity),
+    spectralLaneB: createColorSlotArray(capacity),
+    spectralMeta: createColorSlotArray(capacity),
     harmonicSupport: new Float32Array(HARMONIC_SUPPORT_COUNT),
     uniqueModeCount: 0,
     peaks: [],
@@ -162,8 +169,12 @@ export function createAudioFeatureState(capacity = AUDIO_SLOT_CAPACITY) {
       frozenModeSlots: new Float32Array(capacity * 4),
       frozenSourceCoupledColorSlots: createColorSlotArray(capacity),
       frozenResonantColorSlots: createColorSlotArray(capacity),
-      frozenSourceCoupledSpectralSlots: createColorSlotArray(capacity),
-      frozenResonantSpectralSlots: createColorSlotArray(capacity),
+      frozenSourceCoupledSpectralLaneA: createColorSlotArray(capacity),
+      frozenSourceCoupledSpectralLaneB: createColorSlotArray(capacity),
+      frozenSourceCoupledSpectralMeta: createColorSlotArray(capacity),
+      frozenResonantSpectralLaneA: createColorSlotArray(capacity),
+      frozenResonantSpectralLaneB: createColorSlotArray(capacity),
+      frozenResonantSpectralMeta: createColorSlotArray(capacity),
       lastSnapshot: null,
       settings: { ...AUDIT_DEFAULTS },
     },
@@ -178,8 +189,12 @@ export function clearModalStack(state) {
   state.referenceSlots?.fill(0);
   state.colorSlots?.fill(0);
   state.referenceColorSlots?.fill(0);
-  state.spectralSlots?.fill(0);
-  state.referenceSpectralSlots?.fill(0);
+  state.spectralLaneA?.fill(0);
+  state.spectralLaneB?.fill(0);
+  state.spectralMeta?.fill(0);
+  state.referenceSpectralLaneA?.fill(0);
+  state.referenceSpectralLaneB?.fill(0);
+  state.referenceSpectralMeta?.fill(0);
   state.phaseSlots?.fill(0);
   state.harmonicSupport?.fill(0);
   state.fundamental = 0;
@@ -380,23 +395,18 @@ export function blendColorStack(
   state,
   targetSlots,
   targetColorSlots,
-  targetSpectralSlotsOrCapacity,
-  capacityOrOptions,
-  optionsMaybe = {},
+  capacity,
+  options = {},
 ) {
   if (!state?.slots || !state?.colorSlots || !targetColorSlots) return;
 
-  const hasExplicitSpectralArgument = arguments.length >= 6;
-  const targetSpectralSlots = hasExplicitSpectralArgument
-    ? targetSpectralSlotsOrCapacity
-    : null;
-  const trackSpectralOwner = Boolean(targetSpectralSlots);
-  const capacity = hasExplicitSpectralArgument
-    ? capacityOrOptions
-    : targetSpectralSlotsOrCapacity;
-  const options = hasExplicitSpectralArgument
-    ? optionsMaybe
-    : (capacityOrOptions ?? {});
+  const targetSpectralLaneA = options.targetSpectralLaneA ?? null;
+  const targetSpectralLaneB = options.targetSpectralLaneB ?? null;
+  const targetSpectralMeta = options.targetSpectralMeta ?? null;
+  const trackSpectralLaneOwner = Boolean(
+    targetSpectralLaneA || targetSpectralLaneB || targetSpectralMeta,
+  );
+  const trackSpectralOwner = trackSpectralLaneOwner;
   const attack = options.attack ?? BLEND_ATTACK;
   const tracking = options.tracking ?? BLEND_TRACKING;
   const release = options.release ?? BLEND_RELEASE;
@@ -421,10 +431,9 @@ export function blendColorStack(
         g: state.colorSlots[offset + 1],
         b: state.colorSlots[offset + 2],
         weight: colorWeight,
-        phase: state.spectralSlots?.[offset] ?? 0,
-        wavelength: state.spectralSlots?.[offset + 1] ?? 0,
-        harmonicConfidence: state.spectralSlots?.[offset + 2] ?? 0,
-        accentEnergy: state.spectralSlots?.[offset + 3] ?? 0,
+        laneA: readPackedQuad(state.spectralLaneA, offset),
+        laneB: readPackedQuad(state.spectralLaneB, offset),
+        meta: readPackedQuad(state.spectralMeta, offset),
       },
     );
   }
@@ -446,6 +455,13 @@ export function blendColorStack(
       targetSlots[offset + 2],
     );
     const influence = Math.max(0, amplitude) * Math.max(0, weight);
+    const spectralMeta = readPackedQuad(targetSpectralMeta, offset);
+    const laneA = readPackedQuad(targetSpectralLaneA, offset);
+    const laneB = readPackedQuad(targetSpectralLaneB, offset);
+    const packetDisplayEnergy = Math.max(0, spectralMeta[3] ?? 0);
+    const packetConfidence = Math.max(0, spectralMeta[2] ?? 0);
+    const laneInfluence =
+      Math.max(0, amplitude) * packetDisplayEnergy * packetConfidence;
     const existing = targetColorMap.get(key);
     if (existing) {
       existing.amplitude += Math.max(0, amplitude);
@@ -454,12 +470,14 @@ export function blendColorStack(
       existing.colorG += targetColorSlots[offset + 1] * influence;
       existing.colorB += targetColorSlots[offset + 2] * influence;
       existing.weightNumerator += weight * Math.max(0, amplitude);
-      if (influence > existing.ownerInfluence) {
-        existing.ownerInfluence = influence;
-        existing.phase = targetSpectralSlots?.[offset] ?? 0;
-        existing.wavelength = targetSpectralSlots?.[offset + 1] ?? 0;
-        existing.harmonicConfidence = targetSpectralSlots?.[offset + 2] ?? 0;
-        existing.accentEnergy = targetSpectralSlots?.[offset + 3] ?? 0;
+      existing.laneInfluence += laneInfluence;
+      for (let laneIndex = 0; laneIndex < 4; laneIndex += 1) {
+        existing.laneA[laneIndex] += laneA[laneIndex] * laneInfluence;
+        existing.laneB[laneIndex] += laneB[laneIndex] * laneInfluence;
+      }
+      if (laneInfluence > existing.spectralOwnerInfluence) {
+        existing.spectralOwnerInfluence = laneInfluence;
+        existing.meta = spectralMeta;
       }
     } else {
       targetColorMap.set(key, {
@@ -469,26 +487,36 @@ export function blendColorStack(
         colorG: targetColorSlots[offset + 1] * influence,
         colorB: targetColorSlots[offset + 2] * influence,
         weightNumerator: weight * Math.max(0, amplitude),
-        ownerInfluence: influence,
-        phase: targetSpectralSlots?.[offset] ?? 0,
-        wavelength: targetSpectralSlots?.[offset + 1] ?? 0,
-        harmonicConfidence: targetSpectralSlots?.[offset + 2] ?? 0,
-        accentEnergy: targetSpectralSlots?.[offset + 3] ?? 0,
+        spectralOwnerInfluence: laneInfluence,
+        laneInfluence,
+        laneA: laneA.map((value) => value * laneInfluence),
+        laneB: laneB.map((value) => value * laneInfluence),
+        meta: spectralMeta,
       });
     }
   }
   for (const [key, target] of targetColorMap) {
     const colorDenom = Math.max(target.colorInfluence, 1e-9);
     const amplitudeDenom = Math.max(target.amplitude, 1e-9);
+    const laneDenom = Math.max(target.laneInfluence, 1e-9);
+    const normalizedLanes =
+      target.laneInfluence > 0
+        ? normalizeSpectralLanePacket(
+            target.laneA.map((value) => value / laneDenom),
+            target.laneB.map((value) => value / laneDenom),
+          )
+        : {
+            laneA: [0, 0, 0, 0],
+            laneB: [0, 0, 0, 0],
+          };
     targetColorMap.set(key, {
       r: target.colorR / colorDenom,
       g: target.colorG / colorDenom,
       b: target.colorB / colorDenom,
       weight: target.weightNumerator / amplitudeDenom,
-      phase: target.phase,
-      wavelength: target.wavelength,
-      harmonicConfidence: target.harmonicConfidence,
-      accentEnergy: target.accentEnergy,
+      laneA: normalizedLanes.laneA,
+      laneB: normalizedLanes.laneB,
+      meta: target.laneInfluence > 0 ? target.meta : [0, 0, 0, 0],
     });
   }
 
@@ -506,7 +534,15 @@ export function blendColorStack(
     const current = currentColorMap.get(key);
     const target = targetColorMap.get(key);
     const blendFactor = current && target ? tracking : attack;
-    const base = current ?? { r: 0, g: 0, b: 0, weight: 0 };
+    const base = current ?? {
+      r: 0,
+      g: 0,
+      b: 0,
+      weight: 0,
+      laneA: [0, 0, 0, 0],
+      laneB: [0, 0, 0, 0],
+      meta: [0, 0, 0, 0],
+    };
     const nextWeight = target
       ? base.weight + (target.weight - base.weight) * blendFactor
       : base.weight * release;
@@ -522,10 +558,9 @@ export function blendColorStack(
             ? target.b
             : base.b + (target.b - base.b) * blendFactor,
           weight: nextWeight,
-          phase: target.phase,
-          wavelength: target.wavelength,
-          harmonicConfidence: target.harmonicConfidence,
-          accentEnergy: target.accentEnergy,
+          laneA: target.laneA,
+          laneB: target.laneB,
+          meta: target.meta,
         }
       : trackSpectralOwner
         ? {
@@ -533,20 +568,18 @@ export function blendColorStack(
             g: 0,
             b: 0,
             weight: 0,
-            phase: 0,
-            wavelength: 0,
-            harmonicConfidence: 0,
-            accentEnergy: 0,
+            laneA: [0, 0, 0, 0],
+            laneB: [0, 0, 0, 0],
+            meta: [0, 0, 0, 0],
           }
         : {
             r: base.r,
             g: base.g,
             b: base.b,
             weight: nextWeight,
-            phase: base.phase,
-            wavelength: base.wavelength,
-            harmonicConfidence: base.harmonicConfidence,
-            accentEnergy: base.accentEnergy,
+            laneA: base.laneA,
+            laneB: base.laneB,
+            meta: base.meta,
           };
 
     survivors.push({
@@ -566,22 +599,23 @@ export function blendColorStack(
   survivors.sort((left, right) => left.offset - right.offset);
 
   state.colorSlots.fill(0);
-  state.spectralSlots?.fill(0);
+  state.spectralLaneA?.fill(0);
+  state.spectralLaneB?.fill(0);
+  state.spectralMeta?.fill(0);
   for (const survivor of survivors) {
     state.colorSlots[survivor.offset] = survivor.r;
     state.colorSlots[survivor.offset + 1] = survivor.g;
     state.colorSlots[survivor.offset + 2] = survivor.b;
     state.colorSlots[survivor.offset + 3] = survivor.weight;
-    if (state.spectralSlots) {
-      state.spectralSlots[survivor.offset] = survivor.phase;
-      state.spectralSlots[survivor.offset + 1] = survivor.wavelength;
-      state.spectralSlots[survivor.offset + 2] = survivor.harmonicConfidence;
-      state.spectralSlots[survivor.offset + 3] = survivor.accentEnergy;
-    }
+    writePackedQuad(state.spectralLaneA, survivor.offset, survivor.laneA);
+    writePackedQuad(state.spectralLaneB, survivor.offset, survivor.laneB);
+    writePackedQuad(state.spectralMeta, survivor.offset, survivor.meta);
   }
 
   state.referenceColorSlots.fill(0);
-  state.referenceSpectralSlots?.fill(0);
+  state.referenceSpectralLaneA?.fill(0);
+  state.referenceSpectralLaneB?.fill(0);
+  state.referenceSpectralMeta?.fill(0);
   for (let i = 0; i < slotLimit; i++) {
     const offset = i * 4;
     const key = modeKey(
@@ -595,12 +629,9 @@ export function blendColorStack(
     state.referenceColorSlots[offset + 1] = target.g;
     state.referenceColorSlots[offset + 2] = target.b;
     state.referenceColorSlots[offset + 3] = target.weight;
-    if (state.referenceSpectralSlots) {
-      state.referenceSpectralSlots[offset] = target.phase;
-      state.referenceSpectralSlots[offset + 1] = target.wavelength;
-      state.referenceSpectralSlots[offset + 2] = target.harmonicConfidence;
-      state.referenceSpectralSlots[offset + 3] = target.accentEnergy;
-    }
+    writePackedQuad(state.referenceSpectralLaneA, offset, target.laneA);
+    writePackedQuad(state.referenceSpectralLaneB, offset, target.laneB);
+    writePackedQuad(state.referenceSpectralMeta, offset, target.meta);
   }
 }
 

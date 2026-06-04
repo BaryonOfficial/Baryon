@@ -4,11 +4,13 @@ export const SPECTRAL_CIE_STEP_NM = 5;
 export const SPECTRAL_REFERENCE_OCTAVES = 40;
 export const SPECTRAL_PHASE_DEFAULT = 0;
 export const SPECTRAL_EPSILON = 1e-6;
+export const SPECTRAL_LIGHT_LANE_COUNT = 8;
 
 const SPEED_OF_LIGHT_M_PER_S = 299_792_458;
 const D65_WHITE = Object.freeze({ x: 0.95047, y: 1, z: 1.08883 });
 const CIE_TABLE_MIN_NM = SPECTRAL_VISIBLE_VIOLET_NM;
 const CIE_TABLE_MAX_NM = SPECTRAL_VISIBLE_RED_NM;
+const SPECTRAL_LIGHT_LANE_DEFAULT_SPREAD = 1 / (SPECTRAL_LIGHT_LANE_COUNT * 2.5);
 
 export const SPECTRAL_CIE_1931_2DEG_5NM = Object.freeze([
   { x: 0.0014, y: 0.0, z: 0.0065 },
@@ -118,6 +120,15 @@ function smoothstep(edge0, edge1, value) {
 
 function fract(value) {
   return value - Math.floor(value);
+}
+
+function circularPhaseDistance(left, right) {
+  const delta = Math.abs(fract(left) - fract(right));
+  return Math.min(delta, 1 - delta);
+}
+
+function getSpectralLightLaneCenterPhase(lane) {
+  return (lane + 0.5) / SPECTRAL_LIGHT_LANE_COUNT;
 }
 
 function addXyz(left, right) {
@@ -316,6 +327,49 @@ export function spectralPhaseToWavelengthNm(phase) {
   return (SPEED_OF_LIGHT_M_PER_S / visibleFrequency) * 1e9;
 }
 
+export function createSpectralLightLaneDistribution({
+  phase = SPECTRAL_PHASE_DEFAULT,
+  spread = SPECTRAL_LIGHT_LANE_DEFAULT_SPREAD,
+} = {}) {
+  const laneCount = SPECTRAL_LIGHT_LANE_COUNT;
+  const lanes = new Float32Array(laneCount);
+  const safePhase = fract(Number.isFinite(phase) ? phase : SPECTRAL_PHASE_DEFAULT);
+  const safeSpread = Number.isFinite(spread) ? Math.max(0, spread) : 0;
+
+  if (safeSpread <= SPECTRAL_EPSILON) {
+    let nearestLane = 0;
+    let nearestDistance = Infinity;
+    for (let lane = 0; lane < laneCount; lane += 1) {
+      const lanePhase = getSpectralLightLaneCenterPhase(lane);
+      const distance = circularPhaseDistance(safePhase, lanePhase);
+      if (distance < nearestDistance) {
+        nearestLane = lane;
+        nearestDistance = distance;
+      }
+    }
+    lanes[nearestLane] = 1;
+    return lanes;
+  }
+
+  let total = 0;
+  for (let lane = 0; lane < laneCount; lane += 1) {
+    const lanePhase = getSpectralLightLaneCenterPhase(lane);
+    const distance = circularPhaseDistance(safePhase, lanePhase);
+    const weight = Math.exp(-0.5 * (distance / safeSpread) ** 2);
+    lanes[lane] = weight;
+    total += weight;
+  }
+
+  if (total <= SPECTRAL_EPSILON) {
+    return createSpectralLightLaneDistribution({ phase: safePhase, spread: 0 });
+  }
+
+  for (let lane = 0; lane < laneCount; lane += 1) {
+    lanes[lane] /= total;
+  }
+  return lanes;
+}
+
 export function sampleCie1931(wavelengthNm) {
   const clampedNm = clamp(
     Number.isFinite(wavelengthNm) ? wavelengthNm : CIE_TABLE_MIN_NM,
@@ -388,6 +442,37 @@ export function compressLinearSrgbToGamut(rgb) {
   }
 
   return clampRgb(best);
+}
+
+function createSpectralLightLaneCenter(lane) {
+  const phase = getSpectralLightLaneCenterPhase(lane);
+  const wavelengthNm = spectralPhaseToWavelengthNm(phase);
+  const xyz = sampleCie1931(wavelengthNm);
+  const rgb = normalizeRgbPeak(
+    compressLinearSrgbToGamut(normalizeRgbPeak(xyzToLinearSrgb(xyz))),
+  );
+
+  return Object.freeze({
+    lane,
+    phase,
+    wavelengthNm,
+    xyz: Object.freeze({ ...xyz }),
+    rgb: Object.freeze({ ...rgb }),
+  });
+}
+
+export const SPECTRAL_LIGHT_LANE_CENTERS = Object.freeze(
+  Array.from({ length: SPECTRAL_LIGHT_LANE_COUNT }, (_, lane) =>
+    createSpectralLightLaneCenter(lane),
+  ),
+);
+
+export const SPECTRAL_LIGHT_LANE_DISPLAY_RGB = Object.freeze(
+  SPECTRAL_LIGHT_LANE_CENTERS.map((center) => center.rgb),
+);
+
+export function createSpectralLightLaneDisplayMatrix() {
+  return SPECTRAL_LIGHT_LANE_DISPLAY_RGB;
 }
 
 export function createEqualEnergySpectralLightColor() {

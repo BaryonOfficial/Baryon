@@ -16,7 +16,7 @@ import {
 } from "./modalStack.js";
 import { createModalExcitationState } from "./modalExcitationState.js";
 import {
-  SPECTRAL_VISIBLE_RED_NM,
+  createSpectralLightLaneDistribution,
   createSpectralLightColor,
 } from "./spectralLight.js";
 import {
@@ -960,7 +960,9 @@ function clearLayerBuffers(layerBuffer) {
   layerBuffer.slots.fill(0);
   layerBuffer.referenceSlots.fill(0);
   layerBuffer.colorSlots.fill(0);
-  layerBuffer.spectralSlots?.fill(0);
+  layerBuffer.spectralLaneA?.fill(0);
+  layerBuffer.spectralLaneB?.fill(0);
+  layerBuffer.spectralMeta?.fill(0);
   layerBuffer.phaseSlots?.fill(0);
 }
 
@@ -1094,6 +1096,7 @@ function resolveEntrySpectralLightFrequency(entry) {
 
 function createEntrySpectralLightComponent(entry, colorContext = {}) {
   const colorFrequencyHz = resolveEntrySpectralLightFrequency(entry);
+  const displayEnergy = clamp01(entry.displayProjectionAmplitude ?? 0);
   const strength = clamp01(
     (entry.displayProjectionAmplitude ?? entry.amplitude ?? 0) * 0.58 +
       (entry.currentDriveEnergy ?? entry.driveEnergy ?? 0) * 0.28 +
@@ -1109,17 +1112,32 @@ function createEntrySpectralLightComponent(entry, colorContext = {}) {
       (colorContext.trebleBroadbandEnergy ?? 0) * 0.24 +
       (entry.currentDriveEnergy ?? entry.driveEnergy ?? 0) * 0.14,
   );
+  const spectralSpread = Math.min(
+    0.16,
+    Math.max(
+      0.035,
+      0.035 + accentEnergy * 0.07 + (1 - harmonicConfidence) * 0.035,
+    ),
+  );
   const spectralLight = createSpectralLightColor({
     frequency: colorFrequencyHz,
     strength,
     harmonicConfidence,
     accentEnergy,
   });
+  const laneDistribution = createSpectralLightLaneDistribution({
+    phase: spectralLight.phase,
+    spread: spectralSpread,
+  });
 
   return {
     frequency: entry.naturalFrequencyHz,
     familyFrequency: colorFrequencyHz,
     colorFrequency: colorFrequencyHz,
+    displayEnergy,
+    spectralConfidence: harmonicConfidence,
+    spectralSpread,
+    laneDistribution,
     weight: spectralLight.weight,
     phase: spectralLight.phase,
     wavelengthNm: spectralLight.wavelengthNm,
@@ -1132,8 +1150,12 @@ function createEntrySpectralLightComponent(entry, colorContext = {}) {
 function clearBlendColorState(layerState) {
   layerState.colorSlots?.fill(0);
   layerState.referenceColorSlots?.fill(0);
-  layerState.spectralSlots?.fill(0);
-  layerState.referenceSpectralSlots?.fill(0);
+  layerState.spectralLaneA?.fill(0);
+  layerState.spectralLaneB?.fill(0);
+  layerState.spectralMeta?.fill(0);
+  layerState.referenceSpectralLaneA?.fill(0);
+  layerState.referenceSpectralLaneB?.fill(0);
+  layerState.referenceSpectralMeta?.fill(0);
   layerState._poolCurrentColorMap?.clear();
   layerState._poolTargetColorMap?.clear();
 }
@@ -1159,12 +1181,29 @@ function writeLayerEntry(
   layerBuffer.colorSlots[offset + 1] = spectralLight.color.g;
   layerBuffer.colorSlots[offset + 2] = spectralLight.color.b;
   layerBuffer.colorSlots[offset + 3] = spectralLight.weight;
-  if (layerBuffer.spectralSlots) {
-    layerBuffer.spectralSlots[offset] = spectralLight.phase;
-    layerBuffer.spectralSlots[offset + 1] =
-      spectralLight.wavelengthNm / SPECTRAL_VISIBLE_RED_NM;
-    layerBuffer.spectralSlots[offset + 2] = spectralLight.harmonicConfidence;
-    layerBuffer.spectralSlots[offset + 3] = spectralLight.accentEnergy;
+  if (layerBuffer.spectralLaneA) {
+    layerBuffer.spectralLaneA[offset] = spectralLight.laneDistribution[0] ?? 0;
+    layerBuffer.spectralLaneA[offset + 1] =
+      spectralLight.laneDistribution[1] ?? 0;
+    layerBuffer.spectralLaneA[offset + 2] =
+      spectralLight.laneDistribution[2] ?? 0;
+    layerBuffer.spectralLaneA[offset + 3] =
+      spectralLight.laneDistribution[3] ?? 0;
+  }
+  if (layerBuffer.spectralLaneB) {
+    layerBuffer.spectralLaneB[offset] = spectralLight.laneDistribution[4] ?? 0;
+    layerBuffer.spectralLaneB[offset + 1] =
+      spectralLight.laneDistribution[5] ?? 0;
+    layerBuffer.spectralLaneB[offset + 2] =
+      spectralLight.laneDistribution[6] ?? 0;
+    layerBuffer.spectralLaneB[offset + 3] =
+      spectralLight.laneDistribution[7] ?? 0;
+  }
+  if (layerBuffer.spectralMeta) {
+    layerBuffer.spectralMeta[offset] = spectralLight.phase;
+    layerBuffer.spectralMeta[offset + 1] = spectralLight.spectralSpread;
+    layerBuffer.spectralMeta[offset + 2] = spectralLight.spectralConfidence;
+    layerBuffer.spectralMeta[offset + 3] = spectralLight.displayEnergy;
   }
 }
 
@@ -3073,9 +3112,15 @@ function buildModalProjection({
   const resonantBlendColorSlots = resonantUsesSignalProjection
     ? state.resonantProjection.colorSlots
     : state.displayResonant.colorSlots;
-  const resonantBlendSpectralSlots = resonantUsesSignalProjection
-    ? state.resonantProjection.spectralSlots
-    : state.displayResonant.spectralSlots;
+  const resonantBlendSpectralLaneA = resonantUsesSignalProjection
+    ? state.resonantProjection.spectralLaneA
+    : state.displayResonant.spectralLaneA;
+  const resonantBlendSpectralLaneB = resonantUsesSignalProjection
+    ? state.resonantProjection.spectralLaneB
+    : state.displayResonant.spectralLaneB;
+  const resonantBlendSpectralMeta = resonantUsesSignalProjection
+    ? state.resonantProjection.spectralMeta
+    : state.displayResonant.spectralMeta;
   const projectionNormalizationMetrics = mergeProjectionNormalizationMetrics(
     sourceCoupledProjectionNormalizationMetrics,
     resonantUsesSignalProjection
@@ -3115,7 +3160,9 @@ function buildModalProjection({
     resonantBlendTargetSlots,
     resonantBlendReferenceSlots,
     resonantBlendColorSlots,
-    resonantBlendSpectralSlots,
+    resonantBlendSpectralLaneA,
+    resonantBlendSpectralLaneB,
+    resonantBlendSpectralMeta,
     resonantShiftReleaseOverrides,
     resonantShiftTrackingOverrides,
     projectionNormalizationMetrics,
@@ -4026,7 +4073,9 @@ export function buildModalExcitationStructuralState({
     resonantBlendTargetSlots,
     resonantBlendReferenceSlots,
     resonantBlendColorSlots,
-    resonantBlendSpectralSlots,
+    resonantBlendSpectralLaneA,
+    resonantBlendSpectralLaneB,
+    resonantBlendSpectralMeta,
     resonantShiftReleaseOverrides,
     resonantShiftTrackingOverrides,
     projectionNormalizationMetrics,
@@ -4107,19 +4156,20 @@ export function buildModalExcitationStructuralState({
       state.blendSourceCoupled,
       state.displaySourceCoupled.slots,
       state.displaySourceCoupled.colorSlots,
-      state.displaySourceCoupled.spectralSlots,
       sourceCoupledCapacity,
       {
         attack: EXCITATION_SOURCE_COUPLED_BLEND_ATTACK,
         tracking: EXCITATION_SOURCE_COUPLED_BLEND_TRACKING,
         release: EXCITATION_SOURCE_COUPLED_BLEND_RELEASE,
+        targetSpectralLaneA: state.displaySourceCoupled.spectralLaneA,
+        targetSpectralLaneB: state.displaySourceCoupled.spectralLaneB,
+        targetSpectralMeta: state.displaySourceCoupled.spectralMeta,
       },
     );
     blendColorStack(
       state.blendResonant,
       resonantBlendTargetSlots,
       resonantBlendColorSlots,
-      resonantBlendSpectralSlots,
       resonantCapacity,
       {
         attack: resonantSignalAuthoritative
@@ -4127,6 +4177,9 @@ export function buildModalExcitationStructuralState({
           : EXCITATION_RESONANT_BLEND_ATTACK,
         tracking: EXCITATION_RESONANT_BLEND_TRACKING,
         release: EXCITATION_RESONANT_BLEND_RELEASE,
+        targetSpectralLaneA: resonantBlendSpectralLaneA,
+        targetSpectralLaneB: resonantBlendSpectralLaneB,
+        targetSpectralMeta: resonantBlendSpectralMeta,
       },
     );
   }
@@ -4404,12 +4457,24 @@ export function buildModalExcitationStructuralState({
   const renderResonantColorSlotsSource = renderSuppressedByEnergy
     ? preparedInputs.zeroResonantTargetSlots
     : state.blendResonant.colorSlots;
-  const renderSourceCoupledSpectralSlotsSource = renderSuppressedByEnergy
+  const renderSourceCoupledSpectralLaneASource = renderSuppressedByEnergy
     ? preparedInputs.zeroSourceCoupledTargetSlots
-    : state.blendSourceCoupled.spectralSlots;
-  const renderResonantSpectralSlotsSource = renderSuppressedByEnergy
+    : state.blendSourceCoupled.spectralLaneA;
+  const renderSourceCoupledSpectralLaneBSource = renderSuppressedByEnergy
+    ? preparedInputs.zeroSourceCoupledTargetSlots
+    : state.blendSourceCoupled.spectralLaneB;
+  const renderSourceCoupledSpectralMetaSource = renderSuppressedByEnergy
+    ? preparedInputs.zeroSourceCoupledTargetSlots
+    : state.blendSourceCoupled.spectralMeta;
+  const renderResonantSpectralLaneASource = renderSuppressedByEnergy
     ? preparedInputs.zeroResonantTargetSlots
-    : state.blendResonant.spectralSlots;
+    : state.blendResonant.spectralLaneA;
+  const renderResonantSpectralLaneBSource = renderSuppressedByEnergy
+    ? preparedInputs.zeroResonantTargetSlots
+    : state.blendResonant.spectralLaneB;
+  const renderResonantSpectralMetaSource = renderSuppressedByEnergy
+    ? preparedInputs.zeroResonantTargetSlots
+    : state.blendResonant.spectralMeta;
   const renderSourceCoupledModeCount = renderSuppressedByEnergy
     ? 0
     : blendedSourceCoupledCount;
@@ -4438,11 +4503,23 @@ export function buildModalExcitationStructuralState({
     resonantColorSlotsSource: preparedInputs.shouldBuildSpectralLight
       ? renderResonantColorSlotsSource
       : null,
-    sourceCoupledSpectralSlotsSource: preparedInputs.shouldBuildSpectralLight
-      ? renderSourceCoupledSpectralSlotsSource
+    sourceCoupledSpectralLaneASource: preparedInputs.shouldBuildSpectralLight
+      ? renderSourceCoupledSpectralLaneASource
       : null,
-    resonantSpectralSlotsSource: preparedInputs.shouldBuildSpectralLight
-      ? renderResonantSpectralSlotsSource
+    sourceCoupledSpectralLaneBSource: preparedInputs.shouldBuildSpectralLight
+      ? renderSourceCoupledSpectralLaneBSource
+      : null,
+    sourceCoupledSpectralMetaSource: preparedInputs.shouldBuildSpectralLight
+      ? renderSourceCoupledSpectralMetaSource
+      : null,
+    resonantSpectralLaneASource: preparedInputs.shouldBuildSpectralLight
+      ? renderResonantSpectralLaneASource
+      : null,
+    resonantSpectralLaneBSource: preparedInputs.shouldBuildSpectralLight
+      ? renderResonantSpectralLaneBSource
+      : null,
+    resonantSpectralMetaSource: preparedInputs.shouldBuildSpectralLight
+      ? renderResonantSpectralMetaSource
       : null,
     sourceCoupledStateSource,
     resonantStateSource,

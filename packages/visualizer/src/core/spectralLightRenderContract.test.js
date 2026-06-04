@@ -24,7 +24,7 @@ async function collectFiles(dir) {
 }
 
 describe("Spectral Light render contract", () => {
-  it("keeps pre-lane Spectral unavailable instead of routing through the old RGB cache", async () => {
+  it("routes Spectral through lane radiance instead of the removed RGB cache", async () => {
     const raymarchSetup = await readFile(
       resolve(currentDir, "raymarchSetup.js"),
       "utf8",
@@ -50,14 +50,18 @@ describe("Spectral Light render contract", () => {
       "enqueueRaymarchSpectralLightCacheRebuild",
     );
     expect(raymarchRuntime).not.toContain("spectralLightCache");
-    expect(raymarchRuntime).toContain(
-      'spectralLightImplementationState: "pending-lane-architecture"',
-    );
+    expect(raymarchRuntime).toContain("computeRaymarchSpectralLaneCache");
+    expect(raymarchRuntime).toContain("spectralLaneCache");
+    expect(raymarchRuntime).toContain('"lane-cache-radiance"');
 
     expect(raymarchMaterial).not.toContain("RAYMARCH_SPECTRAL_LIGHT_TUNING");
     expect(raymarchMaterial).not.toContain("cachedSpectralLightEnabled");
     expect(raymarchMaterial).not.toContain("spectralLightCacheTexture");
     expect(raymarchMaterial).not.toContain("spectralLightCausticTexture");
+    expect(raymarchMaterial).toContain("sampleSpectralLaneCacheNode");
+    expect(raymarchMaterial).toContain("projectSpectralLaneRadianceToRgbNode");
+    expect(raymarchMaterial).toContain("spectralLaneTextureA");
+    expect(raymarchMaterial).toContain("spectralLaneStatsTexture");
     expect(raymarchMaterial).not.toContain("colorSum.div");
     expect(raymarchMaterial).not.toContain("FallbackColor");
     expect(raymarchMaterial).not.toContain("tonalFallback");

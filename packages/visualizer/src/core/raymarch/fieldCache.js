@@ -11,6 +11,7 @@ import {
   globalId,
   int,
   instancedArray,
+  log,
   textureStore,
   texture3D,
   uniform,
@@ -26,6 +27,7 @@ import { normalizeCavityGeometry } from "../cavityGeometry.js";
 import { getModalGeometryBackend } from "../modalGeometryBackend.js";
 import { buildRaymarchModalBasisPhaseSignature } from "./phaseSlotSemantics.js";
 import { normalizePhaseRad } from "../../utils/audio/modalPhaseSlots.js";
+import { SPECTRAL_LIGHT_LANE_COUNT } from "../../utils/audio/spectralLight.js";
 
 export const RAYMARCH_FIELD_CACHE_RESOLUTION = 64;
 export const RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION =
@@ -59,6 +61,7 @@ const MODAL_BASIS_SUPPORT_DIAGNOSTIC_SAMPLE_POINTS = Object.freeze([
 ]);
 const MODAL_BASIS_SUPPORT_DIAGNOSTIC_ADAPTIVE_SAMPLE_LIMIT = 8;
 const MODAL_BASIS_SUPPORT_DIAGNOSTIC_SAMPLE_KEY_SCALE = 1e6;
+const SPECTRAL_LANE_EPSILON = 1e-12;
 
 const FNV_OFFSET_BASIS = 2166136261;
 const FNV_PRIME = 16777619;
@@ -1260,6 +1263,31 @@ export function createRaymarchLiveFieldProjectionCache({
   };
 }
 
+export function createRaymarchSpectralLaneCache({
+  resolution = RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
+} = {}) {
+  const normalizedResolution = normalizeModalBasisCacheResolution(resolution);
+  const spectralLaneTextureA = createCacheTexture(normalizedResolution);
+  const spectralLaneTextureB = createCacheTexture(normalizedResolution);
+  const spectralLaneStatsTexture = createCacheTexture(normalizedResolution);
+
+  return {
+    ...createCacheState({
+      resolution: normalizedResolution,
+      texture: spectralLaneTextureA,
+      mode: "spectral-lane-cache",
+    }),
+    semantic: "spectral-lane-cache",
+    spectralLaneTextureA,
+    spectralLaneTextureB,
+    spectralLaneStatsTexture,
+    descriptor: null,
+    activeCacheBuiltAtSec: null,
+    lastComputedAtSec: null,
+    lastComputeReason: "uninitialized",
+  };
+}
+
 export function disposeRaymarchFieldCache(fieldCache) {
   fieldCache?.texture?.dispose?.();
   if (
@@ -1294,6 +1322,12 @@ export function disposeRaymarchLiveFieldProjectionCache(
   disposeRaymarchFieldCache(liveFieldProjectionCache);
   liveFieldProjectionCache?.supportTexture?.dispose?.();
   liveFieldProjectionCache?.phaseInterferenceTexture?.dispose?.();
+}
+
+export function disposeRaymarchSpectralLaneCache(spectralLaneCache) {
+  disposeRaymarchFieldCache(spectralLaneCache);
+  spectralLaneCache?.spectralLaneTextureB?.dispose?.();
+  spectralLaneCache?.spectralLaneStatsTexture?.dispose?.();
 }
 
 function createCacheTexture(width, height = width, depth = width) {
@@ -1960,6 +1994,137 @@ function accumulateLiveSynthesisFieldAtPoint({
   };
 }
 
+/**
+ * @param {{
+ *   point?: [number, number, number] | Float32Array | number[] | null,
+ *   modalFieldSlots?: Float32Array | number[] | null,
+ *   modalFieldSpectralLaneA?: Float32Array | number[] | null,
+ *   modalFieldSpectralLaneB?: Float32Array | number[] | null,
+ *   modalFieldSpectralMeta?: Float32Array | number[] | null,
+ *   activeCount?: number,
+ *   boundaryMode?: string,
+ *   cavityGeometry?: string,
+ *   radius?: number,
+ *   x?: number,
+ *   y?: number,
+ *   z?: number,
+ *   resolution?: number,
+ *   supportExponent?: number,
+ * }} options
+ */
+export function accumulateSpectralLaneRadianceAtPoint({
+  point = null,
+  modalFieldSlots,
+  modalFieldSpectralLaneA,
+  modalFieldSpectralLaneB,
+  modalFieldSpectralMeta,
+  activeCount,
+  boundaryMode,
+  cavityGeometry = "rectangular",
+  radius = 1,
+  x = point?.[0] ?? 0,
+  y = point?.[1] ?? 0,
+  z = point?.[2] ?? 0,
+  resolution = RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
+  supportExponent = 1,
+} = {}) {
+  const lanes = new Float32Array(SPECTRAL_LIGHT_LANE_COUNT);
+  const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
+  const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
+  const normalizedResolution = normalizeModalBasisCacheResolution(resolution);
+  const scale = getModalBasisFieldScale(radius);
+  const geometryBackend = getModalGeometryBackend(normalizedCavityGeometry);
+  const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
+  const gamma =
+    Number.isFinite(supportExponent) && supportExponent > 0
+      ? supportExponent
+      : 1;
+
+  for (let slotIndex = 0; slotIndex < clampedActiveCount; slotIndex += 1) {
+    const offset = slotIndex * 4;
+    const coefficient = Math.max(0, modalFieldSlots?.[offset + 3] ?? 0);
+    if (!(coefficient > 0)) {
+      continue;
+    }
+    if (
+      !isBasisPageSlotRepresentable({
+        slots: modalFieldSlots,
+        offset,
+        resolution: normalizedResolution,
+      })
+    ) {
+      continue;
+    }
+    const displayEnergy = Math.max(0, modalFieldSpectralMeta?.[offset + 3] ?? 0);
+    const spectralConfidence = Math.max(
+      0,
+      modalFieldSpectralMeta?.[offset + 2] ?? 0,
+    );
+    if (!(displayEnergy > 0) || !(spectralConfidence > 0)) {
+      continue;
+    }
+
+    const family = geometryBackend.evaluateMode({
+      u: modalFieldSlots?.[offset] ?? 0,
+      v: modalFieldSlots?.[offset + 1] ?? 0,
+      w: modalFieldSlots?.[offset + 2] ?? 0,
+      x,
+      y,
+      z,
+      scale,
+      boundaryMode: normalizedBoundaryMode,
+    });
+    const support =
+      Math.abs(coefficient * (family?.field ?? 0)) ** gamma *
+      displayEnergy *
+      spectralConfidence;
+    if (!(support > 0)) {
+      continue;
+    }
+
+    lanes[0] += support * Math.max(0, modalFieldSpectralLaneA?.[offset] ?? 0);
+    lanes[1] +=
+      support * Math.max(0, modalFieldSpectralLaneA?.[offset + 1] ?? 0);
+    lanes[2] +=
+      support * Math.max(0, modalFieldSpectralLaneA?.[offset + 2] ?? 0);
+    lanes[3] +=
+      support * Math.max(0, modalFieldSpectralLaneA?.[offset + 3] ?? 0);
+    lanes[4] += support * Math.max(0, modalFieldSpectralLaneB?.[offset] ?? 0);
+    lanes[5] +=
+      support * Math.max(0, modalFieldSpectralLaneB?.[offset + 1] ?? 0);
+    lanes[6] +=
+      support * Math.max(0, modalFieldSpectralLaneB?.[offset + 2] ?? 0);
+    lanes[7] +=
+      support * Math.max(0, modalFieldSpectralLaneB?.[offset + 3] ?? 0);
+  }
+
+  let total = 0;
+  let maxLane = 0;
+  for (let laneIndex = 0; laneIndex < lanes.length; laneIndex += 1) {
+    const value = lanes[laneIndex];
+    total += value;
+    maxLane = Math.max(maxLane, value);
+  }
+  const dominance = total > SPECTRAL_LANE_EPSILON ? maxLane / total : 0;
+  let entropy = 0;
+  if (total > SPECTRAL_LANE_EPSILON) {
+    for (let laneIndex = 0; laneIndex < lanes.length; laneIndex += 1) {
+      const probability = lanes[laneIndex] / total;
+      if (probability > SPECTRAL_LANE_EPSILON) {
+        entropy -= probability * Math.log(probability);
+      }
+    }
+    entropy /= Math.log(SPECTRAL_LIGHT_LANE_COUNT);
+  }
+
+  return {
+    lanes,
+    total,
+    dominance,
+    entropy,
+  };
+}
+
 function getPhaseProjectionWeight(phaseSlots, offset) {
   return clamp01(
     (phaseSlots?.[offset + 2] ?? 0) * (phaseSlots?.[offset + 3] ?? 0),
@@ -2538,6 +2703,194 @@ function createLiveFieldProjectionComputeKernel({
   );
 }
 
+function createSpectralLaneCacheComputeKernel({
+  spectralLaneCache,
+  modalBasisAtlasTexture,
+  modalFieldCoefficientBuffer,
+  modalFieldSpectralLaneABuffer,
+  modalFieldSpectralLaneBBuffer,
+  modalFieldSpectralMetaBuffer,
+  modalFieldCapacity,
+  uniforms,
+}) {
+  const {
+    resolution,
+    spectralLaneTextureA,
+    spectralLaneTextureB,
+    spectralLaneStatsTexture,
+  } = spectralLaneCache;
+  const modalFieldActiveCount = int(uniforms.uModalFieldModeCount);
+  const resolutionUint = uint(resolution);
+  const resolutionFloat = float(resolution);
+  const normalizedCapacity = Math.max(1, Math.round(modalFieldCapacity || 0));
+  const half = float(0.5);
+  const zero = float(0.0);
+  const one = float(1.0);
+  const entropyNorm = one.div(log(float(SPECTRAL_LIGHT_LANE_COUNT)));
+  const laneEpsilon = float(SPECTRAL_LANE_EPSILON);
+  const invResolution = one.div(resolutionFloat);
+  const invCapacity = one.div(float(normalizedCapacity));
+
+  return Fn(() => {
+    const voxelCoord = uvec3(globalId);
+    const inBounds = voxelCoord.x
+      .lessThan(resolutionUint)
+      .and(voxelCoord.y.lessThan(resolutionUint))
+      .and(voxelCoord.z.lessThan(resolutionUint));
+
+    If(inBounds, () => {
+      const basisUv = vec3(
+        float(voxelCoord.x).add(half).mul(invResolution),
+        float(voxelCoord.y).add(half).mul(invResolution),
+        float(voxelCoord.z).add(half).mul(invResolution),
+      );
+      const lane0 = zero.toVar();
+      const lane1 = zero.toVar();
+      const lane2 = zero.toVar();
+      const lane3 = zero.toVar();
+      const lane4 = zero.toVar();
+      const lane5 = zero.toVar();
+      const lane6 = zero.toVar();
+      const lane7 = zero.toVar();
+      const packetConfidenceSum = zero.toVar();
+      const packetSupportSum = zero.toVar();
+
+      Loop(
+        {
+          start: int(0),
+          end: int(normalizedCapacity),
+          type: "int",
+          condition: "<",
+        },
+        ({ i }) => {
+          If(i.greaterThanEqual(modalFieldActiveCount), () => {}).Else(() => {
+            const coefficient = modalFieldCoefficientBuffer.element(i).x;
+            const atlasUv = vec3(
+              basisUv.x,
+              basisUv.y,
+              float(i).add(basisUv.z).mul(invCapacity),
+            );
+            const basisSample = texture3D(modalBasisAtlasTexture).sample(
+              atlasUv,
+            );
+            const laneA = modalFieldSpectralLaneABuffer.element(i);
+            const laneB = modalFieldSpectralLaneBBuffer.element(i);
+            const meta = modalFieldSpectralMetaBuffer.element(i);
+            const spectralConfidence = clamp(meta.z, zero, one);
+            const displayEnergy = max(meta.w, zero);
+            const modalSupport = abs(coefficient).mul(abs(basisSample.x));
+            const spectralSupport = modalSupport
+              .mul(displayEnergy)
+              .mul(spectralConfidence);
+
+            packetConfidenceSum.addAssign(spectralConfidence.mul(modalSupport));
+            packetSupportSum.addAssign(modalSupport);
+            lane0.addAssign(spectralSupport.mul(max(laneA.x, zero)));
+            lane1.addAssign(spectralSupport.mul(max(laneA.y, zero)));
+            lane2.addAssign(spectralSupport.mul(max(laneA.z, zero)));
+            lane3.addAssign(spectralSupport.mul(max(laneA.w, zero)));
+            lane4.addAssign(spectralSupport.mul(max(laneB.x, zero)));
+            lane5.addAssign(spectralSupport.mul(max(laneB.y, zero)));
+            lane6.addAssign(spectralSupport.mul(max(laneB.z, zero)));
+            lane7.addAssign(spectralSupport.mul(max(laneB.w, zero)));
+          });
+        },
+      );
+
+      const total = lane0
+        .add(lane1)
+        .add(lane2)
+        .add(lane3)
+        .add(lane4)
+        .add(lane5)
+        .add(lane6)
+        .add(lane7)
+        .toVar();
+      const maxLaneA = max(max(lane0, lane1), max(lane2, lane3));
+      const maxLaneB = max(max(lane4, lane5), max(lane6, lane7));
+      const maxLane = max(maxLaneA, maxLaneB);
+      const dominance = total
+        .greaterThan(laneEpsilon)
+        .select(maxLane.div(total), zero)
+        .toVar();
+      const invTotal = one.div(max(total, laneEpsilon));
+      const p0 = lane0.mul(invTotal);
+      const p1 = lane1.mul(invTotal);
+      const p2 = lane2.mul(invTotal);
+      const p3 = lane3.mul(invTotal);
+      const p4 = lane4.mul(invTotal);
+      const p5 = lane5.mul(invTotal);
+      const p6 = lane6.mul(invTotal);
+      const p7 = lane7.mul(invTotal);
+      const entropyContribution0 = p0
+        .greaterThan(laneEpsilon)
+        .select(p0.mul(log(p0)), zero);
+      const entropyContribution1 = p1
+        .greaterThan(laneEpsilon)
+        .select(p1.mul(log(p1)), zero);
+      const entropyContribution2 = p2
+        .greaterThan(laneEpsilon)
+        .select(p2.mul(log(p2)), zero);
+      const entropyContribution3 = p3
+        .greaterThan(laneEpsilon)
+        .select(p3.mul(log(p3)), zero);
+      const entropyContribution4 = p4
+        .greaterThan(laneEpsilon)
+        .select(p4.mul(log(p4)), zero);
+      const entropyContribution5 = p5
+        .greaterThan(laneEpsilon)
+        .select(p5.mul(log(p5)), zero);
+      const entropyContribution6 = p6
+        .greaterThan(laneEpsilon)
+        .select(p6.mul(log(p6)), zero);
+      const entropyContribution7 = p7
+        .greaterThan(laneEpsilon)
+        .select(p7.mul(log(p7)), zero);
+      const entropy = total
+        .greaterThan(laneEpsilon)
+        .select(
+          zero
+            .sub(
+              entropyContribution0
+                .add(entropyContribution1)
+                .add(entropyContribution2)
+                .add(entropyContribution3)
+                .add(entropyContribution4)
+                .add(entropyContribution5)
+                .add(entropyContribution6)
+                .add(entropyContribution7),
+            )
+            .mul(entropyNorm),
+          zero,
+        )
+        .toVar();
+      const spectralConfidence =
+        packetSupportSum
+          .greaterThan(laneEpsilon)
+          .select(packetConfidenceSum.div(packetSupportSum), zero);
+
+      textureStore(
+        spectralLaneTextureA,
+        voxelCoord,
+        vec4(lane0, lane1, lane2, lane3),
+      ).toWriteOnly();
+      textureStore(
+        spectralLaneTextureB,
+        voxelCoord,
+        vec4(lane4, lane5, lane6, lane7),
+      ).toWriteOnly();
+      textureStore(
+        spectralLaneStatsTexture,
+        voxelCoord,
+        vec4(total, dominance, entropy, spectralConfidence),
+      ).toWriteOnly();
+    });
+  })().compute(
+    spectralLaneCache.dispatchSize,
+    Array.from(FIELD_CACHE_COMPUTE_WORKGROUP_SIZE),
+  );
+}
+
 function getOrCreateRaymarchModalBasisCacheComputeNode(
   modalBasisCache,
   {
@@ -2645,6 +2998,54 @@ function getOrCreateRaymarchLiveFieldProjectionCacheComputeNode(
   return computeNode;
 }
 
+function getOrCreateRaymarchSpectralLaneCacheComputeNode(
+  spectralLaneCache,
+  {
+    modalBasisAtlasTexture,
+    modalFieldCoefficientBuffer,
+    modalFieldSpectralLaneABuffer,
+    modalFieldSpectralLaneBBuffer,
+    modalFieldSpectralMetaBuffer,
+    modalFieldCapacity,
+    uniforms,
+  },
+) {
+  if (
+    !spectralLaneCache ||
+    !modalBasisAtlasTexture ||
+    !modalFieldCoefficientBuffer ||
+    !modalFieldSpectralLaneABuffer ||
+    !modalFieldSpectralLaneBBuffer ||
+    !modalFieldSpectralMetaBuffer
+  ) {
+    return null;
+  }
+
+  const normalizedModalFieldCapacity =
+    normalizeComputeNodeCapacity(modalFieldCapacity);
+  const nodeKey = [
+    "spectral-lane-cache",
+    `capacity=${normalizedModalFieldCapacity}`,
+  ].join(":");
+  const cachedNode = spectralLaneCache.computeNodesByKey?.[nodeKey];
+  if (cachedNode) {
+    return cachedNode;
+  }
+
+  const computeNode = createSpectralLaneCacheComputeKernel({
+    spectralLaneCache,
+    modalBasisAtlasTexture,
+    modalFieldCoefficientBuffer,
+    modalFieldSpectralLaneABuffer,
+    modalFieldSpectralLaneBBuffer,
+    modalFieldSpectralMetaBuffer,
+    modalFieldCapacity: normalizedModalFieldCapacity,
+    uniforms,
+  });
+  spectralLaneCache.computeNodesByKey[nodeKey] = computeNode;
+  return computeNode;
+}
+
 export function computeRaymarchLiveFieldProjectionCache(
   liveFieldProjectionCache,
   renderer,
@@ -2712,6 +3113,83 @@ export function computeRaymarchLiveFieldProjectionCache(
     : getCacheSchedulerTimeSec({ uniforms });
   liveFieldProjectionCache.lastComputeReason = "frame-current";
   return { computed: true, reason: "frame-current" };
+}
+
+export function computeRaymarchSpectralLaneCache(
+  spectralLaneCache,
+  renderer,
+  {
+    descriptor = null,
+    modalBasisAtlasTexture,
+    modalFieldCoefficientBuffer,
+    modalFieldSpectralLaneABuffer,
+    modalFieldSpectralLaneBBuffer,
+    modalFieldSpectralMetaBuffer,
+    modalFieldCapacity,
+    uniforms,
+    schedulerTimeSec = null,
+  },
+) {
+  if (!spectralLaneCache) {
+    return { computed: false, reason: "unavailable" };
+  }
+
+  if (spectralLaneCache.backend === "unavailable") {
+    spectralLaneCache.active = false;
+    return { computed: false, reason: "unavailable" };
+  }
+
+  if (!renderer || typeof renderer.compute !== "function") {
+    spectralLaneCache.active = false;
+    spectralLaneCache.ready = false;
+    spectralLaneCache.lastError = "renderer-compute-unavailable";
+    spectralLaneCache.lastComputeReason = "renderer-unavailable";
+    return { computed: false, reason: "renderer-unavailable" };
+  }
+
+  const computeNode = getOrCreateRaymarchSpectralLaneCacheComputeNode(
+    spectralLaneCache,
+    {
+      modalBasisAtlasTexture,
+      modalFieldCoefficientBuffer,
+      modalFieldSpectralLaneABuffer,
+      modalFieldSpectralLaneBBuffer,
+      modalFieldSpectralMetaBuffer,
+      modalFieldCapacity,
+      uniforms,
+    },
+  );
+  if (!computeNode) {
+    spectralLaneCache.active = false;
+    spectralLaneCache.ready = false;
+    spectralLaneCache.lastComputeReason = "compute-node-unavailable";
+    return { computed: false, reason: "compute-node-unavailable" };
+  }
+
+  try {
+    renderer.compute(computeNode);
+  } catch (error) {
+    spectralLaneCache.active = false;
+    markCacheBackendUnavailable(
+      spectralLaneCache,
+      error instanceof Error ? error.message : String(error),
+    );
+    spectralLaneCache.lastComputeReason = "compute-failed";
+    return { computed: false, reason: "compute-failed" };
+  }
+
+  spectralLaneCache.active = true;
+  spectralLaneCache.ready = true;
+  spectralLaneCache.backend = "compute";
+  spectralLaneCache.descriptor = descriptor;
+  spectralLaneCache.activeDescriptor = descriptor;
+  spectralLaneCache.lastError = null;
+  spectralLaneCache.activeCacheBuiltAtSec = Number.isFinite(schedulerTimeSec)
+    ? schedulerTimeSec
+    : getCacheSchedulerTimeSec({ uniforms });
+  spectralLaneCache.lastComputedAtSec = spectralLaneCache.activeCacheBuiltAtSec;
+  spectralLaneCache.lastComputeReason = "frame-current";
+  return { computed: true, reason: "frame-current", descriptor };
 }
 
 function dispatchQueuedRaymarchModalBasisCacheRebuild(modalBasisCache) {

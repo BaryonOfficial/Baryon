@@ -1183,6 +1183,9 @@ describe("modal excitation structural state", () => {
       phase: expect.any(Number),
       wavelengthNm: expect.any(Number),
       weight: expect.any(Number),
+      displayEnergy: expect.any(Number),
+      spectralConfidence: expect.any(Number),
+      spectralSpread: expect.any(Number),
       color: {
         r: expect.any(Number),
         g: expect.any(Number),
@@ -1193,6 +1196,16 @@ describe("modal excitation structural state", () => {
     expect(component.phase).toBeLessThan(1);
     expect(component.wavelengthNm).toBeGreaterThanOrEqual(380);
     expect(component.wavelengthNm).toBeLessThanOrEqual(780);
+    expect(component.laneDistribution).toBeInstanceOf(Float32Array);
+    expect(component.laneDistribution).toHaveLength(8);
+    expect(
+      component.laneDistribution.reduce((total, lane) => total + lane, 0),
+    ).toBeCloseTo(1, 6);
+    expect(component.displayEnergy).toBeGreaterThan(0);
+    expect(component.spectralConfidence).toBeGreaterThan(0);
+    expect(component.spectralSpread).toBeGreaterThan(0);
+    expect(component.displayEnergy).not.toBeCloseTo(component.weight, 6);
+    expect(component.spectralConfidence).not.toBeCloseTo(component.weight, 6);
     expect(component).not.toHaveProperty("pitchClass");
   });
 
