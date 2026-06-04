@@ -4157,6 +4157,70 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.volumeMesh.visible).toBe(false);
   });
 
+  it("retains committed Spectral Light through a transient empty color frame", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 1;
+    const renderer = { computeAsync: vi.fn(async () => undefined) };
+    const activeFrame = createActiveFeatureFrame({
+      backboneSlots: new Float32Array([1, 1, 1, 0.4]),
+      detailSlots: new Float32Array([2, 2, 2, 0.3]),
+      backboneColorSlots: new Float32Array([1, 0.1, 0.05, 0.8]),
+      detailColorSlots: new Float32Array([0.05, 0.6, 1, 0.7]),
+    });
+    const emptyColorFrame = createActiveFeatureFrame({
+      backboneSlots: new Float32Array([1, 1, 1, 0.4]),
+      detailSlots: new Float32Array([2, 2, 2, 0.3]),
+      backboneColorSlots: new Float32Array([0, 0, 0, 0]),
+      detailColorSlots: new Float32Array([0, 0, 0, 0]),
+    });
+
+    tickRaymarchRuntime(runtimeState, activeFrame, 1, 1 / 60, renderer);
+    await flushMicrotasks();
+    tickRaymarchRuntime(
+      runtimeState,
+      activeFrame,
+      1 + 1 / 60,
+      1 / 60,
+      renderer,
+    );
+
+    const activeDescriptor = runtimeState.spectralLightCache.activeDescriptor;
+    const activeTexture = runtimeState.spectralLightCache.texture;
+    const activeMaterial = runtimeState.volumeMesh.material;
+    expect(activeDescriptor).toMatchObject({ spectralLightModeCount: 2 });
+    expect(
+      runtimeState.volumeMesh.userData.raymarchSpectralLightEvaluationMode,
+    ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached);
+    expect(runtimeState.volumeMesh.visible).toBe(true);
+    renderer.copyTextureToTexture.mockClear();
+
+    tickRaymarchRuntime(
+      runtimeState,
+      emptyColorFrame,
+      1 + 2 / 60,
+      1 / 60,
+      renderer,
+    );
+
+    expect(
+      runtimeState.currentSpectralLightDescriptor?.spectralLightModeCount,
+    ).toBe(0);
+    expect(runtimeState.spectralLightCache.activeDescriptor).toEqual(
+      activeDescriptor,
+    );
+    expect(runtimeState.spectralLightCache.ready).toBe(true);
+    expect(
+      runtimeState.volumeMesh.userData.raymarchSpectralLightEvaluationMode,
+    ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached);
+    expect(runtimeState.volumeMesh.material).toBe(activeMaterial);
+    expect(runtimeState.volumeMesh.material.spectralLightCacheTexture).toBe(
+      activeTexture,
+    );
+    expect(runtimeState.volumeMesh.visible).toBe(true);
+    expect(renderer.copyTextureToTexture).not.toHaveBeenCalled();
+  });
+
   it("keeps Spectral Light visible for weak but nonzero color confidence", async () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     seedRuntimeCacheNodes(runtimeState);

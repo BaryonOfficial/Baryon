@@ -2193,6 +2193,9 @@ function accumulateSpectralLightLayerAtPoint({
   let ownerB = 0;
   let ownerPhase = 0;
   let ownerWavelength = 0;
+  let colorSumR = 0;
+  let colorSumG = 0;
+  let colorSumB = 0;
   let momentX = 0;
   let momentY = 0;
   const topContributors = [
@@ -2232,6 +2235,9 @@ function accumulateSpectralLightLayerAtPoint({
       b: clamp01(colorSlots?.[offset + 2] ?? 0),
     };
     totalInfluence += localInfluence;
+    colorSumR += localInfluence * contributor.r;
+    colorSumG += localInfluence * contributor.g;
+    colorSumB += localInfluence * contributor.b;
     momentX += localInfluence * Math.cos(phaseRad);
     momentY += localInfluence * Math.sin(phaseRad);
     insertSpectralCausticContributor(topContributors, contributor);
@@ -2272,9 +2278,9 @@ function accumulateSpectralLightLayerAtPoint({
 
   return {
     colorWeight: totalInfluence,
-    colorR: ownerR,
-    colorG: ownerG,
-    colorB: ownerB,
+    colorR: colorSumR / influenceDenominator,
+    colorG: colorSumG / influenceDenominator,
+    colorB: colorSumB / influenceDenominator,
     ownerInfluence,
     momentX,
     momentY,
@@ -2801,10 +2807,9 @@ function createSpectralLightComputeKernel({
         .toVar();
       const scale = float(Math.PI).div(uRadius.max(float(1e-4)));
       const totalInfluence = zero.toVar();
-      const ownerInfluence = zero.toVar();
-      const ownerColorX = zero.toVar();
-      const ownerColorY = zero.toVar();
-      const ownerColorZ = zero.toVar();
+      const colorSumX = zero.toVar();
+      const colorSumY = zero.toVar();
+      const colorSumZ = zero.toVar();
 
       Loop(
         {
@@ -2833,20 +2838,23 @@ function createSpectralLightComputeKernel({
             const localInfluence = zero.toVar();
             localInfluence.addAssign(abs(contribution).mul(colorSlot.w));
             totalInfluence.addAssign(localInfluence);
-            If(localInfluence.greaterThan(ownerInfluence), () => {
-              ownerInfluence.assign(localInfluence);
-              ownerColorX.assign(colorSlot.x);
-              ownerColorY.assign(colorSlot.y);
-              ownerColorZ.assign(colorSlot.z);
-            });
+            colorSumX.addAssign(localInfluence.mul(colorSlot.x));
+            colorSumY.addAssign(localInfluence.mul(colorSlot.y));
+            colorSumZ.addAssign(localInfluence.mul(colorSlot.z));
           });
         },
       );
+      const colorNormalizer = max(totalInfluence, float(1e-9));
 
       textureStore(
         texture,
         uvec3(voxelCoord),
-        vec4(ownerColorX, ownerColorY, ownerColorZ, totalInfluence),
+        vec4(
+          colorSumX.div(colorNormalizer),
+          colorSumY.div(colorNormalizer),
+          colorSumZ.div(colorNormalizer),
+          totalInfluence,
+        ),
       ).toWriteOnly();
     });
   })().compute(

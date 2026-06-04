@@ -2292,11 +2292,35 @@ function deactivateSpectralLightCacheEvaluation(
 
 function resolveRenderableSpectralLightCacheEvaluation(spectralLightCache) {
   if (spectralLightCache?.ready && spectralLightCache?.activeDescriptor) {
+    spectralLightCache.active = true;
     spectralLightCache.mode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached;
     return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached;
   }
   spectralLightCache.mode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off;
   return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off;
+}
+
+function resolveCommittedSpectralLightModeCount(spectralLightCache) {
+  return Math.max(
+    0,
+    Math.floor(
+      spectralLightCache?.activeDescriptor?.spectralLightModeCount ?? 0,
+    ),
+  );
+}
+
+function retainCommittedSpectralLightCacheEvaluation(spectralLightCache) {
+  if (
+    !spectralLightCache?.ready ||
+    !spectralLightCache?.activeDescriptor ||
+    resolveCommittedSpectralLightModeCount(spectralLightCache) <= 0
+  ) {
+    return null;
+  }
+
+  spectralLightCache.active = true;
+  spectralLightCache.mode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached;
+  return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached;
 }
 
 function resolveCacheTextureCopyRegion(cache) {
@@ -2416,6 +2440,11 @@ function resolveSpectralLightEvaluationMode(
   }
 
   if ((spectralLightDescriptor?.spectralLightModeCount ?? 0) <= 0) {
+    const retainedEvaluationMode =
+      retainCommittedSpectralLightCacheEvaluation(spectralLightCache);
+    if (retainedEvaluationMode) {
+      return retainedEvaluationMode;
+    }
     return deactivateSpectralLightCacheEvaluation(spectralLightCache);
   }
 
@@ -3216,8 +3245,9 @@ export function tickRaymarchRuntime(
   const modalBasisDisplayCoherent =
     modalBasisCacheDrawable &&
     isRaymarchModalBasisDisplayCoherent(runtimeState);
-  const spectralLightModeCount =
-    runtimeState.currentSpectralLightDescriptor?.spectralLightModeCount ?? 0;
+  const spectralLightModeCount = resolveCommittedSpectralLightModeCount(
+    runtimeState.spectralLightCache,
+  );
   const spectralLightCacheDrawable =
     !spectralLightEnabled ||
     (spectralLightModeCount > 0 &&

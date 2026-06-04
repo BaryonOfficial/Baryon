@@ -771,7 +771,7 @@ describe("fieldCache", () => {
     expect(dispose).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps Spectral Light cache compute as single-texture owner metadata", () => {
+  it("keeps Spectral Light cache compute as single-texture modal color mixing", () => {
     const source = readFileSync(
       new URL("./fieldCache.js", import.meta.url),
       "utf8",
@@ -794,12 +794,15 @@ describe("fieldCache", () => {
     expect(spectralComputeSource).not.toContain("normalizedColorWeight");
     expect(spectralComputeSource).not.toContain("totalAmplitude");
     expect(spectralComputeSource).not.toContain("localChromaInfluence");
-    expect(spectralComputeSource).not.toContain("chromaNormalizer");
+    expect(spectralComputeSource).toContain("const colorSumX = zero.toVar();");
     expect(spectralComputeSource).toContain(
-      "const ownerInfluence = zero.toVar();",
+      "colorSumX.addAssign(localInfluence.mul(colorSlot.x));",
     );
     expect(spectralComputeSource).toContain(
-      "vec4(ownerColorX, ownerColorY, ownerColorZ, totalInfluence)",
+      "const colorNormalizer = max(totalInfluence, float(1e-9));",
+    );
+    expect(spectralComputeSource).toContain(
+      "colorSumX.div(colorNormalizer)",
     );
     expect(spectralComputeSource).toContain(
       "spectralLightCache.pendingTexture ?? spectralLightCache.texture",
@@ -811,7 +814,7 @@ describe("fieldCache", () => {
       "vec4(causticColorX, causticColorY, causticColorZ, ownerInfluence)",
     );
     expect(spectralComputeSource).not.toContain("momentX.addAssign");
-    expect(spectralComputeSource).not.toContain("colorSumX");
+    expect(spectralComputeSource).not.toContain("ownerColorX");
   });
 
   it("treats phase offsets as live-synthesis state", () => {
@@ -3060,9 +3063,10 @@ describe("fieldCache", () => {
       z: 0,
     });
 
-    expect(sample.r).toBeGreaterThan(0.9);
-    expect(sample.g).toBeLessThan(0.08);
-    expect(sample.b).toBeLessThan(0.08);
+    expect(sample.r).toBeGreaterThan(0.45);
+    expect(sample.r).toBeLessThan(0.55);
+    expect(sample.g).toBeGreaterThan(0.2);
+    expect(sample.b).toBeGreaterThan(0.3);
     expect(sample.causticContributorCount).toBe(3);
     expect(sample.causticDiversity).toBeGreaterThan(0.45);
     expect(sample.causticR).toBeLessThan(0.16);
@@ -4285,7 +4289,7 @@ describe("fieldCache", () => {
     expect(canceling.b).toBeCloseTo(reinforcing.b, 6);
   });
 
-  it("selects a dominant Spectral owner instead of averaging complementary modal colors to gray", () => {
+  it("mixes complementary Spectral modal colors by local influence", () => {
     const sample = evaluateRaymarchSpectralLightCachePoint({
       backboneSlots: new Float32Array([
         1, 1, 1, 0.45, 2, 2, 2, 0.35, 3, 3, 3, 0.32,
@@ -4320,9 +4324,9 @@ describe("fieldCache", () => {
     const expectedColorWeight = 0.45 + 0.35 + 0.32;
 
     expect(sample.colorWeight).toBeCloseTo(expectedColorWeight, 6);
-    expect(sample.r).toBeCloseTo(1, 6);
-    expect(sample.g).toBeCloseTo(0, 6);
-    expect(sample.b).toBeCloseTo(0, 6);
+    expect(sample.r).toBeCloseTo(0.45 / expectedColorWeight, 6);
+    expect(sample.g).toBeCloseTo(0.35 / expectedColorWeight, 6);
+    expect(sample.b).toBeCloseTo(0.32 / expectedColorWeight, 6);
     expect(sample.ownerInfluence).toBeCloseTo(0.45, 6);
     expect(sample.dominance).toBeCloseTo(0.45 / expectedColorWeight, 6);
     expect(sample.coherence).toBeLessThan(0.18);

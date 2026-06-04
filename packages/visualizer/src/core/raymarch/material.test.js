@@ -1273,7 +1273,7 @@ describe("raymarch volume material", () => {
     expect(source).not.toContain("spectralLightUncoloredColor");
   });
 
-  it("uses dominant core ownership in the single staged Spectral texture", () => {
+  it("uses modal-local color mixing in the single staged Spectral texture", () => {
     const source = readFileSync(
       new URL("./fieldCache.js", import.meta.url),
       "utf8",
@@ -1290,23 +1290,29 @@ describe("raymarch volume material", () => {
       source,
       "totalInfluence.addAssign(localInfluence);",
     );
-    const ownerStart = expectSourceIndex(
+    const colorSumStart = expectSourceIndex(
       source,
-      "ownerInfluence.assign(localInfluence);",
+      "colorSumX.addAssign(localInfluence.mul(colorSlot.x));",
     );
-    const ownerTextureStoreStart = expectSourceIndex(
+    const colorNormalizerStart = expectSourceIndex(
       source,
-      "vec4(ownerColorX, ownerColorY, ownerColorZ, totalInfluence)",
+      "const colorNormalizer = max(totalInfluence, float(1e-9));",
+    );
+    const mixedTextureStoreStart = expectSourceIndex(
+      source,
+      "colorSumX.div(colorNormalizer)",
     );
 
     expect(influenceStart).toBeGreaterThan(0);
     expect(totalInfluenceStart).toBeGreaterThan(influenceStart);
-    expect(ownerStart).toBeGreaterThan(totalInfluenceStart);
-    expect(ownerStart).toBeLessThan(ownerTextureStoreStart);
+    expect(colorSumStart).toBeGreaterThan(totalInfluenceStart);
+    expect(colorNormalizerStart).toBeGreaterThan(colorSumStart);
+    expect(mixedTextureStoreStart).toBeGreaterThan(colorNormalizerStart);
     expect(source).toContain(
       "spectralLightCache.pendingTexture ?? spectralLightCache.texture",
     );
     expect(source).not.toContain("vec4(causticColorX");
+    expect(source).not.toContain("ownerColorX");
     expect(source).not.toContain("secondaryInfluence.assign");
     expect(source).not.toContain("tertiaryInfluence.assign");
     expect(source).not.toContain("causticColorPeak");
@@ -1318,7 +1324,6 @@ describe("raymarch volume material", () => {
     expect(materialSource).not.toContain("colorSum.div");
     expect(materialSource).not.toContain("spectralLightCausticTexture");
     expect(materialSource).not.toContain("spectralMomentX");
-    expect(source).not.toContain("colorSumX");
   });
 
   it("routes white emission through the adaptive highlight target only in static color", () => {
