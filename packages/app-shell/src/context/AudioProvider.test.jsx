@@ -47,6 +47,7 @@ import { AudioProvider } from "./AudioProvider.jsx";
 import { useAudio } from "./AudioContext.jsx";
 import { useAudioTransportClock } from "./audioTransportClock.js";
 import * as audioTransportClockModule from "./audioTransportClock.js";
+import { installLocalStorageMock } from "../test/installLocalStorageMock.js";
 
 function AudioHarness({ onValue }) {
   const audio = useAudio();
@@ -88,6 +89,7 @@ describe("AudioProvider source transport gating", () => {
   });
 
   beforeEach(() => {
+    installLocalStorageMock();
     originalActEnvironment = globalThis.IS_REACT_ACT_ENVIRONMENT;
     globalThis.IS_REACT_ACT_ENVIRONMENT = true;
     originalIsSecureContextDescriptor = Object.getOwnPropertyDescriptor(

@@ -2,7 +2,15 @@ packages:
   - "apps/*"
   - "packages/*"
 
+nodeLinker: hoisted
+
+minimumReleaseAgeExclude:
+  - "electron@42.3.3"
+
+blockExoticSubdeps: false
+
 overrides:
+  "extract-zip>yauzl": "3.3.1"
 
 allowBuilds:
   "@ast-grep/cli": true
