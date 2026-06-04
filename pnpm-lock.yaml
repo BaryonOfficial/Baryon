@@ -254,6 +254,9 @@ importers:
       '@baryon/config':
         specifier: workspace:*
         version: link:../config
+      '@types/react':
+        specifier: ^19.2.14
+        version: 19.2.14
       jsdom:
         specifier: ^29.0.1
         version: 29.0.1

@@ -167,7 +167,8 @@ export const RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES = Object.freeze({
   off: "off",
 });
 
-function normalizeSpectralLightEvaluationMode(_spectralLightEvaluationMode) {
+function normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) {
+  void spectralLightEvaluationMode;
   return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off;
 }
 
@@ -536,7 +537,6 @@ function createScatteringNode({
     uModalFieldModeCount,
     uColor,
     uSurfaceColor,
-    uSpectralMix,
     uDensityAbsorption,
     uContourSharpness,
     uRimBloomBias,

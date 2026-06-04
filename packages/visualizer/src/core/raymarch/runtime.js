@@ -2319,6 +2319,7 @@ function resolveSpectralLightEvaluationMode(
   runtimeState,
   { spectralLightEnabled },
 ) {
+  void spectralLightEnabled;
   runtimeState.currentSpectralLightDescriptor = null;
   runtimeState.spectralLightBuffersUploaded = false;
   return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off;

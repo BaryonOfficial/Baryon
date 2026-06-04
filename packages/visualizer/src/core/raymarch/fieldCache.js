@@ -1053,18 +1053,6 @@ function summarizeLiveSynthesisSupportDiagnostics({
   };
 }
 
-function fieldDescriptorBaseEqual(left, right) {
-  if (!left || !right) {
-    return false;
-  }
-
-  return (
-    left.boundaryMode === right.boundaryMode &&
-    left.cavityGeometry === right.cavityGeometry &&
-    left.radius === right.radius
-  );
-}
-
 function modalBasisCacheDescriptorsEqual(left, right) {
   return resolveModalBasisCacheRebuildReason(left, right) == null;
 }
