@@ -5,6 +5,7 @@ import {
   RAYMARCH_DEFAULTS,
   RENDER_DEFAULTS,
   SIMULATION_DEFAULTS,
+  TEST_TONE_SIGNALS,
 } from "../defaults.js";
 import {} from "../utils/audioFeatures.js";
 import {
@@ -902,13 +903,34 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "testToneHz",
       label: "Tone Hz",
       title:
-        "Frequency of the injected test tone in Hz. Try values like 110, 220, or 440 to compare how pitch changes the pattern.",
+        "Frequency of the injected test tone in Hz. Try values like 110, 440, 2000, or 12000 to compare how pitch changes the pattern.",
       defaultValue: AUDIT_DEFAULTS.testToneHz,
       methods: ALL_METHODS,
-      binding: { min: 40, max: 2000, step: 1 },
+      binding: { min: 40, max: 16000, step: 1 },
       targetType: CONTROL_TARGET_TYPES.audit,
       handler: CONTROL_HANDLERS.audit,
       runtimePath: "featureState.audit.settings.testToneHz",
+      status: CONTROL_STATUSES.debugOnly,
+    },
+    CONTROL_GROUPS.diagnostics,
+  ),
+  withControlGroup(
+    {
+      key: "testToneSignal",
+      label: "Tone Signal",
+      title:
+        "Choose whether the injected test signal is a pure sine or an explicit harmonic series.",
+      defaultValue: AUDIT_DEFAULTS.testToneSignal,
+      methods: ALL_METHODS,
+      binding: {
+        options: {
+          "Pure Sine": TEST_TONE_SIGNALS.pureSine,
+          "Harmonic Series": TEST_TONE_SIGNALS.harmonicSeries,
+        },
+      },
+      targetType: CONTROL_TARGET_TYPES.audit,
+      handler: CONTROL_HANDLERS.audit,
+      runtimePath: "featureState.audit.settings.testToneSignal",
       status: CONTROL_STATUSES.debugOnly,
     },
     CONTROL_GROUPS.diagnostics,

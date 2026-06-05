@@ -62,6 +62,7 @@ test("builds the advanced controls presentation layout", () => {
       "cavityGeometry",
       "injectTestTone",
       "testToneHz",
+      "testToneSignal",
       "testToneAmplitude",
       "logEveryFrames",
     ],

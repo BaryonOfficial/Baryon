@@ -18,6 +18,11 @@ export const AUDIO_DEFAULTS = Object.freeze({
   liveInputAcousticIntent: "ambient",
 });
 
+export const TEST_TONE_SIGNALS = Object.freeze({
+  pureSine: "pure-sine",
+  harmonicSeries: "harmonic-series",
+});
+
 export const CAVITY_ACOUSTIC_DEFAULTS = Object.freeze({
   radiusMeters: 12.5,
   soundSpeedMetersPerSecond: 1480,
@@ -95,6 +100,7 @@ export const AUDIT_DEFAULTS = Object.freeze({
   forceWebGLFallbackTest: false,
   lowLoadPlaybackDiagnostics: false,
   injectTestTone: false,
+  testToneSignal: TEST_TONE_SIGNALS.pureSine,
   testToneHz: 440,
   testToneAmplitude: 0.5,
   logEveryFrames: 30,

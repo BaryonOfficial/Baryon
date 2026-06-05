@@ -58,6 +58,9 @@ export const HIGHLIGHT_MASK_START = 0.38;
 export const HIGHLIGHT_MASK_END = 0.96;
 export const BOUNDARY_CONTOUR_ACCENT_WEIGHT = 0.08;
 export const HIGHLIGHT_CONTOUR_ACCENT_WEIGHT = 0.04;
+export const PROJECTED_CAUSTIC_RADIANCE_COMPRESSION = 0.6;
+export const PROJECTED_CAUSTIC_RADIANCE_MIN_SCALE = 0.34;
+export const PROJECTED_CAUSTIC_RADIANCE_RIDGE_AUTHORITY_FLOOR = 0.35;
 export const HOLOGRAPHIC_TINT_RED = 0.62;
 export const HOLOGRAPHIC_TINT_GREEN = 0.94;
 export const HOLOGRAPHIC_TINT_BLUE = 1.0;
@@ -139,7 +142,9 @@ function multiplyColor(color, scalar) {
 }
 
 function clampColor(color, minValue, maxValue) {
-  return color.map((channel) => Math.min(maxValue, Math.max(minValue, channel)));
+  return color.map((channel) =>
+    Math.min(maxValue, Math.max(minValue, channel)),
+  );
 }
 
 function addColor(left, right) {
@@ -1278,20 +1283,73 @@ export function deriveCrowdedWhiteEmissionMix({
   };
 }
 
+export function deriveProjectedCausticRadianceDensity({
+  causticVisibleDensity = 0,
+  ridgeConcentration = 0,
+  causticRidgeAuthority = 0,
+  photographicFocus = 0,
+  structuralConcentration = 0,
+  modalCoefficientEnergy = 0,
+  compression = PROJECTED_CAUSTIC_RADIANCE_COMPRESSION,
+} = {}) {
+  const physicalDensity = Math.max(0, safeFinite(causticVisibleDensity, 0));
+  const ridgeEvidence = clamp01(
+    Math.max(ridgeConcentration, causticRidgeAuthority),
+  );
+  const focusEvidence = clamp01(
+    clamp01(photographicFocus) * mix(0.35, 1, ridgeEvidence),
+  );
+  const localEvidence = clamp01(Math.max(ridgeEvidence, focusEvidence));
+  const structuralDrive = clamp01(
+    Math.max(structuralConcentration, modalCoefficientEnergy),
+  );
+  const radianceAuthority = clamp01(
+    Math.max(
+      localEvidence * structuralDrive,
+      ridgeEvidence * PROJECTED_CAUSTIC_RADIANCE_RIDGE_AUTHORITY_FLOOR,
+    ),
+  );
+  const authorityResponse = Math.sqrt(radianceAuthority);
+  const compressionGate = (1 - radianceAuthority) ** 2;
+  const compressedDensity =
+    physicalDensity /
+    (1 +
+      physicalDensity *
+        Math.max(0, safeFinite(compression, 0)) *
+        compressionGate);
+  const radianceScale = mix(
+    PROJECTED_CAUSTIC_RADIANCE_MIN_SCALE,
+    1,
+    authorityResponse,
+  );
+  const projectedCausticRadianceDensity = compressedDensity * radianceScale;
+
+  return {
+    projectedCausticRadianceDensity,
+    projectedCausticRadianceAuthority: radianceAuthority,
+    projectedCausticAuthorityResponse: authorityResponse,
+    projectedCausticLocalEvidence: localEvidence,
+    projectedCausticCompressedDensity: compressedDensity,
+    projectedCausticRadianceScale: radianceScale,
+  };
+}
+
 export function deriveMaterialRadianceTransfer({
   stabilizedDensity = 0,
   causticVisibleDensity = 0,
+  projectedCausticRadianceDensity = 0,
   volumeColor = [1, 1, 1],
   surfaceColor = [1, 1, 1],
   structureAwareEmissionGain = 1,
 } = {}) {
-  const safeStabilizedDensity = Math.max(
-    0,
-    safeFinite(stabilizedDensity, 0),
-  );
+  const safeStabilizedDensity = Math.max(0, safeFinite(stabilizedDensity, 0));
   const safeCausticVisibleDensity = Math.max(
     0,
     safeFinite(causticVisibleDensity, 0),
+  );
+  const safeProjectedCausticRadianceDensity = Math.max(
+    0,
+    safeFinite(projectedCausticRadianceDensity, 0),
   );
   const safeGain = Math.max(0, safeFinite(structureAwareEmissionGain, 1));
   const resolvedVolumeColor = readVector3(volumeColor, [1, 1, 1]);
@@ -1307,7 +1365,7 @@ export function deriveMaterialRadianceTransfer({
   );
   const causticRadianceContribution = multiplyColor(
     resolvedVolumeColor,
-    safeCausticVisibleDensity,
+    safeProjectedCausticRadianceDensity,
   );
   const supportRevealContribution = multiplyColor(
     supportRevealColor,

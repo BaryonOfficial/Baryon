@@ -1046,8 +1046,7 @@ export function buildPerformanceHudSnapshot(runtimeDiagnostics) {
     requestedRenderScale: render?.requestedRenderScale ?? 1,
     renderScale: render?.renderScale ?? 1,
     traaEnabled: render?.traaEnabled ?? false,
-    smaaEnabled:
-      runtimeDiagnostics?.postProcess?.smaaGraphEnabled ?? false,
+    smaaEnabled: runtimeDiagnostics?.postProcess?.smaaGraphEnabled ?? false,
     temporalHistoryBlend:
       runtimeDiagnostics?.postProcess?.temporalHistoryBlend ?? null,
     requestedRaymarchSteps: render?.requestedRaymarchSteps ?? 0,
@@ -1177,6 +1176,13 @@ export function getEffectiveRenderScale(
 }
 
 function readRaymarchFrameModeCount(featureFrame) {
+  if (
+    featureFrame?.modalDescriptor?.fieldAuthority &&
+    featureFrame.modalDescriptor.fieldAuthority !== "complete"
+  ) {
+    return 0;
+  }
+
   return Math.max(
     0,
     Math.round(
@@ -1714,6 +1720,11 @@ export function resolveRaymarchGovernorFrameInputs(
   runtimeState,
   effectiveFrame,
 ) {
+  const modalDescriptorFieldAuthority =
+    effectiveFrame?.modalDescriptor?.fieldAuthority;
+  const modalDescriptorRenderAuthoritative =
+    !modalDescriptorFieldAuthority ||
+    modalDescriptorFieldAuthority === "complete";
   const modalFieldCapacity =
     raymarchPerformanceGovernor.inferModalFieldCapacity(
       runtimeState?.modalFieldCapacity,
@@ -1723,19 +1734,23 @@ export function resolveRaymarchGovernorFrameInputs(
     modalFieldCapacity,
     resolveProductBasisAtlasPageCapacity(runtimeState),
   );
-  const uploadedModeCount = Math.max(
-    0,
-    Math.round(runtimeState?.uniforms?.uModalFieldModeCount?.value ?? 0),
-  );
-  const descriptorModeCount = Math.max(
-    0,
-    Math.round(
-      effectiveFrame?.activeModeCount ??
-        effectiveFrame?.activeModalFieldModeCount ??
-        effectiveFrame?.modalDescriptor?.counts?.modalFieldModeCount ??
+  const uploadedModeCount = modalDescriptorRenderAuthoritative
+    ? Math.max(
         0,
-    ),
-  );
+        Math.round(runtimeState?.uniforms?.uModalFieldModeCount?.value ?? 0),
+      )
+    : 0;
+  const descriptorModeCount = modalDescriptorRenderAuthoritative
+    ? Math.max(
+        0,
+        Math.round(
+          effectiveFrame?.activeModeCount ??
+            effectiveFrame?.activeModalFieldModeCount ??
+            effectiveFrame?.modalDescriptor?.counts?.modalFieldModeCount ??
+            0,
+        ),
+      )
+    : 0;
   const activeModeCount =
     uploadedModeCount > 0 ? uploadedModeCount : descriptorModeCount;
 

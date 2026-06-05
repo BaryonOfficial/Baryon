@@ -907,6 +907,7 @@ describe("control runtime sync", () => {
     controls.lowLoadPlaybackDiagnostics = true;
     controls.injectTestTone = true;
     controls.testToneHz = 660;
+    controls.testToneSignal = "harmonic-series";
     controls.testToneAmplitude = 0.75;
     controls.logEveryFrames = 12;
 
@@ -918,6 +919,7 @@ describe("control runtime sync", () => {
           forceWebGLFallbackTest: false,
           lowLoadPlaybackDiagnostics: false,
           injectTestTone: false,
+          testToneSignal: "pure-sine",
           testToneHz: 440,
           testToneAmplitude: 0.5,
           logEveryFrames: 30,
@@ -932,12 +934,14 @@ describe("control runtime sync", () => {
     expect(featureState.audit.settings.lowLoadPlaybackDiagnostics).toBe(true);
     expect(featureState.audit.settings.injectTestTone).toBe(true);
     expect(featureState.audit.settings.testToneHz).toBe(660);
+    expect(featureState.audit.settings.testToneSignal).toBe("harmonic-series");
     expect(featureState.audit.settings.testToneAmplitude).toBe(0.75);
     expect(featureState.audit.settings.logEveryFrames).toBe(12);
     expect(snapshot.enabled).toBe(true);
     expect(snapshot.forceWebGLFallbackTest).toBe(true);
     expect(snapshot.lowLoadPlaybackDiagnostics).toBe(true);
     expect(snapshot.testToneHz).toBe(660);
+    expect(snapshot.testToneSignal).toBe("harmonic-series");
     expect(snapshot.testToneAmplitude).toBe(0.75);
     expect(snapshot.logEveryFrames).toBe(12);
   });

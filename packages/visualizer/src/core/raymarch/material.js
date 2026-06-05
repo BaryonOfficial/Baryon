@@ -17,6 +17,7 @@ import {
   modelWorldMatrixInverse,
   screenCoordinate,
   smoothstep,
+  sqrt,
   int,
   texture3D,
   vec3,
@@ -115,6 +116,9 @@ import {
   PHOTOGRAPHIC_SHELL_RIM_START,
   PHOTOGRAPHIC_SHELL_SUPPRESSION_END,
   PHOTOGRAPHIC_SHELL_SUPPRESSION_START,
+  PROJECTED_CAUSTIC_RADIANCE_COMPRESSION,
+  PROJECTED_CAUSTIC_RADIANCE_MIN_SCALE,
+  PROJECTED_CAUSTIC_RADIANCE_RIDGE_AUTHORITY_FLOOR,
   SIGNED_INTERFERENCE_BODY_AUTHORITY_END,
   SIGNED_INTERFERENCE_BODY_AUTHORITY_POWER,
   SIGNED_INTERFERENCE_BODY_AUTHORITY_START,
@@ -1481,11 +1485,65 @@ function createScatteringNode({
       const causticVisibleDensity = physicalCausticDensity.mul(
         causticVisibilityGate,
       );
+      const projectedCausticRidgeEvidence = clamp(
+        max(ridgeConcentration, causticRidgeAuthority),
+        float(0.0),
+        float(1.0),
+      );
+      const projectedCausticFocusEvidence = clamp(
+        photographicFocus.mul(
+          float(0.35).add(projectedCausticRidgeEvidence.mul(float(0.65))),
+        ),
+        float(0.0),
+        float(1.0),
+      );
+      const projectedCausticLocalEvidence = clamp(
+        max(projectedCausticRidgeEvidence, projectedCausticFocusEvidence),
+        float(0.0),
+        float(1.0),
+      );
+      const projectedCausticStructuralDrive = clamp(
+        max(structuralConcentration, modalCoefficientEnergy),
+        float(0.0),
+        float(1.0),
+      );
+      const projectedCausticRadianceAuthority = clamp(
+        max(
+          projectedCausticLocalEvidence.mul(projectedCausticStructuralDrive),
+          projectedCausticRidgeEvidence.mul(
+            float(PROJECTED_CAUSTIC_RADIANCE_RIDGE_AUTHORITY_FLOOR),
+          ),
+        ),
+        float(0.0),
+        float(1.0),
+      );
+      const projectedCausticAuthorityResponse = sqrt(
+        /** @type {any} */ (projectedCausticRadianceAuthority),
+      );
+      const projectedCausticCompressionBase = float(1.0).sub(
+        projectedCausticRadianceAuthority,
+      );
+      const projectedCausticCompressionGate =
+        projectedCausticCompressionBase.mul(projectedCausticCompressionBase);
+      const projectedCausticCompressedDensity = causticVisibleDensity.div(
+        float(1.0).add(
+          causticVisibleDensity
+            .mul(float(PROJECTED_CAUSTIC_RADIANCE_COMPRESSION))
+            .mul(projectedCausticCompressionGate),
+        ),
+      );
+      const projectedCausticRadianceScale = float(
+        PROJECTED_CAUSTIC_RADIANCE_MIN_SCALE,
+      )
+        .mul(float(1.0).sub(projectedCausticAuthorityResponse))
+        .add(projectedCausticAuthorityResponse);
+      const projectedCausticRadianceDensity =
+        projectedCausticCompressedDensity.mul(projectedCausticRadianceScale);
       const observedContourSupport = observationTransfer.observedContourSupport;
       const highlightMask = smoothstep(
         float(HIGHLIGHT_MASK_START),
         float(HIGHLIGHT_MASK_END),
-        /** @type {any} */ (causticVisibleDensity),
+        /** @type {any} */ (projectedCausticRadianceDensity),
       );
       const stabilizedDensity = observationDensity;
       const contourMix = smoothstep(
@@ -1561,7 +1619,7 @@ function createScatteringNode({
       // Beat pulse briefly expands the bright hot core — "bloom from within" on hits
       // hotCoreStartDynamic is pre-computed above the Fn.
       // excitationGate prevents weak tonal fields from triggering the white laser core.
-      const hotCoreInput = photographicLaserCausticRadiance
+      const hotCoreInput = projectedCausticRadianceDensity
         .mul(contourMix.mul(float(0.14)).add(float(0.76)))
         .mul(float(0.72).add(photographicFocus.mul(float(0.28))))
         .add(highlightMask.mul(float(0.12)))
@@ -1723,7 +1781,7 @@ function createScatteringNode({
           spectralLaneStatsTexture,
         });
         const spectralCausticRadianceContribution =
-          spectralLaneTransfer.rgb.mul(causticVisibleDensity);
+          spectralLaneTransfer.rgb.mul(projectedCausticRadianceDensity);
         const spectralSupportRevealContribution = spectralLaneTransfer.rgb
           .mul(float(PHOTOGRAPHIC_DARK_BODY_RATIO))
           .mul(supportRevealDensity);
@@ -1733,7 +1791,7 @@ function createScatteringNode({
           .add(spectralSupportRevealContribution);
       }
       const causticRadianceContribution = volumeColor.mul(
-        causticVisibleDensity,
+        projectedCausticRadianceDensity,
       );
       const supportRevealContribution =
         supportRevealColor.mul(supportRevealDensity);

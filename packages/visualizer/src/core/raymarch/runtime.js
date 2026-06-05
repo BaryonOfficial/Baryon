@@ -43,6 +43,7 @@ import {
 import {
   deriveLiveSynthesisCancellationSuppression,
   deriveMaterialRadianceTransfer,
+  deriveProjectedCausticRadianceDensity,
   deriveHolographicColorMix,
   deriveHolographicFresnel,
 } from "./fieldShaping.js";
@@ -903,6 +904,9 @@ function buildRuntimeModalDescriptor(
   const slotViews = sourceDescriptor?.slotViews ?? {};
   const basisAtlasPageCapacity =
     resolveProductBasisAtlasPageCapacity(runtimeState);
+  if (sourceDescriptor?.fieldAuthority === "bandwidth-limited") {
+    return sourceDescriptor;
+  }
   if (slotViews.modalFieldSlots) {
     if (
       sourceDescriptor?.diagnostics?.basisAtlasPageCapacity ===
@@ -930,7 +934,10 @@ function buildRuntimeModalDescriptor(
     modalFieldSpectralMeta: featureFrame?.modalFieldSpectralMeta,
     modalFieldMetadataSlots: featureFrame?.modalFieldMetadataSlots,
     activeModalFieldModeCount:
-      sourceDescriptor?.counts?.validModeCount ?? featureFrame?.activeModeCount,
+      sourceDescriptor?.fieldAuthority === "complete"
+        ? (sourceDescriptor?.counts?.validModeCount ??
+          featureFrame?.activeModeCount)
+        : featureFrame?.activeModeCount,
     observerCandidateModeCount:
       sourceDescriptor?.diagnostics?.observerCandidateModeCount ??
       featureFrame?.debug?.excitedModeCount ??
@@ -943,6 +950,14 @@ function buildRuntimeModalDescriptor(
       sourceDescriptor?.diagnostics?.phaseAuthorityModeCount ??
       featureFrame?.debug?.modalPhaseCoherentFieldModeCount ??
       featureFrame?.debug?.structuralMetrics?.modalPhaseCoherentFieldModeCount,
+    overBandwidthRejectedModeCount:
+      sourceDescriptor?.diagnostics?.overBandwidthRejectedModeCount,
+    overBandwidthRejectedModalEnergy:
+      sourceDescriptor?.diagnostics?.overBandwidthRejectedModalEnergy,
+    overBandwidthMaxRequestedModeIndex:
+      sourceDescriptor?.diagnostics?.overBandwidthMaxRequestedModeIndex,
+    overBandwidthMaxRequestedMode:
+      sourceDescriptor?.diagnostics?.overBandwidthMaxRequestedMode,
     modeIdentityRetentionRatio:
       sourceDescriptor?.diagnostics?.modeIdentityRetentionRatio ??
       featureFrame?.debug?.modalPersistence ??
@@ -950,11 +965,12 @@ function buildRuntimeModalDescriptor(
   });
 }
 
-function blockOverflowedModalDescriptor(
+function blockNonAuthoritativeModalDescriptor(
   runtimeState,
   featureFrame,
   fieldState,
   renderAuthority,
+  reason = "descriptor-overflow",
 ) {
   clearBufferNode(runtimeState.modalFieldModeBuffer);
   clearBufferNode(runtimeState.modalFieldColorBuffer);
@@ -979,8 +995,9 @@ function blockOverflowedModalDescriptor(
   resetCacheActivity(runtimeState.modalBasisCache);
   resetCacheActivity(runtimeState.liveFieldProjectionCache);
   resetCacheActivity(runtimeState.spectralLaneCache);
+  blockModalBasisCacheForDescriptor(runtimeState.modalBasisCache, reason);
   resetModalBasisCacheRuntimeDiagnostics(runtimeState.modalBasisCache);
-  deactivateLiveFieldProjectionCache(runtimeState, "descriptor-overflow");
+  deactivateLiveFieldProjectionCache(runtimeState, reason);
   setIfChanged(runtimeState.uniforms.uModalFieldModeCount, 0);
   setIfChanged(runtimeState.uniforms.uTotalSlotAmplitude, 0);
   setRaymarchStructuralProjectionUniforms(runtimeState.uniforms, null);
@@ -1417,9 +1434,20 @@ function buildRaymarchDebugSnapshot(
   const materialProbeObservationDensity = clamp01(
     diagnosticVisibility.observationTransfer?.observationDensity ?? avgDensity,
   );
+  const materialProbeProjectedCausticRadiance =
+    deriveProjectedCausticRadianceDensity({
+      causticVisibleDensity: materialProbeCausticVisibleDensity,
+      ridgeConcentration: diagnosticObservationAnchor,
+      causticRidgeAuthority: diagnosticObservationAnchor,
+      photographicFocus: diagnosticObservationAnchor,
+      structuralConcentration: structuralProjection.structuralConcentration,
+      modalCoefficientEnergy,
+    });
   const materialProbeTransfer = deriveMaterialRadianceTransfer({
     stabilizedDensity: materialProbeObservationDensity,
     causticVisibleDensity: materialProbeCausticVisibleDensity,
+    projectedCausticRadianceDensity:
+      materialProbeProjectedCausticRadiance.projectedCausticRadianceDensity,
     volumeColor: readUniformColorRgb(
       runtimeState.uniforms.uColor,
       [0.34, 0.62, 0.9],
@@ -1563,6 +1591,8 @@ function buildRaymarchDebugSnapshot(
     avgDensity,
     materialProbePhysicalDensity,
     materialProbeCausticVisibleDensity,
+    materialProbeProjectedCausticRadianceDensity:
+      materialProbeProjectedCausticRadiance.projectedCausticRadianceDensity,
     materialProbeSupportVisibleDensity,
     materialProbePreBloomRadiance,
     materialProbePostBloomRisk,
@@ -3354,6 +3384,21 @@ export function tickRaymarchRuntime(
       runtimeState.fieldStateValues.idle,
   );
 
+  if (
+    !renderAuthority &&
+    featureFrame?.modalDescriptor?.fieldAuthority === "bandwidth-limited"
+  ) {
+    runtimeState.currentModalDescriptor = featureFrame.modalDescriptor;
+    blockNonAuthoritativeModalDescriptor(
+      runtimeState,
+      featureFrame,
+      fieldState,
+      renderAuthority,
+      "bandwidth-limited",
+    );
+    return;
+  }
+
   if (!renderAuthority) {
     if (runtimeState.renderAuthorityResetApplied !== true) {
       resetRenderAuthorityState(runtimeState);
@@ -3427,12 +3472,17 @@ export function tickRaymarchRuntime(
     },
   );
   runtimeState.currentModalDescriptor = modalDescriptor;
-  if (modalDescriptor.diagnostics.descriptorOverflow) {
-    blockOverflowedModalDescriptor(
+  if (modalDescriptor.fieldAuthority !== "complete") {
+    const blockedReason =
+      modalDescriptor.fieldAuthority === "bandwidth-limited"
+        ? "bandwidth-limited"
+        : "descriptor-overflow";
+    blockNonAuthoritativeModalDescriptor(
       runtimeState,
       featureFrame,
       fieldState,
       renderAuthority,
+      blockedReason,
     );
     return;
   }

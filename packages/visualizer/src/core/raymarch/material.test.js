@@ -302,15 +302,23 @@ describe("raymarch volume material", () => {
     expect(cancellationContract.forbiddenConsumers).toEqual(
       expect.arrayContaining(["whiteEmissionFieldAuthority"]),
     );
-    expect(highlightBlock).toContain("causticVisibleDensity");
+    expect(highlightBlock).toContain("projectedCausticRadianceDensity");
+    expect(highlightBlock).not.toContain("causticVisibleDensity");
     expect(highlightBlock).not.toContain("visibleDensity");
     expect(highlightBlock).not.toContain("observedDensityFloor");
-    expect(hotCoreBlock).toContain("photographicLaserCausticRadiance");
+    expect(hotCoreBlock).toContain("projectedCausticRadianceDensity");
+    expect(hotCoreBlock).toContain("highlightMask");
+    expect(hotCoreBlock).not.toContain("photographicLaserCausticRadiance");
+    expect(hotCoreBlock).not.toContain("causticVisibleDensity");
     expect(hotCoreBlock).not.toContain("visibleDensity");
     expect(hotCoreBlock).not.toContain("observedDensityFloor");
     expect(whiteEmissionBlock).not.toContain("cancellationSuppression");
     expect(finalTransferBlock).toContain(
       "causticRadianceContribution = volumeColor.mul",
+    );
+    expect(finalTransferBlock).toContain("projectedCausticRadianceDensity");
+    expect(finalTransferBlock).not.toContain(
+      "volumeColor.mul(\n        causticVisibleDensity",
     );
     expect(finalTransferBlock).toContain("supportRevealContribution =");
     expect(finalTransferBlock).toContain(
@@ -781,6 +789,10 @@ describe("raymarch volume material", () => {
       source,
       "const causticVisibleDensity = physicalCausticDensity.mul(",
     );
+    const projectedCausticRadianceStart = expectSourceIndex(
+      source,
+      "const projectedCausticRadianceDensity =",
+    );
     const highlightMaskStart = expectSourceIndex(
       source,
       "const highlightMask = smoothstep(",
@@ -809,8 +821,12 @@ describe("raymarch volume material", () => {
     expect(densityBlock).toContain("photographicBodyContribution");
     expect(observationDensityStart).toBeGreaterThan(observationTransferStart);
     expect(causticVisibleDensityStart).toBeGreaterThan(observationDensityStart);
-    expect(highlightMaskStart).toBeGreaterThan(causticVisibleDensityStart);
-    expect(highlightMaskBlock).toContain("causticVisibleDensity");
+    expect(projectedCausticRadianceStart).toBeGreaterThan(
+      causticVisibleDensityStart,
+    );
+    expect(highlightMaskStart).toBeGreaterThan(projectedCausticRadianceStart);
+    expect(highlightMaskBlock).toContain("projectedCausticRadianceDensity");
+    expect(highlightMaskBlock).not.toContain("causticVisibleDensity");
     expect(highlightMaskBlock).not.toContain("visibleDensity");
     expect(highlightMaskBlock).not.toContain("observedDensityFloor");
   });
@@ -849,6 +865,10 @@ describe("raymarch volume material", () => {
     expect(causticRadianceStart).toBeGreaterThan(supportDensityStart);
     expect(supportRevealStart).toBeGreaterThan(causticRadianceStart);
     expect(finalRadianceBlock).toContain("supportRevealColor");
+    expect(finalRadianceBlock).toContain("projectedCausticRadianceDensity");
+    expect(finalRadianceBlock).not.toContain(
+      "volumeColor.mul(\n        causticVisibleDensity",
+    );
     expect(finalRadianceBlock).toContain(
       "causticRadianceContribution\n        .mul(structureAwareEmissionGain)\n        .add(supportRevealContribution)",
     );
@@ -1000,7 +1020,8 @@ describe("raymarch volume material", () => {
       "const spectralCausticRadianceContribution =",
     );
     expect(spectralBranch).toContain("spectralLaneTransfer.rgb");
-    expect(spectralBranch).toContain(".mul(causticVisibleDensity)");
+    expect(spectralBranch).toContain(".mul(projectedCausticRadianceDensity)");
+    expect(spectralBranch).not.toContain(".mul(causticVisibleDensity)");
     expect(spectralBranch).not.toContain(
       ".mul(spectralLaneTransfer.authority)",
     );
@@ -1672,7 +1693,8 @@ describe("raymarch volume material", () => {
     expect(fringeBlock).not.toContain(
       "photographicFocus.mul(causticVisibility)",
     );
-    expect(hotCoreBlock).toContain("photographicLaserCausticRadiance");
+    expect(hotCoreBlock).toContain("projectedCausticRadianceDensity");
+    expect(hotCoreBlock).not.toContain("photographicLaserCausticRadiance");
     expect(hotCoreBlock).toContain("photographicFocus");
     expect(holographicBlock).toContain("photographicFringeWeight");
     expect(holographicBlock).toContain("photographicFocus");

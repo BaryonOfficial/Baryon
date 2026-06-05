@@ -7,6 +7,7 @@ import {
   sumUploadedModalFieldAmplitude,
   tickRaymarchRuntime as tickRaymarchRuntimeBase,
 } from "./runtime.js";
+import { buildCanonicalFullModalDescriptor } from "../modalDescriptor.js";
 import {
   buildRaymarchModalBasisCacheDescriptor,
   createRaymarchLiveFieldProjectionCache,
@@ -762,6 +763,111 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.debugSnapshot.liveSynthesisRawGradientEnvelope).toBe(0);
   });
 
+  it("preserves bandwidth-limited authority when runtime rebuilds descriptor capacity", () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    runtimeState.modalFieldCapacity = 8;
+    runtimeState.modalFieldPhaseCapacity = 8;
+    runtimeState.modalBasisCache.basisCapacity = 8;
+    runtimeState.modalFieldModeBuffer.value.array = makeModeSlots(2, () => 0.6);
+    runtimeState.modalFieldColorBuffer.value.array = makeColorSlots(2);
+    runtimeState.modalFieldPhaseBuffer.value.array = makePhaseSlots(2);
+    runtimeState.modalBasisCache.contributingBasisPageModeCount = 2;
+    runtimeState.modalBasisCache.contributingRawModalEnergy = 0.8;
+    runtimeState.uniforms.uModalFieldModeCount.value = 2;
+    runtimeState.uniforms.uTotalSlotAmplitude.value = 1.2;
+    runtimeState.uniforms.uStructuralProjectionDrive.value = 0.7;
+    runtimeState.uniforms.uStructuralProjectionConcentration.value = 0.5;
+    const sourceDescriptor = buildCanonicalFullModalDescriptor({
+      maxTotalModes: 8,
+      basisAtlasPageCapacity: 4,
+      modalFieldSlots: makeModeSlots(2, () => 0.2),
+      activeModalFieldModeCount: 2,
+      overBandwidthRejectedModeCount: 4,
+      overBandwidthRejectedModalEnergy: 0.6,
+      overBandwidthMaxRequestedModeIndex: 184,
+      overBandwidthMaxRequestedMode: [56, 64, 184],
+    });
+    const featureFrame = createActiveFeatureFrame({
+      backboneSlots: makeModeSlots(2, () => 0.2),
+      backboneColorSlots: makeColorSlots(2),
+      backbonePhaseSlots: makePhaseSlots(2),
+      detailSlots: new Float32Array(),
+      detailColorSlots: new Float32Array(),
+      detailPhaseSlots: new Float32Array(),
+      activeBackboneModeCount: 2,
+      activeDetailModeCount: 0,
+      activeModeCount: 2,
+      modalDescriptor: sourceDescriptor,
+    });
+
+    tickRaymarchRuntime(runtimeState, featureFrame, 1, 1 / 60);
+
+    expect(runtimeState.currentModalDescriptor.fieldAuthority).toBe(
+      "bandwidth-limited",
+    );
+    expect(
+      runtimeState.currentModalDescriptor.diagnostics.overBandwidthDominant,
+    ).toBe(true);
+    expect(
+      runtimeState.currentModalDescriptor.diagnostics
+        .overBandwidthRejectedModeCount,
+    ).toBe(4);
+    expect(
+      runtimeState.currentModalDescriptor.diagnostics
+        .overBandwidthMaxRequestedModeIndex,
+    ).toBe(184);
+    expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(0);
+    expect(runtimeState.uniforms.uTotalSlotAmplitude.value).toBe(0);
+    expect(runtimeState.uniforms.uStructuralProjectionDrive.value).toBe(0);
+    expect(runtimeState.uniforms.uStructuralProjectionConcentration.value).toBe(
+      0,
+    );
+    expect(runtimeState.volumeMesh.visible).toBe(false);
+    expect(runtimeState.debugSnapshot.modalDescriptorFieldAuthority).toBe(
+      "bandwidth-limited",
+    );
+    expect(runtimeState.modalBasisCache.lastRebuildReason).toBe(
+      "bandwidth-limited",
+    );
+  });
+
+  it("rebuilds blocked overflow descriptors when runtime capacity can represent them", () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    runtimeState.modalFieldCapacity = 8;
+    runtimeState.modalFieldPhaseCapacity = 8;
+    runtimeState.modalBasisCache.basisCapacity = 8;
+    const sourceSlots = makeModeSlots(3, () => 0.35);
+    const sourceDescriptor = buildCanonicalFullModalDescriptor({
+      maxTotalModes: 2,
+      basisAtlasPageCapacity: 4,
+      modalFieldSlots: sourceSlots,
+      activeModalFieldModeCount: 3,
+    });
+    expect(sourceDescriptor.fieldAuthority).toBe("blocked");
+
+    const featureFrame = createActiveFeatureFrame({
+      backboneSlots: sourceSlots,
+      backboneColorSlots: makeColorSlots(3),
+      backbonePhaseSlots: makePhaseSlots(3),
+      detailSlots: new Float32Array(),
+      detailColorSlots: new Float32Array(),
+      detailPhaseSlots: new Float32Array(),
+      activeBackboneModeCount: 3,
+      activeDetailModeCount: 0,
+      activeModeCount: 3,
+      modalDescriptor: sourceDescriptor,
+    });
+
+    tickRaymarchRuntime(runtimeState, featureFrame, 1, 1 / 60);
+
+    expect(runtimeState.currentModalDescriptor.fieldAuthority).toBe("complete");
+    expect(
+      runtimeState.currentModalDescriptor.diagnostics.descriptorOverflow,
+    ).toBe(false);
+    expect(runtimeState.currentModalDescriptor.counts.validModeCount).toBe(3);
+    expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(3);
+  });
+
   it("creates a self-lit scene root with weak symmetric fill lights", () => {
     const volumeMesh = new THREE.Mesh();
     const idleOverlay = new THREE.LineSegments();
@@ -989,6 +1095,17 @@ describe("tickRaymarchRuntime", () => {
       runtimeState.debugSnapshot.raymarchDebug
         .materialProbeCausticVisibleDensity,
     ).toBeGreaterThan(0);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug
+        .materialProbeProjectedCausticRadianceDensity,
+    ).toBeGreaterThan(0);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug
+        .materialProbeProjectedCausticRadianceDensity,
+    ).toBeLessThanOrEqual(
+      runtimeState.debugSnapshot.raymarchDebug
+        .materialProbeCausticVisibleDensity,
+    );
     expect(
       runtimeState.debugSnapshot.raymarchDebug
         .materialProbeSupportVisibleDensity,
@@ -3410,8 +3527,9 @@ describe("tickRaymarchRuntime", () => {
     runtimeState.modalFieldPhaseBuffer.value.needsUpdate = false;
     tickRaymarchRuntime(runtimeState, neutralFrame, 2, 1 / 60);
 
-    expect(Array.from(runtimeState.modalFieldPhaseBuffer.value.array.slice(0, 4)))
-      .toEqual([0, 0, 0, 0]);
+    expect(
+      Array.from(runtimeState.modalFieldPhaseBuffer.value.array.slice(0, 4)),
+    ).toEqual([0, 0, 0, 0]);
     expect(runtimeState.modalFieldPhaseBuffer.value.needsUpdate).toBe(true);
     expect(runtimeState.modalBasisPhaseAuthorityModeCount).toBe(0);
     expect(runtimeState.uniforms.uPhaseEvaluationTime.value).toBe(0);

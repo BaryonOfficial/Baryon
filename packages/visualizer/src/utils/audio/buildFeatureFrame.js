@@ -7,6 +7,7 @@ import {
   DEFAULT_FFT_SIZE,
   DEFAULT_SAMPLE_RATE,
   SIMULATION_DEFAULTS,
+  TEST_TONE_SIGNALS,
 } from "../../defaults.js";
 import {
   DEFAULT_EFFECTIVE_CAVITY_GEOMETRY,
@@ -102,6 +103,12 @@ const {
 } = AUDIO_ANALYSIS_POLICY;
 const TEST_TONE_HARMONIC_ATTENUATION =
   SPECTRAL_MODAL_POLICY.harmonicAttenuation;
+
+function resolveTestToneSignal(value) {
+  return value === TEST_TONE_SIGNALS.harmonicSeries
+    ? TEST_TONE_SIGNALS.harmonicSeries
+    : TEST_TONE_SIGNALS.pureSine;
+}
 
 const LIVE_INPUT_NORMALIZATION_TARGET = 0.65;
 const LIVE_INPUT_NORMALIZATION_MAX_GAIN = 6.0;
@@ -1561,6 +1568,10 @@ function buildEmptyModalFieldDescriptor({
     confidenceWeightedCandidateEnergy: 0,
     modalObservationCoherence: 0,
     modalObservationConfidence: 0,
+    overBandwidthRejectedModeCount: 0,
+    overBandwidthRejectedModalEnergy: 0,
+    overBandwidthMaxRequestedModeIndex: 0,
+    overBandwidthMaxRequestedMode: [0, 0, 0],
     modeIdentityRetentionRatio: 0,
   });
 }
@@ -1756,8 +1767,11 @@ export function applyTestToneToSnapshot({
     0,
     Math.min(1, auditSettings.testToneAmplitude),
   );
+  const testToneSignal = resolveTestToneSignal(auditSettings.testToneSignal);
+  const injectHarmonicSeries =
+    testToneSignal === TEST_TONE_SIGNALS.harmonicSeries;
   const nyquist = sampleRate * 0.5;
-  const writeHarmonicBin = (frequency, amplitude) => {
+  const writeToneBin = (frequency, amplitude) => {
     const index = frequencyToBinIndex(
       frequency,
       fftMagnitudes.length,
@@ -1782,21 +1796,23 @@ export function applyTestToneToSnapshot({
     Math.min(nyquist, auditSettings.testToneHz),
   );
 
-  writeHarmonicBin(baseFrequency, testBinAmplitude);
+  writeToneBin(baseFrequency, testBinAmplitude);
 
-  for (let i = 0; i < HARMONIC_ORDERS.length; i++) {
-    const harmonicFrequency = baseFrequency * HARMONIC_ORDERS[i];
-    if (i === 0 || harmonicFrequency <= 0 || harmonicFrequency > nyquist) {
-      continue;
+  if (injectHarmonicSeries) {
+    for (let i = 0; i < HARMONIC_ORDERS.length; i++) {
+      const harmonicFrequency = baseFrequency * HARMONIC_ORDERS[i];
+      if (i === 0 || harmonicFrequency <= 0 || harmonicFrequency > nyquist) {
+        continue;
+      }
+
+      const attenuation =
+        TEST_TONE_HARMONIC_ATTENUATION[i] ??
+        TEST_TONE_HARMONIC_ATTENUATION[
+          TEST_TONE_HARMONIC_ATTENUATION.length - 1
+        ] ??
+        1;
+      writeToneBin(harmonicFrequency, testBinAmplitude * attenuation);
     }
-
-    const attenuation =
-      TEST_TONE_HARMONIC_ATTENUATION[i] ??
-      TEST_TONE_HARMONIC_ATTENUATION[
-        TEST_TONE_HARMONIC_ATTENUATION.length - 1
-      ] ??
-      1;
-    writeHarmonicBin(harmonicFrequency, testBinAmplitude * attenuation);
   }
 
   const timeData = new Float32Array(fftSize);
@@ -1804,25 +1820,30 @@ export function applyTestToneToSnapshot({
     for (let index = 0; index < timeData.length; index += 1) {
       const t = index / sampleRate;
       let sample = 0;
-      for (
-        let harmonicIndex = 0;
-        harmonicIndex < HARMONIC_ORDERS.length;
-        harmonicIndex += 1
-      ) {
-        const harmonicOrder = HARMONIC_ORDERS[harmonicIndex];
-        const harmonicFrequency = baseFrequency * harmonicOrder;
-        if (harmonicFrequency <= 0 || harmonicFrequency > nyquist) {
-          continue;
+      if (injectHarmonicSeries) {
+        for (
+          let harmonicIndex = 0;
+          harmonicIndex < HARMONIC_ORDERS.length;
+          harmonicIndex += 1
+        ) {
+          const harmonicOrder = HARMONIC_ORDERS[harmonicIndex];
+          const harmonicFrequency = baseFrequency * harmonicOrder;
+          if (harmonicFrequency <= 0 || harmonicFrequency > nyquist) {
+            continue;
+          }
+          const attenuation =
+            TEST_TONE_HARMONIC_ATTENUATION[harmonicIndex] ??
+            TEST_TONE_HARMONIC_ATTENUATION[
+              TEST_TONE_HARMONIC_ATTENUATION.length - 1
+            ] ??
+            1;
+          sample +=
+            Math.sin(
+              2 * Math.PI * harmonicFrequency * t + harmonicIndex * 0.37,
+            ) * attenuation;
         }
-        const attenuation =
-          TEST_TONE_HARMONIC_ATTENUATION[harmonicIndex] ??
-          TEST_TONE_HARMONIC_ATTENUATION[
-            TEST_TONE_HARMONIC_ATTENUATION.length - 1
-          ] ??
-          1;
-        sample +=
-          Math.sin(2 * Math.PI * harmonicFrequency * t + harmonicIndex * 0.37) *
-          attenuation;
+      } else {
+        sample = Math.sin(2 * Math.PI * baseFrequency * t);
       }
       timeData[index] = sample;
     }
@@ -4160,6 +4181,9 @@ function buildFeatureAnalysisInputsSignature({
     calibrationVersion,
     shouldBuildSpectralLight,
     injectTestTone: Boolean(resolvedAuditSettings?.injectTestTone),
+    testToneSignal: resolveTestToneSignal(
+      resolvedAuditSettings?.testToneSignal,
+    ),
     freezeModeSlots: Boolean(resolvedAuditSettings?.freezeModeSlots),
     liveInputNoiseGateActive,
     liveInputHardSilenceActive,
@@ -6946,6 +6970,17 @@ export function composeAudioFeatureFrame({
       modalFieldContinuityDiagnostics.confidenceWeightedCandidateEnergy,
     modalObservationCoherence,
     modalObservationConfidence,
+    overBandwidthRejectedModeCount:
+      modalFieldContinuityDiagnostics.overBandwidthRejectedModeCount,
+    overBandwidthRejectedModalEnergy:
+      modalFieldContinuityDiagnostics.overBandwidthRejectedModalEnergy,
+    overBandwidthMaxRequestedModeIndex:
+      modalFieldContinuityDiagnostics.overBandwidthMaxRequestedModeIndex,
+    overBandwidthMaxRequestedMode: /** @type {[number, number, number]} */ ([
+      modalFieldContinuityDiagnostics.overBandwidthMaxRequestedMode?.[0] ?? 0,
+      modalFieldContinuityDiagnostics.overBandwidthMaxRequestedMode?.[1] ?? 0,
+      modalFieldContinuityDiagnostics.overBandwidthMaxRequestedMode?.[2] ?? 0,
+    ]),
     upstreamSourceCoupledModeCount:
       continuityDescriptorSources.activeSourceCoupledModeCount,
     upstreamResonantModeCount:
@@ -6962,6 +6997,11 @@ export function composeAudioFeatureFrame({
     modeIdentityRetentionRatio:
       modalFieldContinuityDiagnostics.modeIdentityRetentionRatio,
   });
+  const modalDescriptorRenderAuthoritative =
+    modalDescriptor.fieldAuthority === "complete";
+  const renderActiveModeCount = modalDescriptorRenderAuthoritative
+    ? activeModeCount
+    : 0;
 
   let debug = analysisResult.debug;
   if (!debug) {
@@ -7086,7 +7126,7 @@ export function composeAudioFeatureFrame({
     micActive: analysisResult.micActive,
     averageAmplitude: analysisResult.avgAmplitude,
     fftMagnitudes: analysisResult.fftMagnitudes,
-    activeModeCount,
+    activeModeCount: renderActiveModeCount,
     activeModalFieldModeCount: modalDescriptor.counts.modalFieldModeCount,
     modalFieldContinuity: modalFieldContinuityDiagnostics,
     modalDescriptor,

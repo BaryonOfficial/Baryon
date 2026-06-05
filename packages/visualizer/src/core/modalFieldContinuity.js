@@ -886,6 +886,44 @@ function summarizeCandidateConfidence(candidateEntries) {
   };
 }
 
+function summarizeOverBandwidthCandidates(candidateEntries, maxBasisModeOrder) {
+  const maxRepresentableModeIndex =
+    normalizeMaxBasisModeOrder(maxBasisModeOrder);
+  let overBandwidthRejectedModeCount = 0;
+  let overBandwidthRejectedModalEnergy = 0;
+  let overBandwidthMaxRequestedModeIndex = 0;
+  let overBandwidthMaxRequestedMode = [0, 0, 0];
+
+  for (const entry of candidateEntries) {
+    const modeOrder = getModeOrder(entry?.mode);
+    if (modeOrder <= maxRepresentableModeIndex) {
+      continue;
+    }
+
+    overBandwidthRejectedModeCount += 1;
+    overBandwidthRejectedModalEnergy += Math.max(
+      0,
+      entry?.storedEnergySnapshot ?? 0,
+    );
+    if (modeOrder > overBandwidthMaxRequestedModeIndex) {
+      overBandwidthMaxRequestedModeIndex = modeOrder;
+      overBandwidthMaxRequestedMode = [
+        normalizeModeCoordinate(entry?.mode?.[0]),
+        normalizeModeCoordinate(entry?.mode?.[1]),
+        normalizeModeCoordinate(entry?.mode?.[2]),
+      ];
+    }
+  }
+
+  return {
+    maxRepresentableModeIndex,
+    overBandwidthRejectedModeCount,
+    overBandwidthRejectedModalEnergy,
+    overBandwidthMaxRequestedModeIndex,
+    overBandwidthMaxRequestedMode,
+  };
+}
+
 function buildDiagnostics({
   state,
   candidateEntries,
@@ -894,6 +932,7 @@ function buildDiagnostics({
   admittedModeKeys,
   removedModeKeys,
   reset,
+  maxBasisModeOrder,
   modalGeometryBackend,
 }) {
   const outputModeKeys = outputRecords.map((record) => record.modeKey);
@@ -924,8 +963,11 @@ function buildDiagnostics({
   );
   const visibleTopology = summarizeRecords(outputRecords, modalGeometryBackend);
   const tailTopology = summarizeRecords(tailEntries, modalGeometryBackend);
-  const candidateConfidence =
-    summarizeCandidateConfidence(candidateEntries);
+  const candidateConfidence = summarizeCandidateConfidence(candidateEntries);
+  const overBandwidthCandidates = summarizeOverBandwidthCandidates(
+    candidateEntries,
+    maxBasisModeOrder,
+  );
 
   return {
     reset,
@@ -934,6 +976,7 @@ function buildDiagnostics({
     eligibilityEpoch: state.eligibilityEpoch,
     candidateModeCount: candidateEntries.length,
     ...candidateConfidence,
+    ...overBandwidthCandidates,
     candidateShellCount: candidateTopology.shellCount,
     candidateSpatialFamilyCount: candidateTopology.familyCount,
     candidateDuplicateShellPressure: candidateTopology.duplicateShellPressure,
@@ -960,6 +1003,7 @@ function buildDormantResult({
   candidateEntries,
   previousVisibleKeys,
   reset,
+  maxBasisModeOrder,
   modalGeometryBackend,
 }) {
   const activeModeCount = countBasisEligibleRecords(state);
@@ -967,8 +1011,11 @@ function buildDormantResult({
     candidateEntries,
     modalGeometryBackend,
   );
-  const candidateConfidence =
-    summarizeCandidateConfidence(candidateEntries);
+  const candidateConfidence = summarizeCandidateConfidence(candidateEntries);
+  const overBandwidthCandidates = summarizeOverBandwidthCandidates(
+    candidateEntries,
+    maxBasisModeOrder,
+  );
   const diagnostics = {
     reset,
     dormant: true,
@@ -976,6 +1023,7 @@ function buildDormantResult({
     eligibilityEpoch: state.eligibilityEpoch,
     candidateModeCount: candidateEntries.length,
     ...candidateConfidence,
+    ...overBandwidthCandidates,
     candidateShellCount: candidateTopology.shellCount,
     candidateSpatialFamilyCount: candidateTopology.familyCount,
     candidateDuplicateShellPressure: candidateTopology.duplicateShellPressure,
@@ -1067,6 +1115,7 @@ export function updateModalFieldContinuity(
       candidateEntries,
       previousVisibleKeys,
       reset,
+      maxBasisModeOrder,
       modalGeometryBackend,
     });
   }
@@ -1219,6 +1268,7 @@ export function updateModalFieldContinuity(
     admittedModeKeys,
     removedModeKeys,
     reset,
+    maxBasisModeOrder,
     modalGeometryBackend,
   });
   state.diagnostics = diagnostics;

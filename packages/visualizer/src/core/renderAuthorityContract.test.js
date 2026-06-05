@@ -39,6 +39,28 @@ describe("render authority contract", () => {
     expect(allowsAudioMotion(heldFrame)).toBe(false);
   });
 
+  it("rejects bandwidth-limited descriptors as render authority", () => {
+    const bandwidthLimitedFrame = {
+      fieldState: "active",
+      renderAuthority: true,
+      energyLedger: {
+        projectedRenderEnergy: 0.08,
+        renderEnergyEpsilon: 1e-6,
+      },
+      modalDescriptor: {
+        fieldAuthority: "bandwidth-limited",
+      },
+      sourceEvidence: {
+        sourceBoundaryState: "live",
+        currentSourceEvidence: true,
+      },
+    };
+
+    expect(hasRenderAuthority(bandwidthLimitedFrame)).toBe(false);
+    expect(allowsAudioMotion(bandwidthLimitedFrame)).toBe(false);
+    expect(allowsCurrentLiveRenderFrame(bandwidthLimitedFrame)).toBe(false);
+  });
+
   it("does not allow legacy render-shaped fields without the ledger", () => {
     expect(
       hasRenderAuthority({

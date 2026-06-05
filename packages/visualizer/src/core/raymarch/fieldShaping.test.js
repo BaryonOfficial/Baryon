@@ -51,6 +51,7 @@ import {
   deriveHotCoreMix,
   deriveMaterialRadianceTransfer,
   derivePhotographicCymaticProbe,
+  deriveProjectedCausticRadianceDensity,
   deriveWhiteEmissionFieldAuthority,
   deriveModalCrowdingDensity,
   deriveShellWeight,
@@ -2173,6 +2174,7 @@ describe("field shaping", () => {
     const mixed = deriveMaterialRadianceTransfer({
       stabilizedDensity: 0.5,
       causticVisibleDensity: 0.2,
+      projectedCausticRadianceDensity: 0.12,
       volumeColor: [0.9, 0.7, 0.4],
       surfaceColor: [1, 0.8, 0.5],
       structureAwareEmissionGain: 0.8,
@@ -2183,13 +2185,60 @@ describe("field shaping", () => {
     expect(supportOnly.supportRevealContribution[0]).toBeGreaterThan(0);
     expect(supportOnly.finalRadiance[0]).toBeLessThan(0.3);
     expect(mixed.supportVisibleDensity).toBeCloseTo(0.3);
-    expect(mixed.causticRadianceContribution[0]).toBeCloseTo(0.18);
+    expect(mixed.causticRadianceContribution[0]).toBeCloseTo(0.108);
     expect(mixed.supportRevealContribution[0]).toBeCloseTo(
       1 * PHOTOGRAPHIC_DARK_BODY_RATIO * 0.3,
     );
     expect(mixed.finalRadiance[0]).toBeCloseTo(
-      0.9 * 0.2 * 0.8 + 1 * PHOTOGRAPHIC_DARK_BODY_RATIO * 0.3,
+      0.9 * 0.12 * 0.8 + 1 * PHOTOGRAPHIC_DARK_BODY_RATIO * 0.3,
     );
+  });
+
+  it("projects physical caustic density into bounded radiance authority", () => {
+    const broad = deriveProjectedCausticRadianceDensity({
+      causticVisibleDensity: 0.6,
+      ridgeConcentration: 0,
+      causticRidgeAuthority: 0,
+      photographicFocus: 0,
+      structuralConcentration: 0.1,
+      modalCoefficientEnergy: 0.1,
+    });
+    const normal = deriveProjectedCausticRadianceDensity({
+      causticVisibleDensity: 0.56,
+      ridgeConcentration: 0.45,
+      causticRidgeAuthority: 0.35,
+      photographicFocus: 0.45,
+      structuralConcentration: 0.5,
+      modalCoefficientEnergy: 0.5,
+    });
+    const focused = deriveProjectedCausticRadianceDensity({
+      causticVisibleDensity: 0.6,
+      ridgeConcentration: 0.92,
+      causticRidgeAuthority: 0.86,
+      photographicFocus: 0.82,
+      structuralConcentration: 0.7,
+      modalCoefficientEnergy: 0.48,
+    });
+    const denseTail = deriveProjectedCausticRadianceDensity({
+      causticVisibleDensity: 1,
+      ridgeConcentration: 0.15,
+      causticRidgeAuthority: 0.08,
+      photographicFocus: 0.1,
+      structuralConcentration: 0.5,
+      modalCoefficientEnergy: 0.5,
+    });
+
+    expect(broad.projectedCausticRadianceDensity).toBeGreaterThan(0);
+    expect(broad.projectedCausticRadianceDensity).toBeLessThan(0.25);
+    expect(normal.projectedCausticRadianceDensity).toBeGreaterThan(0.28);
+    expect(normal.projectedCausticRadianceDensity).toBeLessThan(0.56);
+    expect(focused.projectedCausticRadianceDensity).toBeGreaterThan(
+      normal.projectedCausticRadianceDensity,
+    );
+    expect(focused.projectedCausticRadianceDensity).toBeGreaterThan(0.38);
+    expect(focused.projectedCausticRadianceDensity).toBeLessThan(0.6);
+    expect(denseTail.projectedCausticRadianceDensity).toBeLessThan(0.38);
+    expect(focused.projectedCausticRadianceAuthority).toBeGreaterThan(0.5);
   });
 
   it("keeps support reveal outside structure-aware emission gain", () => {
@@ -2210,6 +2259,7 @@ describe("field shaping", () => {
     const caustic = deriveMaterialRadianceTransfer({
       stabilizedDensity: 0.6,
       causticVisibleDensity: 0.4,
+      projectedCausticRadianceDensity: 0.16,
       volumeColor: [1, 0.8, 0.6],
       surfaceColor: [0.8, 0.9, 1],
       structureAwareEmissionGain: 0.5,
@@ -2219,7 +2269,7 @@ describe("field shaping", () => {
     expect(dimmed.causticRadianceContribution).toEqual([0, 0, 0]);
     expect(dimmed.finalRadiance).toEqual(undimmed.finalRadiance);
     expect(caustic.finalRadiance[0]).toBeCloseTo(
-      1 * 0.4 * 0.5 + 0.8 * PHOTOGRAPHIC_DARK_BODY_RATIO * 0.2,
+      1 * 0.16 * 0.5 + 0.8 * PHOTOGRAPHIC_DARK_BODY_RATIO * 0.2,
     );
   });
 

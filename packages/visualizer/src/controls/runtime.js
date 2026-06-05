@@ -159,6 +159,7 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "lowLoadPlaybackDiagnostics",
     "injectTestTone",
     "testToneHz",
+    "testToneSignal",
     "testToneAmplitude",
     "logEveryFrames",
   ]),
@@ -540,6 +541,7 @@ export function applyAuditControls(featureState, controls) {
     lowLoadPlaybackDiagnostics: controls.lowLoadPlaybackDiagnostics,
     injectTestTone: controls.injectTestTone,
     testToneHz: controls.testToneHz,
+    testToneSignal: controls.testToneSignal,
     testToneAmplitude: controls.testToneAmplitude,
     logEveryFrames: controls.logEveryFrames,
   });

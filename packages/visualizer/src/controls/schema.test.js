@@ -75,6 +75,7 @@ const EXPECTED_CONTROL_KEYS = [
   "cavityGeometry",
   "injectTestTone",
   "testToneHz",
+  "testToneSignal",
   "testToneAmplitude",
   "logEveryFrames",
 ];
@@ -359,6 +360,7 @@ describe("control schema", () => {
       "cavityGeometry",
       "injectTestTone",
       "testToneHz",
+      "testToneSignal",
       "testToneAmplitude",
       "logEveryFrames",
     ]);

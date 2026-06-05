@@ -49,4 +49,29 @@ describe("temporal reprojection policy", () => {
       reason: "reprojectable-scene-motion",
     });
   });
+
+  it("bypasses history for bandwidth-limited modal descriptors", () => {
+    expect(
+      resolveTemporalReprojectionPolicy({
+        visualizationMethod: RAYMARCH_METHOD,
+        featureFrame: {
+          fieldState: "active",
+          energyLedger: {
+            projectedRenderEnergy: 0.05,
+            renderEnergyEpsilon: 1e-6,
+          },
+          modalDescriptor: {
+            fieldAuthority: "bandwidth-limited",
+          },
+        },
+        sceneSnapshot: {
+          angularVelocity: 0.1,
+        },
+      }),
+    ).toMatchObject({
+      accumulateHistory: false,
+      shouldBypassHistory: true,
+      reason: "render-not-authorized",
+    });
+  });
 });

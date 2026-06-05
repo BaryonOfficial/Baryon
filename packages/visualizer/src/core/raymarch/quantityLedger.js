@@ -757,14 +757,13 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
     lane: "caustic",
     represents: "physical caustic/laser density before observation floor",
     transforms: ["laser caustic radiance", "density absorption", "active mask"],
-    allowedConsumers: [
-      "causticVisibleDensity",
+    allowedConsumers: ["causticVisibleDensity", "diagnostics"],
+    forbiddenConsumers: [
       "highlightMask",
       "hotCoreInput",
       "causticRadianceContribution",
-      "diagnostics",
+      "supportRevealContribution",
     ],
-    forbiddenConsumers: ["supportRevealContribution"],
   }),
   causticVisibleDensity: createQuantityContract({
     quantity: "causticVisibleDensity",
@@ -772,9 +771,34 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
     represents: "visibility-gated physical caustic density",
     transforms: ["physical caustic density", "density fade gate"],
     allowedConsumers: [
+      "projectedCausticRadianceDensity",
+      "supportVisibleDensity",
+      "diagnostics",
+    ],
+    forbiddenConsumers: [
       "highlightMask",
       "hotCoreInput",
       "causticRadianceContribution",
+      "supportRevealContribution",
+      "observedDensityFloor",
+    ],
+  }),
+  projectedCausticRadianceDensity: createQuantityContract({
+    quantity: "projectedCausticRadianceDensity",
+    lane: "caustic",
+    represents:
+      "bounded display-facing caustic radiance density projected from physical caustic density and local ridge/structural evidence",
+    transforms: [
+      "caustic visible density",
+      "ridge-local authority",
+      "structural drive",
+      "bounded radiance compression",
+    ],
+    allowedConsumers: [
+      "highlightMask",
+      "hotCoreInput",
+      "causticRadianceContribution",
+      "diagnostics",
     ],
     forbiddenConsumers: ["supportRevealContribution", "observedDensityFloor"],
   }),
@@ -783,13 +807,8 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
     lane: "caustic",
     represents: "focused optical caustic radiance after blackfield scaling",
     transforms: ["laser caustic density", "photographic focus scale"],
-    allowedConsumers: [
-      "physicalCausticDensity",
-      "density",
-      "hotCoreInput",
-      "volumeColor",
-    ],
-    forbiddenConsumers: ["supportRevealContribution"],
+    allowedConsumers: ["physicalCausticDensity", "density", "volumeColor"],
+    forbiddenConsumers: ["hotCoreInput", "supportRevealContribution"],
   }),
   supportVisibleDensity: createQuantityContract({
     quantity: "supportVisibleDensity",
@@ -885,7 +904,7 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
     quantity: "causticRadianceContribution",
     lane: "caustic",
     represents: "colored caustic radiance contribution",
-    transforms: ["volume color", "caustic visible density"],
+    transforms: ["volume color", "projected caustic radiance density"],
     allowedConsumers: ["finalRadiance"],
     forbiddenConsumers: ["supportRevealContribution"],
   }),
@@ -1029,6 +1048,7 @@ export const RAYMARCH_RENDER_SURFACE_AUDITS = Object.freeze({
     requiredTokens: [
       "const { observationDensity } = observationTransfer;",
       "const causticVisibleDensity =",
+      "const projectedCausticRadianceDensity =",
       "const highlightMask =",
       "const stabilizedDensity = observationDensity;",
     ],
@@ -1037,11 +1057,12 @@ export const RAYMARCH_RENDER_SURFACE_AUDITS = Object.freeze({
   materialHighlightAuthority: createSourceSurfaceAudit({
     surface: "materialHighlightAuthority",
     file: "material.js",
-    owner: "causticVisibleDensity",
+    owner: "projectedCausticRadianceDensity",
     startToken: "const highlightMask = smoothstep(",
     endToken: "const stabilizedDensity = observationDensity;",
-    requiredTokens: ["causticVisibleDensity"],
+    requiredTokens: ["projectedCausticRadianceDensity"],
     forbiddenTokens: [
+      "causticVisibleDensity",
       "visibleDensity",
       "observationDensity",
       "observedDensityFloor",
@@ -1051,11 +1072,13 @@ export const RAYMARCH_RENDER_SURFACE_AUDITS = Object.freeze({
   materialHotCoreAuthority: createSourceSurfaceAudit({
     surface: "materialHotCoreAuthority",
     file: "material.js",
-    owner: "photographicLaserCausticRadiance plus caustic highlight evidence",
+    owner: "projectedCausticRadianceDensity plus caustic highlight evidence",
     startToken: "const hotCoreInput =",
     endToken: "const hotCoreMix =",
-    requiredTokens: ["photographicLaserCausticRadiance", "highlightMask"],
+    requiredTokens: ["projectedCausticRadianceDensity", "highlightMask"],
     forbiddenTokens: [
+      "photographicLaserCausticRadiance",
+      "causticVisibleDensity",
       "visibleDensity",
       "observationDensity",
       "observedDensityFloor",
@@ -1092,6 +1115,8 @@ export const RAYMARCH_RENDER_SURFACE_AUDITS = Object.freeze({
     requiredTokens: [
       "materialProbeObservationDensity",
       "materialProbeCausticVisibleDensity",
+      "materialProbeProjectedCausticRadiance",
+      "projectedCausticRadianceDensity",
       "deriveMaterialRadianceTransfer",
     ],
     forbiddenTokens: [

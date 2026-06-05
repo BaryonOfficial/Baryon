@@ -395,6 +395,7 @@ function createAuditSettings(overrides = {}) {
     enabled: true,
     freezeModeSlots: false,
     injectTestTone: false,
+    testToneSignal: "pure-sine",
     testToneHz: 440,
     testToneAmplitude: 0.5,
     logEveryFrames: 30,
@@ -1384,9 +1385,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
       frameTimeMs: 16,
       candidateForcingSlots: makeModeSlots([[2, 1, 1, 0.9]]),
       proposalSourceCoupledSlots: makeModeSlots([[2, 1, 1, 0.9]]),
-      modalCandidateState: new Map([
-        ["2:1:1", { observedSupport: 0.02 }],
-      ]),
+      modalCandidateState: new Map([["2:1:1", { observedSupport: 0.02 }]]),
       structuralMetrics: makeModalFieldContinuityStructuralMetrics({
         modalObservationConfidence: 1,
       }),
@@ -3040,6 +3039,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
       status: createStatus(),
       auditSettings: createAuditSettings({
         injectTestTone: true,
+        testToneSignal: "harmonic-series",
         testToneHz: 660,
         testToneAmplitude: 0.2,
       }),
@@ -3049,11 +3049,6 @@ describe("buildAudioFeatureFrame modal contract", () => {
     expect(frame.debug.pitchSource).toBe("resonator-bank");
     expect(frame.debug.analysisEngine).toBe("modal-excitation");
     expect(frame.debug.modeSlotCount).toBeGreaterThan(1);
-    expect(
-      frame.modalFieldSlots.some(
-        (_, index) => index % 4 === 3 && frame.modalFieldSlots[index] > 0,
-      ),
-    ).toBe(true);
     expect(
       frame.modalFieldSlots.some(
         (_, index) => index % 4 === 3 && frame.modalFieldSlots[index] > 0,
@@ -3239,6 +3234,7 @@ describe("Spectral Light feature frame outputs", () => {
           status: createStatus(),
           auditSettings: createAuditSettings({
             injectTestTone: true,
+            testToneSignal: "harmonic-series",
             testToneHz,
             testToneAmplitude: 0.5,
           }),
@@ -3269,6 +3265,7 @@ describe("Spectral Light feature frame outputs", () => {
         status: createStatus(),
         auditSettings: createAuditSettings({
           injectTestTone: true,
+          testToneSignal: "harmonic-series",
           testToneHz: 528,
           testToneAmplitude: 0.5,
         }),
@@ -6272,7 +6269,7 @@ describe("tempo tracking", () => {
 });
 
 describe("test-tone snapshot generation", () => {
-  it("writes harmonics into the fft magnitudes", () => {
+  it("writes a pure sine into the fft magnitudes by default", () => {
     const snapshot = applyTestToneToSnapshot({
       analysisSnapshot: null,
       auditSettings: {
@@ -6285,7 +6282,38 @@ describe("test-tone snapshot generation", () => {
 
     // avgAmplitude is now RMS-derived (pure sine: amplitude / sqrt(2) * 255)
     expect(snapshot.avgAmplitude).toBeCloseTo((0.5 / Math.SQRT2) * 255, 1);
-    expect(snapshot.fftMagnitudes.some((value) => value > 0)).toBe(true);
+    const fundamentalBin = frequencyToBinIndex(
+      440,
+      snapshot.fftMagnitudes.length,
+      SAMPLE_RATE,
+    );
+    const secondHarmonicBin = frequencyToBinIndex(
+      880,
+      snapshot.fftMagnitudes.length,
+      SAMPLE_RATE,
+    );
+    expect(snapshot.fftMagnitudes[fundamentalBin]).toBeGreaterThan(0);
+    expect(snapshot.fftMagnitudes[secondHarmonicBin]).toBe(0);
+  });
+
+  it("writes harmonics only for explicit harmonic-series test tones", () => {
+    const snapshot = applyTestToneToSnapshot({
+      analysisSnapshot: null,
+      auditSettings: {
+        testToneHz: 440,
+        testToneSignal: "harmonic-series",
+        testToneAmplitude: 0.5,
+      },
+      fftSize: FFT_SIZE,
+      sampleRate: SAMPLE_RATE,
+    });
+
+    const secondHarmonicBin = frequencyToBinIndex(
+      880,
+      snapshot.fftMagnitudes.length,
+      SAMPLE_RATE,
+    );
+    expect(snapshot.fftMagnitudes[secondHarmonicBin]).toBeGreaterThan(0);
   });
 
   it("produces non-zero rms that scales with tone amplitude", () => {
@@ -6857,7 +6885,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
 });
 
 describe("full-range music handling", () => {
-  it("frequency ceiling: 6 kHz peak reaches detail slots", () => {
+  it("frequency ceiling: 6 kHz peak is bandwidth-limited", () => {
     const featureState = createAudioFeatureState();
     const fftMagnitudes = makeFft([[6000, 0.7]]);
     const frame = buildTimedFrame({
@@ -6867,15 +6895,15 @@ describe("full-range music handling", () => {
       rms: 0.4,
     });
 
-    // At least one detail slot must have non-zero amplitude
-    let hasResonantActivity = false;
-    for (let i = 3; i < frame.modalFieldSlots.length; i += 4) {
-      if ((frame.modalFieldSlots[i] ?? 0) > 0) {
-        hasResonantActivity = true;
-        break;
-      }
-    }
-    expect(hasResonantActivity).toBe(true);
+    expect(frame.modalDescriptor.fieldAuthority).toBe("bandwidth-limited");
+    expect(frame.modalDescriptor.diagnostics.overBandwidthDominant).toBe(true);
+    expect(frame.activeModalFieldModeCount).toBe(0);
+    expect(frame.modalFieldSlots.some((value) => value !== 0)).toBe(false);
+    expect(
+      frame.modalDescriptor.diagnostics.overBandwidthMaxRequestedModeIndex,
+    ).toBeGreaterThan(
+      frame.modalDescriptor.diagnostics.maxRepresentableModeIndex,
+    );
   });
 
   it("fade-out: structureSignal collapses proportionally with energy", () => {
@@ -7399,6 +7427,161 @@ describe("modal excitation integration", () => {
     expect(frame.activeModalFieldModeCount).toBeLessThanOrEqual(
       diagnostics.basisAtlasPageCapacity,
     );
+  });
+
+  function buildPureToneFrame({ testToneHz, frameCount = 8 }) {
+    const featureState = createAudioFeatureState();
+    let frame = null;
+
+    for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+      frame = buildAudioFeatureFrame({
+        analysisSnapshot: null,
+        featureState,
+        radius: 3,
+        status: createStatus({
+          audioInputMode: "file",
+          analysisSource: "file",
+          isPlaying: true,
+          isAudioLoaded: true,
+          hasAnalysisSource: true,
+          sampleRate: SAMPLE_RATE,
+          fftSize: FFT_SIZE,
+        }),
+        auditSettings: createAuditSettings({
+          injectTestTone: true,
+          testToneSignal: "pure-sine",
+          testToneHz,
+          testToneAmplitude: 0.7,
+        }),
+        frameTimeMs: frameIndex * 33,
+      });
+    }
+
+    return frame;
+  }
+
+  function buildMixedToneFrame(partials) {
+    const featureState = createAudioFeatureState();
+    let frame = null;
+
+    for (let frameIndex = 0; frameIndex < 8; frameIndex += 1) {
+      frame = buildAudioFeatureFrame({
+        analysisSnapshot: createSnapshot({
+          avgAmplitude: 64,
+          rms: 0.35,
+          fftMagnitudes: makeFft(partials),
+          timeData: makeMixedTimeData({
+            partials,
+            amplitudeScale: 0.8,
+          }),
+        }),
+        featureState,
+        radius: 3,
+        status: createStatus({
+          audioInputMode: "file",
+          analysisSource: "file",
+          isPlaying: true,
+          isAudioLoaded: true,
+          hasAnalysisSource: true,
+          sampleRate: SAMPLE_RATE,
+          fftSize: FFT_SIZE,
+        }),
+        frameTimeMs: frameIndex * 33,
+      });
+    }
+
+    return frame;
+  }
+
+  it("reports high-Hz over-bandwidth diagnostics while suppressing topology", () => {
+    const frame = buildPureToneFrame({ testToneHz: 12000 });
+
+    const diagnostics = frame.modalDescriptor.diagnostics;
+    const audit = diagnostics.modalVarietyAudit;
+
+    expect(diagnostics.overBandwidthRejectedModeCount).toBeGreaterThan(0);
+    expect(diagnostics.overBandwidthRejectedModalEnergy).toBeGreaterThan(0);
+    expect(diagnostics.overBandwidthMaxRequestedModeIndex).toBeGreaterThan(
+      diagnostics.maxRepresentableModeIndex,
+    );
+    expect(
+      diagnostics.overBandwidthMaxRequestedMode.some(
+        (coordinate) =>
+          Math.abs(coordinate) > diagnostics.maxRepresentableModeIndex,
+      ),
+    ).toBe(true);
+    expect(diagnostics.rejectionReasons.overBandwidth).toBe(
+      diagnostics.overBandwidthRejectedModeCount,
+    );
+    expect(diagnostics.structuralCoverageSatisfied).toBe(false);
+    expect(diagnostics.spatialBandwidthRejectedCount).toBe(0);
+    expect(audit.modeOrderMax).toBeLessThanOrEqual(
+      diagnostics.maxRepresentableModeIndex,
+    );
+    expect(audit.overBandwidthRejectedModeCount).toBe(
+      diagnostics.overBandwidthRejectedModeCount,
+    );
+    expect(audit.overBandwidthRejectedModalEnergy).toBeGreaterThan(
+      audit.representedModalEnergy,
+    );
+    expect(audit.renderRepresentedEnergyRatio).toBeLessThan(0.5);
+  });
+
+  it.each([2398, 12000])(
+    "marks %iHz pure sine over-bandwidth frames bandwidth-limited",
+    (testToneHz) => {
+      const frame = buildPureToneFrame({ testToneHz });
+      const diagnostics = frame.modalDescriptor.diagnostics;
+
+      expect(frame.modalDescriptor.fieldAuthority).toBe("bandwidth-limited");
+      expect(diagnostics.overBandwidthDominant).toBe(true);
+      expect(
+        diagnostics.overBandwidthRejectedRepresentedEnergyRatio,
+      ).toBeGreaterThanOrEqual(1);
+      expect(frame.activeModalFieldModeCount).toBe(0);
+      expect(frame.modalDescriptor.counts.modalFieldModeCount).toBe(0);
+      expect(frame.modalDescriptor.modes.modalField).toEqual([]);
+      expect(frame.modalFieldSlots.some((value) => value !== 0)).toBe(false);
+      expect(diagnostics.overBandwidthRejectedModeCount).toBeGreaterThan(0);
+      expect(diagnostics.overBandwidthMaxRequestedModeIndex).toBeGreaterThan(
+        diagnostics.maxRepresentableModeIndex,
+      );
+    },
+  );
+
+  it("keeps low pure sine topology authoritative when over-bandwidth is not dominant", () => {
+    const frame = buildPureToneFrame({ testToneHz: 440 });
+
+    expect(frame.modalDescriptor.fieldAuthority).toBe("complete");
+    expect(frame.modalDescriptor.diagnostics.overBandwidthDominant).toBe(false);
+    expect(frame.activeModalFieldModeCount).toBeGreaterThan(0);
+    expect(frame.modalDescriptor.counts.modalFieldModeCount).toBeGreaterThan(0);
+    expect(frame.modalFieldSlots.some((value) => value !== 0)).toBe(true);
+  });
+
+  it("keeps mixed low and high tone topology complete unless over-bandwidth dominates", () => {
+    const representedDominant = buildMixedToneFrame([
+      [440, 0.95],
+      [12000, 0.08],
+    ]);
+    const overBandwidthDominant = buildMixedToneFrame([
+      [440, 0.2],
+      [12000, 0.9],
+    ]);
+
+    expect(representedDominant.modalDescriptor.fieldAuthority).toBe("complete");
+    expect(
+      representedDominant.modalDescriptor.diagnostics.overBandwidthDominant,
+    ).toBe(false);
+    expect(representedDominant.activeModalFieldModeCount).toBeGreaterThan(0);
+
+    expect(overBandwidthDominant.modalDescriptor.fieldAuthority).toBe(
+      "bandwidth-limited",
+    );
+    expect(
+      overBandwidthDominant.modalDescriptor.diagnostics.overBandwidthDominant,
+    ).toBe(true);
+    expect(overBandwidthDominant.activeModalFieldModeCount).toBe(0);
   });
 
   it("modal path still collapses structure through fade-out after shared persistence gating", () => {

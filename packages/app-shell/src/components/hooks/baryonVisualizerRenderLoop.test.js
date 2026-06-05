@@ -3101,6 +3101,35 @@ test("resolveRaymarchGovernorFrameInputs prefers uploaded mode count over descri
   });
 });
 
+test("resolveRaymarchGovernorFrameInputs suppresses bandwidth-limited topology", () => {
+  const runtimeState = {
+    modalFieldCapacity: 12,
+    modalBasisCache: { basisCapacity: 12 },
+    modalFieldModeBuffer: { value: { array: new Float32Array(48) } },
+    uniforms: {
+      uModalFieldModeCount: { value: 3 },
+      uTotalSlotAmplitude: { value: 0.42 },
+    },
+  };
+  const effectiveFrame = {
+    activeModeCount: 48,
+    activeModalFieldModeCount: 48,
+    modalDescriptor: {
+      fieldAuthority: "bandwidth-limited",
+      counts: { modalFieldModeCount: 48 },
+    },
+  };
+
+  expect(
+    resolveRaymarchGovernorFrameInputs(runtimeState, effectiveFrame),
+  ).toEqual({
+    modalFieldCapacity: 12,
+    productUploadCapacity: 12,
+    activeModeCount: 0,
+    uploadedModeCount: 0,
+  });
+});
+
 test("syncRenderSurfacePixelRatio applies effective render scale to DPR", () => {
   const runtimeDiagnostics = createRuntimeDiagnostics();
   runtimeDiagnostics.adaptiveRaymarch.adaptiveRaymarchActive = true;
@@ -3142,9 +3171,7 @@ test("syncUploadedRenderQuantities mirrors runtime uniforms into diagnostics", (
 
   expect(runtimeDiagnostics.render.uploadedModeCount).toBe(5);
   expect(runtimeDiagnostics.render.totalSlotAmplitude).toBeCloseTo(0.18);
-  expect(runtimeDiagnostics.render.structuralProjectionDrive).toBeCloseTo(
-    0.42,
-  );
+  expect(runtimeDiagnostics.render.structuralProjectionDrive).toBeCloseTo(0.42);
   expect(
     runtimeDiagnostics.render.structuralProjectionConcentration,
   ).toBeCloseTo(0.31);

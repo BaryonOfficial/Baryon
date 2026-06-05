@@ -14,6 +14,8 @@ const FNV_OFFSET_BASIS = 2166136261;
 const FNV_PRIME = 16777619;
 const FLOAT32_BITS_VALUE = new Float32Array(1);
 const FLOAT32_BITS_VIEW = new Uint32Array(FLOAT32_BITS_VALUE.buffer);
+const OVER_BANDWIDTH_DOMINANCE_EPSILON = 1e-9;
+const OVER_BANDWIDTH_DOMINANCE_SEMANTIC_RATIO = 0.85;
 
 function clamp01(value) {
   return Math.min(1, Math.max(0, value));
@@ -183,6 +185,42 @@ function resolveNonNegativeNumber(value, fallback = 0) {
   return Math.max(0, fallback ?? 0);
 }
 
+/**
+ * @param {{
+ *   overBandwidthRejectedModeCount?: number,
+ *   overBandwidthRejectedModalEnergy?: number,
+ *   overBandwidthMaxRequestedModeIndex?: number,
+ *   overBandwidthMaxRequestedMode?: [number, number, number] | number[],
+ * }} [diagnostics]
+ */
+function resolveOverBandwidthDiagnostics({
+  overBandwidthRejectedModeCount,
+  overBandwidthRejectedModalEnergy,
+  overBandwidthMaxRequestedModeIndex,
+  overBandwidthMaxRequestedMode,
+} = {}) {
+  return {
+    overBandwidthRejectedModeCount: resolveNonNegativeInteger(
+      overBandwidthRejectedModeCount,
+    ),
+    overBandwidthRejectedModalEnergy: resolveNonNegativeNumber(
+      overBandwidthRejectedModalEnergy,
+    ),
+    overBandwidthMaxRequestedModeIndex: resolveNonNegativeInteger(
+      overBandwidthMaxRequestedModeIndex,
+    ),
+    overBandwidthMaxRequestedMode: Array.isArray(overBandwidthMaxRequestedMode)
+      ? [
+          overBandwidthMaxRequestedMode[0] ?? 0,
+          overBandwidthMaxRequestedMode[1] ?? 0,
+          overBandwidthMaxRequestedMode[2] ?? 0,
+        ].map((coordinate) =>
+          Number.isFinite(coordinate) ? Math.trunc(coordinate) : 0,
+        )
+      : [0, 0, 0],
+  };
+}
+
 function resolveCandidateConfidenceDiagnostics({
   rawCandidateModeCount,
   confidenceQualifiedCandidateModeCount,
@@ -278,6 +316,10 @@ function buildModalVarietyAudit({
   upstreamSourceCoupledModalEnergy,
   upstreamResonantModalEnergy,
   upstreamCandidateModalEnergy,
+  overBandwidthRejectedModeCount,
+  overBandwidthRejectedModalEnergy,
+  overBandwidthMaxRequestedModeIndex,
+  overBandwidthMaxRequestedMode,
   modalGeometryBackend,
 }) {
   const acceptedEntries = slotAssignments.filter(Boolean);
@@ -326,8 +368,23 @@ function buildModalVarietyAudit({
     (total, entry) => total + Math.max(0, entry.coefficient) ** 2,
     0,
   );
+  const overBandwidthDiagnostics = resolveOverBandwidthDiagnostics({
+    overBandwidthRejectedModeCount,
+    overBandwidthRejectedModalEnergy,
+    overBandwidthMaxRequestedModeIndex,
+    overBandwidthMaxRequestedMode,
+  });
+  const {
+    overBandwidthRejectedModeCount: resolvedOverBandwidthRejectedModeCount,
+    overBandwidthRejectedModalEnergy: resolvedOverBandwidthRejectedModalEnergy,
+    overBandwidthMaxRequestedModeIndex:
+      resolvedOverBandwidthMaxRequestedModeIndex,
+    overBandwidthMaxRequestedMode: resolvedOverBandwidthMaxRequestedMode,
+  } = overBandwidthDiagnostics;
   const semanticModalEnergy =
-    acceptedModalEnergy + descriptorRejectedModalEnergy;
+    acceptedModalEnergy +
+    descriptorRejectedModalEnergy +
+    resolvedOverBandwidthRejectedModalEnergy;
   const resolvedObserverCandidateModeCount = resolveNonNegativeInteger(
     observerCandidateModeCount,
     acceptedEntries.length,
@@ -407,6 +464,24 @@ function buildModalVarietyAudit({
     modalEnergySquaredSum > 0
       ? (acceptedModalEnergy * acceptedModalEnergy) / modalEnergySquaredSum
       : 0;
+  const overBandwidthRejectedRepresentedEnergyRatio =
+    representedModalEnergy > OVER_BANDWIDTH_DOMINANCE_EPSILON
+      ? resolvedOverBandwidthRejectedModalEnergy / representedModalEnergy
+      : resolvedOverBandwidthRejectedModalEnergy >
+          OVER_BANDWIDTH_DOMINANCE_EPSILON
+        ? Number.MAX_SAFE_INTEGER
+        : 0;
+  const overBandwidthRejectedSemanticEnergyRatio = divideOrFallback(
+    resolvedOverBandwidthRejectedModalEnergy,
+    semanticModalEnergy,
+  );
+  const overBandwidthDominant =
+    resolvedOverBandwidthRejectedModalEnergy >
+      OVER_BANDWIDTH_DOMINANCE_EPSILON &&
+    (representedModalEnergy <= OVER_BANDWIDTH_DOMINANCE_EPSILON ||
+      resolvedOverBandwidthRejectedModalEnergy >= representedModalEnergy) &&
+    overBandwidthRejectedSemanticEnergyRatio >=
+      OVER_BANDWIDTH_DOMINANCE_SEMANTIC_RATIO;
 
   return {
     modalTopologyGeometry: modalGeometryBackend.cavityGeometry,
@@ -528,6 +603,14 @@ function buildModalVarietyAudit({
       structuralAdmission.spatialBandwidthRejectedEnergy,
       semanticModalEnergy,
     ),
+    overBandwidthRejectedModeCount: resolvedOverBandwidthRejectedModeCount,
+    overBandwidthRejectedModalEnergy: resolvedOverBandwidthRejectedModalEnergy,
+    overBandwidthRejectedEnergyRatio: overBandwidthRejectedSemanticEnergyRatio,
+    overBandwidthRejectedRepresentedEnergyRatio,
+    overBandwidthDominant,
+    overBandwidthMaxRequestedModeIndex:
+      resolvedOverBandwidthMaxRequestedModeIndex,
+    overBandwidthMaxRequestedMode: resolvedOverBandwidthMaxRequestedMode,
     basisAtlasCapacitySweep: buildBasisAtlasCapacitySweep({
       slotAssignments,
       semanticModalEnergy,
@@ -880,6 +963,20 @@ function writeUnifiedModalSlotViewsFromAssignments(assignments, capacity) {
   };
 }
 
+function buildZeroedModalSlotViews(capacity) {
+  const length = Math.max(0, Math.floor(capacity ?? 0)) * 4;
+
+  return {
+    modalFieldSlots: new Float32Array(length),
+    modalFieldPhaseSlots: new Float32Array(length),
+    modalFieldColorSlots: new Float32Array(length),
+    modalFieldSpectralLaneA: new Float32Array(length),
+    modalFieldSpectralLaneB: new Float32Array(length),
+    modalFieldSpectralMeta: new Float32Array(length),
+    modalFieldMetadataSlots: new Float32Array(length),
+  };
+}
+
 function countOccupiedSlotSpan(assignments) {
   for (let slotIndex = assignments.length - 1; slotIndex >= 0; slotIndex -= 1) {
     if (assignments[slotIndex] != null) {
@@ -942,6 +1039,10 @@ function buildSpectralLaneDescriptorHash(slotAssignments) {
  *   upstreamSourceCoupledModalEnergy?: number,
  *   upstreamResonantModalEnergy?: number,
  *   upstreamCandidateModalEnergy?: number,
+ *   overBandwidthRejectedModeCount?: number,
+ *   overBandwidthRejectedModalEnergy?: number,
+ *   overBandwidthMaxRequestedModeIndex?: number,
+ *   overBandwidthMaxRequestedMode?: [number, number, number],
  *   basisAtlasPageCapacity?: number,
  *   basisCacheResolution?: number,
  *   cavityGeometry?: import("./cavityGeometry.js").CavityGeometry,
@@ -978,6 +1079,10 @@ export function buildCanonicalFullModalDescriptor({
   upstreamSourceCoupledModalEnergy,
   upstreamResonantModalEnergy,
   upstreamCandidateModalEnergy,
+  overBandwidthRejectedModeCount,
+  overBandwidthRejectedModalEnergy,
+  overBandwidthMaxRequestedModeIndex,
+  overBandwidthMaxRequestedMode,
   basisAtlasPageCapacity = MODAL_BASIS_ATLAS_PAGE_CAPACITY,
   basisCacheResolution = MODAL_BASIS_CACHE_RESOLUTION,
   cavityGeometry = DEFAULT_EFFECTIVE_CAVITY_GEOMETRY,
@@ -1043,6 +1148,22 @@ export function buildCanonicalFullModalDescriptor({
     rejectionReasons.spatialBandwidth =
       structuralAdmission.spatialBandwidthRejectedCount;
   }
+  const overBandwidthDiagnostics = resolveOverBandwidthDiagnostics({
+    overBandwidthRejectedModeCount,
+    overBandwidthRejectedModalEnergy,
+    overBandwidthMaxRequestedModeIndex,
+    overBandwidthMaxRequestedMode,
+  });
+  const {
+    overBandwidthRejectedModeCount: resolvedOverBandwidthRejectedModeCount,
+    overBandwidthRejectedModalEnergy: resolvedOverBandwidthRejectedModalEnergy,
+    overBandwidthMaxRequestedModeIndex:
+      resolvedOverBandwidthMaxRequestedModeIndex,
+    overBandwidthMaxRequestedMode: resolvedOverBandwidthMaxRequestedMode,
+  } = overBandwidthDiagnostics;
+  if (resolvedOverBandwidthRejectedModeCount > 0) {
+    rejectionReasons.overBandwidth = resolvedOverBandwidthRejectedModeCount;
+  }
   const unifiedSlotViews = writeUnifiedModalSlotViewsFromAssignments(
     slotAssignments,
     totalCapacity,
@@ -1096,17 +1217,32 @@ export function buildCanonicalFullModalDescriptor({
     upstreamSourceCoupledModalEnergy,
     upstreamResonantModalEnergy,
     upstreamCandidateModalEnergy,
+    ...overBandwidthDiagnostics,
     modalGeometryBackend,
   });
+  const overBandwidthDominant =
+    modalVarietyAudit.overBandwidthDominant === true;
+  const fieldAuthority = descriptorOverflow
+    ? "blocked"
+    : overBandwidthDominant
+      ? "bandwidth-limited"
+      : "complete";
+  const renderAuthoritative = fieldAuthority === "complete";
+  const renderSlotViews = renderAuthoritative
+    ? unifiedSlotViews
+    : buildZeroedModalSlotViews(totalCapacity);
+  const renderedEntries = renderAuthoritative ? acceptedEntries : [];
+  const renderedValidModeCount = renderAuthoritative ? validModeCount : 0;
+  const renderedOccupiedSlotSpan = renderAuthoritative ? occupiedSlotSpan : 0;
 
   return {
     generation: Math.max(0, Math.floor(generation ?? 0)),
-    fieldAuthority: descriptorOverflow ? "blocked" : "complete",
+    fieldAuthority,
     capacity: {
       maxTotalModes: totalCapacity,
     },
     modes: {
-      modalField: acceptedEntries.map((entry) => ({
+      modalField: renderedEntries.map((entry) => ({
         modeKey: entry.modeKey,
         u: entry.u,
         v: entry.v,
@@ -1126,8 +1262,8 @@ export function buildCanonicalFullModalDescriptor({
       })),
     },
     counts: {
-      validModeCount,
-      modalFieldModeCount: occupiedSlotSpan,
+      validModeCount: renderedValidModeCount,
+      modalFieldModeCount: renderedOccupiedSlotSpan,
       overflowModeCount,
     },
     diagnostics: {
@@ -1142,20 +1278,34 @@ export function buildCanonicalFullModalDescriptor({
       modeIdentityRetentionRatio: clamp01(modeIdentityRetentionRatio ?? 1),
       descriptorOverflow,
       structuralCoverageSatisfied:
-        !descriptorOverflow && structuralAdmission.structuralCoverageSatisfied,
+        !descriptorOverflow &&
+        structuralAdmission.structuralCoverageSatisfied &&
+        resolvedOverBandwidthRejectedModeCount === 0,
       rejectedModalEnergy:
         rejectedModalEnergy +
         structuralAdmission.basisAtlasCapacityRejectedEnergy +
-        structuralAdmission.spatialBandwidthRejectedEnergy,
+        structuralAdmission.spatialBandwidthRejectedEnergy +
+        resolvedOverBandwidthRejectedModalEnergy,
       descriptorRejectedModalEnergy: rejectedModalEnergy,
       basisAtlasRejectedModalEnergy:
         structuralAdmission.basisAtlasCapacityRejectedEnergy,
       spatialBandwidthRejectedModalEnergy:
         structuralAdmission.spatialBandwidthRejectedEnergy,
+      overBandwidthRejectedModalEnergy:
+        resolvedOverBandwidthRejectedModalEnergy,
+      overBandwidthRejectedEnergyRatio:
+        modalVarietyAudit.overBandwidthRejectedEnergyRatio,
+      overBandwidthRejectedRepresentedEnergyRatio:
+        modalVarietyAudit.overBandwidthRejectedRepresentedEnergyRatio,
+      overBandwidthDominant,
       basisAtlasCapacityRejectedCount:
         structuralAdmission.basisAtlasCapacityRejectedCount,
       spatialBandwidthRejectedCount:
         structuralAdmission.spatialBandwidthRejectedCount,
+      overBandwidthRejectedModeCount: resolvedOverBandwidthRejectedModeCount,
+      overBandwidthMaxRequestedModeIndex:
+        resolvedOverBandwidthMaxRequestedModeIndex,
+      overBandwidthMaxRequestedMode: resolvedOverBandwidthMaxRequestedMode,
       basisAtlasPageCapacity: structuralAdmission.basisAtlasPageCapacity,
       maxRepresentableModeIndex: structuralAdmission.maxRepresentableModeIndex,
       spectralLaneHash,
@@ -1163,7 +1313,7 @@ export function buildCanonicalFullModalDescriptor({
       rejectionReasons,
     },
     slotViews: {
-      ...unifiedSlotViews,
+      ...renderSlotViews,
     },
   };
 }

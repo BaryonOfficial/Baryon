@@ -25,12 +25,21 @@ function hasCurrentLiveSourceEvidence(featureFrame) {
   );
 }
 
+function hasDescriptorAuthority(featureFrame) {
+  const fieldAuthority = featureFrame?.modalDescriptor?.fieldAuthority;
+  return fieldAuthority !== "bandwidth-limited";
+}
+
 export function hasRenderAuthority(featureFrame) {
   if (!featureFrame) {
     return false;
   }
 
-  return hasLedgerData(featureFrame) && hasLedgerAuthority(featureFrame);
+  return (
+    hasLedgerData(featureFrame) &&
+    hasLedgerAuthority(featureFrame) &&
+    hasDescriptorAuthority(featureFrame)
+  );
 }
 
 export function allowsAudioMotion(featureFrame) {

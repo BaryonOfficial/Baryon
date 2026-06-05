@@ -77,6 +77,7 @@ describe("raymarch quantity ownership ledger", () => {
         caustic: expect.arrayContaining([
           "physicalCausticDensity",
           "causticVisibleDensity",
+          "projectedCausticRadianceDensity",
         ]),
         support: expect.arrayContaining(["supportVisibleDensity"]),
         body: expect.arrayContaining(["photographicBodyContribution"]),
@@ -111,6 +112,7 @@ describe("raymarch quantity ownership ledger", () => {
       "observedDensityFloor",
       "physicalCausticDensity",
       "causticVisibleDensity",
+      "projectedCausticRadianceDensity",
       "supportVisibleDensity",
       "photographicBodyContribution",
       "cancellationSuppression",
@@ -156,8 +158,11 @@ describe("raymarch quantity ownership ledger", () => {
           forbiddenTokens: expect.arrayContaining(["visibleDensity"]),
         }),
         materialHighlightAuthority: expect.objectContaining({
-          owner: "causticVisibleDensity",
-          forbiddenTokens: expect.arrayContaining(["observedDensityFloor"]),
+          owner: "projectedCausticRadianceDensity",
+          forbiddenTokens: expect.arrayContaining([
+            "causticVisibleDensity",
+            "observedDensityFloor",
+          ]),
         }),
         materialWhiteEmissionAuthority: expect.objectContaining({
           owner: "whiteEmissionFieldAuthority",
@@ -238,7 +243,7 @@ describe("raymarch quantity ownership ledger", () => {
       }),
     );
     expect(RAYMARCH_RENDER_SURFACE_AUDITS.materialHotCoreAuthority.owner).toBe(
-      "photographicLaserCausticRadiance plus caustic highlight evidence",
+      "projectedCausticRadianceDensity plus caustic highlight evidence",
     );
   });
 
@@ -284,6 +289,24 @@ describe("raymarch quantity ownership ledger", () => {
           `${supportQuantity} -> ${consumer}`,
         ).toBe(false);
       }
+    }
+
+    for (const consumer of [
+      "highlightMask",
+      "hotCoreInput",
+      "causticRadianceContribution",
+    ]) {
+      expect(
+        isRaymarchQuantityConsumerAllowed("causticVisibleDensity", consumer),
+        `causticVisibleDensity -> ${consumer}`,
+      ).toBe(false);
+      expect(
+        isRaymarchQuantityConsumerAllowed(
+          "projectedCausticRadianceDensity",
+          consumer,
+        ),
+        `projectedCausticRadianceDensity -> ${consumer}`,
+      ).toBe(true);
     }
 
     expect(
@@ -399,8 +422,8 @@ describe("raymarch quantity ownership ledger", () => {
     expect(RAYMARCH_FORBIDDEN_CONSUMER_SUMMARY.cancellationSuppression).toEqual(
       expect.arrayContaining(["whiteEmissionFieldAuthority"]),
     );
-    expect(
-      RAYMARCH_FORBIDDEN_CONSUMER_SUMMARY.physicalCausticDensity,
-    ).not.toContain("highlightMask");
+    expect(RAYMARCH_FORBIDDEN_CONSUMER_SUMMARY.physicalCausticDensity).toEqual(
+      expect.arrayContaining(["highlightMask", "hotCoreInput"]),
+    );
   });
 });
