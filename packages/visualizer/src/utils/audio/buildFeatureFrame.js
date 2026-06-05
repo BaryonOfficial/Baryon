@@ -69,6 +69,7 @@ import {
   hasVisibleModalFieldContinuityPayload,
   updateModalFieldContinuity,
 } from "../../core/modalFieldContinuity.js";
+import { summarizeModalSlotTopologyRange } from "../../core/modalTopology.js";
 import {
   MODAL_BASIS_ATLAS_PAGE_CAPACITY,
   MODAL_BASIS_CACHE_RESOLUTION,
@@ -6194,7 +6195,8 @@ export function composeAudioFeatureFrame({
       preparedInputs.zeroSourceCoupledTargetSlots;
     renderSourceCoupledSpectralLaneB =
       preparedInputs.zeroSourceCoupledTargetSlots;
-    renderSourceCoupledSpectralMeta = preparedInputs.zeroSourceCoupledTargetSlots;
+    renderSourceCoupledSpectralMeta =
+      preparedInputs.zeroSourceCoupledTargetSlots;
     renderResonantSpectralLaneA = preparedInputs.zeroResonantTargetSlots;
     renderResonantSpectralLaneB = preparedInputs.zeroResonantTargetSlots;
     renderResonantSpectralMeta = preparedInputs.zeroResonantTargetSlots;
@@ -6223,6 +6225,18 @@ export function composeAudioFeatureFrame({
     cavityAcousticScale: preparedInputs.cavityAcousticScale,
     boundaryMode: preparedInputs.boundaryMode,
   });
+  const upstreamSourceCoupledTopology = summarizeModalSlotTopologyRange(
+    renderSourceCoupledSlots,
+    { count: activeSourceCoupledModeCount },
+  );
+  const upstreamResonantTopology = summarizeModalSlotTopologyRange(
+    renderResonantSlots,
+    { count: activeResonantModeCount },
+  );
+  const upstreamCandidateTopology = summarizeModalSlotTopologyRange(
+    modalFieldDescriptorSource.modalFieldSlots,
+    { count: modalFieldDescriptorSource.activeModalFieldModeCount },
+  );
   const upstreamSourceCoupledModalEnergy = sumModalSlotCoefficientEnergy(
     renderSourceCoupledSlots,
     activeSourceCoupledModeCount,
@@ -6286,15 +6300,12 @@ export function composeAudioFeatureFrame({
           ? storedSourceCoupledEnergy / storedLayerEnergy
           : 1;
       const resonantShare =
-        storedLayerEnergy > 0
-          ? storedResonantEnergy / storedLayerEnergy
-          : 0;
+        storedLayerEnergy > 0 ? storedResonantEnergy / storedLayerEnergy : 0;
 
       projectedModalRenderEnergy = heldProjectedRenderEnergy;
       modalResponseSourceCoupledEnergy =
         heldProjectedRenderEnergy * sourceCoupledShare;
-      modalResponseResonantEnergy =
-        heldProjectedRenderEnergy * resonantShare;
+      modalResponseResonantEnergy = heldProjectedRenderEnergy * resonantShare;
       observationEnergy = deriveModalObservationEnergy(
         projectedModalRenderEnergy,
         modalResponseEnergy,
@@ -6347,10 +6358,8 @@ export function composeAudioFeatureFrame({
     modalFieldSlots: continuityDescriptorSource.modalFieldSlots,
     modalFieldPhaseSlots: continuityDescriptorSource.modalFieldPhaseSlots,
     modalFieldColorSlots: continuityDescriptorSource.modalFieldColorSlots,
-    modalFieldSpectralLaneA:
-      continuityDescriptorSource.modalFieldSpectralLaneA,
-    modalFieldSpectralLaneB:
-      continuityDescriptorSource.modalFieldSpectralLaneB,
+    modalFieldSpectralLaneA: continuityDescriptorSource.modalFieldSpectralLaneA,
+    modalFieldSpectralLaneB: continuityDescriptorSource.modalFieldSpectralLaneB,
     modalFieldSpectralMeta: continuityDescriptorSource.modalFieldSpectralMeta,
     modalFieldMetadataSlots: continuityDescriptorSource.modalFieldMetadataSlots,
     activeModalFieldModeCount:
@@ -6365,6 +6374,9 @@ export function composeAudioFeatureFrame({
     upstreamResonantModeCount: activeResonantModeCount,
     upstreamCandidateModeCount:
       modalFieldDescriptorSource.activeModalFieldModeCount,
+    upstreamSourceCoupledShellCount: upstreamSourceCoupledTopology.shellCount,
+    upstreamResonantShellCount: upstreamResonantTopology.shellCount,
+    upstreamCandidateShellCount: upstreamCandidateTopology.shellCount,
     upstreamSourceCoupledModalEnergy,
     upstreamResonantModalEnergy,
     upstreamCandidateModalEnergy,

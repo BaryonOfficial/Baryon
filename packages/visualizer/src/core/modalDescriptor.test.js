@@ -183,6 +183,8 @@ describe("buildCanonicalFullModalDescriptor", () => {
       representedBasisPageModeCount: 2,
       basisAtlasPageCapacity: 2,
       basisAtlasPressure: 1,
+      semanticShellCount: 3,
+      representedShellCount: 2,
       spatialFamilyCount: 3,
       representedSpatialFamilyCount: 2,
       descriptorRejectedModeCount: 0,
@@ -229,6 +231,7 @@ describe("buildCanonicalFullModalDescriptor", () => {
       upstreamResonantModeCount: 4,
       upstreamSourceCoupledModalEnergy: 0.3,
       upstreamResonantModalEnergy: 0.7,
+      upstreamCandidateShellCount: 5,
     });
 
     const audit = descriptor.diagnostics.modalVarietyAudit;
@@ -242,6 +245,7 @@ describe("buildCanonicalFullModalDescriptor", () => {
       upstreamSourceCoupledModeCount: 2,
       upstreamResonantModeCount: 4,
       upstreamCandidateModeCount: 6,
+      upstreamCandidateShellCount: 5,
       observerCandidateModeCount: 7,
       observedModalModeCount: 5,
       phaseAuthorityModeCount: 6,
@@ -250,6 +254,7 @@ describe("buildCanonicalFullModalDescriptor", () => {
       upstreamCandidateModalEnergy: 1,
     });
     expect(audit.publishedModeCoverageRatio).toBeCloseTo(2 / 6, 6);
+    expect(audit.publishedShellCoverageRatio).toBeCloseTo(2 / 5, 6);
     expect(audit.publishedModalEnergyCoverageRatio).toBeCloseTo(
       (0.5 ** 2 + 0.25 ** 2) / 1,
       6,
@@ -258,10 +263,7 @@ describe("buildCanonicalFullModalDescriptor", () => {
       2 / 7,
       6,
     );
-    expect(audit.observedModalPublishedModeCoverageRatio).toBeCloseTo(
-      2 / 5,
-      6,
-    );
+    expect(audit.observedModalPublishedModeCoverageRatio).toBeCloseTo(2 / 5, 6);
     expect(audit.phaseAuthorityPublishedModeCoverageRatio).toBeCloseTo(
       2 / 6,
       6,
@@ -270,6 +272,7 @@ describe("buildCanonicalFullModalDescriptor", () => {
       2 / 6,
       6,
     );
+    expect(audit.basisRepresentedShellCoverageRatio).toBeCloseTo(2 / 5, 6);
   });
 
   it("preserves continuity order when atlas pages are saturated", () => {

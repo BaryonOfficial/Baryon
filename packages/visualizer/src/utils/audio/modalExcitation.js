@@ -2,6 +2,7 @@ import {
   sampleFFTAmplitudeForFrequency,
   getModalGeometryBackend,
 } from "../../core/modalGeometryBackend.js";
+import { MODAL_BASIS_ATLAS_PAGE_CAPACITY } from "../../core/modalBudgets.js";
 import { LIVE_INPUT_ANALYSIS_CLASSES } from "../../core/audio/liveInputAnalysis.js";
 import {
   binIndexToFrequencyHz,
@@ -3420,6 +3421,14 @@ export function buildModalExcitationStructuralState({
   state.lastFrameAtMs = preparedInputs.currentFrameAtMs;
   const sourceCoupledCapacity = state.sourceCoupledProposal.slots.length / 4;
   const resonantCapacity = state.resonantProposal.slots.length / 4;
+  const renderSourceCoupledCapacity = Math.min(
+    sourceCoupledCapacity,
+    MODAL_BASIS_ATLAS_PAGE_CAPACITY,
+  );
+  const renderResonantCapacity = Math.min(
+    resonantCapacity,
+    MODAL_BASIS_ATLAS_PAGE_CAPACITY,
+  );
   const observedModalResult = updateObservedModalModes({
     state,
     atlas,
@@ -4091,7 +4100,7 @@ export function buildModalExcitationStructuralState({
   blendModalStack(
     state.blendSourceCoupled,
     state.displaySourceCoupled.slots,
-    sourceCoupledCapacity,
+    renderSourceCoupledCapacity,
     {
       attack: EXCITATION_SOURCE_COUPLED_BLEND_ATTACK,
       tracking: EXCITATION_SOURCE_COUPLED_BLEND_TRACKING,
@@ -4115,7 +4124,7 @@ export function buildModalExcitationStructuralState({
   blendModalStack(
     state.blendResonant,
     resonantBlendTargetSlots,
-    resonantCapacity,
+    renderResonantCapacity,
     {
       attack:
         resonantSignalAuthoritative || modalResponseResonantSignalAuthoritative
@@ -4156,7 +4165,7 @@ export function buildModalExcitationStructuralState({
       state.blendSourceCoupled,
       state.displaySourceCoupled.slots,
       state.displaySourceCoupled.colorSlots,
-      sourceCoupledCapacity,
+      renderSourceCoupledCapacity,
       {
         attack: EXCITATION_SOURCE_COUPLED_BLEND_ATTACK,
         tracking: EXCITATION_SOURCE_COUPLED_BLEND_TRACKING,
@@ -4170,7 +4179,7 @@ export function buildModalExcitationStructuralState({
       state.blendResonant,
       resonantBlendTargetSlots,
       resonantBlendColorSlots,
-      resonantCapacity,
+      renderResonantCapacity,
       {
         attack: resonantSignalAuthoritative
           ? EXCITATION_RESONANT_SHIFT_BLEND_ATTACK
@@ -4190,13 +4199,13 @@ export function buildModalExcitationStructuralState({
   remapReferenceToBlendedOrder(
     state.blendSourceCoupled.slots,
     state.displaySourceCoupled.referenceSlots,
-    sourceCoupledCapacity,
+    renderSourceCoupledCapacity,
     state.remappedSourceCoupledRef,
   );
   remapReferenceToBlendedOrder(
     state.blendResonant.slots,
     resonantBlendReferenceSlots,
-    resonantCapacity,
+    renderResonantCapacity,
     state.remappedResonantRef,
   );
   remapReferenceToBlendedOrder(
@@ -4214,25 +4223,25 @@ export function buildModalExcitationStructuralState({
   const sourceCoupledPhaseModeCount = writePhaseSlotsForVisibleModes({
     target: state.blendSourceCoupled.phaseSlots,
     visibleSlots: state.blendSourceCoupled.slots,
-    capacity: sourceCoupledCapacity,
+    capacity: renderSourceCoupledCapacity,
     activeModes: state.activeModes,
     observedModes: state.observedModes,
   });
   const resonantPhaseModeCount = writePhaseSlotsForVisibleModes({
     target: state.blendResonant.phaseSlots,
     visibleSlots: state.blendResonant.slots,
-    capacity: resonantCapacity,
+    capacity: renderResonantCapacity,
     activeModes: state.activeModes,
     observedModes: state.observedModes,
   });
 
   let blendedSourceCoupledCount = countActiveSlots(
     state.blendSourceCoupled.slots,
-    sourceCoupledCapacity,
+    renderSourceCoupledCapacity,
   );
   let blendedResonantCount = countActiveSlots(
     state.blendResonant.slots,
-    resonantCapacity,
+    renderResonantCapacity,
   );
   const signalSourceCoupledCount = countActiveSlots(
     state.sourceCoupledProposal.slots,
@@ -4274,7 +4283,7 @@ export function buildModalExcitationStructuralState({
     modalResponse,
     candidateForcingSlots: state.blendSourceCoupled.slots,
     candidateResponseSlots: state.blendResonant.slots,
-    capacity: sourceCoupledCapacity + resonantCapacity,
+    capacity: renderSourceCoupledCapacity + renderResonantCapacity,
     sourceEnergy: resolvedSourceEvidence.sourceEnergy,
     renderBoundaryState,
     currentSignalEnergy,
@@ -4291,11 +4300,11 @@ export function buildModalExcitationStructuralState({
     scaleSlotAmplitudes(state.blendResonant.slots, projectedEnergyScale);
     blendedSourceCoupledCount = countActiveSlots(
       state.blendSourceCoupled.slots,
-      sourceCoupledCapacity,
+      renderSourceCoupledCapacity,
     );
     blendedResonantCount = countActiveSlots(
       state.blendResonant.slots,
-      resonantCapacity,
+      renderResonantCapacity,
     );
   }
   const weakResidualSignal = isWeakResidualDisplayTail({

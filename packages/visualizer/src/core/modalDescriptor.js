@@ -7,6 +7,10 @@ import {
   normalizeSpectralLanePacket,
   readPackedQuad,
 } from "../utils/audio/spectralLanePacket.js";
+import {
+  getRectangularModeFamilyKey,
+  getRectangularModeShellKey,
+} from "./modalTopology.js";
 
 const FNV_OFFSET_BASIS = 2166136261;
 const FNV_PRIME = 16777619;
@@ -152,9 +156,11 @@ function getEntryModeOrder(entry) {
 }
 
 function getSpatialFamilyKey(entry) {
-  return [Math.abs(entry.u), Math.abs(entry.v), Math.abs(entry.w)]
-    .sort((left, right) => left - right)
-    .join(":");
+  return getRectangularModeFamilyKey(entry);
+}
+
+function getSpatialShellKey(entry) {
+  return getRectangularModeShellKey(entry);
 }
 
 function divideOrFallback(numerator, denominator, fallback = 0) {
@@ -199,12 +205,17 @@ function buildModalVarietyAudit({
   upstreamSourceCoupledModeCount,
   upstreamResonantModeCount,
   upstreamCandidateModeCount,
+  upstreamSourceCoupledShellCount,
+  upstreamResonantShellCount,
+  upstreamCandidateShellCount,
   upstreamSourceCoupledModalEnergy,
   upstreamResonantModalEnergy,
   upstreamCandidateModalEnergy,
 }) {
   const acceptedEntries = slotAssignments.filter(Boolean);
   const representedEntries = [];
+  const shellKeys = new Set();
+  const representedShellKeys = new Set();
   const familyKeys = new Set();
   const representedFamilyKeys = new Set();
   let acceptedModalEnergy = 0;
@@ -227,6 +238,7 @@ function buildModalVarietyAudit({
     minModeOrder = Math.min(minModeOrder, modeOrder);
     maxModeOrder = Math.max(maxModeOrder, modeOrder);
     weightedModeOrderSum += modalEnergy * modeOrder;
+    shellKeys.add(getSpatialShellKey(entry));
     familyKeys.add(getSpatialFamilyKey(entry));
 
     if (
@@ -234,6 +246,7 @@ function buildModalVarietyAudit({
       slotIndex < structuralAdmission.basisAtlasPageCapacity
     ) {
       representedEntries.push(entry);
+      representedShellKeys.add(getSpatialShellKey(entry));
       representedFamilyKeys.add(getSpatialFamilyKey(entry));
       representedModalEnergy += modalEnergy;
     }
@@ -270,6 +283,26 @@ function buildModalVarietyAudit({
     summedUpstreamCandidateModeCount,
     acceptedEntries.length,
   );
+  const resolvedUpstreamSourceCoupledShellCount = resolveNonNegativeInteger(
+    upstreamSourceCoupledShellCount,
+  );
+  const resolvedUpstreamResonantShellCount = resolveNonNegativeInteger(
+    upstreamResonantShellCount,
+  );
+  const summedUpstreamCandidateShellCount =
+    resolvedUpstreamSourceCoupledShellCount +
+    resolvedUpstreamResonantShellCount;
+  const fallbackUpstreamCandidateShellCount = Math.max(
+    summedUpstreamCandidateShellCount,
+    shellKeys.size,
+  );
+  const resolvedUpstreamCandidateShellCount = Math.max(
+    resolveNonNegativeInteger(
+      upstreamCandidateShellCount,
+      fallbackUpstreamCandidateShellCount,
+    ),
+    shellKeys.size,
+  );
   const resolvedUpstreamSourceCoupledModalEnergy = resolveNonNegativeNumber(
     upstreamSourceCoupledModalEnergy,
   );
@@ -298,6 +331,9 @@ function buildModalVarietyAudit({
     upstreamSourceCoupledModeCount: resolvedUpstreamSourceCoupledModeCount,
     upstreamResonantModeCount: resolvedUpstreamResonantModeCount,
     upstreamCandidateModeCount: resolvedUpstreamCandidateModeCount,
+    upstreamSourceCoupledShellCount: resolvedUpstreamSourceCoupledShellCount,
+    upstreamResonantShellCount: resolvedUpstreamResonantShellCount,
+    upstreamCandidateShellCount: resolvedUpstreamCandidateShellCount,
     upstreamSourceCoupledModalEnergy: resolvedUpstreamSourceCoupledModalEnergy,
     upstreamResonantModalEnergy: resolvedUpstreamResonantModalEnergy,
     upstreamCandidateModalEnergy: resolvedUpstreamCandidateModalEnergy,
@@ -305,6 +341,11 @@ function buildModalVarietyAudit({
       acceptedEntries.length,
       resolvedUpstreamCandidateModeCount,
       resolvedUpstreamCandidateModeCount > 0 ? 0 : 1,
+    ),
+    publishedShellCoverageRatio: coverageRatio(
+      shellKeys.size,
+      resolvedUpstreamCandidateShellCount,
+      resolvedUpstreamCandidateShellCount > 0 ? 0 : 1,
     ),
     publishedModalEnergyCoverageRatio: coverageRatio(
       semanticModalEnergy,
@@ -331,6 +372,11 @@ function buildModalVarietyAudit({
       resolvedUpstreamCandidateModeCount,
       resolvedUpstreamCandidateModeCount > 0 ? 0 : 1,
     ),
+    basisRepresentedShellCoverageRatio: coverageRatio(
+      representedShellKeys.size,
+      resolvedUpstreamCandidateShellCount,
+      resolvedUpstreamCandidateShellCount > 0 ? 0 : 1,
+    ),
     basisRepresentedObservedModeCoverageRatio: coverageRatio(
       representedEntries.length,
       resolvedObservedModalModeCount,
@@ -345,6 +391,16 @@ function buildModalVarietyAudit({
     basisAtlasPressure: divideOrFallback(
       representedEntries.length,
       structuralAdmission.basisAtlasPageCapacity,
+    ),
+    semanticShellCount: shellKeys.size,
+    representedShellCount: representedShellKeys.size,
+    duplicateShellPressure: divideOrFallback(
+      acceptedEntries.length - shellKeys.size,
+      acceptedEntries.length,
+    ),
+    representedDuplicateShellPressure: divideOrFallback(
+      representedEntries.length - representedShellKeys.size,
+      representedEntries.length,
     ),
     spatialFamilyCount: familyKeys.size,
     representedSpatialFamilyCount: representedFamilyKeys.size,
@@ -423,6 +479,7 @@ function buildBasisAtlasCapacitySweep({
     basisAtlasPageCapacity,
     modalFieldCount: slotAssignments.filter(Boolean).length,
   }).map((capacity) => {
+    const representedShellKeys = new Set();
     const representedFamilyKeys = new Set();
     let representedModeCount = 0;
     let representedModalEnergy = 0;
@@ -453,6 +510,7 @@ function buildBasisAtlasCapacitySweep({
       }
 
       representedModeCount += 1;
+      representedShellKeys.add(getSpatialShellKey(entry));
       representedFamilyKeys.add(getSpatialFamilyKey(entry));
       representedModalEnergy += modalEnergy;
     }
@@ -464,6 +522,7 @@ function buildBasisAtlasCapacitySweep({
     return {
       basisAtlasPageCapacity: capacity,
       representedBasisPageModeCount: representedModeCount,
+      representedShellCount: representedShellKeys.size,
       representedSpatialFamilyCount: representedFamilyKeys.size,
       representedModalEnergy,
       renderRepresentedEnergyRatio: divideOrFallback(
@@ -778,6 +837,9 @@ function buildSpectralLaneDescriptorHash(slotAssignments) {
  *   upstreamSourceCoupledModeCount?: number,
  *   upstreamResonantModeCount?: number,
  *   upstreamCandidateModeCount?: number,
+ *   upstreamSourceCoupledShellCount?: number,
+ *   upstreamResonantShellCount?: number,
+ *   upstreamCandidateShellCount?: number,
  *   upstreamSourceCoupledModalEnergy?: number,
  *   upstreamResonantModalEnergy?: number,
  *   upstreamCandidateModalEnergy?: number,
@@ -803,6 +865,9 @@ export function buildCanonicalFullModalDescriptor({
   upstreamSourceCoupledModeCount,
   upstreamResonantModeCount,
   upstreamCandidateModeCount,
+  upstreamSourceCoupledShellCount,
+  upstreamResonantShellCount,
+  upstreamCandidateShellCount,
   upstreamSourceCoupledModalEnergy,
   upstreamResonantModalEnergy,
   upstreamCandidateModalEnergy,
@@ -890,6 +955,9 @@ export function buildCanonicalFullModalDescriptor({
     upstreamSourceCoupledModeCount,
     upstreamResonantModeCount,
     upstreamCandidateModeCount,
+    upstreamSourceCoupledShellCount,
+    upstreamResonantShellCount,
+    upstreamCandidateShellCount,
     upstreamSourceCoupledModalEnergy,
     upstreamResonantModalEnergy,
     upstreamCandidateModalEnergy,

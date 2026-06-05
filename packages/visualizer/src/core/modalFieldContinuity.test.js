@@ -164,9 +164,9 @@ describe("modal field continuity", () => {
     expect(retained.descriptorSource.modalFieldColorSlots[3]).toBeGreaterThan(
       0,
     );
-    expect(retained.descriptorSource.modalFieldMetadataSlots[3]).toBeGreaterThan(
-      0,
-    );
+    expect(
+      retained.descriptorSource.modalFieldMetadataSlots[3],
+    ).toBeGreaterThan(0);
 
     const released = update(state, [], {
       deltaTimeSec: TOPOLOGY_RELEASE_SECONDS,
@@ -198,18 +198,12 @@ describe("modal field continuity", () => {
     const retained = update(state, [], { deltaTimeSec: DT });
 
     expect(readModeKeys(retained.descriptorSource)).toEqual(["4:2:1"]);
-    expect(Array.from(retained.descriptorSource.modalFieldSpectralLaneA)).toEqual([
-      0,
-      1,
-      0,
-      0,
-    ]);
-    expect(Array.from(retained.descriptorSource.modalFieldSpectralLaneB)).toEqual([
-      0,
-      0,
-      0,
-      0,
-    ]);
+    expect(
+      Array.from(retained.descriptorSource.modalFieldSpectralLaneA),
+    ).toEqual([0, 1, 0, 0]);
+    expect(
+      Array.from(retained.descriptorSource.modalFieldSpectralLaneB),
+    ).toEqual([0, 0, 0, 0]);
     expect(retained.descriptorSource.modalFieldSpectralMeta[0]).toBeCloseTo(
       0.25,
       6,
@@ -258,6 +252,66 @@ describe("modal field continuity", () => {
     expect(readModeKeys(result.descriptorSource)).toEqual(["1:1:1", "2:1:1"]);
   });
 
+  it("reserves finite basis slots for distinct 3D wavenumber shells", () => {
+    const state = createModalFieldContinuityState();
+    const result = update(
+      state,
+      [
+        { mode: [0, 0, 3], coefficient: 0.9, observedSupport: 0.9 },
+        { mode: [1, 2, 2], coefficient: 0.88, observedSupport: 0.88 },
+        { mode: [2, 1, 2], coefficient: 0.86, observedSupport: 0.86 },
+        { mode: [1, 1, 1], coefficient: 0.35, observedSupport: 0.35 },
+        { mode: [1, 1, 2], coefficient: 0.34, observedSupport: 0.34 },
+      ],
+      {
+        deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
+        maxVisibleModeCount: 3,
+      },
+    );
+
+    expect(readModeKeys(result.descriptorSource)).toEqual([
+      "0:0:3",
+      "1:1:1",
+      "1:1:2",
+    ]);
+    expect(result.diagnostics.visibleShellCount).toBe(3);
+    expect(result.diagnostics.duplicateShellPressure).toBe(0);
+    expect(result.diagnostics.tailModeKeys).toEqual(["1:2:2", "2:1:2"]);
+  });
+
+  it("replaces weak duplicate-shell topology with a missing structural shell", () => {
+    const state = createModalFieldContinuityState();
+    update(
+      state,
+      [
+        { mode: [0, 0, 3], coefficient: 0.9, observedSupport: 0.9 },
+        { mode: [1, 2, 2], coefficient: 0.82, observedSupport: 0.82 },
+      ],
+      {
+        deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
+        maxVisibleModeCount: 2,
+      },
+    );
+
+    const replaced = update(
+      state,
+      [
+        { mode: [0, 0, 3], coefficient: 0.9, observedSupport: 0.9 },
+        { mode: [1, 2, 2], coefficient: 0.82, observedSupport: 0.82 },
+        { mode: [1, 1, 1], coefficient: 0.35, observedSupport: 0.35 },
+      ],
+      {
+        deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS + BASIS_REASSIGN_MIN_SECONDS,
+        maxVisibleModeCount: 2,
+      },
+    );
+
+    expect(readModeKeys(replaced.descriptorSource)).toEqual(["0:0:3", "1:1:1"]);
+    expect(replaced.diagnostics.removedModeKeys).toEqual(["1:2:2"]);
+    expect(replaced.diagnostics.admittedModeKeys).toEqual(["1:1:1"]);
+    expect(replaced.diagnostics.visibleShellCount).toBe(2);
+  });
+
   it("keeps unrepresentable high-order candidates out of basis-visible topology", () => {
     const state = createModalFieldContinuityState();
     const result = update(
@@ -292,10 +346,7 @@ describe("modal field continuity", () => {
       },
     );
 
-    expect(readModeKeys(result.descriptorSource)).toEqual([
-      "2:1:1",
-      "3:1:1",
-    ]);
+    expect(readModeKeys(result.descriptorSource)).toEqual(["2:1:1", "3:1:1"]);
     expect(result.diagnostics.tailModeKeys).toContain("18:18:18");
   });
 

@@ -15,6 +15,7 @@ import {
 
 describe("modalBudgets", () => {
   it("keeps the three modal budgets distinct and canonical", () => {
+    expect(RAYMARCH_MODAL_BASIS_CACHE_CAPACITY).toBe(12);
     expect(MODAL_SEMANTIC_DESCRIPTOR_CAPACITY).toBe(
       AUDIO_DEFAULTS.maxModalFieldDescriptorModes,
     );

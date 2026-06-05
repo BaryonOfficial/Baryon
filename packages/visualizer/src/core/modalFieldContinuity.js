@@ -2,6 +2,12 @@ import {
   MODAL_BASIS_CACHE_RESOLUTION,
   getModalBasisCacheMaxRepresentableModeIndex,
 } from "./modalBudgets.js";
+import {
+  getRectangularModeFamilyKey,
+  getRectangularModeShellKey,
+  normalizeModalTopologyCoordinate,
+  summarizeModalTopology,
+} from "./modalTopology.js";
 
 export const TOPOLOGY_ADMIT_EVIDENCE = 0.08;
 export const TOPOLOGY_PROMOTE_SECONDS = 0.05;
@@ -13,6 +19,7 @@ export const IDENTITY_RETENTION_MIN = 0.72;
 export const STRUCTURAL_ADMISSION_REFERENCE_MODE_ORDER_FRACTION = 0.25;
 const TOPOLOGY_REPLACE_EVIDENCE_MARGIN = 0.08;
 const TOPOLOGY_REPLACE_EVIDENCE_RATIO = 1.35;
+const TOPOLOGY_REPLACE_MISSING_SHELL_SCORE_RATIO = 0.4;
 const TOPOLOGY_REPLACE_MAX_FRACTION = 0.4;
 const RETAINED_PAYLOAD_DROP_RATIO = 0.85;
 const STRUCTURAL_ADMISSION_COMPLIANCE_EXPONENT = 2;
@@ -34,7 +41,7 @@ function normalizeDeltaTimeSec(deltaTimeSec) {
 }
 
 function normalizeModeCoordinate(value) {
-  return Number.isFinite(value) ? Math.round(value) : 0;
+  return normalizeModalTopologyCoordinate(value);
 }
 
 function buildModeKey(u, v, w) {
@@ -173,10 +180,13 @@ function readCandidateEntries(
     const structuralAdmissionScore = basisRepresentable
       ? clamp01(evidenceScore * structuralAdmissionCompliance)
       : 0;
+    const topologySource = { mode };
 
     entries.push({
       modeKey,
       mode,
+      topologyShellKey: getRectangularModeShellKey(topologySource),
+      topologyFamilyKey: getRectangularModeFamilyKey(topologySource),
       candidateIndex: index,
       basisRepresentable,
       evidenceScore,
@@ -219,6 +229,8 @@ function createRecord(entry, nowSec) {
     lastStoredEnergySnapshot: entry.storedEnergySnapshot,
     structuralAdmissionScore: entry.structuralAdmissionScore,
     structuralAdmissionCompliance: entry.structuralAdmissionCompliance,
+    topologyShellKey: entry.topologyShellKey,
+    topologyFamilyKey: entry.topologyFamilyKey,
     eligibilityEpoch: 0,
     basisEligible: false,
     basisRepresentable: entry.basisRepresentable,
@@ -296,6 +308,8 @@ function updateRecordSnapshot(record, entry, nowSec) {
   record.lastStoredEnergySnapshot = entry.storedEnergySnapshot;
   record.structuralAdmissionScore = entry.structuralAdmissionScore;
   record.structuralAdmissionCompliance = entry.structuralAdmissionCompliance;
+  record.topologyShellKey = entry.topologyShellKey;
+  record.topologyFamilyKey = entry.topologyFamilyKey;
   record.basisRepresentable = entry.basisRepresentable;
   record.candidateIndex = entry.candidateIndex;
   record.payload = entry.payload;
@@ -308,6 +322,8 @@ function updateRecordEvidence(record, entry, nowSec) {
   record.lastObservedAtSec = nowSec;
   record.structuralAdmissionScore = entry.structuralAdmissionScore;
   record.structuralAdmissionCompliance = entry.structuralAdmissionCompliance;
+  record.topologyShellKey = entry.topologyShellKey;
+  record.topologyFamilyKey = entry.topologyFamilyKey;
   record.basisRepresentable = entry.basisRepresentable;
   record.candidateIndex = entry.candidateIndex;
 }
@@ -344,8 +360,8 @@ function decayRecordLivePayload(record) {
       record.lowEvidenceSec /
         Math.max(TOPOLOGY_RELEASE_SECONDS, Number.EPSILON),
   );
-  const sourcePayload =
-    record.lastRenderablePayload ?? record.payload ?? {
+  const sourcePayload = record.lastRenderablePayload ??
+    record.payload ?? {
       slot: [
         record.mode?.[0] ?? 0,
         record.mode?.[1] ?? 0,
@@ -463,6 +479,34 @@ function getAdmissionRole(record) {
     : "detail";
 }
 
+function getRecordShellKey(record) {
+  return record?.topologyShellKey ?? getRectangularModeShellKey(record);
+}
+
+function getRecordFamilyKey(record) {
+  return record?.topologyFamilyKey ?? getRectangularModeFamilyKey(record);
+}
+
+function summarizeRecords(records) {
+  return summarizeModalTopology(records, {
+    getShellKey: getRecordShellKey,
+    getFamilyKey: getRecordFamilyKey,
+  });
+}
+
+function buildRecordShellCountMap(records) {
+  const shellCounts = new Map();
+  for (const record of records ?? []) {
+    const shellKey = getRecordShellKey(record);
+    shellCounts.set(shellKey, (shellCounts.get(shellKey) ?? 0) + 1);
+  }
+  return shellCounts;
+}
+
+function buildRecordShellKeySet(records) {
+  return new Set((records ?? []).map((record) => getRecordShellKey(record)));
+}
+
 function getDetailAdmissionBudget(maxVisibleModeCount) {
   if (!Number.isFinite(maxVisibleModeCount)) {
     return Infinity;
@@ -547,12 +591,15 @@ function selectAdmissionRecords({
   availableVisibleSlots,
   maxDetailVisibleCount,
   currentDetailVisibleCount,
+  currentShellKeys = new Set(),
 }) {
   if (availableVisibleSlots <= 0) {
     return [];
   }
   const orderedRecords = [...records].sort(compareAdmissionRecords);
   const selectedRecords = [];
+  const selectedRecordKeys = new Set();
+  const coveredShellKeys = new Set(currentShellKeys);
   let selectedDetailCount = 0;
   const remainingDetailSlots =
     Number.isFinite(maxDetailVisibleCount) ||
@@ -562,15 +609,52 @@ function selectAdmissionRecords({
           maxDetailVisibleCount - Math.max(0, currentDetailVisibleCount),
         )
       : Infinity;
-  for (const record of orderedRecords) {
+
+  const canSelectRecord = (record) => {
+    if (selectedRecordKeys.has(record.modeKey)) {
+      return false;
+    }
     const isDetail = getAdmissionRole(record) === "detail";
     if (isDetail && selectedDetailCount >= remainingDetailSlots) {
-      continue;
+      return false;
     }
+    return true;
+  };
+  const selectRecord = (record) => {
     selectedRecords.push(record);
-    if (isDetail) {
+    selectedRecordKeys.add(record.modeKey);
+    coveredShellKeys.add(getRecordShellKey(record));
+    if (getAdmissionRole(record) === "detail") {
       selectedDetailCount += 1;
     }
+  };
+  const selectionFull = () =>
+    Number.isFinite(availableVisibleSlots) &&
+    selectedRecords.length >= availableVisibleSlots;
+
+  for (const record of orderedRecords) {
+    if (getAdmissionRole(record) !== "structural" || !canSelectRecord(record)) {
+      continue;
+    }
+    const shellKey = getRecordShellKey(record);
+    if (coveredShellKeys.has(shellKey)) {
+      continue;
+    }
+    selectRecord(record);
+    if (selectionFull()) {
+      break;
+    }
+  }
+
+  if (selectionFull()) {
+    return selectedRecords;
+  }
+
+  for (const record of orderedRecords) {
+    if (!canSelectRecord(record)) {
+      continue;
+    }
+    selectRecord(record);
     if (
       Number.isFinite(availableVisibleSlots) &&
       selectedRecords.length >= availableVisibleSlots
@@ -608,8 +692,11 @@ function selectReplacementPairs({
   const candidates = [...candidateRecords].sort(compareAdmissionRecords);
   const pairs = [];
   const usedTargetKeys = new Set();
+  const visibleShellCounts = buildRecordShellCountMap(targets);
+  const coveredShellKeys = buildRecordShellKeySet(targets);
 
   for (const candidate of candidates) {
+    const candidateShellKey = getRecordShellKey(candidate);
     const target = targets.find((record) => {
       if (usedTargetKeys.has(record.modeKey)) {
         return false;
@@ -628,6 +715,16 @@ function selectReplacementPairs({
           record.evidenceScore * TOPOLOGY_REPLACE_EVIDENCE_RATIO,
         );
 
+      const coverageReplacement =
+        candidateRole === "structural" &&
+        targetRole === "structural" &&
+        candidate.evidenceScore >= TOPOLOGY_ADMIT_EVIDENCE &&
+        !coveredShellKeys.has(candidateShellKey) &&
+        (visibleShellCounts.get(getRecordShellKey(record)) ?? 0) > 1 &&
+        getStructuralAdmissionScore(candidate) >=
+          getStructuralAdmissionScore(record) *
+            TOPOLOGY_REPLACE_MISSING_SHELL_SCORE_RATIO;
+
       if (candidateRole === "detail" && targetRole === "detail") {
         return evidenceReplacement;
       }
@@ -639,13 +736,31 @@ function selectReplacementPairs({
             TOPOLOGY_REPLACE_EVIDENCE_MARGIN,
           getStructuralAdmissionScore(record) * TOPOLOGY_REPLACE_EVIDENCE_RATIO,
         );
-      return structuralReplacement || evidenceReplacement;
+      return (
+        structuralReplacement || evidenceReplacement || coverageReplacement
+      );
     });
     if (!target) {
       continue;
     }
     pairs.push({ candidate, target });
     usedTargetKeys.add(target.modeKey);
+    const targetShellKey = getRecordShellKey(target);
+    const nextTargetShellCount = Math.max(
+      0,
+      (visibleShellCounts.get(targetShellKey) ?? 0) - 1,
+    );
+    if (nextTargetShellCount > 0) {
+      visibleShellCounts.set(targetShellKey, nextTargetShellCount);
+    } else {
+      visibleShellCounts.delete(targetShellKey);
+      coveredShellKeys.delete(targetShellKey);
+    }
+    visibleShellCounts.set(
+      candidateShellKey,
+      (visibleShellCounts.get(candidateShellKey) ?? 0) + 1,
+    );
+    coveredShellKeys.add(candidateShellKey);
     if (pairs.length >= replacementBudget) {
       break;
     }
@@ -714,9 +829,10 @@ function buildDiagnostics({
   const releasingModeKeys = outputRecords
     .filter((record) => record.state === "releasing")
     .map((record) => record.modeKey);
-  const tailModeKeys = candidateEntries
-    .map((entry) => entry.modeKey)
-    .filter((modeKey) => !outputModeKeySet.has(modeKey));
+  const tailEntries = candidateEntries.filter(
+    (entry) => !outputModeKeySet.has(entry.modeKey),
+  );
+  const tailModeKeys = tailEntries.map((entry) => entry.modeKey);
   const activeModeCount = countBasisEligibleRecords(state);
   const previousVisibleCount = previousVisibleKeys.length;
   const modeIdentityRetentionRatio =
@@ -725,19 +841,31 @@ function buildDiagnostics({
       : outputModeKeys.length > 0
         ? 1
         : 0;
+  const candidateTopology = summarizeRecords(candidateEntries);
+  const visibleTopology = summarizeRecords(outputRecords);
+  const tailTopology = summarizeRecords(tailEntries);
 
   return {
     reset,
     dormant: false,
     eligibilityEpoch: state.eligibilityEpoch,
     candidateModeCount: candidateEntries.length,
+    candidateShellCount: candidateTopology.shellCount,
+    candidateSpatialFamilyCount: candidateTopology.familyCount,
+    candidateDuplicateShellPressure: candidateTopology.duplicateShellPressure,
     activeModeCount,
     visibleModeCount: outputRecords.length,
+    visibleShellCount: visibleTopology.shellCount,
+    visibleSpatialFamilyCount: visibleTopology.familyCount,
+    duplicateShellPressure: visibleTopology.duplicateShellPressure,
     admittedModeKeys,
     retainedModeKeys,
     releasingModeKeys,
     removedModeKeys,
     tailModeKeys,
+    tailShellCount: tailTopology.shellCount,
+    tailSpatialFamilyCount: tailTopology.familyCount,
+    tailDuplicateShellPressure: tailTopology.duplicateShellPressure,
     basisEligibleModeKeys: outputModeKeys,
     modeIdentityRetentionRatio,
   };
@@ -750,13 +878,20 @@ function buildDormantResult({
   reset,
 }) {
   const activeModeCount = countBasisEligibleRecords(state);
+  const candidateTopology = summarizeRecords(candidateEntries);
   const diagnostics = {
     reset,
     dormant: true,
     eligibilityEpoch: state.eligibilityEpoch,
     candidateModeCount: candidateEntries.length,
+    candidateShellCount: candidateTopology.shellCount,
+    candidateSpatialFamilyCount: candidateTopology.familyCount,
+    candidateDuplicateShellPressure: candidateTopology.duplicateShellPressure,
     activeModeCount,
     visibleModeCount: 0,
+    visibleShellCount: 0,
+    visibleSpatialFamilyCount: 0,
+    duplicateShellPressure: 0,
     admittedModeKeys: [],
     retainedModeKeys: previousVisibleKeys.filter((modeKey) =>
       state.recordsByModeKey.has(modeKey),
@@ -764,6 +899,9 @@ function buildDormantResult({
     releasingModeKeys: [],
     removedModeKeys: [],
     tailModeKeys: candidateEntries.map((entry) => entry.modeKey),
+    tailShellCount: candidateTopology.shellCount,
+    tailSpatialFamilyCount: candidateTopology.familyCount,
+    tailDuplicateShellPressure: candidateTopology.duplicateShellPressure,
     basisEligibleModeKeys: [],
     modeIdentityRetentionRatio: activeModeCount > 0 ? 1 : 0,
   };
@@ -905,6 +1043,7 @@ export function updateModalFieldContinuity(
         normalizedMaxVisibleModeCount,
       ),
       currentDetailVisibleCount: countVisibleDetailRecords(state),
+      currentShellKeys: buildRecordShellKeySet(getBasisEligibleRecords(state)),
     });
     const selectedRecordKeys = new Set(
       selectedRecords.map((record) => record.modeKey),
