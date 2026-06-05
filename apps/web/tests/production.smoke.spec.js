@@ -111,7 +111,7 @@ test.describe("Baryon production smoke", () => {
       hasAuditSnapshot: false,
     });
 
-    await expect(page.getByTestId("raymarch-debug-overlay")).toHaveCount(0);
+    await expect(page.getByTestId("diagnostics-hud")).toHaveCount(0);
 
     await page
       .getByRole("button", { name: "Toggle advanced controls" })
@@ -125,9 +125,7 @@ test.describe("Baryon production smoke", () => {
     ).toBeVisible();
     await expect(page.getByRole("button", { name: /^Shape\s/ })).toBeVisible();
     await expect(page.getByText("Audit")).toHaveCount(0);
-    await page
-      .getByRole("button", { name: "Close advanced controls" })
-      .click();
+    await page.getByRole("button", { name: "Close advanced controls" }).click();
     await expect(page.getByTestId("advanced-controls-sidebar")).toBeHidden();
   });
 

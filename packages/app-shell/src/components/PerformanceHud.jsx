@@ -37,6 +37,21 @@ function formatRenderSurfaceLabel(renderSurface) {
   return `${Math.round(backingWidth)} x ${Math.round(backingHeight)} (${formatNumber(backingMegapixels, 2)} MP)`;
 }
 
+function PerformanceHudDivider() {
+  return (
+    <div
+      aria-hidden="true"
+      data-testid="performance-hud-resolution-divider"
+      style={{
+        height: 1,
+        margin: "0.42rem 0 0.38rem",
+        background: "var(--nd-border-subtle)",
+        opacity: 0.72,
+      }}
+    />
+  );
+}
+
 export default function PerformanceHud({
   metrics,
   top = "1rem",
@@ -70,19 +85,12 @@ export default function PerformanceHud({
       ? formatNumber(metrics.renderScale, 3)
       : null;
   const renderSurfaceLabel = formatRenderSurfaceLabel(metrics.renderSurface);
-  const temporalBlendLabel =
-    typeof metrics.temporalHistoryBlend === "number"
-      ? formatNumber(metrics.temporalHistoryBlend, 2)
-      : "—";
-  let traaLabel = null;
-  let smaaLabel = null;
-  if (usesRaymarchVolumePipeline(metrics.visualizationMethod)) {
-    traaLabel = metrics.traaEnabled
-      ? `on · blend ${temporalBlendLabel}`
-      : "off";
-    smaaLabel = metrics.smaaEnabled ? "on" : "off";
-  }
-
+  const performanceProfileLabel = metrics.qualityPreset
+    ? formatPerformanceProfileLabel(
+        metrics.qualityPreset,
+        resolvedTargetFps ?? metrics.targetFps,
+      )
+    : null;
   return (
     <aside
       data-testid="performance-hud"
@@ -107,15 +115,42 @@ export default function PerformanceHud({
     >
       <div
         style={{
+          display: "flex",
+          alignItems: "baseline",
+          gap: "0.32rem",
           fontWeight: 700,
           marginBottom: "0.32rem",
-          textTransform: "uppercase",
           letterSpacing: "var(--baryon-type-section-letter-spacing)",
           color: "var(--nd-text-secondary)",
+          minWidth: 0,
         }}
       >
-        Performance
+        <span style={{ textTransform: "uppercase" }}>Performance</span>
+        {performanceProfileLabel ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <span
+              data-testid="performance-hud-profile-title"
+              style={{
+                minWidth: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                fontStyle: "italic",
+                letterSpacing: 0,
+                color: "var(--nd-text-primary)",
+              }}
+            >
+              {performanceProfileLabel}
+            </span>
+          </>
+        ) : null}
       </div>
+      {typeof resolvedTargetFps === "number" ? (
+        <div>
+          {targetFpsLabel}: {Math.round(resolvedTargetFps)}
+        </div>
+      ) : null}
       {splitAuthoritativeMetrics ? (
         <>
           <div>Stage FPS: {formatNumber(metrics.fps, 1)}</div>
@@ -135,29 +170,16 @@ export default function PerformanceHud({
           <div>Frame ms: {formatNumber(metrics.smoothedFrameTimeMs, 2)}</div>
         </>
       )}
-      <div>
-        DPR: {formatNumber(metrics.currentPixelRatio, 3)} /{" "}
-        {formatNumber(metrics.basePixelRatio, 3)}
-      </div>
-      {renderSurfaceLabel ? <div>Canvas: {renderSurfaceLabel}</div> : null}
-      {renderScaleLabel ? <div>Render Scale: {renderScaleLabel}</div> : null}
-      {metrics.qualityPreset ? (
-        <div>
-          Performance Profile:{" "}
-          {formatPerformanceProfileLabel(
-            metrics.qualityPreset,
-            resolvedTargetFps ?? metrics.targetFps,
-          )}
-        </div>
-      ) : null}
-      {typeof resolvedTargetFps === "number" ? (
-        <div>
-          {targetFpsLabel}: {Math.round(resolvedTargetFps)}
-        </div>
-      ) : null}
       {raymarchStepsLabel ? <div>Steps: {raymarchStepsLabel}</div> : null}
-      {traaLabel ? <div>TRAA: {traaLabel}</div> : null}
-      {smaaLabel ? <div>SMAA: {smaaLabel}</div> : null}
+      <PerformanceHudDivider />
+      <div data-testid="performance-hud-resolution-fields">
+        <div>
+          DPR: {formatNumber(metrics.currentPixelRatio, 3)} /{" "}
+          {formatNumber(metrics.basePixelRatio, 3)}
+        </div>
+        {renderScaleLabel ? <div>Render Scale: {renderScaleLabel}</div> : null}
+        {renderSurfaceLabel ? <div>Canvas: {renderSurfaceLabel}</div> : null}
+      </div>
     </aside>
   );
 }

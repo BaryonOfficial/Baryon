@@ -138,7 +138,7 @@ export function useBaryonVisualizer({
   const lastAppliedExternalFrameSequenceRef = useRef(null);
   const performanceHudStateRef = useRef({
     lastPublishedAtMs: Number.NEGATIVE_INFINITY,
-    wasVisible: false,
+    wasPublishing: false,
   });
   const {
     points,
@@ -213,7 +213,7 @@ export function useBaryonVisualizer({
       runtimeDiagnosticsRef.current = createRuntimeDiagnostics();
       performanceHudStateRef.current = {
         lastPublishedAtMs: Number.NEGATIVE_INFINITY,
-        wasVisible: false,
+        wasPublishing: false,
       };
       lastAudioIssueSignatureRef.current = null;
       clearCachedControlsSnapshot(cachedControlSnapshotsRef);
@@ -281,7 +281,7 @@ export function useBaryonVisualizer({
       runtimeDiagnosticsRef.current = createRuntimeDiagnostics();
       performanceHudStateRef.current = {
         lastPublishedAtMs: Number.NEGATIVE_INFINITY,
-        wasVisible: false,
+        wasPublishing: false,
       };
       lastAudioIssueSignatureRef.current = null;
       uiInteractionUntilMsRef.current = 0;
@@ -577,15 +577,17 @@ export function useBaryonVisualizer({
       runtimeDiagnostics.uiInteraction.lastKind =
         latestUiInteractionRef.current.kind;
     }
-    if (controls.performanceHudEnabled) {
+    const shouldPublishHudSnapshot =
+      controls.performanceHudEnabled || controls.auditEnabled;
+    if (shouldPublishHudSnapshot) {
       publishPerformanceHudSnapshot({
         runtimeDiagnostics,
         onPerformanceHudSnapshotChange,
         performanceHudState: performanceHudStateRef.current,
       });
-      performanceHudStateRef.current.wasVisible = true;
-    } else if (performanceHudStateRef.current.wasVisible) {
-      performanceHudStateRef.current.wasVisible = false;
+      performanceHudStateRef.current.wasPublishing = true;
+    } else if (performanceHudStateRef.current.wasPublishing) {
+      performanceHudStateRef.current.wasPublishing = false;
       performanceHudStateRef.current.lastPublishedAtMs =
         Number.NEGATIVE_INFINITY;
       onPerformanceHudSnapshotChange?.(null);

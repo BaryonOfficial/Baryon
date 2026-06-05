@@ -483,7 +483,7 @@ test.describe("Baryon control smoke", () => {
       .toBe("raymarch");
 
     await setControl(page, "auditEnabled", true);
-    await expect(page.getByTestId("raymarch-debug-overlay")).toBeVisible();
+    await expect(page.getByTestId("diagnostics-hud")).toBeVisible();
     await expect
       .poll(() =>
         page.evaluate(() => ({
@@ -727,7 +727,7 @@ test.describe("Baryon control smoke", () => {
     await waitForControlSurface(page);
     await setControl(page, "auditEnabled", true);
 
-    await expect(page.getByTestId("raymarch-debug-overlay")).toBeVisible();
+    await expect(page.getByTestId("diagnostics-hud")).toBeVisible();
     await expect
       .poll(() =>
         page.evaluate(() => window.__baryonControlState?.method ?? null),

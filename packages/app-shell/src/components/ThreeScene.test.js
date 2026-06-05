@@ -40,7 +40,7 @@ vi.mock("./cameraControlEvents.js", () => ({
   dispatchCameraControlCommand: dispatchCameraControlCommandSpy,
 }));
 
-vi.mock("./ParticleDebugOverlay.jsx", () => ({
+vi.mock("./DiagnosticsHud.jsx", () => ({
   default: () => null,
 }));
 
@@ -449,7 +449,7 @@ describe("camera reset control", () => {
           ControlsProvider,
           { store: controlsStore },
           React.createElement(ThreeScene, {
-            debugOverlayExtraItems: [{ label: "A", value: 1 }],
+            diagnosticsHudExtraItems: [{ label: "A", value: 1 }],
           }),
         ),
       );
@@ -463,7 +463,7 @@ describe("camera reset control", () => {
           ControlsProvider,
           { store: controlsStore },
           React.createElement(ThreeScene, {
-            debugOverlayExtraItems: [{ label: "A", value: 2 }],
+            diagnosticsHudExtraItems: [{ label: "A", value: 2 }],
           }),
         ),
       );

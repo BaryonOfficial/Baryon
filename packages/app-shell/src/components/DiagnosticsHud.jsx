@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { usesRaymarchVolumePipeline } from "@baryon/visualizer/visualization/types";
 import { DEVTOOLS_ENABLED } from "../devtools/config.js";
 import {
-  normalizeDebugOverlayItems,
-  resolveDebugOverlayState,
-  shouldRenderDebugOverlay,
-} from "./ParticleDebugOverlayState.js";
+  normalizeDiagnosticsHudItems,
+  resolveDiagnosticsHudState,
+  shouldRenderDiagnosticsHud,
+} from "./DiagnosticsHudState.js";
 
 function formatNumber(value, digits = 3) {
   if (typeof value !== "number" || Number.isNaN(value)) return "n/a";
@@ -164,7 +165,8 @@ const DEBUG_METRIC_TOOLTIPS = {
   "Live Scale":
     "Current effective render scale reported by the hidden Syphon output stage runtime.",
   FPS: "Current FPS reported by the hidden Syphon output stage runtime snapshot.",
-  TRAA: "Whether temporal resolve/anti-aliasing is enabled in the hidden Syphon stage.",
+  TRAA: "Whether temporal reprojection anti-aliasing is enabled in the render output graph.",
+  SMAA: "Whether final screen-space morphological anti-aliasing is enabled in the render output graph.",
   Phase:
     "Current Syphon stage lifecycle phase in the desktop output controller.",
   Clients: "Whether the Syphon server currently reports any attached clients.",
@@ -204,6 +206,117 @@ function buildChangeMixItems(changeBreakdown) {
   }));
 }
 
+function buildPostProcessItems(metrics) {
+  if (!metrics || !usesRaymarchVolumePipeline(metrics.visualizationMethod)) {
+    return null;
+  }
+
+  const temporalBlendLabel =
+    typeof metrics.temporalHistoryBlend === "number"
+      ? formatNumber(metrics.temporalHistoryBlend, 2)
+      : "—";
+
+  return [
+    {
+      label: "TRAA",
+      value: metrics.traaEnabled ? `on · blend ${temporalBlendLabel}` : "off",
+    },
+    {
+      label: "SMAA",
+      value: metrics.smaaEnabled ? "on" : "off",
+    },
+  ];
+}
+
+function AccentTile({ label, value, onMetricEnter, onMetricLeave }) {
+  return (
+    <div
+      onPointerEnter={(event) => onMetricEnter?.(event, label)}
+      onPointerLeave={onMetricLeave}
+      style={{
+        minWidth: 0,
+        padding: "0.3rem 0.42rem 0.34rem",
+        borderRadius: "0.55rem",
+        background:
+          "linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03))",
+        border: "1px solid rgba(255,255,255,0.09)",
+        pointerEvents: "auto",
+        cursor: "help",
+      }}
+    >
+      <div
+        style={{
+          color: "rgba(217, 236, 255, 0.5)",
+          fontSize: "9px",
+          letterSpacing: "var(--baryon-type-action-letter-spacing)",
+          textTransform: "uppercase",
+          marginBottom: "0.1rem",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontWeight: 700,
+          fontSize: "13px",
+          color: "#eaf4ff",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function MetricRow({ label, value, onMetricEnter, onMetricLeave }) {
+  return (
+    <div
+      onPointerEnter={(event) => onMetricEnter?.(event, label)}
+      onPointerLeave={onMetricLeave}
+      style={{
+        display: "flex",
+        alignItems: "baseline",
+        justifyContent: "space-between",
+        gap: "0.4rem",
+        minWidth: 0,
+        padding: "0.13rem 0.04rem",
+        pointerEvents: "auto",
+        cursor: "help",
+      }}
+    >
+      <span
+        style={{
+          flex: "0 0 auto",
+          color: "rgba(217, 236, 255, 0.5)",
+          fontSize: "9px",
+          letterSpacing: "var(--baryon-type-action-letter-spacing)",
+          textTransform: "uppercase",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {label}
+      </span>
+      <span
+        style={{
+          flex: "0 1 auto",
+          minWidth: 0,
+          textAlign: "right",
+          fontWeight: 500,
+          fontSize: "11px",
+          color: "#d9ecff",
+          whiteSpace: "normal",
+          overflowWrap: "anywhere",
+        }}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
 function CompactGrid({
   items,
   columns = 2,
@@ -211,55 +324,23 @@ function CompactGrid({
   onMetricEnter,
   onMetricLeave,
 }) {
+  const Cell = accent ? AccentTile : MetricRow;
   return (
     <div
       style={{
         display: "grid",
         gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
-        gap: "0.4rem 0.45rem",
+        gap: accent ? "0.26rem" : "0.02rem 0.5rem",
       }}
     >
       {items.map(({ label, value }) => (
-        <div
+        <Cell
           key={label}
-          onPointerEnter={(event) => onMetricEnter?.(event, label)}
-          onPointerLeave={onMetricLeave}
-          style={{
-            minWidth: 0,
-            padding: accent ? "0.44rem 0.5rem" : "0.38rem 0.46rem",
-            borderRadius: accent ? "0.75rem" : "0.6rem",
-            background: accent
-              ? "linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03))"
-              : "rgba(255, 255, 255, 0.04)",
-            border: accent
-              ? "1px solid rgba(255,255,255,0.09)"
-              : "1px solid rgba(255, 255, 255, 0.07)",
-            pointerEvents: "auto",
-            cursor: "help",
-          }}
-        >
-          <div
-            style={{
-              color: "rgba(217, 236, 255, 0.62)",
-              fontSize: "10px",
-              letterSpacing: "var(--baryon-type-action-letter-spacing)",
-              textTransform: "uppercase",
-              marginBottom: "0.14rem",
-            }}
-          >
-            {label}
-          </div>
-          <div
-            style={{
-              fontWeight: accent ? 700 : 500,
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
-            {value}
-          </div>
-        </div>
+          label={label}
+          value={value}
+          onMetricEnter={onMetricEnter}
+          onMetricLeave={onMetricLeave}
+        />
       ))}
     </div>
   );
@@ -269,25 +350,37 @@ function SectionKicker({ children }) {
   return (
     <div
       style={{
-        marginTop: "0.52rem",
-        marginBottom: "0.32rem",
-        color: "rgba(217, 236, 255, 0.64)",
-        fontSize: "10px",
+        display: "flex",
+        alignItems: "center",
+        gap: "0.4rem",
+        marginTop: "0.4rem",
+        marginBottom: "0.18rem",
+        color: "rgba(217, 236, 255, 0.5)",
+        fontSize: "8.5px",
         fontWeight: 700,
         letterSpacing: "var(--baryon-type-dense-label-letter-spacing)",
         textTransform: "uppercase",
       }}
     >
-      {children}
+      <span style={{ flex: "0 0 auto" }}>{children}</span>
+      <span
+        style={{
+          flex: "1 1 auto",
+          height: "1px",
+          background:
+            "linear-gradient(90deg, rgba(217,236,255,0.16), rgba(217,236,255,0))",
+        }}
+      />
     </div>
   );
 }
 
-export default function ParticleDebugOverlay({
+export default function DiagnosticsHud({
   top = "1rem",
   right = "1rem",
   stacked = false,
-  debugOverlayExtraItems = null,
+  diagnosticsHudExtraItems = null,
+  postProcessMetrics = null,
   enabledOverride = undefined,
   snapshotOverride = undefined,
 }) {
@@ -356,14 +449,14 @@ export default function ParticleDebugOverlay({
     };
   }, []);
 
-  const resolvedOverlayState = resolveDebugOverlayState({
+  const resolvedOverlayState = resolveDiagnosticsHudState({
     localState: overlayState,
     enabledOverride,
     snapshotOverride,
   });
 
   if (
-    !shouldRenderDebugOverlay({
+    !shouldRenderDiagnosticsHud({
       enabledOverride,
       overlayState: resolvedOverlayState,
     })
@@ -416,6 +509,7 @@ export default function ParticleDebugOverlay({
     { label: "Coherence", value: formatNumber(primaryCoherence) },
   ];
   const changeMixItems = buildChangeMixItems(debugSnapshot.changeBreakdown);
+  const postProcessItems = buildPostProcessItems(postProcessMetrics);
   const supportItems = [
     { label: "Steps", value: debugSnapshot.stepBudget ?? "n/a" },
     { label: "Excite", value: formatNumber(debugSnapshot.fieldExcitation) },
@@ -460,8 +554,8 @@ export default function ParticleDebugOverlay({
       value: formatModalBasisCacheState(debugSnapshot),
     },
   ];
-  const externalOutputItems = normalizeDebugOverlayItems(
-    debugOverlayExtraItems,
+  const externalOutputItems = normalizeDiagnosticsHudItems(
+    diagnosticsHudExtraItems,
   );
   const handleHeaderPointerDown = (event) => {
     if (event.button !== 0) {
@@ -508,17 +602,17 @@ export default function ParticleDebugOverlay({
 
   return (
     <aside
-      data-testid="raymarch-debug-overlay"
+      data-testid="diagnostics-hud"
       ref={overlayRef}
       style={{
         position: stacked ? "relative" : "fixed",
         top: stacked ? "auto" : top,
         right: stacked ? "auto" : right,
         zIndex: 10001,
-        width: "min(21.5rem, calc(100vw - 2rem))",
-        maxWidth: "21.5rem",
-        padding: "0.78rem 0.82rem 0.82rem",
-        borderRadius: "1rem",
+        width: "min(20rem, calc(100vw - 2rem))",
+        maxWidth: "20rem",
+        padding: "0.55rem 0.6rem 0.62rem",
+        borderRadius: "0.85rem",
         background:
           "linear-gradient(180deg, rgba(3, 5, 10, 0.88), rgba(0, 0, 0, 0.82))",
         border: "1px solid rgba(255, 255, 255, 0.12)",
@@ -526,7 +620,7 @@ export default function ParticleDebugOverlay({
         color: "#d9ecff",
         fontFamily: "var(--baryon-type-mono-family)",
         fontSize: "11px",
-        lineHeight: 1.22,
+        lineHeight: 1.18,
         pointerEvents: "none",
         backdropFilter: "blur(12px)",
         transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)`,
@@ -542,7 +636,7 @@ export default function ParticleDebugOverlay({
           alignItems: "baseline",
           justifyContent: "space-between",
           gap: "0.75rem",
-          marginBottom: "0.5rem",
+          marginBottom: "0.34rem",
           cursor: isDragging ? "grabbing" : "grab",
           pointerEvents: "auto",
           userSelect: "none",
@@ -556,7 +650,7 @@ export default function ParticleDebugOverlay({
             letterSpacing: "var(--baryon-type-data-letter-spacing)",
           }}
         >
-          Visualization Debug
+          Diagnostics
         </div>
         <div
           style={{
@@ -567,12 +661,12 @@ export default function ParticleDebugOverlay({
             whiteSpace: "nowrap",
           }}
         >
-          live audit
+          live diagnostics
         </div>
       </div>
       <CompactGrid
         items={summaryItems}
-        columns={3}
+        columns={2}
         onMetricEnter={handleMetricEnter}
         onMetricLeave={handleMetricLeave}
       />
@@ -595,10 +689,21 @@ export default function ParticleDebugOverlay({
           />
         </>
       ) : null}
+      {postProcessItems ? (
+        <>
+          <SectionKicker>Post Process</SectionKicker>
+          <CompactGrid
+            items={postProcessItems}
+            columns={2}
+            onMetricEnter={handleMetricEnter}
+            onMetricLeave={handleMetricLeave}
+          />
+        </>
+      ) : null}
       <SectionKicker>Render</SectionKicker>
       <CompactGrid
         items={supportItems}
-        columns={4}
+        columns={2}
         onMetricEnter={handleMetricEnter}
         onMetricLeave={handleMetricLeave}
       />
@@ -607,7 +712,7 @@ export default function ParticleDebugOverlay({
           <SectionKicker>External Output</SectionKicker>
           <CompactGrid
             items={externalOutputItems}
-            columns={3}
+            columns={2}
             onMetricEnter={handleMetricEnter}
             onMetricLeave={handleMetricLeave}
           />

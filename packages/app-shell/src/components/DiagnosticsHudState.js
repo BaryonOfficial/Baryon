@@ -1,12 +1,13 @@
 import { DEVTOOLS_ENABLED } from "../devtools/config.js";
 
-export function normalizeDebugOverlayItems(debugOverlayExtraItems) {
-  return Array.isArray(debugOverlayExtraItems) && debugOverlayExtraItems.length
-    ? debugOverlayExtraItems
+export function normalizeDiagnosticsHudItems(diagnosticsHudExtraItems) {
+  return Array.isArray(diagnosticsHudExtraItems) &&
+    diagnosticsHudExtraItems.length
+    ? diagnosticsHudExtraItems
     : null;
 }
 
-export function resolveDebugOverlayState({
+export function resolveDiagnosticsHudState({
   localState,
   enabledOverride,
   snapshotOverride,
@@ -26,7 +27,7 @@ export function resolveDebugOverlayState({
   );
 }
 
-export function shouldRenderDebugOverlay({
+export function shouldRenderDiagnosticsHud({
   devtoolsEnabled = DEVTOOLS_ENABLED,
   enabledOverride,
   overlayState,

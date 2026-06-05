@@ -27,7 +27,7 @@ import {
   deriveCameraControlState,
 } from "./cameraControlModel.js";
 import { dispatchCameraControlCommand } from "./cameraControlEvents.js";
-import ParticleDebugOverlay from "./ParticleDebugOverlay.jsx";
+import DiagnosticsHud from "./DiagnosticsHud.jsx";
 import PerformanceHud from "./PerformanceHud.jsx";
 import { RendererErrorBoundary } from "./RendererErrorBoundary.jsx";
 import UnsupportedWarning from "./UnsupportedWarning.jsx";
@@ -101,7 +101,7 @@ function createCameraPoseDisplayKey(cameraPose) {
  *     showAction?: boolean,
  *     deviceSelectTestId?: string,
  *   } | null,
- *   debugOverlayExtraItems?: Array<{ label: string, value: string | number | boolean }> | null,
+ *   diagnosticsHudExtraItems?: Array<{ label: string, value: string | number | boolean }> | null,
  *   outputFrameConfig?: { enabled: boolean, width: number, height: number } | null,
  *   onOutputFrame?: (frame: { width: number, height: number, rgba: ArrayBuffer }) => Promise<void> | void,
  *   onFrameState?: (state: Record<string, unknown>) => void,
@@ -141,7 +141,7 @@ const ThreeScene = ({
   controlsOverlay = null,
   topRightOverlay = null,
   liveInputPanel = null,
-  debugOverlayExtraItems = null,
+  diagnosticsHudExtraItems = null,
   outputFrameConfig = null,
   onOutputFrame = null,
   onFrameState = null,
@@ -281,18 +281,19 @@ const ThreeScene = ({
     authoritativeStageTelemetry,
     authoritativeOutputHudMetrics,
   });
+  const resolvedHudMetrics = useAuthoritativePerformanceHud
+    ? composeAuthoritativePerformanceHudMetrics(
+        authoritativeStageTelemetry?.performanceHudSnapshot ?? null,
+        authoritativeOutputHudMetrics,
+      )
+    : performanceHudMetrics;
   const resolvedPerformanceHudMetrics = controlsState.performanceHudEnabled
-    ? useAuthoritativePerformanceHud
-      ? composeAuthoritativePerformanceHudMetrics(
-          authoritativeStageTelemetry?.performanceHudSnapshot ?? null,
-          authoritativeOutputHudMetrics,
-        )
-      : performanceHudMetrics
+    ? resolvedHudMetrics
     : null;
-  const debugOverlayEnabledOverride = omitLocalScene
+  const diagnosticsHudEnabledOverride = omitLocalScene
     ? authoritativeStageTelemetry?.auditEnabled === true
     : undefined;
-  const debugOverlaySnapshotOverride = omitLocalScene
+  const diagnosticsHudSnapshotOverride = omitLocalScene
     ? (authoritativeStageTelemetry?.auditSnapshot ?? null)
     : undefined;
   const liveInputStatusPanelVisible =
@@ -319,7 +320,7 @@ const ThreeScene = ({
     !isPhoneViewport &&
     !isTabletPortraitViewport &&
     (!isCompactViewport || !isControlsDockOpen);
-  const shouldShowDebugOverlay = !isTabletViewport;
+  const shouldShowDiagnosticsHud = !isTabletViewport;
 
   const handleCanvasError = (error) => {
     if (error?.name !== WEBGPU_RENDERER_INIT_ERROR) {
@@ -609,12 +610,13 @@ const ThreeScene = ({
           {shouldShowPerformanceOverlay ? (
             <PerformanceHud metrics={resolvedPerformanceHudMetrics} stacked />
           ) : null}
-          {shouldShowDebugOverlay ? (
-            <ParticleDebugOverlay
+          {shouldShowDiagnosticsHud ? (
+            <DiagnosticsHud
               stacked
-              debugOverlayExtraItems={debugOverlayExtraItems}
-              enabledOverride={debugOverlayEnabledOverride}
-              snapshotOverride={debugOverlaySnapshotOverride}
+              diagnosticsHudExtraItems={diagnosticsHudExtraItems}
+              postProcessMetrics={resolvedHudMetrics}
+              enabledOverride={diagnosticsHudEnabledOverride}
+              snapshotOverride={diagnosticsHudSnapshotOverride}
             />
           ) : null}
         </div>

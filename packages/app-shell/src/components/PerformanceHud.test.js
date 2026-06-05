@@ -50,6 +50,53 @@ describe("PerformanceHud", () => {
     expect(markup).not.toContain("Target FPS:");
   });
 
+  it("puts profile in the title row and separates resolution fields", () => {
+    const metrics = {
+      fps: 69.9,
+      smoothedFrameTimeMs: 14.31,
+      currentPixelRatio: 2,
+      basePixelRatio: 2,
+      renderScale: 0.75,
+      qualityPreset: "max-quality",
+      targetFps: 60,
+      visualizationMethod: "raymarch",
+      requestedRaymarchSteps: 80,
+      effectiveRaymarchSteps: 72,
+      renderSurface: {
+        backingWidth: 1920,
+        backingHeight: 1080,
+      },
+    };
+    const markup = renderToStaticMarkup(
+      React.createElement(PerformanceHud, { metrics }),
+    );
+
+    expect(markup).toContain(
+      'data-testid="performance-hud-resolution-divider"',
+    );
+    expect(markup).toContain('data-testid="performance-hud-profile-title"');
+    expect(markup).toContain("Performance");
+    expect(markup).toContain("Max Quality");
+    expect(markup).toContain("·");
+    expect(markup).not.toContain("Performance Profile:");
+    expect(markup).toContain("font-style:italic");
+    expect(markup.indexOf("Max Quality")).toBeLessThan(
+      markup.indexOf("Frame Budget FPS:"),
+    );
+    expect(markup.indexOf("Steps: 72 / 80")).toBeLessThan(
+      markup.indexOf('data-testid="performance-hud-resolution-divider"'),
+    );
+    expect(
+      markup.indexOf('data-testid="performance-hud-resolution-divider"'),
+    ).toBeLessThan(markup.indexOf("DPR:"));
+    expect(markup.indexOf("DPR:")).toBeLessThan(
+      markup.indexOf("Render Scale:"),
+    );
+    expect(markup.indexOf("Render Scale:")).toBeLessThan(
+      markup.indexOf("Canvas:"),
+    );
+  });
+
   it("shows the effective render scale without a duplicate governor target", () => {
     const markup = renderToStaticMarkup(
       React.createElement(PerformanceHud, {
@@ -120,8 +167,8 @@ describe("PerformanceHud", () => {
     expect(markup).toContain("Canvas: 3008 x 1660 (4.99 MP)");
   });
 
-  it("reports TRAA state and temporal-history blend", () => {
-    const raymarchMarkup = renderToStaticMarkup(
+  it("does not report post-process anti-aliasing state", () => {
+    const markup = renderToStaticMarkup(
       React.createElement(PerformanceHud, {
         metrics: {
           fps: 60,
@@ -138,26 +185,8 @@ describe("PerformanceHud", () => {
         },
       }),
     );
-    expect(raymarchMarkup).toContain("TRAA: on · blend 0.50");
-    expect(raymarchMarkup).toContain("SMAA: on");
 
-    const traaOffMarkup = renderToStaticMarkup(
-      React.createElement(PerformanceHud, {
-        metrics: {
-          fps: 60,
-          smoothedFrameTimeMs: 16.67,
-          currentPixelRatio: 1,
-          basePixelRatio: 1,
-          renderScale: 1,
-          qualityPreset: "auto",
-          targetFps: 60,
-          visualizationMethod: "raymarch",
-          traaEnabled: false,
-          smaaEnabled: false,
-        },
-      }),
-    );
-    expect(traaOffMarkup).toContain("TRAA: off");
-    expect(traaOffMarkup).toContain("SMAA: off");
+    expect(markup).not.toContain("TRAA:");
+    expect(markup).not.toContain("SMAA:");
   });
 });

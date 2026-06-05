@@ -52,6 +52,7 @@ describe("Bebop XR design-system CSS", () => {
       "packages/app-shell/src/components/AdvancedControlsDock.jsx",
       "packages/app-shell/src/components/AdvancedControlsSidebar.jsx",
       "packages/app-shell/src/components/AudioControls.jsx",
+      "packages/app-shell/src/components/DiagnosticsHud.jsx",
       "packages/app-shell/src/components/FloatingCameraControls.jsx",
       "packages/app-shell/src/components/LiveInputStatusPanel.jsx",
       "packages/app-shell/src/components/OutputStageSurface.jsx",
