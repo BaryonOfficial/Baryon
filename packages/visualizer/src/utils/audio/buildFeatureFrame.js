@@ -2594,6 +2594,21 @@ function sumSlotAmplitudeTotal(modeSlots, capacity) {
   return total;
 }
 
+function sumModalSlotCoefficientEnergy(modeSlots, capacity) {
+  const slotCount = Math.min(
+    Math.max(0, Math.floor(capacity ?? 0)),
+    Math.floor((modeSlots?.length ?? 0) / 4),
+  );
+  let total = 0;
+  for (let index = 0; index < slotCount; index += 1) {
+    const coefficient = modeSlots?.[index * 4 + 3] ?? 0;
+    if (coefficient > 0) {
+      total += coefficient * coefficient;
+    }
+  }
+  return total;
+}
+
 function scaleSlotAmplitudes(modeSlots, capacity, scale) {
   if (!(modeSlots instanceof Float32Array) || scale >= 1) {
     return;
@@ -6208,6 +6223,16 @@ export function composeAudioFeatureFrame({
     cavityAcousticScale: preparedInputs.cavityAcousticScale,
     boundaryMode: preparedInputs.boundaryMode,
   });
+  const upstreamSourceCoupledModalEnergy = sumModalSlotCoefficientEnergy(
+    renderSourceCoupledSlots,
+    activeSourceCoupledModeCount,
+  );
+  const upstreamResonantModalEnergy = sumModalSlotCoefficientEnergy(
+    renderResonantSlots,
+    activeResonantModeCount,
+  );
+  const upstreamCandidateModalEnergy =
+    upstreamSourceCoupledModalEnergy + upstreamResonantModalEnergy;
   const previousModalFieldContinuityFrameAtMs =
     preparedInputs.analysisMemory.lastModalFieldContinuityFrameAtMs;
   const modalFieldContinuityResetToken = `${preparedInputs.analysisSessionKey}|${preparedInputs.analysisInputsSignature}`;
@@ -6336,6 +6361,13 @@ export function composeAudioFeatureFrame({
       analysisResult.structuralMetrics?.observedModalModeCount,
     phaseAuthorityModeCount:
       analysisResult.structuralMetrics?.modalPhaseCoherentFieldModeCount,
+    upstreamSourceCoupledModeCount: activeSourceCoupledModeCount,
+    upstreamResonantModeCount: activeResonantModeCount,
+    upstreamCandidateModeCount:
+      modalFieldDescriptorSource.activeModalFieldModeCount,
+    upstreamSourceCoupledModalEnergy,
+    upstreamResonantModalEnergy,
+    upstreamCandidateModalEnergy,
     modeIdentityRetentionRatio:
       modalFieldContinuityDiagnostics.modeIdentityRetentionRatio,
   });

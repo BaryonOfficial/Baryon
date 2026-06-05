@@ -161,6 +161,24 @@ function divideOrFallback(numerator, denominator, fallback = 0) {
   return denominator > 0 ? numerator / denominator : fallback;
 }
 
+function coverageRatio(numerator, denominator, fallback = 0) {
+  return clamp01(divideOrFallback(numerator, denominator, fallback));
+}
+
+function resolveNonNegativeInteger(value, fallback = 0) {
+  if (Number.isFinite(value)) {
+    return Math.max(0, Math.floor(value));
+  }
+  return Math.max(0, Math.floor(fallback ?? 0));
+}
+
+function resolveNonNegativeNumber(value, fallback = 0) {
+  if (Number.isFinite(value)) {
+    return Math.max(0, value);
+  }
+  return Math.max(0, fallback ?? 0);
+}
+
 function getSpectralLanePacketMass(laneA, laneB) {
   let mass = 0;
   for (let laneIndex = 0; laneIndex < 4; laneIndex += 1) {
@@ -174,8 +192,16 @@ function buildModalVarietyAudit({
   slotAssignments,
   rejectedEntries,
   structuralAdmission,
+  observerCandidateModeCount,
+  observedModalModeCount,
   phaseAuthorityModeCount,
   modeIdentityRetentionRatio,
+  upstreamSourceCoupledModeCount,
+  upstreamResonantModeCount,
+  upstreamCandidateModeCount,
+  upstreamSourceCoupledModalEnergy,
+  upstreamResonantModalEnergy,
+  upstreamCandidateModalEnergy,
 }) {
   const acceptedEntries = slotAssignments.filter(Boolean);
   const representedEntries = [];
@@ -219,6 +245,45 @@ function buildModalVarietyAudit({
   );
   const semanticModalEnergy =
     acceptedModalEnergy + descriptorRejectedModalEnergy;
+  const resolvedObserverCandidateModeCount = resolveNonNegativeInteger(
+    observerCandidateModeCount,
+    acceptedEntries.length,
+  );
+  const resolvedObservedModalModeCount = resolveNonNegativeInteger(
+    observedModalModeCount,
+    acceptedEntries.length,
+  );
+  const resolvedPhaseAuthorityModeCount = resolveNonNegativeInteger(
+    phaseAuthorityModeCount,
+    acceptedEntries.length,
+  );
+  const resolvedUpstreamSourceCoupledModeCount = resolveNonNegativeInteger(
+    upstreamSourceCoupledModeCount,
+  );
+  const resolvedUpstreamResonantModeCount = resolveNonNegativeInteger(
+    upstreamResonantModeCount,
+  );
+  const summedUpstreamCandidateModeCount =
+    resolvedUpstreamSourceCoupledModeCount + resolvedUpstreamResonantModeCount;
+  const resolvedUpstreamCandidateModeCount = Math.max(
+    resolveNonNegativeInteger(upstreamCandidateModeCount),
+    summedUpstreamCandidateModeCount,
+    acceptedEntries.length,
+  );
+  const resolvedUpstreamSourceCoupledModalEnergy = resolveNonNegativeNumber(
+    upstreamSourceCoupledModalEnergy,
+  );
+  const resolvedUpstreamResonantModalEnergy = resolveNonNegativeNumber(
+    upstreamResonantModalEnergy,
+  );
+  const summedUpstreamCandidateModalEnergy =
+    resolvedUpstreamSourceCoupledModalEnergy +
+    resolvedUpstreamResonantModalEnergy;
+  const resolvedUpstreamCandidateModalEnergy = Math.max(
+    resolveNonNegativeNumber(upstreamCandidateModalEnergy),
+    summedUpstreamCandidateModalEnergy,
+    semanticModalEnergy,
+  );
   const energyEffectiveModeCount =
     modalEnergySquaredSum > 0
       ? (acceptedModalEnergy * acceptedModalEnergy) / modalEnergySquaredSum
@@ -227,6 +292,55 @@ function buildModalVarietyAudit({
   return {
     semanticModeCount: acceptedEntries.length,
     representedBasisPageModeCount: representedEntries.length,
+    observerCandidateModeCount: resolvedObserverCandidateModeCount,
+    observedModalModeCount: resolvedObservedModalModeCount,
+    phaseAuthorityModeCount: resolvedPhaseAuthorityModeCount,
+    upstreamSourceCoupledModeCount: resolvedUpstreamSourceCoupledModeCount,
+    upstreamResonantModeCount: resolvedUpstreamResonantModeCount,
+    upstreamCandidateModeCount: resolvedUpstreamCandidateModeCount,
+    upstreamSourceCoupledModalEnergy: resolvedUpstreamSourceCoupledModalEnergy,
+    upstreamResonantModalEnergy: resolvedUpstreamResonantModalEnergy,
+    upstreamCandidateModalEnergy: resolvedUpstreamCandidateModalEnergy,
+    publishedModeCoverageRatio: coverageRatio(
+      acceptedEntries.length,
+      resolvedUpstreamCandidateModeCount,
+      resolvedUpstreamCandidateModeCount > 0 ? 0 : 1,
+    ),
+    publishedModalEnergyCoverageRatio: coverageRatio(
+      semanticModalEnergy,
+      resolvedUpstreamCandidateModalEnergy,
+      resolvedUpstreamCandidateModalEnergy > 0 ? 0 : 1,
+    ),
+    observerCandidatePublishedModeCoverageRatio: coverageRatio(
+      acceptedEntries.length,
+      resolvedObserverCandidateModeCount,
+      resolvedObserverCandidateModeCount > 0 ? 0 : 1,
+    ),
+    observedModalPublishedModeCoverageRatio: coverageRatio(
+      acceptedEntries.length,
+      resolvedObservedModalModeCount,
+      resolvedObservedModalModeCount > 0 ? 0 : 1,
+    ),
+    phaseAuthorityPublishedModeCoverageRatio: coverageRatio(
+      acceptedEntries.length,
+      resolvedPhaseAuthorityModeCount,
+      resolvedPhaseAuthorityModeCount > 0 ? 0 : 1,
+    ),
+    basisRepresentedUpstreamModeCoverageRatio: coverageRatio(
+      representedEntries.length,
+      resolvedUpstreamCandidateModeCount,
+      resolvedUpstreamCandidateModeCount > 0 ? 0 : 1,
+    ),
+    basisRepresentedObservedModeCoverageRatio: coverageRatio(
+      representedEntries.length,
+      resolvedObservedModalModeCount,
+      resolvedObservedModalModeCount > 0 ? 0 : 1,
+    ),
+    basisRepresentedPhaseAuthorityModeCoverageRatio: coverageRatio(
+      representedEntries.length,
+      resolvedPhaseAuthorityModeCount,
+      resolvedPhaseAuthorityModeCount > 0 ? 0 : 1,
+    ),
     basisAtlasPageCapacity: structuralAdmission.basisAtlasPageCapacity,
     basisAtlasPressure: divideOrFallback(
       representedEntries.length,
@@ -661,6 +775,12 @@ function buildSpectralLaneDescriptorHash(slotAssignments) {
  *   observedModalModeCount?: number,
  *   phaseAuthorityModeCount?: number,
  *   modeIdentityRetentionRatio?: number,
+ *   upstreamSourceCoupledModeCount?: number,
+ *   upstreamResonantModeCount?: number,
+ *   upstreamCandidateModeCount?: number,
+ *   upstreamSourceCoupledModalEnergy?: number,
+ *   upstreamResonantModalEnergy?: number,
+ *   upstreamCandidateModalEnergy?: number,
  *   basisAtlasPageCapacity?: number,
  *   basisCacheResolution?: number,
  * }} [options]
@@ -680,6 +800,12 @@ export function buildCanonicalFullModalDescriptor({
   observedModalModeCount,
   phaseAuthorityModeCount,
   modeIdentityRetentionRatio = 1,
+  upstreamSourceCoupledModeCount,
+  upstreamResonantModeCount,
+  upstreamCandidateModeCount,
+  upstreamSourceCoupledModalEnergy,
+  upstreamResonantModalEnergy,
+  upstreamCandidateModalEnergy,
   basisAtlasPageCapacity = MODAL_BASIS_ATLAS_PAGE_CAPACITY,
   basisCacheResolution = MODAL_BASIS_CACHE_RESOLUTION,
 } = {}) {
@@ -757,8 +883,16 @@ export function buildCanonicalFullModalDescriptor({
     slotAssignments,
     rejectedEntries,
     structuralAdmission,
+    observerCandidateModeCount,
+    observedModalModeCount,
     phaseAuthorityModeCount: resolvedPhaseAuthorityModeCount,
     modeIdentityRetentionRatio,
+    upstreamSourceCoupledModeCount,
+    upstreamResonantModeCount,
+    upstreamCandidateModeCount,
+    upstreamSourceCoupledModalEnergy,
+    upstreamResonantModalEnergy,
+    upstreamCandidateModalEnergy,
   });
 
   return {

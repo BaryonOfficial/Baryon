@@ -213,6 +213,65 @@ describe("buildCanonicalFullModalDescriptor", () => {
     ]);
   });
 
+  it("reports upstream publication coverage separately from descriptor rejection", () => {
+    const descriptor = buildCanonicalFullModalDescriptor({
+      maxTotalModes: 8,
+      basisAtlasPageCapacity: 8,
+      modalFieldSlots: makeSlots([
+        [1, 1, 1, 0.5],
+        [2, 1, 1, 0.25],
+      ]),
+      activeModalFieldModeCount: 2,
+      observerCandidateModeCount: 7,
+      observedModalModeCount: 5,
+      phaseAuthorityModeCount: 6,
+      upstreamSourceCoupledModeCount: 2,
+      upstreamResonantModeCount: 4,
+      upstreamSourceCoupledModalEnergy: 0.3,
+      upstreamResonantModalEnergy: 0.7,
+    });
+
+    const audit = descriptor.diagnostics.modalVarietyAudit;
+
+    expect(descriptor.diagnostics.descriptorOverflow).toBe(false);
+    expect(descriptor.diagnostics.structuralCoverageSatisfied).toBe(true);
+    expect(descriptor.diagnostics.rejectedModalEnergy).toBe(0);
+    expect(audit).toMatchObject({
+      semanticModeCount: 2,
+      representedBasisPageModeCount: 2,
+      upstreamSourceCoupledModeCount: 2,
+      upstreamResonantModeCount: 4,
+      upstreamCandidateModeCount: 6,
+      observerCandidateModeCount: 7,
+      observedModalModeCount: 5,
+      phaseAuthorityModeCount: 6,
+      upstreamSourceCoupledModalEnergy: 0.3,
+      upstreamResonantModalEnergy: 0.7,
+      upstreamCandidateModalEnergy: 1,
+    });
+    expect(audit.publishedModeCoverageRatio).toBeCloseTo(2 / 6, 6);
+    expect(audit.publishedModalEnergyCoverageRatio).toBeCloseTo(
+      (0.5 ** 2 + 0.25 ** 2) / 1,
+      6,
+    );
+    expect(audit.observerCandidatePublishedModeCoverageRatio).toBeCloseTo(
+      2 / 7,
+      6,
+    );
+    expect(audit.observedModalPublishedModeCoverageRatio).toBeCloseTo(
+      2 / 5,
+      6,
+    );
+    expect(audit.phaseAuthorityPublishedModeCoverageRatio).toBeCloseTo(
+      2 / 6,
+      6,
+    );
+    expect(audit.basisRepresentedUpstreamModeCoverageRatio).toBeCloseTo(
+      2 / 6,
+      6,
+    );
+  });
+
   it("preserves continuity order when atlas pages are saturated", () => {
     const descriptor = buildCanonicalFullModalDescriptor({
       maxTotalModes: 8,

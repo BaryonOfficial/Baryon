@@ -5213,6 +5213,103 @@ describe("live input noise gate", () => {
     expect(frame.debug.highQPhaseAuthority).toBeGreaterThan(0);
   });
 
+  it("audits upstream modal publication coverage before descriptor admission", () => {
+    const featureState = createAudioFeatureState();
+    const preparedInputs = prepareAudioFeatureFrameInputs({
+      analysisSnapshot: createSnapshot({
+        sourceMode: "file",
+        avgAmplitude: 36,
+        fftMagnitudes: makeFft([
+          [196, 0.8],
+          [392, 0.6],
+          [588, 0.42],
+        ]),
+        timeData: makeMixedTimeData({
+          partials: [
+            [196, 0.7],
+            [392, 0.42],
+            [588, 0.28],
+          ],
+          amplitudeScale: 0.16,
+        }),
+        rms: 0.18,
+      }),
+      featureState,
+      radius: 3,
+      status: makeActiveStatus(),
+      frameTimeMs: 17300,
+    });
+    const sourceEntries = Array.from({ length: 12 }, (_, index) => [
+      1 + (index % 3),
+      1 + Math.floor(index / 3),
+      1,
+      0.18 - index * 0.003,
+    ]);
+    const resonantEntries = Array.from({ length: 24 }, (_, index) => [
+      4 + (index % 6),
+      2 + Math.floor(index / 6),
+      1,
+      0.16 - index * 0.002,
+    ]);
+    const frame = composeManualStructuralFrame({
+      preparedInputs,
+      structuralState: makeManualStructuralState({
+        candidateForcingSlots: makeModeSlots(sourceEntries),
+        candidateResponseSlots: makeModeSlots(resonantEntries),
+        structuralMetrics: {
+          observedModalModeCount: 36,
+          excitedModeCount: 36,
+          lowQSourceCoupledModeCount: 12,
+          lowQSourceCoupledEnergy: 0.4,
+          lowQObservedCoherence: 0.72,
+          highQResonantModeCount: 24,
+          highQResonantEnergy: 0.55,
+          highQRingSupport: 0.7,
+          highQObservedCoherence: 0.82,
+          highQObservedSnr: 0.7,
+          modalPersistence: 0.62,
+          modalDriveEnergy: 0.4,
+          modalResponseEnergy: 0.78,
+          modalResponseRenderEnergy: 0.78,
+          modalResponseSourceCoupledEnergy: 0.32,
+          modalResponseResonantEnergy: 0.46,
+          modalResponseModeCount: 36,
+          modalResponseRawEnergy: 0.78,
+          modalResponseBudgetScale: 1,
+          modeCoherence: 0.72,
+          modalPhaseAuthority: 0.9,
+          highQPhaseAuthority: 0.9,
+          modalPhaseCoherentFieldModeCount: 36,
+        },
+      }),
+    });
+    const audit = frame.modalDescriptor.diagnostics.modalVarietyAudit;
+
+    expect(audit.upstreamSourceCoupledModeCount).toBe(12);
+    expect(audit.upstreamResonantModeCount).toBe(24);
+    expect(audit.upstreamCandidateModeCount).toBe(36);
+    expect(audit.observedModalModeCount).toBe(36);
+    expect(audit.phaseAuthorityModeCount).toBe(36);
+    expect(frame.activeModalFieldModeCount).toBeLessThan(
+      audit.upstreamCandidateModeCount,
+    );
+    expect(audit.semanticModeCount).toBe(frame.activeModalFieldModeCount);
+    expect(audit.publishedModeCoverageRatio).toBeCloseTo(
+      frame.activeModalFieldModeCount / 36,
+      6,
+    );
+    expect(audit.observedModalPublishedModeCoverageRatio).toBeCloseTo(
+      frame.activeModalFieldModeCount / 36,
+      6,
+    );
+    expect(audit.basisRepresentedUpstreamModeCoverageRatio).toBeCloseTo(
+      audit.representedBasisPageModeCount / 36,
+      6,
+    );
+    expect(audit.publishedModalEnergyCoverageRatio).toBeGreaterThan(0);
+    expect(audit.publishedModalEnergyCoverageRatio).toBeLessThanOrEqual(1);
+  });
+
   it("does not authorize observer visibility or create slots from stale silence", () => {
     const featureState = createAudioFeatureState();
     const preparedInputs = prepareAudioFeatureFrameInputs({
