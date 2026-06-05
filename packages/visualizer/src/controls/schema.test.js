@@ -52,7 +52,6 @@ const EXPECTED_CONTROL_KEYS = [
   "bloomStrength",
   "bloomRadius",
   "bloomThreshold",
-  "smaaEnabled",
   "backgroundColor",
   "renderQualityPreset",
   "customPerformanceTargetFps",
@@ -68,6 +67,7 @@ const EXPECTED_CONTROL_KEYS = [
   "rimCompression",
   // Diagnostics
   "traaEnabled",
+  "smaaEnabled",
   "auditEnabled",
   "freezeModeSlots",
   "forceWebGLFallbackTest",
@@ -181,13 +181,14 @@ describe("control schema", () => {
     expect(outputFillControl?.runtimePath).toBe("program.backgroundColor");
   });
 
-  it("exposes SMAA as a live display post-process toggle", () => {
+  it("exposes SMAA as a live diagnostics post-process toggle", () => {
     const smaaControl = CONTROL_DEFINITIONS.find(
       (definition) => definition.key === "smaaEnabled",
     );
 
     expect(smaaControl).toMatchObject({
       label: "SMAA",
+      group: "Diagnostics",
       defaultValue: true,
       targetType: CONTROL_TARGET_TYPES.pipeline,
       handler: CONTROL_HANDLERS.output,
@@ -333,7 +334,6 @@ describe("control schema", () => {
       "bloomStrength",
       "bloomRadius",
       "bloomThreshold",
-      "smaaEnabled",
       "backgroundColor",
       "outputBackgroundColor",
       "bloomResponseBias",
@@ -351,6 +351,7 @@ describe("control schema", () => {
       ),
     ).toEqual([
       "traaEnabled",
+      "smaaEnabled",
       "auditEnabled",
       "freezeModeSlots",
       "forceWebGLFallbackTest",

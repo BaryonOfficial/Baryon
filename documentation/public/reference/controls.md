@@ -27,7 +27,6 @@ Controls for post-processing and idle-state appearance.
 | **Strength**       | How bright and intense the bloom glow is — higher values create a more pronounced halo around bright particles.                       |
 | **Radius**         | How far the bloom glow spreads outward from bright areas — higher values create a softer, wider glow.                                 |
 | **Threshold**      | Minimum brightness required for a pixel to contribute to the bloom effect — raise this to limit glow to only the brightest particles. |
-| **SMAA**           | Toggle final screen-space anti-aliasing on or off for visual A/B checks.                                                              |
 | **Logo Intensity** | Strength of the logo particle attraction when no audio is playing — higher values make the idle logo formation more defined.          |
 | **Logo Size**      | Scale of the logo formation that particles drift toward when idle — adjust to match the visual weight of your logo.                   |
 
@@ -94,12 +93,14 @@ Fine-grained controls over how the cymatics simulation behaves. These interact w
 
 ---
 
-## Audit _(dev-only)_
+## Diagnostics
 
-These controls are only visible when devtools are enabled (`DEVTOOLS_ENABLED`). They are for diagnosing the audio and particle pipelines — they do not affect the final render quality.
+Diagnostic controls help isolate render, audio, and particle behavior. Debug-only controls require devtools (`DEVTOOLS_ENABLED`).
 
 | Label                 | Description                                                                                                                                      |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **TRAA**              | Toggle temporal anti-aliasing for diagnostics when isolating render latency, shimmer, or post-process cost.                                      |
+| **SMAA**              | Toggle final screen-space anti-aliasing on or off for visual A/B checks.                                                                         |
 | **Enabled**           | Enable frame-by-frame debug logging for the audio and particle pipeline.                                                                         |
 | **Freeze Slots**      | Lock the current modal frequency slots so they stop updating from live audio — useful for inspecting a specific cymatics pattern.                |
 | **Low-load Playback** | Reduce renderer overhead during playback diagnostics by forcing a lower pixel ratio and skipping non-essential audit work while audio is active. |

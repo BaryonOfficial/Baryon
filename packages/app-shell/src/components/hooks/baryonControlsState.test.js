@@ -54,6 +54,7 @@ test("builds the advanced controls presentation layout", () => {
   expect(diagnosticsGroup.controls.map((control) => control.key)).toStrictEqual(
     [
       "traaEnabled",
+      "smaaEnabled",
       "auditEnabled",
       "freezeModeSlots",
       "forceWebGLFallbackTest",
@@ -76,7 +77,6 @@ test("builds the advanced controls presentation layout", () => {
     "bloomStrength",
     "bloomRadius",
     "bloomThreshold",
-    "smaaEnabled",
     "backgroundColor",
     "outputBackgroundColor",
     "bloomResponseBias",
@@ -97,7 +97,7 @@ test("operator control keys can surface Capture Debug Data without enabling all 
 
   expect(
     diagnosticsGroup?.controls.map((control) => control.key),
-  ).toStrictEqual(["auditEnabled"]);
+  ).toStrictEqual(["smaaEnabled", "auditEnabled"]);
 });
 
 test("persistControls rewrites settings to the current schema and drops removed keys", () => {
