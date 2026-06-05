@@ -14,9 +14,46 @@ import {
   evaluatePermutationFamilyNodeForBoundary,
 } from "./modeFamilyNode.js";
 import { resolveEffectiveCavityGeometry } from "./cavityGeometry.js";
+import {
+  readModalTopologyMode,
+  summarizeModalSlotTopologyRange,
+  summarizeModalTopology,
+} from "./modalTopology.js";
+
+function getRectangularModeShellKey(source) {
+  const [u, v, w] = readModalTopologyMode(source).map(Math.abs);
+  return `rect:${u * u + v * v + w * w}`;
+}
+
+function getRectangularModeFamilyKey(source) {
+  return readModalTopologyMode(source)
+    .map(Math.abs)
+    .sort((left, right) => left - right)
+    .join(":");
+}
+
+function summarizeRectangularModalTopology(records, options = {}) {
+  return summarizeModalTopology(records, {
+    getShellKey: getRectangularModeShellKey,
+    getFamilyKey: getRectangularModeFamilyKey,
+    ...options,
+  });
+}
+
+function summarizeRectangularModalSlotTopologyRange(slots, options = {}) {
+  return summarizeModalSlotTopologyRange(slots, {
+    getShellKey: getRectangularModeShellKey,
+    getFamilyKey: getRectangularModeFamilyKey,
+    ...options,
+  });
+}
 
 const RECTANGULAR_MODE_BACKEND = Object.freeze({
   cavityGeometry: "rectangular",
+  getModeShellKey: getRectangularModeShellKey,
+  getModeFamilyKey: getRectangularModeFamilyKey,
+  summarizeModalTopology: summarizeRectangularModalTopology,
+  summarizeModalSlotTopologyRange: summarizeRectangularModalSlotTopologyRange,
   buildAtlas({
     radius,
     acousticScale = null,
@@ -69,7 +106,13 @@ const RECTANGULAR_MODE_BACKEND = Object.freeze({
       (left, right) => left.naturalFrequencyHz - right.naturalFrequencyHz,
     );
   },
-  solveTermsForPitch({ pitch, radius, acousticScale = null, boundaryMode, count }) {
+  solveTermsForPitch({
+    pitch,
+    radius,
+    acousticScale = null,
+    boundaryMode,
+    count,
+  }) {
     return resolveCavityModeFamilyForPitch(
       pitch,
       resolveModalSolveOptions({ radius, acousticScale, boundaryMode }),

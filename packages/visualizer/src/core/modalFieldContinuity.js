@@ -2,12 +2,9 @@ import {
   MODAL_BASIS_CACHE_RESOLUTION,
   getModalBasisCacheMaxRepresentableModeIndex,
 } from "./modalBudgets.js";
-import {
-  getRectangularModeFamilyKey,
-  getRectangularModeShellKey,
-  normalizeModalTopologyCoordinate,
-  summarizeModalTopology,
-} from "./modalTopology.js";
+import { DEFAULT_EFFECTIVE_CAVITY_GEOMETRY } from "./cavityGeometry.js";
+import { getModalGeometryBackend } from "./modalGeometryBackend.js";
+import { normalizeModalTopologyCoordinate } from "./modalTopology.js";
 
 export const TOPOLOGY_ADMIT_EVIDENCE = 0.08;
 export const TOPOLOGY_PROMOTE_SECONDS = 0.05;
@@ -114,7 +111,13 @@ function readActiveCount(descriptorSource) {
 
 function readCandidateEntries(
   descriptorSource,
-  { normalizeCandidateEvidence = false, maxBasisModeOrder = Infinity } = {},
+  {
+    normalizeCandidateEvidence = false,
+    maxBasisModeOrder = Infinity,
+    modalGeometryBackend = getModalGeometryBackend(
+      DEFAULT_EFFECTIVE_CAVITY_GEOMETRY,
+    ),
+  } = {},
 ) {
   const entries = [];
   const activeCount = readActiveCount(descriptorSource);
@@ -185,8 +188,9 @@ function readCandidateEntries(
     entries.push({
       modeKey,
       mode,
-      topologyShellKey: getRectangularModeShellKey(topologySource),
-      topologyFamilyKey: getRectangularModeFamilyKey(topologySource),
+      topologyGeometry: modalGeometryBackend.cavityGeometry,
+      topologyShellKey: modalGeometryBackend.getModeShellKey(topologySource),
+      topologyFamilyKey: modalGeometryBackend.getModeFamilyKey(topologySource),
       candidateIndex: index,
       basisRepresentable,
       evidenceScore,
@@ -229,6 +233,7 @@ function createRecord(entry, nowSec) {
     lastStoredEnergySnapshot: entry.storedEnergySnapshot,
     structuralAdmissionScore: entry.structuralAdmissionScore,
     structuralAdmissionCompliance: entry.structuralAdmissionCompliance,
+    topologyGeometry: entry.topologyGeometry,
     topologyShellKey: entry.topologyShellKey,
     topologyFamilyKey: entry.topologyFamilyKey,
     eligibilityEpoch: 0,
@@ -308,6 +313,7 @@ function updateRecordSnapshot(record, entry, nowSec) {
   record.lastStoredEnergySnapshot = entry.storedEnergySnapshot;
   record.structuralAdmissionScore = entry.structuralAdmissionScore;
   record.structuralAdmissionCompliance = entry.structuralAdmissionCompliance;
+  record.topologyGeometry = entry.topologyGeometry;
   record.topologyShellKey = entry.topologyShellKey;
   record.topologyFamilyKey = entry.topologyFamilyKey;
   record.basisRepresentable = entry.basisRepresentable;
@@ -322,6 +328,7 @@ function updateRecordEvidence(record, entry, nowSec) {
   record.lastObservedAtSec = nowSec;
   record.structuralAdmissionScore = entry.structuralAdmissionScore;
   record.structuralAdmissionCompliance = entry.structuralAdmissionCompliance;
+  record.topologyGeometry = entry.topologyGeometry;
   record.topologyShellKey = entry.topologyShellKey;
   record.topologyFamilyKey = entry.topologyFamilyKey;
   record.basisRepresentable = entry.basisRepresentable;
@@ -479,32 +486,48 @@ function getAdmissionRole(record) {
     : "detail";
 }
 
-function getRecordShellKey(record) {
-  return record?.topologyShellKey ?? getRectangularModeShellKey(record);
+function canUseStoredTopologyKey(record, modalGeometryBackend) {
+  return (
+    record?.topologyGeometry === modalGeometryBackend.cavityGeometry &&
+    typeof record?.topologyShellKey === "string" &&
+    typeof record?.topologyFamilyKey === "string"
+  );
 }
 
-function getRecordFamilyKey(record) {
-  return record?.topologyFamilyKey ?? getRectangularModeFamilyKey(record);
+function getRecordShellKey(record, modalGeometryBackend) {
+  return canUseStoredTopologyKey(record, modalGeometryBackend)
+    ? record.topologyShellKey
+    : modalGeometryBackend.getModeShellKey(record);
 }
 
-function summarizeRecords(records) {
-  return summarizeModalTopology(records, {
-    getShellKey: getRecordShellKey,
-    getFamilyKey: getRecordFamilyKey,
+function getRecordFamilyKey(record, modalGeometryBackend) {
+  return canUseStoredTopologyKey(record, modalGeometryBackend)
+    ? record.topologyFamilyKey
+    : modalGeometryBackend.getModeFamilyKey(record);
+}
+
+function summarizeRecords(records, modalGeometryBackend) {
+  return modalGeometryBackend.summarizeModalTopology(records, {
+    getShellKey: (record) => getRecordShellKey(record, modalGeometryBackend),
+    getFamilyKey: (record) => getRecordFamilyKey(record, modalGeometryBackend),
   });
 }
 
-function buildRecordShellCountMap(records) {
+function buildRecordShellCountMap(records, modalGeometryBackend) {
   const shellCounts = new Map();
   for (const record of records ?? []) {
-    const shellKey = getRecordShellKey(record);
+    const shellKey = getRecordShellKey(record, modalGeometryBackend);
     shellCounts.set(shellKey, (shellCounts.get(shellKey) ?? 0) + 1);
   }
   return shellCounts;
 }
 
-function buildRecordShellKeySet(records) {
-  return new Set((records ?? []).map((record) => getRecordShellKey(record)));
+function buildRecordShellKeySet(records, modalGeometryBackend) {
+  return new Set(
+    (records ?? []).map((record) =>
+      getRecordShellKey(record, modalGeometryBackend),
+    ),
+  );
 }
 
 function getDetailAdmissionBudget(maxVisibleModeCount) {
@@ -592,6 +615,7 @@ function selectAdmissionRecords({
   maxDetailVisibleCount,
   currentDetailVisibleCount,
   currentShellKeys = new Set(),
+  modalGeometryBackend,
 }) {
   if (availableVisibleSlots <= 0) {
     return [];
@@ -623,7 +647,7 @@ function selectAdmissionRecords({
   const selectRecord = (record) => {
     selectedRecords.push(record);
     selectedRecordKeys.add(record.modeKey);
-    coveredShellKeys.add(getRecordShellKey(record));
+    coveredShellKeys.add(getRecordShellKey(record, modalGeometryBackend));
     if (getAdmissionRole(record) === "detail") {
       selectedDetailCount += 1;
     }
@@ -636,7 +660,7 @@ function selectAdmissionRecords({
     if (getAdmissionRole(record) !== "structural" || !canSelectRecord(record)) {
       continue;
     }
-    const shellKey = getRecordShellKey(record);
+    const shellKey = getRecordShellKey(record, modalGeometryBackend);
     if (coveredShellKeys.has(shellKey)) {
       continue;
     }
@@ -670,6 +694,7 @@ function selectReplacementPairs({
   candidateRecords,
   maxVisibleModeCount,
   alreadyAdmittedCount,
+  modalGeometryBackend,
 }) {
   if (
     !Number.isFinite(maxVisibleModeCount) ||
@@ -692,11 +717,20 @@ function selectReplacementPairs({
   const candidates = [...candidateRecords].sort(compareAdmissionRecords);
   const pairs = [];
   const usedTargetKeys = new Set();
-  const visibleShellCounts = buildRecordShellCountMap(targets);
-  const coveredShellKeys = buildRecordShellKeySet(targets);
+  const visibleShellCounts = buildRecordShellCountMap(
+    targets,
+    modalGeometryBackend,
+  );
+  const coveredShellKeys = buildRecordShellKeySet(
+    targets,
+    modalGeometryBackend,
+  );
 
   for (const candidate of candidates) {
-    const candidateShellKey = getRecordShellKey(candidate);
+    const candidateShellKey = getRecordShellKey(
+      candidate,
+      modalGeometryBackend,
+    );
     const target = targets.find((record) => {
       if (usedTargetKeys.has(record.modeKey)) {
         return false;
@@ -720,7 +754,9 @@ function selectReplacementPairs({
         targetRole === "structural" &&
         candidate.evidenceScore >= TOPOLOGY_ADMIT_EVIDENCE &&
         !coveredShellKeys.has(candidateShellKey) &&
-        (visibleShellCounts.get(getRecordShellKey(record)) ?? 0) > 1 &&
+        (visibleShellCounts.get(
+          getRecordShellKey(record, modalGeometryBackend),
+        ) ?? 0) > 1 &&
         getStructuralAdmissionScore(candidate) >=
           getStructuralAdmissionScore(record) *
             TOPOLOGY_REPLACE_MISSING_SHELL_SCORE_RATIO;
@@ -745,7 +781,7 @@ function selectReplacementPairs({
     }
     pairs.push({ candidate, target });
     usedTargetKeys.add(target.modeKey);
-    const targetShellKey = getRecordShellKey(target);
+    const targetShellKey = getRecordShellKey(target, modalGeometryBackend);
     const nextTargetShellCount = Math.max(
       0,
       (visibleShellCounts.get(targetShellKey) ?? 0) - 1,
@@ -818,6 +854,7 @@ function buildDiagnostics({
   admittedModeKeys,
   removedModeKeys,
   reset,
+  modalGeometryBackend,
 }) {
   const outputModeKeys = outputRecords.map((record) => record.modeKey);
   const outputModeKeySet = new Set(outputModeKeys);
@@ -841,13 +878,17 @@ function buildDiagnostics({
       : outputModeKeys.length > 0
         ? 1
         : 0;
-  const candidateTopology = summarizeRecords(candidateEntries);
-  const visibleTopology = summarizeRecords(outputRecords);
-  const tailTopology = summarizeRecords(tailEntries);
+  const candidateTopology = summarizeRecords(
+    candidateEntries,
+    modalGeometryBackend,
+  );
+  const visibleTopology = summarizeRecords(outputRecords, modalGeometryBackend);
+  const tailTopology = summarizeRecords(tailEntries, modalGeometryBackend);
 
   return {
     reset,
     dormant: false,
+    modalTopologyGeometry: modalGeometryBackend.cavityGeometry,
     eligibilityEpoch: state.eligibilityEpoch,
     candidateModeCount: candidateEntries.length,
     candidateShellCount: candidateTopology.shellCount,
@@ -876,12 +917,17 @@ function buildDormantResult({
   candidateEntries,
   previousVisibleKeys,
   reset,
+  modalGeometryBackend,
 }) {
   const activeModeCount = countBasisEligibleRecords(state);
-  const candidateTopology = summarizeRecords(candidateEntries);
+  const candidateTopology = summarizeRecords(
+    candidateEntries,
+    modalGeometryBackend,
+  );
   const diagnostics = {
     reset,
     dormant: true,
+    modalTopologyGeometry: modalGeometryBackend.cavityGeometry,
     eligibilityEpoch: state.eligibilityEpoch,
     candidateModeCount: candidateEntries.length,
     candidateShellCount: candidateTopology.shellCount,
@@ -932,6 +978,7 @@ function buildDormantResult({
  *   maxBasisModeOrder?: number,
  *   allowImmediateBootstrap?: boolean,
  *   normalizeCandidateEvidence?: boolean,
+ *   cavityGeometry?: import("./cavityGeometry.js").CavityGeometry,
  * }} options
  */
 export function updateModalFieldContinuity(
@@ -945,8 +992,10 @@ export function updateModalFieldContinuity(
     maxBasisModeOrder = Infinity,
     allowImmediateBootstrap = false,
     normalizeCandidateEvidence = false,
+    cavityGeometry = DEFAULT_EFFECTIVE_CAVITY_GEOMETRY,
   } = {},
 ) {
+  const modalGeometryBackend = getModalGeometryBackend(cavityGeometry);
   const resolvedDeltaTimeSec = normalizeDeltaTimeSec(deltaTimeSec);
   const normalizedMaxVisibleModeCount = Number.isFinite(maxVisibleModeCount)
     ? Math.max(0, Math.floor(maxVisibleModeCount))
@@ -963,6 +1012,7 @@ export function updateModalFieldContinuity(
   const candidateEntries = readCandidateEntries(descriptorSource, {
     normalizeCandidateEvidence,
     maxBasisModeOrder,
+    modalGeometryBackend,
   });
 
   if (!renderAuthority) {
@@ -971,6 +1021,7 @@ export function updateModalFieldContinuity(
       candidateEntries,
       previousVisibleKeys,
       reset,
+      modalGeometryBackend,
     });
   }
 
@@ -1043,7 +1094,11 @@ export function updateModalFieldContinuity(
         normalizedMaxVisibleModeCount,
       ),
       currentDetailVisibleCount: countVisibleDetailRecords(state),
-      currentShellKeys: buildRecordShellKeySet(getBasisEligibleRecords(state)),
+      currentShellKeys: buildRecordShellKeySet(
+        getBasisEligibleRecords(state),
+        modalGeometryBackend,
+      ),
+      modalGeometryBackend,
     });
     const selectedRecordKeys = new Set(
       selectedRecords.map((record) => record.modeKey),
@@ -1055,6 +1110,7 @@ export function updateModalFieldContinuity(
       ),
       maxVisibleModeCount: normalizedMaxVisibleModeCount,
       alreadyAdmittedCount: selectedRecords.length,
+      modalGeometryBackend,
     });
     if (selectedRecords.length > 0 || replacementPairs.length > 0) {
       for (const record of selectedRecords) {
@@ -1117,6 +1173,7 @@ export function updateModalFieldContinuity(
     admittedModeKeys,
     removedModeKeys,
     reset,
+    modalGeometryBackend,
   });
   state.diagnostics = diagnostics;
 

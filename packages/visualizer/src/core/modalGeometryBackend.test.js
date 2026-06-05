@@ -41,4 +41,28 @@ describe("modal geometry backend", () => {
       subfloorProjectionActive: false,
     });
   });
+
+  it("owns modal shell and family topology for rectangular modes", () => {
+    const backend = getModalGeometryBackend("rectangular");
+    const duplicateShellModes = [
+      { mode: [0, 0, 3], coefficient: 0.9 },
+      { mode: [1, 2, 2], coefficient: 0.8 },
+      { mode: [2, 1, 2], coefficient: 0.7 },
+      { mode: [1, 1, 1], coefficient: 0.4 },
+    ];
+
+    expect(backend.getModeShellKey({ mode: [0, 0, 3] })).toBe(
+      backend.getModeShellKey({ mode: [1, 2, 2] }),
+    );
+    expect(backend.getModeShellKey({ mode: [1, 1, 1] })).not.toBe(
+      backend.getModeShellKey({ mode: [0, 0, 3] }),
+    );
+    expect(backend.getModeFamilyKey({ mode: [2, 1, 2] })).toBe("1:2:2");
+    expect(backend.summarizeModalTopology(duplicateShellModes)).toMatchObject({
+      recordCount: 4,
+      shellCount: 2,
+      familyCount: 3,
+      duplicateShellPressure: 0.5,
+    });
+  });
 });

@@ -1,5 +1,20 @@
 const COORDINATE_NAMES = ["u", "v", "w"];
 
+/**
+ * @typedef {(record: unknown) => string} ModalTopologyKeyReader
+ * @typedef {(record: unknown) => boolean} ModalTopologyRecordPredicate
+ * @typedef {{
+ *   getShellKey?: ModalTopologyKeyReader,
+ *   getFamilyKey?: ModalTopologyKeyReader,
+ *   includeRecord?: ModalTopologyRecordPredicate | null,
+ * }} ModalTopologySummaryOptions
+ * @typedef {ModalTopologySummaryOptions & {
+ *   startIndex?: number,
+ *   count?: number,
+ *   skipZeroCoefficient?: boolean,
+ * }} ModalSlotTopologyRangeOptions
+ */
+
 function clamp01(value) {
   if (!Number.isFinite(value)) return 0;
   return Math.min(1, Math.max(0, value));
@@ -33,26 +48,28 @@ export function readModalTopologyMode(source) {
   );
 }
 
-export function getRectangularModeShellKey(source) {
-  const [u, v, w] = readModalTopologyMode(source).map(Math.abs);
-  return `rect:${u * u + v * v + w * w}`;
+function assertTopologyKeyReader(reader, name) {
+  if (typeof reader !== "function") {
+    throw new TypeError(
+      `${name} must be provided by the modal geometry backend`,
+    );
+  }
+  return reader;
 }
 
-export function getRectangularModeFamilyKey(source) {
-  return readModalTopologyMode(source)
-    .map(Math.abs)
-    .sort((left, right) => left - right)
-    .join(":");
-}
-
-export function summarizeModalTopology(
-  records,
-  {
-    getShellKey = getRectangularModeShellKey,
-    getFamilyKey = getRectangularModeFamilyKey,
+/**
+ * @param {Iterable<unknown> | null | undefined} records
+ * @param {ModalTopologySummaryOptions} [options]
+ */
+export function summarizeModalTopology(records, options = {}) {
+  const {
+    getShellKey,
+    getFamilyKey,
     includeRecord = null,
-  } = {},
-) {
+  } = /** @type {ModalTopologySummaryOptions} */ (options);
+  const readShellKey = assertTopologyKeyReader(getShellKey, "getShellKey");
+  const readFamilyKey = assertTopologyKeyReader(getFamilyKey, "getFamilyKey");
+
   const shellKeys = new Set();
   const familyKeys = new Set();
   let recordCount = 0;
@@ -62,8 +79,8 @@ export function summarizeModalTopology(
       continue;
     }
     recordCount += 1;
-    shellKeys.add(getShellKey(record));
-    familyKeys.add(getFamilyKey(record));
+    shellKeys.add(readShellKey(record));
+    familyKeys.add(readFamilyKey(record));
   }
 
   return {
@@ -77,10 +94,18 @@ export function summarizeModalTopology(
   };
 }
 
-export function summarizeModalSlotTopologyRange(
-  slots,
-  { startIndex = 0, count = undefined, skipZeroCoefficient = true } = {},
-) {
+/**
+ * @param {Float32Array | number[] | null | undefined} slots
+ * @param {ModalSlotTopologyRangeOptions} [options]
+ */
+export function summarizeModalSlotTopologyRange(slots, options = {}) {
+  const {
+    startIndex = 0,
+    count = undefined,
+    skipZeroCoefficient = true,
+    getShellKey,
+    getFamilyKey,
+  } = /** @type {ModalSlotTopologyRangeOptions} */ (options);
   const slotCount = Math.floor((slots?.length ?? 0) / 4);
   const start = Math.min(slotCount, Math.max(0, Math.floor(startIndex ?? 0)));
   const rangeCount = Number.isFinite(count)
@@ -103,5 +128,5 @@ export function summarizeModalSlotTopologyRange(
     });
   }
 
-  return summarizeModalTopology(records);
+  return summarizeModalTopology(records, { getShellKey, getFamilyKey });
 }

@@ -69,7 +69,7 @@ import {
   hasVisibleModalFieldContinuityPayload,
   updateModalFieldContinuity,
 } from "../../core/modalFieldContinuity.js";
-import { summarizeModalSlotTopologyRange } from "../../core/modalTopology.js";
+import { getModalGeometryBackend } from "../../core/modalGeometryBackend.js";
 import {
   MODAL_BASIS_ATLAS_PAGE_CAPACITY,
   MODAL_BASIS_CACHE_RESOLUTION,
@@ -6225,18 +6225,23 @@ export function composeAudioFeatureFrame({
     cavityAcousticScale: preparedInputs.cavityAcousticScale,
     boundaryMode: preparedInputs.boundaryMode,
   });
-  const upstreamSourceCoupledTopology = summarizeModalSlotTopologyRange(
-    renderSourceCoupledSlots,
-    { count: activeSourceCoupledModeCount },
+  const modalGeometryBackend = getModalGeometryBackend(
+    preparedInputs.effectiveCavityGeometry,
   );
-  const upstreamResonantTopology = summarizeModalSlotTopologyRange(
-    renderResonantSlots,
-    { count: activeResonantModeCount },
-  );
-  const upstreamCandidateTopology = summarizeModalSlotTopologyRange(
-    modalFieldDescriptorSource.modalFieldSlots,
-    { count: modalFieldDescriptorSource.activeModalFieldModeCount },
-  );
+  const upstreamSourceCoupledTopology =
+    modalGeometryBackend.summarizeModalSlotTopologyRange(
+      renderSourceCoupledSlots,
+      { count: activeSourceCoupledModeCount },
+    );
+  const upstreamResonantTopology =
+    modalGeometryBackend.summarizeModalSlotTopologyRange(renderResonantSlots, {
+      count: activeResonantModeCount,
+    });
+  const upstreamCandidateTopology =
+    modalGeometryBackend.summarizeModalSlotTopologyRange(
+      modalFieldDescriptorSource.modalFieldSlots,
+      { count: modalFieldDescriptorSource.activeModalFieldModeCount },
+    );
   const upstreamSourceCoupledModalEnergy = sumModalSlotCoefficientEnergy(
     renderSourceCoupledSlots,
     activeSourceCoupledModeCount,
@@ -6275,6 +6280,7 @@ export function composeAudioFeatureFrame({
       maxBasisModeOrder: MODAL_FIELD_CONTINUITY_MAX_BASIS_MODE_ORDER,
       allowImmediateBootstrap: allowImmediateModalFieldBootstrap,
       normalizeCandidateEvidence: true,
+      cavityGeometry: preparedInputs.effectiveCavityGeometry,
     },
   );
   const continuityDescriptorSource =
@@ -6380,6 +6386,7 @@ export function composeAudioFeatureFrame({
     upstreamSourceCoupledModalEnergy,
     upstreamResonantModalEnergy,
     upstreamCandidateModalEnergy,
+    cavityGeometry: preparedInputs.effectiveCavityGeometry,
     modeIdentityRetentionRatio:
       modalFieldContinuityDiagnostics.modeIdentityRetentionRatio,
   });

@@ -179,6 +179,7 @@ describe("buildCanonicalFullModalDescriptor", () => {
       4,
     );
     expect(descriptor.diagnostics.modalVarietyAudit).toMatchObject({
+      modalTopologyGeometry: "rectangular",
       semanticModeCount: 3,
       representedBasisPageModeCount: 2,
       basisAtlasPageCapacity: 2,

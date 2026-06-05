@@ -921,6 +921,7 @@ function buildRuntimeModalDescriptor(
     basisAtlasPageCapacity,
     basisCacheResolution:
       runtimeState.modalBasisCache?.resolution ?? MODAL_BASIS_CACHE_RESOLUTION,
+    cavityGeometry: getRuntimeEffectiveCavityGeometry(runtimeState),
     modalFieldSlots: featureFrame?.modalFieldSlots,
     modalFieldPhaseSlots: featureFrame?.modalFieldPhaseSlots,
     modalFieldColorSlots: featureFrame?.modalFieldColorSlots,

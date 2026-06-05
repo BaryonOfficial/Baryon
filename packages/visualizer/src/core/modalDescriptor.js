@@ -7,10 +7,8 @@ import {
   normalizeSpectralLanePacket,
   readPackedQuad,
 } from "../utils/audio/spectralLanePacket.js";
-import {
-  getRectangularModeFamilyKey,
-  getRectangularModeShellKey,
-} from "./modalTopology.js";
+import { DEFAULT_EFFECTIVE_CAVITY_GEOMETRY } from "./cavityGeometry.js";
+import { getModalGeometryBackend } from "./modalGeometryBackend.js";
 
 const FNV_OFFSET_BASIS = 2166136261;
 const FNV_PRIME = 16777619;
@@ -155,12 +153,12 @@ function getEntryModeOrder(entry) {
   return Math.max(Math.abs(entry.u), Math.abs(entry.v), Math.abs(entry.w));
 }
 
-function getSpatialFamilyKey(entry) {
-  return getRectangularModeFamilyKey(entry);
+function getSpatialFamilyKey(entry, modalGeometryBackend) {
+  return modalGeometryBackend.getModeFamilyKey(entry);
 }
 
-function getSpatialShellKey(entry) {
-  return getRectangularModeShellKey(entry);
+function getSpatialShellKey(entry, modalGeometryBackend) {
+  return modalGeometryBackend.getModeShellKey(entry);
 }
 
 function divideOrFallback(numerator, denominator, fallback = 0) {
@@ -211,6 +209,7 @@ function buildModalVarietyAudit({
   upstreamSourceCoupledModalEnergy,
   upstreamResonantModalEnergy,
   upstreamCandidateModalEnergy,
+  modalGeometryBackend,
 }) {
   const acceptedEntries = slotAssignments.filter(Boolean);
   const representedEntries = [];
@@ -238,16 +237,18 @@ function buildModalVarietyAudit({
     minModeOrder = Math.min(minModeOrder, modeOrder);
     maxModeOrder = Math.max(maxModeOrder, modeOrder);
     weightedModeOrderSum += modalEnergy * modeOrder;
-    shellKeys.add(getSpatialShellKey(entry));
-    familyKeys.add(getSpatialFamilyKey(entry));
+    shellKeys.add(getSpatialShellKey(entry, modalGeometryBackend));
+    familyKeys.add(getSpatialFamilyKey(entry, modalGeometryBackend));
 
     if (
       modeOrder <= structuralAdmission.maxRepresentableModeIndex &&
       slotIndex < structuralAdmission.basisAtlasPageCapacity
     ) {
       representedEntries.push(entry);
-      representedShellKeys.add(getSpatialShellKey(entry));
-      representedFamilyKeys.add(getSpatialFamilyKey(entry));
+      representedShellKeys.add(getSpatialShellKey(entry, modalGeometryBackend));
+      representedFamilyKeys.add(
+        getSpatialFamilyKey(entry, modalGeometryBackend),
+      );
       representedModalEnergy += modalEnergy;
     }
   }
@@ -323,6 +324,7 @@ function buildModalVarietyAudit({
       : 0;
 
   return {
+    modalTopologyGeometry: modalGeometryBackend.cavityGeometry,
     semanticModeCount: acceptedEntries.length,
     representedBasisPageModeCount: representedEntries.length,
     observerCandidateModeCount: resolvedObserverCandidateModeCount,
@@ -445,6 +447,7 @@ function buildModalVarietyAudit({
       semanticModalEnergy,
       maxRepresentableModeIndex: structuralAdmission.maxRepresentableModeIndex,
       basisAtlasPageCapacity: structuralAdmission.basisAtlasPageCapacity,
+      modalGeometryBackend,
     }),
   };
 }
@@ -474,6 +477,7 @@ function buildBasisAtlasCapacitySweep({
   semanticModalEnergy,
   maxRepresentableModeIndex,
   basisAtlasPageCapacity,
+  modalGeometryBackend,
 }) {
   return resolveBasisAtlasSweepCapacities({
     basisAtlasPageCapacity,
@@ -510,8 +514,10 @@ function buildBasisAtlasCapacitySweep({
       }
 
       representedModeCount += 1;
-      representedShellKeys.add(getSpatialShellKey(entry));
-      representedFamilyKeys.add(getSpatialFamilyKey(entry));
+      representedShellKeys.add(getSpatialShellKey(entry, modalGeometryBackend));
+      representedFamilyKeys.add(
+        getSpatialFamilyKey(entry, modalGeometryBackend),
+      );
       representedModalEnergy += modalEnergy;
     }
 
@@ -845,6 +851,7 @@ function buildSpectralLaneDescriptorHash(slotAssignments) {
  *   upstreamCandidateModalEnergy?: number,
  *   basisAtlasPageCapacity?: number,
  *   basisCacheResolution?: number,
+ *   cavityGeometry?: import("./cavityGeometry.js").CavityGeometry,
  * }} [options]
  */
 export function buildCanonicalFullModalDescriptor({
@@ -873,7 +880,9 @@ export function buildCanonicalFullModalDescriptor({
   upstreamCandidateModalEnergy,
   basisAtlasPageCapacity = MODAL_BASIS_ATLAS_PAGE_CAPACITY,
   basisCacheResolution = MODAL_BASIS_CACHE_RESOLUTION,
+  cavityGeometry = DEFAULT_EFFECTIVE_CAVITY_GEOMETRY,
 } = {}) {
+  const modalGeometryBackend = getModalGeometryBackend(cavityGeometry);
   const fallbackCapacity = resolveCapacity(undefined, modalFieldSlots);
   const totalCapacity = resolveTotalCapacity({
     maxTotalModes,
@@ -961,6 +970,7 @@ export function buildCanonicalFullModalDescriptor({
     upstreamSourceCoupledModalEnergy,
     upstreamResonantModalEnergy,
     upstreamCandidateModalEnergy,
+    modalGeometryBackend,
   });
 
   return {

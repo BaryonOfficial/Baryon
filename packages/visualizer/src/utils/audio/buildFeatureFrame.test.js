@@ -3005,9 +3005,7 @@ describe("Spectral Light feature frame outputs", () => {
       });
     }
 
-    const colors = collectWeightedColorSlotTriples(
-      frame.modalFieldColorSlots,
-    );
+    const colors = collectWeightedColorSlotTriples(frame.modalFieldColorSlots);
 
     expect(colors.length).toBeGreaterThanOrEqual(3);
     expect(
@@ -5288,6 +5286,12 @@ describe("live input noise gate", () => {
     expect(audit.upstreamSourceCoupledModeCount).toBe(12);
     expect(audit.upstreamResonantModeCount).toBe(24);
     expect(audit.upstreamCandidateModeCount).toBe(36);
+    expect(audit.modalTopologyGeometry).toBe("rectangular");
+    expect(audit.upstreamSourceCoupledShellCount).toBeGreaterThan(0);
+    expect(audit.upstreamResonantShellCount).toBeGreaterThan(0);
+    expect(audit.upstreamCandidateShellCount).toBeGreaterThan(0);
+    expect(audit.semanticShellCount).toBeGreaterThan(0);
+    expect(audit.representedShellCount).toBeGreaterThan(0);
     expect(audit.observedModalModeCount).toBe(36);
     expect(audit.phaseAuthorityModeCount).toBe(36);
     expect(frame.activeModalFieldModeCount).toBeLessThan(
@@ -5296,6 +5300,14 @@ describe("live input noise gate", () => {
     expect(audit.semanticModeCount).toBe(frame.activeModalFieldModeCount);
     expect(audit.publishedModeCoverageRatio).toBeCloseTo(
       frame.activeModalFieldModeCount / 36,
+      6,
+    );
+    expect(audit.publishedShellCoverageRatio).toBeCloseTo(
+      audit.semanticShellCount / audit.upstreamCandidateShellCount,
+      6,
+    );
+    expect(audit.basisRepresentedShellCoverageRatio).toBeCloseTo(
+      audit.representedShellCount / audit.upstreamCandidateShellCount,
       6,
     );
     expect(audit.observedModalPublishedModeCoverageRatio).toBeCloseTo(
