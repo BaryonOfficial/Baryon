@@ -23,6 +23,7 @@ export { default as FloatingCameraControls } from "./components/FloatingCameraCo
 export { default as PerformanceHud } from "./components/PerformanceHud.jsx";
 export { resolvePreviewOverlayState } from "./components/threeSceneState.js";
 export { composeAuthoritativePerformanceHudMetrics } from "./components/threeSceneState.js";
+export { commitOrbitControlsCameraPose } from "./components/baryonSceneCameraSync.js";
 export {
   DEFAULT_IDLE_PERFORMER_CAMERA_POSE,
   DEFAULT_LIVE_PERFORMER_CAMERA_POSE,

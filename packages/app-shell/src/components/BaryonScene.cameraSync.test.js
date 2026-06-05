@@ -1,4 +1,6 @@
 import { expect, test, vi } from "vitest";
+import { PerspectiveCamera } from "three";
+import { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import {
   augmentFrameStateWithCameraSync,
   applyExternalCameraPose,
@@ -6,6 +8,18 @@ import {
   shouldMountOrbitControls,
 } from "./baryonSceneCameraSync.js";
 import { resolvePresetCameraPose } from "./cameraPosePresets.js";
+
+function expectCameraPoseCloseTo(camera, controls, cameraPose) {
+  expect(camera.position.x).toBeCloseTo(cameraPose.position.x);
+  expect(camera.position.y).toBeCloseTo(cameraPose.position.y);
+  expect(camera.position.z).toBeCloseTo(cameraPose.position.z);
+  expect(camera.up.x).toBeCloseTo(cameraPose.up.x);
+  expect(camera.up.y).toBeCloseTo(cameraPose.up.y);
+  expect(camera.up.z).toBeCloseTo(cameraPose.up.z);
+  expect(controls.target.x).toBeCloseTo(cameraPose.target.x);
+  expect(controls.target.y).toBeCloseTo(cameraPose.target.y);
+  expect(controls.target.z).toBeCloseTo(cameraPose.target.z);
+}
 
 test("frame state augmentation only appends the canonical camera pose", () => {
   const augmented = augmentFrameStateWithCameraSync(
@@ -83,6 +97,26 @@ test("external camera pose application updates projection and world matrices", (
   expect(controls.update).toHaveBeenCalledTimes(1);
   expect(camera.updateProjectionMatrix).toHaveBeenCalledTimes(1);
   expect(camera.updateMatrixWorld).toHaveBeenCalledWith(true);
+});
+
+test("camera pose application stays fixed with real three-stdlib damping residue", () => {
+  const camera = new PerspectiveCamera(65, 1, 0.1, 100);
+  const controls = new OrbitControlsImpl(camera);
+  const sidePose = resolvePresetCameraPose("side");
+  const topDownPose = resolvePresetCameraPose("top-down");
+
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.05;
+  applyExternalCameraPose(sidePose, camera, controls);
+
+  controls.setAzimuthalAngle(Math.PI / 2);
+  expect(camera.position.x).not.toBeCloseTo(sidePose.position.x);
+
+  applyExternalCameraPose(topDownPose, camera, controls);
+  controls.update();
+  controls.update();
+
+  expectCameraPoseCloseTo(camera, controls, topDownPose);
 });
 
 test("camera pose preset helper still produces canonical side and top-down poses", () => {
