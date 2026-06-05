@@ -2276,8 +2276,9 @@ function applyLayerPhaseUploadIfChanged({
     capacity,
   });
   const previous = uploadState[key]?.signature ?? null;
+  const signatureChanged = !phaseUploadSignatureEquals(previous, signature);
   const rebaseRequired = shouldRebasePhaseEvaluationClock(runtimeState, time);
-  if (phaseUploadSignatureEquals(previous, signature) && !rebaseRequired) {
+  if (!signatureChanged && !rebaseRequired) {
     return uploadState[key]?.activeCount ?? 0;
   }
 
@@ -2293,7 +2294,7 @@ function applyLayerPhaseUploadIfChanged({
     runtimeState.modalPhaseEvaluationEpochSec = phaseEvaluationTimeSec;
   }
   if (phaseBufferNode?.value) {
-    phaseBufferNode.value.needsUpdate = activeCount > 0;
+    phaseBufferNode.value.needsUpdate = signatureChanged || activeCount > 0;
   }
   uploadState[key] = {
     signature,

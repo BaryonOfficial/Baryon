@@ -3380,6 +3380,43 @@ describe("tickRaymarchRuntime", () => {
     expect(Math.abs(phaseBuffer[0])).toBeLessThanOrEqual(Math.PI);
   });
 
+  it("uploads cleared phase slots when phase authority drops to zero", () => {
+    const runtimeState = createRuntimeState();
+    const sharedBackboneSlots = new Float32Array([3, 4, 6, 0.8]);
+    const emptySlots = new Float32Array(0);
+    const activeFrame = createActiveFeatureFrame({
+      backboneSlots: sharedBackboneSlots,
+      detailSlots: emptySlots,
+      detailColorSlots: emptySlots,
+      detailPhaseSlots: emptySlots,
+      backbonePhaseSlots: new Float32Array([0.45, 0.6, 0.8, 0.9]),
+      modalPhaseAuthority: 0.8,
+    });
+    const neutralFrame = createActiveFeatureFrame({
+      backboneSlots: sharedBackboneSlots,
+      detailSlots: emptySlots,
+      detailColorSlots: emptySlots,
+      detailPhaseSlots: emptySlots,
+      backbonePhaseSlots: new Float32Array([0, 0, 0, 0]),
+      modalPhaseAuthority: 0,
+    });
+
+    tickRaymarchRuntime(runtimeState, activeFrame, 1, 1 / 60);
+
+    expect(runtimeState.modalFieldPhaseBuffer.value.needsUpdate).toBe(true);
+    expect(runtimeState.modalFieldPhaseBuffer.value.array[2]).toBeCloseTo(0.8);
+    expect(runtimeState.modalFieldPhaseBuffer.value.array[3]).toBeCloseTo(0.9);
+
+    runtimeState.modalFieldPhaseBuffer.value.needsUpdate = false;
+    tickRaymarchRuntime(runtimeState, neutralFrame, 2, 1 / 60);
+
+    expect(Array.from(runtimeState.modalFieldPhaseBuffer.value.array.slice(0, 4)))
+      .toEqual([0, 0, 0, 0]);
+    expect(runtimeState.modalFieldPhaseBuffer.value.needsUpdate).toBe(true);
+    expect(runtimeState.modalBasisPhaseAuthorityModeCount).toBe(0);
+    expect(runtimeState.uniforms.uPhaseEvaluationTime.value).toBe(0);
+  });
+
   it("uploads again when a reused source slot array changes values", () => {
     const runtimeState = createRuntimeState();
     const featureFrame = createActiveFeatureFrame();
