@@ -183,6 +183,68 @@ function resolveNonNegativeNumber(value, fallback = 0) {
   return Math.max(0, fallback ?? 0);
 }
 
+function resolveCandidateConfidenceDiagnostics({
+  rawCandidateModeCount,
+  confidenceQualifiedCandidateModeCount,
+  lowConfidenceCandidateModeCount,
+  rawCandidateModalEnergy,
+  confidenceWeightedCandidateEnergy,
+  modalObservationCoherence,
+  modalObservationConfidence,
+  fallbackRawCandidateModeCount = 0,
+  fallbackConfidenceQualifiedCandidateModeCount = 0,
+  fallbackRawCandidateModalEnergy = 0,
+  fallbackConfidenceWeightedCandidateEnergy = 0,
+}) {
+  const resolvedRawCandidateModeCount = Math.max(
+    resolveNonNegativeInteger(rawCandidateModeCount),
+    resolveNonNegativeInteger(fallbackRawCandidateModeCount),
+  );
+  const resolvedConfidenceQualifiedCandidateModeCount = Math.min(
+    resolvedRawCandidateModeCount,
+    resolveNonNegativeInteger(
+      confidenceQualifiedCandidateModeCount,
+      fallbackConfidenceQualifiedCandidateModeCount,
+    ),
+  );
+  const resolvedLowConfidenceCandidateModeCount = Math.min(
+    resolvedRawCandidateModeCount,
+    resolveNonNegativeInteger(
+      lowConfidenceCandidateModeCount,
+      Math.max(
+        0,
+        resolvedRawCandidateModeCount -
+          resolvedConfidenceQualifiedCandidateModeCount,
+      ),
+    ),
+  );
+
+  return {
+    rawCandidateModeCount: resolvedRawCandidateModeCount,
+    confidenceQualifiedCandidateModeCount:
+      resolvedConfidenceQualifiedCandidateModeCount,
+    lowConfidenceCandidateModeCount: resolvedLowConfidenceCandidateModeCount,
+    rawCandidateModalEnergy: Math.max(
+      resolveNonNegativeNumber(rawCandidateModalEnergy),
+      resolveNonNegativeNumber(fallbackRawCandidateModalEnergy),
+    ),
+    confidenceWeightedCandidateEnergy: resolveNonNegativeNumber(
+      confidenceWeightedCandidateEnergy,
+      fallbackConfidenceWeightedCandidateEnergy,
+    ),
+    modalObservationCoherence: clamp01(
+      Number.isFinite(modalObservationCoherence)
+        ? modalObservationCoherence
+        : 1,
+    ),
+    modalObservationConfidence: clamp01(
+      Number.isFinite(modalObservationConfidence)
+        ? modalObservationConfidence
+        : 1,
+    ),
+  };
+}
+
 function getSpectralLanePacketMass(laneA, laneB) {
   let mass = 0;
   for (let laneIndex = 0; laneIndex < 4; laneIndex += 1) {
@@ -199,6 +261,13 @@ function buildModalVarietyAudit({
   observerCandidateModeCount,
   observedModalModeCount,
   phaseAuthorityModeCount,
+  rawCandidateModeCount,
+  confidenceQualifiedCandidateModeCount,
+  lowConfidenceCandidateModeCount,
+  rawCandidateModalEnergy,
+  confidenceWeightedCandidateEnergy,
+  modalObservationCoherence,
+  modalObservationConfidence,
   modeIdentityRetentionRatio,
   upstreamSourceCoupledModeCount,
   upstreamResonantModeCount,
@@ -318,6 +387,22 @@ function buildModalVarietyAudit({
     summedUpstreamCandidateModalEnergy,
     semanticModalEnergy,
   );
+  const candidateConfidenceDiagnostics = resolveCandidateConfidenceDiagnostics({
+    rawCandidateModeCount,
+    confidenceQualifiedCandidateModeCount,
+    lowConfidenceCandidateModeCount,
+    rawCandidateModalEnergy,
+    confidenceWeightedCandidateEnergy,
+    modalObservationCoherence,
+    modalObservationConfidence,
+    fallbackRawCandidateModeCount: Math.max(
+      resolvedUpstreamCandidateModeCount,
+      acceptedEntries.length,
+    ),
+    fallbackConfidenceQualifiedCandidateModeCount: acceptedEntries.length,
+    fallbackRawCandidateModalEnergy: resolvedUpstreamCandidateModalEnergy,
+    fallbackConfidenceWeightedCandidateEnergy: acceptedModalEnergy,
+  });
   const energyEffectiveModeCount =
     modalEnergySquaredSum > 0
       ? (acceptedModalEnergy * acceptedModalEnergy) / modalEnergySquaredSum
@@ -330,6 +415,7 @@ function buildModalVarietyAudit({
     observerCandidateModeCount: resolvedObserverCandidateModeCount,
     observedModalModeCount: resolvedObservedModalModeCount,
     phaseAuthorityModeCount: resolvedPhaseAuthorityModeCount,
+    ...candidateConfidenceDiagnostics,
     upstreamSourceCoupledModeCount: resolvedUpstreamSourceCoupledModeCount,
     upstreamResonantModeCount: resolvedUpstreamResonantModeCount,
     upstreamCandidateModeCount: resolvedUpstreamCandidateModeCount,
@@ -839,6 +925,13 @@ function buildSpectralLaneDescriptorHash(slotAssignments) {
  *   observerCandidateModeCount?: number,
  *   observedModalModeCount?: number,
  *   phaseAuthorityModeCount?: number,
+ *   rawCandidateModeCount?: number,
+ *   confidenceQualifiedCandidateModeCount?: number,
+ *   lowConfidenceCandidateModeCount?: number,
+ *   rawCandidateModalEnergy?: number,
+ *   confidenceWeightedCandidateEnergy?: number,
+ *   modalObservationCoherence?: number,
+ *   modalObservationConfidence?: number,
  *   modeIdentityRetentionRatio?: number,
  *   upstreamSourceCoupledModeCount?: number,
  *   upstreamResonantModeCount?: number,
@@ -868,6 +961,13 @@ export function buildCanonicalFullModalDescriptor({
   observerCandidateModeCount,
   observedModalModeCount,
   phaseAuthorityModeCount,
+  rawCandidateModeCount,
+  confidenceQualifiedCandidateModeCount,
+  lowConfidenceCandidateModeCount,
+  rawCandidateModalEnergy,
+  confidenceWeightedCandidateEnergy,
+  modalObservationCoherence,
+  modalObservationConfidence,
   modeIdentityRetentionRatio = 1,
   upstreamSourceCoupledModeCount,
   upstreamResonantModeCount,
@@ -953,6 +1053,31 @@ export function buildCanonicalFullModalDescriptor({
   )
     ? Math.max(0, Math.floor(phaseAuthorityModeCount))
     : countPhaseAuthorityModes(modalFieldPhaseSlots, validModeCount);
+  const fallbackRawCandidateModalEnergy =
+    acceptedEntries.reduce(
+      (total, entry) => total + getEntryModalEnergy(entry),
+      0,
+    ) + rejectedModalEnergy;
+  const fallbackConfidenceWeightedCandidateEnergy = acceptedEntries.reduce(
+    (total, entry) => {
+      const support = clamp01(entry.observedSupport ?? 0);
+      return total + (support * Math.max(0, entry.coefficient ?? 0)) ** 2;
+    },
+    0,
+  );
+  const candidateConfidenceDiagnostics = resolveCandidateConfidenceDiagnostics({
+    rawCandidateModeCount,
+    confidenceQualifiedCandidateModeCount,
+    lowConfidenceCandidateModeCount,
+    rawCandidateModalEnergy,
+    confidenceWeightedCandidateEnergy,
+    modalObservationCoherence,
+    modalObservationConfidence,
+    fallbackRawCandidateModeCount: validModeCount,
+    fallbackConfidenceQualifiedCandidateModeCount: acceptedEntries.length,
+    fallbackRawCandidateModalEnergy,
+    fallbackConfidenceWeightedCandidateEnergy,
+  });
   const modalVarietyAudit = buildModalVarietyAudit({
     slotAssignments,
     rejectedEntries,
@@ -960,6 +1085,7 @@ export function buildCanonicalFullModalDescriptor({
     observerCandidateModeCount,
     observedModalModeCount,
     phaseAuthorityModeCount: resolvedPhaseAuthorityModeCount,
+    ...candidateConfidenceDiagnostics,
     modeIdentityRetentionRatio,
     upstreamSourceCoupledModeCount,
     upstreamResonantModeCount,
@@ -1012,6 +1138,7 @@ export function buildCanonicalFullModalDescriptor({
         ? Math.max(0, Math.floor(observedModalModeCount))
         : validModeCount,
       phaseAuthorityModeCount: resolvedPhaseAuthorityModeCount,
+      ...candidateConfidenceDiagnostics,
       modeIdentityRetentionRatio: clamp01(modeIdentityRetentionRatio ?? 1),
       descriptorOverflow,
       structuralCoverageSatisfied:

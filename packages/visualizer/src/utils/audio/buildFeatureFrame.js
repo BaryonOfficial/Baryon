@@ -1035,6 +1035,20 @@ function readModalResponseRenderResonantEnergy(
   );
 }
 
+function resolveModalObservationCoherence(structuralMetrics) {
+  if (Number.isFinite(structuralMetrics?.modalObservationCoherence)) {
+    return clamp01(structuralMetrics.modalObservationCoherence);
+  }
+  return 1;
+}
+
+function resolveModalObservationConfidence(structuralMetrics) {
+  if (Number.isFinite(structuralMetrics?.modalObservationConfidence)) {
+    return clamp01(structuralMetrics.modalObservationConfidence);
+  }
+  return 1;
+}
+
 function hasFeatureFrameRenderAuthority({
   fieldState,
   hasModalField,
@@ -1319,6 +1333,10 @@ function buildDebugSummary({
       structuralMetrics?.highQProjectionLoad ??
       0,
     modalPhaseAuthority: structuralMetrics?.modalPhaseAuthority ?? 0,
+    modalObservationCoherence:
+      resolveModalObservationCoherence(structuralMetrics),
+    modalObservationConfidence:
+      resolveModalObservationConfidence(structuralMetrics),
     highQPhaseAuthority: structuralMetrics?.highQPhaseAuthority ?? 0,
     lowQPhaseAuthority: structuralMetrics?.lowQPhaseAuthority ?? 0,
     modalPhaseCoherentFieldModeCount:
@@ -1536,6 +1554,13 @@ function buildEmptyModalFieldDescriptor({
     observerCandidateModeCount: 0,
     observedModalModeCount: 0,
     phaseAuthorityModeCount: 0,
+    rawCandidateModeCount: 0,
+    confidenceQualifiedCandidateModeCount: 0,
+    lowConfidenceCandidateModeCount: 0,
+    rawCandidateModalEnergy: 0,
+    confidenceWeightedCandidateEnergy: 0,
+    modalObservationCoherence: 0,
+    modalObservationConfidence: 0,
     modeIdentityRetentionRatio: 0,
   });
 }
@@ -2640,6 +2665,73 @@ function buildModalFieldFrequencyOptions({
   };
 }
 
+function buildModalSlotModeKey(sourceSlots, sourceOffset) {
+  const u = Math.round(sourceSlots?.[sourceOffset] ?? 0);
+  const v = Math.round(sourceSlots?.[sourceOffset + 1] ?? 0);
+  const w = Math.round(sourceSlots?.[sourceOffset + 2] ?? 0);
+  return `${u}:${v}:${w}`;
+}
+
+function buildModalCandidateMetadataSlots({
+  slots,
+  activeModeCount,
+  capacity,
+  candidateState,
+}) {
+  if (!candidateState || typeof candidateState.get !== "function") {
+    return null;
+  }
+  if (candidateState.size === 0) {
+    return null;
+  }
+
+  const slotLength = slots?.length ?? 0;
+  const slotLimit = Math.min(
+    Math.max(0, Math.floor(capacity ?? 0)),
+    Math.floor(slotLength / 4),
+  );
+  const validLimit = Math.max(0, Math.floor(activeModeCount ?? 0));
+  const metadataSlots = new Float32Array(slotLength);
+  metadataSlots.fill(Number.NaN);
+  let seen = 0;
+  let wroteSupport = false;
+
+  for (
+    let sourceIndex = 0;
+    sourceIndex < slotLimit && seen < validLimit;
+    sourceIndex += 1
+  ) {
+    const sourceOffset = sourceIndex * 4;
+    if (!((slots?.[sourceOffset + 3] ?? 0) > 0)) {
+      continue;
+    }
+    seen += 1;
+
+    const candidate = candidateState.get(
+      buildModalSlotModeKey(slots, sourceOffset),
+    );
+    if (!candidate) {
+      continue;
+    }
+
+    if (Number.isFinite(candidate.naturalFrequencyHz)) {
+      metadataSlots[sourceOffset] = candidate.naturalFrequencyHz;
+    }
+    if (Number.isFinite(candidate.qualityFactor)) {
+      metadataSlots[sourceOffset + 1] = candidate.qualityFactor;
+    }
+    if (Number.isFinite(candidate.dampingRatio)) {
+      metadataSlots[sourceOffset + 2] = candidate.dampingRatio;
+    }
+    if (Number.isFinite(candidate.observedSupport)) {
+      metadataSlots[sourceOffset + 3] = clamp01(candidate.observedSupport);
+      wroteSupport = true;
+    }
+  }
+
+  return wroteSupport ? metadataSlots : null;
+}
+
 function inferContinuousQualityFactor({ naturalFrequencyHz, u, v, w }) {
   const frequencyRatio =
     naturalFrequencyHz > 0
@@ -2664,11 +2756,12 @@ function buildModalFieldMetadataSlot({
   sourceMetadataSlots,
   sourceOffset,
   frequencyOptions,
+  modalObservationConfidence = 1,
+  defaultCandidateSupport = 1,
 }) {
   const u = sourceSlots?.[sourceOffset] ?? 0;
   const v = sourceSlots?.[sourceOffset + 1] ?? 0;
   const w = sourceSlots?.[sourceOffset + 2] ?? 0;
-  const coefficient = clamp01(sourceSlots?.[sourceOffset + 3] ?? 0);
   const explicitFrequency = sourceMetadataSlots?.[sourceOffset];
   const naturalFrequencyHz =
     Number.isFinite(explicitFrequency) && explicitFrequency > 0
@@ -2688,12 +2781,11 @@ function buildModalFieldMetadataSlot({
     clamp01(sourcePhaseSlots?.[sourceOffset + 2] ?? 0) *
     clamp01(sourcePhaseSlots?.[sourceOffset + 3] ?? 0);
   const explicitObservedSupport = sourceMetadataSlots?.[sourceOffset + 3];
+  const baseSupport = Number.isFinite(explicitObservedSupport)
+    ? clamp01(explicitObservedSupport)
+    : Math.max(phaseEvidence, clamp01(defaultCandidateSupport));
   const observedSupport = clamp01(
-    Math.max(
-      coefficient,
-      phaseEvidence,
-      Number.isFinite(explicitObservedSupport) ? explicitObservedSupport : 0,
-    ),
+    baseSupport * clamp01(modalObservationConfidence),
   );
 
   return {
@@ -2722,6 +2814,8 @@ function writeModalFieldCandidates({
   sourceMetadataSlots,
   validCount,
   frequencyOptions,
+  modalObservationConfidence,
+  defaultCandidateSupport,
 }) {
   const slotCount = Math.floor((sourceSlots?.length ?? 0) / 4);
   const targetCount = Math.floor((targetSlots?.length ?? 0) / 4);
@@ -2794,6 +2888,8 @@ function writeModalFieldCandidates({
       sourceMetadataSlots,
       sourceOffset,
       frequencyOptions,
+      modalObservationConfidence,
+      defaultCandidateSupport,
     });
     targetMetadataSlots[targetOffset] = metadata.naturalFrequencyHz;
     targetMetadataSlots[targetOffset + 1] = metadata.qualityFactor;
@@ -2825,6 +2921,8 @@ function buildModalFieldDescriptorSource({
   radius,
   cavityAcousticScale,
   boundaryMode,
+  modalObservationConfidence = 1,
+  defaultCandidateSupport = 1,
 }) {
   const candidateCount =
     Math.max(0, Math.floor(activeSourceCoupledModeCount ?? 0)) +
@@ -2862,6 +2960,8 @@ function buildModalFieldDescriptorSource({
     sourceMetadataSlots: sourceCoupledMetadataSlots,
     validCount: activeSourceCoupledModeCount,
     frequencyOptions,
+    modalObservationConfidence,
+    defaultCandidateSupport,
   });
   activeModalFieldModeCount = writeModalFieldCandidates({
     targetSlots: modalFieldSlots,
@@ -2881,6 +2981,8 @@ function buildModalFieldDescriptorSource({
     sourceMetadataSlots: resonantMetadataSlots,
     validCount: activeResonantModeCount,
     frequencyOptions,
+    modalObservationConfidence,
+    defaultCandidateSupport,
   });
 
   return {
@@ -4852,12 +4954,14 @@ function resolveStructuralProjectionSources(preparedInputs, structuralState) {
   const referenceResonantSlotsSource =
     structuralState?.referenceResonantSlotsSource ??
     preparedInputs.resonantState.referenceSlots;
-  const activeSourceCoupledModeCount = structuralState?.suppressedByFog
-    ? 0
-    : countActiveSlots(candidateForcingSlotsSource, capacity);
-  const activeResonantModeCount = structuralState?.suppressedByFog
-    ? 0
-    : countActiveSlots(candidateResponseSlotsSource, capacity);
+  const activeSourceCoupledModeCount = countActiveSlots(
+    candidateForcingSlotsSource,
+    capacity,
+  );
+  const activeResonantModeCount = countActiveSlots(
+    candidateResponseSlotsSource,
+    capacity,
+  );
 
   return {
     freezeModeSlots,
@@ -5336,7 +5440,6 @@ function buildStructuralFingerprint({
     preparedInputs,
     structuralState,
   );
-  const fogSuppressed = Boolean(structuralState?.suppressedByFog);
 
   return {
     activeSourceCoupledModeCount,
@@ -5348,18 +5451,14 @@ function buildStructuralFingerprint({
     pitchSource: structuralState?.pitchSource ?? "none",
     usedDecay: Boolean(structuralState?.usedDecay),
     sourceMode: structuralState?.sourceMode ?? preparedInputs.sourceMode,
-    sourceCoupledSignature: fogSuppressed
-      ? 0
-      : computeSlotSignature(
-          projectionSources.candidateForcingSlotsSource,
-          preparedInputs.capacity,
-        ),
-    resonantSignature: fogSuppressed
-      ? 0
-      : computeSlotSignature(
-          projectionSources.candidateResponseSlotsSource,
-          preparedInputs.capacity,
-        ),
+    sourceCoupledSignature: computeSlotSignature(
+      projectionSources.candidateForcingSlotsSource,
+      preparedInputs.capacity,
+    ),
+    resonantSignature: computeSlotSignature(
+      projectionSources.candidateResponseSlotsSource,
+      preparedInputs.capacity,
+    ),
     referenceSourceCoupledSignature: computeSlotSignature(
       projectionSources.referenceSourceCoupledSlotsSource,
       preparedInputs.capacity,
@@ -5368,20 +5467,18 @@ function buildStructuralFingerprint({
       projectionSources.referenceResonantSlotsSource,
       preparedInputs.capacity,
     ),
-    sourceCoupledColorSignature:
-      fogSuppressed || !projectionSources.sourceCoupledColorSlotsSource
-        ? 0
-        : computeColorSignature(
-            projectionSources.sourceCoupledColorSlotsSource,
-            preparedInputs.capacity,
-          ),
-    resonantColorSignature:
-      fogSuppressed || !projectionSources.resonantColorSlotsSource
-        ? 0
-        : computeColorSignature(
-            projectionSources.resonantColorSlotsSource,
-            preparedInputs.capacity,
-          ),
+    sourceCoupledColorSignature: projectionSources.sourceCoupledColorSlotsSource
+      ? computeColorSignature(
+          projectionSources.sourceCoupledColorSlotsSource,
+          preparedInputs.capacity,
+        )
+      : 0,
+    resonantColorSignature: projectionSources.resonantColorSlotsSource
+      ? computeColorSignature(
+          projectionSources.resonantColorSlotsSource,
+          preparedInputs.capacity,
+        )
+      : 0,
   };
 }
 
@@ -5556,30 +5653,6 @@ function materializeAudioFeatureStructuralSnapshot(
     emptyFrozenLayers(auditState);
   }
 
-  let activeSourceCoupledModeCount =
-    projectionSources.activeSourceCoupledModeCount;
-  let activeResonantModeCount = projectionSources.activeResonantModeCount;
-  let activeModeCount = projectionSources.activeModeCount;
-
-  if (structuralState.suppressedByFog) {
-    returnedSourceCoupledSlots.fill(0);
-    returnedResonantSlots.fill(0);
-    returnedSourceCoupledPhaseSlots.fill(0);
-    returnedResonantPhaseSlots.fill(0);
-    returnedModeSlots.fill(0);
-    returnedSourceCoupledColorSlots.fill(0);
-    returnedResonantColorSlots.fill(0);
-    returnedSourceCoupledSpectralLaneA?.fill(0);
-    returnedSourceCoupledSpectralLaneB?.fill(0);
-    returnedSourceCoupledSpectralMeta?.fill(0);
-    returnedResonantSpectralLaneA?.fill(0);
-    returnedResonantSpectralLaneB?.fill(0);
-    returnedResonantSpectralMeta?.fill(0);
-    activeSourceCoupledModeCount = 0;
-    activeResonantModeCount = 0;
-    activeModeCount = 0;
-  }
-
   return {
     candidateForcingSlots: returnedSourceCoupledSlots,
     candidateResponseSlots: returnedResonantSlots,
@@ -5595,9 +5668,10 @@ function materializeAudioFeatureStructuralSnapshot(
     resonantSpectralLaneA: returnedResonantSpectralLaneA,
     resonantSpectralLaneB: returnedResonantSpectralLaneB,
     resonantSpectralMeta: returnedResonantSpectralMeta,
-    activeSourceCoupledModeCount,
-    activeResonantModeCount,
-    activeModeCount,
+    activeSourceCoupledModeCount:
+      projectionSources.activeSourceCoupledModeCount,
+    activeResonantModeCount: projectionSources.activeResonantModeCount,
+    activeModeCount: projectionSources.activeModeCount,
   };
 }
 
@@ -5861,7 +5935,6 @@ function readCurrentStructuralState(
     spectralCandidates: [],
     usedDecay: false,
     sourceMode: preparedInputs.sourceMode,
-    suppressedByFog: false,
     sourceCoupledStateSource: preparedInputs.sourceCoupledState,
     resonantStateSource: preparedInputs.resonantState,
     structuralFingerprint: null,
@@ -6552,6 +6625,18 @@ export function composeAudioFeatureFrame({
   let modalPhaseAuthority = renderAuthority
     ? clamp01(analysisResult.structuralMetrics?.modalPhaseAuthority ?? 0)
     : 0;
+  const modalObservationCoherence = resolveModalObservationCoherence(
+    analysisResult.structuralMetrics,
+  );
+  const modalObservationConfidence = resolveModalObservationConfidence(
+    analysisResult.structuralMetrics,
+  );
+  if (analysisResult.structuralMetrics) {
+    analysisResult.structuralMetrics.modalObservationCoherence =
+      modalObservationCoherence;
+    analysisResult.structuralMetrics.modalObservationConfidence =
+      modalObservationConfidence;
+  }
   let renderSourceCoupledSlots = analysisResult.candidateForcingSlots;
   let renderResonantSlots = analysisResult.candidateResponseSlots;
   let renderSourceCoupledPhaseSlots = analysisResult.sourceCoupledPhaseSlots;
@@ -6649,9 +6734,22 @@ export function composeAudioFeatureFrame({
       scale: renderAuthority ? energyLedger.projectedEnergyScale : 1,
       allowProposalCandidates:
         (renderAuthority || modalProjectionContinuityHold) &&
-        analysisResult.structuralState?.freezeModeSlots !== true &&
-        analysisResult.structuralState?.suppressedByFog !== true,
+        analysisResult.structuralState?.freezeModeSlots !== true,
     });
+  const modalCandidateState =
+    analysisResult.structuralState?.modalCandidateState;
+  const sourceCoupledMetadataSlots = buildModalCandidateMetadataSlots({
+    slots: continuityDescriptorSources.descriptorSourceCoupledSlots,
+    activeModeCount: continuityDescriptorSources.activeSourceCoupledModeCount,
+    capacity: preparedInputs.capacity,
+    candidateState: modalCandidateState,
+  });
+  const resonantMetadataSlots = buildModalCandidateMetadataSlots({
+    slots: continuityDescriptorSources.descriptorResonantSlots,
+    activeModeCount: continuityDescriptorSources.activeResonantModeCount,
+    capacity: preparedInputs.capacity,
+    candidateState: modalCandidateState,
+  });
   const modalFieldDescriptorSource = buildModalFieldDescriptorSource({
     candidateForcingSlots:
       continuityDescriptorSources.descriptorSourceCoupledSlots,
@@ -6671,6 +6769,8 @@ export function composeAudioFeatureFrame({
     resonantSpectralLaneA: continuityDescriptorSources.resonantSpectralLaneA,
     resonantSpectralLaneB: continuityDescriptorSources.resonantSpectralLaneB,
     resonantSpectralMeta: continuityDescriptorSources.resonantSpectralMeta,
+    sourceCoupledMetadataSlots,
+    resonantMetadataSlots,
     activeSourceCoupledModeCount:
       continuityDescriptorSources.activeSourceCoupledModeCount,
     activeResonantModeCount:
@@ -6678,6 +6778,7 @@ export function composeAudioFeatureFrame({
     radius: preparedInputs.radius,
     cavityAcousticScale: preparedInputs.cavityAcousticScale,
     boundaryMode: preparedInputs.boundaryMode,
+    modalObservationConfidence,
   });
   const modalGeometryBackend = getModalGeometryBackend(
     preparedInputs.effectiveCavityGeometry,
@@ -6833,6 +6934,18 @@ export function composeAudioFeatureFrame({
       analysisResult.structuralMetrics?.observedModalModeCount,
     phaseAuthorityModeCount:
       analysisResult.structuralMetrics?.modalPhaseCoherentFieldModeCount,
+    rawCandidateModeCount:
+      modalFieldContinuityDiagnostics.rawCandidateModeCount,
+    confidenceQualifiedCandidateModeCount:
+      modalFieldContinuityDiagnostics.confidenceQualifiedCandidateModeCount,
+    lowConfidenceCandidateModeCount:
+      modalFieldContinuityDiagnostics.lowConfidenceCandidateModeCount,
+    rawCandidateModalEnergy:
+      modalFieldContinuityDiagnostics.rawCandidateModalEnergy,
+    confidenceWeightedCandidateEnergy:
+      modalFieldContinuityDiagnostics.confidenceWeightedCandidateEnergy,
+    modalObservationCoherence,
+    modalObservationConfidence,
     upstreamSourceCoupledModeCount:
       continuityDescriptorSources.activeSourceCoupledModeCount,
     upstreamResonantModeCount:
@@ -7027,6 +7140,8 @@ export function composeAudioFeatureFrame({
     modalObserverVisibilityEnergy,
     modalVisibilityRetainedHighQEnergy,
     modalPhaseAuthority,
+    modalObservationCoherence,
+    modalObservationConfidence,
     changeSignal,
     changeBreakdown: changeBreakdown ? { ...changeBreakdown } : null,
     pulseSignal,

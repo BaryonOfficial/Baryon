@@ -60,6 +60,8 @@ export function createModalExcitationState(capacity = 16) {
       highQPhaseAuthority: 0,
       lowQPhaseAuthority: 0,
       modalPhaseCoherentFieldModeCount: 0,
+      modalObservationCoherence: 0,
+      modalObservationConfidence: 0,
       modalPersistence: 0,
       modalDriveEnergy: 0,
       modeCoherence: 0,

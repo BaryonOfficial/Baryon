@@ -50,6 +50,22 @@ it("derives observation energy from modal coefficient and response only", () => 
   expect(observationEnergyHelper).not.toContain("liveInputHardSilenceActive");
 });
 
+it("keeps modal observation confidence owned by producer output", () => {
+  const source = readFileSync(
+    new URL("./buildFeatureFrame.js", import.meta.url),
+    "utf8",
+  );
+  const confidenceHelper = source.match(
+    /function resolveModalObservationConfidence[\s\S]*?\n}/,
+  )?.[0];
+
+  expect(confidenceHelper).toBeTruthy();
+  expect(confidenceHelper).not.toContain("modalPhaseAuthority");
+  expect(confidenceHelper).not.toContain("modalResponseEnergy");
+  expect(confidenceHelper).not.toContain("currentSignalEnergy");
+  expect(confidenceHelper).not.toContain("modalDriveEnergy");
+});
+
 it("keeps render liveness owned by canonical energy quantities", () => {
   const source = readFileSync(
     new URL("./buildFeatureFrame.js", import.meta.url),
@@ -82,6 +98,23 @@ it("keeps source and resonant slot reservoirs out of production owners", () => {
 
     expect(source).not.toMatch(/\bsourceCoupledSlots\b/);
     expect(source).not.toMatch(/\bresonantSlots\b/);
+  }
+});
+
+it("keeps visual fog out of production modal admission owners", () => {
+  const retiredFogAdmissionField = "suppressed" + "ByFog";
+  const productionFiles = [
+    "./buildFeatureFrame.js",
+    "./modalExcitation.js",
+    "./modalExcitationState.js",
+    "../../core/modalFieldContinuity.js",
+    "../../core/modalDescriptor.js",
+  ];
+
+  for (const file of productionFiles) {
+    const source = readFileSync(new URL(file, import.meta.url), "utf8");
+
+    expect(source).not.toContain(retiredFogAdmissionField);
   }
 });
 
@@ -666,11 +699,11 @@ function makeManualStructuralState({
   proposalSourceCoupledSpectralLaneA = makeQuadSlots([]),
   proposalSourceCoupledSpectralLaneB = makeQuadSlots([]),
   proposalSourceCoupledSpectralMeta = makeQuadSlots([]),
+  modalCandidateState = new Map(),
   dominantFrequency = 196,
   dominantAmplitude = 0.08,
   sourceMode = "file",
   structuralMetrics = {},
-  suppressedByFog = false,
 } = {}) {
   return {
     candidateForcingSlotsSource: candidateForcingSlots,
@@ -695,9 +728,9 @@ function makeManualStructuralState({
     analysisEngine: "modal-excitation",
     pitchSource: "resonator-bank",
     spectralCandidates: [],
+    modalCandidateState,
     sourceMode,
     structuralMetrics,
-    suppressedByFog,
   };
 }
 
@@ -940,6 +973,8 @@ function makeModalFieldContinuityStructuralMetrics(overrides = {}) {
     excitedModeCount: 4,
     observedModalModeCount: 4,
     modalPhaseAuthority: 0.9,
+    modalObservationCoherence: 0.9,
+    modalObservationConfidence: 0.9,
     modalPhaseCoherentFieldModeCount: 4,
     ...overrides,
   };
@@ -956,8 +991,8 @@ function buildManualModalContinuityFrame({
   proposalSourceCoupledSpectralLaneA = makeQuadSlots([]),
   proposalSourceCoupledSpectralLaneB = makeQuadSlots([]),
   proposalSourceCoupledSpectralMeta = makeQuadSlots([]),
+  modalCandidateState = new Map(),
   structuralMetrics = makeModalFieldContinuityStructuralMetrics(),
-  suppressedByFog = false,
   sourceMode = "file",
   status = makeActiveStatus(),
 } = {}) {
@@ -986,9 +1021,9 @@ function buildManualModalContinuityFrame({
     proposalSourceCoupledSpectralLaneA,
     proposalSourceCoupledSpectralLaneB,
     proposalSourceCoupledSpectralMeta,
+    modalCandidateState,
     sourceMode,
     structuralMetrics,
-    suppressedByFog,
   });
   return composeManualStructuralFrame({ preparedInputs, structuralState });
 }
@@ -1264,7 +1299,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
     expect(countActiveSlots(frame.modalFieldSlots)).toBeLessThanOrEqual(12);
   });
 
-  it("does not admit richer proposal candidates during fog suppression", () => {
+  it("keeps low-confidence proposal candidates diagnostic-only until confidence recovers", () => {
     const featureState = createAudioFeatureState();
     const liveStatus = makeLiveInputStatus();
     buildManualModalContinuityFrame({
@@ -1286,18 +1321,92 @@ describe("buildAudioFeatureFrame modal contract", () => {
       structuralMetrics: makeModalFieldContinuityStructuralMetrics({
         excitedModeCount: 2,
         observedModalModeCount: 2,
+        modalObservationCoherence: 0.08,
+        modalObservationConfidence: 0.04,
       }),
       sourceMode: "live",
       status: liveStatus,
-      suppressedByFog: true,
     });
 
     expect(readModeKeys(frame.modalFieldSlots)).toEqual(["1:1:1"]);
-    expect(frame.modalFieldContinuity.candidateModeCount).toBe(0);
+    expect(frame.modalFieldContinuity.candidateModeCount).toBe(2);
+    expect(frame.modalFieldContinuity.rawCandidateModeCount).toBe(2);
+    expect(
+      frame.modalFieldContinuity.confidenceQualifiedCandidateModeCount,
+    ).toBe(0);
+    expect(frame.modalFieldContinuity.lowConfidenceCandidateModeCount).toBe(2);
     expect(
       frame.modalDescriptor.diagnostics.modalVarietyAudit
         .upstreamSourceCoupledModeCount,
+    ).toBe(2);
+    expect(
+      frame.modalDescriptor.diagnostics.modalVarietyAudit
+        .confidenceQualifiedCandidateModeCount,
     ).toBe(0);
+
+    const recovered = buildManualModalContinuityFrame({
+      featureState,
+      frameTimeMs: 96,
+      candidateForcingSlots: makeModeSlots([[2, 1, 1, 0.42]]),
+      proposalSourceCoupledSlots: makeModeSlots([
+        [2, 1, 1, 0.42],
+        [3, 1, 1, 0.36],
+      ]),
+      structuralMetrics: makeModalFieldContinuityStructuralMetrics({
+        excitedModeCount: 2,
+        observedModalModeCount: 2,
+        modalObservationCoherence: 0.9,
+        modalObservationConfidence: 0.9,
+      }),
+      sourceMode: "live",
+      status: liveStatus,
+    });
+
+    expect(recovered.modalFieldContinuity.admittedModeKeys).toContain("2:1:1");
+    expect(
+      recovered.modalFieldContinuity.confidenceQualifiedCandidateModeCount,
+    ).toBe(2);
+  });
+
+  it("uses producer candidate support for admission metadata", () => {
+    const featureState = createAudioFeatureState();
+    const liveStatus = makeLiveInputStatus();
+    buildManualModalContinuityFrame({
+      featureState,
+      frameTimeMs: 0,
+      candidateForcingSlots: makeModeSlots([[1, 1, 1, 0.42]]),
+      sourceMode: "live",
+      status: liveStatus,
+    });
+
+    const frame = buildManualModalContinuityFrame({
+      featureState,
+      frameTimeMs: 16,
+      candidateForcingSlots: makeModeSlots([[2, 1, 1, 0.9]]),
+      proposalSourceCoupledSlots: makeModeSlots([[2, 1, 1, 0.9]]),
+      modalCandidateState: new Map([
+        ["2:1:1", { observedSupport: 0.02 }],
+      ]),
+      structuralMetrics: makeModalFieldContinuityStructuralMetrics({
+        modalObservationConfidence: 1,
+      }),
+      sourceMode: "live",
+      status: liveStatus,
+    });
+
+    expect(frame.modalFieldContinuity.candidateModeCount).toBe(1);
+    expect(frame.modalFieldContinuity.rawCandidateModalEnergy).toBeCloseTo(
+      0.9 ** 2,
+      6,
+    );
+    expect(
+      frame.modalFieldContinuity.confidenceWeightedCandidateEnergy,
+    ).toBeCloseTo((0.02 * 0.9) ** 2, 6);
+    expect(
+      frame.modalFieldContinuity.confidenceQualifiedCandidateModeCount,
+    ).toBe(0);
+    expect(frame.modalFieldContinuity.lowConfidenceCandidateModeCount).toBe(1);
+    expect(frame.modalFieldContinuity.admittedModeKeys).not.toContain("2:1:1");
   });
 
   it("bootstraps modal field continuity immediately after a silent reset", () => {

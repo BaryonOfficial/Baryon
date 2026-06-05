@@ -276,6 +276,48 @@ describe("buildCanonicalFullModalDescriptor", () => {
     expect(audit.basisRepresentedShellCoverageRatio).toBeCloseTo(2 / 5, 6);
   });
 
+  it("reports raw and confidence-qualified reservoir diagnostics separately", () => {
+    const descriptor = buildCanonicalFullModalDescriptor({
+      maxTotalModes: 8,
+      basisAtlasPageCapacity: 8,
+      modalFieldSlots: makeSlots([
+        [1, 1, 1, 0.6],
+        [2, 1, 1, 0.5],
+      ]),
+      modalFieldMetadataSlots: makeMetadataSlots([
+        [110, 5, 0.1, 0.8],
+        [220, 10, 0.05, 0.02],
+      ]),
+      activeModalFieldModeCount: 2,
+      rawCandidateModeCount: 5,
+      confidenceQualifiedCandidateModeCount: 2,
+      lowConfidenceCandidateModeCount: 3,
+      rawCandidateModalEnergy: 0.72,
+      confidenceWeightedCandidateEnergy: 0.24,
+      modalObservationCoherence: 0.42,
+      modalObservationConfidence: 0.35,
+    });
+
+    expect(descriptor.diagnostics).toMatchObject({
+      rawCandidateModeCount: 5,
+      confidenceQualifiedCandidateModeCount: 2,
+      lowConfidenceCandidateModeCount: 3,
+      rawCandidateModalEnergy: 0.72,
+      confidenceWeightedCandidateEnergy: 0.24,
+      modalObservationCoherence: 0.42,
+      modalObservationConfidence: 0.35,
+    });
+    expect(descriptor.diagnostics.modalVarietyAudit).toMatchObject({
+      rawCandidateModeCount: 5,
+      confidenceQualifiedCandidateModeCount: 2,
+      lowConfidenceCandidateModeCount: 3,
+      rawCandidateModalEnergy: 0.72,
+      confidenceWeightedCandidateEnergy: 0.24,
+      modalObservationCoherence: 0.42,
+      modalObservationConfidence: 0.35,
+    });
+  });
+
   it("preserves continuity order when atlas pages are saturated", () => {
     const descriptor = buildCanonicalFullModalDescriptor({
       maxTotalModes: 8,

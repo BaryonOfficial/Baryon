@@ -109,6 +109,15 @@ function readActiveCount(descriptorSource) {
   return Math.floor((descriptorSource?.modalFieldSlots?.length ?? 0) / 4);
 }
 
+function computeCandidateEvidenceScore({
+  coefficient,
+  observedSupport,
+  relativeEvidence,
+}) {
+  const amplitudeEvidence = Math.max(coefficient, relativeEvidence);
+  return clamp01(observedSupport * amplitudeEvidence);
+}
+
 function readCandidateEntries(
   descriptorSource,
   {
@@ -171,9 +180,11 @@ function readCandidateEntries(
       normalizeCandidateEvidence && maxCoefficient > 0
         ? (coefficient / maxCoefficient) * TOPOLOGY_ADMIT_EVIDENCE
         : 0;
-    const evidenceScore = clamp01(
-      Math.max(coefficient, observedSupport, relativeEvidence),
-    );
+    const evidenceScore = computeCandidateEvidenceScore({
+      coefficient,
+      observedSupport,
+      relativeEvidence,
+    });
     const basisRepresentable =
       getModeOrder(mode) <= normalizedMaxBasisModeOrder;
     const structuralAdmissionCompliance = deriveStructuralAdmissionCompliance(
@@ -197,6 +208,7 @@ function readCandidateEntries(
       structuralAdmissionScore,
       structuralAdmissionCompliance,
       storedEnergySnapshot: coefficient * coefficient,
+      observedSupport,
       payload: {
         slot: [
           normalizeModeCoordinate(slot[0]),
@@ -846,6 +858,34 @@ function writeDescriptorSource(records) {
   };
 }
 
+function summarizeCandidateConfidence(candidateEntries) {
+  let rawCandidateModalEnergy = 0;
+  let confidenceWeightedCandidateEnergy = 0;
+  let confidenceQualifiedCandidateModeCount = 0;
+
+  for (const entry of candidateEntries) {
+    const coefficient = Math.max(0, entry?.payload?.slot?.[3] ?? 0);
+    const support = clamp01(entry?.observedSupport ?? 0);
+    rawCandidateModalEnergy += coefficient * coefficient;
+    confidenceWeightedCandidateEnergy += (support * coefficient) ** 2;
+    if ((entry?.evidenceScore ?? 0) >= TOPOLOGY_ADMIT_EVIDENCE) {
+      confidenceQualifiedCandidateModeCount += 1;
+    }
+  }
+
+  const rawCandidateModeCount = candidateEntries.length;
+  return {
+    rawCandidateModeCount,
+    confidenceQualifiedCandidateModeCount,
+    lowConfidenceCandidateModeCount: Math.max(
+      0,
+      rawCandidateModeCount - confidenceQualifiedCandidateModeCount,
+    ),
+    rawCandidateModalEnergy,
+    confidenceWeightedCandidateEnergy,
+  };
+}
+
 function buildDiagnostics({
   state,
   candidateEntries,
@@ -884,6 +924,8 @@ function buildDiagnostics({
   );
   const visibleTopology = summarizeRecords(outputRecords, modalGeometryBackend);
   const tailTopology = summarizeRecords(tailEntries, modalGeometryBackend);
+  const candidateConfidence =
+    summarizeCandidateConfidence(candidateEntries);
 
   return {
     reset,
@@ -891,6 +933,7 @@ function buildDiagnostics({
     modalTopologyGeometry: modalGeometryBackend.cavityGeometry,
     eligibilityEpoch: state.eligibilityEpoch,
     candidateModeCount: candidateEntries.length,
+    ...candidateConfidence,
     candidateShellCount: candidateTopology.shellCount,
     candidateSpatialFamilyCount: candidateTopology.familyCount,
     candidateDuplicateShellPressure: candidateTopology.duplicateShellPressure,
@@ -924,12 +967,15 @@ function buildDormantResult({
     candidateEntries,
     modalGeometryBackend,
   );
+  const candidateConfidence =
+    summarizeCandidateConfidence(candidateEntries);
   const diagnostics = {
     reset,
     dormant: true,
     modalTopologyGeometry: modalGeometryBackend.cavityGeometry,
     eligibilityEpoch: state.eligibilityEpoch,
     candidateModeCount: candidateEntries.length,
+    ...candidateConfidence,
     candidateShellCount: candidateTopology.shellCount,
     candidateSpatialFamilyCount: candidateTopology.familyCount,
     candidateDuplicateShellPressure: candidateTopology.duplicateShellPressure,

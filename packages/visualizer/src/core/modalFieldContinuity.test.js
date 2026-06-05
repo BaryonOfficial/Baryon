@@ -43,7 +43,7 @@ function makeDescriptorSource(entries) {
     modalFieldMetadataSlots[offset] = entry.naturalFrequencyHz ?? 0;
     modalFieldMetadataSlots[offset + 1] = entry.qualityFactor ?? 0;
     modalFieldMetadataSlots[offset + 2] = entry.dampingRatio ?? 0;
-    modalFieldMetadataSlots[offset + 3] = entry.observedSupport ?? 0;
+    modalFieldMetadataSlots[offset + 3] = entry.observedSupport ?? 1;
   });
 
   return {
@@ -95,6 +95,79 @@ describe("modal field continuity", () => {
     const promoted = update(state, [candidate], { deltaTimeSec: 0.001 });
     expect(readModeKeys(promoted.descriptorSource)).toEqual(["1:1:1"]);
     expect(promoted.diagnostics.admittedModeKeys).toEqual(["1:1:1"]);
+  });
+
+  it("does not admit topology from coefficient alone without observation support", () => {
+    const state = createModalFieldContinuityState();
+    const loudUnsupported = {
+      mode: [1, 1, 1],
+      coefficient: 0.9,
+      observedSupport: 0,
+    };
+
+    const held = update(state, [loudUnsupported], {
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
+    });
+
+    expect(held.descriptorSource.activeModalFieldModeCount).toBe(0);
+    expect(held.diagnostics.admittedModeKeys).toEqual([]);
+    expect(held.diagnostics.tailModeKeys).toEqual(["1:1:1"]);
+    expect(held.diagnostics.rawCandidateModeCount).toBe(1);
+    expect(held.diagnostics.confidenceQualifiedCandidateModeCount).toBe(0);
+    expect(held.diagnostics.lowConfidenceCandidateModeCount).toBe(1);
+    expect(held.diagnostics.rawCandidateModalEnergy).toBeCloseTo(0.81, 6);
+    expect(held.diagnostics.confidenceWeightedCandidateEnergy).toBe(0);
+  });
+
+  it("admits the same candidate when observation support recovers", () => {
+    const state = createModalFieldContinuityState();
+    const lowConfidence = {
+      mode: [1, 1, 1],
+      coefficient: 0.9,
+      observedSupport: 0.02,
+    };
+    const recovered = {
+      ...lowConfidence,
+      observedSupport: 0.3,
+    };
+
+    const held = update(state, [lowConfidence], {
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
+    });
+    expect(held.descriptorSource.activeModalFieldModeCount).toBe(0);
+
+    const admitted = update(state, [recovered], {
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
+    });
+
+    expect(readModeKeys(admitted.descriptorSource)).toEqual(["1:1:1"]);
+    expect(admitted.diagnostics.admittedModeKeys).toEqual(["1:1:1"]);
+    expect(admitted.diagnostics.confidenceQualifiedCandidateModeCount).toBe(1);
+    expect(admitted.diagnostics.lowConfidenceCandidateModeCount).toBe(0);
+  });
+
+  it("releases retained topology through low confidence instead of amplitude loss", () => {
+    const state = createModalFieldContinuityState();
+    const supported = {
+      mode: [3, 2, 1],
+      coefficient: 0.6,
+      observedSupport: 0.8,
+    };
+    update(state, [supported], { deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS });
+
+    const unsupported = {
+      ...supported,
+      observedSupport: 0.02,
+    };
+    const releasing = update(state, [unsupported], { deltaTimeSec: DT });
+    expect(readModeKeys(releasing.descriptorSource)).toEqual(["3:2:1"]);
+    expect(releasing.diagnostics.releasingModeKeys).toEqual(["3:2:1"]);
+
+    const released = update(state, [unsupported], {
+      deltaTimeSec: TOPOLOGY_RELEASE_SECONDS,
+    });
+    expect(released.descriptorSource.activeModalFieldModeCount).toBe(0);
+    expect(released.diagnostics.removedModeKeys).toEqual(["3:2:1"]);
   });
 
   it("uses elapsed seconds rather than frame counts for promotion", () => {
@@ -284,8 +357,8 @@ describe("modal field continuity", () => {
     update(
       state,
       [
-        { mode: [0, 0, 3], coefficient: 0.9, observedSupport: 0.9 },
-        { mode: [1, 2, 2], coefficient: 0.82, observedSupport: 0.82 },
+        { mode: [0, 0, 3], coefficient: 0.9, observedSupport: 1 },
+        { mode: [1, 2, 2], coefficient: 0.82, observedSupport: 1 },
       ],
       {
         deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
@@ -296,9 +369,9 @@ describe("modal field continuity", () => {
     const replaced = update(
       state,
       [
-        { mode: [0, 0, 3], coefficient: 0.9, observedSupport: 0.9 },
-        { mode: [1, 2, 2], coefficient: 0.82, observedSupport: 0.82 },
-        { mode: [1, 1, 1], coefficient: 0.35, observedSupport: 0.35 },
+        { mode: [0, 0, 3], coefficient: 0.9, observedSupport: 1 },
+        { mode: [1, 2, 2], coefficient: 0.82, observedSupport: 1 },
+        { mode: [1, 1, 1], coefficient: 0.35, observedSupport: 1 },
       ],
       {
         deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS + BASIS_REASSIGN_MIN_SECONDS,
@@ -336,9 +409,9 @@ describe("modal field continuity", () => {
     const result = update(
       state,
       [
-        { mode: [18, 18, 18], coefficient: 0.95, observedSupport: 0.95 },
-        { mode: [2, 1, 1], coefficient: 0.3, observedSupport: 0.3 },
-        { mode: [3, 1, 1], coefficient: 0.28, observedSupport: 0.28 },
+        { mode: [18, 18, 18], coefficient: 0.95, observedSupport: 1 },
+        { mode: [2, 1, 1], coefficient: 0.3, observedSupport: 1 },
+        { mode: [3, 1, 1], coefficient: 0.28, observedSupport: 1 },
       ],
       {
         deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
@@ -371,12 +444,12 @@ describe("modal field continuity", () => {
     const detail = {
       mode: [8, 8, 8],
       coefficient: 0.38,
-      observedSupport: 0.38,
+      observedSupport: 1,
     };
     const structural = {
       mode: [2, 1, 1],
       coefficient: 0.32,
-      observedSupport: 0.32,
+      observedSupport: 1,
     };
 
     const initial = update(state, [detail], {
@@ -400,12 +473,12 @@ describe("modal field continuity", () => {
     const structural = {
       mode: [2, 1, 1],
       coefficient: 0.3,
-      observedSupport: 0.3,
+      observedSupport: 1,
     };
     const detail = {
       mode: [18, 18, 18],
       coefficient: 0.95,
-      observedSupport: 0.95,
+      observedSupport: 1,
     };
 
     const initial = update(state, [structural], {
@@ -430,17 +503,17 @@ describe("modal field continuity", () => {
     const activeStructural = {
       mode: [1, 1, 1],
       coefficient: 0.36,
-      observedSupport: 0.36,
+      observedSupport: 1,
     };
     const staleStructural = {
       mode: [2, 1, 1],
       coefficient: 0.12,
-      observedSupport: 0.12,
+      observedSupport: 1,
     };
     const detail = {
       mode: [18, 18, 18],
       coefficient: 0.16,
-      observedSupport: 0.16,
+      observedSupport: 1,
     };
 
     const initial = update(state, [activeStructural, staleStructural], {
@@ -475,12 +548,12 @@ describe("modal field continuity", () => {
     const structural = {
       mode: [1, 1, 1],
       coefficient: 0.12,
-      observedSupport: 0.12,
+      observedSupport: 1,
     };
     const unrepresentableDetail = {
       mode: [9, 9, 9],
       coefficient: 0.95,
-      observedSupport: 0.95,
+      observedSupport: 1,
     };
 
     const initial = update(state, [structural], {

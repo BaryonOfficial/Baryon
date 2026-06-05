@@ -207,6 +207,15 @@ it("keeps projection shortlist scores out of semantic modal candidate energy", (
   expect(modalCandidateSource).toContain("observedSupport");
 });
 
+it("publishes observation confidence instead of an audio-side fog category", () => {
+  const source = readModalExcitationSource();
+  const retiredFogAdmissionField = "suppressed" + "ByFog";
+
+  expect(source).toContain("modalObservationCoherence");
+  expect(source).toContain("modalObservationConfidence");
+  expect(source).not.toContain(retiredFogAdmissionField);
+});
+
 it("keeps file weak-noise policy owned by source evidence", () => {
   const modalExcitationSource = readModalExcitationSource();
   const observedScoringSource = readModalObservedScoringSource();

@@ -298,6 +298,13 @@ const EXCITATION_HARD_SILENCE_MAX_AVG_AMPLITUDE = 1;
 const EXCITATION_HARD_SILENCE_MAX_RMS = 0.004;
 const EXCITATION_LINE_FEED_ZERO_SPECTRUM_HARD_SILENCE_MAX_RMS = 0.0065;
 const EXCITATION_HARD_SILENCE_MAX_FFT_PEAK = 0.003;
+const MODAL_OBSERVATION_COHERENCE_START = 0.12;
+const MODAL_OBSERVATION_COHERENCE_FULL = 0.58;
+const MODAL_OBSERVATION_RESPONSE_START = 0.0005;
+const MODAL_OBSERVATION_RESPONSE_FULL = 0.012;
+const MODAL_OBSERVATION_TRANSIENT_START = 0.018;
+const MODAL_OBSERVATION_TRANSIENT_FULL = 0.16;
+const MODAL_OBSERVATION_TRANSIENT_WEIGHT = 0.32;
 function clamp01(value) {
   if (!Number.isFinite(value)) {
     return 0;
@@ -312,6 +319,60 @@ function smoothstep(edge0, edge1, value) {
   }
   const t = clamp01((value - edge0) / (edge1 - edge0));
   return t * t * (3 - 2 * t);
+}
+
+function deriveModalObservationCoherence({
+  preparedInputs,
+  modalObserverMetrics,
+  modeCoherence,
+}) {
+  const rawCoherence = Math.max(
+    clamp01(modeCoherence ?? 0),
+    clamp01(modalObserverMetrics?.highQObservedCoherence ?? 0),
+    clamp01(modalObserverMetrics?.lowQObservedCoherence ?? 0),
+    clamp01(modalObserverMetrics?.modalPhaseAuthority ?? 0) * 0.5,
+    clamp01(modalObserverMetrics?.highQRingSupport ?? 0) * 0.45,
+  );
+  const deterministicSource =
+    preparedInputs?.inputMode === "file" ||
+    preparedInputs?.resolvedAuditSettings?.injectTestTone === true;
+  if (
+    deterministicSource &&
+    (modalObserverMetrics?.observedModalModeCount ?? 0) > 0
+  ) {
+    return Math.max(rawCoherence, 0.72);
+  }
+
+  return rawCoherence;
+}
+
+function deriveModalObservationConfidence({
+  modalObservationCoherence,
+  modalResponseEnergy,
+  modalPresence,
+  transientEnergy,
+}) {
+  const coherenceGate = smoothstep(
+    MODAL_OBSERVATION_COHERENCE_START,
+    MODAL_OBSERVATION_COHERENCE_FULL,
+    modalObservationCoherence,
+  );
+  const modalPresenceGate = smoothstep(
+    MODAL_OBSERVATION_RESPONSE_START,
+    MODAL_OBSERVATION_RESPONSE_FULL,
+    Number.isFinite(modalPresence) ? modalPresence : modalResponseEnergy,
+  );
+  const transientPresence =
+    MODAL_OBSERVATION_TRANSIENT_WEIGHT *
+    smoothstep(
+      MODAL_OBSERVATION_TRANSIENT_START,
+      MODAL_OBSERVATION_TRANSIENT_FULL,
+      transientEnergy,
+    );
+
+  return clamp01(
+    coherenceGate * Math.max(modalPresenceGate, transientPresence),
+  );
 }
 
 function buildModeKey(u, v, w) {
@@ -4365,6 +4426,31 @@ export function buildModalExcitationStructuralState({
     "resonant",
     colorContext,
   );
+  const modalPersistence = excitedEntries.length
+    ? clamp01(persistenceTotal / excitedEntries.length)
+    : 0;
+  const modeCoherence = excitedEntries.length
+    ? clamp01(coherenceTotal / excitedEntries.length)
+    : 0;
+  const modalObservationCoherence = deriveModalObservationCoherence({
+    preparedInputs,
+    modalObserverMetrics,
+    modeCoherence,
+  });
+  const modalObservationPresence = Math.max(
+    modalResponse.modalResponseEnergy ?? 0,
+    modalObserverMetrics.highQResonantEnergy ?? 0,
+    modalObserverMetrics.lowQSourceCoupledEnergy ?? 0,
+    (modalObserverMetrics.highQRingSupport ?? 0) * 0.5,
+    currentSignalEnergy,
+    modalDriveEnergy * 0.6,
+  );
+  const modalObservationConfidence = deriveModalObservationConfidence({
+    modalObservationCoherence,
+    modalResponseEnergy: modalResponse.modalResponseEnergy,
+    modalPresence: modalObservationPresence,
+    transientEnergy: fastSignalState.transientEnergy,
+  });
   const diagnostics = {
     excitedModeCount: excitedEntries.length,
     distributedExcitation,
@@ -4393,15 +4479,13 @@ export function buildModalExcitationStructuralState({
       ? 0
       : sourceCoupledPhaseModeCount + resonantPhaseModeCount,
     highQResonantTopologySignal,
-    modalPersistence: excitedEntries.length
-      ? clamp01(persistenceTotal / excitedEntries.length)
-      : 0,
+    modalPersistence,
     modalDriveEnergy,
     currentSignalEnergy,
     currentSignalAmplitude,
-    modeCoherence: excitedEntries.length
-      ? clamp01(coherenceTotal / excitedEntries.length)
-      : 0,
+    modeCoherence,
+    modalObservationCoherence,
+    modalObservationConfidence,
     driveSource,
     resonantSignalAuthoritative,
     resonantSignalAuthoritativeReason,
@@ -4600,7 +4684,6 @@ export function buildModalExcitationStructuralState({
           weakResidualSignal ||
           decayedDisplayDominatesSignal)) ||
         (lowCurrentModalDrive && decayedDisplayDominatesSignal)),
-    suppressedByFog: false,
     structuralPerf: {
       peakScanMs: 0,
       modalResolveMs: Math.max(0, performanceNow() - startedAt),
