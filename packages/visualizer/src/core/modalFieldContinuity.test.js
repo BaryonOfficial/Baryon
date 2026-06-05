@@ -425,6 +425,88 @@ describe("modal field continuity", () => {
     expect(retained.diagnostics.tailModeKeys).toContain("18:18:18");
   });
 
+  it("does not let detail replace stale releasing structural pages", () => {
+    const state = createModalFieldContinuityState();
+    const activeStructural = {
+      mode: [1, 1, 1],
+      coefficient: 0.36,
+      observedSupport: 0.36,
+    };
+    const staleStructural = {
+      mode: [2, 1, 1],
+      coefficient: 0.12,
+      observedSupport: 0.12,
+    };
+    const detail = {
+      mode: [18, 18, 18],
+      coefficient: 0.16,
+      observedSupport: 0.16,
+    };
+
+    const initial = update(state, [activeStructural, staleStructural], {
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
+      maxVisibleModeCount: 2,
+    });
+    expect(readModeKeys(initial.descriptorSource)).toEqual(["1:1:1", "2:1:1"]);
+
+    const earlySwitch = update(state, [activeStructural, detail], {
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
+      maxVisibleModeCount: 2,
+    });
+    expect(readModeKeys(earlySwitch.descriptorSource)).toEqual([
+      "1:1:1",
+      "2:1:1",
+    ]);
+
+    const retained = update(state, [activeStructural, detail], {
+      deltaTimeSec: BASIS_REASSIGN_MIN_SECONDS,
+      maxVisibleModeCount: 2,
+    });
+
+    expect(readModeKeys(retained.descriptorSource)).toEqual(["1:1:1", "2:1:1"]);
+    expect(retained.diagnostics.retainedModeKeys).toEqual(["1:1:1", "2:1:1"]);
+    expect(retained.diagnostics.removedModeKeys).toEqual([]);
+    expect(retained.diagnostics.admittedModeKeys).toEqual([]);
+    expect(retained.diagnostics.tailModeKeys).toContain("18:18:18");
+  });
+
+  it("does not replace releasing structural pages with unrepresentable detail", () => {
+    const state = createModalFieldContinuityState();
+    const structural = {
+      mode: [1, 1, 1],
+      coefficient: 0.12,
+      observedSupport: 0.12,
+    };
+    const unrepresentableDetail = {
+      mode: [9, 9, 9],
+      coefficient: 0.95,
+      observedSupport: 0.95,
+    };
+
+    const initial = update(state, [structural], {
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
+      maxBasisModeOrder: 4,
+      maxVisibleModeCount: 1,
+    });
+    expect(readModeKeys(initial.descriptorSource)).toEqual(["1:1:1"]);
+
+    update(state, [unrepresentableDetail], {
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
+      maxBasisModeOrder: 4,
+      maxVisibleModeCount: 1,
+    });
+    const retained = update(state, [unrepresentableDetail], {
+      deltaTimeSec: BASIS_REASSIGN_MIN_SECONDS,
+      maxBasisModeOrder: 4,
+      maxVisibleModeCount: 1,
+    });
+
+    expect(readModeKeys(retained.descriptorSource)).toEqual(["1:1:1"]);
+    expect(retained.diagnostics.removedModeKeys).toEqual([]);
+    expect(retained.diagnostics.admittedModeKeys).toEqual([]);
+    expect(retained.diagnostics.tailModeKeys).toContain("9:9:9");
+  });
+
   it("does not let phase authority promote or rank visible topology", () => {
     const phaseOnlyState = createModalFieldContinuityState();
     const phaseOnly = update(

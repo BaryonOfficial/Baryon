@@ -92,6 +92,10 @@ function extractModalExcitationFunctionSource(functionName) {
 }
 
 it("keeps phase-slot derivation in the modal phase slot helper", () => {
+  const source = extractModalExcitationFunctionSource(
+    "buildModalExcitationStructuralState",
+  );
+
   expectModalHelperBoundary({
     helperPath: "./modalPhaseSlots.js",
     localFunctions: [
@@ -99,6 +103,10 @@ it("keeps phase-slot derivation in the modal phase slot helper", () => {
       "findModalPhaseEntryForSlot",
     ],
   });
+  expect(source).toContain("target: state.sourceCoupledProposal.phaseSlots");
+  expect(source).toContain("target: state.resonantProposal.phaseSlots");
+  expect(source).toContain("target: state.blendSourceCoupled.phaseSlots");
+  expect(source).toContain("target: state.blendResonant.phaseSlots");
 });
 
 it("keeps stale-detail override policy in the modal stale detail helper", () => {

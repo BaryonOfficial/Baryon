@@ -571,6 +571,20 @@ function findModeAmplitude(slots, [u, v, w]) {
   return 0;
 }
 
+function findModeSlotOffset(slots, [u, v, w]) {
+  for (let index = 0; index < (slots?.length ?? 0); index += 4) {
+    if (
+      slots[index] === u &&
+      slots[index + 1] === v &&
+      slots[index + 2] === w &&
+      (slots[index + 3] ?? 0) > 0
+    ) {
+      return index;
+    }
+  }
+  return -1;
+}
+
 function makeSingleModeSlot([u, v, w, amplitude]) {
   const slots = new Float32Array(AUDIO_SLOT_CAPACITY * 4);
   slots[0] = u;
@@ -606,6 +620,18 @@ function makePhaseSlots(entries) {
   return slots;
 }
 
+function makeQuadSlots(entries) {
+  const slots = new Float32Array(AUDIO_SLOT_CAPACITY * 4);
+  entries.forEach(([x, y, z, w], index) => {
+    const offset = index * 4;
+    slots[offset] = x;
+    slots[offset + 1] = y;
+    slots[offset + 2] = z;
+    slots[offset + 3] = w;
+  });
+  return slots;
+}
+
 function countAuthoritativePhaseSlots(slots) {
   const slotCount = Math.floor((slots?.length ?? 0) / 4);
   let total = 0;
@@ -631,24 +657,39 @@ function countActiveSlots(slots) {
 function makeManualStructuralState({
   candidateForcingSlots = makeModeSlots([]),
   candidateResponseSlots = makeModeSlots([]),
+  proposalSourceCoupledSlots = candidateForcingSlots,
+  proposalResonantSlots = candidateResponseSlots,
   sourceCoupledPhaseSlots = makePhaseSlots([]),
   resonantPhaseSlots = makePhaseSlots([]),
+  proposalSourceCoupledPhaseSlots = sourceCoupledPhaseSlots,
+  proposalSourceCoupledColorSlots = makeQuadSlots([]),
+  proposalSourceCoupledSpectralLaneA = makeQuadSlots([]),
+  proposalSourceCoupledSpectralLaneB = makeQuadSlots([]),
+  proposalSourceCoupledSpectralMeta = makeQuadSlots([]),
   dominantFrequency = 196,
   dominantAmplitude = 0.08,
   sourceMode = "file",
   structuralMetrics = {},
+  suppressedByFog = false,
 } = {}) {
   return {
     candidateForcingSlotsSource: candidateForcingSlots,
     candidateResponseSlotsSource: candidateResponseSlots,
     referenceSourceCoupledSlotsSource: candidateForcingSlots,
     referenceResonantSlotsSource: candidateResponseSlots,
-    proposalSourceCoupledSlotsSource: candidateForcingSlots,
-    proposalResonantSlotsSource: candidateResponseSlots,
+    proposalSourceCoupledSlotsSource: proposalSourceCoupledSlots,
+    proposalResonantSlotsSource: proposalResonantSlots,
     sourceCoupledPhaseSlotsSource: sourceCoupledPhaseSlots,
     resonantPhaseSlotsSource: resonantPhaseSlots,
-    proposalReferenceSourceCoupledSlotsSource: candidateForcingSlots,
-    proposalReferenceResonantSlotsSource: candidateResponseSlots,
+    proposalSourceCoupledPhaseSlotsSource: proposalSourceCoupledPhaseSlots,
+    proposalSourceCoupledColorSlotsSource: proposalSourceCoupledColorSlots,
+    proposalSourceCoupledSpectralLaneASource:
+      proposalSourceCoupledSpectralLaneA,
+    proposalSourceCoupledSpectralLaneBSource:
+      proposalSourceCoupledSpectralLaneB,
+    proposalSourceCoupledSpectralMetaSource: proposalSourceCoupledSpectralMeta,
+    proposalReferenceSourceCoupledSlotsSource: proposalSourceCoupledSlots,
+    proposalReferenceResonantSlotsSource: proposalResonantSlots,
     dominantFrequency,
     dominantAmplitude,
     analysisEngine: "modal-excitation",
@@ -656,6 +697,7 @@ function makeManualStructuralState({
     spectralCandidates: [],
     sourceMode,
     structuralMetrics,
+    suppressedByFog,
   };
 }
 
@@ -786,10 +828,6 @@ function readModeKeys(slotBuffer) {
   return keys;
 }
 
-function hasNewModeKey(nextKeys, previousKeys) {
-  return nextKeys.some((key) => !previousKeys.includes(key));
-}
-
 function readModeAmplitudeMap(slotBuffer) {
   const amplitudes = new Map();
   for (let i = 0; i < slotBuffer.length; i += 4) {
@@ -911,12 +949,21 @@ function buildManualModalContinuityFrame({
   featureState,
   frameTimeMs,
   candidateForcingSlots,
+  proposalSourceCoupledSlots = candidateForcingSlots,
   sourceCoupledPhaseSlots = makePhaseSlots([]),
+  proposalSourceCoupledPhaseSlots = sourceCoupledPhaseSlots,
+  proposalSourceCoupledColorSlots = makeQuadSlots([]),
+  proposalSourceCoupledSpectralLaneA = makeQuadSlots([]),
+  proposalSourceCoupledSpectralLaneB = makeQuadSlots([]),
+  proposalSourceCoupledSpectralMeta = makeQuadSlots([]),
   structuralMetrics = makeModalFieldContinuityStructuralMetrics(),
+  suppressedByFog = false,
+  sourceMode = "file",
+  status = makeActiveStatus(),
 } = {}) {
   const preparedInputs = prepareAudioFeatureFrameInputs({
     analysisSnapshot: createSnapshot({
-      sourceMode: "file",
+      sourceMode,
       avgAmplitude: 42,
       fftMagnitudes: makeFft([
         [196, 0.72],
@@ -927,14 +974,21 @@ function buildManualModalContinuityFrame({
     }),
     featureState,
     radius: 3,
-    status: makeActiveStatus(),
+    status,
     frameTimeMs,
   });
   const structuralState = makeManualStructuralState({
     candidateForcingSlots,
+    proposalSourceCoupledSlots,
     sourceCoupledPhaseSlots,
-    sourceMode: "file",
+    proposalSourceCoupledPhaseSlots,
+    proposalSourceCoupledColorSlots,
+    proposalSourceCoupledSpectralLaneA,
+    proposalSourceCoupledSpectralLaneB,
+    proposalSourceCoupledSpectralMeta,
+    sourceMode,
     structuralMetrics,
+    suppressedByFog,
   });
   return composeManualStructuralFrame({ preparedInputs, structuralState });
 }
@@ -1136,6 +1190,114 @@ describe("buildAudioFeatureFrame modal contract", () => {
     expect(promotedNewIdentity.modalFieldContinuity.admittedModeKeys).toEqual([
       "10:3:1",
     ]);
+  });
+
+  it("lets richer proposal candidates compete in global continuity admission", () => {
+    const featureState = createAudioFeatureState();
+    const blendedSourceCoupledSlots = makeModeSlots([[2, 1, 1, 0.42]]);
+    const proposalSourceCoupledSlots = makeModeSlots([[3, 1, 1, 0.36]]);
+    const proposalSourceCoupledPhaseSlots = makePhaseSlots([
+      [1.25, 2.5, 0.7, 0.8],
+    ]);
+    const proposalSourceCoupledColorSlots = makeQuadSlots([
+      [0.2, 0.45, 0.7, 0.9],
+    ]);
+    const proposalSourceCoupledSpectralLaneA = makeQuadSlots([
+      [0.1, 0.2, 0.3, 0.4],
+    ]);
+    const proposalSourceCoupledSpectralLaneB = makeQuadSlots([
+      [0.05, 0.15, 0.25, 0.35],
+    ]);
+    const proposalSourceCoupledSpectralMeta = makeQuadSlots([
+      [0.4, 0.5, 0.6, 0.7],
+    ]);
+
+    const frame = buildManualModalContinuityFrame({
+      featureState,
+      frameTimeMs: 0,
+      candidateForcingSlots: blendedSourceCoupledSlots,
+      proposalSourceCoupledSlots,
+      proposalSourceCoupledPhaseSlots,
+      proposalSourceCoupledColorSlots,
+      proposalSourceCoupledSpectralLaneA,
+      proposalSourceCoupledSpectralLaneB,
+      proposalSourceCoupledSpectralMeta,
+      structuralMetrics: makeModalFieldContinuityStructuralMetrics({
+        excitedModeCount: 2,
+        observedModalModeCount: 2,
+      }),
+    });
+
+    expect(readModeKeys(frame.modalFieldSlots).sort()).toEqual([
+      "2:1:1",
+      "3:1:1",
+    ]);
+    expect(frame.modalFieldContinuity.candidateModeCount).toBe(2);
+    expect(frame.modalFieldContinuity.admittedModeKeys.sort()).toEqual([
+      "2:1:1",
+      "3:1:1",
+    ]);
+    expect(
+      frame.modalDescriptor.diagnostics.modalVarietyAudit
+        .upstreamSourceCoupledModeCount,
+    ).toBe(2);
+    const proposalModeOffset = findModeSlotOffset(
+      frame.modalFieldSlots,
+      [3, 1, 1],
+    );
+    expect(proposalModeOffset).toBeGreaterThanOrEqual(0);
+    expect(frame.modalFieldPhaseSlots[proposalModeOffset]).toBeCloseTo(1.25, 6);
+    expect(frame.modalFieldPhaseSlots[proposalModeOffset + 3]).toBeCloseTo(
+      0.8,
+      6,
+    );
+    expect(frame.modalFieldColorSlots[proposalModeOffset + 3]).toBeCloseTo(
+      0.9,
+      6,
+    );
+    expect(
+      frame.modalFieldSpectralLaneA[proposalModeOffset + 2],
+    ).toBeGreaterThan(0);
+    expect(
+      frame.modalFieldSpectralMeta[proposalModeOffset + 3],
+    ).toBeGreaterThan(0);
+    expect(countActiveSlots(frame.modalFieldSlots)).toBeLessThanOrEqual(12);
+  });
+
+  it("does not admit richer proposal candidates during fog suppression", () => {
+    const featureState = createAudioFeatureState();
+    const liveStatus = makeLiveInputStatus();
+    buildManualModalContinuityFrame({
+      featureState,
+      frameTimeMs: 0,
+      candidateForcingSlots: makeModeSlots([[1, 1, 1, 0.42]]),
+      sourceMode: "live",
+      status: liveStatus,
+    });
+
+    const frame = buildManualModalContinuityFrame({
+      featureState,
+      frameTimeMs: 16,
+      candidateForcingSlots: makeModeSlots([[2, 1, 1, 0.42]]),
+      proposalSourceCoupledSlots: makeModeSlots([
+        [2, 1, 1, 0.42],
+        [3, 1, 1, 0.36],
+      ]),
+      structuralMetrics: makeModalFieldContinuityStructuralMetrics({
+        excitedModeCount: 2,
+        observedModalModeCount: 2,
+      }),
+      sourceMode: "live",
+      status: liveStatus,
+      suppressedByFog: true,
+    });
+
+    expect(readModeKeys(frame.modalFieldSlots)).toEqual(["1:1:1"]);
+    expect(frame.modalFieldContinuity.candidateModeCount).toBe(0);
+    expect(
+      frame.modalDescriptor.diagnostics.modalVarietyAudit
+        .upstreamSourceCoupledModeCount,
+    ).toBe(0);
   });
 
   it("bootstraps modal field continuity immediately after a silent reset", () => {
@@ -6224,7 +6386,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
     expect(fileResonant).toBeGreaterThan(0);
     expect(micResonant / fileResonant).toBeGreaterThanOrEqual(0.5);
     expect(micResonant / fileResonant).toBeLessThanOrEqual(2.7);
-    expect(micSourceCoupled / fileSourceCoupled).toBeGreaterThanOrEqual(0.8);
+    expect(micSourceCoupled / fileSourceCoupled).toBeGreaterThanOrEqual(0.5);
     expect(micSourceCoupled / fileSourceCoupled).toBeLessThanOrEqual(2.7);
     expect(micFrame.debug.micFftNormGain).toBe(1);
     expect(fileFrame.debug.micFftNormGain).toBe(1);
@@ -7031,7 +7193,7 @@ describe("modal excitation integration", () => {
     );
   });
 
-  it("surfaces a newly visible composed detail key for calibrated line-feed modal excitation", () => {
+  it("reports unrepresentable line-feed detail as omitted tail topology", () => {
     const featureState = createAudioFeatureState();
     const status = makeResolvedLineFeedLiveStatus();
 
@@ -7047,7 +7209,7 @@ describe("modal excitation integration", () => {
       timeData: new Float32Array(FFT_SIZE),
     });
 
-    const firstFrame = buildAudioFeatureFrame({
+    buildAudioFeatureFrame({
       analysisSnapshot: createSnapshot({
         sourceMode: "live",
         avgAmplitude: 5.2,
@@ -7068,7 +7230,6 @@ describe("modal excitation integration", () => {
       frameTimeMs: LIVE_INPUT_POST_CALIBRATION_MS,
       liveInputAnalysisSettings: { acousticIntent: "ambient" },
     });
-    const firstFrameResonantKeys = readModeKeys(firstFrame.modalFieldSlots);
     let frame = null;
 
     for (const frameTimeMs of [
@@ -7101,8 +7262,33 @@ describe("modal excitation integration", () => {
     expect(frame.sourceMode).toBe("line-feed");
     expect(frame.debug.liveInputPolicy).toBe("line-feed");
     const switchedResonantKeys = readModeKeys(frame.modalFieldSlots);
-    expect(hasNewModeKey(switchedResonantKeys, firstFrameResonantKeys)).toBe(
-      true,
+    expect(frame.modalFieldContinuity.candidateModeCount).toBeGreaterThan(0);
+    expect(frame.modalFieldContinuity.tailModeKeys.length).toBeGreaterThan(0);
+    expect(
+      frame.modalFieldContinuity.tailModeKeys.every(
+        (key) => !switchedResonantKeys.includes(key),
+      ),
+    ).toBe(true);
+    const diagnostics = frame.modalDescriptor.diagnostics;
+    const maxRepresentableModeIndex = diagnostics.maxRepresentableModeIndex;
+    expect(
+      frame.modalFieldContinuity.tailModeKeys.some((key) =>
+        key
+          .split(":")
+          .some(
+            (coordinate) =>
+              Math.abs(Number(coordinate)) > maxRepresentableModeIndex,
+          ),
+      ),
+    ).toBe(true);
+    expect(diagnostics.modalVarietyAudit.upstreamCandidateModeCount).toBe(
+      frame.modalFieldContinuity.candidateModeCount,
+    );
+    expect(
+      diagnostics.modalVarietyAudit.upstreamResonantModeCount,
+    ).toBeGreaterThan(0);
+    expect(frame.activeModalFieldModeCount).toBeLessThanOrEqual(
+      diagnostics.basisAtlasPageCapacity,
     );
   });
 

@@ -4883,6 +4883,7 @@ function resolveStructuralProjectionSources(preparedInputs, structuralState) {
 }
 
 function resolveStructuralProposalSources(preparedInputs, structuralState) {
+  const { shouldBuildSpectralLight } = preparedInputs;
   return {
     proposalSourceCoupledSlotsSource:
       structuralState?.proposalSourceCoupledSlotsSource ??
@@ -4900,6 +4901,427 @@ function resolveStructuralProposalSources(preparedInputs, structuralState) {
       structuralState?.proposalReferenceResonantSlotsSource ??
       structuralState?.referenceResonantSlotsSource ??
       preparedInputs.resonantState.referenceSlots,
+    proposalSourceCoupledPhaseSlotsSource:
+      structuralState?.proposalSourceCoupledPhaseSlotsSource ??
+      structuralState?.sourceCoupledPhaseSlotsSource ??
+      preparedInputs.sourceCoupledPhaseSlots,
+    proposalResonantPhaseSlotsSource:
+      structuralState?.proposalResonantPhaseSlotsSource ??
+      structuralState?.resonantPhaseSlotsSource ??
+      preparedInputs.resonantPhaseSlots,
+    proposalSourceCoupledColorSlotsSource: shouldBuildSpectralLight
+      ? (structuralState?.proposalSourceCoupledColorSlotsSource ??
+        structuralState?.sourceCoupledColorSlotsSource ??
+        preparedInputs.sourceCoupledState.colorSlots)
+      : null,
+    proposalResonantColorSlotsSource: shouldBuildSpectralLight
+      ? (structuralState?.proposalResonantColorSlotsSource ??
+        structuralState?.resonantColorSlotsSource ??
+        preparedInputs.resonantState.colorSlots)
+      : null,
+    proposalSourceCoupledSpectralLaneASource: shouldBuildSpectralLight
+      ? (structuralState?.proposalSourceCoupledSpectralLaneASource ??
+        structuralState?.sourceCoupledSpectralLaneASource ??
+        preparedInputs.sourceCoupledState.spectralLaneA)
+      : null,
+    proposalSourceCoupledSpectralLaneBSource: shouldBuildSpectralLight
+      ? (structuralState?.proposalSourceCoupledSpectralLaneBSource ??
+        structuralState?.sourceCoupledSpectralLaneBSource ??
+        preparedInputs.sourceCoupledState.spectralLaneB)
+      : null,
+    proposalSourceCoupledSpectralMetaSource: shouldBuildSpectralLight
+      ? (structuralState?.proposalSourceCoupledSpectralMetaSource ??
+        structuralState?.sourceCoupledSpectralMetaSource ??
+        preparedInputs.sourceCoupledState.spectralMeta)
+      : null,
+    proposalResonantSpectralLaneASource: shouldBuildSpectralLight
+      ? (structuralState?.proposalResonantSpectralLaneASource ??
+        structuralState?.resonantSpectralLaneASource ??
+        preparedInputs.resonantState.spectralLaneA)
+      : null,
+    proposalResonantSpectralLaneBSource: shouldBuildSpectralLight
+      ? (structuralState?.proposalResonantSpectralLaneBSource ??
+        structuralState?.resonantSpectralLaneBSource ??
+        preparedInputs.resonantState.spectralLaneB)
+      : null,
+    proposalResonantSpectralMetaSource: shouldBuildSpectralLight
+      ? (structuralState?.proposalResonantSpectralMetaSource ??
+        structuralState?.resonantSpectralMetaSource ??
+        preparedInputs.resonantState.spectralMeta)
+      : null,
+  };
+}
+
+function copyDescriptorQuad(source, offset) {
+  return [
+    source?.[offset] ?? 0,
+    source?.[offset + 1] ?? 0,
+    source?.[offset + 2] ?? 0,
+    source?.[offset + 3] ?? 0,
+  ];
+}
+
+function descriptorQuadWeight(quad) {
+  return Math.max(
+    Math.abs(quad?.[0] ?? 0),
+    Math.abs(quad?.[1] ?? 0),
+    Math.abs(quad?.[2] ?? 0),
+    Math.abs(quad?.[3] ?? 0),
+  );
+}
+
+function descriptorPhaseWeight(quad) {
+  return Math.max(0, quad?.[2] ?? 0) * Math.max(0, quad?.[3] ?? 0);
+}
+
+function chooseDescriptorQuad(existing, incoming, weightFn) {
+  return weightFn(incoming) > weightFn(existing) ? incoming : existing;
+}
+
+function createDescriptorLayerEntry({
+  sourceSlots,
+  sourcePhaseSlots,
+  sourceColorSlots,
+  sourceSpectralLaneA,
+  sourceSpectralLaneB,
+  sourceSpectralMeta,
+  sourceOffset,
+  coefficientScale = 1,
+}) {
+  const boundedCoefficientScale = Number.isFinite(coefficientScale)
+    ? Math.max(0, coefficientScale)
+    : 1;
+  const coefficient =
+    Math.max(0, sourceSlots?.[sourceOffset + 3] ?? 0) * boundedCoefficientScale;
+  if (!(coefficient > 0)) {
+    return null;
+  }
+
+  const slot = copyDescriptorQuad(sourceSlots, sourceOffset);
+  slot[3] = coefficient;
+  return {
+    key: `${slot[0]}:${slot[1]}:${slot[2]}`,
+    slot,
+    phase: copyDescriptorQuad(sourcePhaseSlots, sourceOffset),
+    color: copyDescriptorQuad(sourceColorSlots, sourceOffset),
+    spectralLaneA: copyDescriptorQuad(sourceSpectralLaneA, sourceOffset),
+    spectralLaneB: copyDescriptorQuad(sourceSpectralLaneB, sourceOffset),
+    spectralMeta: copyDescriptorQuad(sourceSpectralMeta, sourceOffset),
+  };
+}
+
+function mergeDescriptorLayerEntry(entries, entryByModeKey, incoming) {
+  if (!incoming) {
+    return;
+  }
+
+  const existing = entryByModeKey.get(incoming.key);
+  if (!existing) {
+    entries.push(incoming);
+    entryByModeKey.set(incoming.key, incoming);
+    return;
+  }
+
+  if ((incoming.slot?.[3] ?? 0) > (existing.slot?.[3] ?? 0)) {
+    existing.slot = incoming.slot;
+  }
+  existing.phase = chooseDescriptorQuad(
+    existing.phase,
+    incoming.phase,
+    descriptorPhaseWeight,
+  );
+  existing.color = chooseDescriptorQuad(
+    existing.color,
+    incoming.color,
+    descriptorQuadWeight,
+  );
+  existing.spectralLaneA = chooseDescriptorQuad(
+    existing.spectralLaneA,
+    incoming.spectralLaneA,
+    descriptorQuadWeight,
+  );
+  existing.spectralLaneB = chooseDescriptorQuad(
+    existing.spectralLaneB,
+    incoming.spectralLaneB,
+    descriptorQuadWeight,
+  );
+  existing.spectralMeta = chooseDescriptorQuad(
+    existing.spectralMeta,
+    incoming.spectralMeta,
+    descriptorQuadWeight,
+  );
+}
+
+function appendDescriptorLayerEntries({
+  entries,
+  entryByModeKey,
+  slots,
+  phaseSlots,
+  colorSlots,
+  spectralLaneA,
+  spectralLaneB,
+  spectralMeta,
+  activeModeCount,
+  capacity,
+  coefficientScale = 1,
+}) {
+  const slotLimit = Math.min(
+    Math.max(0, Math.floor(capacity ?? 0)),
+    Math.floor((slots?.length ?? 0) / 4),
+  );
+  const validLimit = Math.max(0, Math.floor(activeModeCount ?? 0));
+  let seen = 0;
+
+  for (
+    let sourceIndex = 0;
+    sourceIndex < slotLimit && seen < validLimit;
+    sourceIndex += 1
+  ) {
+    const sourceOffset = sourceIndex * 4;
+    if (!((slots?.[sourceOffset + 3] ?? 0) > 0)) {
+      continue;
+    }
+    seen += 1;
+    mergeDescriptorLayerEntry(
+      entries,
+      entryByModeKey,
+      createDescriptorLayerEntry({
+        sourceSlots: slots,
+        sourcePhaseSlots: phaseSlots,
+        sourceColorSlots: colorSlots,
+        sourceSpectralLaneA: spectralLaneA,
+        sourceSpectralLaneB: spectralLaneB,
+        sourceSpectralMeta: spectralMeta,
+        sourceOffset,
+        coefficientScale,
+      }),
+    );
+  }
+}
+
+function writeDescriptorLayerEntries(entries) {
+  const length = entries.length * 4;
+  const slots = new Float32Array(length);
+  const phaseSlots = new Float32Array(length);
+  const colorSlots = new Float32Array(length);
+  const spectralLaneA = new Float32Array(length);
+  const spectralLaneB = new Float32Array(length);
+  const spectralMeta = new Float32Array(length);
+
+  entries.forEach((entry, index) => {
+    const offset = index * 4;
+    slots.set(entry.slot, offset);
+    phaseSlots.set(entry.phase, offset);
+    colorSlots.set(entry.color, offset);
+    spectralLaneA.set(entry.spectralLaneA, offset);
+    spectralLaneB.set(entry.spectralLaneB, offset);
+    spectralMeta.set(entry.spectralMeta, offset);
+  });
+
+  return {
+    slots,
+    phaseSlots,
+    colorSlots,
+    spectralLaneA,
+    spectralLaneB,
+    spectralMeta,
+    activeModeCount: entries.length,
+  };
+}
+
+function mergeDescriptorLayerSources({
+  renderSlots,
+  proposalSlots,
+  renderPhaseSlots,
+  proposalPhaseSlots,
+  renderColorSlots,
+  proposalColorSlots,
+  renderSpectralLaneA,
+  proposalSpectralLaneA,
+  renderSpectralLaneB,
+  proposalSpectralLaneB,
+  renderSpectralMeta,
+  proposalSpectralMeta,
+  activeRenderModeCount,
+  activeProposalModeCount,
+  capacity,
+  proposalScale,
+}) {
+  if (proposalSlots === renderSlots || !(activeProposalModeCount > 0)) {
+    return {
+      slots: renderSlots,
+      phaseSlots: renderPhaseSlots,
+      colorSlots: renderColorSlots,
+      spectralLaneA: renderSpectralLaneA,
+      spectralLaneB: renderSpectralLaneB,
+      spectralMeta: renderSpectralMeta,
+      activeModeCount: activeRenderModeCount,
+    };
+  }
+
+  const entries = [];
+  const entryByModeKey = new Map();
+
+  appendDescriptorLayerEntries({
+    entries,
+    entryByModeKey,
+    slots: renderSlots,
+    phaseSlots: renderPhaseSlots,
+    colorSlots: renderColorSlots,
+    spectralLaneA: renderSpectralLaneA,
+    spectralLaneB: renderSpectralLaneB,
+    spectralMeta: renderSpectralMeta,
+    activeModeCount: activeRenderModeCount,
+    capacity,
+  });
+  appendDescriptorLayerEntries({
+    entries,
+    entryByModeKey,
+    slots: proposalSlots,
+    phaseSlots: proposalPhaseSlots,
+    colorSlots: proposalColorSlots,
+    spectralLaneA: proposalSpectralLaneA,
+    spectralLaneB: proposalSpectralLaneB,
+    spectralMeta: proposalSpectralMeta,
+    activeModeCount: activeProposalModeCount,
+    capacity,
+    coefficientScale: proposalScale,
+  });
+
+  return writeDescriptorLayerEntries(entries);
+}
+
+function resolveModalFieldContinuityDescriptorSources({
+  preparedInputs,
+  structuralState,
+  renderSourceCoupledSlots,
+  renderResonantSlots,
+  renderSourceCoupledPhaseSlots,
+  renderResonantPhaseSlots,
+  renderSourceCoupledColorSlots,
+  renderResonantColorSlots,
+  renderSourceCoupledSpectralLaneA,
+  renderSourceCoupledSpectralLaneB,
+  renderSourceCoupledSpectralMeta,
+  renderResonantSpectralLaneA,
+  renderResonantSpectralLaneB,
+  renderResonantSpectralMeta,
+  activeSourceCoupledModeCount,
+  activeResonantModeCount,
+  scale,
+  allowProposalCandidates = true,
+}) {
+  const capacity = preparedInputs.capacity;
+  const defaultSources = {
+    descriptorSourceCoupledSlots: renderSourceCoupledSlots,
+    descriptorResonantSlots: renderResonantSlots,
+    sourceCoupledPhaseSlots: renderSourceCoupledPhaseSlots,
+    resonantPhaseSlots: renderResonantPhaseSlots,
+    sourceCoupledColorSlots: renderSourceCoupledColorSlots,
+    resonantColorSlots: renderResonantColorSlots,
+    sourceCoupledSpectralLaneA: renderSourceCoupledSpectralLaneA,
+    sourceCoupledSpectralLaneB: renderSourceCoupledSpectralLaneB,
+    sourceCoupledSpectralMeta: renderSourceCoupledSpectralMeta,
+    resonantSpectralLaneA: renderResonantSpectralLaneA,
+    resonantSpectralLaneB: renderResonantSpectralLaneB,
+    resonantSpectralMeta: renderResonantSpectralMeta,
+    activeSourceCoupledModeCount,
+    activeResonantModeCount,
+  };
+  if (!allowProposalCandidates) {
+    return defaultSources;
+  }
+
+  const proposalSources = resolveStructuralProposalSources(
+    preparedInputs,
+    structuralState,
+  );
+  const proposalSourceCoupledModeCount = countActiveSlots(
+    proposalSources.proposalSourceCoupledSlotsSource,
+    capacity,
+  );
+  const proposalResonantModeCount = countActiveSlots(
+    proposalSources.proposalResonantSlotsSource,
+    capacity,
+  );
+  const hasProposalCandidates =
+    proposalSourceCoupledModeCount + proposalResonantModeCount > 0;
+  const proposalDiffersFromRender =
+    proposalSources.proposalSourceCoupledSlotsSource !==
+      renderSourceCoupledSlots ||
+    proposalSources.proposalResonantSlotsSource !== renderResonantSlots;
+
+  if (!hasProposalCandidates || !proposalDiffersFromRender) {
+    return defaultSources;
+  }
+
+  const sourceCoupledDescriptorSources = mergeDescriptorLayerSources({
+    renderSlots: renderSourceCoupledSlots,
+    proposalSlots: proposalSources.proposalSourceCoupledSlotsSource,
+    renderPhaseSlots: renderSourceCoupledPhaseSlots,
+    proposalPhaseSlots: proposalSources.proposalSourceCoupledPhaseSlotsSource,
+    renderColorSlots: renderSourceCoupledColorSlots,
+    proposalColorSlots: proposalSources.proposalSourceCoupledColorSlotsSource,
+    renderSpectralLaneA: renderSourceCoupledSpectralLaneA,
+    proposalSpectralLaneA:
+      proposalSources.proposalSourceCoupledSpectralLaneASource,
+    renderSpectralLaneB: renderSourceCoupledSpectralLaneB,
+    proposalSpectralLaneB:
+      proposalSources.proposalSourceCoupledSpectralLaneBSource,
+    renderSpectralMeta: renderSourceCoupledSpectralMeta,
+    proposalSpectralMeta:
+      proposalSources.proposalSourceCoupledSpectralMetaSource,
+    activeRenderModeCount: activeSourceCoupledModeCount,
+    activeProposalModeCount: proposalSourceCoupledModeCount,
+    capacity,
+    proposalScale:
+      proposalSources.proposalSourceCoupledSlotsSource ===
+      renderSourceCoupledSlots
+        ? 1
+        : scale < 1
+          ? scale
+          : 1,
+  });
+  const resonantDescriptorSources = mergeDescriptorLayerSources({
+    renderSlots: renderResonantSlots,
+    proposalSlots: proposalSources.proposalResonantSlotsSource,
+    renderPhaseSlots: renderResonantPhaseSlots,
+    proposalPhaseSlots: proposalSources.proposalResonantPhaseSlotsSource,
+    renderColorSlots: renderResonantColorSlots,
+    proposalColorSlots: proposalSources.proposalResonantColorSlotsSource,
+    renderSpectralLaneA: renderResonantSpectralLaneA,
+    proposalSpectralLaneA: proposalSources.proposalResonantSpectralLaneASource,
+    renderSpectralLaneB: renderResonantSpectralLaneB,
+    proposalSpectralLaneB: proposalSources.proposalResonantSpectralLaneBSource,
+    renderSpectralMeta: renderResonantSpectralMeta,
+    proposalSpectralMeta: proposalSources.proposalResonantSpectralMetaSource,
+    activeRenderModeCount: activeResonantModeCount,
+    activeProposalModeCount: proposalResonantModeCount,
+    capacity,
+    proposalScale:
+      proposalSources.proposalResonantSlotsSource === renderResonantSlots
+        ? 1
+        : scale < 1
+          ? scale
+          : 1,
+  });
+
+  return {
+    descriptorSourceCoupledSlots: sourceCoupledDescriptorSources.slots,
+    descriptorResonantSlots: resonantDescriptorSources.slots,
+    sourceCoupledPhaseSlots: sourceCoupledDescriptorSources.phaseSlots,
+    resonantPhaseSlots: resonantDescriptorSources.phaseSlots,
+    sourceCoupledColorSlots: sourceCoupledDescriptorSources.colorSlots,
+    resonantColorSlots: resonantDescriptorSources.colorSlots,
+    sourceCoupledSpectralLaneA: sourceCoupledDescriptorSources.spectralLaneA,
+    sourceCoupledSpectralLaneB: sourceCoupledDescriptorSources.spectralLaneB,
+    sourceCoupledSpectralMeta: sourceCoupledDescriptorSources.spectralMeta,
+    resonantSpectralLaneA: resonantDescriptorSources.spectralLaneA,
+    resonantSpectralLaneB: resonantDescriptorSources.spectralLaneB,
+    resonantSpectralMeta: resonantDescriptorSources.spectralMeta,
+    activeSourceCoupledModeCount:
+      sourceCoupledDescriptorSources.activeModeCount,
+    activeResonantModeCount: resonantDescriptorSources.activeModeCount,
   };
 }
 
@@ -6206,21 +6628,53 @@ export function composeAudioFeatureFrame({
     activeModeCount = 0;
   }
 
+  const continuityDescriptorSources =
+    resolveModalFieldContinuityDescriptorSources({
+      preparedInputs,
+      structuralState: analysisResult.structuralState,
+      renderSourceCoupledSlots,
+      renderResonantSlots,
+      renderSourceCoupledPhaseSlots,
+      renderResonantPhaseSlots,
+      renderSourceCoupledColorSlots,
+      renderResonantColorSlots,
+      renderSourceCoupledSpectralLaneA,
+      renderSourceCoupledSpectralLaneB,
+      renderSourceCoupledSpectralMeta,
+      renderResonantSpectralLaneA,
+      renderResonantSpectralLaneB,
+      renderResonantSpectralMeta,
+      activeSourceCoupledModeCount,
+      activeResonantModeCount,
+      scale: renderAuthority ? energyLedger.projectedEnergyScale : 1,
+      allowProposalCandidates:
+        (renderAuthority || modalProjectionContinuityHold) &&
+        analysisResult.structuralState?.freezeModeSlots !== true &&
+        analysisResult.structuralState?.suppressedByFog !== true,
+    });
   const modalFieldDescriptorSource = buildModalFieldDescriptorSource({
-    candidateForcingSlots: renderSourceCoupledSlots,
-    candidateResponseSlots: renderResonantSlots,
-    sourceCoupledPhaseSlots: renderSourceCoupledPhaseSlots,
-    resonantPhaseSlots: renderResonantPhaseSlots,
-    sourceCoupledColorSlots: renderSourceCoupledColorSlots,
-    resonantColorSlots: renderResonantColorSlots,
-    sourceCoupledSpectralLaneA: renderSourceCoupledSpectralLaneA,
-    sourceCoupledSpectralLaneB: renderSourceCoupledSpectralLaneB,
-    sourceCoupledSpectralMeta: renderSourceCoupledSpectralMeta,
-    resonantSpectralLaneA: renderResonantSpectralLaneA,
-    resonantSpectralLaneB: renderResonantSpectralLaneB,
-    resonantSpectralMeta: renderResonantSpectralMeta,
-    activeSourceCoupledModeCount,
-    activeResonantModeCount,
+    candidateForcingSlots:
+      continuityDescriptorSources.descriptorSourceCoupledSlots,
+    candidateResponseSlots: continuityDescriptorSources.descriptorResonantSlots,
+    sourceCoupledPhaseSlots:
+      continuityDescriptorSources.sourceCoupledPhaseSlots,
+    resonantPhaseSlots: continuityDescriptorSources.resonantPhaseSlots,
+    sourceCoupledColorSlots:
+      continuityDescriptorSources.sourceCoupledColorSlots,
+    resonantColorSlots: continuityDescriptorSources.resonantColorSlots,
+    sourceCoupledSpectralLaneA:
+      continuityDescriptorSources.sourceCoupledSpectralLaneA,
+    sourceCoupledSpectralLaneB:
+      continuityDescriptorSources.sourceCoupledSpectralLaneB,
+    sourceCoupledSpectralMeta:
+      continuityDescriptorSources.sourceCoupledSpectralMeta,
+    resonantSpectralLaneA: continuityDescriptorSources.resonantSpectralLaneA,
+    resonantSpectralLaneB: continuityDescriptorSources.resonantSpectralLaneB,
+    resonantSpectralMeta: continuityDescriptorSources.resonantSpectralMeta,
+    activeSourceCoupledModeCount:
+      continuityDescriptorSources.activeSourceCoupledModeCount,
+    activeResonantModeCount:
+      continuityDescriptorSources.activeResonantModeCount,
     radius: preparedInputs.radius,
     cavityAcousticScale: preparedInputs.cavityAcousticScale,
     boundaryMode: preparedInputs.boundaryMode,
@@ -6230,25 +6684,28 @@ export function composeAudioFeatureFrame({
   );
   const upstreamSourceCoupledTopology =
     modalGeometryBackend.summarizeModalSlotTopologyRange(
-      renderSourceCoupledSlots,
-      { count: activeSourceCoupledModeCount },
+      continuityDescriptorSources.descriptorSourceCoupledSlots,
+      { count: continuityDescriptorSources.activeSourceCoupledModeCount },
     );
   const upstreamResonantTopology =
-    modalGeometryBackend.summarizeModalSlotTopologyRange(renderResonantSlots, {
-      count: activeResonantModeCount,
-    });
+    modalGeometryBackend.summarizeModalSlotTopologyRange(
+      continuityDescriptorSources.descriptorResonantSlots,
+      {
+        count: continuityDescriptorSources.activeResonantModeCount,
+      },
+    );
   const upstreamCandidateTopology =
     modalGeometryBackend.summarizeModalSlotTopologyRange(
       modalFieldDescriptorSource.modalFieldSlots,
       { count: modalFieldDescriptorSource.activeModalFieldModeCount },
     );
   const upstreamSourceCoupledModalEnergy = sumModalSlotCoefficientEnergy(
-    renderSourceCoupledSlots,
-    activeSourceCoupledModeCount,
+    continuityDescriptorSources.descriptorSourceCoupledSlots,
+    continuityDescriptorSources.activeSourceCoupledModeCount,
   );
   const upstreamResonantModalEnergy = sumModalSlotCoefficientEnergy(
-    renderResonantSlots,
-    activeResonantModeCount,
+    continuityDescriptorSources.descriptorResonantSlots,
+    continuityDescriptorSources.activeResonantModeCount,
   );
   const upstreamCandidateModalEnergy =
     upstreamSourceCoupledModalEnergy + upstreamResonantModalEnergy;
@@ -6376,8 +6833,10 @@ export function composeAudioFeatureFrame({
       analysisResult.structuralMetrics?.observedModalModeCount,
     phaseAuthorityModeCount:
       analysisResult.structuralMetrics?.modalPhaseCoherentFieldModeCount,
-    upstreamSourceCoupledModeCount: activeSourceCoupledModeCount,
-    upstreamResonantModeCount: activeResonantModeCount,
+    upstreamSourceCoupledModeCount:
+      continuityDescriptorSources.activeSourceCoupledModeCount,
+    upstreamResonantModeCount:
+      continuityDescriptorSources.activeResonantModeCount,
     upstreamCandidateModeCount:
       modalFieldDescriptorSource.activeModalFieldModeCount,
     upstreamSourceCoupledShellCount: upstreamSourceCoupledTopology.shellCount,

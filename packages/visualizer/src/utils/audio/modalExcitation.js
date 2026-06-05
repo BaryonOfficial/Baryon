@@ -4220,6 +4220,20 @@ export function buildModalExcitationStructuralState({
     resonantCapacity,
     state.remappedSignalResonantRef,
   );
+  writePhaseSlotsForVisibleModes({
+    target: state.sourceCoupledProposal.phaseSlots,
+    visibleSlots: state.sourceCoupledProposal.slots,
+    capacity: sourceCoupledCapacity,
+    activeModes: state.activeModes,
+    observedModes: state.observedModes,
+  });
+  writePhaseSlotsForVisibleModes({
+    target: state.resonantProposal.phaseSlots,
+    visibleSlots: state.resonantProposal.slots,
+    capacity: resonantCapacity,
+    activeModes: state.activeModes,
+    observedModes: state.observedModes,
+  });
   const sourceCoupledPhaseModeCount = writePhaseSlotsForVisibleModes({
     target: state.blendSourceCoupled.phaseSlots,
     visibleSlots: state.blendSourceCoupled.slots,
@@ -4503,9 +4517,40 @@ export function buildModalExcitationStructuralState({
     referenceResonantSlotsSource: renderResonantReferenceSlotsSource,
     proposalSourceCoupledSlotsSource: state.sourceCoupledProposal.slots,
     proposalResonantSlotsSource: state.resonantProposal.slots,
+    proposalSourceCoupledPhaseSlotsSource:
+      state.sourceCoupledProposal.phaseSlots,
+    proposalResonantPhaseSlotsSource: state.resonantProposal.phaseSlots,
     proposalReferenceSourceCoupledSlotsSource:
       state.remappedSignalSourceCoupledRef,
     proposalReferenceResonantSlotsSource: state.remappedSignalResonantRef,
+    proposalSourceCoupledColorSlotsSource:
+      preparedInputs.shouldBuildSpectralLight
+        ? state.sourceCoupledProposal.colorSlots
+        : null,
+    proposalResonantColorSlotsSource: preparedInputs.shouldBuildSpectralLight
+      ? state.resonantProposal.colorSlots
+      : null,
+    proposalSourceCoupledSpectralLaneASource:
+      preparedInputs.shouldBuildSpectralLight
+        ? state.sourceCoupledProposal.spectralLaneA
+        : null,
+    proposalSourceCoupledSpectralLaneBSource:
+      preparedInputs.shouldBuildSpectralLight
+        ? state.sourceCoupledProposal.spectralLaneB
+        : null,
+    proposalSourceCoupledSpectralMetaSource:
+      preparedInputs.shouldBuildSpectralLight
+        ? state.sourceCoupledProposal.spectralMeta
+        : null,
+    proposalResonantSpectralLaneASource: preparedInputs.shouldBuildSpectralLight
+      ? state.resonantProposal.spectralLaneA
+      : null,
+    proposalResonantSpectralLaneBSource: preparedInputs.shouldBuildSpectralLight
+      ? state.resonantProposal.spectralLaneB
+      : null,
+    proposalResonantSpectralMetaSource: preparedInputs.shouldBuildSpectralLight
+      ? state.resonantProposal.spectralMeta
+      : null,
     sourceCoupledColorSlotsSource: preparedInputs.shouldBuildSpectralLight
       ? renderSourceCoupledColorSlotsSource
       : null,
