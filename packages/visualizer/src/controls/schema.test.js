@@ -97,7 +97,7 @@ describe("control schema", () => {
     expect(state.spectralMix).toBe(0.96);
     expect(state.volumeColor).toBe("#5be3f4");
     expect(state.surfaceColor).toBe("#f7fdff");
-    expect(state.zeroPointPrecision).toBe(0.1);
+    expect(state.zeroPointPrecision).toBe(0.08);
     expect(state).not.toHaveProperty("structureMin");
     expect(state).not.toHaveProperty("structureMax");
     expect(state.boundaryMode).toBe("neumann");
