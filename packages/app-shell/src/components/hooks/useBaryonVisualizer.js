@@ -4,6 +4,7 @@ import * as THREE from "three";
 import {
   advanceRenderOutputTemporalHistoryBypass,
   consumeRenderOutputVisualIdle,
+  getRenderOutputSmaaGraphEnabled,
   getRenderOutputTemporalHistoryGraphEnabled,
   getRenderQualityProfileKey,
   markRenderOutputContentChange,
@@ -763,6 +764,8 @@ export function useBaryonVisualizer({
         effectiveBloomEnabled,
       );
       const postNodes = renderLoopContext.postNodesRef.current;
+      runtimeDiagnostics.postProcess.smaaGraphEnabled =
+        getRenderOutputSmaaGraphEnabled(postNodes);
       runtimeDiagnostics.postProcess.temporalHistoryBlend =
         postNodes?.temporalHistoryBlendUniform?.value ?? null;
       runtimeDiagnostics.postProcess.temporalHistoryGraphEnabled =
@@ -915,10 +918,13 @@ export function useBaryonVisualizer({
           outputMode: controls.outputMode,
           bloomActive: effectiveBloomEnabled,
           temporalHistoryEnabled: !temporalHistoryBypassRequested,
+          smaaEnabled: controls.smaaEnabled !== false,
         },
       );
       if (runtimeDiagnostics?.postProcess) {
         const postNodes = renderLoopContext.postNodesRef.current;
+        runtimeDiagnostics.postProcess.smaaGraphEnabled =
+          getRenderOutputSmaaGraphEnabled(postNodes);
         runtimeDiagnostics.postProcess.temporalHistoryGraphEnabled =
           getRenderOutputTemporalHistoryGraphEnabled(postNodes);
       }

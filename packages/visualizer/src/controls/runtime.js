@@ -117,6 +117,7 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
   [CONTROL_HANDLERS.output]: Object.freeze([
     "outputMode",
     "outputBackgroundColor",
+    "smaaEnabled",
   ]),
   [CONTROL_HANDLERS.raymarch]: Object.freeze([
     "volumeColor",
@@ -218,6 +219,7 @@ export function applyOutputControls(pipelineState, controls) {
     controls.outputBackgroundColor ?? RENDER_DEFAULTS.outputBackgroundColor;
   const bloomAllowed = pipelineState.renderProfileRef?.current?.bloomAllowed;
   const effectiveBloomEnabled = controls.bloomEnabled && bloomAllowed !== false;
+  const smaaEnabled = controls.smaaEnabled !== false;
   const pipeline = pipelineState.ensurePipeline();
   const postNodes = pipelineState.postNodesRef.current;
 
@@ -226,6 +228,7 @@ export function applyOutputControls(pipelineState, controls) {
       bloomEnabled: effectiveBloomEnabled,
       outputMode,
       outputBackgroundColor,
+      smaaEnabled,
     };
   }
 
@@ -237,6 +240,7 @@ export function applyOutputControls(pipelineState, controls) {
     bloomEnabled: effectiveBloomEnabled,
     outputMode,
     outputBackgroundColor,
+    smaaEnabled,
   };
 }
 
@@ -509,6 +513,7 @@ export function applyBloomControls(pipelineState, controls) {
     bloomEnabled: effectiveBloomEnabled,
     outputMode,
     bloomActive,
+    smaaEnabled: controls.smaaEnabled !== false,
   });
 
   return {

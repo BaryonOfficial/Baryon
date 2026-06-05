@@ -1046,6 +1046,8 @@ export function buildPerformanceHudSnapshot(runtimeDiagnostics) {
     requestedRenderScale: render?.requestedRenderScale ?? 1,
     renderScale: render?.renderScale ?? 1,
     traaEnabled: render?.traaEnabled ?? false,
+    smaaEnabled:
+      runtimeDiagnostics?.postProcess?.smaaGraphEnabled ?? false,
     temporalHistoryBlend:
       runtimeDiagnostics?.postProcess?.temporalHistoryBlend ?? null,
     requestedRaymarchSteps: render?.requestedRaymarchSteps ?? 0,

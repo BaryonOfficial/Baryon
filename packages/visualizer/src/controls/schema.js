@@ -585,6 +585,21 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   ),
   withControlGroup(
     {
+      key: "smaaEnabled",
+      label: "SMAA",
+      title:
+        "Toggle screen-space morphological anti-aliasing on the final output for visual A/B comparison.",
+      defaultValue: RENDER_DEFAULTS.smaaEnabled,
+      methods: ALL_METHODS,
+      targetType: CONTROL_TARGET_TYPES.pipeline,
+      handler: CONTROL_HANDLERS.output,
+      runtimePath: "program.smaaEnabled",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.display,
+  ),
+  withControlGroup(
+    {
       key: "backgroundColor",
       label: "Background",
       title: "Backdrop color shown behind the orb in transparent output mode",

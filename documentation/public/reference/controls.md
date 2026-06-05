@@ -27,6 +27,7 @@ Controls for post-processing and idle-state appearance.
 | **Strength**       | How bright and intense the bloom glow is — higher values create a more pronounced halo around bright particles.                       |
 | **Radius**         | How far the bloom glow spreads outward from bright areas — higher values create a softer, wider glow.                                 |
 | **Threshold**      | Minimum brightness required for a pixel to contribute to the bloom effect — raise this to limit glow to only the brightest particles. |
+| **SMAA**           | Toggle final screen-space anti-aliasing on or off for visual A/B checks.                                                              |
 | **Logo Intensity** | Strength of the logo particle attraction when no audio is playing — higher values make the idle logo formation more defined.          |
 | **Logo Size**      | Scale of the logo formation that particles drift toward when idle — adjust to match the visual weight of your logo.                   |
 

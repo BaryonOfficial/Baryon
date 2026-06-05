@@ -76,6 +76,7 @@ test("builds the advanced controls presentation layout", () => {
     "bloomStrength",
     "bloomRadius",
     "bloomThreshold",
+    "smaaEnabled",
     "backgroundColor",
     "outputBackgroundColor",
     "bloomResponseBias",

@@ -55,6 +55,7 @@ function createPostProcessDiagnostics() {
     traaNodeActive: false,
     bloomPassPresent: false,
     bloomComposeEnabled: false,
+    smaaGraphEnabled: false,
     temporalHistoryBlend: null,
     temporalHistoryGraphEnabled: null,
   };
@@ -1122,6 +1123,8 @@ function buildRuntimePerfSnapshot(runtimeDiagnostics) {
         runtimeDiagnostics?.postProcess?.bloomPassPresent ?? false,
       bloomComposeEnabled:
         runtimeDiagnostics?.postProcess?.bloomComposeEnabled ?? false,
+      smaaGraphEnabled:
+        runtimeDiagnostics?.postProcess?.smaaGraphEnabled ?? false,
       temporalHistoryBlend:
         runtimeDiagnostics?.postProcess?.temporalHistoryBlend ?? null,
       temporalHistoryGraphEnabled:

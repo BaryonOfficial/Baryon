@@ -6,6 +6,7 @@ const {
   mockMix,
   mockMrt,
   mockPass,
+  mockSmaa,
   mockTraa,
   renderPipelineInstances,
 } = vi.hoisted(() => ({
@@ -13,6 +14,11 @@ const {
   mockMix: vi.fn(() => ({ kind: "mixedOutput" })),
   mockMrt: vi.fn((config) => ({ kind: "mrt", config })),
   mockPass: vi.fn(),
+  mockSmaa: vi.fn((node) => ({
+    kind: "smaa",
+    node,
+    dispose: vi.fn(),
+  })),
   mockTraa: vi.fn(() => ({
     edgeDepthDiff: null,
     useSubpixelCorrection: true,
@@ -60,6 +66,10 @@ vi.mock("three/examples/jsm/tsl/display/TRAANode.js", () => ({
   traa: mockTraa,
 }));
 
+vi.mock("three/examples/jsm/tsl/display/SMAANode.js", () => ({
+  smaa: mockSmaa,
+}));
+
 vi.mock("./displayRadiance.js", () => ({
   compressDisplayRadianceNode: vi.fn((node) => ({
     kind: "compressedRadiance",
@@ -75,11 +85,13 @@ import {
   consumeRenderOutputVisualIdle,
   createCaptureOutputSession,
   createRenderOutputPipeline,
+  getRenderOutputSmaaGraphEnabled,
   markRenderOutputCameraCut,
   markRenderOutputContentChange,
   markRenderOutputVisualIdle,
   normalizeOutputMode,
   resolveRenderQualityProfile,
+  syncRenderOutputNodeTopology,
 } from "./outputPipeline.js";
 
 describe("outputPipeline compatibility surface", () => {
@@ -88,6 +100,7 @@ describe("outputPipeline compatibility surface", () => {
     mockBloom.mockClear();
     mockMix.mockClear();
     mockMrt.mockClear();
+    mockSmaa.mockClear();
     mockTraa.mockClear();
     mockPass.mockReset();
     mockPass.mockImplementation(() => ({
@@ -139,6 +152,100 @@ describe("outputPipeline compatibility surface", () => {
     );
     expect(pipelineState.postNodes.renderProfile.traaEnabled).toBe(true);
     expect(renderPipelineInstances).toHaveLength(1);
+  });
+
+  it("wraps the final output node in SMAA by default", () => {
+    const pipelineState = createRenderOutputPipeline(
+      {},
+      {},
+      {},
+      {
+        renderProfile: {
+          qualityPreset: "max-quality",
+          renderScale: 1,
+          traaEnabled: false,
+          bloomAllowed: false,
+        },
+      },
+    );
+
+    expect(mockSmaa).toHaveBeenCalledTimes(1);
+    expect(pipelineState.postNodes.smaaNode).toBe(
+      mockSmaa.mock.results[0].value,
+    );
+    expect(getRenderOutputSmaaGraphEnabled(pipelineState.postNodes)).toBe(true);
+    expect(renderPipelineInstances[0].outputNode).toBe(
+      mockSmaa.mock.results[0].value,
+    );
+  });
+
+  it("rebuilds output topology when SMAA is toggled", () => {
+    const pipelineState = createRenderOutputPipeline(
+      {},
+      {},
+      {},
+      {
+        renderProfile: {
+          qualityPreset: "max-quality",
+          renderScale: 1,
+          traaEnabled: false,
+          bloomAllowed: false,
+        },
+      },
+    );
+    const pipeline = pipelineState.pipeline;
+    const postNodes = pipelineState.postNodes;
+    const initialSmaaNode = postNodes.smaaNode;
+    const originalComposeOutputNode = postNodes.composeOutputNode;
+    const composeOutputNode = vi.fn((args) => originalComposeOutputNode(args));
+    postNodes.composeOutputNode = composeOutputNode;
+    pipeline.needsUpdate = false;
+
+    expect(
+      syncRenderOutputNodeTopology(pipeline, postNodes, {
+        bloomEnabled: true,
+        outputMode: "transparent",
+        bloomActive: false,
+        temporalHistoryEnabled: true,
+        smaaEnabled: false,
+      }),
+    ).toBe(true);
+
+    expect(composeOutputNode).toHaveBeenLastCalledWith({
+      bloomEnabled: true,
+      outputMode: "transparent",
+      temporalHistoryEnabled: false,
+      smaaEnabled: false,
+    });
+    expect(initialSmaaNode.dispose).toHaveBeenCalledTimes(1);
+    expect(postNodes.smaaNode).toBeNull();
+    expect(getRenderOutputSmaaGraphEnabled(postNodes)).toBe(false);
+    expect(pipeline.outputNode).not.toBe(initialSmaaNode);
+    expect(pipeline.needsUpdate).toBe(true);
+
+    pipeline.needsUpdate = false;
+    composeOutputNode.mockClear();
+
+    expect(
+      syncRenderOutputNodeTopology(pipeline, postNodes, {
+        bloomEnabled: true,
+        outputMode: "transparent",
+        bloomActive: false,
+        temporalHistoryEnabled: false,
+        smaaEnabled: true,
+      }),
+    ).toBe(true);
+
+    expect(composeOutputNode).toHaveBeenLastCalledWith({
+      bloomEnabled: true,
+      outputMode: "transparent",
+      temporalHistoryEnabled: false,
+      smaaEnabled: true,
+    });
+    expect(postNodes.smaaNode).toBe(mockSmaa.mock.results.at(-1).value);
+    expect(getRenderOutputSmaaGraphEnabled(postNodes)).toBe(true);
+    expect(pipeline.outputNode).toBe(postNodes.smaaNode);
+    expect(pipeline.needsUpdate).toBe(true);
   });
 
   it("skips the TRAA post-process node when TRAA is disabled", () => {

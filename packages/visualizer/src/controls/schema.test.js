@@ -52,6 +52,7 @@ const EXPECTED_CONTROL_KEYS = [
   "bloomStrength",
   "bloomRadius",
   "bloomThreshold",
+  "smaaEnabled",
   "backgroundColor",
   "renderQualityPreset",
   "customPerformanceTargetFps",
@@ -112,6 +113,7 @@ describe("control schema", () => {
     expect(state.bloomStrength).toBe(0.8);
     expect(state.bloomRadius).toBe(0);
     expect(state.bloomThreshold).toBe(0.24);
+    expect(state.smaaEnabled).toBe(RENDER_DEFAULTS.smaaEnabled);
     expect(state.performanceHudEnabled).toBe(
       RENDER_DEFAULTS.performanceHudEnabled,
     );
@@ -177,6 +179,21 @@ describe("control schema", () => {
 
     expect(outputModeControl?.runtimePath).toBe("program.outputMode");
     expect(outputFillControl?.runtimePath).toBe("program.backgroundColor");
+  });
+
+  it("exposes SMAA as a live display post-process toggle", () => {
+    const smaaControl = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "smaaEnabled",
+    );
+
+    expect(smaaControl).toMatchObject({
+      label: "SMAA",
+      defaultValue: true,
+      targetType: CONTROL_TARGET_TYPES.pipeline,
+      handler: CONTROL_HANDLERS.output,
+      runtimePath: "program.smaaEnabled",
+      status: CONTROL_STATUSES.live,
+    });
   });
 
   it("exposes cavity geometry as a debug-only requested-state control", () => {
@@ -316,6 +333,7 @@ describe("control schema", () => {
       "bloomStrength",
       "bloomRadius",
       "bloomThreshold",
+      "smaaEnabled",
       "backgroundColor",
       "outputBackgroundColor",
       "bloomResponseBias",

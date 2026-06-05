@@ -52,6 +52,7 @@ export const RENDER_DEFAULTS = Object.freeze({
   bloomRadius: 0,
   bloomThreshold: 0.24,
   bloomResponseBias: 1,
+  smaaEnabled: true,
   performanceHudEnabled: false,
   traaEnabled: true,
   cameraLocked: false,

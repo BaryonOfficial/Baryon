@@ -488,6 +488,7 @@ describe("control runtime sync", () => {
       bloomEnabled: false,
       outputMode: controls.outputMode,
       temporalHistoryEnabled: false,
+      smaaEnabled: true,
     });
     expect(pipeline.outputNode).toBe("transparent-output");
     expect(pipeline.needsUpdate).toBe(true);
@@ -527,6 +528,7 @@ describe("control runtime sync", () => {
       bloomEnabled: true,
       outputMode: controls.outputMode,
       temporalHistoryEnabled: false,
+      smaaEnabled: true,
     });
     expect(pipeline.outputNode).toBe("transparent-output");
     expect(pipeline.needsUpdate).toBe(true);
@@ -573,6 +575,7 @@ describe("control runtime sync", () => {
       bloomEnabled: true,
       outputMode: controls.outputMode,
       temporalHistoryEnabled: false,
+      smaaEnabled: true,
     });
     expect(pipeline.needsUpdate).toBe(true);
     expect(runtimeState.bloomTuning.lowStepBloomGuard).toBeCloseTo(
@@ -649,6 +652,7 @@ describe("control runtime sync", () => {
       bloomEnabled: true,
       outputMode: "transparent",
       temporalHistoryEnabled: true,
+      smaaEnabled: true,
     });
 
     pipeline.needsUpdate = false;
@@ -666,6 +670,7 @@ describe("control runtime sync", () => {
       bloomEnabled: true,
       outputMode: "transparent",
       temporalHistoryEnabled: false,
+      smaaEnabled: true,
     });
     expect(pipeline.needsUpdate).toBe(true);
   });
@@ -790,11 +795,56 @@ describe("control runtime sync", () => {
     expect(pipeline.needsUpdate).toBe(true);
   });
 
+  it("rebuilds pipeline topology when SMAA changes", () => {
+    const controls = createControlState();
+    controls.bloomEnabled = true;
+    controls.smaaEnabled = true;
+
+    const pipeline = { outputNode: null, needsUpdate: false };
+    const bloomPass = {
+      strength: { value: 0 },
+      radius: { value: 0 },
+      threshold: { value: 0 },
+    };
+    const composeOutputNode = vi.fn(() => "output");
+    const postNodes = { sceneColor: {}, bloomPass, composeOutputNode };
+
+    applyBloomControls(
+      {
+        ensurePipeline: () => pipeline,
+        postNodesRef: { current: postNodes },
+        runtimeState: createRaymarchHarness(),
+      },
+      controls,
+    );
+    expect(composeOutputNode).toHaveBeenCalledTimes(1);
+    pipeline.needsUpdate = false;
+    composeOutputNode.mockClear();
+
+    controls.smaaEnabled = false;
+    applyBloomControls(
+      {
+        ensurePipeline: () => pipeline,
+        postNodesRef: { current: postNodes },
+        runtimeState: createRaymarchHarness(),
+      },
+      controls,
+    );
+    expect(composeOutputNode).toHaveBeenCalledWith({
+      bloomEnabled: true,
+      outputMode: controls.outputMode,
+      temporalHistoryEnabled: false,
+      smaaEnabled: false,
+    });
+    expect(pipeline.needsUpdate).toBe(true);
+  });
+
   it("applies output controls to the program pipeline", () => {
     const controls = createControlState();
     controls.outputMode = "opaque";
     controls.outputBackgroundColor = "#123456";
     controls.bloomEnabled = true;
+    controls.smaaEnabled = false;
 
     const pipeline = { outputNode: null, needsUpdate: false };
     const outputUniforms = {
@@ -822,6 +872,30 @@ describe("control runtime sync", () => {
       bloomEnabled: true,
       outputMode: "opaque",
       outputBackgroundColor: "#123456",
+      smaaEnabled: false,
+    });
+  });
+
+  it("keeps output control snapshot shape before the pipeline is ready", () => {
+    const controls = createControlState();
+    controls.outputMode = "opaque";
+    controls.outputBackgroundColor = "#123456";
+    controls.bloomEnabled = true;
+    controls.smaaEnabled = false;
+
+    const snapshot = applyOutputControls(
+      {
+        ensurePipeline: () => null,
+        postNodesRef: { current: null },
+      },
+      controls,
+    );
+
+    expect(snapshot).toEqual({
+      bloomEnabled: true,
+      outputMode: "opaque",
+      outputBackgroundColor: "#123456",
+      smaaEnabled: false,
     });
   });
 

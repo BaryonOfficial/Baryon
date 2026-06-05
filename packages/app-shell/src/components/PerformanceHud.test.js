@@ -133,11 +133,13 @@ describe("PerformanceHud", () => {
           targetFps: 60,
           visualizationMethod: "raymarch",
           traaEnabled: true,
+          smaaEnabled: true,
           temporalHistoryBlend: 0.5,
         },
       }),
     );
     expect(raymarchMarkup).toContain("TRAA: on · blend 0.50");
+    expect(raymarchMarkup).toContain("SMAA: on");
 
     const traaOffMarkup = renderToStaticMarkup(
       React.createElement(PerformanceHud, {
@@ -151,9 +153,11 @@ describe("PerformanceHud", () => {
           targetFps: 60,
           visualizationMethod: "raymarch",
           traaEnabled: false,
+          smaaEnabled: false,
         },
       }),
     );
     expect(traaOffMarkup).toContain("TRAA: off");
+    expect(traaOffMarkup).toContain("SMAA: off");
   });
 });

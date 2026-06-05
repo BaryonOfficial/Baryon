@@ -75,10 +75,12 @@ export default function PerformanceHud({
       ? formatNumber(metrics.temporalHistoryBlend, 2)
       : "—";
   let traaLabel = null;
+  let smaaLabel = null;
   if (usesRaymarchVolumePipeline(metrics.visualizationMethod)) {
     traaLabel = metrics.traaEnabled
       ? `on · blend ${temporalBlendLabel}`
       : "off";
+    smaaLabel = metrics.smaaEnabled ? "on" : "off";
   }
 
   return (
@@ -155,6 +157,7 @@ export default function PerformanceHud({
       ) : null}
       {raymarchStepsLabel ? <div>Steps: {raymarchStepsLabel}</div> : null}
       {traaLabel ? <div>TRAA: {traaLabel}</div> : null}
+      {smaaLabel ? <div>SMAA: {smaaLabel}</div> : null}
     </aside>
   );
 }
