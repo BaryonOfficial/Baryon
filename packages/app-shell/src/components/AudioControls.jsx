@@ -269,7 +269,7 @@ const CSS = `
 
 .am-source-mode-shell {
   position: fixed;
-  right: 1.75rem;
+  right: 0.9rem;
   bottom: 1.75rem;
   z-index: 52;
   display: inline-flex;

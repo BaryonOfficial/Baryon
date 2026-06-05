@@ -169,6 +169,22 @@ describe("ListenerControls compact dock layout", () => {
     expect(container.querySelector(".am-compact-volume-row")).toBeNull();
   });
 
+  it("aligns the standalone source control to the top-right overlay rail", () => {
+    renderControls({
+      playbackSource: "local-file",
+      selectedSource: "system",
+      liveInputDeviceKind: "system",
+    });
+
+    const injectedCss = Array.from(document.querySelectorAll("style"))
+      .map((style) => style.textContent ?? "")
+      .join("\n");
+
+    expect(injectedCss).toContain(`.am-source-mode-shell {
+  position: fixed;
+  right: 0.9rem;`);
+  });
+
   it("shows upload-audio placeholder copy for the file source before a file is loaded", () => {
     renderControls({
       playbackSource: "local-file",
