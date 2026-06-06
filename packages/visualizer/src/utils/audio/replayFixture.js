@@ -18,7 +18,6 @@ export function reviveSerializedReplayFrame(frame) {
   return {
     frameTimeMs: frame.frameTimeMs ?? 0,
     status: frame.status ?? {},
-    analysisHints: frame.analysisHints ?? null,
     analysisSnapshot: snapshot,
   };
 }

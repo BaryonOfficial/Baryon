@@ -1,4 +1,6 @@
 import { expect, test, vi } from "vitest";
+import { PerspectiveCamera } from "three";
+import { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import {
   augmentFrameStateWithCameraSync,
   applyExternalCameraPose,
@@ -6,6 +8,18 @@ import {
   shouldMountOrbitControls,
 } from "./baryonSceneCameraSync.js";
 import { resolvePresetCameraPose } from "./cameraPosePresets.js";
+
+function expectCameraPoseCloseTo(camera, controls, cameraPose) {
+  expect(camera.position.x).toBeCloseTo(cameraPose.position.x);
+  expect(camera.position.y).toBeCloseTo(cameraPose.position.y);
+  expect(camera.position.z).toBeCloseTo(cameraPose.position.z);
+  expect(camera.up.x).toBeCloseTo(cameraPose.up.x);
+  expect(camera.up.y).toBeCloseTo(cameraPose.up.y);
+  expect(camera.up.z).toBeCloseTo(cameraPose.up.z);
+  expect(controls.target.x).toBeCloseTo(cameraPose.target.x);
+  expect(controls.target.y).toBeCloseTo(cameraPose.target.y);
+  expect(controls.target.z).toBeCloseTo(cameraPose.target.z);
+}
 
 test("frame state augmentation only appends the canonical camera pose", () => {
   const augmented = augmentFrameStateWithCameraSync(
@@ -45,13 +59,13 @@ test("external-synced frame state augmentation preserves the original frame stat
   expect(augmented).toBe(frameState);
 });
 
-test("orbit controls only mount for preview-local 3d camera control", () => {
-  expect(
-    shouldMountOrbitControls("raymarch", CAMERA_CONTROL_MODES.previewLocal),
-  ).toBe(true);
-  expect(
-    shouldMountOrbitControls("raymarch", CAMERA_CONTROL_MODES.externalSynced),
-  ).toBe(false);
+test("orbit controls only mount for preview-local camera control", () => {
+  expect(shouldMountOrbitControls(CAMERA_CONTROL_MODES.previewLocal)).toBe(
+    true,
+  );
+  expect(shouldMountOrbitControls(CAMERA_CONTROL_MODES.externalSynced)).toBe(
+    false,
+  );
 });
 
 test("external camera pose application updates projection and world matrices", () => {
@@ -85,6 +99,26 @@ test("external camera pose application updates projection and world matrices", (
   expect(camera.updateMatrixWorld).toHaveBeenCalledWith(true);
 });
 
+test("camera pose application stays fixed with real three-stdlib damping residue", () => {
+  const camera = new PerspectiveCamera(65, 1, 0.1, 100);
+  const controls = new OrbitControlsImpl(camera);
+  const sidePose = resolvePresetCameraPose("side");
+  const topDownPose = resolvePresetCameraPose("top-down");
+
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.05;
+  applyExternalCameraPose(sidePose, camera, controls);
+
+  controls.setAzimuthalAngle(Math.PI / 2);
+  expect(camera.position.x).not.toBeCloseTo(sidePose.position.x);
+
+  applyExternalCameraPose(topDownPose, camera, controls);
+  controls.update();
+  controls.update();
+
+  expectCameraPoseCloseTo(camera, controls, topDownPose);
+});
+
 test("camera pose preset helper still produces canonical side and top-down poses", () => {
   expect(resolvePresetCameraPose("side")).toMatchObject({
     position: { x: 0, y: 0, z: 9 },
@@ -95,8 +129,8 @@ test("camera pose preset helper still produces canonical side and top-down poses
   expect(resolvePresetCameraPose("top-down")).toMatchObject({
     position: {
       x: 0,
-      y: expect.closeTo(9, 6),
-      z: expect.closeTo(0.001, 6),
+      y: 9,
+      z: 0,
     },
     target: { x: 0, y: 0, z: 0 },
     up: { x: 0, y: 0, z: -1 },

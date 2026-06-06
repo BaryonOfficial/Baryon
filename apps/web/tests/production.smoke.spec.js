@@ -9,12 +9,13 @@ test.describe("Baryon production smoke", () => {
 
     await page.setViewportSize({ width: 740, height: 900 });
     await page.goto("/");
-    await expect(page.locator(".app-legal-links")).toBeVisible();
-    await expect(page.locator(".app-legal-mobile")).toBeHidden();
+    await expect(page.getByText("Baryon | Cymatics")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Toggle advanced controls" }),
+    ).toBeVisible();
 
-    await page.setViewportSize({ width: 700, height: 900 });
-    await expect(page.locator(".app-legal-links")).toBeHidden();
-    await expect(page.locator(".app-legal-mobile")).toBeVisible();
+    await page.setViewportSize({ width: 640, height: 900 });
+    await expect(page.getByText("Baryon | Cymatics")).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "Toggle advanced controls" }),
     ).toBeVisible();
@@ -110,7 +111,7 @@ test.describe("Baryon production smoke", () => {
       hasAuditSnapshot: false,
     });
 
-    await expect(page.getByTestId("raymarch-debug-overlay")).toHaveCount(0);
+    await expect(page.getByTestId("diagnostics-hud")).toHaveCount(0);
 
     await page
       .getByRole("button", { name: "Toggle advanced controls" })
@@ -120,13 +121,11 @@ test.describe("Baryon production smoke", () => {
       page.getByRole("button", { name: "Close advanced controls backdrop" }),
     ).toHaveCount(0);
     await expect(
-      page.getByRole("button", { name: "Toggle advanced controls" }),
+      page.getByRole("button", { name: "Close advanced controls" }),
     ).toBeVisible();
     await expect(page.getByRole("button", { name: /^Shape\s/ })).toBeVisible();
     await expect(page.getByText("Audit")).toHaveCount(0);
-    await page
-      .getByRole("button", { name: "Toggle advanced controls" })
-      .click();
+    await page.getByRole("button", { name: "Close advanced controls" }).click();
     await expect(page.getByTestId("advanced-controls-sidebar")).toBeHidden();
   });
 
@@ -188,7 +187,7 @@ test.describe("Baryon production smoke", () => {
     await expect(bloomToggle).toBeChecked();
   });
 
-  test("hides all overlay chrome while fullscreen is active", async ({
+  test("hides overlay chrome while fullscreen is active and restores closed controls", async ({
     page,
     browserName,
   }) => {
@@ -224,7 +223,7 @@ test.describe("Baryon production smoke", () => {
     await expect(
       page.getByRole("button", { name: "Toggle advanced controls" }),
     ).toBeVisible();
-    await expect(page.getByTestId("advanced-controls-sidebar")).toBeVisible();
+    await expect(page.getByTestId("advanced-controls-sidebar")).toHaveCount(0);
     await expect(page.getByText("Upload Audio")).toBeVisible();
   });
 });

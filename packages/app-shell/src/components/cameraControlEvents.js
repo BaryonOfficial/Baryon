@@ -1,4 +1,4 @@
-import { resolvePresetCameraPose } from "./cameraPosePresets.js";
+import { createCameraPresetCommand } from "./cameraControlModel.js";
 
 export const CAMERA_CONTROL_COMMAND_EVENT = "__baryon-camera-command";
 
@@ -13,9 +13,7 @@ export function createCameraControlCommand(command = {}) {
     command?.cameraViewPreset === "top-down" ||
     command?.cameraViewPreset === "side"
   ) {
-    return {
-      cameraPose: resolvePresetCameraPose(command.cameraViewPreset),
-    };
+    return createCameraPresetCommand(command.cameraViewPreset);
   }
 
   return null;

@@ -1,8 +1,5 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "types": ["node"]
-  },
-  "include": ["vite.base.js", "vitest.js"],
+  "include": ["node-path.d.ts", "vite.base.js", "vitest.js"],
   "exclude": ["node_modules", "dist"]
 }

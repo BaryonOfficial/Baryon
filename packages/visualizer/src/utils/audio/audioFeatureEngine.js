@@ -1,14 +1,42 @@
-import { normalizeAudioFeatureEngineSettings } from "./audioFeatureEngineShared.js";
-import { buildAnalysisSessionKey } from "./featureAnalyzer.js";
+import {
+  FAST_SIGNAL_PATCH_ANALYSIS_KEYS,
+  normalizeAudioFeatureEngineSettings,
+} from "./audioFeatureEngineShared.js";
+import { buildAnalysisSessionKey } from "./analysisSession.js";
 import {
   DEFAULT_REQUESTED_CAVITY_GEOMETRY,
   normalizeCavityGeometry,
 } from "../../core/cavityGeometry.js";
+import {
+  CAVITY_ACOUSTIC_DEFAULTS,
+  SIMULATION_DEFAULTS,
+} from "../../defaults.js";
 
 export {
   DEFAULT_AUDIO_FEATURE_ENGINE_SETTINGS,
   normalizeAudioFeatureEngineSettings,
 } from "./audioFeatureEngineShared.js";
+
+const WORKER_PERF_STATUS_BASES = Object.freeze([
+  "FastSignal",
+  "Structural",
+  "PeakScan",
+  "ModalResolve",
+  "Projection",
+  "Chroma",
+  "Tempo",
+]);
+const WORKER_PERF_STATUS_SUFFIXES = Object.freeze(["Ms", "LastMs", "MaxMs"]);
+
+function createDefaultWorkerPerfStatus() {
+  const status = {};
+  for (const base of WORKER_PERF_STATUS_BASES) {
+    for (const suffix of WORKER_PERF_STATUS_SUFFIXES) {
+      status[`worker${base}${suffix}`] = 0;
+    }
+  }
+  return status;
+}
 
 function cloneArray(values) {
   if (values instanceof Float32Array) {
@@ -27,16 +55,6 @@ function cloneArray(values) {
     return new Float64Array(values);
   }
   return values ?? null;
-}
-
-function cloneAnalysisHints(analysisHints) {
-  if (!analysisHints) {
-    return null;
-  }
-
-  return {
-    ...analysisHints,
-  };
 }
 
 function shouldIncludeTransportTimeData({ timeData }) {
@@ -72,11 +90,12 @@ export function buildAudioFeatureTransportFrame({
   frameTimeMs,
   frameId = null,
   radius,
-  includeChromesthesia = true,
-  analysisHints = null,
+  includeSpectralLight = true,
   auditSettings = null,
   beatSettings = null,
   liveInputAnalysisSettings = null,
+  cavityAcousticScale = CAVITY_ACOUSTIC_DEFAULTS,
+  boundaryMode = SIMULATION_DEFAULTS.boundaryMode,
   cavityGeometry = DEFAULT_REQUESTED_CAVITY_GEOMETRY,
 }) {
   const audioInputMode = status?.audioInputMode ?? "idle";
@@ -108,8 +127,12 @@ export function buildAudioFeatureTransportFrame({
     liveInputAnalysisClass,
     liveInputAcousticIntent,
     radius,
+    cavityAcousticScale: cavityAcousticScale
+      ? { ...cavityAcousticScale }
+      : CAVITY_ACOUSTIC_DEFAULTS,
+    boundaryMode,
     cavityGeometry: normalizeCavityGeometry(cavityGeometry),
-    includeChromesthesia: Boolean(includeChromesthesia),
+    includeSpectralLight: Boolean(includeSpectralLight),
     sourceMode: analysisSnapshot?.sourceMode ?? null,
     avgAmplitude: analysisSnapshot?.avgAmplitude ?? 0,
     rms: analysisSnapshot?.rms ?? 0,
@@ -117,7 +140,6 @@ export function buildAudioFeatureTransportFrame({
     spectralFlux: analysisSnapshot?.spectralFlux ?? 0,
     fftMagnitudes,
     timeData,
-    analysisHints: cloneAnalysisHints(analysisHints),
     auditSettings: auditSettings ? { ...auditSettings } : null,
     beatSettings: beatSettings ? { ...beatSettings } : null,
     liveInputAnalysisSettings: liveInputAnalysisSettings
@@ -135,6 +157,7 @@ function createDefaultEngineStatus(state = "none", reason = null) {
     droppedFrameCount: 0,
     transportDropCount: 0,
     publishSkipCount: 0,
+    fastSignalPatchCount: 0,
     fastSignalUpdateCount: 0,
     structuralUpdateCount: 0,
     chromaUpdateCount: 0,
@@ -143,13 +166,52 @@ function createDefaultEngineStatus(state = "none", reason = null) {
     latestPublishedFrameId: 0,
     latestSnapshotFrameTimeMs: null,
     latestSnapshotAgeMs: null,
-    workerFastSignalMs: 0,
-    workerStructuralMs: 0,
-    workerPeakScanMs: 0,
-    workerModalResolveMs: 0,
-    workerProjectionMs: 0,
-    workerChromaMs: 0,
-    workerTempoMs: 0,
+    ...createDefaultWorkerPerfStatus(),
+  };
+}
+
+function cloneFastSignalPatchValue(value) {
+  if (ArrayBuffer.isView(value)) {
+    return cloneArray(value);
+  }
+  if (value && typeof value === "object") {
+    return { ...value };
+  }
+  return value;
+}
+
+export function mergeFastSignalPatchIntoSnapshot(snapshot, patch) {
+  if (
+    !snapshot ||
+    !patch ||
+    snapshot.analysisSessionKey !== patch.analysisSessionKey ||
+    snapshot.analysisInputsSignature !== patch.analysisInputsSignature
+  ) {
+    return snapshot ?? null;
+  }
+
+  const patchAnalysis = patch.analysisResult ?? {};
+  const analysisResult = {
+    ...(snapshot.analysisResult ?? {}),
+  };
+
+  for (const key of FAST_SIGNAL_PATCH_ANALYSIS_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(patchAnalysis, key)) {
+      continue;
+    }
+    analysisResult[key] = cloneFastSignalPatchValue(patchAnalysis[key]);
+  }
+
+  return {
+    ...snapshot,
+    frameTimeMs: Number.isFinite(patch.frameTimeMs)
+      ? patch.frameTimeMs
+      : snapshot.frameTimeMs,
+    fastSignalPatchCount:
+      patch.fastSignalPatchCount ?? snapshot.fastSignalPatchCount ?? 0,
+    latestFastSignalPatchFrameTimeMs:
+      patch.frameTimeMs ?? snapshot.latestFastSignalPatchFrameTimeMs ?? null,
+    analysisResult,
   };
 }
 
@@ -179,6 +241,9 @@ export function createNoopAudioFeatureEngine(settings = {}) {
       return createDefaultEngineStatus("none", "disabled");
     },
     reset() {},
+    resetMetrics(reason = "manual-reset-metrics") {
+      void reason;
+    },
     dispose() {},
   };
 }
@@ -231,6 +296,29 @@ export function createAudioFeatureEngine(settings = {}, dependencies = {}) {
         latestSnapshotFrameTimeMs: snapshotMetadata.frameTimeMs,
         publishCount:
           snapshotMetadata.publishCount ?? latestStatus.publishCount ?? 0,
+      });
+      return;
+    }
+
+    if (payload.type === "fast-signal-patch") {
+      const nextSnapshot = mergeFastSignalPatchIntoSnapshot(
+        latestSnapshot,
+        payload.patch,
+      );
+      if (nextSnapshot === latestSnapshot) {
+        return;
+      }
+      latestSnapshot = nextSnapshot;
+      updateStatus({
+        state: "ready",
+        reason: "fast-signal-patched",
+        latestSnapshotFrameTimeMs: latestSnapshot?.frameTimeMs ?? null,
+        latestFastSignalPatchFrameTimeMs:
+          latestSnapshot?.latestFastSignalPatchFrameTimeMs ?? null,
+        fastSignalPatchCount:
+          latestSnapshot?.fastSignalPatchCount ??
+          latestStatus.fastSignalPatchCount ??
+          0,
       });
     }
   });
@@ -289,6 +377,16 @@ export function createAudioFeatureEngine(settings = {}, dependencies = {}) {
       return {
         ...latestStatus,
       };
+    },
+    resetMetrics(reason = "manual-reset-metrics") {
+      latestStatus = {
+        ...createDefaultEngineStatus(latestStatus.state ?? "ready", reason),
+        latestSnapshotFrameTimeMs: latestSnapshot?.frameTimeMs ?? null,
+      };
+      worker?.postMessage({
+        type: "reset-metrics",
+        reason,
+      });
     },
     reset(reason = "manual-reset") {
       latestSnapshot = null;

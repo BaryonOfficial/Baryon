@@ -2,20 +2,17 @@ import { describe, expect, it } from "vitest";
 import {
   BLEND_ATTACK,
   BLEND_DROP_THRESHOLD,
-  BLEND_MAX_FRESH_PER_FRAME,
   BLEND_RELEASE,
   BLEND_TRACKING,
-  DECAY_PER_FRAME,
   blendColorStack,
   blendModalStack,
   clearModalStack,
   countActiveSlots,
-  decayModalStack,
   writeSlot,
 } from "./modalStack.js";
 
 // Slot layout: [u, v, w, amplitude] repeating at stride 4.
-// Only amplitude (index 3 of each group) is touched by decay and active-slot counting.
+// Active-slot counting only reads amplitude (index 3 of each group).
 
 function makeState(amplitudes) {
   const slots = new Float32Array(amplitudes.length * 4);
@@ -37,76 +34,9 @@ function makeState(amplitudes) {
     fundamentalConfidence: 0,
     analysisEngine: "none",
     uniqueModeCount: 0,
-    chromesthesiaComponents: [],
+    spectralLightComponents: [],
   };
 }
-
-describe("DECAY_PER_FRAME", () => {
-  it("is 0.9 — changing this affects how long patterns persist after audio stops", () => {
-    expect(DECAY_PER_FRAME).toBe(0.9);
-  });
-});
-
-describe("decayModalStack", () => {
-  it("multiplies each slot amplitude by DECAY_PER_FRAME once per call", () => {
-    const state = makeState([1.0, 0.5]);
-    decayModalStack(state);
-    expect(state.slots[3]).toBeCloseTo(1.0 * DECAY_PER_FRAME);
-    expect(state.slots[7]).toBeCloseTo(0.5 * DECAY_PER_FRAME);
-  });
-
-  it("applies geometric decay — amplitude after N calls equals initial * DECAY_PER_FRAME^N", () => {
-    const initial = 1.0;
-    const N = 10;
-    const state = makeState([initial]);
-    for (let i = 0; i < N; i++) decayModalStack(state);
-    expect(state.slots[3]).toBeCloseTo(initial * Math.pow(DECAY_PER_FRAME, N));
-  });
-
-  it("converges toward zero after many calls", () => {
-    const state = makeState([1.0]);
-    for (let i = 0; i < 200; i++) decayModalStack(state);
-    expect(state.slots[3]).toBeLessThan(1e-8);
-  });
-
-  it("does not touch mode coordinates (u, v, w) — only amplitude", () => {
-    const state = makeState([0.8]);
-    state.slots[0] = 3; // u
-    state.slots[1] = 5; // v
-    state.slots[2] = 7; // w
-    decayModalStack(state);
-    expect(state.slots[0]).toBe(3);
-    expect(state.slots[1]).toBe(5);
-    expect(state.slots[2]).toBe(7);
-    expect(state.slots[3]).toBeCloseTo(0.8 * DECAY_PER_FRAME);
-  });
-
-  it("clears raw target slots while decaying the live stack", () => {
-    const state = makeState([1.0]);
-    state.colorSlots[0] = 0.4;
-    state.referenceColorSlots[0] = 0.6;
-    state.referenceSlots[3] = 0.6;
-    decayModalStack(state);
-    expect(state.referenceSlots.every((value) => value === 0)).toBe(true);
-    expect(state.referenceColorSlots.every((value) => value === 0)).toBe(true);
-  });
-
-  it("clears target metadata while decaying the live stack", () => {
-    const state = makeState([1.0]);
-    state.harmonicSupport = new Float32Array([0.9, 0.3, 0, 0]);
-    state.fundamental = 440;
-    state.fundamentalConfidence = 0.8;
-    state.analysisEngine = "spectral";
-    state.uniqueModeCount = 2;
-    decayModalStack(state);
-    expect(state.harmonicSupport.every((value) => value === 0)).toBe(true);
-    expect(state.fundamental).toBe(0);
-    expect(state.fundamentalConfidence).toBe(0);
-    expect(state.analysisEngine).toBe("none");
-    expect(state.uniqueModeCount).toBe(0);
-    expect(state.chromesthesiaComponents).toEqual([]);
-  });
-});
 
 describe("countActiveSlots", () => {
   it("counts slots where amplitude is greater than zero", () => {
@@ -165,7 +95,7 @@ describe("blendModalStack", () => {
       analysisEngine: "none",
       uniqueModeCount: entries.length,
       lastStableAt: 0,
-      chromesthesiaComponents: [],
+      spectralLightComponents: [],
       latchedFundamentalHz: 0,
       latchedFundamentalConfidence: 0,
       latchHoldFrames: 0,
@@ -233,7 +163,7 @@ describe("blendModalStack", () => {
     expect(out).toHaveLength(0);
   });
 
-  it("fresh cap: at most BLEND_MAX_FRESH_PER_FRAME new modes are admitted per call", () => {
+  it("admits all fresh modes by default so topology admission stays downstream", () => {
     const state = makeBlendState(8, []); // empty current
     // 4 fresh modes in target
     const target = makeTargetSlots(8, [
@@ -244,11 +174,11 @@ describe("blendModalStack", () => {
     ]);
     blendModalStack(state, target, 8);
     const out = readSlots(state, 8);
-    expect(out).toHaveLength(BLEND_MAX_FRESH_PER_FRAME);
+    expect(out).toHaveLength(4);
   });
 
-  it("existing modes are not subject to fresh cap", () => {
-    // 3 existing modes + 6 fresh modes; all 3 existing should survive + up to cap fresh
+  it("an explicit helper fresh cap does not affect existing modes", () => {
+    // 3 existing modes + 6 fresh modes; all 3 existing should survive + explicit cap fresh
     const state = makeBlendState(10, [
       { u: 1, v: 1, w: 1, amplitude: 0.8 },
       { u: 2, v: 2, w: 2, amplitude: 0.7 },
@@ -265,10 +195,9 @@ describe("blendModalStack", () => {
       { u: 8, v: 8, w: 8, amplitude: 0.15 }, // fresh
       { u: 9, v: 9, w: 9, amplitude: 0.1 }, // fresh
     ]);
-    blendModalStack(state, target, 10);
+    blendModalStack(state, target, 10, { freshCap: 2 });
     const out = readSlots(state, 10);
-    // 3 existing + capped admitted fresh modes.
-    expect(out).toHaveLength(3 + BLEND_MAX_FRESH_PER_FRAME);
+    expect(out).toHaveLength(5);
   });
 
   it("attack: fresh mode enters at attack rate (from zero)", () => {
@@ -297,6 +226,17 @@ describe("blendModalStack", () => {
     blendModalStack(state, target, 4, { tracking: 0.9 });
     const out = readSlots(state, 4);
     expect(out[0].amplitude).toBeCloseTo(0.5 + (1.0 - 0.5) * 0.9);
+  });
+
+  it("trackingOverrides accelerates retained modes toward weaker targets", () => {
+    const state = makeBlendState(4, [{ u: 1, v: 1, w: 1, amplitude: 0.8 }]);
+    const target = makeTargetSlots(4, [{ u: 1, v: 1, w: 1, amplitude: 0.2 }]);
+    blendModalStack(state, target, 4, {
+      tracking: 0.28,
+      trackingOverrides: new Map([["1:1:1", 0.9]]),
+    });
+    const out = readSlots(state, 4);
+    expect(out[0].amplitude).toBeCloseTo(0.8 + (0.2 - 0.8) * 0.9);
   });
 
   it("attack option: custom attack rate overrides default", () => {
@@ -428,6 +368,126 @@ describe("blendColorStack", () => {
     expect(state.colorSlots[3]).toBeCloseTo(0.9);
     expect(state.colorSlots[7]).toBeCloseTo(0.7);
     expect(state.colorSlots[11]).toBe(0);
+  });
+
+  it("mixes duplicate Spectral target colors without legacy spectral slots", () => {
+    const state = {
+      ...makeState([0.8]),
+      slots: new Float32Array([2, 2, 2, 0.8]),
+      colorSlots: new Float32Array(4),
+      referenceColorSlots: new Float32Array(4),
+    };
+    const targetSlots = new Float32Array([
+      2, 2, 2, 0.4, 2, 2, 2, 0.3,
+    ]);
+    const targetColors = new Float32Array([1, 0, 0, 0.5, 0, 1, 1, 1]);
+
+    blendColorStack(state, targetSlots, targetColors, 1, {
+      attack: 1,
+      tracking: 1,
+      release: 1,
+      maxActiveSlots: 1,
+    });
+
+    expect(state.colorSlots[0]).toBeCloseTo(0.4, 6);
+    expect(state.colorSlots[1]).toBeCloseTo(0.6, 6);
+    expect(state.colorSlots[2]).toBeCloseTo(0.6, 6);
+    expect(state.colorSlots[3]).toBeCloseTo(0.5 / 0.7, 6);
+  });
+
+  it("blends duplicate Spectral lane packets by modal identity without reading RGB", () => {
+    const state = {
+      ...makeState([0.8]),
+      slots: new Float32Array([2, 2, 2, 0.8]),
+      colorSlots: new Float32Array(4),
+      spectralLaneA: new Float32Array(4),
+      spectralLaneB: new Float32Array(4),
+      spectralMeta: new Float32Array(4),
+      referenceColorSlots: new Float32Array(4),
+      referenceSpectralLaneA: new Float32Array(4),
+      referenceSpectralLaneB: new Float32Array(4),
+      referenceSpectralMeta: new Float32Array(4),
+    };
+    const targetSlots = new Float32Array([
+      2, 2, 2, 0.4, 2, 2, 2, 0.6,
+    ]);
+    const targetColors = new Float32Array([
+      0.5, 0.5, 0.5, 1, 0.5, 0.5, 0.5, 1,
+    ]);
+    const targetSpectralLaneA = new Float32Array([
+      1, 0, 0, 0, 0, 1, 0, 0,
+    ]);
+    const targetSpectralLaneB = new Float32Array(8);
+    const targetSpectralMeta = new Float32Array([
+      0.1, 0.04, 0.5, 0.5, 0.8, 0.04, 1, 0.5,
+    ]);
+
+    blendColorStack(state, targetSlots, targetColors, 1, {
+      attack: 1,
+      tracking: 1,
+      release: 1,
+      maxActiveSlots: 1,
+      targetSpectralLaneA,
+      targetSpectralLaneB,
+      targetSpectralMeta,
+    });
+
+    expect(state.colorSlots[0]).toBeCloseTo(0.5, 6);
+    expect(state.colorSlots[1]).toBeCloseTo(0.5, 6);
+    expect(state.colorSlots[2]).toBeCloseTo(0.5, 6);
+    expect(state.spectralLaneA[0]).toBeCloseTo(0.25, 6);
+    expect(state.spectralLaneA[1]).toBeCloseTo(0.75, 6);
+    expect(state.spectralLaneA[2]).toBeCloseTo(0, 6);
+    expect(state.spectralLaneA[3]).toBeCloseTo(0, 6);
+    expect(state.spectralLaneB[0]).toBeCloseTo(0, 6);
+    expect(state.spectralMeta[0]).toBeCloseTo(0.8, 6);
+    expect(state.spectralMeta[2]).toBeCloseTo(1, 6);
+    expect(state.spectralMeta[3]).toBeCloseTo(0.5, 6);
+    expect(state.referenceSpectralLaneA[0]).toBeCloseTo(0.25, 6);
+    expect(state.referenceSpectralLaneA[1]).toBeCloseTo(0.75, 6);
+  });
+
+  it("keeps Spectral packet owner color and meta coupled while smoothing weight", () => {
+    const state = {
+      ...makeState([0.8]),
+      slots: new Float32Array([1, 1, 1, 0.8]),
+      colorSlots: new Float32Array([1, 0, 0, 1]),
+      spectralLaneA: new Float32Array([1, 0, 0, 0]),
+      spectralLaneB: new Float32Array(4),
+      spectralMeta: new Float32Array([0, 0.04, 0.7, 0.1]),
+      referenceColorSlots: new Float32Array(4),
+      referenceSpectralLaneA: new Float32Array(4),
+      referenceSpectralLaneB: new Float32Array(4),
+      referenceSpectralMeta: new Float32Array(4),
+    };
+    const targetSlots = new Float32Array([1, 1, 1, 0.8]);
+    const targetColors = new Float32Array([0, 1, 1, 0.5]);
+    const targetSpectralLaneA = new Float32Array([0, 1, 0, 0]);
+    const targetSpectralLaneB = new Float32Array(4);
+    const targetSpectralMeta = new Float32Array([0.5, 0.07, 0.9, 0.4]);
+
+    blendColorStack(state, targetSlots, targetColors, 1, {
+      attack: 1,
+      tracking: 0.5,
+      release: 1,
+      maxActiveSlots: 1,
+      targetSpectralLaneA,
+      targetSpectralLaneB,
+      targetSpectralMeta,
+    });
+
+    expect(Array.from(state.colorSlots)).toEqual([
+      0,
+      1,
+      1,
+      expect.closeTo(0.75, 6),
+    ]);
+    expect(state.spectralLaneA[0]).toBeCloseTo(0, 6);
+    expect(state.spectralLaneA[1]).toBeCloseTo(1, 6);
+    expect(state.spectralMeta[0]).toBeCloseTo(0.5, 6);
+    expect(state.spectralMeta[1]).toBeCloseTo(0.07, 6);
+    expect(state.spectralMeta[2]).toBeCloseTo(0.9, 6);
+    expect(state.spectralMeta[3]).toBeCloseTo(0.4, 6);
   });
 });
 

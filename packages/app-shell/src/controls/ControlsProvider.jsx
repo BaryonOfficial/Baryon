@@ -19,6 +19,13 @@ function emitControlsChanged(controlsState) {
   );
 }
 
+function normalizeControlPersistMode(value) {
+  if (value === "debounced" || value === "none") {
+    return value;
+  }
+  return "immediate";
+}
+
 function ControlsEventBridge({ store }) {
   useEffect(() => {
     emitControlsChanged(store.getSnapshot().controlsState);
@@ -33,8 +40,9 @@ function ControlsEventBridge({ store }) {
         return;
       }
 
-      const persistMode =
-        event?.detail?.persistMode === "debounced" ? "debounced" : "immediate";
+      const persistMode = normalizeControlPersistMode(
+        event?.detail?.persistMode,
+      );
       store.updateControl(key, event.detail.value, { persistMode });
     };
 

@@ -55,4 +55,4 @@ The licensor is currently Kyle Daniel Collins personally, with the agreement str
 so it can later be assigned to a company without changing the public licensing
 model.
 
-Licensing contact: kyledcollins@proton.me
+Licensing contact: licensing@baryon.live

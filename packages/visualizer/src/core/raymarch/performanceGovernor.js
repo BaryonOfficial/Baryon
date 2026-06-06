@@ -1,28 +1,46 @@
 import { getModalGeometryBackend } from "../modalGeometryBackend.js";
+import { deriveObservationVisibilityDrive } from "./observationTransfer.js";
 
-export const MIN_BACKBONE_RENDER_SLOTS = 4;
-export const MIN_DETAIL_RENDER_SLOTS = 2;
-export const BACKBONE_ENERGY_RETENTION = 0.86;
-export const DETAIL_ENERGY_RETENTION = 0.72;
 export const MIN_COMPLEXITY_RENDER_SCALE = 0.84;
-export const RAYMARCH_LAYER_BUDGETS = Object.freeze({
-  backbone: Object.freeze({
-    minSlots: MIN_BACKBONE_RENDER_SLOTS,
-    energyRetention: BACKBONE_ENERGY_RETENTION,
-  }),
-  detail: Object.freeze({
-    minSlots: MIN_DETAIL_RENDER_SLOTS,
-    energyRetention: DETAIL_ENERGY_RETENTION,
-  }),
-});
+
 const STEP_COMPLEXITY_START = 0.45;
 const RENDER_SCALE_COMPLEXITY_START = 0.58;
 const BLOOM_GUARD_COMPLEXITY_START = 0.5;
-const SALIENCE_AMPLITUDE_WEIGHT = 0.68;
-const SALIENCE_COLOR_WEIGHT = 0.18;
-const SALIENCE_TRANSIENT_WEIGHT = 0.08;
-const SALIENCE_DETAIL_WEIGHT = 0.06;
-const SALIENCE_NOISE_WEIGHT = 0.1;
+
+// The bloom guard fully cuts reactive bloom only when a complex field is being
+// rendered at a starved integration budget (few steps + downscaled). These
+// cutoffs are read against the integrator's committed budget, never the
+// governor's proactive values.
+const BLOOM_GUARD_COMPLEXITY_CUTOFF = 0.95;
+const BLOOM_GUARD_STEP_BUDGET_CUTOFF = 32;
+const BLOOM_GUARD_RENDER_SCALE_CUTOFF = 0.84;
+
+/**
+ * Resolve whether reactive bloom is allowed for the current frame. Shared by
+ * the governor and the render-loop diagnostic so both read one formula.
+ *
+ * @param {object} params
+ * @param {number} params.complexityScore Normalized field complexity (0..1).
+ * @param {boolean} [params.bloomAdaptationActive] Whether the guard is armed.
+ * @param {number} params.effectiveStepBudget Integrator's committed step count.
+ * @param {number} params.effectiveRenderScale Integrator's committed scale.
+ * @returns {boolean} False only when bloom should be cut.
+ */
+export function deriveRaymarchBloomAllowed({
+  complexityScore,
+  bloomAdaptationActive = true,
+  effectiveStepBudget,
+  effectiveRenderScale,
+}) {
+  if (bloomAdaptationActive === false) {
+    return true;
+  }
+  return !(
+    complexityScore > BLOOM_GUARD_COMPLEXITY_CUTOFF &&
+    effectiveStepBudget <= BLOOM_GUARD_STEP_BUDGET_CUTOFF &&
+    effectiveRenderScale <= BLOOM_GUARD_RENDER_SCALE_CUTOFF
+  );
+}
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -47,49 +65,11 @@ function copySlot4(source, sourceOffset, target, targetOffset) {
   target[targetOffset + 3] = source?.[sourceOffset + 3] ?? 0;
 }
 
-function deriveBroadbandNoisePenalty(featureFrame) {
-  const harmonicity = clamp01(
-    featureFrame?.harmonicity ?? featureFrame?.modeCoherence ?? 0,
-  );
-  const textureSpread = clamp01(featureFrame?.textureSpread ?? 0);
-  const trebleBroadbandEnergy = clamp01(
-    featureFrame?.trebleBroadbandEnergy ?? 0,
-  );
-  const flatnessLike = clamp01(
-    textureSpread * 0.52 +
-      trebleBroadbandEnergy * 0.34 +
-      (1 - harmonicity) * 0.14,
-  );
-  return clamp01((flatnessLike - 0.55) / 0.45);
-}
-
-function deriveRenderSalience({
-  amplitude,
-  colorWeight,
-  transientEnergy,
-  detailBonus,
-  noisePenalty,
-}) {
-  return (
-    amplitude * SALIENCE_AMPLITUDE_WEIGHT +
-    colorWeight * SALIENCE_COLOR_WEIGHT +
-    transientEnergy * SALIENCE_TRANSIENT_WEIGHT +
-    detailBonus * SALIENCE_DETAIL_WEIGHT -
-    noisePenalty * SALIENCE_NOISE_WEIGHT
-  );
-}
-
 export function deriveFieldExcitation(featureFrame) {
-  const avgAmplitude = (featureFrame?.averageAmplitude ?? 0) / 255;
-  const structureSignal = featureFrame?.structureSignal ?? 0;
-  const harmonicity = featureFrame?.harmonicity ?? 0;
-
-  return clamp01(
-    avgAmplitude * 0.3 + structureSignal * 0.45 + harmonicity * 0.25,
-  );
+  return deriveObservationVisibilityDrive(featureFrame);
 }
 
-export function inferLayerCapacity(capacity, slots) {
+export function inferModalFieldCapacity(capacity, slots) {
   if (Number.isFinite(capacity) && capacity > 0) {
     return Math.max(1, Math.round(capacity));
   }
@@ -97,25 +77,17 @@ export function inferLayerCapacity(capacity, slots) {
   return Math.max(1, Math.floor((slots?.length ?? 0) / 4));
 }
 
-export function analyzeBudgetedModeLayer({
+export function analyzeModalField({
   slots,
-  colorSlots,
   capacity,
-  minSlots = 0,
-  energyRetention = 1,
   cavityGeometry = "rectangular",
-  layerType = "backbone",
-  chromesthesiaEnabled = false,
-  featureFrame = null,
 }) {
-  const resolvedCapacity = inferLayerCapacity(capacity, slots);
-  const candidates = [];
-  let totalAmplitude = 0;
+  const resolvedCapacity = inferModalFieldCapacity(capacity, slots);
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
-  const useRenderSalience = Boolean(chromesthesiaEnabled && colorSlots);
-  const transientEnergy = clamp01(featureFrame?.transientEnergy ?? 0);
-  const noisePenalty = deriveBroadbandNoisePenalty(featureFrame);
-  const detailBonus = layerType === "detail" ? 1 : 0;
+  let activeCount = 0;
+  let occupiedSlotSpan = 0;
+  let totalAmplitude = 0;
+  let weightedPermutationLoad = 0;
 
   for (let slotIndex = 0; slotIndex < resolvedCapacity; slotIndex += 1) {
     const offset = slotIndex * 4;
@@ -128,185 +100,73 @@ export function analyzeBudgetedModeLayer({
       slots,
       offset,
     );
-    const rawColorWeight = useRenderSalience
-      ? clamp01(colorSlots[offset + 3])
-      : 0;
-    const colorWeight = rawColorWeight * (1 - noisePenalty);
+    activeCount += 1;
+    occupiedSlotSpan = slotIndex + 1;
     totalAmplitude += amplitude;
-    candidates.push({
-      slotIndex,
-      amplitude,
-      permutationCount,
-      colorWeight,
-      renderSalience: useRenderSalience
-        ? deriveRenderSalience({
-            amplitude,
-            colorWeight,
-            transientEnergy: transientEnergy * (1 - noisePenalty),
-            detailBonus,
-            noisePenalty,
-          })
-        : amplitude,
-    });
+    weightedPermutationLoad += amplitude * (permutationCount / 6);
   }
-
-  const originalActiveCount = candidates.length;
-  if (originalActiveCount === 0) {
-    return {
-      capacity: resolvedCapacity,
-      originalActiveCount,
-      uploadedActiveCount: 0,
-      totalAmplitude: 0,
-      uploadedAmplitude: 0,
-      retainedEnergyRatio: 0,
-      weightedPermutationLoad: 0,
-      averagePermutationCost: 0,
-      selectedIndices: [],
-    };
-  }
-
-  const normalizedRetention = clamp01(energyRetention);
-  const ranked = [...candidates].sort((left, right) => {
-    if (right.renderSalience !== left.renderSalience) {
-      return right.renderSalience - left.renderSalience;
-    }
-    if (right.amplitude !== left.amplitude) {
-      return right.amplitude - left.amplitude;
-    }
-    return left.slotIndex - right.slotIndex;
-  });
-  const requiredCount = Math.min(
-    originalActiveCount,
-    Math.max(0, Math.round(minSlots)),
-  );
-  const selected = [];
-  let uploadedAmplitude = 0;
-
-  for (let index = 0; index < ranked.length; index += 1) {
-    const candidate = ranked[index];
-    const shouldRetain =
-      index < requiredCount ||
-      uploadedAmplitude / Math.max(totalAmplitude, 1e-4) < normalizedRetention;
-    if (!shouldRetain) {
-      continue;
-    }
-    uploadedAmplitude += candidate.amplitude;
-    selected.push(candidate);
-  }
-
-  if (selected.length === 0) {
-    selected.push(ranked[0]);
-    uploadedAmplitude = ranked[0].amplitude;
-  }
-
-  selected.sort((left, right) => left.slotIndex - right.slotIndex);
-  const uploadedPermutationLoad = selected.reduce(
-    (sum, candidate) =>
-      sum + candidate.amplitude * (candidate.permutationCount / 6),
-    0,
-  );
 
   return {
     capacity: resolvedCapacity,
-    originalActiveCount,
-    uploadedActiveCount: selected.length,
+    originalActiveCount: activeCount,
+    uploadedActiveCount: occupiedSlotSpan,
     totalAmplitude,
-    uploadedAmplitude,
-    retainedEnergyRatio: clamp01(
-      uploadedAmplitude / Math.max(totalAmplitude, 1e-4),
-    ),
-    weightedPermutationLoad: uploadedPermutationLoad,
+    uploadedAmplitude: totalAmplitude,
+    weightedPermutationLoad,
     averagePermutationCost:
-      uploadedAmplitude > 0 ? uploadedPermutationLoad / uploadedAmplitude : 0,
-    selectedIndices: selected.map((candidate) => candidate.slotIndex),
-    chromesthesiaAware: useRenderSalience,
-    maxColorWeight: selected.reduce(
-      (max, candidate) => Math.max(max, candidate.colorWeight ?? 0),
-      0,
-    ),
-    noisePenalty: useRenderSalience ? noisePenalty : 0,
+      totalAmplitude > 0 ? weightedPermutationLoad / totalAmplitude : 0,
   };
 }
 
-export function buildBudgetedModeLayer({
-  slots,
-  colorSlots,
-  capacity,
-  layerType = "backbone",
-  cavityGeometry = "rectangular",
-  chromesthesiaEnabled = false,
-  featureFrame = null,
-}) {
-  const layerBudget =
-    RAYMARCH_LAYER_BUDGETS[layerType] ?? RAYMARCH_LAYER_BUDGETS.backbone;
-  return analyzeBudgetedModeLayer({
-    slots,
-    colorSlots,
-    capacity,
-    minSlots: layerBudget.minSlots,
-    energyRetention: layerBudget.energyRetention,
-    cavityGeometry,
-    layerType,
-    chromesthesiaEnabled,
-    featureFrame,
-  });
-}
-
-export function copyBudgetedModeLayer({
+export function copyModalField({
   sourceSlots,
-  sourceColorSlots,
+  sourceColorSlots = null,
   targetSlots,
-  targetColorSlots,
-  selectedIndices,
+  targetColorSlots = null,
   capacity,
   includeColors = true,
 }) {
-  const resolvedCapacity = inferLayerCapacity(capacity, targetSlots);
+  const resolvedCapacity = inferModalFieldCapacity(capacity, targetSlots);
   const targetLength = resolvedCapacity * 4;
   targetSlots.fill(0, 0, targetLength);
   if (targetColorSlots) {
     targetColorSlots.fill(0, 0, targetLength);
   }
 
-  for (
-    let selectedIndex = 0;
-    selectedIndex < selectedIndices.length && selectedIndex < resolvedCapacity;
-    selectedIndex += 1
-  ) {
-    const sourceSlotIndex = selectedIndices[selectedIndex] * 4;
-    const targetSlotIndex = selectedIndex * 4;
-    copySlot4(sourceSlots, sourceSlotIndex, targetSlots, targetSlotIndex);
+  for (let slotIndex = 0; slotIndex < resolvedCapacity; slotIndex += 1) {
+    const sourceOffset = slotIndex * 4;
+    const targetOffset = slotIndex * 4;
+    copySlot4(sourceSlots, sourceOffset, targetSlots, targetOffset);
     if (includeColors && targetColorSlots) {
-      copySlot4(
-        sourceColorSlots,
-        sourceSlotIndex,
-        targetColorSlots,
-        targetSlotIndex,
-      );
+      copySlot4(sourceColorSlots, sourceOffset, targetColorSlots, targetOffset);
     }
   }
 }
 
 export function deriveRaymarchComplexityGovernor({
-  backbone,
-  detail,
+  modalField,
   featureFrame,
   requestedStepBudget,
   requestedRenderScale = 1,
+  stepScaleAdaptationEnabled = true,
+  bloomAdaptationEnabled = true,
+  effectiveStepBudget = null,
+  effectiveRenderScale = null,
 }) {
-  const totalCapacity = Math.max(
-    1,
-    (backbone?.capacity ?? 0) + (detail?.capacity ?? 0),
+  const totalCapacity = Math.max(1, modalField?.capacity ?? 0);
+  const normalizedRequestedStepBudget = Math.max(
+    16,
+    Math.round(Number.isFinite(requestedStepBudget) ? requestedStepBudget : 16),
   );
-  const uploadedModeCount =
-    (backbone?.uploadedActiveCount ?? 0) + (detail?.uploadedActiveCount ?? 0);
-  const originalModeCount =
-    (backbone?.originalActiveCount ?? 0) + (detail?.originalActiveCount ?? 0);
+  const normalizedRequestedRenderScale =
+    Number.isFinite(requestedRenderScale) && requestedRenderScale > 0
+      ? requestedRenderScale
+      : 1;
+  const uploadedModeCount = modalField?.uploadedActiveCount ?? 0;
+  const originalModeCount = modalField?.originalActiveCount ?? 0;
   const countLoad = clamp01(uploadedModeCount / totalCapacity);
   const weightedPermutationLoad = clamp01(
-    ((backbone?.weightedPermutationLoad ?? 0) +
-      (detail?.weightedPermutationLoad ?? 0) * 0.85) /
-      Math.max(1, (backbone?.capacity ?? 0) + (detail?.capacity ?? 0) * 0.85),
+    (modalField?.weightedPermutationLoad ?? 0) / totalCapacity,
   );
   const excitation = deriveFieldExcitation(featureFrame);
   const complexityScore = clamp01(
@@ -323,25 +183,49 @@ export function deriveRaymarchComplexityGovernor({
     1,
     complexityScore,
   );
-  const proactiveStepBudget = Math.max(
-    16,
-    Math.round(requestedStepBudget * (1 - stepPressure * 0.28)),
-  );
-  const proactiveRenderScale = clamp(
-    requestedRenderScale * (1 - renderScalePressure * 0.16),
-    Math.min(requestedRenderScale, MIN_COMPLEXITY_RENDER_SCALE),
-    requestedRenderScale,
-  );
-  const bloomStrengthScale = 1 - bloomPressure * 0.22;
-  const bloomThresholdOffset = bloomPressure * 0.08;
-  const bloomAllowed = !(
-    complexityScore > 0.95 &&
-    proactiveStepBudget <= 32 &&
-    proactiveRenderScale <= 0.84
-  );
+  // Step/scale adaptation and bloom adaptation are independent authorities:
+  // in auto/custom the FPS ladder owns step/scale (stepScaleAdaptation off)
+  // while the governor still applies bloom pressure (bloomAdaptation on).
+  const stepScaleAdaptationActive = stepScaleAdaptationEnabled !== false;
+  const bloomAdaptationActive = bloomAdaptationEnabled !== false;
+  const proactiveStepBudget = stepScaleAdaptationActive
+    ? Math.max(
+        16,
+        Math.round(normalizedRequestedStepBudget * (1 - stepPressure * 0.28)),
+      )
+    : normalizedRequestedStepBudget;
+  const proactiveRenderScale = stepScaleAdaptationActive
+    ? clamp(
+        normalizedRequestedRenderScale * (1 - renderScalePressure * 0.16),
+        Math.min(normalizedRequestedRenderScale, MIN_COMPLEXITY_RENDER_SCALE),
+        normalizedRequestedRenderScale,
+      )
+    : normalizedRequestedRenderScale;
+  const bloomStrengthScale = bloomAdaptationActive
+    ? 1 - bloomPressure * 0.22
+    : 1;
+  const bloomThresholdOffset = bloomAdaptationActive ? bloomPressure * 0.08 : 0;
+  // The bloom guard reads the integrator's committed budget (the ladder's
+  // effective step/scale) rather than the governor's own proactive values,
+  // which are inert when the ladder owns step/scale. Falls back to the
+  // proactive values when an effective budget is not supplied.
+  const bloomGuardStepBudget = Number.isFinite(effectiveStepBudget)
+    ? effectiveStepBudget
+    : proactiveStepBudget;
+  const bloomGuardRenderScale = Number.isFinite(effectiveRenderScale)
+    ? effectiveRenderScale
+    : proactiveRenderScale;
+  const bloomAllowed = deriveRaymarchBloomAllowed({
+    complexityScore,
+    bloomAdaptationActive,
+    effectiveStepBudget: bloomGuardStepBudget,
+    effectiveRenderScale: bloomGuardRenderScale,
+  });
 
   return {
     complexityScore,
+    stepScaleAdaptationActive,
+    bloomAdaptationActive,
     excitation,
     originalModeCount,
     uploadedModeCount,
@@ -356,46 +240,56 @@ export function deriveRaymarchComplexityGovernor({
 }
 
 export function buildRaymarchPerformanceGovernor({
-  backboneSlots,
-  detailSlots,
-  backboneColorSlots = null,
-  detailColorSlots = null,
-  backboneCapacity,
-  detailCapacity,
+  modalFieldSlots,
+  modalFieldCapacity,
   featureFrame,
   requestedStepBudget,
   requestedRenderScale = 1,
+  stepScaleAdaptationEnabled = true,
+  bloomAdaptationEnabled = true,
+  effectiveStepBudget = null,
+  effectiveRenderScale = null,
   cavityGeometry = "rectangular",
-  chromesthesiaEnabled = false,
 }) {
-  const backbone = buildBudgetedModeLayer({
-    slots: backboneSlots,
-    colorSlots: backboneColorSlots,
-    capacity: backboneCapacity,
-    layerType: "backbone",
+  const modalField = analyzeModalField({
+    slots: modalFieldSlots,
+    capacity: modalFieldCapacity,
     cavityGeometry,
-    chromesthesiaEnabled,
-    featureFrame,
-  });
-  const detail = buildBudgetedModeLayer({
-    slots: detailSlots,
-    colorSlots: detailColorSlots,
-    capacity: detailCapacity,
-    layerType: "detail",
-    cavityGeometry,
-    chromesthesiaEnabled,
-    featureFrame,
   });
 
+  return deriveRaymarchPerformanceGovernor({
+    modalField,
+    featureFrame,
+    requestedStepBudget,
+    requestedRenderScale,
+    stepScaleAdaptationEnabled,
+    bloomAdaptationEnabled,
+    effectiveStepBudget,
+    effectiveRenderScale,
+  });
+}
+
+function deriveRaymarchPerformanceGovernor({
+  modalField,
+  featureFrame,
+  requestedStepBudget,
+  requestedRenderScale = 1,
+  stepScaleAdaptationEnabled = true,
+  bloomAdaptationEnabled = true,
+  effectiveStepBudget = null,
+  effectiveRenderScale = null,
+}) {
   return {
     ...deriveRaymarchComplexityGovernor({
-      backbone,
-      detail,
+      modalField,
       featureFrame,
       requestedStepBudget,
       requestedRenderScale,
+      stepScaleAdaptationEnabled,
+      bloomAdaptationEnabled,
+      effectiveStepBudget,
+      effectiveRenderScale,
     }),
-    backbone,
-    detail,
+    modalField,
   };
 }

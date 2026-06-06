@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createVisualizationRuntime } from "@baryon/visualizer/visualization/runtime";
 import {
-  createAudioFeatureAnalyzer,
   createAudioFeatureEngine,
   createAudioFeatureState,
-  createNoopAudioFeatureAnalyzer,
   createNoopAudioFeatureEngine,
 } from "@baryon/visualizer/audio-features";
 import { SIMULATION_DEFAULTS } from "@baryon/visualizer/defaults";
@@ -29,11 +27,11 @@ export function useVisualizationRuntimeLifecycle({
   const runtimeRef = useRef(createVisualizationRuntime(visualizationMethod));
   const runtimeStateRef = useRef(null);
   const audioFeatureRef = useRef(null);
-  const audioFeatureAnalyzerRef = useRef(createNoopAudioFeatureAnalyzer());
   const audioFeatureEngineRef = useRef(createNoopAudioFeatureEngine());
   const lastLiveFrameRef = useRef(null);
   const lastActiveFrameRef = useRef(null);
   const lastIdleFrameRef = useRef(null);
+  const pausedFileFrameRef = useRef(null);
   const analysisSchedulerRef = useRef(createEmptyAnalysisSchedulerState());
   const lastLiveInputRuntimeStatusRef = useRef(null);
   const controlVersionRef = useRef(0);
@@ -53,6 +51,7 @@ export function useVisualizationRuntimeLifecycle({
     lastLiveFrameRef,
     lastActiveFrameRef,
     lastIdleFrameRef,
+    pausedFileFrameRef,
     analysisSchedulerRef,
   }).current;
   const controlCacheRefs = useRef({
@@ -89,8 +88,6 @@ export function useVisualizationRuntimeLifecycle({
         sampleRate: audioStatus.sampleRate,
       };
 
-      audioFeatureAnalyzerRef.current?.dispose?.();
-      audioFeatureAnalyzerRef.current = createAudioFeatureAnalyzer();
       audioFeatureEngineRef.current?.dispose?.();
       audioFeatureEngineRef.current = createAudioFeatureEngine();
       audioFeatureRef.current = createAudioFeatureState(audioConfig.capacity);
@@ -124,8 +121,6 @@ export function useVisualizationRuntimeLifecycle({
         runtime.dispose(runtimeStateRef.current);
         runtimeStateRef.current = null;
       }
-      audioFeatureAnalyzerRef.current?.dispose?.();
-      audioFeatureAnalyzerRef.current = createNoopAudioFeatureAnalyzer();
       audioFeatureEngineRef.current?.dispose?.();
       audioFeatureEngineRef.current = createNoopAudioFeatureEngine();
       clearFrameCache(frameCacheRefs);
@@ -149,7 +144,6 @@ export function useVisualizationRuntimeLifecycle({
     runtimeRef,
     runtimeStateRef,
     audioFeatureRef,
-    audioFeatureAnalyzerRef,
     audioFeatureEngineRef,
     runtimeDiagnosticsRef,
     frameCacheRefs,

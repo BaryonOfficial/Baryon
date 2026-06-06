@@ -28,6 +28,13 @@ const SYSTEM_KEYWORDS = [
 
 const STORAGE_KEY = "baryon:deviceClassification";
 
+/**
+ * @typedef {Readonly<{
+ *   deviceId?: string,
+ *   label?: string,
+ * }>} LiveInputDeviceLike
+ */
+
 function loadOverrides() {
   try {
     return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
@@ -41,7 +48,7 @@ function persistOverrides(overrides) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
 }
 
-/** @param {MediaDeviceInfo} device */
+/** @param {LiveInputDeviceLike} device */
 export function classifyLiveInputDeviceKind(device) {
   const label = (device.label || "").toLowerCase();
   return SYSTEM_KEYWORDS.some((k) => label.includes(k))
@@ -52,7 +59,7 @@ export function classifyLiveInputDeviceKind(device) {
 /**
  * Resolve the effective classification bucket for a device.
  * Manual overrides in localStorage take precedence over heuristics.
- * @param {MediaDeviceInfo | null | undefined} device
+ * @param {LiveInputDeviceLike | null | undefined} device
  * @returns {import("@baryon/visualizer/audio/liveInputAnalysis").LiveInputDeviceKind}
  */
 export function getLiveInputDeviceKind(device) {

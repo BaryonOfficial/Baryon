@@ -38,6 +38,7 @@ Baryon Design System.zip
 *.sw?
 .repomixignore
 repomix*
+.cursor
 .cursorrules
 .impeccable.md
 

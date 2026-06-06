@@ -1,3 +1,5 @@
+import { frequencyToBinIndex } from "./binFrequency.js";
+
 const DEFAULT_SAMPLE_RATE = 44100;
 const DEFAULT_FFT_SIZE = 4096;
 
@@ -6,11 +8,9 @@ function clamp(value, min, max) {
 }
 
 function writeFftPeak(fftMagnitudes, frequency, amplitude, sampleRate) {
-  const nyquist = sampleRate / 2;
-  const bin = clamp(
-    Math.round((frequency / nyquist) * (fftMagnitudes.length - 1)),
+  const bin = Math.max(
     1,
-    fftMagnitudes.length - 1,
+    frequencyToBinIndex(frequency, fftMagnitudes.length, sampleRate),
   );
   fftMagnitudes[bin] = Math.max(fftMagnitudes[bin] ?? 0, amplitude);
 }

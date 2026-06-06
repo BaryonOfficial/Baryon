@@ -1,12 +1,12 @@
 import { instancedArray } from "three/tsl";
 import {
   DEFAULT_REQUESTED_CAVITY_GEOMETRY,
+  normalizeCavityGeometry,
   resolveEffectiveCavityGeometry,
 } from "./cavityGeometry.js";
 import {
   AUDIO_DEFAULTS,
   REACTIVITY_DEFAULTS,
-  RAYMARCH_DEFAULTS,
   RENDER_DEFAULTS,
 } from "../defaults.js";
 import { FIELD_STATE_VALUES } from "./fieldState.js";
@@ -15,16 +15,18 @@ import {
   createIdleOverlay,
 } from "./raymarch/material.js";
 import {
-  createRaymarchChromaCache,
-  createRaymarchFieldCache,
+  createRaymarchLiveFieldProjectionCache,
+  createRaymarchModalBasisCache,
+  createRaymarchSpectralLaneCache,
 } from "./raymarch/fieldCache.js";
 import { estimateProjectedSphereStats } from "./raymarch/intersection.js";
+import { RAYMARCH_DEFAULTS } from "../defaults.js";
 import {
   createRaymarchSceneRoot,
   disposeRaymarchRuntime,
   tickRaymarchRuntime,
 } from "./raymarch/runtime.js";
-import { createRaymarchUniforms } from "./raymarch/uniforms.js";
+import { createVisualizationUniforms } from "./visualizationUniforms.js";
 import {
   deriveLowStepBloomGuard,
   deriveStepCompensation,
@@ -53,40 +55,60 @@ function resolveLayerCapacity(
   );
 }
 
-export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
-  const uniforms = createRaymarchUniforms(parameters);
-  const requestedCavityGeometry =
-    parameters.cavityGeometry ?? DEFAULT_REQUESTED_CAVITY_GEOMETRY;
+/**
+ * @param {object | null} baryonGeometry
+ * @param {{ radius?: number, threshold?: number, cavityGeometry?: string }} parameters
+ * @param {{ capacity?: number, modalFieldCapacity?: number, fftSize?: number, sampleRate?: number }} audioConfig
+ * @param {{ method?: string }} [options]
+ */
+export function setupRaymarch(
+  baryonGeometry,
+  parameters,
+  audioConfig,
+  options = {},
+) {
+  const method = options.method ?? VISUALIZATION_METHODS.raymarch;
+  const uniforms = createVisualizationUniforms(parameters);
+  const requestedCavityGeometry = normalizeCavityGeometry(
+    parameters.cavityGeometry ?? DEFAULT_REQUESTED_CAVITY_GEOMETRY,
+  );
   const effectiveCavityGeometry = resolveEffectiveCavityGeometry(
     requestedCavityGeometry,
   );
-  const sharedModeCapacity = audioConfig?.capacity;
-  const backboneCapacity = resolveLayerCapacity(
-    audioConfig?.backboneCapacity,
-    sharedModeCapacity,
-    AUDIO_DEFAULTS.backboneStackSlots,
+  const modalFieldCapacity = resolveLayerCapacity(
+    audioConfig?.modalFieldCapacity ?? audioConfig?.capacity,
+    AUDIO_DEFAULTS.maxModalFieldDescriptorModes,
+    AUDIO_DEFAULTS.maxModalFieldDescriptorModes,
   );
-  const detailCapacity = resolveLayerCapacity(
-    audioConfig?.detailCapacity,
-    sharedModeCapacity,
-    AUDIO_DEFAULTS.detailStackSlots,
-  );
-  const backboneModeBuffer = createModeBuffer(backboneCapacity);
-  const detailModeBuffer = createModeBuffer(detailCapacity);
-  const backboneColorBuffer = createModeBuffer(backboneCapacity);
-  const detailColorBuffer = createModeBuffer(detailCapacity);
-  const fieldCache = createRaymarchFieldCache();
-  const chromaCache = createRaymarchChromaCache();
+  const modalFieldModeBuffer = createModeBuffer(modalFieldCapacity);
+  const modalFieldColorBuffer = createModeBuffer(modalFieldCapacity);
+  const modalFieldSpectralLaneABuffer = createModeBuffer(modalFieldCapacity);
+  const modalFieldSpectralLaneBBuffer = createModeBuffer(modalFieldCapacity);
+  const modalFieldSpectralMetaBuffer = createModeBuffer(modalFieldCapacity);
+  const modalFieldPhaseBuffer = createModeBuffer(modalFieldCapacity);
+  const modalFieldCoefficientBuffer = createModeBuffer(modalFieldCapacity);
+  const modalBasisCache = createRaymarchModalBasisCache();
+  const liveFieldProjectionCache = createRaymarchLiveFieldProjectionCache({
+    resolution: modalBasisCache.resolution,
+  });
+  const spectralLaneCache = createRaymarchSpectralLaneCache({
+    resolution: modalBasisCache.resolution,
+  });
   const volumeMesh = createRaymarchVolumeMesh({
     radius: parameters.radius,
-    backboneModeBuffer,
-    detailModeBuffer,
-    backboneColorBuffer,
-    detailColorBuffer,
-    fieldCacheTexture: fieldCache.texture,
-    chromaCacheTexture: chromaCache.texture,
-    backboneCapacity,
-    detailCapacity,
+    modalBasisAtlasTexture: modalBasisCache.texture,
+    modalLiveFieldTexture: liveFieldProjectionCache.fieldTexture,
+    modalLiveSupportTexture: liveFieldProjectionCache.supportTexture,
+    modalPressureRadiationTexture:
+      liveFieldProjectionCache.pressureRadiationTexture,
+    modalPhaseInterferenceTexture:
+      liveFieldProjectionCache.phaseInterferenceTexture,
+    spectralLaneTextureA: spectralLaneCache.spectralLaneTextureA,
+    spectralLaneTextureB: spectralLaneCache.spectralLaneTextureB,
+    spectralLaneStatsTexture: spectralLaneCache.spectralLaneStatsTexture,
+    modalFieldModeBuffer,
+    modalFieldCoefficientBuffer,
+    modalFieldCapacity: modalBasisCache.liveSynthesisModeCount,
     uniforms,
     cavityGeometry: effectiveCavityGeometry,
   });
@@ -105,7 +127,7 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
   });
 
   return {
-    method: VISUALIZATION_METHODS.raymarch,
+    method,
     points,
     object: points,
     visualRoot,
@@ -113,17 +135,17 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     volumeMesh,
     idleOverlay,
     uniforms,
-    backboneModeBuffer,
-    detailModeBuffer,
-    backboneColorBuffer,
-    detailColorBuffer,
-    fieldCache,
-    chromaCache,
-    sharedModeCapacity,
-    // Compatibility alias for older runtime call sites that still read `capacity`.
-    capacity: sharedModeCapacity,
-    backboneCapacity,
-    detailCapacity,
+    modalFieldModeBuffer,
+    modalFieldColorBuffer,
+    modalFieldSpectralLaneABuffer,
+    modalFieldSpectralLaneBBuffer,
+    modalFieldSpectralMetaBuffer,
+    modalFieldPhaseBuffer,
+    modalFieldCoefficientBuffer,
+    modalBasisCache,
+    liveFieldProjectionCache,
+    spectralLaneCache,
+    modalFieldCapacity,
     requestedCavityGeometry,
     effectiveCavityGeometry,
     fftSize: audioConfig.fftSize,
@@ -134,7 +156,6 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     reactivityTuning: {
       reactivity: REACTIVITY_DEFAULTS.reactivity,
       motionAmount: REACTIVITY_DEFAULTS.motionAmount,
-      structurePersistence: REACTIVITY_DEFAULTS.structurePersistence,
     },
     bloomTuning: {
       bloomResponseBias: RENDER_DEFAULTS.bloomResponseBias,
@@ -153,11 +174,11 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     baseDensityGain: uniforms.uDensityGain.value,
     baseThreshold: uniforms.uThreshold.value,
     baseContourSharpness: uniforms.uContourSharpness.value,
-    chromesthesia: {
+    spectralLight: {
       colorMode: RENDER_DEFAULTS.colorMode,
-      chromesthesiaMix:
-        RENDER_DEFAULTS.colorMode === "chromesthesia"
-          ? RENDER_DEFAULTS.chromesthesiaMix
+      spectralMix:
+        RENDER_DEFAULTS.colorMode === "spectral"
+          ? RENDER_DEFAULTS.spectralMix
           : 0,
     },
     sceneMotion: {
@@ -171,6 +192,7 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     responseEnvelope: 0,
     accentEnvelope: 0,
     beatPulseEnvelope: 0,
+    visibilityDriveEnvelope: 0,
     keyHue: 0,
     keyModeSmooth: 0,
     motionSignal: 0,

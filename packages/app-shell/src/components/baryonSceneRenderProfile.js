@@ -1,5 +1,4 @@
 import {
-  applyRenderQualityProfileOverrides,
   normalizePerformanceProfile,
   normalizeRenderQualityProfileOverrides,
   normalizeResolvedRenderQualityProfile,
@@ -9,7 +8,7 @@ import {
 
 /**
  * @param {unknown} overrides
- * @returns {{ renderScale?: number, traaEnabled?: boolean, bloomAllowed?: boolean } | null}
+ * @returns {{ renderScale?: number, bloomAllowed?: boolean, traaEnabled?: boolean } | null}
  */
 export function sanitizeRenderProfileOverrides(overrides) {
   return normalizeRenderQualityProfileOverrides(overrides);
@@ -30,8 +29,8 @@ export function shouldAllowLocalRenderProfileCommands(renderContext) {
  *   outputWidth?: number,
  *   outputHeight?: number,
  *   resolvedRenderProfile?: unknown,
- *   syncedRenderProfileOverrides?: unknown,
  *   localRenderProfileOverrides?: unknown,
+ *   traaEnabled?: boolean,
  * }} options
  * @returns {import("@baryon/visualizer/render/outputPipeline").RenderQualityProfile}
  */
@@ -41,12 +40,10 @@ export function resolveSceneRenderQualityProfile({
   outputWidth = 0,
   outputHeight = 0,
   resolvedRenderProfile = null,
-  syncedRenderProfileOverrides = null,
   localRenderProfileOverrides = null,
+  traaEnabled = true,
 }) {
-  const sanitizedSyncedOverrides = sanitizeRenderProfileOverrides(
-    syncedRenderProfileOverrides,
-  );
+  const traaOverride = traaEnabled === false ? { traaEnabled: false } : null;
   const sanitizedLocalOverrides = shouldAllowLocalRenderProfileCommands(
     renderContext,
   )
@@ -57,19 +54,19 @@ export function resolveSceneRenderQualityProfile({
     const normalizedResolvedRenderProfile =
       normalizeResolvedRenderQualityProfile(resolvedRenderProfile);
     if (normalizedResolvedRenderProfile) {
-      return applyRenderQualityProfileOverrides(
+      return applyRenderProfileDiagnosticsOverrides(
         normalizedResolvedRenderProfile,
-        sanitizedSyncedOverrides,
+        traaOverride,
       );
     }
   }
 
   const mergedOverrides =
     renderContext === RENDER_CONTEXTS.externalOutput
-      ? sanitizedSyncedOverrides
+      ? null
       : {
-          ...(sanitizedSyncedOverrides ?? {}),
           ...(sanitizedLocalOverrides ?? {}),
+          ...(traaOverride ?? {}),
         };
 
   return resolveRenderQualityProfile({
@@ -85,4 +82,14 @@ export function resolveSceneRenderQualityProfile({
         ? RENDER_CONTEXTS.externalOutput
         : RENDER_CONTEXTS.preview,
   });
+}
+
+function applyRenderProfileDiagnosticsOverrides(profile, overrides) {
+  if (!overrides) {
+    return profile;
+  }
+  return {
+    ...profile,
+    ...overrides,
+  };
 }

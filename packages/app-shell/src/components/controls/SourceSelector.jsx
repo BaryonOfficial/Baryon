@@ -33,25 +33,26 @@ function ensureStyles() {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
 }
 
 /* Segmented control with an amber/cream stage highlight */
 
 .ac-source-tabs {
-  --tab-file-width: 3.45rem;
-  --tab-system-width: 4.9rem;
+  --tab-file-width: 2.86rem;
+  --tab-system-width: 4rem;
   position: relative;
   display: inline-flex;
   align-items: center;
   min-width: 0;
   padding: 2px;
   background: transparent;
-  border: 1px solid var(--nd-border-visible);
-  border-radius: 4px;
+  border: none;
+  border-radius: var(--baryon-source-selector-radius);
   flex-shrink: 0;
   overflow: hidden;
+  min-height: var(--baryon-source-selector-inner-min-height);
 }
 
 .ac-source-tab-slider {
@@ -60,8 +61,10 @@ function ensureStyles() {
   bottom: 2px;
   left: calc(2px + var(--slider-offset, 0rem));
   width: var(--slider-width, 3.5rem);
-  border-radius: 2px;
-  background: var(--nd-text-display);
+  box-sizing: border-box;
+  border-radius: var(--baryon-source-selector-radius);
+  border: 1px solid var(--nd-border-visible);
+  background: var(--nd-surface-raised);
   transition:
     left 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
     width 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
@@ -73,17 +76,21 @@ function ensureStyles() {
 .ac-source-tab {
   position: relative;
   z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
   text-align: center;
-  padding: 4px 0;
+  min-height: var(--baryon-source-selector-inner-min-height);
+  padding: 0;
   border: none;
-  border-radius: 2px;
+  border-radius: var(--baryon-source-selector-radius);
   background: transparent;
-  color: var(--nd-text-disabled);
-  font-family: "JetBrains Mono", monospace;
-  font-size: 11px;
+  color: var(--nd-text-secondary);
+  font-family: var(--baryon-type-mono-family);
+  font-size: 10px;
   font-weight: 400;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--baryon-type-control-letter-spacing);
   text-transform: uppercase;
   cursor: pointer;
   white-space: nowrap;
@@ -92,15 +99,15 @@ function ensureStyles() {
 }
 
 .ac-source-tab--file {
-  width: 3.45rem;
+  width: var(--tab-file-width);
 }
 
 .ac-source-tab--system {
-  width: 4.9rem;
+  width: var(--tab-system-width);
 }
 
 .ac-source-tab--active {
-  color: var(--nd-black);
+  color: var(--nd-accent);
 }
 
 .ac-source-tab:hover:not(.ac-source-tab--active) {
@@ -122,15 +129,16 @@ function ensureStyles() {
   justify-content: center;
   position: relative;
   min-width: 5.25rem;
+  min-height: var(--baryon-source-selector-inner-min-height);
   padding: 4px 12px;
   border: 1px solid var(--nd-border-visible);
-  border-radius: 999px;
+  border-radius: var(--baryon-source-selector-radius);
   background: transparent;
   color: var(--nd-text-secondary);
-  font-family: "JetBrains Mono", monospace;
+  font-family: var(--baryon-type-mono-family);
   font-size: 11px;
   font-weight: 400;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--baryon-type-control-letter-spacing);
   text-transform: uppercase;
   cursor: pointer;
   white-space: nowrap;
@@ -205,56 +213,11 @@ function ensureStyles() {
   pointer-events: none;
 }
 
-.ac-source-compact {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.ac-source-compact-btn {
-  width: 40px;
-  height: 40px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid transparent;
-  border-radius: 12px;
-  background: transparent;
-  color: var(--nd-text-secondary, #9A8E7E);
-  cursor: pointer;
-  transition:
-    border-color 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
-    color 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
-    background 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
-    opacity 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
-}
-
-.ac-source-compact-btn[data-active="true"] {
-  background: var(--nd-text-display, #E8DFD0);
-  color: var(--nd-black, #0D0A07);
-  border-color: var(--nd-text-display, #E8DFD0);
-}
-
-.ac-source-compact-btn[data-live="true"] {
-  border-color: var(--nd-accent, #F2A05C);
-  color: var(--nd-accent, #F2A05C);
-}
-
-.ac-source-compact-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.ac-source-compact-btn svg {
-  width: 16px;
-  height: 16px;
-}
-
 @media (max-width: 720px) {
   .ac-source-selector {
     min-width: 0;
-    width: 100%;
-    justify-content: flex-end;
+    width: auto;
+    justify-content: flex-start;
   }
 
   .ac-source-cluster {
@@ -264,16 +227,12 @@ function ensureStyles() {
 
   .ac-source-tabs {
     min-width: 0;
-    flex: 1 1 auto;
-  }
-
-  .ac-source-tab {
-    font-size: 10px;
+    flex: 0 0 auto;
   }
 
   .ac-source-tabs {
-    --tab-file-width: 3.15rem;
-    --tab-system-width: 4.3rem;
+    --tab-file-width: 2.68rem;
+    --tab-system-width: 3.64rem;
   }
 
   .ac-source-live-btn {
@@ -284,24 +243,20 @@ function ensureStyles() {
 
 @media (max-width: 480px) {
   .ac-source-selector {
-    justify-content: stretch;
+    justify-content: flex-start;
   }
 
   .ac-source-cluster {
-    width: 100%;
+    width: auto;
   }
 
   .ac-source-tabs {
-    flex: 1 1 auto;
-  }
-
-  .ac-source-tab {
-    font-size: 10px;
+    flex: 0 0 auto;
   }
 
   .ac-source-tabs {
-    --tab-file-width: 2.95rem;
-    --tab-system-width: 4rem;
+    --tab-file-width: 2.56rem;
+    --tab-system-width: 3.42rem;
   }
 
   .ac-source-live-btn {
@@ -316,86 +271,17 @@ function ensureStyles() {
   document.head.appendChild(el);
 }
 
-function FileIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M7 5.5h6l4 4V18a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 6 18V7A1.5 1.5 0 0 1 7.5 5.5Z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M13 5.5V10h4.5"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function SystemIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect
-        x="4"
-        y="6"
-        width="16"
-        height="10"
-        rx="2"
-        stroke="currentColor"
-        strokeWidth="1.8"
-      />
-      <path
-        d="M9 19h6"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
-      <path
-        d="M12 16v3"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function LiveDotIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="4.2" fill="currentColor" />
-      <path
-        d="M5.5 12a6.5 6.5 0 0 1 6.5-6.5"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
-      <path
-        d="M18.5 12A6.5 6.5 0 0 1 12 18.5"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
 /**
  * @param {{
  *   onInteraction?: (() => void) | undefined,
  *   showLiveButton?: boolean | undefined,
  *   allowSystemSource?: boolean | undefined,
- *   compactMode?: boolean | undefined,
  * }} props
  */
 export function SourceSelector({
   onInteraction,
   showLiveButton = true,
   allowSystemSource = true,
-  compactMode = false,
 } = {}) {
   ensureStyles();
   const showSystemSource = allowSystemSource;
@@ -467,49 +353,6 @@ export function SourceSelector({
     void handleSystemToggle();
   }, [handleSystemToggle, onInteraction]);
 
-  if (compactMode) {
-    return (
-      <div className="ac-source-compact">
-        <button
-          className="ac-source-compact-btn"
-          data-active={resolvedSource === "file" ? "true" : "false"}
-          type="button"
-          onClick={() => handleTabClick("file")}
-          aria-label="Use file source"
-          title="Use file source"
-        >
-          <FileIcon />
-        </button>
-        {showSystemSource ? (
-          <button
-            className="ac-source-compact-btn"
-            data-active={resolvedSource === "system" ? "true" : "false"}
-            data-live={isCurrentLive ? "true" : "false"}
-            type="button"
-            onClick={() => handleTabClick("system")}
-            aria-label="Use system source"
-            title="Use system source"
-          >
-            <SystemIcon />
-          </button>
-        ) : null}
-        {showLiveButton && showSystemSource ? (
-          <button
-            className="ac-source-compact-btn"
-            data-live={isCurrentLive ? "true" : "false"}
-            type="button"
-            disabled={liveStartDisabled}
-            onClick={handleLiveButtonClick}
-            aria-label={liveButtonActionLabel}
-            title={liveButtonActionLabel}
-          >
-            <LiveDotIcon />
-          </button>
-        ) : null}
-      </div>
-    );
-  }
-
   return (
     <div className="ac-source-selector">
       <div className="ac-source-stack">
@@ -524,7 +367,7 @@ export function SourceSelector({
             <div className="ac-source-tab-slider" aria-hidden="true" />
 
             <button
-              className={`ac-source-tab ac-source-tab--file${selectedSource === "file" ? " ac-source-tab--active" : ""}`}
+              className={`ac-source-tab ac-source-tab--file${resolvedSource === "file" ? " ac-source-tab--active" : ""}`}
               data-testid="file-source-tab"
               onClick={() => handleTabClick("file")}
               title="Use a file as audio source"
