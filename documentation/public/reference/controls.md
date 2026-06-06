@@ -40,7 +40,7 @@ Controls for the modal family, color mode, rotation mode, performance profile, a
 | **Boundary**          | Choose whether the modal family behaves like a reflective boundary (`Neumann`) or a fixed node at the boundary (`Dirichlet`).             |
 | **Color Mode**        | `Static` uses the chosen colors. `Spectral` colors promoted cymatic modes from the audio spectrum.                                        |
 | **Rotation Mode**     | `Audio` rotates the orb with the music, `Manual` uses Manual Rotation, and `Off` keeps the scene stationary.                              |
-| **Performance Profile** | `Auto` targets the stable default, `Custom` adapts toward Custom Target FPS, and `Max Quality` disables preset behavior.                |
+| **Performance Profile** | `Auto` uses the app-chosen FPS budget, `Custom` adapts toward Custom Target FPS, and `Max Quality` keeps full quality at display-rate cadence. |
 | **Custom Target FPS** | Frame-rate target used when Performance Profile is `Custom`.                                                                              |
 | **Output Mode**       | `Transparent` composites over other content. `Opaque` renders with its own solid background.                                              |
 | **Visualizer**        | Visualization method. The current product renderer is the single 3D Volume raymarch path.                                                 |

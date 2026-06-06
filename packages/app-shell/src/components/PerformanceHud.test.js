@@ -36,7 +36,7 @@ describe("PerformanceHud", () => {
           basePixelRatio: 2,
           renderScale: 1,
           requestedRenderScale: 1,
-          qualityPreset: "max-quality",
+          qualityPreset: "auto",
           targetFps: 60,
           visualizationMethod: "raymarch",
           requestedRaymarchSteps: 80,
@@ -48,6 +48,52 @@ describe("PerformanceHud", () => {
     expect(markup).toContain("FPS: 69.9");
     expect(markup).toContain("Frame Budget FPS: 60");
     expect(markup).not.toContain("Target FPS:");
+  });
+
+  it("labels max quality cadence as display rate instead of an fps budget", () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(PerformanceHud, {
+        metrics: {
+          fps: 118.7,
+          smoothedFrameTimeMs: 8.42,
+          currentPixelRatio: 2,
+          basePixelRatio: 2,
+          renderScale: 1,
+          requestedRenderScale: 1,
+          qualityPreset: "max-quality",
+          targetFps: 60,
+          visualizationMethod: "raymarch",
+        },
+      }),
+    );
+
+    expect(markup).toContain("Max Quality");
+    expect(markup).toContain("Cadence: Display Rate");
+    expect(markup).toContain("FPS: 118.7");
+    expect(markup).not.toContain("Frame Budget FPS:");
+    expect(markup).not.toContain("Output Target FPS:");
+  });
+
+  it("does not repeat custom target fps in the profile title", () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(PerformanceHud, {
+        metrics: {
+          fps: 69.9,
+          smoothedFrameTimeMs: 14.31,
+          currentPixelRatio: 2,
+          basePixelRatio: 2,
+          renderScale: 1,
+          requestedRenderScale: 1,
+          qualityPreset: "custom",
+          targetFps: 72,
+          visualizationMethod: "raymarch",
+        },
+      }),
+    );
+
+    expect(markup).toContain("Custom");
+    expect(markup).toContain("Frame Budget FPS: 72");
+    expect(markup).not.toContain("Custom 72 FPS");
   });
 
   it("puts profile in the title row and separates resolution fields", () => {
@@ -81,7 +127,7 @@ describe("PerformanceHud", () => {
     expect(markup).not.toContain("Performance Profile:");
     expect(markup).toContain("font-style:italic");
     expect(markup.indexOf("Max Quality")).toBeLessThan(
-      markup.indexOf("Frame Budget FPS:"),
+      markup.indexOf("Cadence: Display Rate"),
     );
     expect(markup.indexOf("Steps: 72 / 80")).toBeLessThan(
       markup.indexOf('data-testid="performance-hud-resolution-divider"'),

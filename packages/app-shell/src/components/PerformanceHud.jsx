@@ -1,4 +1,8 @@
-import { formatPerformanceProfileLabel } from "@baryon/visualizer/render/outputProfilePolicy";
+import {
+  PERFORMANCE_PROFILES,
+  formatPerformanceProfileLabel,
+  normalizePerformanceProfile,
+} from "@baryon/visualizer/render/outputProfilePolicy";
 import { usesRaymarchVolumePipeline } from "@baryon/visualizer/visualization/types";
 import { TOP_RIGHT_OVERLAY_PANEL_WIDTH } from "./topRightOverlayLayout.js";
 
@@ -70,6 +74,11 @@ export default function PerformanceHud({
   const resolvedTargetFps = splitAuthoritativeMetrics
     ? (metrics.outputTargetFps ?? metrics.targetFps)
     : metrics.targetFps;
+  const normalizedQualityPreset = normalizePerformanceProfile(
+    metrics.qualityPreset,
+  );
+  const displayRateCadence =
+    normalizedQualityPreset === PERFORMANCE_PROFILES.maxQuality;
   const targetFpsLabel = splitAuthoritativeMetrics
     ? "Output Target FPS"
     : "Frame Budget FPS";
@@ -86,10 +95,7 @@ export default function PerformanceHud({
       : null;
   const renderSurfaceLabel = formatRenderSurfaceLabel(metrics.renderSurface);
   const performanceProfileLabel = metrics.qualityPreset
-    ? formatPerformanceProfileLabel(
-        metrics.qualityPreset,
-        resolvedTargetFps ?? metrics.targetFps,
-      )
+    ? formatPerformanceProfileLabel(metrics.qualityPreset)
     : null;
   return (
     <aside
@@ -146,7 +152,9 @@ export default function PerformanceHud({
           </>
         ) : null}
       </div>
-      {typeof resolvedTargetFps === "number" ? (
+      {displayRateCadence ? (
+        <div>Cadence: Display Rate</div>
+      ) : typeof resolvedTargetFps === "number" ? (
         <div>
           {targetFpsLabel}: {Math.round(resolvedTargetFps)}
         </div>

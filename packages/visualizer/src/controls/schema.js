@@ -603,7 +603,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "renderQualityPreset",
       label: "Performance Profile",
       title:
-        "Auto targets a stable default frame rate, Custom adapts toward your chosen FPS, and Max Quality disables preset behavior so advanced display controls apply directly.",
+        "Auto adapts toward the app-chosen FPS budget, Custom adapts toward your chosen FPS, and Max Quality keeps full quality at display-rate cadence.",
       defaultValue: RENDER_DEFAULTS.renderQualityPreset,
       methods: ALL_METHODS,
       binding: {
