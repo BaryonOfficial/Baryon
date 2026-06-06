@@ -1,12 +1,12 @@
 import React, { useState } from "react";
 import { useAudio } from "../context/AudioContext.jsx";
-import { getDeviceKindOverride } from "./controls/deviceClassification.js";
 import {
   createLiveInputRuntimeStatus,
   LIVE_INPUT_PHASES,
   LIVE_INPUT_SIGNAL_STATES,
   isLiveInputTransitionLocked,
 } from "../context/liveInputRuntimeStatus.js";
+import { TOP_RIGHT_OVERLAY_PANEL_WIDTH } from "./topRightOverlayLayout.js";
 
 function getSignalBadgeStyle(status) {
   if (
@@ -14,21 +14,21 @@ function getSignalBadgeStyle(status) {
     status.signalState === LIVE_INPUT_SIGNAL_STATES.clipped
   ) {
     return {
-      border: "1px solid rgba(255, 59, 48, 0.5)",
+      border: "none",
       background: "rgba(255, 59, 48, 0.12)",
       color: "var(--nd-text-display)",
     };
   }
   if (status.phase === LIVE_INPUT_PHASES.weakSignal) {
     return {
-      border: "1px solid rgba(255, 204, 102, 0.4)",
+      border: "none",
       background: "rgba(255, 204, 102, 0.1)",
       color: "var(--nd-text-display)",
     };
   }
   if (status.phase === LIVE_INPUT_PHASES.calibrating) {
     return {
-      border: "1px solid rgba(91, 155, 246, 0.42)",
+      border: "none",
       background: "rgba(91, 155, 246, 0.1)",
       color: "var(--nd-text-display)",
     };
@@ -38,13 +38,13 @@ function getSignalBadgeStyle(status) {
     status.phase === LIVE_INPUT_PHASES.stopping
   ) {
     return {
-      border: "1px solid var(--nd-border-visible)",
+      border: "none",
       background: "rgba(255, 255, 255, 0.03)",
       color: "var(--nd-text-display)",
     };
   }
   return {
-    border: "1px solid rgba(74, 158, 92, 0.44)",
+    border: "none",
     background: "rgba(74, 158, 92, 0.1)",
     color: "var(--nd-text-display)",
   };
@@ -115,10 +115,10 @@ function getSelectStyle(disabled) {
     border: "1px solid var(--nd-border-visible)",
     background: disabled ? "rgba(255, 255, 255, 0.02)" : "#0c0c0c",
     color: disabled ? "var(--nd-text-disabled)" : "var(--nd-text-primary)",
-    fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+    fontFamily: "var(--baryon-type-mono-family)",
     fontSize: "0.62rem",
     fontWeight: 700,
-    letterSpacing: "0.05em",
+    letterSpacing: "var(--baryon-type-data-letter-spacing)",
     outline: "none",
     appearance: "none",
     WebkitAppearance: "none",
@@ -148,9 +148,10 @@ export default function LiveInputStatusPanel({
     liveInputRuntimeStatus,
     liveInputPermissionState,
     audioDevices,
-    selectedDevice,
     selectedSystemDevice,
+    selectedLiveDeviceId,
     selectedLiveInputDeviceKind,
+    selectedLiveInputDeviceKindOverride,
     setSelectedSystemDevice,
     handleSourceChange,
     handleSystemToggle,
@@ -173,17 +174,13 @@ export default function LiveInputStatusPanel({
 
   const runtimeSelectedLiveDeviceId = status.selectedDeviceId ?? "";
   const runtimeSelectedLiveDeviceLabel = status.selectedDeviceLabel ?? "";
-  const selectedLiveDeviceId =
-    selectedSystemDevice ?? selectedDevice ?? runtimeSelectedLiveDeviceId;
-  const deviceKindOverride = getDeviceKindOverride(
-    selectedLiveDeviceId || null,
-  );
-  const deviceTypeValue = deviceKindOverride ?? "auto";
-  const deviceTypeIsManual = deviceKindOverride != null;
+  const deviceTypeValue = selectedLiveInputDeviceKindOverride ?? "auto";
+  const deviceTypeIsManual = selectedLiveInputDeviceKindOverride != null;
 
   const selectedLiveDevice =
     audioDevices.find((d) => d.deviceId === selectedLiveDeviceId) ??
-    (selectedLiveDeviceId
+    (selectedLiveDeviceId &&
+    selectedLiveDeviceId === runtimeSelectedLiveDeviceId
       ? {
           deviceId: selectedLiveDeviceId,
           label: runtimeSelectedLiveDeviceLabel,
@@ -277,12 +274,8 @@ export default function LiveInputStatusPanel({
     if (!isLiveInputActive && selectedSource !== "system") {
       await handleSourceChange("system");
     }
-    if (
-      !isLiveInputActive &&
-      !selectedSystemDevice &&
-      runtimeSelectedLiveDeviceId
-    ) {
-      await setSelectedSystemDevice(runtimeSelectedLiveDeviceId);
+    if (!isLiveInputActive && !selectedSystemDevice && selectedLiveDeviceId) {
+      await setSelectedSystemDevice(selectedLiveDeviceId);
     }
     await handleSystemToggle();
   };
@@ -298,14 +291,14 @@ export default function LiveInputStatusPanel({
         right: stacked ? "auto" : right,
         zIndex: 9998,
         pointerEvents: "auto",
-        width: "min(15.25rem, calc(100vw - 1rem))",
+        width: TOP_RIGHT_OVERLAY_PANEL_WIDTH,
         padding: "0.62rem",
         borderRadius: "0.9rem",
-        border: "1px solid var(--nd-border-visible)",
+        border: "none",
         background: "var(--nd-surface)",
         color: "var(--nd-text-primary)",
         boxShadow: "var(--nd-shell-shadow)",
-        fontFamily: '"Aspekta", system-ui, sans-serif',
+        fontFamily: "var(--baryon-type-interface-family)",
       }}
       aria-live="polite"
     >
@@ -323,10 +316,10 @@ export default function LiveInputStatusPanel({
           style={{
             fontSize: "0.58rem",
             fontWeight: 700,
-            letterSpacing: "0.16em",
+            letterSpacing: "var(--baryon-type-heading-letter-spacing)",
             textTransform: "uppercase",
             color: "var(--nd-text-secondary)",
-            fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+            fontFamily: "var(--baryon-type-mono-family)",
           }}
         >
           Input
@@ -339,9 +332,9 @@ export default function LiveInputStatusPanel({
             padding: "0.18rem 0.44rem",
             fontSize: "0.54rem",
             fontWeight: 700,
-            letterSpacing: "0.12em",
+            letterSpacing: "var(--baryon-type-label-letter-spacing)",
             textTransform: "uppercase",
-            fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+            fontFamily: "var(--baryon-type-mono-family)",
           }}
         >
           {signalLabel}
@@ -382,10 +375,10 @@ export default function LiveInputStatusPanel({
                 border: "1px solid var(--nd-border-visible)",
                 background: "transparent",
                 color: "var(--nd-text-display)",
-                fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+                fontFamily: "var(--baryon-type-mono-family)",
                 fontSize: "0.58rem",
                 fontWeight: 700,
-                letterSpacing: "0.12em",
+                letterSpacing: "var(--baryon-type-label-letter-spacing)",
                 textTransform: "uppercase",
                 cursor: "pointer",
               }}
@@ -418,10 +411,10 @@ export default function LiveInputStatusPanel({
                   border: "1px solid var(--nd-border-visible)",
                   background: "transparent",
                   color: "var(--nd-text-display)",
-                  fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+                  fontFamily: "var(--baryon-type-mono-family)",
                   fontSize: "0.58rem",
                   fontWeight: 700,
-                  letterSpacing: "0.12em",
+                  letterSpacing: "var(--baryon-type-label-letter-spacing)",
                   textTransform: "uppercase",
                   cursor: "pointer",
                 }}
@@ -444,10 +437,10 @@ export default function LiveInputStatusPanel({
                 style={{
                   fontSize: "0.54rem",
                   fontWeight: 700,
-                  letterSpacing: "0.12em",
+                  letterSpacing: "var(--baryon-type-label-letter-spacing)",
                   textTransform: "uppercase",
                   color: "var(--nd-text-secondary)",
-                  fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+                  fontFamily: "var(--baryon-type-mono-family)",
                 }}
               >
                 Device
@@ -483,10 +476,10 @@ export default function LiveInputStatusPanel({
                   style={{
                     fontSize: "0.54rem",
                     fontWeight: 700,
-                    letterSpacing: "0.12em",
+                    letterSpacing: "var(--baryon-type-label-letter-spacing)",
                     textTransform: "uppercase",
                     color: "var(--nd-text-secondary)",
-                    fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+                    fontFamily: "var(--baryon-type-mono-family)",
                   }}
                 >
                   Type
@@ -507,7 +500,7 @@ export default function LiveInputStatusPanel({
                       color: deviceTypeIsManual
                         ? "var(--nd-warning)"
                         : "var(--nd-text-disabled)",
-                      fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+                      fontFamily: "var(--baryon-type-mono-family)",
                       textTransform: "uppercase",
                     }}
                   >
@@ -545,10 +538,10 @@ export default function LiveInputStatusPanel({
                   style={{
                     fontSize: "0.54rem",
                     fontWeight: 700,
-                    letterSpacing: "0.12em",
+                    letterSpacing: "var(--baryon-type-label-letter-spacing)",
                     textTransform: "uppercase",
                     color: "var(--nd-text-secondary)",
-                    fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+                    fontFamily: "var(--baryon-type-mono-family)",
                   }}
                 >
                   Intent
@@ -608,10 +601,10 @@ export default function LiveInputStatusPanel({
                 style={{
                   fontSize: "0.54rem",
                   fontWeight: 700,
-                  letterSpacing: "0.12em",
+                  letterSpacing: "var(--baryon-type-label-letter-spacing)",
                   textTransform: "uppercase",
                   color: "var(--nd-text-secondary)",
-                  fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+                  fontFamily: "var(--baryon-type-mono-family)",
                 }}
               >
                 Mic Settings
@@ -630,7 +623,7 @@ export default function LiveInputStatusPanel({
                   color: micProcessingDisabled
                     ? "var(--nd-text-disabled)"
                     : "var(--nd-text-secondary)",
-                  fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+                  fontFamily: "var(--baryon-type-mono-family)",
                   textTransform: "uppercase",
                 }}
               >
@@ -642,7 +635,7 @@ export default function LiveInputStatusPanel({
                 flexShrink: 0,
                 color: "var(--nd-text-secondary)",
                 fontSize: "0.68rem",
-                fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+                fontFamily: "var(--baryon-type-mono-family)",
               }}
             >
               {micSettingsOpen ? "▾" : "▸"}
@@ -690,6 +683,7 @@ export default function LiveInputStatusPanel({
                   <button
                     key={key}
                     type="button"
+                    aria-pressed={enabled}
                     onClick={() => onMicControlChange?.(key, !enabled)}
                     disabled={micProcessingDisabled}
                     title={String(tooltip)}
@@ -703,23 +697,17 @@ export default function LiveInputStatusPanel({
                       minHeight: "1.72rem",
                       padding: "0 0.48rem",
                       borderRadius: "0.56rem",
-                      border: enabled
-                        ? "1px solid var(--nd-text-display)"
-                        : "1px solid var(--nd-border)",
+                      border: "1px solid var(--nd-border)",
                       background: micProcessingDisabled
                         ? "rgba(255, 255, 255, 0.02)"
-                        : enabled
-                          ? "var(--nd-text-display)"
-                          : "var(--nd-surface-raised)",
+                        : "var(--nd-surface-raised)",
                       color: micProcessingDisabled
                         ? "var(--nd-text-disabled)"
-                        : enabled
-                          ? "var(--nd-black)"
-                          : "var(--nd-text-primary)",
+                        : "var(--nd-text-primary)",
                       fontSize: "0.58rem",
                       fontWeight: 700,
-                      fontFamily: '"JetBrains Mono", ui-monospace, monospace',
-                      letterSpacing: "0.08em",
+                      fontFamily: "var(--baryon-type-mono-family)",
+                      letterSpacing: "var(--baryon-type-action-letter-spacing)",
                       textTransform: "uppercase",
                       textAlign: "left",
                       whiteSpace: "nowrap",
@@ -737,29 +725,48 @@ export default function LiveInputStatusPanel({
                       {String(label)}
                     </span>
                     <span
+                      aria-hidden="true"
                       style={{
+                        position: "relative",
                         flexShrink: 0,
+                        width: "1.95rem",
+                        height: "1.14rem",
                         borderRadius: "999px",
-                        padding: "0.08rem 0.34rem",
-                        border: enabled
-                          ? "1px solid rgba(0, 0, 0, 0.16)"
-                          : "1px solid var(--nd-border-visible)",
-                        background: enabled
-                          ? "rgba(0, 0, 0, 0.06)"
-                          : "rgba(255, 255, 255, 0.02)",
-                        color: micProcessingDisabled
-                          ? "var(--nd-text-disabled)"
+                        background: micProcessingDisabled
+                          ? "rgba(255, 255, 255, 0.03)"
                           : enabled
-                            ? "var(--nd-black)"
-                            : "var(--nd-text-secondary)",
-                        fontSize: "0.54rem",
-                        fontWeight: 700,
-                        letterSpacing: "0.08em",
-                        textTransform: "uppercase",
-                        fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+                            ? "var(--nd-accent)"
+                            : "var(--nd-border)",
+                        boxShadow: micProcessingDisabled
+                          ? "inset 0 0 0 1px var(--nd-border)"
+                          : enabled
+                            ? "inset 0 0 0 1px color-mix(in srgb, var(--nd-accent) 55%, #000), inset 0 1px 2px rgba(0, 0, 0, 0.18)"
+                            : "inset 0 0 0 1px var(--nd-border-visible), inset 0 1px 2px rgba(0, 0, 0, 0.5)",
+                        transition:
+                          "background 180ms cubic-bezier(0.34, 1.4, 0.64, 1), box-shadow 180ms ease",
                       }}
                     >
-                      {enabled ? "On" : "Off"}
+                      <span
+                        style={{
+                          position: "absolute",
+                          top: "50%",
+                          left: "0.14rem",
+                          width: "0.86rem",
+                          height: "0.86rem",
+                          borderRadius: "999px",
+                          background: micProcessingDisabled
+                            ? "var(--nd-text-disabled)"
+                            : "var(--baryon-cream)",
+                          boxShadow: micProcessingDisabled
+                            ? "none"
+                            : "0 1px 2px rgba(0, 0, 0, 0.5)",
+                          transform: enabled
+                            ? "translate(0.81rem, -50%)"
+                            : "translateY(-50%)",
+                          transition:
+                            "transform 200ms cubic-bezier(0.34, 1.5, 0.64, 1), background 180ms ease",
+                        }}
+                      />
                     </span>
                   </button>
                 ))}
@@ -805,9 +812,9 @@ export default function LiveInputStatusPanel({
                     : "var(--nd-black)",
                 fontSize: "0.6rem",
                 fontWeight: 700,
-                letterSpacing: "0.12em",
+                letterSpacing: "var(--baryon-type-label-letter-spacing)",
                 textTransform: "uppercase",
-                fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+                fontFamily: "var(--baryon-type-mono-family)",
                 cursor: liveButtonDisabled ? "not-allowed" : "pointer",
                 transition:
                   "background 140ms ease, border-color 140ms ease, color 140ms ease, opacity 140ms ease",

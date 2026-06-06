@@ -36,7 +36,12 @@
   background: #ffffff;
   color: #000000;
   padding: 0.375rem 0.875rem;
-  font-family: Ubuntu, sans-serif;
+  font-family: var(
+    --baryon-type-interface-family,
+    "Aspekta",
+    system-ui,
+    sans-serif
+  );
   font-size: 0.875rem;
   line-height: 1.25rem;
   cursor: pointer;
@@ -104,7 +109,7 @@
   color: #6b7280;
   font-size: 0.75rem;
   line-height: 1rem;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--baryon-type-data-letter-spacing);
   text-transform: uppercase;
 }
 

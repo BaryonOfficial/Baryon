@@ -44,6 +44,14 @@ const REFERENCE_STEPS = STEP_REFERENCE;
 const EARLY_EXIT_TRANSMITTANCE_EPSILON = 5e-3;
 export const EMISSION_SAMPLE_GAIN = 1.6;
 export const DIRECT_LIGHT_RESPONSE_GAIN = 0.14;
+const extinctionScaleNode = float(EXTINCTION_SCALE);
+const emissionSampleGainNode = float(EMISSION_SAMPLE_GAIN);
+const directLightResponseGainNode = float(DIRECT_LIGHT_RESPONSE_GAIN);
+const earlyExitTransmittanceEpsilonNode = float(
+  EARLY_EXIT_TRANSMITTANCE_EPSILON,
+);
+const outputGainNode = float(OUTPUT_GAIN);
+const referenceStepsNode = float(REFERENCE_STEPS);
 
 export function applySoftKneeCompression(
   value,
@@ -103,12 +111,14 @@ export default class SafeVolumetricLightingModel extends LightingModel {
 
     const startPos = property("vec3");
     const endPos = property("vec3");
+    const radiusNode = material.radiusNode ?? modelRadius;
+    const cameraDistanceThreshold = modelRadius.mul(2);
 
     If(
       cameraPosition
         .sub(positionWorld)
         .length()
-        .greaterThan(modelRadius.mul(2)),
+        .greaterThan(cameraDistanceThreshold),
       () => {
         startPos.assign(cameraPosition);
         endPos.assign(positionWorld);
@@ -122,7 +132,6 @@ export default class SafeVolumetricLightingModel extends LightingModel {
       ({ material: runtimeMaterial }) =>
         /** @type {RuntimeVolumeMaterial} */ (runtimeMaterial).steps ?? 0,
     );
-    const radiusNode = material.radiusNode ?? modelRadius;
     const opacityGainNode =
       material.opacityGainNode ?? uniform(RAYMARCH_DEFAULTS.opacityGain);
     const startPosLocal = modelWorldMatrixInverse
@@ -138,13 +147,6 @@ export default class SafeVolumetricLightingModel extends LightingModel {
     const viewVectorLocal = endPosLocal.sub(startPosLocal).toVar();
     const rayDirLocal = viewVectorLocal.normalize().toVar();
     const maxDistance = viewVectorLocal.length().toVar();
-    const rayOriginProjection = dot(startPosLocal, rayDirLocal).toVar();
-    const originDistanceSquared = dot(startPosLocal, startPosLocal).toVar();
-    const radiusSquared = radiusNode.mul(radiusNode).toVar();
-    const discriminant = rayOriginProjection
-      .mul(rayOriginProjection)
-      .sub(originDistanceSquared.sub(radiusSquared))
-      .toVar();
     const entryDistance = float(0.0).toVar();
     const exitDistance = float(0.0).toVar();
     const segmentLength = float(0.0).toVar();
@@ -156,20 +158,7 @@ export default class SafeVolumetricLightingModel extends LightingModel {
     raymarchLightNode.assign(vec3(0));
     raymarchOpacityNode.assign(0.0);
 
-    If(discriminant.greaterThan(0.0), () => {
-      const intersectionRoot = sqrt(discriminant).toVar();
-      const unclampedEntry = rayOriginProjection
-        .negate()
-        .sub(intersectionRoot)
-        .toVar();
-      const unclampedExit = rayOriginProjection
-        .negate()
-        .add(intersectionRoot)
-        .toVar();
-
-      entryDistance.assign(max(unclampedEntry, 0.0));
-      exitDistance.assign(min(unclampedExit, maxDistance));
-
+    const marchVolumeSegment = () => {
       If(exitDistance.greaterThan(entryDistance), () => {
         segmentLength.assign(exitDistance.sub(entryDistance));
         const diameter = radiusNode.mul(2.0);
@@ -180,7 +169,7 @@ export default class SafeVolumetricLightingModel extends LightingModel {
           stepCount,
         ).toVar();
         stepSize.assign(segmentLength.div(max(effectiveSteps, float(1.0))));
-        const stepRatio = float(REFERENCE_STEPS).div(effectiveSteps).toVar();
+        const stepRatio = referenceStepsNode.div(effectiveSteps).toVar();
         If(stepRatio.greaterThan(1.0), () => {
           stepCompensation.assign(
             min(
@@ -256,17 +245,17 @@ export default class SafeVolumetricLightingModel extends LightingModel {
             const directLightContribution = scatteringDensity.toVar();
             scatteringDensity.assign(
               scatteringNode
-                .mul(float(EMISSION_SAMPLE_GAIN))
+                .mul(emissionSampleGainNode)
                 .add(
                   directLightContribution
                     .mul(scatteringNode)
-                    .mul(float(DIRECT_LIGHT_RESPONSE_GAIN)),
+                    .mul(directLightResponseGainNode),
                 ),
             );
           }
 
           const falloff = /** @type {any} */ (
-            scatteringDensity.mul(EXTINCTION_SCALE).negate().mul(stepSize)
+            scatteringDensity.mul(extinctionScaleNode).negate().mul(stepSize)
           ).exp();
           transmittance.mulAssign(falloff);
           const remainingTransmittance = max(
@@ -274,9 +263,7 @@ export default class SafeVolumetricLightingModel extends LightingModel {
             transmittance.z,
           ).toVar();
           If(
-            remainingTransmittance.lessThan(
-              float(EARLY_EXIT_TRANSMITTANCE_EPSILON),
-            ),
+            remainingTransmittance.lessThan(earlyExitTransmittanceEpsilonNode),
             () => {
               Break();
             },
@@ -289,7 +276,7 @@ export default class SafeVolumetricLightingModel extends LightingModel {
 
         const visibility = transmittance.saturate().oneMinus().toVar();
         const compensatedVisibility = visibility
-          .mul(OUTPUT_GAIN)
+          .mul(outputGainNode)
           .mul(stepCompensation)
           .toVar();
         const visibilityPeak = max(
@@ -308,6 +295,30 @@ export default class SafeVolumetricLightingModel extends LightingModel {
           clamp(compressedVisibilityPeak.mul(opacityGainNode), 0.0, 1.0),
         );
       });
+    };
+
+    const rayOriginProjection = dot(startPosLocal, rayDirLocal).toVar();
+    const originDistanceSquared = dot(startPosLocal, startPosLocal).toVar();
+    const radiusSquared = radiusNode.mul(radiusNode).toVar();
+    const discriminant = rayOriginProjection
+      .mul(rayOriginProjection)
+      .sub(originDistanceSquared.sub(radiusSquared))
+      .toVar();
+
+    If(discriminant.greaterThan(0.0), () => {
+      const intersectionRoot = sqrt(discriminant).toVar();
+      const unclampedEntry = rayOriginProjection
+        .negate()
+        .sub(intersectionRoot)
+        .toVar();
+      const unclampedExit = rayOriginProjection
+        .negate()
+        .add(intersectionRoot)
+        .toVar();
+
+      entryDistance.assign(max(unclampedEntry, 0.0));
+      exitDistance.assign(min(unclampedExit, maxDistance));
+      marchVolumeSegment();
     });
   }
 

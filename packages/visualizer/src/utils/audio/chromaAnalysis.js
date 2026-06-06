@@ -1,4 +1,4 @@
-import { getPitchClassForFrequency } from "./chromesthesia.js";
+import { getPitchClassForFrequency } from "./pitch.js";
 
 const CHROMA_MIN_HZ = 65; // C2 — ignore sub-bass rumble
 const CHROMA_MAX_HZ = 2100; // matches MAX_SPECTRAL_FREQUENCY

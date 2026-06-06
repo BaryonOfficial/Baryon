@@ -1,4 +1,10 @@
-import { formatPerformanceProfileLabel } from "@baryon/visualizer/render/outputProfilePolicy";
+import {
+  PERFORMANCE_PROFILES,
+  formatPerformanceProfileLabel,
+  normalizePerformanceProfile,
+} from "@baryon/visualizer/render/outputProfilePolicy";
+import { usesRaymarchVolumePipeline } from "@baryon/visualizer/visualization/types";
+import { TOP_RIGHT_OVERLAY_PANEL_WIDTH } from "./topRightOverlayLayout.js";
 
 function formatNumber(value, digits = 1) {
   if (
@@ -10,6 +16,44 @@ function formatNumber(value, digits = 1) {
   }
 
   return value.toFixed(digits);
+}
+
+function formatRenderSurfaceLabel(renderSurface) {
+  const backingWidth = renderSurface?.backingWidth;
+  const backingHeight = renderSurface?.backingHeight;
+  if (
+    typeof backingWidth !== "number" ||
+    typeof backingHeight !== "number" ||
+    !Number.isFinite(backingWidth) ||
+    !Number.isFinite(backingHeight) ||
+    backingWidth <= 0 ||
+    backingHeight <= 0
+  ) {
+    return null;
+  }
+
+  const backingMegapixels =
+    typeof renderSurface?.backingMegapixels === "number" &&
+    Number.isFinite(renderSurface.backingMegapixels)
+      ? renderSurface.backingMegapixels
+      : (backingWidth * backingHeight) / 1_000_000;
+
+  return `${Math.round(backingWidth)} x ${Math.round(backingHeight)} (${formatNumber(backingMegapixels, 2)} MP)`;
+}
+
+function PerformanceHudDivider() {
+  return (
+    <div
+      aria-hidden="true"
+      data-testid="performance-hud-resolution-divider"
+      style={{
+        height: 1,
+        margin: "0.42rem 0 0.38rem",
+        background: "var(--nd-border-subtle)",
+        opacity: 0.72,
+      }}
+    />
+  );
 }
 
 export default function PerformanceHud({
@@ -30,9 +74,17 @@ export default function PerformanceHud({
   const resolvedTargetFps = splitAuthoritativeMetrics
     ? (metrics.outputTargetFps ?? metrics.targetFps)
     : metrics.targetFps;
+  const normalizedQualityPreset = normalizePerformanceProfile(
+    metrics.qualityPreset,
+  );
+  const displayRateCadence =
+    normalizedQualityPreset === PERFORMANCE_PROFILES.maxQuality;
+  const targetFpsLabel = splitAuthoritativeMetrics
+    ? "Output Target FPS"
+    : "Frame Budget FPS";
 
   const showRaymarchSteps =
-    metrics.visualizationMethod === "raymarch" &&
+    usesRaymarchVolumePipeline(metrics.visualizationMethod) &&
     metrics.requestedRaymarchSteps > 0;
   const raymarchStepsLabel = showRaymarchSteps
     ? `${Math.round(metrics.effectiveRaymarchSteps)} / ${Math.round(metrics.requestedRaymarchSteps)}`
@@ -41,7 +93,10 @@ export default function PerformanceHud({
     typeof metrics.renderScale === "number"
       ? formatNumber(metrics.renderScale, 3)
       : null;
-
+  const renderSurfaceLabel = formatRenderSurfaceLabel(metrics.renderSurface);
+  const performanceProfileLabel = metrics.qualityPreset
+    ? formatPerformanceProfileLabel(metrics.qualityPreset)
+    : null;
   return (
     <aside
       data-testid="performance-hud"
@@ -50,14 +105,14 @@ export default function PerformanceHud({
         top: stacked ? "auto" : top,
         right: stacked ? "auto" : right,
         zIndex: 10000,
-        minWidth: "9.25rem",
+        width: TOP_RIGHT_OVERLAY_PANEL_WIDTH,
+        boxSizing: "border-box",
         padding: "0.7rem 0.78rem",
         borderRadius: "0.78rem",
         background: "var(--nd-surface)",
-        border: "1px solid var(--nd-border-visible)",
+        border: "none",
         color: "var(--nd-text-primary)",
-        fontFamily:
-          '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
+        fontFamily: "var(--baryon-type-mono-family)",
         fontSize: "10.5px",
         lineHeight: 1.45,
         pointerEvents: "none",
@@ -66,15 +121,44 @@ export default function PerformanceHud({
     >
       <div
         style={{
+          display: "flex",
+          alignItems: "baseline",
+          gap: "0.32rem",
           fontWeight: 700,
           marginBottom: "0.32rem",
-          textTransform: "uppercase",
-          letterSpacing: "0.14em",
+          letterSpacing: "var(--baryon-type-section-letter-spacing)",
           color: "var(--nd-text-secondary)",
+          minWidth: 0,
         }}
       >
-        Performance
+        <span style={{ textTransform: "uppercase" }}>Performance</span>
+        {performanceProfileLabel ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <span
+              data-testid="performance-hud-profile-title"
+              style={{
+                minWidth: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                fontStyle: "italic",
+                letterSpacing: 0,
+                color: "var(--nd-text-primary)",
+              }}
+            >
+              {performanceProfileLabel}
+            </span>
+          </>
+        ) : null}
       </div>
+      {displayRateCadence ? (
+        <div>Cadence: Display Rate</div>
+      ) : typeof resolvedTargetFps === "number" ? (
+        <div>
+          {targetFpsLabel}: {Math.round(resolvedTargetFps)}
+        </div>
+      ) : null}
       {splitAuthoritativeMetrics ? (
         <>
           <div>Stage FPS: {formatNumber(metrics.fps, 1)}</div>
@@ -94,24 +178,16 @@ export default function PerformanceHud({
           <div>Frame ms: {formatNumber(metrics.smoothedFrameTimeMs, 2)}</div>
         </>
       )}
-      <div>
-        DPR: {formatNumber(metrics.currentPixelRatio, 3)} /{" "}
-        {formatNumber(metrics.basePixelRatio, 3)}
-      </div>
-      {renderScaleLabel ? <div>Render Scale: {renderScaleLabel}</div> : null}
-      {metrics.qualityPreset ? (
-        <div>
-          Performance Profile:{" "}
-          {formatPerformanceProfileLabel(
-            metrics.qualityPreset,
-            resolvedTargetFps ?? metrics.targetFps,
-          )}
-        </div>
-      ) : null}
-      {typeof resolvedTargetFps === "number" ? (
-        <div>Target FPS: {Math.round(resolvedTargetFps)}</div>
-      ) : null}
       {raymarchStepsLabel ? <div>Steps: {raymarchStepsLabel}</div> : null}
+      <PerformanceHudDivider />
+      <div data-testid="performance-hud-resolution-fields">
+        <div>
+          DPR: {formatNumber(metrics.currentPixelRatio, 3)} /{" "}
+          {formatNumber(metrics.basePixelRatio, 3)}
+        </div>
+        {renderScaleLabel ? <div>Render Scale: {renderScaleLabel}</div> : null}
+        {renderSurfaceLabel ? <div>Canvas: {renderSurfaceLabel}</div> : null}
+      </div>
     </aside>
   );
 }

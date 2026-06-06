@@ -18,7 +18,6 @@ export const baryonCommonOptimizeDepsInclude = [
   "@react-three/drei",
   "@react-three/fiber",
   "hls.js",
-  "onnxruntime-web/wasm",
   "scheduler",
   "stats.js",
   "three",
@@ -73,6 +72,17 @@ export function createBaryonWorkspaceAliases({ workspaceRoot }) {
     {
       find: /^@baryon\/visualizer\/controls\/schema$/,
       replacement: path.join(visualizerRoot, "controls/schema.js"),
+    },
+    {
+      find: /^@baryon\/visualizer\/core\/raymarch\/fieldCache$/,
+      replacement: path.join(visualizerRoot, "core/raymarch/fieldCache.js"),
+    },
+    {
+      find: /^@baryon\/visualizer\/core\/raymarch\/performanceGovernor$/,
+      replacement: path.join(
+        visualizerRoot,
+        "core/raymarch/performanceGovernor.js",
+      ),
     },
     {
       find: /^@baryon\/visualizer\/defaults$/,

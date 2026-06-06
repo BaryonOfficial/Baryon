@@ -4,11 +4,11 @@ import {
   isValidElement,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import { Canvas } from "@react-three/fiber";
-import { VISUALIZATION_METHODS } from "@baryon/visualizer/visualization/types";
 import { BaryonScene, CAMERA_CONTROL_MODES } from "./BaryonScene";
 import AdvancedControlsDock from "./AdvancedControlsDock.jsx";
 import {
@@ -19,10 +19,15 @@ import {
 import FloatingCameraControls from "./FloatingCameraControls.jsx";
 import {
   CAMERA_VIEW_PRESETS,
+  DEFAULT_ACTIVE_CAMERA_POSE,
   resolvePresetCameraPose,
 } from "./cameraPosePresets.js";
+import {
+  createCameraPresetCommand,
+  deriveCameraControlState,
+} from "./cameraControlModel.js";
 import { dispatchCameraControlCommand } from "./cameraControlEvents.js";
-import ParticleDebugOverlay from "./ParticleDebugOverlay.jsx";
+import DiagnosticsHud from "./DiagnosticsHud.jsx";
 import PerformanceHud from "./PerformanceHud.jsx";
 import { RendererErrorBoundary } from "./RendererErrorBoundary.jsx";
 import UnsupportedWarning from "./UnsupportedWarning.jsx";
@@ -31,6 +36,7 @@ import {
   createBaryonRenderer,
   WEBGPU_RENDERER_INIT_ERROR,
 } from "./rendererDiagnostics.js";
+import { DEVTOOLS_ENABLED } from "../devtools/config.js";
 import { useFullscreen } from "./hooks/useFullScreenToggle.jsx";
 import { useBrowserSupportState } from "./hooks/useBrowserSupportState.js";
 import { useRendererModeState } from "./hooks/useRendererModeState.js";
@@ -63,18 +69,27 @@ function resolveDefaultCameraViewPreset({
 }
 
 function resolveEffectiveCameraViewPreset({
-  visualizationMethod,
   shouldUseIdleCameraDefault,
   defaultCameraViewPreset,
   cameraViewPreset,
 }) {
-  if (visualizationMethod === VISUALIZATION_METHODS.cymatics2d) {
-    return CAMERA_VIEW_PRESETS.side;
-  }
-
   return shouldUseIdleCameraDefault
     ? defaultCameraViewPreset
     : cameraViewPreset;
+}
+
+function formatCameraCoordinate(value) {
+  const number = Number.isFinite(value) ? Number(value) : 0;
+  const normalized = Object.is(number, -0) ? 0 : number;
+  return normalized.toFixed(2);
+}
+
+function createCameraPoseDisplayKey(cameraPose) {
+  return [
+    formatCameraCoordinate(cameraPose?.position?.x),
+    formatCameraCoordinate(cameraPose?.position?.y),
+    formatCameraCoordinate(cameraPose?.position?.z),
+  ].join(":");
 }
 
 /**
@@ -86,7 +101,7 @@ function resolveEffectiveCameraViewPreset({
  *     showAction?: boolean,
  *     deviceSelectTestId?: string,
  *   } | null,
- *   debugOverlayExtraItems?: Array<{ label: string, value: string | number | boolean }> | null,
+ *   diagnosticsHudExtraItems?: Array<{ label: string, value: string | number | boolean }> | null,
  *   outputFrameConfig?: { enabled: boolean, width: number, height: number } | null,
  *   onOutputFrame?: (frame: { width: number, height: number, rgba: ArrayBuffer }) => Promise<void> | void,
  *   onFrameState?: (state: Record<string, unknown>) => void,
@@ -126,7 +141,7 @@ const ThreeScene = ({
   controlsOverlay = null,
   topRightOverlay = null,
   liveInputPanel = null,
-  debugOverlayExtraItems = null,
+  diagnosticsHudExtraItems = null,
   outputFrameConfig = null,
   onOutputFrame = null,
   onFrameState = null,
@@ -147,9 +162,11 @@ const ThreeScene = ({
     /** @type {any} */ (controlsRef.current).forceWebGLFallbackTest,
   );
   const [performanceHudMetrics, setPerformanceHudMetrics] = useState(null);
-  const [cameraViewPreset, setCameraViewPreset] = useState(
+  const [appliedCameraViewPreset, setAppliedCameraViewPreset] = useState(
     CAMERA_VIEW_PRESETS.topDown,
   );
+  const [cameraPoseOverride, setCameraPoseOverride] = useState(null);
+  const [latestFrameCameraPose, setLatestFrameCameraPose] = useState(null);
   const [cameraResetNonce, setCameraResetNonce] = useState(0);
   const [frameFieldState, setFrameFieldState] = useState("idle");
   const [viewportWidth, setViewportWidth] = useState(() =>
@@ -197,14 +214,22 @@ const ThreeScene = ({
   const shouldUseIdleCameraDefault =
     liveInputUiState === "idle" && resolvedFrameFieldState === "idle";
   const effectiveCameraViewPreset = resolveEffectiveCameraViewPreset({
-    visualizationMethod: controlsState.visualizationMethod,
     shouldUseIdleCameraDefault,
     defaultCameraViewPreset,
-    cameraViewPreset,
+    cameraViewPreset: appliedCameraViewPreset,
   });
-  const effectiveCameraPose = resolvePresetCameraPose(
-    effectiveCameraViewPreset,
+  const defaultCameraPose = useMemo(
+    () =>
+      shouldUseIdleCameraDefault
+        ? resolvePresetCameraPose(effectiveCameraViewPreset)
+        : DEFAULT_ACTIVE_CAMERA_POSE,
+    [effectiveCameraViewPreset, shouldUseIdleCameraDefault],
   );
+  const effectiveCameraPose = useMemo(
+    () => cameraPoseOverride ?? defaultCameraPose,
+    [cameraPoseOverride, defaultCameraPose],
+  );
+  const displayedCameraPose = latestFrameCameraPose ?? effectiveCameraPose;
   const cameraConfig = /** @type {{
     position: [number, number, number],
     up: [number, number, number],
@@ -244,34 +269,37 @@ const ThreeScene = ({
   });
   const showOverlayUi = isSupportReady && !isFullscreen;
   const previewOverlayState = resolvePreviewOverlayState(previewState);
-  const activeCameraControlPreset = /** @type {"top-down" | "side"} */ (
-    effectiveCameraViewPreset
-  );
+  const cameraControlsAvailable =
+    liveInputUiState === "active" || resolvedFrameFieldState !== "idle";
+  const cameraControlState = deriveCameraControlState({
+    available: cameraControlsAvailable,
+    appliedCameraPose: displayedCameraPose,
+    fallbackPreset: effectiveCameraViewPreset,
+  });
   const useAuthoritativePerformanceHud = shouldUseAuthoritativePerformanceHud({
     previewState,
     authoritativeStageTelemetry,
     authoritativeOutputHudMetrics,
   });
+  const resolvedHudMetrics = useAuthoritativePerformanceHud
+    ? composeAuthoritativePerformanceHudMetrics(
+        authoritativeStageTelemetry?.performanceHudSnapshot ?? null,
+        authoritativeOutputHudMetrics,
+      )
+    : performanceHudMetrics;
   const resolvedPerformanceHudMetrics = controlsState.performanceHudEnabled
-    ? useAuthoritativePerformanceHud
-      ? composeAuthoritativePerformanceHudMetrics(
-          authoritativeStageTelemetry?.performanceHudSnapshot ?? null,
-          authoritativeOutputHudMetrics,
-        )
-      : performanceHudMetrics
+    ? resolvedHudMetrics
     : null;
-  const debugOverlayEnabledOverride = omitLocalScene
+  const diagnosticsHudEnabledOverride = omitLocalScene
     ? authoritativeStageTelemetry?.auditEnabled === true
     : undefined;
-  const debugOverlaySnapshotOverride = omitLocalScene
+  const diagnosticsHudSnapshotOverride = omitLocalScene
     ? (authoritativeStageTelemetry?.auditSnapshot ?? null)
     : undefined;
   const liveInputStatusPanelVisible =
     showOverlayUi &&
     (selectedSource === "system" || resolvedLiveInputPanel.forceVisible);
-  const showCameraControls =
-    showOverlayUi &&
-    controlsState.visualizationMethod !== VISUALIZATION_METHODS.cymatics2d;
+  const showCameraControls = showOverlayUi && cameraControlState.visible;
   const isPhoneViewport = viewportWidth <= 640;
   const isTabletPortraitViewport = viewportWidth > 640 && viewportWidth <= 820;
   const isTabletViewport = viewportWidth <= 1024;
@@ -292,7 +320,7 @@ const ThreeScene = ({
     !isPhoneViewport &&
     !isTabletPortraitViewport &&
     (!isCompactViewport || !isControlsDockOpen);
-  const shouldShowDebugOverlay = !isTabletViewport;
+  const shouldShowDiagnosticsHud = !isTabletViewport;
 
   const handleCanvasError = (error) => {
     if (error?.name !== WEBGPU_RENDERER_INIT_ERROR) {
@@ -306,13 +334,42 @@ const ThreeScene = ({
   };
 
   const applyCameraPreset = (preset) => {
-    const nextCameraPose = resolvePresetCameraPose(preset);
-    setCameraViewPreset(preset);
+    const command = createCameraPresetCommand(preset);
+    setLatestFrameCameraPose(null);
+    setCameraPoseOverride(command.cameraPose);
+    setAppliedCameraViewPreset(preset);
     setCameraResetNonce((current) => current + 1);
-    dispatchCameraControlCommand({
-      cameraPose: nextCameraPose,
-    });
+    dispatchCameraControlCommand(command);
   };
+
+  const resetCameraPreset = () => {
+    const command = { cameraPose: defaultCameraPose };
+    setLatestFrameCameraPose(null);
+    setCameraPoseOverride(null);
+    setCameraResetNonce((current) => current + 1);
+    dispatchCameraControlCommand(command);
+  };
+
+  useEffect(() => {
+    if (!DEVTOOLS_ENABLED || typeof window === "undefined") {
+      return undefined;
+    }
+
+    window.__baryonCameraControls = {
+      setPreset(preset) {
+        applyCameraPreset(preset);
+      },
+      setPose(cameraPose) {
+        setLatestFrameCameraPose(null);
+        setCameraPoseOverride(cameraPose);
+        setCameraResetNonce((current) => current + 1);
+      },
+    };
+
+    return () => {
+      delete window.__baryonCameraControls;
+    };
+  });
 
   const handleFrameState = useCallback(
     (state) => {
@@ -320,6 +377,14 @@ const ThreeScene = ({
       setFrameFieldState((current) =>
         current === nextFieldState ? current : nextFieldState,
       );
+      if (state?.cameraPose) {
+        setLatestFrameCameraPose((current) =>
+          createCameraPoseDisplayKey(current) ===
+          createCameraPoseDisplayKey(state.cameraPose)
+            ? current
+            : state.cameraPose,
+        );
+      }
       onFrameState?.(state);
     },
     [onFrameState],
@@ -383,13 +448,13 @@ const ThreeScene = ({
                   background: "var(--nd-surface)",
                   boxShadow: "var(--nd-shell-shadow)",
                   color: "var(--nd-text-primary)",
-                  fontFamily: '"Aspekta", system-ui, sans-serif',
+                  fontFamily: "var(--baryon-type-interface-family)",
                 }}
               >
                 <div
                   style={{
                     fontSize: "0.62rem",
-                    letterSpacing: "0.16em",
+                    letterSpacing: "var(--baryon-type-heading-letter-spacing)",
                     textTransform: "uppercase",
                     color: "var(--nd-text-secondary)",
                     marginBottom: "0.35rem",
@@ -459,6 +524,7 @@ const ThreeScene = ({
                 controlsRef={controlsRef}
                 visualizationMethod={controlsState.visualizationMethod}
                 renderQualityPreset={controlsState.renderQualityPreset}
+                traaEnabled={controlsState.traaEnabled !== false}
                 onPerformanceHudSnapshotChange={setPerformanceHudMetrics}
                 outputFrameConfig={outputFrameConfig}
                 onOutputFrame={onOutputFrame}
@@ -466,6 +532,7 @@ const ThreeScene = ({
                 cameraControlMode={CAMERA_CONTROL_MODES.previewLocal}
                 cameraPose={effectiveCameraPose}
                 cameraResetNonce={cameraResetNonce}
+                cameraLocked={controlsState.cameraLocked === true}
                 suppressRender={usingPreview}
               />
             </Suspense>
@@ -475,9 +542,14 @@ const ThreeScene = ({
 
       {showCameraControls ? (
         <FloatingCameraControls
-          activePreset={activeCameraControlPreset}
+          activePreset={cameraControlState.activePreset}
+          cameraPose={displayedCameraPose}
           onPresetSelect={applyCameraPreset}
-          onPresetReset={() => applyCameraPreset(activeCameraControlPreset)}
+          onPresetReset={resetCameraPreset}
+          cameraLocked={controlsState.cameraLocked === true}
+          onToggleLock={(nextLocked) =>
+            updateControl("cameraLocked", nextLocked)
+          }
           rootTestId="camera-controls"
           topButtonTestId="camera-top-view-button"
           sideButtonTestId="camera-side-view-button"
@@ -538,12 +610,13 @@ const ThreeScene = ({
           {shouldShowPerformanceOverlay ? (
             <PerformanceHud metrics={resolvedPerformanceHudMetrics} stacked />
           ) : null}
-          {shouldShowDebugOverlay ? (
-            <ParticleDebugOverlay
+          {shouldShowDiagnosticsHud ? (
+            <DiagnosticsHud
               stacked
-              debugOverlayExtraItems={debugOverlayExtraItems}
-              enabledOverride={debugOverlayEnabledOverride}
-              snapshotOverride={debugOverlaySnapshotOverride}
+              diagnosticsHudExtraItems={diagnosticsHudExtraItems}
+              postProcessMetrics={resolvedHudMetrics}
+              enabledOverride={diagnosticsHudEnabledOverride}
+              snapshotOverride={diagnosticsHudSnapshotOverride}
             />
           ) : null}
         </div>

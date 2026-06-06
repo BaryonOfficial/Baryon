@@ -1,21 +1,21 @@
 import {
   AUDIT_DEFAULTS,
-  AUDIO_DEFAULTS,
   AUDIO_SLOT_CAPACITY,
   BEAT_DEFAULTS,
 } from "../../defaults.js";
+import { createModalFieldContinuityState } from "../../core/modalFieldContinuity.js";
 import { createBlendableLayerState } from "./blendState.js";
 import { createModalExcitationState } from "./modalExcitationState.js";
+import {
+  normalizeSpectralLanePacket,
+  readPackedQuad,
+  writePackedQuad,
+} from "./spectralLanePacket.js";
 
-/** @type {number} */
-export const BACKBONE_STACK_SLOTS = AUDIO_DEFAULTS.backboneStackSlots;
-/** @type {number} */
-export const DETAIL_STACK_SLOTS = AUDIO_DEFAULTS.detailStackSlots;
 /** @type {number} */
 export const MAX_STACK_SLOTS = AUDIO_SLOT_CAPACITY;
 export const BAND_BUCKET_COUNT = 4;
 const BEAT_HISTORY_SIZE = 8;
-export const DECAY_PER_FRAME = 0.9;
 const HARMONIC_SUPPORT_COUNT = 6;
 const COLOR_SLOT_STRIDE = 4;
 
@@ -32,6 +32,9 @@ export function createModalTargetBuild(capacity) {
     slots: createZeroTargetArray(capacity),
     referenceSlots: createZeroTargetArray(capacity),
     colorSlots: createColorSlotArray(capacity),
+    spectralLaneA: createColorSlotArray(capacity),
+    spectralLaneB: createColorSlotArray(capacity),
+    spectralMeta: createColorSlotArray(capacity),
     harmonicSupport: new Float32Array(HARMONIC_SUPPORT_COUNT),
     uniqueModeCount: 0,
     peaks: [],
@@ -49,7 +52,7 @@ function createModalLayerState(capacity) {
     analysisEngine: "none",
     uniqueModeCount: 0,
     lastStableAt: 0,
-    chromesthesiaComponents: [],
+    spectralLightComponents: [],
     latchedFundamentalHz: 0,
     latchedFundamentalConfidence: 0,
     latchHoldFrames: 0,
@@ -128,44 +131,53 @@ function createChromaState() {
 }
 
 export function createAudioFeatureState(capacity = AUDIO_SLOT_CAPACITY) {
-  const backboneCapacity = Math.min(capacity, BACKBONE_STACK_SLOTS);
-  const detailCapacity = Math.min(capacity, DETAIL_STACK_SLOTS);
-
   return {
     capacity,
     analysis: {
       frameId: 0,
-      backboneSlots: new Float32Array(capacity * 4),
-      detailSlots: new Float32Array(capacity * 4),
+      candidateForcingSlots: new Float32Array(capacity * 4),
+      candidateResponseSlots: new Float32Array(capacity * 4),
+      sourceCoupledPhaseSlots: new Float32Array(capacity * 4),
+      resonantPhaseSlots: new Float32Array(capacity * 4),
       modeSlots: new Float32Array(capacity * 4),
-      backboneColorSlots: createColorSlotArray(capacity),
-      detailColorSlots: createColorSlotArray(capacity),
-      referenceBackboneSlots: new Float32Array(capacity * 4),
-      referenceDetailSlots: new Float32Array(capacity * 4),
+      sourceCoupledColorSlots: createColorSlotArray(capacity),
+      resonantColorSlots: createColorSlotArray(capacity),
+      referenceSourceCoupledSlots: new Float32Array(capacity * 4),
+      referenceResonantSlots: new Float32Array(capacity * 4),
       referenceModeSlots: new Float32Array(capacity * 4),
       bandEnergies: new Float32Array(BAND_BUCKET_COUNT),
       fftMagnitudes: new Float32Array(0),
-      backboneState: createModalLayerState(capacity),
-      detailState: createModalLayerState(capacity),
+      sourceCoupledState: createModalLayerState(capacity),
+      resonantState: createModalLayerState(capacity),
       bandState: createBandState(),
       chromaState: createChromaState(),
       previousSpectrum: new Float32Array(0),
-      zeroBackboneTargetSlots: createZeroTargetArray(backboneCapacity),
-      zeroDetailTargetSlots: createZeroTargetArray(detailCapacity),
-      nonAcousticBackboneTarget: createModalTargetBuild(backboneCapacity),
-      nonAcousticDetailTarget: createModalTargetBuild(detailCapacity),
-      nonAcousticPeakDriverScratch: createModalTargetBuild(backboneCapacity),
-      acousticBackboneTarget: createModalTargetBuild(backboneCapacity),
-      acousticDetailTarget: createModalTargetBuild(detailCapacity),
+      zeroSourceCoupledTargetSlots: createZeroTargetArray(capacity),
+      zeroResonantTargetSlots: createZeroTargetArray(capacity),
+      nonAcousticSourceCoupledTarget: createModalTargetBuild(capacity),
+      nonAcousticResonantTarget: createModalTargetBuild(capacity),
+      nonAcousticPeakDriverScratch: createModalTargetBuild(capacity),
+      acousticSourceCoupledTarget: createModalTargetBuild(capacity),
+      acousticResonantTarget: createModalTargetBuild(capacity),
       modalExcitationState: createModalExcitationState(capacity),
+      modalFieldContinuityState: createModalFieldContinuityState(),
+      modalDescriptorAuthorityState: {
+        previousFieldAuthority: null,
+      },
     },
     audit: {
       frame: 0,
-      frozenBackboneSlots: new Float32Array(capacity * 4),
-      frozenDetailSlots: new Float32Array(capacity * 4),
+      frozenSourceCoupledSlots: new Float32Array(capacity * 4),
+      frozenResonantSlots: new Float32Array(capacity * 4),
       frozenModeSlots: new Float32Array(capacity * 4),
-      frozenBackboneColorSlots: createColorSlotArray(capacity),
-      frozenDetailColorSlots: createColorSlotArray(capacity),
+      frozenSourceCoupledColorSlots: createColorSlotArray(capacity),
+      frozenResonantColorSlots: createColorSlotArray(capacity),
+      frozenSourceCoupledSpectralLaneA: createColorSlotArray(capacity),
+      frozenSourceCoupledSpectralLaneB: createColorSlotArray(capacity),
+      frozenSourceCoupledSpectralMeta: createColorSlotArray(capacity),
+      frozenResonantSpectralLaneA: createColorSlotArray(capacity),
+      frozenResonantSpectralLaneB: createColorSlotArray(capacity),
+      frozenResonantSpectralMeta: createColorSlotArray(capacity),
       lastSnapshot: null,
       settings: { ...AUDIT_DEFAULTS },
     },
@@ -180,53 +192,26 @@ export function clearModalStack(state) {
   state.referenceSlots?.fill(0);
   state.colorSlots?.fill(0);
   state.referenceColorSlots?.fill(0);
+  state.spectralLaneA?.fill(0);
+  state.spectralLaneB?.fill(0);
+  state.spectralMeta?.fill(0);
+  state.referenceSpectralLaneA?.fill(0);
+  state.referenceSpectralLaneB?.fill(0);
+  state.referenceSpectralMeta?.fill(0);
+  state.phaseSlots?.fill(0);
   state.harmonicSupport?.fill(0);
   state.fundamental = 0;
   state.fundamentalConfidence = 0;
   state.analysisEngine = "none";
   state.uniqueModeCount = 0;
   state.lastStableAt = 0;
-  state.chromesthesiaComponents = [];
+  state.spectralLightComponents = [];
   if ("latchedFundamentalHz" in state) state.latchedFundamentalHz = 0;
   if ("latchedFundamentalConfidence" in state) {
     state.latchedFundamentalConfidence = 0;
   }
   if ("latchHoldFrames" in state) state.latchHoldFrames = 0;
   if ("latchLowSupportFrames" in state) state.latchLowSupportFrames = 0;
-  if ("driverFrequency" in state) state.driverFrequency = 0;
-  if ("candidateFrequency" in state) state.candidateFrequency = 0;
-  if ("candidateConfidence" in state) state.candidateConfidence = 0;
-  if ("candidateFrames" in state) state.candidateFrames = 0;
-  if ("candidatePeriodicity" in state) state.candidatePeriodicity = 0;
-  if ("candidateHarmonicSupport" in state) {
-    state.candidateHarmonicSupport = 0;
-  }
-  if ("candidateDirectSupport" in state) state.candidateDirectSupport = 0;
-  if ("candidateLowEnergy" in state) state.candidateLowEnergy = false;
-  if ("voicingActive" in state) state.voicingActive = false;
-  if ("highCandidateRejected" in state) state.highCandidateRejected = false;
-  if ("rejectionReason" in state) state.rejectionReason = "none";
-  state.slotAgeFrames?.fill(0);
-  state.slotConfidence?.fill(0);
-  state.slotDisagreementCounts?.fill(0);
-  state.slotLastConfirmedFrames?.fill(0);
-  state._slotMetricMap?.clear?.();
-}
-
-export function decayModalStack(state) {
-  if (!state?.slots) return;
-
-  for (let i = 0; i < state.slots.length; i += 4) {
-    state.slots[i + 3] *= DECAY_PER_FRAME;
-  }
-  state.referenceSlots?.fill(0);
-  state.referenceColorSlots?.fill(0);
-  state.harmonicSupport?.fill(0);
-  state.fundamental = 0;
-  state.fundamentalConfidence = 0;
-  state.analysisEngine = "none";
-  state.uniqueModeCount = 0;
-  state.chromesthesiaComponents = [];
   if ("driverFrequency" in state) state.driverFrequency = 0;
   if ("candidateFrequency" in state) state.candidateFrequency = 0;
   if ("candidateConfidence" in state) state.candidateConfidence = 0;
@@ -273,7 +258,7 @@ export const BLEND_ATTACK = 0.18;
 export const BLEND_TRACKING = 0.28;
 export const BLEND_RELEASE = 0.94;
 export const BLEND_DROP_THRESHOLD = 1e-4;
-export const BLEND_MAX_FRESH_PER_FRAME = 2;
+export const BLEND_FRESH_ADMISSION_UNLIMITED = 0;
 
 function modeKey(u, v, w) {
   return `${u}:${v}:${w}`;
@@ -283,12 +268,14 @@ export function blendModalStack(state, targetSlots, capacity, options = {}) {
   const attack = options.attack ?? BLEND_ATTACK;
   const tracking = options.tracking ?? BLEND_TRACKING;
   const release = options.release ?? BLEND_RELEASE;
+  const trackingOverrides = options.trackingOverrides ?? null;
   const releaseOverrides = options.releaseOverrides ?? null;
-  const freshCap = options.freshCap ?? BLEND_MAX_FRESH_PER_FRAME;
+  const freshCap = options.freshCap ?? BLEND_FRESH_ADMISSION_UNLIMITED;
   const dropThreshold = options.dropThreshold ?? BLEND_DROP_THRESHOLD;
   const emptyTargetRelease = options.emptyTargetRelease;
   const lowSignalReleaseThreshold = options.lowSignalReleaseThreshold ?? 0;
   const lowSignalRelease = options.lowSignalRelease;
+  const retainReleased = options.retainReleased ?? true;
   const slotLimit = Math.min(state.slots.length / 4, capacity);
 
   const currentMap = state._poolCurrentMap ?? new Map();
@@ -340,8 +327,10 @@ export function blendModalStack(state, targetSlots, capacity, options = {}) {
   for (const key of admittedTargetKeys) {
     const target = targetMap.get(key);
     const current = currentMap.get(key);
+    const trackingFactor = trackingOverrides?.get?.(key) ?? tracking;
     const newAmp = current
-      ? current.amplitude + (target.amplitude - current.amplitude) * tracking
+      ? current.amplitude +
+        (target.amplitude - current.amplitude) * trackingFactor
       : target.amplitude * attack;
     if (newAmp >= dropThreshold) {
       blended.set(key, {
@@ -355,6 +344,9 @@ export function blendModalStack(state, targetSlots, capacity, options = {}) {
 
   for (const [key, entry] of currentMap.entries()) {
     if (!admittedTargetKeys.has(key)) {
+      if (!retainReleased && targetMap.size === 0) {
+        continue;
+      }
       let releaseFactor = releaseOverrides?.get?.(key) ?? release;
       if (Number.isFinite(emptyTargetRelease) && targetMap.size === 0) {
         releaseFactor = Math.min(releaseFactor, emptyTargetRelease);
@@ -411,6 +403,13 @@ export function blendColorStack(
 ) {
   if (!state?.slots || !state?.colorSlots || !targetColorSlots) return;
 
+  const targetSpectralLaneA = options.targetSpectralLaneA ?? null;
+  const targetSpectralLaneB = options.targetSpectralLaneB ?? null;
+  const targetSpectralMeta = options.targetSpectralMeta ?? null;
+  const trackSpectralLaneOwner = Boolean(
+    targetSpectralLaneA || targetSpectralLaneB || targetSpectralMeta,
+  );
+  const trackSpectralOwner = trackSpectralLaneOwner;
   const attack = options.attack ?? BLEND_ATTACK;
   const tracking = options.tracking ?? BLEND_TRACKING;
   const release = options.release ?? BLEND_RELEASE;
@@ -435,6 +434,9 @@ export function blendColorStack(
         g: state.colorSlots[offset + 1],
         b: state.colorSlots[offset + 2],
         weight: colorWeight,
+        laneA: readPackedQuad(state.spectralLaneA, offset),
+        laneB: readPackedQuad(state.spectralLaneB, offset),
+        meta: readPackedQuad(state.spectralMeta, offset),
       },
     );
   }
@@ -444,26 +446,81 @@ export function blendColorStack(
   const targetLimit = Math.min(
     targetSlots.length / 4,
     targetColorSlots.length / 4,
-    capacity,
   );
   for (let i = 0; i < targetLimit; i++) {
     const offset = i * 4;
     const amplitude = targetSlots[offset + 3] ?? 0;
     const weight = targetColorSlots[offset + 3] ?? 0;
     if (amplitude <= 0 && weight <= 0) continue;
-    targetColorMap.set(
-      modeKey(
-        targetSlots[offset],
-        targetSlots[offset + 1],
-        targetSlots[offset + 2],
-      ),
-      {
-        r: targetColorSlots[offset],
-        g: targetColorSlots[offset + 1],
-        b: targetColorSlots[offset + 2],
-        weight,
-      },
+    const key = modeKey(
+      targetSlots[offset],
+      targetSlots[offset + 1],
+      targetSlots[offset + 2],
     );
+    const influence = Math.max(0, amplitude) * Math.max(0, weight);
+    const spectralMeta = readPackedQuad(targetSpectralMeta, offset);
+    const laneA = readPackedQuad(targetSpectralLaneA, offset);
+    const laneB = readPackedQuad(targetSpectralLaneB, offset);
+    const packetDisplayEnergy = Math.max(0, spectralMeta[3] ?? 0);
+    const packetConfidence = Math.max(0, spectralMeta[2] ?? 0);
+    const laneInfluence =
+      Math.max(0, amplitude) * packetDisplayEnergy * packetConfidence;
+    const existing = targetColorMap.get(key);
+    if (existing) {
+      existing.amplitude += Math.max(0, amplitude);
+      existing.colorInfluence += influence;
+      existing.colorR += targetColorSlots[offset] * influence;
+      existing.colorG += targetColorSlots[offset + 1] * influence;
+      existing.colorB += targetColorSlots[offset + 2] * influence;
+      existing.weightNumerator += weight * Math.max(0, amplitude);
+      existing.laneInfluence += laneInfluence;
+      for (let laneIndex = 0; laneIndex < 4; laneIndex += 1) {
+        existing.laneA[laneIndex] += laneA[laneIndex] * laneInfluence;
+        existing.laneB[laneIndex] += laneB[laneIndex] * laneInfluence;
+      }
+      if (laneInfluence > existing.spectralOwnerInfluence) {
+        existing.spectralOwnerInfluence = laneInfluence;
+        existing.meta = spectralMeta;
+      }
+    } else {
+      targetColorMap.set(key, {
+        amplitude: Math.max(0, amplitude),
+        colorInfluence: influence,
+        colorR: targetColorSlots[offset] * influence,
+        colorG: targetColorSlots[offset + 1] * influence,
+        colorB: targetColorSlots[offset + 2] * influence,
+        weightNumerator: weight * Math.max(0, amplitude),
+        spectralOwnerInfluence: laneInfluence,
+        laneInfluence,
+        laneA: laneA.map((value) => value * laneInfluence),
+        laneB: laneB.map((value) => value * laneInfluence),
+        meta: spectralMeta,
+      });
+    }
+  }
+  for (const [key, target] of targetColorMap) {
+    const colorDenom = Math.max(target.colorInfluence, 1e-9);
+    const amplitudeDenom = Math.max(target.amplitude, 1e-9);
+    const laneDenom = Math.max(target.laneInfluence, 1e-9);
+    const normalizedLanes =
+      target.laneInfluence > 0
+        ? normalizeSpectralLanePacket(
+            target.laneA.map((value) => value / laneDenom),
+            target.laneB.map((value) => value / laneDenom),
+          )
+        : {
+            laneA: [0, 0, 0, 0],
+            laneB: [0, 0, 0, 0],
+          };
+    targetColorMap.set(key, {
+      r: target.colorR / colorDenom,
+      g: target.colorG / colorDenom,
+      b: target.colorB / colorDenom,
+      weight: target.weightNumerator / amplitudeDenom,
+      laneA: normalizedLanes.laneA,
+      laneB: normalizedLanes.laneB,
+      meta: target.laneInfluence > 0 ? target.meta : [0, 0, 0, 0],
+    });
   }
 
   const survivors = [];
@@ -480,20 +537,53 @@ export function blendColorStack(
     const current = currentColorMap.get(key);
     const target = targetColorMap.get(key);
     const blendFactor = current && target ? tracking : attack;
-    const base = current ?? { r: 0, g: 0, b: 0, weight: 0 };
+    const base = current ?? {
+      r: 0,
+      g: 0,
+      b: 0,
+      weight: 0,
+      laneA: [0, 0, 0, 0],
+      laneB: [0, 0, 0, 0],
+      meta: [0, 0, 0, 0],
+    };
+    const nextWeight = target
+      ? base.weight + (target.weight - base.weight) * blendFactor
+      : base.weight * release;
     const next = target
       ? {
-          r: base.r + (target.r - base.r) * blendFactor,
-          g: base.g + (target.g - base.g) * blendFactor,
-          b: base.b + (target.b - base.b) * blendFactor,
-          weight: base.weight + (target.weight - base.weight) * blendFactor,
+          r: trackSpectralOwner
+            ? target.r
+            : base.r + (target.r - base.r) * blendFactor,
+          g: trackSpectralOwner
+            ? target.g
+            : base.g + (target.g - base.g) * blendFactor,
+          b: trackSpectralOwner
+            ? target.b
+            : base.b + (target.b - base.b) * blendFactor,
+          weight: nextWeight,
+          laneA: target.laneA,
+          laneB: target.laneB,
+          meta: target.meta,
         }
-      : {
-          r: base.r,
-          g: base.g,
-          b: base.b,
-          weight: base.weight * release,
-        };
+      : trackSpectralOwner
+        ? {
+            r: 0,
+            g: 0,
+            b: 0,
+            weight: 0,
+            laneA: [0, 0, 0, 0],
+            laneB: [0, 0, 0, 0],
+            meta: [0, 0, 0, 0],
+          }
+        : {
+            r: base.r,
+            g: base.g,
+            b: base.b,
+            weight: nextWeight,
+            laneA: base.laneA,
+            laneB: base.laneB,
+            meta: base.meta,
+          };
 
     survivors.push({
       offset,
@@ -512,14 +602,23 @@ export function blendColorStack(
   survivors.sort((left, right) => left.offset - right.offset);
 
   state.colorSlots.fill(0);
+  state.spectralLaneA?.fill(0);
+  state.spectralLaneB?.fill(0);
+  state.spectralMeta?.fill(0);
   for (const survivor of survivors) {
     state.colorSlots[survivor.offset] = survivor.r;
     state.colorSlots[survivor.offset + 1] = survivor.g;
     state.colorSlots[survivor.offset + 2] = survivor.b;
     state.colorSlots[survivor.offset + 3] = survivor.weight;
+    writePackedQuad(state.spectralLaneA, survivor.offset, survivor.laneA);
+    writePackedQuad(state.spectralLaneB, survivor.offset, survivor.laneB);
+    writePackedQuad(state.spectralMeta, survivor.offset, survivor.meta);
   }
 
   state.referenceColorSlots.fill(0);
+  state.referenceSpectralLaneA?.fill(0);
+  state.referenceSpectralLaneB?.fill(0);
+  state.referenceSpectralMeta?.fill(0);
   for (let i = 0; i < slotLimit; i++) {
     const offset = i * 4;
     const key = modeKey(
@@ -533,6 +632,9 @@ export function blendColorStack(
     state.referenceColorSlots[offset + 1] = target.g;
     state.referenceColorSlots[offset + 2] = target.b;
     state.referenceColorSlots[offset + 3] = target.weight;
+    writePackedQuad(state.referenceSpectralLaneA, offset, target.laneA);
+    writePackedQuad(state.referenceSpectralLaneB, offset, target.laneB);
+    writePackedQuad(state.referenceSpectralMeta, offset, target.meta);
   }
 }
 

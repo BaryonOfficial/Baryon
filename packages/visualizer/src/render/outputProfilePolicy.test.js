@@ -14,6 +14,7 @@ import {
 
 describe("render quality profiles", () => {
   it("normalizes quality presets and defaults to auto", () => {
+    expect(normalizePerformanceProfile("auto")).toBe("auto");
     expect(normalizePerformanceProfile("custom")).toBe("custom");
     expect(normalizePerformanceProfile("none")).toBe("max-quality");
     expect(normalizePerformanceProfile("max-quality")).toBe("max-quality");
@@ -88,6 +89,26 @@ describe("render quality profiles", () => {
         traaEnabled: true,
       }),
     ).toBeNull();
+  });
+
+  it("preserves explicit TRAA state in resolved profiles", () => {
+    expect(
+      normalizeResolvedRenderQualityProfile({
+        qualityPreset: "custom",
+        targetFps: 120,
+        renderScale: 0.67,
+        traaEnabled: false,
+        bloomAllowed: false,
+        renderContext: "external-output",
+      }),
+    ).toEqual({
+      qualityPreset: "custom",
+      targetFps: 120,
+      renderScale: 0.67,
+      traaEnabled: false,
+      bloomAllowed: false,
+      renderContext: RENDER_CONTEXTS.externalOutput,
+    });
   });
 
   it("keeps full quality for auto at 1080p", () => {
@@ -456,8 +477,39 @@ describe("render quality profiles", () => {
       qualityPreset: "auto",
       targetFps: 60,
       renderScale: 0.67,
-      traaEnabled: true,
+      traaEnabled: false,
       bloomAllowed: false,
+      renderContext: RENDER_CONTEXTS.preview,
+    });
+  });
+
+  it("applies TRAA diagnostics overrides", () => {
+    expect(
+      normalizeRenderQualityProfileOverrides({
+        traaEnabled: false,
+      }),
+    ).toEqual({ traaEnabled: false });
+
+    expect(
+      applyRenderQualityProfileOverrides(
+        {
+          qualityPreset: "max-quality",
+          targetFps: 60,
+          renderScale: 1,
+          traaEnabled: true,
+          bloomAllowed: true,
+          renderContext: RENDER_CONTEXTS.preview,
+        },
+        {
+          traaEnabled: false,
+        },
+      ),
+    ).toEqual({
+      qualityPreset: "max-quality",
+      targetFps: 60,
+      renderScale: 1,
+      traaEnabled: false,
+      bloomAllowed: true,
       renderContext: RENDER_CONTEXTS.preview,
     });
   });
@@ -501,7 +553,7 @@ describe("render quality profiles", () => {
       qualityPreset: "auto",
       targetFps: 60,
       renderScale: 0.67,
-      traaEnabled: true,
+      traaEnabled: false,
       bloomAllowed: false,
       renderContext: RENDER_CONTEXTS.preview,
     });

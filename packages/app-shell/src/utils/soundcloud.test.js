@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
   assertSoundCloudClientId,
   canUseNativeStreamPlayback,
@@ -226,4 +226,177 @@ test("detects HLS streams and native playback capability", () => {
       "application/vnd.apple.mpegurl",
     ),
   ).toBe(true);
+});
+
+test("surfaces non-OK SoundCloud resolve responses", async () => {
+  await expect(
+    resolveSoundCloudQueue("https://soundcloud.com/artist/native-track", {
+      clientId: "client-id",
+      fetchImpl: async () => ({
+        ok: false,
+        status: 503,
+      }),
+    }),
+  ).rejects.toThrow(/SoundCloud request failed: 503/);
+});
+
+test("rejects tracks without playable transcodings", async () => {
+  await expect(
+    resolveSoundCloudQueue("https://soundcloud.com/artist/native-track", {
+      clientId: "client-id",
+      fetchImpl: async () => ({
+        ok: true,
+        async json() {
+          return {
+            kind: "track",
+            id: 101,
+            urn: "urn:soundcloud:tracks:101",
+            title: "No Streams",
+            media: { transcodings: [] },
+          };
+        },
+      }),
+    }),
+  ).rejects.toThrow(/could not find a playable public track/);
+});
+
+test("rejects playlists when every track is unplayable", async () => {
+  await expect(
+    resolveSoundCloudQueue("https://soundcloud.com/artist/sets/empty", {
+      clientId: "client-id",
+      fetchImpl: async () => ({
+        ok: true,
+        async json() {
+          return {
+            kind: "playlist",
+            title: "No Playable Tracks",
+            tracks: [
+              {
+                id: 1,
+                urn: "urn:soundcloud:tracks:1",
+                media: {
+                  transcodings: [
+                    {
+                      url: "https://api.soundcloud.com/media/1/stream/hls",
+                      snipped: true,
+                      format: {
+                        protocol: "hls",
+                        mime_type: "application/vnd.apple.mpegurl",
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          };
+        },
+      }),
+    }),
+  ).rejects.toThrow(/could not find a playable public track/);
+});
+
+test("prefers progressive transcodings over HLS", async () => {
+  const result = await resolveSoundCloudQueue(
+    "https://soundcloud.com/artist/native-track",
+    {
+      clientId: "client-id",
+      fetchImpl: async () => ({
+        ok: true,
+        async json() {
+          return {
+            kind: "track",
+            id: 101,
+            urn: "urn:soundcloud:tracks:101",
+            title: "Progressive Track",
+            media: {
+              transcodings: [
+                {
+                  url: "https://api.soundcloud.com/media/101/stream/hls",
+                  format: {
+                    protocol: "hls",
+                    mime_type: "application/vnd.apple.mpegurl",
+                  },
+                },
+                {
+                  url: "https://api.soundcloud.com/media/101/stream/progressive",
+                  format: {
+                    protocol: "progressive",
+                    mime_type: "audio/mpeg",
+                  },
+                },
+              ],
+            },
+          };
+        },
+      }),
+    },
+  );
+
+  expect(result.queue[0]).toMatchObject({
+    protocol: "progressive",
+    mimeType: "audio/mpeg",
+    transcodingUrl: "https://api.soundcloud.com/media/101/stream/progressive",
+  });
+});
+
+test("rejects stream resolution when the transcoding URL is missing", async () => {
+  await expect(
+    resolveSoundCloudStream(
+      {
+        mimeType: "audio/mpeg",
+        protocol: "progressive",
+      },
+      {
+        clientId: "client-id",
+        fetchImpl: async () => {
+          throw new Error("should not fetch");
+        },
+      },
+    ),
+  ).rejects.toThrow(/does not expose a playable stream/);
+});
+
+test("rejects stream resolution when SoundCloud omits the stream URL", async () => {
+  await expect(
+    resolveSoundCloudStream(
+      {
+        transcodingUrl: "https://api.soundcloud.com/media/track/stream/hls",
+        mimeType: "application/vnd.apple.mpegurl",
+        protocol: "hls",
+      },
+      {
+        clientId: "client-id",
+        fetchImpl: async () => ({
+          ok: true,
+          async json() {
+            return {};
+          },
+        }),
+      },
+    ),
+  ).rejects.toThrow(/did not return a playable stream URL/);
+});
+
+test("rejects blank SoundCloud inputs before fetching", async () => {
+  await expect(
+    resolveSoundCloudQueue("   ", {
+      clientId: "client-id",
+      fetchImpl: async () => {
+        throw new Error("should not fetch");
+      },
+    }),
+  ).rejects.toThrow(/Paste a valid SoundCloud track or playlist URL/);
+});
+
+test("fails fast when the environment does not provide fetch", async () => {
+  vi.stubGlobal("fetch", undefined);
+  try {
+    await expect(
+      resolveSoundCloudQueue("https://soundcloud.com/artist/native-track", {
+        clientId: "client-id",
+      }),
+    ).rejects.toThrow(/Fetch is not available/);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });

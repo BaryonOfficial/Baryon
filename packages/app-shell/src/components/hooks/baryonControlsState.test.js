@@ -31,21 +31,13 @@ test("builds the advanced controls presentation layout", () => {
   ]);
 
   const modeGroup = groupByTitle.get("Mode");
-  expect(modeGroup).toBeTruthy();
+  expect(modeGroup).toMatchObject({
+    title: "Mode",
+    controls: expect.any(Array),
+  });
   expect(
-    modeGroup.controls.map((control) => control.key).slice(0, 4),
-  ).toStrictEqual([
-    "boundaryMode",
-    "fieldCacheOverride",
-    "colorMode",
-    "rotationMode",
-  ]);
-  expect(
-    modeGroup.controls.find((control) => control.key === "fieldCacheOverride")
-      ?.title,
-  ).toBe(
-    "Cached is faster and usually looks the same. Direct recomputes the field live instead of using the 3D cache, so it costs more.",
-  );
+    modeGroup.controls.map((control) => control.key).slice(0, 3),
+  ).toStrictEqual(["boundaryMode", "colorMode", "rotationMode"]);
   expect(
     !modeGroup.controls.some((control) =>
       ["renderQualityPreset", "customPerformanceTargetFps"].includes(
@@ -55,24 +47,43 @@ test("builds the advanced controls presentation layout", () => {
   ).toBe(true);
 
   const diagnosticsGroup = groupByTitle.get("Diagnostics");
-  expect(diagnosticsGroup).toBeTruthy();
+  expect(diagnosticsGroup).toMatchObject({
+    title: "Diagnostics",
+    controls: expect.any(Array),
+  });
   expect(diagnosticsGroup.controls.map((control) => control.key)).toStrictEqual(
     [
-      "bloomResponseBias",
-      "rimBloomBias",
-      "rimCompression",
+      "traaEnabled",
+      "smaaEnabled",
       "auditEnabled",
       "freezeModeSlots",
       "forceWebGLFallbackTest",
       "lowLoadPlaybackDiagnostics",
-      "fieldCacheOverride",
       "cavityGeometry",
       "injectTestTone",
       "testToneHz",
+      "testToneSignal",
       "testToneAmplitude",
       "logEveryFrames",
     ],
   );
+
+  const displayGroup = groupByTitle.get("Display");
+  expect(displayGroup).toMatchObject({
+    title: "Display",
+    controls: expect.any(Array),
+  });
+  expect(displayGroup.controls.map((control) => control.key)).toStrictEqual([
+    "bloomEnabled",
+    "bloomStrength",
+    "bloomRadius",
+    "bloomThreshold",
+    "backgroundColor",
+    "outputBackgroundColor",
+    "bloomResponseBias",
+    "rimBloomBias",
+    "rimCompression",
+  ]);
 });
 
 test("operator control keys can surface Capture Debug Data without enabling all devtools controls", () => {
@@ -87,7 +98,7 @@ test("operator control keys can surface Capture Debug Data without enabling all 
 
   expect(
     diagnosticsGroup?.controls.map((control) => control.key),
-  ).toStrictEqual(["auditEnabled"]);
+  ).toStrictEqual(["smaaEnabled", "auditEnabled"]);
 });
 
 test("persistControls rewrites settings to the current schema and drops removed keys", () => {
@@ -97,6 +108,8 @@ test("persistControls rewrites settings to the current schema and drops removed 
       JSON.stringify({
         backgroundColor: "#010203",
         structuralImplementation: "legacy-peak",
+        structureMin: 0.12,
+        structureMax: 0.48,
       }),
     ],
   ]);
@@ -122,5 +135,11 @@ test("persistControls rewrites settings to the current schema and drops removed 
   });
   expect(JSON.parse(storage.get(SETTINGS_KEY))).not.toHaveProperty(
     "structuralImplementation",
+  );
+  expect(JSON.parse(storage.get(SETTINGS_KEY))).not.toHaveProperty(
+    "structureMin",
+  );
+  expect(JSON.parse(storage.get(SETTINGS_KEY))).not.toHaveProperty(
+    "structureMax",
   );
 });

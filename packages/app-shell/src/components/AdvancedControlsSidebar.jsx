@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { resolveAdvancedControlsHelpPosition } from "./advancedControlsHelpPosition.js";
+import {
+  UI_INTERACTION_SOURCES,
+  dispatchBaryonUiInteraction,
+} from "./uiInteractionEvents.js";
 
 const CLOSE_HELP_DELAY_MS = 110;
+const OPEN_HELP_DELAY_MS = 180;
+const SCROLL_INTERACTION_MARK_INTERVAL_MS = 140;
 const INFO_LINKS = [
   {
     href: "https://github.com/BaryonOfficial/Baryon",
@@ -95,11 +101,11 @@ const CSS = `
   gap: 0.28rem;
   padding: 0.42rem;
   background: var(--nd-surface);
-  border: 1px solid var(--nd-border-visible);
+  border: none;
   border-radius: 1.05rem;
   box-shadow: var(--nd-shell-shadow);
   color: var(--nd-text-primary);
-  font-family: "Aspekta", system-ui, sans-serif;
+  font-family: var(--baryon-type-interface-family);
   transform: translateX(calc(-100% - 0.75rem));
   opacity: 0;
   visibility: hidden;
@@ -109,6 +115,8 @@ const CSS = `
     visibility 220ms ease;
   pointer-events: auto;
   overflow: hidden;
+  contain: layout paint style;
+  transform-style: preserve-3d;
 }
 
 .baryon-controls-shell[data-open="true"] {
@@ -119,7 +127,7 @@ const CSS = `
 
 .baryon-controls-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 0.45rem;
   padding: 0.08rem 0.08rem 0.16rem;
@@ -130,46 +138,38 @@ const CSS = `
   min-width: 0;
 }
 
+.baryon-controls-close-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--nd-text-secondary);
+  cursor: pointer;
+  transition: color 140ms ease;
+}
+
+.baryon-controls-close-button:hover {
+  color: var(--nd-text-display);
+}
+
+.baryon-controls-close-button svg {
+  width: 1rem;
+  height: 1rem;
+}
+
 .baryon-controls-header-label {
   margin: 0;
   font-size: 0.62rem;
   font-weight: 700;
-  letter-spacing: 0.16em;
+  letter-spacing: var(--baryon-type-heading-letter-spacing);
   text-transform: uppercase;
   color: var(--nd-text-display);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-}
-
-.baryon-controls-header-note {
-  margin: 0.12rem 0 0;
-  font-size: 0.64rem;
-  line-height: 1.35;
-  color: var(--nd-text-secondary);
-}
-
-.baryon-controls-close-button {
-  min-height: 1.5rem;
-  padding: 0.26rem 0.5rem;
-  border-radius: 999px;
-  border: 1px solid var(--nd-border-visible);
-  background: transparent;
-  color: var(--nd-text-secondary);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 0.58rem;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition:
-    background 140ms ease,
-    border-color 140ms ease,
-    color 140ms ease;
-}
-
-.baryon-controls-close-button:hover {
-  background: var(--nd-surface-raised);
-  border-color: var(--nd-text-display);
-  color: var(--nd-text-display);
+  font-family: var(--baryon-type-mono-family);
 }
 
 .baryon-controls-pill-button,
@@ -180,10 +180,10 @@ const CSS = `
   border: 1px solid var(--nd-border-visible);
   background: transparent;
   color: var(--nd-text-secondary);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--baryon-type-mono-family);
   font-size: 0.57rem;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--baryon-type-label-letter-spacing);
   text-transform: uppercase;
   cursor: pointer;
   transition:
@@ -207,6 +207,11 @@ const CSS = `
   flex: 1;
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  contain: layout paint style;
+  will-change: scroll-position;
+  transform: translateZ(0);
   display: flex;
   flex-direction: column;
   gap: 0.28rem;
@@ -224,7 +229,7 @@ const CSS = `
 
 .baryon-controls-presets,
 .baryon-controls-group {
-  border: 1px solid var(--nd-border);
+  border: none;
   background: var(--nd-surface-raised);
   border-radius: 0.8rem;
 }
@@ -238,7 +243,7 @@ const CSS = `
   margin: 0 0.12rem 0.22rem;
   overflow-x: auto;
   scrollbar-width: none;
-  border: 1px solid var(--nd-border);
+  border: none;
   border-radius: 999px;
   background: color-mix(in srgb, var(--nd-surface-raised) 82%, #E8DFD0 4%);
   box-shadow:
@@ -257,10 +262,10 @@ const CSS = `
   border-radius: 999px;
   background: transparent;
   color: var(--nd-text-secondary);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--baryon-type-mono-family);
   font-size: 0.58rem;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--baryon-type-label-letter-spacing);
   text-transform: uppercase;
   cursor: pointer;
   white-space: nowrap;
@@ -296,10 +301,10 @@ const CSS = `
   margin: 0;
   font-size: 0.54rem;
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: var(--baryon-type-section-letter-spacing);
   text-transform: uppercase;
   color: var(--nd-text-secondary);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--baryon-type-mono-family);
 }
 
 .baryon-controls-field,
@@ -317,6 +322,10 @@ const CSS = `
   flex-wrap: wrap;
 }
 
+.baryon-controls-presets-load-field {
+  margin-top: 0.22rem;
+}
+
 .baryon-controls-text-input,
 .baryon-controls-select {
   width: 100%;
@@ -326,9 +335,9 @@ const CSS = `
   background: var(--nd-surface-raised);
   color: var(--nd-text-primary);
   padding: 0.24rem 0.44rem;
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--baryon-type-mono-family);
   font-size: 0.61rem;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--baryon-type-data-letter-spacing);
   box-sizing: border-box;
 }
 
@@ -372,15 +381,15 @@ const CSS = `
 .baryon-controls-group-count {
   font-size: 0.54rem;
   color: var(--nd-text-disabled);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--baryon-type-mono-family);
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: var(--baryon-type-dense-label-letter-spacing);
 }
 
 .baryon-controls-chevron {
   font-size: 0.54rem;
   color: var(--nd-text-secondary);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--baryon-type-mono-family);
 }
 
 .baryon-controls-group-content {
@@ -397,7 +406,7 @@ const CSS = `
   padding: 0.34rem 0.38rem;
   border-radius: 0.58rem;
   background: rgba(255, 255, 255, 0.015);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  border: none;
 }
 
 .baryon-controls-card-header {
@@ -421,9 +430,9 @@ const CSS = `
 .baryon-controls-card-label {
   font-size: 0.56rem;
   font-weight: 700;
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--baryon-type-mono-family);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--baryon-type-action-letter-spacing);
 }
 
 .baryon-controls-help-trigger {
@@ -479,10 +488,10 @@ const CSS = `
   margin: 0 0 0.18rem;
   font-size: 0.61rem;
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: var(--baryon-type-section-letter-spacing);
   text-transform: uppercase;
   color: var(--nd-text-secondary);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--baryon-type-mono-family);
 }
 
 .baryon-controls-help-tooltip-copy {
@@ -495,7 +504,7 @@ const CSS = `
 .baryon-controls-toggle {
   position: relative;
   width: 1.95rem;
-  height: 1.22rem;
+  height: 1.14rem;
   flex: 0 0 auto;
 }
 
@@ -512,28 +521,40 @@ const CSS = `
   inset: 0;
   border-radius: 999px;
   background: var(--nd-border);
+  box-shadow:
+    inset 0 0 0 1px var(--nd-border-visible),
+    inset 0 1px 2px rgba(0, 0, 0, 0.5);
   pointer-events: none;
-  transition: background 140ms ease;
+  transition:
+    background 180ms cubic-bezier(0.34, 1.4, 0.64, 1),
+    box-shadow 180ms ease;
 }
 
 .baryon-controls-toggle-thumb {
   position: absolute;
-  top: 0.12rem;
-  left: 0.12rem;
-  width: 0.94rem;
-  height: 0.94rem;
+  top: 50%;
+  left: 0.14rem;
+  width: 0.86rem;
+  height: 0.86rem;
   border-radius: 999px;
-  background: #E8DFD0;
+  background: var(--baryon-cream);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
   pointer-events: none;
-  transition: transform 140ms ease;
+  transform: translateY(-50%);
+  transition:
+    transform 200ms cubic-bezier(0.34, 1.5, 0.64, 1),
+    background 180ms ease;
 }
 
 .baryon-controls-toggle input:checked + .baryon-controls-toggle-track {
-  background: var(--nd-text-display);
+  background: var(--nd-accent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--nd-accent) 55%, #000),
+    inset 0 1px 2px rgba(0, 0, 0, 0.18);
 }
 
 .baryon-controls-toggle input:checked + .baryon-controls-toggle-track .baryon-controls-toggle-thumb {
-  transform: translateX(0.68rem);
+  transform: translate(0.81rem, -50%);
 }
 
 .baryon-controls-slider-row {
@@ -555,7 +576,7 @@ const CSS = `
   border: 1px solid var(--nd-border-visible);
   background: var(--nd-surface-raised);
   color: var(--nd-text-primary);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--baryon-type-mono-family);
   font-size: 0.58rem;
   text-align: right;
   box-sizing: border-box;
@@ -597,15 +618,15 @@ const CSS = `
   font-size: 0.62rem;
   color: var(--nd-text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: var(--baryon-type-action-letter-spacing);
+  font-family: var(--baryon-type-mono-family);
 }
 
 .baryon-controls-footer {
   display: grid;
   gap: 0.3rem;
   padding: 0.38rem;
-  border: 1px solid var(--nd-border);
+  border: none;
   background: var(--nd-surface-raised);
   border-radius: 0.8rem;
 }
@@ -626,10 +647,10 @@ const CSS = `
   border-radius: 0.62rem;
   background: rgba(255, 255, 255, 0.02);
   color: var(--nd-text-primary);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--baryon-type-mono-family);
   font-size: 0.54rem;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--baryon-type-label-letter-spacing);
   text-decoration: none;
   text-transform: uppercase;
 }
@@ -688,17 +709,6 @@ const CSS = `
     text-align: center;
   }
 
-  .baryon-controls-header-note {
-    margin-top: 0.12rem;
-    font-size: 0.64rem;
-    line-height: 1.35;
-  }
-
-  .baryon-controls-close-button {
-    min-height: 1.5rem;
-    padding: 0.26rem 0.5rem;
-  }
-
   .baryon-controls-scroll {
     gap: 0.28rem;
   }
@@ -716,7 +726,7 @@ const CSS = `
 
   .baryon-controls-section-label {
     font-size: 0.54rem;
-    letter-spacing: 0.14em;
+    letter-spacing: var(--baryon-type-section-letter-spacing);
   }
 
   .baryon-controls-field,
@@ -767,7 +777,7 @@ const CSS = `
 
   .baryon-controls-card-label {
     font-size: 0.56rem;
-    letter-spacing: 0.08em;
+    letter-spacing: var(--baryon-type-action-letter-spacing);
   }
 
   .baryon-controls-help-trigger {
@@ -830,17 +840,6 @@ const CSS = `
     padding-bottom: 0.32rem;
   }
 
-  .baryon-controls-header-note {
-    margin-top: 0.12rem;
-    font-size: 0.64rem;
-    line-height: 1.35;
-  }
-
-  .baryon-controls-close-button {
-    min-height: 1.5rem;
-    padding: 0.26rem 0.5rem;
-  }
-
   .baryon-controls-scroll {
     gap: 0.28rem;
   }
@@ -858,7 +857,7 @@ const CSS = `
 
   .baryon-controls-section-label {
     font-size: 0.54rem;
-    letter-spacing: 0.14em;
+    letter-spacing: var(--baryon-type-section-letter-spacing);
   }
 
   .baryon-controls-field,
@@ -909,7 +908,7 @@ const CSS = `
 
   .baryon-controls-card-label {
     font-size: 0.56rem;
-    letter-spacing: 0.08em;
+    letter-spacing: var(--baryon-type-action-letter-spacing);
   }
 
   .baryon-controls-help-trigger {
@@ -958,6 +957,55 @@ function HelpIcon() {
       <circle cx="12" cy="16.9" r="1" fill="currentColor" />
     </svg>
   );
+}
+
+function CloseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M6 6 18 18M18 6 6 18"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function noteAdvancedControlsInteraction(kind = "panel") {
+  dispatchBaryonUiInteraction({
+    source: UI_INTERACTION_SOURCES.advancedControls,
+    kind,
+  });
+}
+
+function usePassiveWheelBlur({ beforeBlur = null } = {}) {
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) {
+      return undefined;
+    }
+
+    const handleWheel = () => {
+      beforeBlur?.();
+      node.blur();
+    };
+
+    node.addEventListener("wheel", handleWheel, { passive: true });
+    return () => {
+      node.removeEventListener("wheel", handleWheel);
+    };
+  }, [beforeBlur]);
+
+  return ref;
+}
+
+function PassiveWheelBlurSelect(props) {
+  const selectRef = usePassiveWheelBlur();
+
+  return <select ref={selectRef} {...props} />;
 }
 
 function ControlHelpTrigger({
@@ -1011,6 +1059,13 @@ function SliderWithNumberInput({ controlId, definition, value, onChange }) {
 
   // Local draft state lets the user type partial values without interruption
   const [draft, setDraft] = useState(null);
+  const skipBlurCommitRef = useRef(false);
+  const sliderRef = usePassiveWheelBlur();
+  const numberInputRef = usePassiveWheelBlur({
+    beforeBlur: useCallback(() => {
+      skipBlurCommitRef.current = true;
+    }, []),
+  });
 
   // When the slider (or an external update) changes the committed value,
   // discard any stale draft so the field shows the new value
@@ -1029,6 +1084,7 @@ function SliderWithNumberInput({ controlId, definition, value, onChange }) {
   return (
     <span className="baryon-controls-slider-row">
       <input
+        ref={sliderRef}
         aria-label={sliderAriaLabel}
         className="baryon-controls-slider"
         type="range"
@@ -1042,6 +1098,7 @@ function SliderWithNumberInput({ controlId, definition, value, onChange }) {
         }}
       />
       <input
+        ref={numberInputRef}
         id={controlId}
         aria-label={numberInputAriaLabel}
         className="baryon-controls-number-input"
@@ -1057,7 +1114,14 @@ function SliderWithNumberInput({ controlId, definition, value, onChange }) {
             onChange(clampValue(parsed));
           }
         }}
-        onBlur={(event) => commitDraft(event.target.value)}
+        onBlur={(event) => {
+          if (skipBlurCommitRef.current) {
+            skipBlurCommitRef.current = false;
+            setDraft(null);
+            return;
+          }
+          commitDraft(event.target.value);
+        }}
         onKeyDown={(event) => {
           if (event.key === "Enter") {
             commitDraft(event.currentTarget.value);
@@ -1187,7 +1251,7 @@ function ControlField({
           </label>
           {helpTrigger}
         </div>
-        <select
+        <PassiveWheelBlurSelect
           id={controlId}
           aria-label={definition.label}
           className="baryon-controls-select"
@@ -1199,7 +1263,7 @@ function ControlField({
               {label}
             </option>
           ))}
-        </select>
+        </PassiveWheelBlurSelect>
       </div>
     );
   }
@@ -1351,9 +1415,11 @@ export default function AdvancedControlsSidebar({
   };
   const helpTriggerRefs = useRef(new Map());
   const helpOverlayRef = useRef(null);
+  const helpOpenTimerRef = useRef(null);
   const helpCloseTimerRef = useRef(null);
   const shellRef = useRef(null);
   const scrollRef = useRef(null);
+  const lastScrollInteractionAtRef = useRef(Number.NEGATIVE_INFINITY);
   const wasOpenRef = useRef(isOpen);
   const [hasHoverSupport, setHasHoverSupport] = useState(() =>
     typeof window === "undefined"
@@ -1373,6 +1439,9 @@ export default function AdvancedControlsSidebar({
   const [activeCompactSectionId, setActiveCompactSectionId] = useState(
     () => compactSections[0]?.id ?? "mode",
   );
+  const selectedPreset =
+    presets.find((preset) => preset.name === selectedPresetName) ?? null;
+  const canDeleteSelectedPreset = Boolean(selectedPresetName && selectedPreset);
 
   const helpDefinitions = new Map();
   for (const group of [
@@ -1390,6 +1459,13 @@ export default function AdvancedControlsSidebar({
     ? (helpDefinitions.get(activeHelpKey) ?? null)
     : null;
 
+  const clearPendingHelpOpen = useCallback(() => {
+    if (helpOpenTimerRef.current !== null) {
+      window.clearTimeout(helpOpenTimerRef.current);
+      helpOpenTimerRef.current = null;
+    }
+  }, []);
+
   const clearPendingHelpClose = useCallback(() => {
     if (helpCloseTimerRef.current !== null) {
       window.clearTimeout(helpCloseTimerRef.current);
@@ -1398,35 +1474,51 @@ export default function AdvancedControlsSidebar({
   }, []);
 
   const closeHelp = useCallback(() => {
+    clearPendingHelpOpen();
     clearPendingHelpClose();
     setActiveHelpKey("");
     setActiveHelpPosition(null);
-  }, [clearPendingHelpClose]);
+  }, [clearPendingHelpClose, clearPendingHelpOpen]);
 
   const scheduleHelpClose = useCallback(() => {
+    clearPendingHelpOpen();
     clearPendingHelpClose();
     helpCloseTimerRef.current = window.setTimeout(() => {
       helpCloseTimerRef.current = null;
       setActiveHelpKey("");
       setActiveHelpPosition(null);
     }, CLOSE_HELP_DELAY_MS);
-  }, [clearPendingHelpClose]);
+  }, [clearPendingHelpClose, clearPendingHelpOpen]);
 
   const openHelp = useCallback(
     (key) => {
+      clearPendingHelpOpen();
       clearPendingHelpClose();
       setActiveHelpKey((current) => (current === key ? current : key));
     },
-    [clearPendingHelpClose],
+    [clearPendingHelpClose, clearPendingHelpOpen],
+  );
+
+  const scheduleHelpOpen = useCallback(
+    (key) => {
+      clearPendingHelpOpen();
+      clearPendingHelpClose();
+      helpOpenTimerRef.current = window.setTimeout(() => {
+        helpOpenTimerRef.current = null;
+        setActiveHelpKey((current) => (current === key ? current : key));
+      }, OPEN_HELP_DELAY_MS);
+    },
+    [clearPendingHelpClose, clearPendingHelpOpen],
   );
 
   const toggleHelp = useCallback(
     (key) => {
+      clearPendingHelpOpen();
       clearPendingHelpClose();
       setActiveHelpPosition(null);
       setActiveHelpKey((current) => (current === key ? "" : key));
     },
-    [clearPendingHelpClose],
+    [clearPendingHelpClose, clearPendingHelpOpen],
   );
 
   const registerHelpTrigger = useCallback((key, node) => {
@@ -1571,25 +1663,49 @@ export default function AdvancedControlsSidebar({
 
     refreshHelpPosition();
 
-    const handleViewportChange = () => {
-      refreshHelpPosition();
-    };
-
-    window.addEventListener("resize", handleViewportChange);
-    window.addEventListener("scroll", handleViewportChange, true);
+    window.addEventListener("resize", refreshHelpPosition);
 
     return () => {
-      window.removeEventListener("resize", handleViewportChange);
-      window.removeEventListener("scroll", handleViewportChange, true);
+      window.removeEventListener("resize", refreshHelpPosition);
     };
   }, [activeHelpKey, refreshHelpPosition]);
 
   useEffect(
     () => () => {
+      clearPendingHelpOpen();
       clearPendingHelpClose();
     },
-    [clearPendingHelpClose],
+    [clearPendingHelpClose, clearPendingHelpOpen],
   );
+
+  useEffect(() => {
+    const scrollNode = scrollRef.current;
+    if (!isOpen || !scrollNode) {
+      return undefined;
+    }
+
+    lastScrollInteractionAtRef.current = Number.NEGATIVE_INFINITY;
+
+    const handleWheel = () => {
+      const nowMs =
+        typeof globalThis.performance?.now === "function"
+          ? globalThis.performance.now()
+          : Date.now();
+      if (
+        nowMs - lastScrollInteractionAtRef.current <
+        SCROLL_INTERACTION_MARK_INTERVAL_MS
+      ) {
+        return;
+      }
+      lastScrollInteractionAtRef.current = nowMs;
+      noteAdvancedControlsInteraction("scroll");
+    };
+
+    scrollNode.addEventListener("wheel", handleWheel, { passive: true });
+    return () => {
+      scrollNode.removeEventListener("wheel", handleWheel);
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     const shell = shellRef.current;
@@ -1615,7 +1731,7 @@ export default function AdvancedControlsSidebar({
 
   const helpEventHandlers = {
     onHelpPointerEnter: (key) => {
-      if (hasHoverSupport) openHelp(key);
+      if (hasHoverSupport) scheduleHelpOpen(key);
     },
     onHelpPointerLeave: () => {
       if (hasHoverSupport) scheduleHelpClose();
@@ -1654,16 +1770,15 @@ export default function AdvancedControlsSidebar({
               <p className="baryon-controls-header-label">
                 Baryon | Advanced Controls
               </p>
-              <p className="baryon-controls-header-note">
-                Tune the cymatic visuals
-              </p>
             </div>
             <button
               type="button"
               className="baryon-controls-close-button"
               onClick={onClose}
+              aria-label="Close advanced controls"
+              title="Close advanced controls"
             >
-              Close
+              <CloseIcon />
             </button>
           </header>
 
@@ -1690,14 +1805,21 @@ export default function AdvancedControlsSidebar({
             </div>
           ) : null}
 
-          <div ref={scrollRef} className="baryon-controls-scroll">
+          <div
+            ref={scrollRef}
+            className="baryon-controls-scroll"
+            onPointerEnter={() => noteAdvancedControlsInteraction("hover")}
+            onPointerDownCapture={() =>
+              noteAdvancedControlsInteraction("pointer")
+            }
+            onFocusCapture={() => noteAdvancedControlsInteraction("focus")}
+            onKeyDownCapture={() => noteAdvancedControlsInteraction("keyboard")}
+          >
             {(!isCompactInspector || activeCompactSection?.includePresets) && (
               <section className="baryon-controls-presets">
                 <p className="baryon-controls-section-label">Presets</p>
                 <label className="baryon-controls-field">
-                  <span className="baryon-controls-card-label">
-                    Preset name
-                  </span>
+                  <span className="baryon-controls-card-label">Name</span>
                   <input
                     aria-label="Preset name"
                     className="baryon-controls-text-input"
@@ -1723,11 +1845,9 @@ export default function AdvancedControlsSidebar({
                     Reset to Defaults
                   </button>
                 </div>
-                <label className="baryon-controls-field">
-                  <span className="baryon-controls-card-label">
-                    Load preset
-                  </span>
-                  <select
+                <label className="baryon-controls-field baryon-controls-presets-load-field">
+                  <span className="baryon-controls-card-label">Load</span>
+                  <PassiveWheelBlurSelect
                     aria-label="Load preset"
                     className="baryon-controls-select"
                     value={selectedPresetName}
@@ -1739,12 +1859,17 @@ export default function AdvancedControlsSidebar({
                         {preset.name}
                       </option>
                     ))}
-                  </select>
+                  </PassiveWheelBlurSelect>
                 </label>
                 <button
                   type="button"
                   className="baryon-controls-danger-button"
-                  onClick={() => deletePreset(selectedPresetName)}
+                  disabled={!canDeleteSelectedPreset}
+                  onClick={() => {
+                    if (canDeleteSelectedPreset) {
+                      deletePreset(selectedPresetName);
+                    }
+                  }}
                 >
                   Delete selected
                 </button>

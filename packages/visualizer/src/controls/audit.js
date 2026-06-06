@@ -7,6 +7,10 @@ import {
 import { CONTROL_RUNTIME_COVERAGE } from "./runtime.js";
 import { isVisualizationMethod } from "../visualization/types.js";
 
+const CONTROL_TARGET_TYPE_SET = new Set(Object.values(CONTROL_TARGET_TYPES));
+const CONTROL_HANDLER_SET = new Set(Object.values(CONTROL_HANDLERS));
+const CONTROL_STATUS_SET = new Set(Object.values(CONTROL_STATUSES));
+
 export function auditControlSchema(
   definitions = CONTROL_DEFINITIONS,
   runtimeCoverage = CONTROL_RUNTIME_COVERAGE,
@@ -15,6 +19,12 @@ export function auditControlSchema(
   const keys = new Set();
   const schemaHandlers = new Set(
     definitions.map((definition) => definition.handler),
+  );
+  const runtimeCoverageByHandler = new Map(
+    Object.entries(runtimeCoverage).map(([handler, coveredKeys]) => [
+      handler,
+      new Set(coveredKeys),
+    ]),
   );
 
   for (const handler of schemaHandlers) {
@@ -40,13 +50,13 @@ export function auditControlSchema(
       issues.push(`Control ${definition.key} is missing label`);
     if (!definition.runtimePath)
       issues.push(`Control ${definition.key} is missing runtimePath`);
-    if (!Object.values(CONTROL_TARGET_TYPES).includes(definition.targetType)) {
+    if (!CONTROL_TARGET_TYPE_SET.has(definition.targetType)) {
       issues.push(`Control ${definition.key} has invalid targetType`);
     }
-    if (!Object.values(CONTROL_HANDLERS).includes(definition.handler)) {
+    if (!CONTROL_HANDLER_SET.has(definition.handler)) {
       issues.push(`Control ${definition.key} has invalid handler`);
     }
-    if (!Object.values(CONTROL_STATUSES).includes(definition.status)) {
+    if (!CONTROL_STATUS_SET.has(definition.status)) {
       issues.push(`Control ${definition.key} has invalid status`);
     }
     if (!Array.isArray(definition.methods) || definition.methods.length === 0) {
@@ -58,8 +68,8 @@ export function auditControlSchema(
         `Control ${definition.key} has invalid visualization methods`,
       );
     }
-    const coveredKeys = runtimeCoverage[definition.handler];
-    if (!coveredKeys?.includes(definition.key)) {
+    const coveredKeys = runtimeCoverageByHandler.get(definition.handler);
+    if (!coveredKeys?.has(definition.key)) {
       issues.push(`Control ${definition.key} is missing runtime coverage`);
     }
   }

@@ -14,4 +14,5 @@ export const SPECTRAL_MODAL_POLICY = Object.freeze({
   minSpectralBinAmplitude: 0.09,
   minSpectralBinGapHz: 20,
   maxSpectralFrequency: 8000,
+  modalRenderLivenessFloor: 0.04,
 });

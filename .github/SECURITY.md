@@ -4,7 +4,7 @@
 
 **Do not open a public GitHub issue for security vulnerabilities.**
 
-Email: kyledcollins@proton.me
+Email: security@baryon.live
 Subject line: `[SECURITY] Baryon — brief description`
 
 Please include:

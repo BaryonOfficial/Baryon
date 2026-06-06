@@ -5,8 +5,8 @@ import {
   RAYMARCH_DEFAULTS,
   RENDER_DEFAULTS,
   SIMULATION_DEFAULTS,
+  TEST_TONE_SIGNALS,
 } from "../defaults.js";
-import {} from "../utils/audioFeatures.js";
 import {
   MAX_PERFORMANCE_TARGET_FPS,
   MIN_PERFORMANCE_TARGET_FPS,
@@ -40,6 +40,7 @@ export const CONTROL_HANDLERS = Object.freeze({
 const ALL_METHODS = Object.freeze(Object.values(VISUALIZATION_METHODS));
 const METHOD_SCOPES = Object.freeze({
   shared: ALL_METHODS,
+  volume: ALL_METHODS,
   raymarchOnly: Object.freeze([VISUALIZATION_METHODS.raymarch]),
 });
 
@@ -221,38 +222,6 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   ),
   withControlGroup(
     {
-      key: "structureMin",
-      label: "Structure Min",
-      title:
-        "Fades out the faintest, noisiest areas of the field — raise to clean up thin wisps and noise",
-      defaultValue: SIMULATION_DEFAULTS.structureMin,
-      methods: ALL_METHODS,
-      binding: { min: 0, max: 1, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uStructureMin.value",
-      status: CONTROL_STATUSES.live,
-    },
-    CONTROL_GROUPS.shape,
-  ),
-  withControlGroup(
-    {
-      key: "structureMax",
-      label: "Structure Max",
-      title:
-        "Trims the densest inner regions — raise if the center looks too solid or foggy",
-      defaultValue: SIMULATION_DEFAULTS.structureMax,
-      methods: ALL_METHODS,
-      binding: { min: 0, max: 1, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uStructureMax.value",
-      status: CONTROL_STATUSES.live,
-    },
-    CONTROL_GROUPS.shape,
-  ),
-  withControlGroup(
-    {
       key: "boundaryMode",
       label: "Boundary",
       title:
@@ -322,28 +291,12 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   ),
   withControlGroup(
     {
-      key: "contourSharpness",
-      label: "Sharpness",
-      title:
-        "How prominent the bright ring edges are — raise for a crisper, more angular look",
-      defaultValue: RAYMARCH_DEFAULTS.contourSharpness,
-      methods: ALL_METHODS,
-      binding: { min: 1, max: 8, step: 0.1 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uContourSharpness.value",
-      status: CONTROL_STATUSES.live,
-    },
-    CONTROL_GROUPS.shape,
-  ),
-  withControlGroup(
-    {
       key: "raymarchSteps",
       label: "Steps",
       title:
         "Rendering quality vs. speed — higher values look smoother but may reduce frame rate on slower GPUs",
       defaultValue: RAYMARCH_DEFAULTS.raymarchSteps,
-      methods: methodsFor("raymarchOnly"),
+      methods: methodsFor("volume"),
       binding: { min: 16, max: 192, step: 1 },
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
@@ -389,34 +342,34 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "colorMode",
       label: "Color Mode",
       title:
-        "Static uses your chosen colors; Chromesthesia shifts colors dynamically with the music's harmonic content",
+        "Static uses your chosen colors; Spectral colors promoted cymatic modes from the audio spectrum",
       defaultValue: RENDER_DEFAULTS.colorMode,
       methods: ALL_METHODS,
       binding: {
         options: {
           Static: "static",
-          Chromesthesia: "chromesthesia",
+          Spectral: "spectral",
         },
       },
       targetType: CONTROL_TARGET_TYPES.object,
       handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.chromesthesia.colorMode",
+      runtimePath: "runtime.spectralLight.colorMode",
       status: CONTROL_STATUSES.live,
     },
     CONTROL_GROUPS.mode,
   ),
   withControlGroup(
     {
-      key: "chromesthesiaMix",
+      key: "spectralMix",
       label: "Color Mix",
       title:
-        "How strongly the Chromesthesia colors tint the volume — only applies when Color Mode is set to Chromesthesia",
-      defaultValue: RENDER_DEFAULTS.chromesthesiaMix,
+        "How strongly Spectral Light colors tint the volume when Color Mode is set to Spectral",
+      defaultValue: RENDER_DEFAULTS.spectralMix,
       methods: ALL_METHODS,
-      binding: { min: 0, max: 1, step: 0.01 },
+      binding: { min: 0.01, max: 1, step: 0.01 },
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uChromesthesiaMix.value",
+      runtimePath: "runtime.uniforms.uSpectralMix.value",
       status: CONTROL_STATUSES.live,
     },
     CONTROL_GROUPS.color,
@@ -569,23 +522,6 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     },
     CONTROL_GROUPS.motion,
   ),
-  withControlGroup(
-    {
-      key: "structurePersistence",
-      label: "Structure Persistence",
-      title:
-        "How long the current pattern holds before settling — set to 0 to disable persistence, raise for slower transitions",
-      defaultValue: REACTIVITY_DEFAULTS.structurePersistence,
-      methods: methodsFor("shared"),
-      binding: { min: 0, max: 3, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.object,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.reactivityTuning.structurePersistence",
-      status: CONTROL_STATUSES.live,
-    },
-    CONTROL_GROUPS.motion,
-  ),
-
   // ── Display ────────────────────────────────────────────────────────────────
   withControlGroup(
     {
@@ -667,7 +603,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "renderQualityPreset",
       label: "Performance Profile",
       title:
-        "Auto targets a stable default frame rate, Custom adapts toward your chosen FPS, and Max Quality disables preset behavior so advanced display controls apply directly.",
+        "Auto adapts toward the app-chosen FPS budget, Custom adapts toward your chosen FPS, and Max Quality keeps full quality at display-rate cadence.",
       defaultValue: RENDER_DEFAULTS.renderQualityPreset,
       methods: ALL_METHODS,
       binding: {
@@ -758,15 +694,10 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     {
       key: "visualizationMethod",
       label: "Visualizer",
-      title: "Switch between the 3D orb and a flat 2D cymatic view",
+      title: "Visualization method (single 3D Volume raymarch renderer)",
       defaultValue: VISUALIZATION_METHODS.raymarch,
       methods: ALL_METHODS,
-      binding: {
-        options: {
-          "3D Volume": VISUALIZATION_METHODS.raymarch,
-          "2D Fullscreen": VISUALIZATION_METHODS.cymatics2d,
-        },
-      },
+      sidebarHidden: true,
       targetType: CONTROL_TARGET_TYPES.object,
       handler: CONTROL_HANDLERS.shared,
       runtimePath: "runtime.method",
@@ -774,28 +705,43 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     },
     CONTROL_GROUPS.mode,
   ),
+  withControlGroup(
+    {
+      key: "cameraLocked",
+      label: "Lock Camera",
+      title: "Lock the camera so orbit drag cannot accidentally move the view",
+      defaultValue: RENDER_DEFAULTS.cameraLocked,
+      methods: ALL_METHODS,
+      sidebarHidden: true,
+      targetType: CONTROL_TARGET_TYPES.object,
+      handler: CONTROL_HANDLERS.shared,
+      runtimePath: "ui.cameraLocked",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.mode,
+  ),
 
-  // ── Diagnostics (debug-only) ───────────────────────────────────────────────
+  // ── Fine-grained glow shaping ─────────────────────────────────────────────
   withControlGroup(
     {
       key: "bloomResponseBias",
-      label: "Bloom Bias",
+      label: "Glow Response",
       title:
-        "Makes the glow smaller and more stable by trimming how easily bloom reacts.",
+        "Makes the glow smaller and more stable by trimming how easily bloom reacts during crowded frames.",
       defaultValue: RENDER_DEFAULTS.bloomResponseBias,
       methods: ALL_METHODS,
       binding: { min: 0, max: 1, step: 0.01 },
       targetType: CONTROL_TARGET_TYPES.pipeline,
       handler: CONTROL_HANDLERS.bloom,
       runtimePath: "runtime.bloomTuning.bloomResponseBias",
-      status: CONTROL_STATUSES.debugOnly,
+      status: CONTROL_STATUSES.live,
     },
-    CONTROL_GROUPS.diagnostics,
+    CONTROL_GROUPS.display,
   ),
   withControlGroup(
     {
       key: "rimBloomBias",
-      label: "Rim Bias",
+      label: "Rim Glow",
       title:
         "Pushes more brightness toward the outer rim before bloom is applied.",
       defaultValue: RAYMARCH_DEFAULTS.rimBloomBias,
@@ -804,9 +750,9 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.uniforms.uRimBloomBias.value",
-      status: CONTROL_STATUSES.debugOnly,
+      status: CONTROL_STATUSES.live,
     },
-    CONTROL_GROUPS.diagnostics,
+    CONTROL_GROUPS.display,
   ),
   withControlGroup(
     {
@@ -819,7 +765,39 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.uniforms.uRimCompression.value",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.display,
+  ),
+
+  // ── Diagnostics (debug-only) ───────────────────────────────────────────────
+  withControlGroup(
+    {
+      key: "traaEnabled",
+      label: "TRAA",
+      title:
+        "Toggle temporal anti-aliasing for diagnostics. Disable only when isolating render latency, shimmer, or post-process cost.",
+      defaultValue: RENDER_DEFAULTS.traaEnabled,
+      methods: ALL_METHODS,
+      targetType: CONTROL_TARGET_TYPES.object,
+      handler: CONTROL_HANDLERS.shared,
+      runtimePath: "ui.traaEnabled",
       status: CONTROL_STATUSES.debugOnly,
+    },
+    CONTROL_GROUPS.diagnostics,
+  ),
+  withControlGroup(
+    {
+      key: "smaaEnabled",
+      label: "SMAA",
+      title:
+        "Toggle screen-space morphological anti-aliasing on the final output for visual A/B comparison.",
+      defaultValue: RENDER_DEFAULTS.smaaEnabled,
+      methods: ALL_METHODS,
+      targetType: CONTROL_TARGET_TYPES.pipeline,
+      handler: CONTROL_HANDLERS.output,
+      runtimePath: "program.smaaEnabled",
+      status: CONTROL_STATUSES.live,
     },
     CONTROL_GROUPS.diagnostics,
   ),
@@ -885,27 +863,6 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   ),
   withControlGroup(
     {
-      key: "fieldCacheOverride",
-      label: "3D Field Eval",
-      title:
-        "Cached is faster and usually looks the same. Direct recomputes the field live instead of using the 3D cache, so it costs more.",
-      defaultValue: AUDIT_DEFAULTS.fieldCacheOverride,
-      methods: methodsFor("raymarchOnly"),
-      binding: {
-        options: {
-          Direct: "direct",
-          Cached: "cached",
-        },
-      },
-      targetType: CONTROL_TARGET_TYPES.audit,
-      handler: CONTROL_HANDLERS.audit,
-      runtimePath: "controls.fieldCacheOverride",
-      status: CONTROL_STATUSES.debugOnly,
-    },
-    CONTROL_GROUPS.diagnostics,
-  ),
-  withControlGroup(
-    {
       key: "cavityGeometry",
       label: "Cavity Geometry",
       title:
@@ -945,13 +902,34 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "testToneHz",
       label: "Tone Hz",
       title:
-        "Frequency of the injected test tone in Hz. Try values like 110, 220, or 440 to compare how pitch changes the pattern.",
+        "Frequency of the injected test tone in Hz. Low values inspect renderable patterns; high values exercise bandwidth-limit diagnostics.",
       defaultValue: AUDIT_DEFAULTS.testToneHz,
       methods: ALL_METHODS,
-      binding: { min: 40, max: 2000, step: 1 },
+      binding: { min: 40, max: 16000, step: 1 },
       targetType: CONTROL_TARGET_TYPES.audit,
       handler: CONTROL_HANDLERS.audit,
       runtimePath: "featureState.audit.settings.testToneHz",
+      status: CONTROL_STATUSES.debugOnly,
+    },
+    CONTROL_GROUPS.diagnostics,
+  ),
+  withControlGroup(
+    {
+      key: "testToneSignal",
+      label: "Tone Signal",
+      title:
+        "Choose whether the injected test signal is a pure sine or an explicit harmonic series.",
+      defaultValue: AUDIT_DEFAULTS.testToneSignal,
+      methods: ALL_METHODS,
+      binding: {
+        options: {
+          "Pure Sine": TEST_TONE_SIGNALS.pureSine,
+          "Harmonic Series": TEST_TONE_SIGNALS.harmonicSeries,
+        },
+      },
+      targetType: CONTROL_TARGET_TYPES.audit,
+      handler: CONTROL_HANDLERS.audit,
+      runtimePath: "featureState.audit.settings.testToneSignal",
       status: CONTROL_STATUSES.debugOnly,
     },
     CONTROL_GROUPS.diagnostics,

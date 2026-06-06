@@ -20,6 +20,22 @@ Safe changes:
 - splitting feature construction into clearer internal stages
 - adding fields that downstream consumers can safely ignore
 
+Current modal visibility semantics:
+
+- `modalVisibilityEnergy` is an audio-owned feature-frame signal derived from
+  rectangular water-cavity modal excitation, persistence, coherence, and active
+  mode amplitudes
+- low transient change must not suppress modal visibility; sustained ringing is
+  valid cavity excitation
+- renderers may use it to preserve local modal pressure-field visibility inside
+  the spherical render hull, but must not use it as a full-frame fallback tint,
+  density wash, spherical eigenmode switch, or independent mode promoter
+- the current physical model is:
+  `audio drive -> rectangular water-cavity modes -> modal pressure field -> spherical render hull`
+- appearance descriptors are deterministic audio-derived fields. They may
+  affect color, iridescence, and style, but must not drive modal promotion,
+  core structure signals, visibility, density, or performance salience.
+
 High-risk changes:
 
 - changing the meaning of existing fields without a coordinated migration
@@ -33,6 +49,25 @@ When a bug appears near this seam, determine whether the issue is:
 3. runtime consumption
 
 Do not skip that diagnosis step.
+
+### Spectral Light Color Contract
+
+Spectral Light color is part of audio interpretation when it is implemented. It
+must be produced before the render/runtime boundary and carried through the
+render-facing modal color slots, not reconstructed from raw FFT bins inside the
+renderer.
+
+The intended shape is:
+
+- modal promotion decides which frequencies become render-facing structure
+- Spectral Light colors only those promoted modes
+- renderers spatially mix modal colors using the same modal fields that define
+  cymatic geometry
+- a color value must not independently promote a mode
+- the main render path must not add a global Spectral Light fallback tint
+
+Detailed Spectral Light design notes and the engine whitepaper live in private
+internal documentation and are intentionally not exported with the public repo.
 
 ## Internal Optimization Boundary: Audio Engine Transport Frames
 
@@ -101,7 +136,11 @@ Visualization methods are defined in:
 Current canonical values:
 
 - `raymarch`
-- `cymatics-2d`
+
+`raymarch` is the only supported method. Legacy persisted or synced values
+(`fullscreen-volume`, `cymatics-2d`) collapse to `raymarch` at persistence and
+stage-sync ingress. The field is retained as a constant for forward
+compatibility; there is no user-facing visualizer selector.
 
 These values cross important boundaries:
 
@@ -206,6 +245,25 @@ That distinction affects:
 - expected visualization behavior under live input
 
 Changes that “simplify” these paths into a single live-input mode are high risk unless the task explicitly intends a semantic merge.
+
+### Line-feed program activity vs session intent vs render authority
+
+Three quantities must stay separate on loopback / line-feed input:
+
+| Quantity                   | Meaning                                                                                          | Typical owner                                                              |
+| -------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| Session render intent      | Go Live is on; the app keeps listening on BlackHole                                              | App status (`isLiveInputActive`) and render-loop scheduling                |
+| Line-feed program activity | Upstream OS/program audio is actively driving the virtual device above its calibrated idle floor | `resolveLineFeedProgramActivity()` during `prepareAudioFeatureFrameInputs` |
+| Render authority           | The composed frame may drive GPU field upload and reactive envelopes                             | `composeAudioFeatureFrame` + `renderAuthorityContract`                     |
+
+Rules:
+
+- `isLiveInputActive` may remain true while Apple Music (or another upstream player) is paused.
+- Paused loopback is detected from sustained meter-idle signatures (~1.2 avg, low RMS), not from resonant memory or ad-hoc transport bands inside `modalExcitation`.
+- High-Q retained ring energy may preserve display continuity during brief near-zero dropouts while program activity is still true, but it must not re-establish render authority after program idle.
+- `last-live-cache` in the render loop may only reuse frames that still have render authority and `debug.lineFeedProgramActive !== false`.
+
+File-mode transport pause remains owned by `shouldMuteFileTransportSource` (`status.isPlaying`) at prepare time.
 
 ## Host Boundary: Shared Engine vs Host-Specific Delivery
 

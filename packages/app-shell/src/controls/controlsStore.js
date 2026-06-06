@@ -1,4 +1,7 @@
-import { deserializeControls } from "@baryon/visualizer/controls/persistence";
+import {
+  deserializeControls,
+  normalizeSpectralLightActivationControls,
+} from "@baryon/visualizer/controls/persistence";
 import {
   CONTROL_DEFINITIONS,
   createControlState,
@@ -34,6 +37,29 @@ function createSnapshot({
     presetName,
     selectedPresetName,
   };
+}
+
+function findPreset(userPresets, name) {
+  return userPresets.find((preset) => preset.name === name) ?? null;
+}
+
+function applyControlUpdate(controls, key, value) {
+  let changed = false;
+  if (!Object.is(controls[key], value)) {
+    controls[key] = value;
+    changed = true;
+  }
+
+  const normalizedControls = normalizeSpectralLightActivationControls(
+    controls,
+    CONTROL_DEFINITIONS,
+  );
+  if (normalizedControls !== controls) {
+    Object.assign(controls, normalizedControls);
+    changed = true;
+  }
+
+  return changed;
 }
 
 export function createControlsStore({ storage = getBrowserStorage() } = {}) {
@@ -79,6 +105,9 @@ export function createControlsStore({ storage = getBrowserStorage() } = {}) {
     if (clearPresetSelection) {
       state.selectedPresetName = "";
     }
+    if (persistMode === "none") {
+      return emit();
+    }
     if (persistMode === "immediate") {
       persistScheduler.flush(nextControls);
     } else {
@@ -106,11 +135,9 @@ export function createControlsStore({ storage = getBrowserStorage() } = {}) {
         throw new Error(`[Baryon controls] Unknown control key: ${key}`);
       }
 
-      if (Object.is(controlsRef.current[key], value)) {
+      if (!applyControlUpdate(controlsRef.current, key, value)) {
         return snapshot;
       }
-
-      controlsRef.current[key] = value;
       return syncControls(controlsRef.current, options);
     },
     resetControls() {
@@ -144,7 +171,7 @@ export function createControlsStore({ storage = getBrowserStorage() } = {}) {
       return emit();
     },
     loadPreset(name) {
-      const preset = state.presets.find((entry) => entry.name === name);
+      const preset = findPreset(state.presets, name);
       if (!preset) {
         return snapshot;
       }

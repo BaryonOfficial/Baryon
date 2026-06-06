@@ -17,93 +17,135 @@ The mic path auto-calibrates when the microphone starts and whenever you switch 
 
 ---
 
-## Effects
+## Mic Settings
 
-Controls for post-processing and idle-state appearance.
+Controls for live-input analysis and browser microphone processing.
 
-| Label              | Description                                                                                                                           |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| **Enabled**        | Toggle the bloom (glow) post-processing effect on or off.                                                                             |
-| **Strength**       | How bright and intense the bloom glow is — higher values create a more pronounced halo around bright particles.                       |
-| **Radius**         | How far the bloom glow spreads outward from bright areas — higher values create a softer, wider glow.                                 |
-| **Threshold**      | Minimum brightness required for a pixel to contribute to the bloom effect — raise this to limit glow to only the brightest particles. |
-| **Logo Intensity** | Strength of the logo particle attraction when no audio is playing — higher values make the idle logo formation more defined.          |
-| **Logo Size**      | Scale of the logo formation that particles drift toward when idle — adjust to match the visual weight of your logo.                   |
+| Label               | Description                                                                                                                   |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| **Live Input Mode** | Choose how unknown live devices should be analyzed. `Auto` uses heuristics, `Line Feed` uses the file-style path, and `Acoustic Mic` uses the mic-specific path. |
+| **Mic Intent**      | Choose how acoustic mic input should be interpreted. `Ambient` is forgiving for rooms and instruments; `Vocal` emphasizes singing and lead pitch. |
+| **Echo Cancel**     | Suppress speaker bleed and room echo from mic input. Useful with speakers, but it may color the audio spectrum.               |
+| **Noise Suppress**  | Filter out steady background noise before analysis. Useful in noisy rooms, but it can soften quieter harmonics.               |
+| **Auto Gain**       | Automatically normalize mic volume. Convenient for speech, but it flattens dynamics for visualization.                        |
+
+---
+
+## Mode
+
+Controls for the modal family, color mode, rotation mode, performance profile, and output mode.
+
+| Label                 | Description                                                                                                                               |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| **Boundary**          | Choose whether the modal family behaves like a reflective boundary (`Neumann`) or a fixed node at the boundary (`Dirichlet`).             |
+| **Color Mode**        | `Static` uses the chosen colors. `Spectral` colors promoted cymatic modes from the audio spectrum.                                        |
+| **Rotation Mode**     | `Audio` rotates the orb with the music, `Manual` uses Manual Rotation, and `Off` keeps the scene stationary.                              |
+| **Performance Profile** | `Auto` uses the app-chosen FPS budget, `Custom` adapts toward Custom Target FPS, and `Max Quality` keeps full quality at display-rate cadence. |
+| **Custom Target FPS** | Frame-rate target used when Performance Profile is `Custom`.                                                                              |
+| **Output Mode**       | `Transparent` composites over other content. `Opaque` renders with its own solid background.                                              |
+| **Visualizer**        | Visualization method. The current product renderer is the single 3D Volume raymarch path.                                                 |
+| **Lock Camera**       | Lock the camera so orbit drag cannot accidentally move the view.                                                                          |
+
+---
+
+## Shape
+
+Controls for the raymarched modal volume.
+
+| Label              | Description                                                                                                      |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| **Node Threshold** | How sharp the glowing ring structures appear — lower values create crisper, more defined rings.                  |
+| **Density**        | How thick and bright the overall volume glow appears — raise for a bolder, denser orb.                           |
+| **Absorption**     | Depth contrast inside the orb — raise for crisper internal layers and less haze.                                 |
+| **Opacity**        | How solid the orb appears — raise for a stronger presence, especially when compositing over video.               |
+| **Steps**          | Rendering quality versus speed — higher values look smoother but may reduce frame rate on slower GPUs.           |
 
 ---
 
 ## Color
 
-Controls for the scene and particle color palette.
+Controls for the orb color and Spectral Light transfer.
 
-| Label              | Description                                                                                                                                                                                |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Background**     | Scene background color — use deep black for the most contrast with glowing particles.                                                                                                      |
-| **Program Output** | `Transparent` keeps the render alpha so Baryon can sit over video, graphics, or another scene. `Opaque` fills the frame with a solid background for standalone fullscreen or stage output. |
-| **Program Fill**   | Background color used only when Program Output is `Opaque`.                                                                                                                                |
-| **Volume**         | Color of particles inside the resonant volume — these particles fill the interior of the cymatics pattern.                                                                                 |
-| **Surface**        | Color of particles that sit on the nodal surface boundaries of the cymatics structure.                                                                                                     |
-
----
-
-## Particles
-
-High-level motion controls.
-
-| Label        | Description                                                                                                                     |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| **Speed**    | Overall speed multiplier for particle movement — higher values make particles respond faster to the field but can feel chaotic. |
-| **Rotation** | Speed and direction of the particle cloud's Y-axis rotation — negative values reverse direction, zero disables rotation.        |
+| Label           | Description                                                                                                            |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **Volume**      | Main glow color of the orb interior.                                                                                   |
+| **Contour**     | Color of the sharpest ring edges and contour highlights.                                                               |
+| **Color Mix**   | Strength of Spectral Light coloring when Color Mode is `Spectral`.                                                     |
+| **Sheen**       | Adds a holographic sheen to the orb's surface edges.                                                                   |
+| **Sheen Color** | How far the sheen color shifts toward cool blue-green tones.                                                           |
+| **Sheen Edge**  | How tightly the sheen stays to the very edge — higher values confine it to a thinner rim.                              |
 
 ---
 
-## Granular
+## Logo
 
-Fine-grained controls over how the cymatics simulation behaves. These interact with each other — see the notes below the table.
+Idle-state overlay controls.
 
-| Label              | Description                                                                                                                                            |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Flow Strength**  | Strength of the turbulent 3D noise field that adds organic, swirling motion to particles — combine with Flow Mix to blend with structured cymatics.    |
-| **Flow Frequency** | Spatial frequency of the noise flow field — lower values create broad, slow swirls; higher values produce fine, tight eddies.                          |
-| **Node Threshold** | How tightly the field must approach zero for a point to be considered a nodal target — lower values create sharper, more defined structures.           |
-| **Flow Mix**       | Blend between structured cymatics (0) and freeform noise-field motion (1) — mid values produce organic formations that still follow the audio pattern. |
-| **Attraction**     | How strongly particles are pulled toward their target nodal positions — higher values snap particles into sharp formations faster.                     |
-| **Damping**        | How quickly particle velocity decays each frame — higher values slow particles more aggressively, reducing overshooting and jitter.                    |
-| **Center Inner**   | Inner radius of the dead zone at the origin — particles inside this radius are pushed outward to prevent a bright central clump.                       |
-| **Center Outer**   | Outer boundary of the center-suppression gradient — particles between inner and outer radius experience a graduated push away from center.             |
-| **Structure Min**  | Lower field-potential cutoff — particles targeting nodes below this threshold are excluded, trimming the weakest/noisiest parts of the pattern.        |
-| **Structure Max**  | Upper field-potential cutoff — particles targeting nodes above this threshold are excluded, removing the densest interior regions.                     |
-
-### Granular interaction notes
-
-- **Flow Mix** is the main blend lever. At 0 the pattern is purely cymatics-driven; at 1 it is purely noise-driven. Flow Strength and Flow Frequency only take effect above 0.
-- **Center Inner / Center Outer** work as a gradient pair. Keep Inner ≤ Outer. Widening the gap between them softens the suppression falloff.
-- **Structure Min / Structure Max** together act as a band-pass filter on the scalar field. Narrowing the band concentrates particles on a thin shell of the pattern; widening it fills in more of the volume.
-- **Attraction** and **Damping** are counteracting forces. High attraction + low damping produces fast, springy particles. Low attraction + high damping produces slow, viscous drift.
+| Label              | Description                                                     |
+| ------------------ | --------------------------------------------------------------- |
+| **Logo Intensity** | Brightness of the idle logo shown when no audio is playing.     |
+| **Logo Size**      | Size of the idle logo overlay shown when no audio is playing.   |
 
 ---
 
-## Aesthetics
+## Motion
 
-| Label       | Description                                                                                                              |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------ |
-| **Surface** | Toggle particles that sit on the outer nodal surface boundary — disabling this shows only the interior volume particles. |
+Controls for scene movement and audio reactivity.
+
+| Label               | Description                                                                                                            |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **Manual Rotation** | Spin speed in Manual rotation mode — negative values reverse direction.                                                |
+| **Reactivity**      | How strongly the visuals respond to the audio — raise for more dramatic reactions.                                     |
+| **Motion Scale**    | Scales the auto-calibrated rotation in Audio mode. It has no effect in Manual rotation mode.                           |
 
 ---
 
-## Audit _(dev-only)_
+## Display
 
-These controls are only visible when devtools are enabled (`DEVTOOLS_ENABLED`). They are for diagnosing the audio and particle pipelines — they do not affect the final render quality.
+Controls for bloom, background, output color, and fine-grained glow shaping.
 
-| Label                 | Description                                                                                                                                      |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Enabled**           | Enable frame-by-frame debug logging for the audio and particle pipeline.                                                                         |
-| **Freeze Slots**      | Lock the current modal frequency slots so they stop updating from live audio — useful for inspecting a specific cymatics pattern.                |
-| **Low-load Playback** | Reduce renderer overhead during playback diagnostics by forcing a lower pixel ratio and skipping non-essential audit work while audio is active. |
-| **Inject Tone**       | Replace live audio input with a synthetic test tone — use with Tone Hz and Tone Amp to diagnose specific frequency responses.                    |
-| **Tone Hz**           | Frequency in Hz of the injected test tone — try values like 110, 220, 440 to see how different pitches shape the cymatics pattern.               |
-| **Tone Amp**          | Amplitude (volume) of the injected test tone — lower values produce subtler pattern excitation.                                                  |
-| **Log Frames**        | Log a debug snapshot every N frames to the browser console — set to 1 to log every frame, higher to reduce noise.                                |
+| Label              | Description                                                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------------------------------ |
+| **Glow**           | Toggle the glow or halo effect around bright parts of the orb.                                               |
+| **Glow Strength**  | How bright the glow halo is.                                                                                 |
+| **Glow Radius**    | How far the glow spreads from bright areas.                                                                  |
+| **Glow Threshold** | Minimum brightness before a region contributes to glow — raise to limit it to the brightest highlights.      |
+| **Background**     | Backdrop color shown behind the orb in transparent output mode.                                              |
+| **Output Color**   | Background fill color used in Opaque output mode.                                                           |
+| **Glow Response**  | Makes the glow smaller and more stable by trimming how easily bloom reacts during crowded frames.            |
+| **Rim Glow**       | Pushes more brightness toward the outer rim before bloom is applied.                                         |
+| **Rim Compression** | Tames sharp edge spikes before they reach the bloom pass.                                                   |
+
+---
+
+## Inline Stage Controls
+
+These controls are defined in the shared control schema but may be rendered inline instead of inside a collapsible folder.
+
+| Label               | Description                                |
+| ------------------- | ------------------------------------------ |
+| **Performance HUD** | Shows FPS and render resolution on screen. |
+
+---
+
+## Diagnostics
+
+Diagnostic controls help isolate render, audio, and analysis behavior. Debug-only controls require devtools (`DEVTOOLS_ENABLED`).
+
+| Label                  | Description                                                                                                                       |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **TRAA**               | Toggle temporal anti-aliasing for diagnostics when isolating render latency, shimmer, or post-process cost.                       |
+| **SMAA**               | Toggle final screen-space anti-aliasing on or off for visual A/B checks.                                                          |
+| **Capture Debug Data** | Record per-frame debug data for the active analysis and renderer.                                                                 |
+| **Freeze Pattern**     | Hold the current modal pattern in place instead of updating it from live audio.                                                    |
+| **Force WebGL2**       | Restart the renderer on the WebGL2 fallback path for compatibility testing. This remounts the canvas.                             |
+| **Low-load Playback**  | Reduce render overhead during playback diagnostics so you can inspect behavior on slower systems or heavier songs.                |
+| **Cavity Geometry**    | Choose which cavity geometry to request for diagnostics. Spherical requests still fall back to the rectangular basis today.        |
+| **Inject Tone**        | Replace live audio with a synthetic test tone so you can inspect a known, repeatable input.                                       |
+| **Tone Hz**            | Frequency of the injected test tone in Hz. Low values inspect renderable patterns; high values exercise bandwidth-limit diagnostics. |
+| **Tone Signal**        | Choose whether the injected test signal is a pure sine or an explicit harmonic series.                                            |
+| **Tone Amp**           | Amplitude of the injected test tone — lower values produce subtler pattern excitation.                                            |
+| **Log Frames**         | Write a debug snapshot to the browser console every N frames. Use 1 for every frame.                                              |
 
 ---
 

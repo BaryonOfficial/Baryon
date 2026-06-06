@@ -105,22 +105,6 @@ export default function AdvancedControlsDock({
 
   const isPhoneViewport = viewportWidth <= 640;
   const overlayTopInset = isPhoneViewport ? "0.7rem" : "0.9rem";
-  const openControlsToggleStyle =
-    /** @type {import("react").CSSProperties} */ ({
-      position: "absolute",
-      top: overlayTopInset,
-      left: `calc(${dockWidth} + 0.15rem)`,
-      zIndex: 59,
-      width: "2rem",
-      height: "2.35rem",
-      border: "1px solid var(--nd-border-visible)",
-      borderRadius: "0 0.9rem 0.9rem 0",
-      borderLeft: "0",
-      background: "var(--nd-surface)",
-      color: "var(--nd-text-primary)",
-      boxShadow: "var(--nd-shell-shadow)",
-      cursor: "pointer",
-    });
   const closedControlsToggleStyle =
     /** @type {import("react").CSSProperties} */ ({
       position: "absolute",
@@ -139,40 +123,38 @@ export default function AdvancedControlsDock({
       boxShadow: "var(--app-floating-control-shadow)",
       cursor: "pointer",
     });
-  const controlsToggleStyle = isOpen
-    ? openControlsToggleStyle
-    : closedControlsToggleStyle;
-
   return (
     <>
-      <div style={controlsToggleStyle}>
-        <button
-          ref={triggerRef}
-          type="button"
-          aria-label="Toggle advanced controls"
-          data-testid="advanced-controls-trigger"
-          aria-expanded={isOpen}
-          onClick={() => {
-            setIsLoaded(true);
-            setIsOpen((current) => !current);
-          }}
-          title={isOpen ? "Hide advanced controls" : "Show advanced controls"}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: "100%",
-            height: "100%",
-            border: "none",
-            background: "transparent",
-            padding: 0,
-            color: "inherit",
-            cursor: "pointer",
-          }}
-        >
-          <ControlsIcon />
-        </button>
-      </div>
+      {!isOpen ? (
+        <div style={closedControlsToggleStyle}>
+          <button
+            ref={triggerRef}
+            type="button"
+            aria-label="Toggle advanced controls"
+            data-testid="advanced-controls-trigger"
+            aria-expanded={isOpen}
+            onClick={() => {
+              setIsLoaded(true);
+              setIsOpen((current) => !current);
+            }}
+            title="Show advanced controls"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: "100%",
+              height: "100%",
+              border: "none",
+              background: "transparent",
+              padding: 0,
+              color: "inherit",
+              cursor: "pointer",
+            }}
+          >
+            <ControlsIcon />
+          </button>
+        </div>
+      ) : null}
 
       {!isOpen && !isPhoneViewport ? (
         <div
@@ -189,10 +171,10 @@ export default function AdvancedControlsDock({
         >
           <span
             style={{
-              fontFamily: "Orbitron, sans-serif",
+              fontFamily: "var(--baryon-type-display-family)",
               fontSize: "0.7rem",
               fontWeight: 500,
-              letterSpacing: "0.12em",
+              letterSpacing: "var(--baryon-type-label-letter-spacing)",
               color: "var(--nd-text-display)",
               whiteSpace: "nowrap",
               textTransform: "uppercase",

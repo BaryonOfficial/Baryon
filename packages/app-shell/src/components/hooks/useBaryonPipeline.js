@@ -1,6 +1,7 @@
 import { useRef, useCallback } from "react";
 import {
   createRenderOutputPipeline,
+  disposeRenderOutputPostNodes,
   getRenderQualityProfileKey,
 } from "@baryon/visualizer/render/outputPipeline";
 
@@ -13,7 +14,7 @@ export function useBaryonPipeline(gl, scene, camera, renderProfile) {
   renderProfileRef.current = renderProfile;
 
   const disposePipeline = useCallback(() => {
-    postNodesRef.current?.traaNode?.dispose?.();
+    disposeRenderOutputPostNodes(postNodesRef.current);
     pipelineRef.current?.dispose?.();
     pipelineRef.current = null;
     postNodesRef.current = null;

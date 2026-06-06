@@ -1,9 +1,12 @@
-const CHROMESTHESIA_INACTIVE_STATIC_COLOR_KEYS = Object.freeze([
+const SPECTRAL_INACTIVE_STATIC_COLOR_KEYS = Object.freeze([
   "volumeColor",
   "surfaceColor",
 ]);
+const SPECTRAL_INACTIVE_STATIC_COLOR_KEY_SET = new Set(
+  SPECTRAL_INACTIVE_STATIC_COLOR_KEYS,
+);
 
-export function shouldSkipChromesthesiaStaticColorInvalidation(
+export function shouldSkipSpectralStaticColorInvalidation(
   previousControls,
   nextControls,
 ) {
@@ -11,7 +14,7 @@ export function shouldSkipChromesthesiaStaticColorInvalidation(
     return false;
   }
 
-  if (nextControls.colorMode !== "chromesthesia") {
+  if (nextControls.colorMode !== "spectral") {
     return false;
   }
 
@@ -22,7 +25,7 @@ export function shouldSkipChromesthesiaStaticColorInvalidation(
     }
 
     changedKeyCount += 1;
-    if (!CHROMESTHESIA_INACTIVE_STATIC_COLOR_KEYS.includes(key)) {
+    if (!SPECTRAL_INACTIVE_STATIC_COLOR_KEY_SET.has(key)) {
       return false;
     }
   }

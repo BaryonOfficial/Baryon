@@ -12,6 +12,7 @@ import {
   LIVE_INPUT_ANALYSIS_CLASSES,
   normalizeLiveInputAcousticIntent,
   normalizeLiveInputAnalysisClass,
+  normalizeLiveInputDeviceKind,
   normalizeResolvedLiveInputAnalysisClass,
   normalizeLiveInputAnalysisOverrides,
   resolveLiveInputAnalysisClass,
@@ -26,7 +27,9 @@ import {
 } from "./liveInputRuntimeStatus.js";
 import { useAudioLogic } from "../components/hooks/useAudioLogic";
 import {
+  getLiveInputDeviceKind,
   getLiveInputDeviceKindById,
+  getDeviceKindOverride,
   saveLiveInputDeviceKindOverride,
   clearDeviceOverride,
 } from "../components/controls/deviceClassification.js";
@@ -192,15 +195,46 @@ function isLiveInputPermissionUnsupported(error) {
   );
 }
 
-function getPreferredAudioInputDeviceId(audioInputs, preferredDeviceId) {
-  if (
-    preferredDeviceId &&
-    audioInputs.some((device) => device.deviceId === preferredDeviceId)
-  ) {
-    return preferredDeviceId;
+function normalizeAudioInputDeviceLabel(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function getPreferredAudioInputDevice(
+  audioInputs,
+  { preferredDeviceId = null, preferredDeviceLabel = "" } = {},
+) {
+  if (preferredDeviceId) {
+    const matchingId = audioInputs.find(
+      (device) => device.deviceId === preferredDeviceId,
+    );
+    if (matchingId) {
+      return matchingId;
+    }
   }
 
-  return audioInputs[0]?.deviceId ?? null;
+  const preferredLabelKey =
+    normalizeAudioInputDeviceLabel(preferredDeviceLabel);
+  if (preferredLabelKey) {
+    const matchingLabel = audioInputs.find(
+      (device) =>
+        normalizeAudioInputDeviceLabel(device?.label) === preferredLabelKey,
+    );
+    if (matchingLabel) {
+      return matchingLabel;
+    }
+  }
+
+  return audioInputs[0] ?? null;
+}
+
+function getAudioInputDeviceLabelById(audioInputs, deviceId) {
+  if (!deviceId) {
+    return "";
+  }
+  return (
+    audioInputs.find((device) => device.deviceId === deviceId)?.label?.trim?.() ??
+    ""
+  );
 }
 
 let hlsModulePromise = null;
@@ -375,7 +409,7 @@ export function AudioProvider({ children, platform = "web" }) {
   );
   const [showDeviceMenu, setShowDeviceMenu] = useState(false);
   const [isEngineReady, setIsEngineReady] = useState(false);
-  const [activeSource, setActiveSource] = useState("upload");
+  const [playbackSource, setPlaybackSource] = useState("local-file");
   const [selectedSource, setSelectedSource] = useState("file");
   const [selectedSystemDevice, setSelectedSystemDevice] = useState(null);
   const [liveInputPermissionState, setLiveInputPermissionState] = useState(
@@ -436,7 +470,7 @@ export function AudioProvider({ children, platform = "web" }) {
   const soundCloudTokenRef = useRef(0);
   const soundCloudQueueRef = useRef([]);
   const soundCloudCurrentIndexRef = useRef(-1);
-  const activeSourceRef = useRef("upload");
+  const playbackSourceRef = useRef("local-file");
   const lastNonZeroVolumeRef = useRef(1);
   const transportFrameRef = useRef(0);
   const resumeAfterScrubRef = useRef(false);
@@ -515,8 +549,8 @@ export function AudioProvider({ children, platform = "web" }) {
   }, [soundCloudCurrentIndex]);
 
   useEffect(() => {
-    activeSourceRef.current = activeSource;
-  }, [activeSource]);
+    playbackSourceRef.current = playbackSource;
+  }, [playbackSource]);
 
   const clearScrubState = useCallback(() => {
     isScrubbingRef.current = false;
@@ -545,7 +579,7 @@ export function AudioProvider({ children, platform = "web" }) {
     if (
       isLiveInputActive ||
       !isAudioLoaded ||
-      activeSource === "soundcloud" ||
+      playbackSource === "soundcloud" ||
       !currentLoadedLocalFile?.file
     ) {
       return null;
@@ -555,7 +589,7 @@ export function AudioProvider({ children, platform = "web" }) {
       currentLoadedLocalFile.file,
       getDefaultAudioSession().getTransportState().currentTimeSeconds,
     );
-  }, [activeSource, currentLoadedLocalFile, isAudioLoaded, isLiveInputActive]);
+  }, [playbackSource, currentLoadedLocalFile, isAudioLoaded, isLiveInputActive]);
 
   const syncTransportState = useCallback((options = {}) => {
     const { includeSeekState = true } = options;
@@ -652,14 +686,46 @@ export function AudioProvider({ children, platform = "web" }) {
     return status;
   }, [clearScrubState]);
 
-  const selectedLiveDeviceId = selectedSystemDevice ?? selectedDevice ?? null;
-  const selectedLiveInputDeviceKind = getLiveInputDeviceKindById(
-    audioDevices,
-    selectedLiveDeviceId,
-  );
-  const selectedLiveDevice =
+  const selectedLocalLiveDeviceId = selectedSystemDevice ?? selectedDevice ?? null;
+  const runtimeSelectedLiveDeviceId =
+    liveInputRuntimeStatus.selectedDeviceId ?? null;
+  const runtimeSelectedLiveDeviceLabel =
+    liveInputRuntimeStatus.selectedDeviceLabel ?? "";
+  const runtimeSelectedLiveInputDeviceKind =
+    liveInputRuntimeStatus.liveInputDeviceKind != null ||
+    liveInputRuntimeStatus.liveInputKind != null
+      ? normalizeLiveInputDeviceKind(
+          liveInputRuntimeStatus.liveInputDeviceKind ??
+            liveInputRuntimeStatus.liveInputKind,
+        )
+      : null;
+  const selectedLiveDeviceId =
+    selectedLocalLiveDeviceId ?? runtimeSelectedLiveDeviceId ?? null;
+  const selectedLocalLiveDevice =
     audioDevices.find((device) => device.deviceId === selectedLiveDeviceId) ??
     null;
+  const selectedRuntimeLiveDevice =
+    selectedLiveDeviceId != null &&
+    selectedLiveDeviceId === runtimeSelectedLiveDeviceId
+      ? {
+          deviceId: selectedLiveDeviceId,
+          label: runtimeSelectedLiveDeviceLabel,
+        }
+      : null;
+  const selectedLiveDevice =
+    selectedLocalLiveDevice ?? selectedRuntimeLiveDevice ?? null;
+  const selectedLiveInputDeviceKindOverride =
+    selectedLiveDeviceId != null
+      ? getDeviceKindOverride(selectedLiveDeviceId)
+      : null;
+  const selectedLiveInputDeviceKind =
+    selectedLiveInputDeviceKindOverride ??
+    (selectedLocalLiveDevice
+      ? getLiveInputDeviceKind(selectedLocalLiveDevice)
+      : runtimeSelectedLiveInputDeviceKind ??
+        (selectedRuntimeLiveDevice
+          ? getLiveInputDeviceKind(selectedRuntimeLiveDevice)
+          : getLiveInputDeviceKindById(audioDevices, selectedLiveDeviceId)));
   const selectedLiveInputAnalysisOverride =
     selectedLiveDeviceId != null
       ? normalizeLiveInputAnalysisClass(
@@ -675,16 +741,23 @@ export function AudioProvider({ children, platform = "web" }) {
   });
 
   const refreshPreferredLiveInputDeviceId = useCallback(
-    async (preferredDeviceId = selectedSystemDevice ?? selectedDevice) => {
-      const audioInputs = await refreshAudioInputs();
-      const nextDeviceId = getPreferredAudioInputDeviceId(
-        audioInputs,
+    async ({
+      preferredDeviceId = selectedSystemDevice ?? selectedDevice,
+      preferredDeviceLabel = getAudioInputDeviceLabelById(
+        audioDevices,
         preferredDeviceId,
-      );
+      ),
+    } = {}) => {
+      const audioInputs = await refreshAudioInputs();
+      const nextDevice = getPreferredAudioInputDevice(audioInputs, {
+        preferredDeviceId,
+        preferredDeviceLabel,
+      });
+      const nextDeviceId = nextDevice?.deviceId ?? null;
       setSelectedSystemDevice(nextDeviceId);
       return nextDeviceId;
     },
-    [refreshAudioInputs, selectedDevice, selectedSystemDevice],
+    [audioDevices, refreshAudioInputs, selectedDevice, selectedSystemDevice],
   );
 
   const requestLiveInputPermission = useCallback(async () => {
@@ -708,7 +781,9 @@ export function AudioProvider({ children, platform = "web" }) {
       const stream = await mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach((track) => track.stop());
 
-      await refreshPreferredLiveInputDeviceId(selectedSystemDevice);
+      await refreshPreferredLiveInputDeviceId({
+        preferredDeviceId: selectedSystemDevice,
+      });
 
       setLiveInputPermissionState(LIVE_INPUT_PERMISSION_STATES.granted);
       return true;
@@ -726,7 +801,9 @@ export function AudioProvider({ children, platform = "web" }) {
         return false;
       }
 
-      await refreshPreferredLiveInputDeviceId(selectedSystemDevice);
+      await refreshPreferredLiveInputDeviceId({
+        preferredDeviceId: selectedSystemDevice,
+      });
       setLiveInputPermissionState(LIVE_INPUT_PERMISSION_STATES.granted);
       return true;
     }
@@ -735,6 +812,7 @@ export function AudioProvider({ children, platform = "web" }) {
   const startLiveInputSession = useCallback(
     async ({
       deviceId = selectedLiveDeviceId,
+      deviceLabel = getAudioInputDeviceLabelById(audioDevices, deviceId),
       liveInputKind: nextLiveInputDeviceKind = selectedLiveInputDeviceKind,
     } = {}) => {
       const audioSession = getDefaultAudioSession();
@@ -755,7 +833,10 @@ export function AudioProvider({ children, platform = "web" }) {
         // Re-enumerate immediately before start so hardware interfaces use the
         // browser's post-permission device list instead of any stale preflight
         // entry the user may have selected earlier.
-        resolvedDeviceId = await refreshPreferredLiveInputDeviceId(deviceId);
+        resolvedDeviceId = await refreshPreferredLiveInputDeviceId({
+          preferredDeviceId: deviceId,
+          preferredDeviceLabel: deviceLabel,
+        });
       }
 
       if (!resolvedDeviceId) {
@@ -771,6 +852,7 @@ export function AudioProvider({ children, platform = "web" }) {
         await audioSession.startLiveInputStream(
           resolvedDeviceId,
           nextLiveInputDeviceKind,
+          deviceLabel,
         );
         if (isWebPlatform) {
           setLiveInputPermissionState(LIVE_INPUT_PERMISSION_STATES.granted);
@@ -804,6 +886,7 @@ export function AudioProvider({ children, platform = "web" }) {
     },
     [
       applyLiveInputUiState,
+      audioDevices,
       isWebPlatform,
       liveInputPermissionState,
       refreshPreferredLiveInputDeviceId,
@@ -867,6 +950,10 @@ export function AudioProvider({ children, platform = "web" }) {
       stopLiveInputSession();
       await startLiveInputSession({
         deviceId: normalizedDeviceId,
+        deviceLabel: getAudioInputDeviceLabelById(
+          audioDevices,
+          normalizedDeviceId,
+        ),
         liveInputKind: getLiveInputDeviceKindById(
           audioDevices,
           normalizedDeviceId,
@@ -1015,7 +1102,7 @@ export function AudioProvider({ children, platform = "web" }) {
 
       setIsSoundCloudLoading(true);
       setShowDeviceMenu(false);
-      setActiveSource("soundcloud");
+      setPlaybackSource("soundcloud");
       setSoundCloudError("");
       setSoundCloudTrackTitle(track.title);
       setSoundCloudCurrentIndex(nextIndex);
@@ -1130,13 +1217,13 @@ export function AudioProvider({ children, platform = "web" }) {
     soundCloudAudioRef.current = audioElement;
 
     const handlePlaybackStateChange = () => {
-      if (activeSourceRef.current === "soundcloud") {
+      if (playbackSourceRef.current === "soundcloud") {
         syncSessionStatus();
       }
     };
 
     const handleEnded = () => {
-      if (activeSourceRef.current !== "soundcloud") {
+      if (playbackSourceRef.current !== "soundcloud") {
         return;
       }
 
@@ -1161,7 +1248,7 @@ export function AudioProvider({ children, platform = "web" }) {
     };
 
     const handleError = () => {
-      if (activeSourceRef.current !== "soundcloud") {
+      if (playbackSourceRef.current !== "soundcloud") {
         return;
       }
       setSoundCloudError("SoundCloud playback failed for this stream.");
@@ -1197,7 +1284,7 @@ export function AudioProvider({ children, platform = "web" }) {
 
     setIsSoundCloudLoading(true);
     setShowDeviceMenu(false);
-    setActiveSource("soundcloud");
+    setPlaybackSource("soundcloud");
     setCurrentLoadedLocalFile(null);
     clearLiveLocalFileState();
     setSoundCloudError("");
@@ -1256,7 +1343,7 @@ export function AudioProvider({ children, platform = "web" }) {
       }
 
       setCurrentLoadedLocalFile(createLocalFileEntry(file));
-      setActiveSource("upload");
+      setPlaybackSource("local-file");
       setSelectedSource("file");
       setShowDeviceMenu(false);
       setShowSoundCloudPanel(false);
@@ -1268,6 +1355,107 @@ export function AudioProvider({ children, platform = "web" }) {
     },
     [handleLocalRecentFileSelect, syncSessionStatus, syncTransportState],
   );
+
+  const loadProbeAudioFile = useCallback(
+    async (source) => {
+      if (!source) {
+        return {
+          ok: false,
+          error: "Probe audio file is required.",
+        };
+      }
+
+      clearScrubState();
+      resetSoundCloudTransport();
+      const selectedProbeFile =
+        source?.useSelectedFile === true ? currentLoadedLocalFile?.file : null;
+      const sourceUrl =
+        typeof source?.fileUrl === "string" && source.fileUrl
+          ? source.fileUrl
+          : null;
+      const sourceName =
+        selectedProbeFile?.name ||
+        (typeof source?.name === "string" && source.name
+          ? source.name
+          : "probe-audio.mp3");
+      let loaded = false;
+      if (source?.useSelectedFile === true) {
+        if (!selectedProbeFile) {
+          return {
+            ok: false,
+            error: "No selected local probe audio file is loaded.",
+          };
+        }
+        loaded = await loadImmediateLocalFile(selectedProbeFile);
+      } else if (sourceUrl) {
+        try {
+          const audioSession = getDefaultAudioSession();
+          if (isLiveInputActive) {
+            audioSession.stopLiveInputStream();
+          }
+          setFileName(sourceName);
+          await audioSession.loadAudio(sourceUrl);
+          setCurrentLoadedLocalFile(null);
+          setPlaybackSource("local-file");
+          setSelectedSource("file");
+          setShowDeviceMenu(false);
+          setShowSoundCloudPanel(false);
+          setLiveReturnLocalFile(null);
+          setQueuedNextLocalFile(null);
+          syncSessionStatus();
+          syncTransportState();
+          loaded = true;
+        } catch (error) {
+          console.error("Error loading probe audio:", error);
+          setIsAudioLoaded(false);
+        }
+      } else {
+        loaded = await loadImmediateLocalFile(source);
+      }
+
+      if (!loaded) {
+        return {
+          ok: false,
+          error: "Probe audio file failed to load.",
+        };
+      }
+
+      const audioSession = getDefaultAudioSession();
+      if (!audioSession.getStatus().isPlaying) {
+        await audioSession.playPauseAudio();
+      }
+      const status = syncSessionStatus();
+      syncTransportState();
+      return {
+        ok: true,
+        fileName: sourceName,
+        isAudioLoaded: status.isAudioLoaded,
+        isPlaying: status.isPlaying,
+      };
+    },
+    [
+      clearScrubState,
+      currentLoadedLocalFile,
+      isLiveInputActive,
+      loadImmediateLocalFile,
+      resetSoundCloudTransport,
+      setIsAudioLoaded,
+      syncSessionStatus,
+      syncTransportState,
+    ],
+  );
+
+  const stopProbeAudio = useCallback(() => {
+    clearScrubState();
+    getDefaultAudioSession().stopAudio();
+    const status = syncSessionStatus();
+    syncTransportState();
+    return {
+      ok: true,
+      isAudioLoaded: status.isAudioLoaded,
+      isPlaying: status.isPlaying,
+    };
+  }, [clearScrubState, syncSessionStatus, syncTransportState]);
 
   const restoreAfterLiveStop = useCallback(async () => {
     if (liveReturnLocalFile?.file) {
@@ -1289,7 +1477,7 @@ export function AudioProvider({ children, platform = "web" }) {
   useEffect(() => {
     const audioSession = getDefaultAudioSession();
     audioSession.setAudioEndedCallback(async () => {
-      if (activeSourceRef.current === "soundcloud") {
+      if (playbackSourceRef.current === "soundcloud") {
         return;
       }
 
@@ -1318,7 +1506,7 @@ export function AudioProvider({ children, platform = "web" }) {
 
       clearScrubState();
       resetSoundCloudTransport();
-      setActiveSource("upload");
+      setPlaybackSource("local-file");
       setShowDeviceMenu(false);
       setShowSoundCloudPanel(false);
       if (isLiveInputActive) {
@@ -1354,7 +1542,7 @@ export function AudioProvider({ children, platform = "web" }) {
 
       clearScrubState();
       resetSoundCloudTransport();
-      setActiveSource("upload");
+      setPlaybackSource("local-file");
       setShowDeviceMenu(false);
       setShowSoundCloudPanel(false);
       if (isLiveInputActive) {
@@ -1385,7 +1573,7 @@ export function AudioProvider({ children, platform = "web" }) {
       return;
     }
 
-    if (activeSource === "soundcloud") {
+    if (playbackSource === "soundcloud") {
       if (!soundCloudQueueRef.current.length) {
         return;
       }
@@ -1411,7 +1599,7 @@ export function AudioProvider({ children, platform = "web" }) {
     await handleLocalPlayPause();
     syncTransportState();
   }, [
-    activeSource,
+    playbackSource,
     handleLocalPlayPause,
     selectedSource,
     syncSessionStatus,
@@ -1424,7 +1612,7 @@ export function AudioProvider({ children, platform = "web" }) {
     }
 
     clearScrubState();
-    if (activeSource === "soundcloud") {
+    if (playbackSource === "soundcloud") {
       getDefaultAudioSession().stopAudio();
       syncSessionStatus();
 
@@ -1446,7 +1634,7 @@ export function AudioProvider({ children, platform = "web" }) {
     handleLocalStop();
     syncTransportState();
   }, [
-    activeSource,
+    playbackSource,
     clearScrubState,
     handleLocalStop,
     selectedSource,
@@ -1504,7 +1692,7 @@ export function AudioProvider({ children, platform = "web" }) {
 
       if (next === "system") {
         clearScrubState();
-        if (activeSource === "soundcloud") {
+        if (playbackSource === "soundcloud") {
           getDefaultAudioSession().stopAudio();
           syncSessionStatus();
         } else if (isAudioLoaded) {
@@ -1530,7 +1718,7 @@ export function AudioProvider({ children, platform = "web" }) {
       }
     },
     [
-      activeSource,
+      playbackSource,
       applyLiveInputUiState,
       clearScrubState,
       handleLocalStop,
@@ -1552,19 +1740,19 @@ export function AudioProvider({ children, platform = "web" }) {
     const liveReturnSnapshot = createLiveReturnSnapshot();
     try {
       if (isLiveInputActive) {
-        const status = stopLiveInputSession();
-        if (!status.isLiveInputActive) {
-          await restoreAfterLiveStop();
-        }
+        // Stop live input but stay in System mode — do not restore the
+        // previous local file, which would switch the source back to File.
+        stopLiveInputSession();
       } else {
         setLiveReturnLocalFile(liveReturnSnapshot);
         resetSoundCloudTransport();
         const started = await startLiveInputSession({
           deviceId: selectedLiveDeviceId,
+          deviceLabel: selectedLiveDevice?.label ?? "",
           liveInputKind: selectedLiveInputDeviceKind,
         });
         if (started) {
-          setActiveSource("upload");
+          setPlaybackSource("local-file");
           setFileName(DEFAULT_FILE_NAME);
         }
       }
@@ -1590,8 +1778,8 @@ export function AudioProvider({ children, platform = "web" }) {
     isLiveInputActive,
     loadImmediateLocalFile,
     resetSoundCloudTransport,
-    restoreAfterLiveStop,
     selectedLiveDeviceId,
+    selectedLiveDevice,
     selectedLiveInputDeviceKind,
     startLiveInputSession,
     stopLiveInputSession,
@@ -1714,7 +1902,7 @@ export function AudioProvider({ children, platform = "web" }) {
   );
 
   const handleMuteToggle = useCallback(() => {
-    if (activeSource === "soundcloud") {
+    if (playbackSource === "soundcloud") {
       const nextVolume =
         isMuted || volume <= 0.001
           ? Math.max(lastNonZeroVolumeRef.current, 0.35)
@@ -1725,7 +1913,7 @@ export function AudioProvider({ children, platform = "web" }) {
 
     handleLocalMuteToggle();
   }, [
-    activeSource,
+    playbackSource,
     handleLocalMuteToggle,
     handleVolumeChange,
     isMuted,
@@ -1733,7 +1921,7 @@ export function AudioProvider({ children, platform = "web" }) {
   ]);
 
   const displayName =
-    activeSource === "soundcloud" ? soundCloudTrackTitle : fileName;
+    playbackSource === "soundcloud" ? soundCloudTrackTitle : fileName;
   const hasQueuedNextLocalFile = Boolean(queuedNextLocalFile?.file);
   const soundCloudCurrentTrack =
     soundCloudQueue[soundCloudCurrentIndex] ?? soundCloudQueue[0] ?? null;
@@ -1866,7 +2054,7 @@ export function AudioProvider({ children, platform = "web" }) {
     setLiveInputRuntimeStatus(createLiveInputRuntimeStatus());
     setShowDeviceMenu(false);
     setIsEngineReady(false);
-    setActiveSource("upload");
+    setPlaybackSource("local-file");
     setSelectedSource("file");
     setSelectedSystemDevice(null);
     setLiveInputPermissionState(
@@ -1923,7 +2111,7 @@ export function AudioProvider({ children, platform = "web" }) {
     () => ({
       soundCloudEnabled: SOUNDCLOUD_ENABLED,
       platform: audioPlatform,
-      activeSource,
+      playbackSource,
       liveInputDeviceKind,
       liveInputKind,
       liveInputPermissionState,
@@ -1931,6 +2119,7 @@ export function AudioProvider({ children, platform = "web" }) {
       selectedSystemDevice,
       selectedLiveDeviceId,
       selectedLiveInputDeviceKind,
+      selectedLiveInputDeviceKindOverride,
       selectedLiveInputKind: selectedLiveInputDeviceKind,
       liveInputAnalysisClass,
       liveInputAcousticIntent,
@@ -1995,6 +2184,8 @@ export function AudioProvider({ children, platform = "web" }) {
       handleSourceChange,
       handleVolumeChange,
       handleMuteToggle,
+      loadProbeAudioFile,
+      stopProbeAudio,
       loadSoundCloudTrack,
       beginScrub,
       previewScrub,
@@ -2002,7 +2193,7 @@ export function AudioProvider({ children, platform = "web" }) {
       cancelScrub,
     }),
     [
-      activeSource,
+      playbackSource,
       audioDevices,
       audioPlatform,
       beginScrub,
@@ -2041,6 +2232,7 @@ export function AudioProvider({ children, platform = "web" }) {
       liveInputRuntimeStatus,
       liveInputUiState,
       liveReturnLocalFile,
+      loadProbeAudioFile,
       loadSoundCloudTrack,
       previewScrub,
       queuedNextLocalFile,
@@ -2053,6 +2245,7 @@ export function AudioProvider({ children, platform = "web" }) {
       selectedLiveDeviceId,
       selectedLiveInputAnalysisOverride,
       selectedLiveInputDeviceKind,
+      selectedLiveInputDeviceKindOverride,
       selectedResolvedLiveInputAnalysisClass,
       selectedSource,
       selectedSystemDevice,
@@ -2078,6 +2271,7 @@ export function AudioProvider({ children, platform = "web" }) {
       soundCloudInfo,
       soundCloudInput,
       soundCloudQueue,
+      stopProbeAudio,
       volume,
     ],
   );
