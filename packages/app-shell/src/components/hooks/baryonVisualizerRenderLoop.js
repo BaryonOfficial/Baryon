@@ -61,20 +61,23 @@ const PERFORMANCE_HUD_SMOOTHING_ALPHA = 0.25;
 const ACTIVE_FEATURE_ANALYSIS_HZ = 30;
 const ACTIVE_FEATURE_ANALYSIS_INTERVAL_MS = 1000 / ACTIVE_FEATURE_ANALYSIS_HZ;
 const MAX_ANALYSIS_AGE_MS = 50;
-const AUTO_RAYMARCH_DECISION_WINDOW_SECONDS = 0.5;
-const AUTO_RAYMARCH_MIN_DECISION_WINDOW_FRAMES = 12;
-const AUTO_RAYMARCH_MAX_DECISION_WINDOW_FRAMES = 45;
-const AUTO_RAYMARCH_RECOVERY_WINDOWS = 4;
-const AUTO_RAYMARCH_STEP_DOWN_LONG_FRAME_RATIO = 0.1;
-const AUTO_RAYMARCH_PRESSURE_SAFETY_MARGIN = 0.94;
-const AUTO_RAYMARCH_PRESSURE_FRAME_TIME_RATIO = 1.08;
-const AUTO_RAYMARCH_STABLE_FRAME_TIME_RATIO = 0.93;
-const AUTO_RAYMARCH_LONG_FRAME_TIME_RATIO = 1.5;
-const AUTO_RAYMARCH_RECOVERY_MIN_RENDER_ENERGY = 0.08;
+const ADAPTIVE_RAYMARCH_DECISION_WINDOW_SECONDS = 0.5;
+const ADAPTIVE_RAYMARCH_MIN_DECISION_WINDOW_FRAMES = 12;
+const ADAPTIVE_RAYMARCH_MAX_DECISION_WINDOW_FRAMES = 45;
+const ADAPTIVE_RAYMARCH_RECOVERY_WINDOWS = 4;
+const ADAPTIVE_RAYMARCH_STEP_DOWN_LONG_FRAME_RATIO = 0.1;
+const ADAPTIVE_RAYMARCH_PRESSURE_SAFETY_MARGIN = 0.94;
+const ADAPTIVE_RAYMARCH_PRESSURE_FRAME_TIME_RATIO = 1.08;
+const ADAPTIVE_RAYMARCH_STABLE_FRAME_TIME_RATIO = 0.93;
+const ADAPTIVE_RAYMARCH_LONG_FRAME_TIME_RATIO = 1.5;
+const ADAPTIVE_RAYMARCH_RECOVERY_MIN_RENDER_ENERGY = 0.08;
 const RAYMARCH_USER_TUNABLE_STEP_MIN = 16;
 const COHERENT_MODAL_RAYMARCH_STEP_FLOOR = RAYMARCH_USER_TUNABLE_STEP_MIN;
-const AUTO_RAYMARCH_STEP_LADDER = Object.freeze([
+const ADAPTIVE_RAYMARCH_STEP_LADDER = Object.freeze([
   16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192,
+]);
+const ADAPTIVE_RAYMARCH_RENDER_SCALE_LADDER = Object.freeze([
+  0.5, 0.59, 0.67, 0.75, 0.84, 0.92, 1,
 ]);
 const STAGE_ATTRIBUTION_TIEBREAK_ORDER = Object.freeze([
   "unattributed",
@@ -1082,10 +1085,12 @@ function buildAdaptiveRaymarchTuning(targetFps) {
   const normalizedTargetFps = normalizePerformanceTargetFps(targetFps);
   const targetFrameTimeMs = 1000 / normalizedTargetFps;
   const decisionFrameCount = Math.min(
-    AUTO_RAYMARCH_MAX_DECISION_WINDOW_FRAMES,
+    ADAPTIVE_RAYMARCH_MAX_DECISION_WINDOW_FRAMES,
     Math.max(
-      AUTO_RAYMARCH_MIN_DECISION_WINDOW_FRAMES,
-      Math.round(normalizedTargetFps * AUTO_RAYMARCH_DECISION_WINDOW_SECONDS),
+      ADAPTIVE_RAYMARCH_MIN_DECISION_WINDOW_FRAMES,
+      Math.round(
+        normalizedTargetFps * ADAPTIVE_RAYMARCH_DECISION_WINDOW_SECONDS,
+      ),
     ),
   );
 
@@ -1093,15 +1098,17 @@ function buildAdaptiveRaymarchTuning(targetFps) {
     targetFps: normalizedTargetFps,
     targetFrameTimeMs,
     pressureFrameTimeMs:
-      targetFrameTimeMs * AUTO_RAYMARCH_PRESSURE_FRAME_TIME_RATIO,
+      targetFrameTimeMs * ADAPTIVE_RAYMARCH_PRESSURE_FRAME_TIME_RATIO,
     stableFrameTimeMs:
-      targetFrameTimeMs * AUTO_RAYMARCH_STABLE_FRAME_TIME_RATIO,
+      targetFrameTimeMs * ADAPTIVE_RAYMARCH_STABLE_FRAME_TIME_RATIO,
     decisionFrameCount,
     longFrameThresholdMs:
-      targetFrameTimeMs * AUTO_RAYMARCH_LONG_FRAME_TIME_RATIO,
+      targetFrameTimeMs * ADAPTIVE_RAYMARCH_LONG_FRAME_TIME_RATIO,
     stepDownLongFrameCount: Math.max(
       1,
-      Math.round(decisionFrameCount * AUTO_RAYMARCH_STEP_DOWN_LONG_FRAME_RATIO),
+      Math.round(
+        decisionFrameCount * ADAPTIVE_RAYMARCH_STEP_DOWN_LONG_FRAME_RATIO,
+      ),
     ),
   };
 }
@@ -1157,13 +1164,15 @@ export function getEffectiveRenderScale(
 ) {
   const normalizedRequestedRenderScale =
     normalizeRenderScale(requestedRenderScale);
-  const effectiveRenderScale =
-    runtimeDiagnostics?.adaptiveRaymarch?.adaptiveRaymarchActive &&
-    Number.isFinite(runtimeDiagnostics?.adaptiveRaymarch?.effectiveRenderScale)
-      ? runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale
-      : normalizedRequestedRenderScale;
+  const effectiveRenderScale = Number.isFinite(
+    runtimeDiagnostics?.adaptiveRaymarch?.effectiveRenderScale,
+  )
+    ? runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale
+    : normalizedRequestedRenderScale;
 
-  return normalizeRenderScale(effectiveRenderScale);
+  return normalizeRenderScale(
+    Math.min(effectiveRenderScale, normalizedRequestedRenderScale),
+  );
 }
 
 function readRaymarchFrameModeCount(featureFrame) {
@@ -1448,11 +1457,23 @@ function buildAdaptiveRaymarchLadder(requestedStepBudget) {
     raymarchSteps: requestedStepBudget,
   });
   const rungSet = new Set(
-    AUTO_RAYMARCH_STEP_LADDER.filter(
+    ADAPTIVE_RAYMARCH_STEP_LADDER.filter(
       (stepBudget) => stepBudget < normalizedRequestedStepBudget,
     ),
   );
   rungSet.add(normalizedRequestedStepBudget);
+  return Array.from(rungSet).sort((left, right) => left - right);
+}
+
+function buildAdaptiveRenderScaleLadder(requestedRenderScale) {
+  const normalizedRequestedRenderScale =
+    normalizeRenderScale(requestedRenderScale);
+  const rungSet = new Set(
+    ADAPTIVE_RAYMARCH_RENDER_SCALE_LADDER.filter(
+      (renderScale) => renderScale < normalizedRequestedRenderScale,
+    ),
+  );
+  rungSet.add(normalizedRequestedRenderScale);
   return Array.from(rungSet).sort((left, right) => left - right);
 }
 
@@ -1543,7 +1564,7 @@ function resolveAdaptiveStartInputs({ renderProfile, requestedStepBudget }) {
 
 function resolveAdaptiveCurrentRung({
   currentRung,
-  resumeRung,
+  resumeRung = null,
   ladder,
   reactivating = false,
 }) {
@@ -1566,6 +1587,8 @@ function resetAdaptiveRaymarchState(
   { preserveHistory = false, startRung = null } = {},
 ) {
   const ladder = buildAdaptiveRaymarchLadder(requestedStepBudget);
+  const renderScaleLadder =
+    buildAdaptiveRenderScaleLadder(requestedRenderScale);
   const normalizedRequestedRenderScale =
     normalizeRenderScale(requestedRenderScale);
   adaptiveRaymarch.requestedRaymarchSteps = requestedStepBudget;
@@ -1575,6 +1598,8 @@ function resetAdaptiveRaymarchState(
     : getAdaptiveLadderMaxRung(ladder);
   adaptiveRaymarch.currentRung = resolvedStartRung;
   adaptiveRaymarch.effectiveRaymarchSteps = ladder[resolvedStartRung];
+  adaptiveRaymarch.currentRenderScaleRung =
+    getAdaptiveLadderMaxRung(renderScaleLadder);
   adaptiveRaymarch.effectiveRenderScale = normalizedRequestedRenderScale;
   adaptiveRaymarch.decisionFrameCount = 0;
   adaptiveRaymarch.longFrameCountInWindow = 0;
@@ -1584,9 +1609,12 @@ function resetAdaptiveRaymarchState(
   if (!preserveHistory) {
     adaptiveRaymarch.stepDownCount = 0;
     adaptiveRaymarch.stepUpCount = 0;
+    adaptiveRaymarch.renderScaleStepDownCount = 0;
+    adaptiveRaymarch.renderScaleStepUpCount = 0;
   }
   return {
     ladder,
+    renderScaleLadder,
   };
 }
 
@@ -1616,7 +1644,7 @@ function deriveAdaptivePressureRung({
   const estimatedBudget =
     currentBudget *
     (targetFrameTimeMs / smoothedFrameTimeMs) *
-    AUTO_RAYMARCH_PRESSURE_SAFETY_MARGIN;
+    ADAPTIVE_RAYMARCH_PRESSURE_SAFETY_MARGIN;
   const estimatedRung = findAdaptiveRaymarchRungAtOrBelow(
     ladder,
     estimatedBudget,
@@ -1652,7 +1680,7 @@ function deriveAdaptiveRecoveryState({
     } else if (!hasRenderAuthority(effectiveFrame)) {
       recoveryBlockedReason = "render-not-authorized";
     } else if (
-      !(projectedRenderEnergy >= AUTO_RAYMARCH_RECOVERY_MIN_RENDER_ENERGY)
+      !(projectedRenderEnergy >= ADAPTIVE_RAYMARCH_RECOVERY_MIN_RENDER_ENERGY)
     ) {
       recoveryBlockedReason = "low-render-energy";
     }
@@ -1675,6 +1703,26 @@ function deriveCoherentModalRaymarchStepFloor({
   }
 
   return Math.min(requestedStepBudget, COHERENT_MODAL_RAYMARCH_STEP_FLOOR);
+}
+
+function resolveAdaptiveStepBudgetAtRung({
+  activeRaymarchFrame,
+  requestedStepBudget,
+  ladder,
+  rung,
+}) {
+  const coherentModalStepFloor = deriveCoherentModalRaymarchStepFloor({
+    activeRaymarchFrame,
+    requestedStepBudget,
+  });
+  return Math.max(
+    coherentModalStepFloor,
+    ladder[clampAdaptiveLadderRung(rung, ladder)],
+  );
+}
+
+function resolveAdaptiveRenderScaleAtRung({ ladder, rung }) {
+  return ladder[clampAdaptiveLadderRung(rung, ladder)];
 }
 
 /**
@@ -1805,15 +1853,15 @@ export function updateAdaptiveRaymarchStepBudget({
     allowsCurrentLiveRenderFrame(effectiveFrame) &&
     Math.max(frameModeCount, uploadedModeCount) > 0,
   );
-  const profileAdaptiveActive = Boolean(
-    activeRaymarchFrame &&
-    (renderProfile?.qualityPreset === PERFORMANCE_PROFILES.auto ||
-      renderProfile?.qualityPreset === PERFORMANCE_PROFILES.custom),
+  const profileAllowsAdaptiveQuality = Boolean(
+    renderProfile?.qualityPreset === PERFORMANCE_PROFILES.auto ||
+    renderProfile?.qualityPreset === PERFORMANCE_PROFILES.custom,
   );
   const adaptiveRaymarch = runtimeDiagnostics.adaptiveRaymarch;
-  const autoAdaptiveActive = profileAdaptiveActive;
-  // The observation integrator owns step budget, while render scale stays a
-  // profile/output contract so transient frame pressure cannot blur cymatics.
+  const adaptiveQualityActive =
+    profileAllowsAdaptiveQuality && activeRaymarchFrame;
+  // The observation integrator owns adaptive quality: steps are lowered first;
+  // render scale/DPR are lowered only after the step ladder reaches its floor.
   // The governor stays bloom-only while there is an active raymarch frame.
   const performanceGovernor =
     raymarchPerformanceGovernor.buildRaymarchPerformanceGovernor({
@@ -1840,6 +1888,7 @@ export function updateAdaptiveRaymarchStepBudget({
   adaptiveRaymarch.targetFrameTimeMs = adaptiveTuning.targetFrameTimeMs;
 
   let ladder = buildAdaptiveRaymarchLadder(governedStepBudget);
+  let renderScaleLadder = buildAdaptiveRenderScaleLadder(governedRenderScale);
   const adaptiveStartInputs = resolveAdaptiveStartInputs({
     renderProfile,
     requestedStepBudget: governedStepBudget,
@@ -1848,45 +1897,79 @@ export function updateAdaptiveRaymarchStepBudget({
     adaptiveRaymarch.requestedRaymarchSteps !== governedStepBudget ||
     adaptiveRaymarch.requestedRenderScale !== governedRenderScale;
   if (requestedChanged) {
-    ({ ladder } = resetAdaptiveRaymarchState(
+    ({ ladder, renderScaleLadder } = resetAdaptiveRaymarchState(
       adaptiveRaymarch,
       governedStepBudget,
       governedRenderScale,
       {
-        startRung: Number.isFinite(runtimeState.autoRaymarchResumeRung)
-          ? runtimeState.autoRaymarchResumeRung
+        startRung: Number.isFinite(runtimeState.adaptiveRaymarchResumeRung)
+          ? runtimeState.adaptiveRaymarchResumeRung
           : adaptiveStartInputs.startRung,
       },
     ));
   }
 
-  if (!autoAdaptiveActive) {
-    runtimeState.autoRaymarchResumeRung = adaptiveRaymarch.currentRung;
+  if (!adaptiveQualityActive) {
+    const inactiveStepRung = profileAllowsAdaptiveQuality
+      ? resolveAdaptiveCurrentRung({
+          currentRung: adaptiveRaymarch.currentRung,
+          ladder,
+        })
+      : getAdaptiveLadderMaxRung(ladder);
+    const inactiveStepBudget = resolveAdaptiveStepBudgetAtRung({
+      activeRaymarchFrame,
+      requestedStepBudget: governedStepBudget,
+      ladder,
+      rung: inactiveStepRung,
+    });
+    const inactiveRenderScaleRung = profileAllowsAdaptiveQuality
+      ? resolveAdaptiveCurrentRung({
+          currentRung: adaptiveRaymarch.currentRenderScaleRung,
+          ladder: renderScaleLadder,
+        })
+      : getAdaptiveLadderMaxRung(renderScaleLadder);
+    const inactiveRenderScale = resolveAdaptiveRenderScaleAtRung({
+      ladder: renderScaleLadder,
+      rung: inactiveRenderScaleRung,
+    });
+    runtimeState.adaptiveRaymarchResumeRung = inactiveStepRung;
     adaptiveRaymarch.adaptiveRaymarchActive = false;
     adaptiveRaymarch.requestedRaymarchSteps = governedStepBudget;
     adaptiveRaymarch.requestedRenderScale = governedRenderScale;
-    adaptiveRaymarch.effectiveRaymarchSteps = governedStepBudget;
-    adaptiveRaymarch.effectiveRenderScale = governedRenderScale;
+    adaptiveRaymarch.currentRung = inactiveStepRung;
+    adaptiveRaymarch.effectiveRaymarchSteps = inactiveStepBudget;
+    adaptiveRaymarch.effectiveRenderScale = inactiveRenderScale;
+    adaptiveRaymarch.currentRenderScaleRung = inactiveRenderScaleRung;
     applyEffectiveRaymarchStepBudget(
       runtimeState,
       controls,
-      governedStepBudget,
+      inactiveStepBudget,
     );
-    // Balanced/performance hold the user cap (no ladder) but still want the
-    // bloom guard while a raymarch frame is active; OSR/non-playing freeze it.
+    // Non-adaptive profiles hold the user cap; adaptive profiles hold their
+    // committed ladder rungs across transient inactive frames.
     publishRaymarchIntegratorBudget(runtimeState, {
-      effectiveRenderScale: governedRenderScale,
+      effectiveRenderScale: inactiveRenderScale,
       bloomAdaptationActive: activeRaymarchFrame,
     });
-    return governedStepBudget;
+    runtimeState.performanceGovernor = {
+      ...runtimeState.performanceGovernor,
+      effectiveRenderScale: inactiveRenderScale,
+      effectiveStepBudget: inactiveStepBudget,
+    };
+    return inactiveStepBudget;
   }
 
   const wasAdaptiveActive = adaptiveRaymarch.adaptiveRaymarchActive === true;
   adaptiveRaymarch.adaptiveRaymarchActive = true;
   adaptiveRaymarch.currentRung = resolveAdaptiveCurrentRung({
     currentRung: adaptiveRaymarch.currentRung,
-    resumeRung: runtimeState.autoRaymarchResumeRung,
+    resumeRung: runtimeState.adaptiveRaymarchResumeRung,
     ladder,
+    reactivating: !wasAdaptiveActive,
+  });
+  adaptiveRaymarch.currentRenderScaleRung = resolveAdaptiveCurrentRung({
+    currentRung: adaptiveRaymarch.currentRenderScaleRung,
+    ladder: renderScaleLadder,
     reactivating: !wasAdaptiveActive,
   });
   const recoveryState = deriveAdaptiveRecoveryState({
@@ -1944,14 +2027,26 @@ export function updateAdaptiveRaymarchStepBudget({
               adaptiveRaymarch.currentRung - nextPressureRung;
             adaptiveRaymarch.currentRung = nextPressureRung;
           }
+        } else if (adaptiveRaymarch.currentRenderScaleRung > 0) {
+          adaptiveRaymarch.currentRenderScaleRung -= 1;
+          adaptiveRaymarch.renderScaleStepDownCount =
+            (adaptiveRaymarch.renderScaleStepDownCount ?? 0) + 1;
         }
         adaptiveRaymarch.stableWindowCount = 0;
       } else if (stableWindow && recoveryState.recoveryEligible) {
         adaptiveRaymarch.stableWindowCount += 1;
         if (
-          adaptiveRaymarch.stableWindowCount >= AUTO_RAYMARCH_RECOVERY_WINDOWS
+          adaptiveRaymarch.stableWindowCount >=
+          ADAPTIVE_RAYMARCH_RECOVERY_WINDOWS
         ) {
-          if (adaptiveRaymarch.currentRung < ladder.length - 1) {
+          if (
+            adaptiveRaymarch.currentRenderScaleRung <
+            renderScaleLadder.length - 1
+          ) {
+            adaptiveRaymarch.currentRenderScaleRung += 1;
+            adaptiveRaymarch.renderScaleStepUpCount =
+              (adaptiveRaymarch.renderScaleStepUpCount ?? 0) + 1;
+          } else if (adaptiveRaymarch.currentRung < ladder.length - 1) {
             adaptiveRaymarch.currentRung += 1;
             adaptiveRaymarch.stepUpCount += 1;
           }
@@ -1966,16 +2061,17 @@ export function updateAdaptiveRaymarchStepBudget({
     }
   }
 
-  const coherentModalStepFloor = deriveCoherentModalRaymarchStepFloor({
+  const effectiveStepBudget = resolveAdaptiveStepBudgetAtRung({
     activeRaymarchFrame,
     requestedStepBudget: governedStepBudget,
+    ladder,
+    rung: adaptiveRaymarch.currentRung,
   });
-  const effectiveStepBudget = Math.max(
-    coherentModalStepFloor,
-    ladder[clampAdaptiveLadderRung(adaptiveRaymarch.currentRung, ladder)],
-  );
   adaptiveRaymarch.effectiveRaymarchSteps = effectiveStepBudget;
-  adaptiveRaymarch.effectiveRenderScale = governedRenderScale;
+  adaptiveRaymarch.effectiveRenderScale = resolveAdaptiveRenderScaleAtRung({
+    ladder: renderScaleLadder,
+    rung: adaptiveRaymarch.currentRenderScaleRung,
+  });
   adaptiveRaymarch.complexityScore = performanceGovernor.complexityScore;
   adaptiveRaymarch.uploadedModeCount = performanceGovernor.uploadedModeCount;
   adaptiveRaymarch.originalModeCount = performanceGovernor.originalModeCount;
@@ -1983,7 +2079,7 @@ export function updateAdaptiveRaymarchStepBudget({
     performanceGovernor.proactiveStepBudget;
   adaptiveRaymarch.proactiveRenderScale =
     performanceGovernor.proactiveRenderScale;
-  runtimeState.autoRaymarchResumeRung = adaptiveRaymarch.currentRung;
+  runtimeState.adaptiveRaymarchResumeRung = adaptiveRaymarch.currentRung;
   runtimeState.performanceGovernor = {
     ...runtimeState.performanceGovernor,
     effectiveRenderScale: adaptiveRaymarch.effectiveRenderScale,

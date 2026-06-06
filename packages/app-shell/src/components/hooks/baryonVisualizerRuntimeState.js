@@ -81,8 +81,11 @@ function createAdaptiveRaymarchDiagnostics() {
     requestedRenderScale: 1,
     effectiveRenderScale: 1,
     currentRung: 0,
+    currentRenderScaleRung: null,
     stepDownCount: 0,
     stepUpCount: 0,
+    renderScaleStepDownCount: 0,
+    renderScaleStepUpCount: 0,
     targetFps: 60,
     targetFrameTimeMs: 1000 / 60,
     decisionFrameCount: 0,
@@ -544,10 +547,10 @@ export function initializeAdaptiveRaymarchRuntimeState(runtimeState) {
   if (
     !Object.prototype.hasOwnProperty.call(
       runtimeState,
-      "autoRaymarchResumeRung",
+      "adaptiveRaymarchResumeRung",
     )
   ) {
-    runtimeState.autoRaymarchResumeRung = null;
+    runtimeState.adaptiveRaymarchResumeRung = null;
   }
   return runtimeState;
 }
@@ -759,8 +762,7 @@ export function updateObservationTransferRenderDiagnostics(
     typeof raymarchDebug.liveFieldProjectionPressureRadiationReady === "boolean"
       ? raymarchDebug.liveFieldProjectionPressureRadiationReady
       : Boolean(
-          liveFieldProjectionCache?.ready === true &&
-            pressureRadiationTexture,
+          liveFieldProjectionCache?.ready === true && pressureRadiationTexture,
         );
   renderDiagnostics.liveFieldProjectionPressureRadiationSemantic =
     raymarchDebug.liveFieldProjectionPressureRadiationSemantic ??
@@ -947,7 +949,7 @@ export function clearAdaptiveRaymarchResumeState(runtimeState) {
     return;
   }
 
-  runtimeState.autoRaymarchResumeRung = null;
+  runtimeState.adaptiveRaymarchResumeRung = null;
 }
 
 export function recordRuntimePerfSample(

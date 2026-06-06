@@ -91,7 +91,7 @@ function createAdaptiveRaymarchHarness({
   const runtimeState = {
     requestedRaymarchSteps: 64,
     effectiveRaymarchSteps: 64,
-    autoRaymarchResumeRung: null,
+    adaptiveRaymarchResumeRung: null,
     uniforms: {
       uRaymarchSteps: {
         value: 64,
@@ -831,6 +831,16 @@ test("buildPerformanceHudSnapshot uses deterministic dominant-bucket tie breaks"
   expect(snapshot.stageAttribution.dominantBucket).toBe("render");
 });
 
+test("buildPerformanceHudSnapshot preserves precise fps from smoothed frame time", () => {
+  const runtimeDiagnostics = createRuntimeDiagnostics();
+  runtimeDiagnostics.smoothedFrameTimeMs = 1000 / 59.94;
+
+  const snapshot = buildPerformanceHudSnapshot(runtimeDiagnostics);
+
+  expect(snapshot.fps).toBeCloseTo(59.94, 10);
+  expect(snapshot.fps).not.toBe(Math.round(snapshot.fps));
+});
+
 test("updateModalFreshnessDiagnostics records modal signals and slot turnover without publishing structural arrays", () => {
   const runtimeDiagnostics = createRuntimeDiagnostics();
   runtimeDiagnostics.engine.snapshotAgeMs = 41;
@@ -1177,7 +1187,7 @@ test("auto raymarch preserves surface resolution before crossing the cymatic sam
   const runtimeState = {
     requestedRaymarchSteps: 64,
     effectiveRaymarchSteps: 64,
-    autoRaymarchResumeRung: null,
+    adaptiveRaymarchResumeRung: null,
     uniforms: {
       uRaymarchSteps: {
         value: 64,
@@ -1307,6 +1317,102 @@ test("max-quality keeps user raymarch budget and render scale under frame pressu
   expect(getEffectiveRenderScale(runtimeDiagnostics, 1)).toBe(1);
 });
 
+test("auto raymarch lowers steps before touching render scale under frame pressure", () => {
+  const { args, runtimeState, runtimeDiagnostics } =
+    createAdaptiveRaymarchHarness();
+  runtimeDiagnostics.lastFrameTimeMs = 120;
+  runtimeDiagnostics.smoothedFrameTimeMs = 120;
+  runtimeDiagnostics.adaptiveRaymarch.currentRung = 3;
+  runtimeDiagnostics.adaptiveRaymarch.decisionFrameCount = 29;
+  runtimeDiagnostics.adaptiveRaymarch.longFrameCountInWindow = 3;
+
+  updateAdaptiveRaymarchStepBudget(args);
+
+  expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBeLessThan(3);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(1);
+  expect(runtimeDiagnostics.adaptiveRaymarch.renderScaleStepDownCount).toBe(0);
+  expect(runtimeState.effectiveRenderScale).toBe(1);
+});
+
+test("auto raymarch lowers render scale only after the step floor is reached", () => {
+  const { args, runtimeState, runtimeDiagnostics } =
+    createAdaptiveRaymarchHarness();
+  runtimeDiagnostics.lastFrameTimeMs = 120;
+  runtimeDiagnostics.smoothedFrameTimeMs = 120;
+  runtimeDiagnostics.adaptiveRaymarch.currentRung = 0;
+  runtimeDiagnostics.adaptiveRaymarch.decisionFrameCount = 29;
+  runtimeDiagnostics.adaptiveRaymarch.longFrameCountInWindow = 3;
+
+  updateAdaptiveRaymarchStepBudget(args);
+
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(16);
+  expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(0);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.92);
+  expect(runtimeDiagnostics.adaptiveRaymarch.renderScaleStepDownCount).toBe(1);
+  expect(getEffectiveRenderScale(runtimeDiagnostics, 1)).toBe(0.92);
+  expect(runtimeState.effectiveRenderScale).toBe(0.92);
+});
+
+test("auto raymarch holds throttled quality across inactive raymarch frames", () => {
+  const { args, runtimeState, runtimeDiagnostics } =
+    createAdaptiveRaymarchHarness({
+      controls: {
+        raymarchSteps: 72,
+      },
+    });
+  runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 72;
+  runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps = 16;
+  runtimeDiagnostics.adaptiveRaymarch.currentRung = 0;
+  runtimeDiagnostics.adaptiveRaymarch.currentRenderScaleRung = 2;
+  runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale = 0.67;
+  runtimeState.effectiveRaymarchSteps = 16;
+  runtimeState.uniforms.uRaymarchSteps.value = 16;
+  runtimeState.volumeMesh.material.steps = 16;
+
+  const effectiveStepBudget = updateAdaptiveRaymarchStepBudget({
+    ...args,
+    effectiveFrame: {
+      ...args.effectiveFrame,
+      activeModeCount: 0,
+      renderAuthority: false,
+    },
+  });
+
+  expect(runtimeDiagnostics.adaptiveRaymarch.adaptiveRaymarchActive).toBe(
+    false,
+  );
+  expect(effectiveStepBudget).toBe(16);
+  expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(0);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(16);
+  expect(runtimeDiagnostics.adaptiveRaymarch.currentRenderScaleRung).toBe(2);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.67);
+  expect(runtimeState.effectiveRaymarchSteps).toBe(16);
+  expect(runtimeState.uniforms.uRaymarchSteps.value).toBe(16);
+  expect(runtimeState.volumeMesh.material.steps).toBe(16);
+  expect(runtimeState.performanceGovernor.effectiveStepBudget).toBe(16);
+  expect(runtimeState.performanceGovernor.effectiveRenderScale).toBe(0.67);
+  expect(getEffectiveRenderScale(runtimeDiagnostics, 1)).toBe(0.67);
+  expect(runtimeState.effectiveRenderScale).toBe(0.67);
+});
+
+test("auto raymarch recovers render scale before increasing steps", () => {
+  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness();
+  runtimeDiagnostics.lastFrameTimeMs = 10;
+  runtimeDiagnostics.smoothedFrameTimeMs = 10;
+  runtimeDiagnostics.adaptiveRaymarch.currentRung = 0;
+  runtimeDiagnostics.adaptiveRaymarch.currentRenderScaleRung = 4;
+  runtimeDiagnostics.adaptiveRaymarch.decisionFrameCount = 29;
+  runtimeDiagnostics.adaptiveRaymarch.stableWindowCount = 3;
+
+  updateAdaptiveRaymarchStepBudget(args);
+
+  expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(0);
+  expect(runtimeDiagnostics.adaptiveRaymarch.stepUpCount).toBe(0);
+  expect(runtimeDiagnostics.adaptiveRaymarch.currentRenderScaleRung).toBe(5);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.92);
+  expect(runtimeDiagnostics.adaptiveRaymarch.renderScaleStepUpCount).toBe(1);
+});
+
 test("auto raymarch ignores long frames caused by active UI interaction", () => {
   const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness();
   runtimeDiagnostics.lastFrameTimeMs = 200;
@@ -1342,13 +1448,16 @@ test("auto raymarch does not publish a phase rebuild cadence under frame pressur
   expect(runtimeState).not.toHaveProperty(removedPhaseCadenceKey);
 });
 
-test("performance HUD scale uses requested render scale when the integrator is idle", () => {
+test("performance HUD scale uses committed adaptive scale when the frame gate is idle", () => {
   const runtimeDiagnostics = createRuntimeDiagnostics();
 
   expect(getEffectiveRenderScale(runtimeDiagnostics, 0.75)).toBe(0.75);
 
-  runtimeDiagnostics.adaptiveRaymarch.adaptiveRaymarchActive = true;
   runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale = 0.67;
+
+  expect(getEffectiveRenderScale(runtimeDiagnostics, 0.75)).toBe(0.67);
+
+  runtimeDiagnostics.adaptiveRaymarch.adaptiveRaymarchActive = true;
 
   expect(getEffectiveRenderScale(runtimeDiagnostics, 0.75)).toBe(0.67);
 });
@@ -1358,7 +1467,7 @@ test("custom profile uses the selected target fps for adaptive tuning", () => {
   const runtimeState = {
     requestedRaymarchSteps: 64,
     effectiveRaymarchSteps: 64,
-    autoRaymarchResumeRung: null,
+    adaptiveRaymarchResumeRung: null,
     uniforms: {
       uRaymarchSteps: {
         value: 64,
@@ -1424,8 +1533,8 @@ test("adaptive raymarch publishes the integrator budget for the runtime tick", (
     runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale,
   );
   expect(runtimeState.raymarchBloomAdaptationActive).toBe(true);
-  // In auto/custom the ladder owns steps while render scale stays a profile
-  // contract and bloom adaptation stays on.
+  // In auto/custom the adaptive ladder owns steps and, after the step floor,
+  // render scale while bloom adaptation stays on.
   expect(runtimeState.performanceGovernor).toMatchObject({
     stepScaleAdaptationActive: false,
     bloomAdaptationActive: true,
@@ -2434,14 +2543,14 @@ test("clearing adaptive resume state forces the next authoritative session to re
       },
     });
 
-  runtimeState.autoRaymarchResumeRung = 6;
+  runtimeState.adaptiveRaymarchResumeRung = 6;
   clearAdaptiveRaymarchResumeState(runtimeState);
   runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
   runtimeDiagnostics.adaptiveRaymarch.requestedRenderScale = 0;
 
   updateAdaptiveRaymarchStepBudget(args);
 
-  expect(runtimeState.autoRaymarchResumeRung).toBe(0);
+  expect(runtimeState.adaptiveRaymarchResumeRung).toBe(0);
   expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(16);
   expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.67);
 });
