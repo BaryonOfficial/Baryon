@@ -205,6 +205,40 @@ test("tail diagnostics records compact samples on the configured interval", () =
   expect(dump.samples[0]).not.toHaveProperty("modeSlots");
 });
 
+test("tail diagnostics records render-facing modal response energy", () => {
+  const recorder = createTailDiagnosticsRecorder({
+    sampleIntervalMs: 1,
+    maxDurationMs: 1000,
+  });
+  recorder.start({ nowMs: 1000 });
+
+  recordTailDiagnosticsSample(recorder, {
+    runtimeDiagnostics: createRuntimeDiagnostics({
+      modalFreshness: {
+        modalResponseEnergy: 0.03,
+      },
+    }),
+    featureFrame: {
+      modalResponseEnergy: 0.03,
+      modalResponseRenderEnergy: 0.31,
+      modalResponseRenderSourceCoupledEnergy: 0.24,
+      modalResponseRenderResonantEnergy: 0.19,
+      debug: {
+        modalResponseEnergy: 0.04,
+      },
+    },
+    runtimeState: {
+      debugSnapshot: {
+        volumeVisible: true,
+        raymarchDebug: { renderAuthority: true },
+      },
+    },
+    nowMs: 1000,
+  });
+
+  expect(recorder.dump().samples[0].frame.modalResponseEnergy).toBe(0.31);
+});
+
 test("tail diagnostics summarizes material probe windows", () => {
   const recorder = createTailDiagnosticsRecorder({
     sampleIntervalMs: 1,

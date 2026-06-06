@@ -3,6 +3,7 @@ import {
   RENDER_PROBE_MATERIAL_FIELDS,
   buildRenderProbeSnapshot,
 } from "./renderProbeSnapshot.js";
+import { readRenderFacingModalResponseEnergy } from "./modalResponseDiagnostics.js";
 
 const DEFAULT_SAMPLE_INTERVAL_MS = 250;
 const DEFAULT_MAX_DURATION_MS = 60_000;
@@ -421,11 +422,9 @@ function buildTailDiagnosticSample({
       observationEnergy: readFiniteNumber(
         modalFreshness.observationEnergy ?? featureFrame?.observationEnergy,
       ),
-      modalResponseEnergy: readFiniteNumber(
-        modalFreshness.modalResponseEnergy ??
-          featureFrame?.modalResponseEnergy ??
-          featureFrame?.modalResponseRenderEnergy ??
-          featureFrame?.debug?.modalResponseEnergy,
+      modalResponseEnergy: Math.max(
+        readFiniteNumber(modalFreshness.modalResponseEnergy),
+        readRenderFacingModalResponseEnergy(featureFrame),
       ),
       modalResponseBudgetScale: readFiniteNumber(
         modalFreshness.modalResponseBudgetScale ??

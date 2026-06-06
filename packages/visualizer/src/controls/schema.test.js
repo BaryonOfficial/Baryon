@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   CONTROL_DEFINITIONS,
   CONTROL_HANDLERS,
@@ -80,6 +81,54 @@ const EXPECTED_CONTROL_KEYS = [
   "logEveryFrames",
 ];
 
+const CONTROLS_REFERENCE_URL = new URL(
+  "../../../../documentation/public/reference/controls.md",
+  import.meta.url,
+);
+const CONTROLS_REFERENCE = readFileSync(CONTROLS_REFERENCE_URL, "utf8");
+
+function getPublicControlsReferenceHeading(group) {
+  return group === "PresetsArea" ? "Inline Stage Controls" : group;
+}
+
+function readPublicControlsReferenceHeadings(controlsReference) {
+  return Array.from(controlsReference.matchAll(/^## (.+)$/gm)).map(
+    (match) => match[1],
+  );
+}
+
+function readPublicControlsReferenceSectionLabels(controlsReference, heading) {
+  const headingMarker = `## ${heading}`;
+  const headingStart = controlsReference.indexOf(`${headingMarker}\n`);
+  if (headingStart < 0) {
+    return [];
+  }
+  const sectionStart = headingStart + headingMarker.length;
+  const remainingReference = controlsReference.slice(sectionStart);
+  const nextHeadingOffset = remainingReference.search(/\n## /);
+  const section =
+    nextHeadingOffset >= 0
+      ? remainingReference.slice(0, nextHeadingOffset)
+      : remainingReference;
+
+  return Array.from(section.matchAll(/^\| \*\*(.+?)\*\*.*\|$/gm)).map(
+    (match) => match[1],
+  );
+}
+
+function getPublicControlsReferenceSchemaHeadings() {
+  return Array.from(
+    CONTROL_DEFINITIONS.reduce((groups, definition) => {
+      if (definition.group) {
+        groups.set(definition.group, definition.groupOrder);
+      }
+      return groups;
+    }, new Map()),
+  )
+    .sort(([, leftOrder], [, rightOrder]) => leftOrder - rightOrder)
+    .map(([group]) => getPublicControlsReferenceHeading(group));
+}
+
 describe("control schema", () => {
   it("enumerates the current pane surface", () => {
     expect(CONTROL_DEFINITIONS.map((definition) => definition.key)).toEqual(
@@ -90,6 +139,32 @@ describe("control schema", () => {
   it("creates state for every control key", () => {
     const state = createControlState();
     expect(Object.keys(state)).toEqual(EXPECTED_CONTROL_KEYS);
+  });
+
+  it("keeps the public controls reference aligned with grouped control labels", () => {
+    for (const group of new Set(
+      CONTROL_DEFINITIONS.map((definition) => definition.group).filter(Boolean),
+    )) {
+      const heading = getPublicControlsReferenceHeading(group);
+      const expectedLabels = CONTROL_DEFINITIONS.filter(
+        (definition) => definition.group === group,
+      ).map((definition) => definition.label);
+      const actualLabels = readPublicControlsReferenceSectionLabels(
+        CONTROLS_REFERENCE,
+        heading,
+      );
+
+      expect(actualLabels).toEqual(expectedLabels);
+    }
+  });
+
+  it("orders public controls reference sections by schema group order", () => {
+    const expectedHeadings = getPublicControlsReferenceSchemaHeadings();
+    const actualSchemaHeadings = readPublicControlsReferenceHeadings(
+      CONTROLS_REFERENCE,
+    ).filter((heading) => expectedHeadings.includes(heading));
+
+    expect(actualSchemaHeadings).toEqual(expectedHeadings);
   });
 
   it("defaults the raymarch surface to the current baseline", () => {

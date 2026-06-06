@@ -161,6 +161,9 @@ export function createAudioFeatureState(capacity = AUDIO_SLOT_CAPACITY) {
       acousticResonantTarget: createModalTargetBuild(capacity),
       modalExcitationState: createModalExcitationState(capacity),
       modalFieldContinuityState: createModalFieldContinuityState(),
+      modalDescriptorAuthorityState: {
+        previousFieldAuthority: null,
+      },
     },
     audit: {
       frame: 0,

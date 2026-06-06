@@ -148,7 +148,7 @@ const DEBUG_METRIC_TOOLTIPS = {
   Overflow:
     "Whether the observer produced more valid modes than descriptor capacity.",
   Chroma: "Maximum Spectral Light color weight uploaded for the modal field.",
-  Lane: "Spectral lane-cache radiance input currently drawable by the material. This is the canonical Spectral packet signal, separate from legacy modal color-slot Chroma.",
+  Lane: "Spectral lane-cache radiance input currently drawable by the material. This is the canonical Spectral packet signal, separate from modal color-slot Chroma.",
   Flux: "Weighted spectral-flux contribution to Change. Higher values mean more fresh frequency-bin motion.",
   Hit: "Weighted transient-energy contribution to Change. Higher values mean stronger attacks and onsets.",
   "Slot Δ": "Weighted average slot-amplitude delta contribution to Change.",
@@ -384,9 +384,9 @@ export default function DiagnosticsHud({
   enabledOverride = undefined,
   snapshotOverride = undefined,
 }) {
-  const overlayRef = useRef(null);
+  const panelRef = useRef(null);
   const dragStateRef = useRef(null);
-  const [overlayState, setOverlayState] = useState({
+  const [diagnosticsHudState, setDiagnosticsHudState] = useState({
     enabled: false,
     snapshot: null,
   });
@@ -404,7 +404,7 @@ export default function DiagnosticsHud({
         window.__baryonControls?.getState?.().auditEnabled,
       );
       const snapshot = enabled ? (window.__baryonAuditSnapshot ?? null) : null;
-      setOverlayState({ enabled, snapshot });
+      setDiagnosticsHudState({ enabled, snapshot });
     };
 
     update();
@@ -449,8 +449,8 @@ export default function DiagnosticsHud({
     };
   }, []);
 
-  const resolvedOverlayState = resolveDiagnosticsHudState({
-    localState: overlayState,
+  const resolvedDiagnosticsHudState = resolveDiagnosticsHudState({
+    localState: diagnosticsHudState,
     enabledOverride,
     snapshotOverride,
   });
@@ -458,13 +458,13 @@ export default function DiagnosticsHud({
   if (
     !shouldRenderDiagnosticsHud({
       enabledOverride,
-      overlayState: resolvedOverlayState,
+      diagnosticsHudState: resolvedDiagnosticsHudState,
     })
   ) {
     return null;
   }
 
-  const snapshot = resolvedOverlayState.snapshot;
+  const snapshot = resolvedDiagnosticsHudState.snapshot;
   const debugSnapshot = selectDebugSnapshot(snapshot);
   if (!debugSnapshot) {
     return null;
@@ -573,11 +573,11 @@ export default function DiagnosticsHud({
     event.preventDefault();
   };
   const handleMetricEnter = (event, label) => {
-    if (!overlayRef.current) {
+    if (!panelRef.current) {
       return;
     }
 
-    const panelRect = overlayRef.current.getBoundingClientRect();
+    const panelRect = panelRef.current.getBoundingClientRect();
     const targetRect = event.currentTarget.getBoundingClientRect();
     const centerX = targetRect.left - panelRect.left + targetRect.width / 2;
     const placeAbove = targetRect.top - panelRect.top > panelRect.height * 0.55;
@@ -603,7 +603,7 @@ export default function DiagnosticsHud({
   return (
     <aside
       data-testid="diagnostics-hud"
-      ref={overlayRef}
+      ref={panelRef}
       style={{
         position: stacked ? "relative" : "fixed",
         top: stacked ? "auto" : top,

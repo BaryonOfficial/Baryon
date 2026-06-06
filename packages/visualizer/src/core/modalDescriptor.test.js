@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { buildCanonicalFullModalDescriptor } from "./modalDescriptor.js";
 
+const OVER_BANDWIDTH_SEMANTIC_DOMINANCE_RATIO = 0.85;
+
 function makeSlots(entries) {
   const slots = new Float32Array(entries.length * 4);
   entries.forEach(([u, v, w, amplitude], index) => {
@@ -122,7 +124,7 @@ describe("buildCanonicalFullModalDescriptor", () => {
     expect(highFrequency.slotViews).not.toHaveProperty("modalFieldRoleSlots");
   });
 
-  it("records overflow count, rejected energy, and rejection reasons", () => {
+  it("publishes a bounded capacity-limited descriptor on overflow", () => {
     const descriptor = buildCanonicalFullModalDescriptor({
       maxTotalModes: 2,
       modalFieldSlots: makeSlots([
@@ -138,9 +140,15 @@ describe("buildCanonicalFullModalDescriptor", () => {
       activeModalFieldModeCount: 3,
     });
 
-    expect(descriptor.fieldAuthority).toBe("blocked");
+    expect(descriptor.fieldAuthority).toBe("capacity-limited");
     expect(descriptor.diagnostics.descriptorOverflow).toBe(true);
+    expect(descriptor.counts.validModeCount).toBe(3);
+    expect(descriptor.counts.modalFieldModeCount).toBe(2);
     expect(descriptor.counts.overflowModeCount).toBe(1);
+    expect(readModeKeys(descriptor.slotViews.modalFieldSlots, 2)).toEqual([
+      "1:1:1",
+      "2:2:2",
+    ]);
     expect(descriptor.diagnostics.rejectedModalEnergy).toBeCloseTo(
       0.15 ** 2,
       4,
@@ -188,6 +196,121 @@ describe("buildCanonicalFullModalDescriptor", () => {
     expect(
       descriptor.diagnostics.modalVarietyAudit.representedModalEnergy,
     ).toBeGreaterThan(0);
+  });
+
+  it("keeps represented topology when rejected energy does not dominate semantic total", () => {
+    const descriptor = buildCanonicalFullModalDescriptor({
+      maxTotalModes: 4,
+      basisAtlasPageCapacity: 4,
+      modalFieldSlots: makeSlots([
+        [2, 3, 5, 0.4],
+        [3, 4, 6, 0.3],
+      ]),
+      activeModalFieldModeCount: 2,
+      overBandwidthRejectedModeCount: 2,
+      overBandwidthRejectedModalEnergy: 0.32,
+      overBandwidthMaxRequestedModeIndex: 96,
+      overBandwidthMaxRequestedMode: [32, 48, 96],
+    });
+
+    expect(descriptor.fieldAuthority).toBe("complete");
+    expect(descriptor.diagnostics.overBandwidthDominant).toBe(false);
+    expect(
+      descriptor.diagnostics.overBandwidthRejectedRepresentedEnergyRatio,
+    ).toBeGreaterThan(1);
+    expect(
+      descriptor.diagnostics.overBandwidthRejectedEnergyRatio,
+    ).toBeLessThan(OVER_BANDWIDTH_SEMANTIC_DOMINANCE_RATIO);
+    expect(descriptor.counts.modalFieldModeCount).toBe(2);
+  });
+
+  it("does not enter bandwidth-limited inside the authority hysteresis band", () => {
+    const descriptor = buildCanonicalFullModalDescriptor({
+      maxTotalModes: 4,
+      basisAtlasPageCapacity: 4,
+      modalFieldSlots: makeSlots([
+        [2, 3, 5, 0.5],
+      ]),
+      activeModalFieldModeCount: 1,
+      overBandwidthRejectedModeCount: 2,
+      overBandwidthRejectedModalEnergy: 0.25,
+      overBandwidthMaxRequestedModeIndex: 96,
+      overBandwidthMaxRequestedMode: [32, 48, 96],
+    });
+
+    expect(descriptor.fieldAuthority).toBe("complete");
+    expect(descriptor.diagnostics.overBandwidthDominant).toBe(false);
+    expect(
+      descriptor.diagnostics.overBandwidthRejectedRepresentedEnergyRatio,
+    ).toBe(1);
+    expect(
+      descriptor.diagnostics.overBandwidthRejectedEnergyRatio,
+    ).toBeLessThan(OVER_BANDWIDTH_SEMANTIC_DOMINANCE_RATIO);
+    expect(descriptor.counts.modalFieldModeCount).toBe(1);
+  });
+
+  it("exits bandwidth-limited authority when semantic total is no longer over-bandwidth dominant", () => {
+    const held = buildCanonicalFullModalDescriptor({
+      maxTotalModes: 4,
+      basisAtlasPageCapacity: 4,
+      modalFieldSlots: makeSlots([[2, 3, 5, 0.2]]),
+      activeModalFieldModeCount: 1,
+      overBandwidthRejectedModeCount: 2,
+      overBandwidthRejectedModalEnergy: 0.23,
+      overBandwidthMaxRequestedModeIndex: 96,
+      overBandwidthMaxRequestedMode: [32, 48, 96],
+      previousFieldAuthority: "bandwidth-limited",
+    });
+    const exited = buildCanonicalFullModalDescriptor({
+      maxTotalModes: 4,
+      basisAtlasPageCapacity: 4,
+      modalFieldSlots: makeSlots([[2, 3, 5, 0.2]]),
+      activeModalFieldModeCount: 1,
+      overBandwidthRejectedModeCount: 2,
+      overBandwidthRejectedModalEnergy: 0.2,
+      overBandwidthMaxRequestedModeIndex: 96,
+      overBandwidthMaxRequestedMode: [32, 48, 96],
+      previousFieldAuthority: "bandwidth-limited",
+    });
+
+    expect(held.fieldAuthority).toBe("bandwidth-limited");
+    expect(held.diagnostics.overBandwidthDominant).toBe(true);
+    expect(
+      held.diagnostics.overBandwidthRejectedRepresentedEnergyRatio,
+    ).toBeGreaterThan(1);
+    expect(held.diagnostics.overBandwidthRejectedEnergyRatio).toBeGreaterThan(
+      OVER_BANDWIDTH_SEMANTIC_DOMINANCE_RATIO,
+    );
+    expect(held.counts.modalFieldModeCount).toBe(0);
+
+    expect(exited.fieldAuthority).toBe("complete");
+    expect(exited.diagnostics.overBandwidthDominant).toBe(false);
+    expect(exited.diagnostics.overBandwidthRejectedEnergyRatio).toBeLessThan(
+      OVER_BANDWIDTH_SEMANTIC_DOMINANCE_RATIO,
+    );
+    expect(exited.counts.modalFieldModeCount).toBe(1);
+  });
+
+  it("keeps rejected energy below represented energy render-authoritative", () => {
+    const descriptor = buildCanonicalFullModalDescriptor({
+      maxTotalModes: 4,
+      basisAtlasPageCapacity: 4,
+      modalFieldSlots: makeSlots([
+        [2, 3, 5, 0.5],
+      ]),
+      activeModalFieldModeCount: 1,
+      overBandwidthRejectedModeCount: 2,
+      overBandwidthRejectedModalEnergy: 0.24,
+      overBandwidthMaxRequestedModeIndex: 96,
+      overBandwidthMaxRequestedMode: [32, 48, 96],
+    });
+
+    expect(descriptor.fieldAuthority).toBe("complete");
+    expect(descriptor.diagnostics.overBandwidthDominant).toBe(false);
+    expect(
+      descriptor.diagnostics.overBandwidthRejectedRepresentedEnergyRatio,
+    ).toBeLessThan(1);
+    expect(descriptor.counts.modalFieldModeCount).toBe(1);
   });
 
   it("keeps non-dominant over-bandwidth diagnostics render-authoritative", () => {

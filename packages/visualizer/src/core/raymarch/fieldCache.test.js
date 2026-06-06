@@ -676,6 +676,23 @@ describe("fieldCache", () => {
     expect(descriptor.modalBasisCacheBlockedReason).toBeNull();
   });
 
+  it("keeps overflowed but bounded modal-basis descriptors drawable", () => {
+    const descriptor = buildRaymarchModalBasisCacheDescriptor({
+      modalFieldSlots: new Float32Array([1, 1, 1, 1]),
+      modalFieldPhaseSlots: new Float32Array([0, 0, 1, 1]),
+      modalFieldCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+      descriptorOverflow: true,
+      resolution: 8,
+    });
+
+    expect(descriptor.descriptorOverflow).toBe(true);
+    expect(descriptor.contributingBasisPageModeCount).toBe(1);
+    expect(descriptor.modalBasisCacheDrawable).toBe(true);
+    expect(descriptor.modalBasisCacheBlockedReason).toBeNull();
+  });
+
   it("resolves modal-basis cache drawable states", () => {
     const cache = raymarchFieldCache.createRaymarchModalBasisCache({
       resolution: 8,

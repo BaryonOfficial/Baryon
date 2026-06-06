@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  allowsModalDescriptorRenderAuthority,
   allowsAudioMotion,
   allowsCurrentLiveRenderFrame,
   hasRenderAuthority,
@@ -8,16 +9,9 @@ import {
 describe("render authority contract", () => {
   it("allows render and motion from explicit ledger authority", () => {
     const ledgerDecayTail = {
-      fieldState: "decay",
-      renderAuthority: true,
       energyLedger: {
         projectedRenderEnergy: 0.08,
         renderEnergyEpsilon: 1e-6,
-      },
-      modalResponseEnergy: 0.72,
-      modalResponseRenderEnergy: 0.08,
-      debug: {
-        modalResponseEnergy: 0.84,
       },
     };
 
@@ -27,7 +21,6 @@ describe("render authority contract", () => {
 
   it("lets held render-authorized frames block audio motion explicitly", () => {
     const heldFrame = {
-      fieldState: "active",
       audioMotionAuthority: false,
       energyLedger: {
         projectedRenderEnergy: 0.08,
@@ -39,16 +32,14 @@ describe("render authority contract", () => {
     expect(allowsAudioMotion(heldFrame)).toBe(false);
   });
 
-  it("rejects bandwidth-limited descriptors as render authority", () => {
-    const bandwidthLimitedFrame = {
-      fieldState: "active",
-      renderAuthority: true,
+  it("allows recoverable capacity-limited descriptors as render authority", () => {
+    const capacityLimitedFrame = {
       energyLedger: {
         projectedRenderEnergy: 0.08,
         renderEnergyEpsilon: 1e-6,
       },
       modalDescriptor: {
-        fieldAuthority: "bandwidth-limited",
+        fieldAuthority: "capacity-limited",
       },
       sourceEvidence: {
         sourceBoundaryState: "live",
@@ -56,9 +47,37 @@ describe("render authority contract", () => {
       },
     };
 
-    expect(hasRenderAuthority(bandwidthLimitedFrame)).toBe(false);
-    expect(allowsAudioMotion(bandwidthLimitedFrame)).toBe(false);
-    expect(allowsCurrentLiveRenderFrame(bandwidthLimitedFrame)).toBe(false);
+    expect(allowsModalDescriptorRenderAuthority(capacityLimitedFrame)).toBe(
+      true,
+    );
+    expect(hasRenderAuthority(capacityLimitedFrame)).toBe(true);
+    expect(allowsAudioMotion(capacityLimitedFrame)).toBe(true);
+    expect(allowsCurrentLiveRenderFrame(capacityLimitedFrame)).toBe(true);
+  });
+
+  it("rejects explicit fatal descriptors as render authority", () => {
+    for (const fieldAuthority of ["bandwidth-limited", "blocked"]) {
+      const fatalDescriptorFrame = {
+        energyLedger: {
+          projectedRenderEnergy: 0.08,
+          renderEnergyEpsilon: 1e-6,
+        },
+        modalDescriptor: {
+          fieldAuthority,
+        },
+        sourceEvidence: {
+          sourceBoundaryState: "live",
+          currentSourceEvidence: true,
+        },
+      };
+
+      expect(allowsModalDescriptorRenderAuthority(fatalDescriptorFrame)).toBe(
+        false,
+      );
+      expect(hasRenderAuthority(fatalDescriptorFrame)).toBe(false);
+      expect(allowsAudioMotion(fatalDescriptorFrame)).toBe(false);
+      expect(allowsCurrentLiveRenderFrame(fatalDescriptorFrame)).toBe(false);
+    }
   });
 
   it("does not allow legacy render-shaped fields without the ledger", () => {

@@ -1455,9 +1455,6 @@ export function resolveRaymarchModalBasisCacheDescriptorBlockedReason(
   if (!descriptor) {
     return "missing-descriptor";
   }
-  if (descriptor.descriptorOverflow === true) {
-    return "descriptor-overflow";
-  }
   if (!(Math.max(0, Math.round(descriptor.modalFieldCount || 0)) > 0)) {
     return "empty-descriptor";
   }

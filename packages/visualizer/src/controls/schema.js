@@ -7,7 +7,6 @@ import {
   SIMULATION_DEFAULTS,
   TEST_TONE_SIGNALS,
 } from "../defaults.js";
-import {} from "../utils/audioFeatures.js";
 import {
   MAX_PERFORMANCE_TARGET_FPS,
   MIN_PERFORMANCE_TARGET_FPS,
@@ -903,7 +902,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "testToneHz",
       label: "Tone Hz",
       title:
-        "Frequency of the injected test tone in Hz. Try values like 110, 440, 2000, or 12000 to compare how pitch changes the pattern.",
+        "Frequency of the injected test tone in Hz. Low values inspect renderable patterns; high values exercise bandwidth-limit diagnostics.",
       defaultValue: AUDIT_DEFAULTS.testToneHz,
       methods: ALL_METHODS,
       binding: { min: 40, max: 16000, step: 1 },

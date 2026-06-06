@@ -15,7 +15,9 @@ const FNV_PRIME = 16777619;
 const FLOAT32_BITS_VALUE = new Float32Array(1);
 const FLOAT32_BITS_VIEW = new Uint32Array(FLOAT32_BITS_VALUE.buffer);
 const OVER_BANDWIDTH_DOMINANCE_EPSILON = 1e-9;
-const OVER_BANDWIDTH_DOMINANCE_SEMANTIC_RATIO = 0.85;
+const OVER_BANDWIDTH_SEMANTIC_DOMINANCE_RATIO = 0.85;
+const OVER_BANDWIDTH_AUTHORITY_ENTER_RATIO = 1.05;
+const OVER_BANDWIDTH_AUTHORITY_EXIT_RATIO = 0.9;
 
 function clamp01(value) {
   return Math.min(1, Math.max(0, value));
@@ -165,6 +167,42 @@ function getSpatialShellKey(entry, modalGeometryBackend) {
 
 function divideOrFallback(numerator, denominator, fallback = 0) {
   return denominator > 0 ? numerator / denominator : fallback;
+}
+
+function normalizeFieldAuthority(value) {
+  return value === "bandwidth-limited" ||
+    value === "capacity-limited" ||
+    value === "blocked" ||
+    value === "complete"
+    ? value
+    : null;
+}
+
+function resolveOverBandwidthAuthorityDominant({
+  rejectedModalEnergy,
+  representedModalEnergy,
+  representedEnergyRatio,
+  semanticEnergyRatio,
+  previousFieldAuthority,
+}) {
+  if (!(rejectedModalEnergy > OVER_BANDWIDTH_DOMINANCE_EPSILON)) {
+    return false;
+  }
+
+  if (semanticEnergyRatio < OVER_BANDWIDTH_SEMANTIC_DOMINANCE_RATIO) {
+    return false;
+  }
+
+  if (representedModalEnergy <= OVER_BANDWIDTH_DOMINANCE_EPSILON) {
+    return true;
+  }
+
+  const previousAuthority = normalizeFieldAuthority(previousFieldAuthority);
+  const threshold =
+    previousAuthority === "bandwidth-limited"
+      ? OVER_BANDWIDTH_AUTHORITY_EXIT_RATIO
+      : OVER_BANDWIDTH_AUTHORITY_ENTER_RATIO;
+  return representedEnergyRatio >= threshold;
 }
 
 function coverageRatio(numerator, denominator, fallback = 0) {
@@ -320,6 +358,7 @@ function buildModalVarietyAudit({
   overBandwidthRejectedModalEnergy,
   overBandwidthMaxRequestedModeIndex,
   overBandwidthMaxRequestedMode,
+  previousFieldAuthority,
   modalGeometryBackend,
 }) {
   const acceptedEntries = slotAssignments.filter(Boolean);
@@ -471,17 +510,17 @@ function buildModalVarietyAudit({
           OVER_BANDWIDTH_DOMINANCE_EPSILON
         ? Number.MAX_SAFE_INTEGER
         : 0;
-  const overBandwidthRejectedSemanticEnergyRatio = divideOrFallback(
+  const overBandwidthRejectedEnergyRatio = divideOrFallback(
     resolvedOverBandwidthRejectedModalEnergy,
     semanticModalEnergy,
   );
-  const overBandwidthDominant =
-    resolvedOverBandwidthRejectedModalEnergy >
-      OVER_BANDWIDTH_DOMINANCE_EPSILON &&
-    (representedModalEnergy <= OVER_BANDWIDTH_DOMINANCE_EPSILON ||
-      resolvedOverBandwidthRejectedModalEnergy >= representedModalEnergy) &&
-    overBandwidthRejectedSemanticEnergyRatio >=
-      OVER_BANDWIDTH_DOMINANCE_SEMANTIC_RATIO;
+  const overBandwidthDominant = resolveOverBandwidthAuthorityDominant({
+    rejectedModalEnergy: resolvedOverBandwidthRejectedModalEnergy,
+    representedModalEnergy,
+    representedEnergyRatio: overBandwidthRejectedRepresentedEnergyRatio,
+    semanticEnergyRatio: overBandwidthRejectedEnergyRatio,
+    previousFieldAuthority,
+  });
 
   return {
     modalTopologyGeometry: modalGeometryBackend.cavityGeometry,
@@ -605,9 +644,13 @@ function buildModalVarietyAudit({
     ),
     overBandwidthRejectedModeCount: resolvedOverBandwidthRejectedModeCount,
     overBandwidthRejectedModalEnergy: resolvedOverBandwidthRejectedModalEnergy,
-    overBandwidthRejectedEnergyRatio: overBandwidthRejectedSemanticEnergyRatio,
+    overBandwidthRejectedEnergyRatio,
     overBandwidthRejectedRepresentedEnergyRatio,
     overBandwidthDominant,
+    overBandwidthSemanticDominanceRatio:
+      OVER_BANDWIDTH_SEMANTIC_DOMINANCE_RATIO,
+    overBandwidthAuthorityEnterRatio: OVER_BANDWIDTH_AUTHORITY_ENTER_RATIO,
+    overBandwidthAuthorityExitRatio: OVER_BANDWIDTH_AUTHORITY_EXIT_RATIO,
     overBandwidthMaxRequestedModeIndex:
       resolvedOverBandwidthMaxRequestedModeIndex,
     overBandwidthMaxRequestedMode: resolvedOverBandwidthMaxRequestedMode,
@@ -1043,6 +1086,7 @@ function buildSpectralLaneDescriptorHash(slotAssignments) {
  *   overBandwidthRejectedModalEnergy?: number,
  *   overBandwidthMaxRequestedModeIndex?: number,
  *   overBandwidthMaxRequestedMode?: [number, number, number],
+ *   previousFieldAuthority?: string | null,
  *   basisAtlasPageCapacity?: number,
  *   basisCacheResolution?: number,
  *   cavityGeometry?: import("./cavityGeometry.js").CavityGeometry,
@@ -1083,6 +1127,7 @@ export function buildCanonicalFullModalDescriptor({
   overBandwidthRejectedModalEnergy,
   overBandwidthMaxRequestedModeIndex,
   overBandwidthMaxRequestedMode,
+  previousFieldAuthority,
   basisAtlasPageCapacity = MODAL_BASIS_ATLAS_PAGE_CAPACITY,
   basisCacheResolution = MODAL_BASIS_CACHE_RESOLUTION,
   cavityGeometry = DEFAULT_EFFECTIVE_CAVITY_GEOMETRY,
@@ -1218,16 +1263,18 @@ export function buildCanonicalFullModalDescriptor({
     upstreamResonantModalEnergy,
     upstreamCandidateModalEnergy,
     ...overBandwidthDiagnostics,
+    previousFieldAuthority,
     modalGeometryBackend,
   });
   const overBandwidthDominant =
     modalVarietyAudit.overBandwidthDominant === true;
-  const fieldAuthority = descriptorOverflow
-    ? "blocked"
-    : overBandwidthDominant
-      ? "bandwidth-limited"
+  const fieldAuthority = overBandwidthDominant
+    ? "bandwidth-limited"
+    : descriptorOverflow
+      ? "capacity-limited"
       : "complete";
-  const renderAuthoritative = fieldAuthority === "complete";
+  const renderAuthoritative =
+    fieldAuthority === "complete" || fieldAuthority === "capacity-limited";
   const renderSlotViews = renderAuthoritative
     ? unifiedSlotViews
     : buildZeroedModalSlotViews(totalCapacity);

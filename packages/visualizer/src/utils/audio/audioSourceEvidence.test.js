@@ -231,16 +231,16 @@ describe("audio source evidence", () => {
     });
   });
 
-  it("uses modal response only after the source boundary remains live", () => {
+  it("uses modal response only after spectral source evidence remains live", () => {
     const quietLiveEvidence = buildAudioSourceEvidenceFrame({
       inputMode: "file",
       hasAnalysisSource: true,
       isPlaying: true,
       metrics: {
         avgAmplitude: 0.04,
-        analyserRms: 0,
-        preModalFftPeak: 0,
-        nonZeroFftBinCount: 0,
+        analyserRms: 0.001,
+        preModalFftPeak: 0.004,
+        nonZeroFftBinCount: 1,
       },
     });
 
@@ -255,6 +255,63 @@ describe("audio source evidence", () => {
       sourceBoundaryState: "live",
       currentSourceEvidence: true,
     });
+  });
+
+  it("treats weak file meter-only fade residue as zero source evidence", () => {
+    const fadeResidueEvidence = buildAudioSourceEvidenceFrame({
+      inputMode: "file",
+      hasAnalysisSource: true,
+      isPlaying: true,
+      metrics: {
+        avgAmplitude: 2.5,
+        analyserRms: 0.01,
+        preModalFftPeak: 0,
+        timeDomainPeakAmplitude: 0,
+        nonZeroFftBinCount: 0,
+      },
+    });
+
+    expect(fadeResidueEvidence).toMatchObject({
+      sourceBoundaryState: "zero",
+      currentSourceEvidence: false,
+      sourceEnergy: 0,
+    });
+    expect(
+      resolveAudioRenderBoundary({
+        sourceEvidence: fadeResidueEvidence,
+        modalResponse: {
+          modalResponseEnergy: 0.35,
+          modalResponseInputEnergy: 0,
+        },
+      }),
+    ).toMatchObject({
+      rawSourceBoundaryState: "zero",
+      renderBoundaryState: "muted",
+      sourceBoundaryState: "muted",
+      currentSourceEvidence: false,
+      sourceEnergy: 0,
+    });
+  });
+
+  it("keeps waveform-backed file evidence live after FFT detail disappears", () => {
+    const waveformEvidence = buildAudioSourceEvidenceFrame({
+      inputMode: "file",
+      hasAnalysisSource: true,
+      isPlaying: true,
+      metrics: {
+        avgAmplitude: 0.18,
+        analyserRms: 0.0008,
+        preModalFftPeak: 0,
+        timeDomainPeakAmplitude: 0.006,
+        nonZeroFftBinCount: 0,
+      },
+    });
+
+    expect(waveformEvidence).toMatchObject({
+      sourceBoundaryState: "live",
+      currentSourceEvidence: true,
+    });
+    expect(waveformEvidence.sourceEnergy).toBeGreaterThan(0);
   });
 
   it("treats file analyser residue without meter or spectrum as zero source evidence", () => {

@@ -33,7 +33,6 @@ describe("temporal reprojection policy", () => {
       resolveTemporalReprojectionPolicy({
         visualizationMethod: RAYMARCH_METHOD,
         featureFrame: {
-          fieldState: "active",
           energyLedger: {
             projectedRenderEnergy: 0.05,
             renderEnergyEpsilon: 1e-6,
@@ -50,18 +49,17 @@ describe("temporal reprojection policy", () => {
     });
   });
 
-  it("bypasses history for bandwidth-limited modal descriptors", () => {
+  it("accumulates history for recoverable capacity-limited descriptors", () => {
     expect(
       resolveTemporalReprojectionPolicy({
         visualizationMethod: RAYMARCH_METHOD,
         featureFrame: {
-          fieldState: "active",
           energyLedger: {
             projectedRenderEnergy: 0.05,
             renderEnergyEpsilon: 1e-6,
           },
           modalDescriptor: {
-            fieldAuthority: "bandwidth-limited",
+            fieldAuthority: "capacity-limited",
           },
         },
         sceneSnapshot: {
@@ -69,9 +67,35 @@ describe("temporal reprojection policy", () => {
         },
       }),
     ).toMatchObject({
-      accumulateHistory: false,
-      shouldBypassHistory: true,
-      reason: "render-not-authorized",
+      accumulateHistory: true,
+      shouldBypassHistory: false,
+      reason: "reprojectable-scene-motion",
     });
+  });
+
+  it("bypasses history for fatal modal descriptors", () => {
+    for (const fieldAuthority of ["bandwidth-limited", "blocked"]) {
+      expect(
+        resolveTemporalReprojectionPolicy({
+          visualizationMethod: RAYMARCH_METHOD,
+          featureFrame: {
+            energyLedger: {
+              projectedRenderEnergy: 0.05,
+              renderEnergyEpsilon: 1e-6,
+            },
+            modalDescriptor: {
+              fieldAuthority,
+            },
+          },
+          sceneSnapshot: {
+            angularVelocity: 0.1,
+          },
+        }),
+      ).toMatchObject({
+        accumulateHistory: false,
+        shouldBypassHistory: true,
+        reason: "render-not-authorized",
+      });
+    }
   });
 });

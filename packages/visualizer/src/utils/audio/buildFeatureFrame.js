@@ -535,6 +535,11 @@ function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
     analysisMemory.modalFieldContinuityState =
       createModalFieldContinuityState();
   }
+  if (!analysisMemory.modalDescriptorAuthorityState) {
+    analysisMemory.modalDescriptorAuthorityState = {
+      previousFieldAuthority: null,
+    };
+  }
 
   if (featureState?.analysis) {
     featureState.analysis = analysisMemory;
@@ -569,6 +574,8 @@ function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
     acousticResonantTarget,
     modalExcitationState: analysisMemory.modalExcitationState,
     modalFieldContinuityState: analysisMemory.modalFieldContinuityState,
+    modalDescriptorAuthorityState:
+      analysisMemory.modalDescriptorAuthorityState,
     sourceCoupledState: analysisMemory.sourceCoupledState,
     resonantState: analysisMemory.resonantState,
     bandState: analysisMemory.bandState,
@@ -1656,6 +1663,10 @@ function buildSilentFeatureFrame({
     modalFieldSpectralMeta: sourceCoupledSpectralMeta,
     modalFieldMetadataSlots: new Float32Array(modeSlots.length),
   });
+  if (featureState?.analysis?.modalDescriptorAuthorityState) {
+    featureState.analysis.modalDescriptorAuthorityState.previousFieldAuthority =
+      modalDescriptor.fieldAuthority;
+  }
   const energyLedger = buildModalEnergyLedger({
     sourceEnergy: sourceEvidence?.sourceEnergy ?? 0,
     renderBoundaryState:
@@ -4317,6 +4328,7 @@ export function prepareAudioFeatureFrameInputs({
     acousticResonantTarget,
     modalExcitationState,
     modalFieldContinuityState,
+    modalDescriptorAuthorityState,
     sourceCoupledState,
     resonantState,
     bandState,
@@ -4690,6 +4702,7 @@ export function prepareAudioFeatureFrameInputs({
     acousticResonantTarget,
     modalExcitationState,
     modalFieldContinuityState,
+    modalDescriptorAuthorityState,
     sourceCoupledState,
     resonantState,
     bandState,
@@ -6682,7 +6695,6 @@ export function composeAudioFeatureFrame({
   let activeSourceCoupledModeCount =
     analysisResult.activeSourceCoupledModeCount;
   let activeResonantModeCount = analysisResult.activeResonantModeCount;
-  let activeModeCount = analysisResult.activeModeCount;
 
   if (renderAuthority && energyLedger.projectedEnergyScale < 1) {
     scaleSlotAmplitudes(
@@ -6734,7 +6746,6 @@ export function composeAudioFeatureFrame({
     renderBandEnergies = preparedInputs.bandEnergies;
     activeSourceCoupledModeCount = 0;
     activeResonantModeCount = 0;
-    activeModeCount = 0;
   }
 
   const continuityDescriptorSources =
@@ -6901,10 +6912,6 @@ export function composeAudioFeatureFrame({
       renderAuthority = true;
       fieldState = FIELD_STATES.decay;
       hasModalField = true;
-      activeModeCount = Math.max(
-        activeModeCount,
-        continuityDescriptorSource.activeModalFieldModeCount,
-      );
       modalPhaseAuthority = Math.max(
         modalPhaseAuthority,
         clamp01(analysisResult.structuralMetrics?.modalPhaseAuthority ?? 0),
@@ -6996,13 +7003,13 @@ export function composeAudioFeatureFrame({
     cavityGeometry: preparedInputs.effectiveCavityGeometry,
     modeIdentityRetentionRatio:
       modalFieldContinuityDiagnostics.modeIdentityRetentionRatio,
+    previousFieldAuthority:
+      preparedInputs.modalDescriptorAuthorityState?.previousFieldAuthority,
   });
-  const modalDescriptorRenderAuthoritative =
-    modalDescriptor.fieldAuthority === "complete";
-  const renderActiveModeCount = modalDescriptorRenderAuthoritative
-    ? activeModeCount
-    : 0;
-
+  if (preparedInputs.modalDescriptorAuthorityState) {
+    preparedInputs.modalDescriptorAuthorityState.previousFieldAuthority =
+      modalDescriptor.fieldAuthority;
+  }
   let debug = analysisResult.debug;
   if (!debug) {
     debug = finalizeFeatureDebugSnapshot({
@@ -7126,7 +7133,7 @@ export function composeAudioFeatureFrame({
     micActive: analysisResult.micActive,
     averageAmplitude: analysisResult.avgAmplitude,
     fftMagnitudes: analysisResult.fftMagnitudes,
-    activeModeCount: renderActiveModeCount,
+    activeModeCount: modalDescriptor.counts.modalFieldModeCount,
     activeModalFieldModeCount: modalDescriptor.counts.modalFieldModeCount,
     modalFieldContinuity: modalFieldContinuityDiagnostics,
     modalDescriptor,

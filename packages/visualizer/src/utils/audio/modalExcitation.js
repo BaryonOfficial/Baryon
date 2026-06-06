@@ -452,6 +452,20 @@ function isHardSilentFrame(preparedInputs) {
   );
 }
 
+function computePreparedTimeDataPeakAmplitude(preparedInputs) {
+  const timeData =
+    preparedInputs?.snapshot?.timeData ?? preparedInputs?.timeData ?? null;
+  if (!(timeData instanceof Float32Array) || timeData.length === 0) {
+    return 0;
+  }
+
+  let peak = 0;
+  for (let index = 0; index < timeData.length; index += 1) {
+    peak = Math.max(peak, Math.abs(timeData[index] ?? 0));
+  }
+  return peak;
+}
+
 function getPreparedInputsSourceEvidence(preparedInputs) {
   if (preparedInputs?.sourceEvidence) {
     return preparedInputs.sourceEvidence;
@@ -479,6 +493,8 @@ function getPreparedInputsSourceEvidence(preparedInputs) {
         avgAmplitude: preparedInputs?.avgAmplitude ?? 0,
         analyserRms: preparedInputs?.analyserRms ?? 0,
         preModalFftPeak: preparedInputs?.preModalFftPeak ?? 0,
+        timeDomainPeakAmplitude:
+          computePreparedTimeDataPeakAmplitude(preparedInputs),
         nonZeroFftBinCount: countNonZeroFftBins(
           preparedInputs?.fftMagnitudesSource,
         ),

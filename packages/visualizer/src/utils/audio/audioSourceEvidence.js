@@ -4,6 +4,8 @@ const CURRENT_SOURCE_AVG_FLOOR = 0.02;
 const CURRENT_SOURCE_TIME_DOMAIN_PEAK_FLOOR = 1e-4;
 const SPECTRAL_SIGNAL_PEAK_FLOOR = 0.003;
 const SPECTRAL_SIGNAL_RMS_FLOOR = 0.0005;
+const FILE_TIME_DOMAIN_SOURCE_PEAK_FLOOR = 0.001;
+const FILE_TIME_DOMAIN_SOURCE_AVG_FLOOR = 0.1;
 const FILE_WEAK_SPECTRAL_FALLBACK_AVG_MAX = 10;
 const FILE_WEAK_SPECTRAL_FALLBACK_RMS_MAX = 0.025;
 const FILE_WEAK_RESONANT_AVG_MIN = 5;
@@ -23,6 +25,10 @@ function readFinite(value, fallback = 0) {
 }
 
 function hasMetricEvidence(metrics, analysisClass = "none") {
+  if (analysisClass === "file") {
+    return hasFileMetricEvidence(metrics);
+  }
+
   const timeDomainEvidence =
     readFinite(metrics?.timeDomainPeakAmplitude) >
     CURRENT_SOURCE_TIME_DOMAIN_PEAK_FLOOR;
@@ -32,6 +38,33 @@ function hasMetricEvidence(metrics, analysisClass = "none") {
     readFinite(metrics?.avgAmplitude) > CURRENT_SOURCE_AVG_FLOOR ||
     ((analysisClass === "line-feed" || analysisClass === "acoustic-mic") &&
       timeDomainEvidence)
+  );
+}
+
+function hasFileMetricEvidence(metrics) {
+  if (hasSpectralSignalEvidence(metrics)) {
+    return true;
+  }
+
+  if (
+    readFinite(metrics?.timeDomainPeakAmplitude) >
+      FILE_TIME_DOMAIN_SOURCE_PEAK_FLOOR &&
+    readFinite(metrics?.avgAmplitude) > FILE_TIME_DOMAIN_SOURCE_AVG_FLOOR
+  ) {
+    return true;
+  }
+
+  const modalObservationPolicy = deriveModalObservationPolicy({
+    analysisClass: "file",
+    metrics,
+  });
+  if (modalObservationPolicy.suppressWeakSpectralFallbackDrive) {
+    return false;
+  }
+
+  return (
+    readFinite(metrics?.avgAmplitude) > CURRENT_SOURCE_AVG_FLOOR ||
+    readFinite(metrics?.analyserRms) > FILE_WEAK_SPECTRAL_FALLBACK_RMS_MAX
   );
 }
 

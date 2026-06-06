@@ -25,9 +25,13 @@ function hasCurrentLiveSourceEvidence(featureFrame) {
   );
 }
 
-function hasDescriptorAuthority(featureFrame) {
+export function allowsModalDescriptorRenderAuthority(featureFrame) {
   const fieldAuthority = featureFrame?.modalDescriptor?.fieldAuthority;
-  return fieldAuthority !== "bandwidth-limited";
+  return (
+    fieldAuthority == null ||
+    fieldAuthority === "complete" ||
+    fieldAuthority === "capacity-limited"
+  );
 }
 
 export function hasRenderAuthority(featureFrame) {
@@ -36,9 +40,8 @@ export function hasRenderAuthority(featureFrame) {
   }
 
   return (
-    hasLedgerData(featureFrame) &&
     hasLedgerAuthority(featureFrame) &&
-    hasDescriptorAuthority(featureFrame)
+    allowsModalDescriptorRenderAuthority(featureFrame)
   );
 }
 

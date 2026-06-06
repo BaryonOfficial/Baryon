@@ -17,6 +17,7 @@ import {
 } from "@baryon/visualizer/audio-features";
 import { CAVITY_ACOUSTIC_DEFAULTS } from "@baryon/visualizer/defaults";
 import {
+  allowsModalDescriptorRenderAuthority,
   allowsCurrentLiveRenderFrame,
   hasRenderAuthority,
 } from "@baryon/visualizer/core/renderAuthorityContract";
@@ -46,6 +47,7 @@ import {
   snapshotSourceEvidenceDiagnostics,
   snapshotWorkerPerfCounters,
 } from "./baryonVisualizerRuntimeState.js";
+import { readRenderFacingModalResponseEnergy } from "./modalResponseDiagnostics.js";
 export { syncLiveInputRuntimeStatus } from "./liveInputRuntimeSync.js";
 
 const LONG_FRAME_THRESHOLD_MS = 34;
@@ -355,11 +357,8 @@ export function updateModalFreshnessDiagnostics(
   modalFreshness.observationEnergy = readFiniteNumber(
     featureFrame.observationEnergy,
   );
-  modalFreshness.modalResponseEnergy = readFiniteNumber(
-    featureFrame.modalResponseEnergy ??
-      featureFrame.modalResponseRenderEnergy ??
-      featureFrame.debug?.modalResponseEnergy,
-  );
+  modalFreshness.modalResponseEnergy =
+    readRenderFacingModalResponseEnergy(featureFrame);
   modalFreshness.modalResponseBudgetScale = readFiniteNumber(
     featureFrame.modalResponseBudgetScale ??
       featureFrame.debug?.modalResponseBudgetScale,
@@ -398,17 +397,9 @@ export function updateModalFreshnessDiagnostics(
       featureFrame.modalPhaseCoherentFieldModeCount,
   );
   modalFreshness.modeCoherence = readFiniteNumber(featureFrame.modeCoherence);
-  modalFreshness.activeModeCount = readFiniteNumber(
-    featureFrame.activeModeCount,
-    featureFrame.activeModalFieldModeCount ??
-      featureFrame.modalDescriptor?.counts?.modalFieldModeCount,
-  );
-  modalFreshness.activeModalFieldModeCount = readFiniteNumber(
-    featureFrame.activeModalFieldModeCount ??
-      featureFrame.modalDescriptor?.counts?.modalFieldModeCount ??
-      featureFrame.modalDescriptor?.slotViews?.modalFieldModeCount,
-    modalFreshness.activeModeCount,
-  );
+  const renderFacingModeCount = readRaymarchFrameModeCount(featureFrame);
+  modalFreshness.activeModeCount = renderFacingModeCount;
+  modalFreshness.activeModalFieldModeCount = renderFacingModeCount;
   applySlotTurnoverDiagnostics(modalFreshness, {
     fieldPrefix: "modalFieldSlot",
     previousField: "_previousModalFieldSlots",
@@ -621,7 +612,7 @@ function classifyFrameSemanticSource(source) {
     case "local-heavy-analysis":
     case "live-warmup":
     case "bootstrap-fallback":
-    case "legacy-build":
+    case "direct-feature-build":
       return { fresh: true, reused: false };
     case "scheduled-reuse":
     case "last-live-cache":
@@ -1176,10 +1167,7 @@ export function getEffectiveRenderScale(
 }
 
 function readRaymarchFrameModeCount(featureFrame) {
-  if (
-    featureFrame?.modalDescriptor?.fieldAuthority &&
-    featureFrame.modalDescriptor.fieldAuthority !== "complete"
-  ) {
+  if (!allowsModalDescriptorRenderAuthority(featureFrame)) {
     return 0;
   }
 
@@ -1187,9 +1175,9 @@ function readRaymarchFrameModeCount(featureFrame) {
     0,
     Math.round(
       readFiniteNumber(
-        featureFrame?.activeModeCount ??
+        featureFrame?.modalDescriptor?.counts?.modalFieldModeCount ??
           featureFrame?.activeModalFieldModeCount ??
-          featureFrame?.modalDescriptor?.counts?.modalFieldModeCount,
+          featureFrame?.activeModeCount,
       ),
     ),
   );
@@ -1720,11 +1708,6 @@ export function resolveRaymarchGovernorFrameInputs(
   runtimeState,
   effectiveFrame,
 ) {
-  const modalDescriptorFieldAuthority =
-    effectiveFrame?.modalDescriptor?.fieldAuthority;
-  const modalDescriptorRenderAuthoritative =
-    !modalDescriptorFieldAuthority ||
-    modalDescriptorFieldAuthority === "complete";
   const modalFieldCapacity =
     raymarchPerformanceGovernor.inferModalFieldCapacity(
       runtimeState?.modalFieldCapacity,
@@ -1734,23 +1717,13 @@ export function resolveRaymarchGovernorFrameInputs(
     modalFieldCapacity,
     resolveProductBasisAtlasPageCapacity(runtimeState),
   );
-  const uploadedModeCount = modalDescriptorRenderAuthoritative
+  const uploadedModeCount = allowsModalDescriptorRenderAuthority(effectiveFrame)
     ? Math.max(
         0,
         Math.round(runtimeState?.uniforms?.uModalFieldModeCount?.value ?? 0),
       )
     : 0;
-  const descriptorModeCount = modalDescriptorRenderAuthoritative
-    ? Math.max(
-        0,
-        Math.round(
-          effectiveFrame?.activeModeCount ??
-            effectiveFrame?.activeModalFieldModeCount ??
-            effectiveFrame?.modalDescriptor?.counts?.modalFieldModeCount ??
-            0,
-        ),
-      )
-    : 0;
+  const descriptorModeCount = readRaymarchFrameModeCount(effectiveFrame);
   const activeModeCount =
     uploadedModeCount > 0 ? uploadedModeCount : descriptorModeCount;
 
@@ -2155,14 +2128,14 @@ export function resolveFeatureFrame(
       frameTimeMs: time * 1000,
     });
 
-    const shouldUseLegacyBuildPath =
+    const shouldUseDirectFeatureBuildPath =
       !featureEngine?.enqueueTransportFrame &&
       buildFeatureFrame !== buildAudioFeatureFrame &&
       prepareFeatureFrame === prepareAudioFeatureFrameInputs &&
       runHeavyFeatureAnalysis === runHeavyAudioFeatureAnalysis &&
       composeFeatureFrame === composeAudioFeatureFrame;
 
-    if (shouldUseLegacyBuildPath) {
+    if (shouldUseDirectFeatureBuildPath) {
       featureFrame = buildFeatureFrame({
         analysisSnapshot,
         featureState,
@@ -2174,7 +2147,7 @@ export function resolveFeatureFrame(
         frameTimeMs: time * 1000,
         includeSpectralLight: spectralLightEnabled,
       });
-      frameSemanticSource = "legacy-build";
+      frameSemanticSource = "direct-feature-build";
     } else {
       const preparedInputs = prepareFeatureFrame({
         analysisSnapshot,
@@ -2360,8 +2333,6 @@ export function resolveFeatureFrame(
                 frameSemanticSource = "live-warmup";
               } else if (shouldBootstrapActive) {
                 frameSemanticSource = "bootstrap-fallback";
-              } else if (shouldRefreshSpectralLight) {
-                frameSemanticSource = "local-heavy-analysis";
               } else {
                 frameSemanticSource = "local-heavy-analysis";
               }

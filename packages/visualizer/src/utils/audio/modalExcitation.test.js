@@ -1649,7 +1649,65 @@ describe("modal excitation structural state", () => {
     expect(amplitudeGaps.at(-1)).toBeLessThanOrEqual(amplitudeGaps[0] * 1.01);
   });
 
-  it("adds release sustain beyond the raw resonator decay", () => {
+  it("adds release sustain beyond the raw resonator decay for waveform-backed tails", () => {
+    const state = createModalExcitationState(16);
+    const activeFft = makeFft([
+      [550, 0.95],
+      [1100, 0.52],
+    ]);
+    const silentFft = new Float32Array(BIN_COUNT);
+    const tailTimeData = makeTimeData({ frequency: 550, amplitude: 0.006 });
+    const silenceFrames = [];
+
+    for (let frame = 0; frame < 10; frame += 1) {
+      const inputs = createLineFeedPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: activeFft,
+        timeData: makeTimeData({ frequency: 550 }),
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    for (let frame = 10; frame < 25; frame += 1) {
+      const inputs = createLineFeedPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: silentFft,
+        timeData: tailTimeData,
+        avgAmplitude: 2.5,
+        rms: 0.01,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      const structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+      silenceFrames.push({
+        proposal: sumAmplitudes(structural.proposalSourceCoupledSlotsSource),
+        blended: sumAmplitudes(structural.candidateForcingSlotsSource),
+      });
+    }
+
+    expect(
+      silenceFrames
+        .slice(4)
+        .some(({ proposal, blended }) => blended > proposal + 1e-4),
+    ).toBe(true);
+    expect(silenceFrames.at(-1).blended).toBeGreaterThan(
+      silenceFrames.at(-1).proposal,
+    );
+  });
+
+  it("does not add release sustain from weak file meter-only fade residue", () => {
     const state = createModalExcitationState(16);
     const activeFft = makeFft([
       [550, 0.95],
@@ -1701,9 +1759,9 @@ describe("modal excitation structural state", () => {
       silenceFrames
         .slice(4)
         .some(({ proposal, blended }) => blended > proposal + 1e-4),
-    ).toBe(true);
-    expect(silenceFrames.at(-1).blended).toBeGreaterThan(
-      silenceFrames.at(-1).proposal,
+    ).toBe(false);
+    expect(silenceFrames.at(-1).blended).toBeLessThanOrEqual(
+      silenceFrames.at(-1).proposal + 1e-4,
     );
   });
 
@@ -3520,11 +3578,14 @@ describe("modal excitation structural state", () => {
 
     expectObservedDisplayContinuityEntries(state);
     expect(
-      countActiveSlotsLocal(structural.candidateResponseSlotsSource),
+      countActiveSlotsLocal(structural.candidateForcingSlotsSource),
     ).toBeGreaterThan(0);
     expect(
-      sumAmplitudes(structural.candidateResponseSlotsSource),
+      sumAmplitudes(structural.candidateForcingSlotsSource),
     ).toBeGreaterThan(0.0015);
+    expect(
+      structural.structuralMetrics.modalResponseRenderEnergy,
+    ).toBeGreaterThan(0);
   });
 
   it("does not blank high-Q detail when a quiet bowl tail dominant bin jitters", () => {

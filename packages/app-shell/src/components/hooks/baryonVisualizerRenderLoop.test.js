@@ -886,6 +886,10 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
       modalVisibilityEnergy: 0.76,
       modalObserverVisibilityEnergy: 0.29,
       modalVisibilityRetainedHighQEnergy: 0.33,
+      modalResponseEnergy: 0.04,
+      modalResponseRenderEnergy: 0.31,
+      modalResponseRenderSourceCoupledEnergy: 0.24,
+      modalResponseRenderResonantEnergy: 0.19,
       modalPhaseAuthority: 0.24,
       highQPhaseAuthority: 0.31,
       lowQPhaseAuthority: 0.08,
@@ -911,6 +915,7 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
         resonantSignalAuthoritativeHighQ: true,
         resonantShiftReleaseOverrideCount: 2,
         resonantShiftTrackingOverrideCount: 3,
+        modalResponseEnergy: 0.05,
       },
       modalFieldSlots: new Float32Array([0.2, 0.45, 0.4, 0.5]),
     },
@@ -960,6 +965,7 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
     modalVisibilityEnergy: 0.76,
     modalObserverVisibilityEnergy: 0.29,
     modalVisibilityRetainedHighQEnergy: 0.33,
+    modalResponseEnergy: 0.31,
     modalPhaseAuthority: 0.24,
     highQPhaseAuthority: 0.31,
     lowQPhaseAuthority: 0.08,
@@ -1000,6 +1006,7 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
     structureSignal: 0.28,
     modalObserverVisibilityEnergy: 0.29,
     modalVisibilityRetainedHighQEnergy: 0.33,
+    modalResponseEnergy: 0.31,
     modalPhaseAuthority: 0.24,
     highQPhaseAuthority: 0.31,
     lowQPhaseAuthority: 0.08,
@@ -1019,6 +1026,48 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
   expect(hudSnapshot.modalFreshness).not.toHaveProperty(
     "_previousModalFieldSlots",
   );
+});
+
+test("updateModalFreshnessDiagnostics uses render-authoritative descriptor counts", () => {
+  const runtimeDiagnostics = createRuntimeDiagnostics();
+
+  updateModalFreshnessDiagnostics(
+    runtimeDiagnostics,
+    {
+      frameTimeMs: 1000,
+      sourceMode: "live",
+      activeModeCount: 48,
+      activeModalFieldModeCount: 48,
+      modalDescriptor: {
+        fieldAuthority: "bandwidth-limited",
+        counts: { modalFieldModeCount: 48 },
+      },
+      modalFieldSlots: new Float32Array(48 * 4),
+    },
+    { getWallTimeMs: () => 1100 },
+  );
+
+  expect(runtimeDiagnostics.modalFreshness.activeModeCount).toBe(0);
+  expect(runtimeDiagnostics.modalFreshness.activeModalFieldModeCount).toBe(0);
+
+  updateModalFreshnessDiagnostics(
+    runtimeDiagnostics,
+    {
+      frameTimeMs: 1016,
+      sourceMode: "live",
+      activeModeCount: 48,
+      activeModalFieldModeCount: 16,
+      modalDescriptor: {
+        fieldAuthority: "complete",
+        counts: { modalFieldModeCount: 12 },
+      },
+      modalFieldSlots: new Float32Array(48 * 4),
+    },
+    { getWallTimeMs: () => 1116 },
+  );
+
+  expect(runtimeDiagnostics.modalFreshness.activeModeCount).toBe(12);
+  expect(runtimeDiagnostics.modalFreshness.activeModalFieldModeCount).toBe(12);
 });
 
 test("publishes provider transition phases even before live audio becomes active", () => {
@@ -1850,6 +1899,12 @@ test("resolveFeatureFrame holds the last file modal frame during paused playback
     playbackSessionId: "song-1",
   });
   expect(frameCacheRefs.pausedFileFrameRef.current.frame).not.toBe(activeFrame);
+  expect(
+    activeHarness.args.runtimeDiagnostics.modalFreshness.frameSemanticSource,
+  ).toBe("direct-feature-build");
+  expect(
+    activeHarness.args.runtimeDiagnostics.modalFreshness.frameSemanticFresh,
+  ).toBe(true);
 
   activeFrame.modalFieldSlots[3] = 0;
   activeFrame.sourceEvidence.currentSourceEvidence = true;
@@ -3101,7 +3156,36 @@ test("resolveRaymarchGovernorFrameInputs prefers uploaded mode count over descri
   });
 });
 
-test("resolveRaymarchGovernorFrameInputs suppresses bandwidth-limited topology", () => {
+test("resolveRaymarchGovernorFrameInputs uses descriptor-owned mode count over raw active count", () => {
+  const runtimeState = {
+    modalFieldCapacity: 16,
+    modalBasisCache: { basisCapacity: 16 },
+    modalFieldModeBuffer: { value: { array: new Float32Array(64) } },
+    uniforms: {
+      uModalFieldModeCount: { value: 0 },
+      uTotalSlotAmplitude: { value: 0.42 },
+    },
+  };
+  const effectiveFrame = {
+    activeModeCount: 24,
+    activeModalFieldModeCount: 16,
+    modalDescriptor: {
+      fieldAuthority: "capacity-limited",
+      counts: { modalFieldModeCount: 12 },
+    },
+  };
+
+  expect(
+    resolveRaymarchGovernorFrameInputs(runtimeState, effectiveFrame),
+  ).toEqual({
+    modalFieldCapacity: 16,
+    productUploadCapacity: 16,
+    activeModeCount: 12,
+    uploadedModeCount: 0,
+  });
+});
+
+test("resolveRaymarchGovernorFrameInputs suppresses fatal descriptor topology", () => {
   const runtimeState = {
     modalFieldCapacity: 12,
     modalBasisCache: { basisCapacity: 12 },
@@ -3111,23 +3195,24 @@ test("resolveRaymarchGovernorFrameInputs suppresses bandwidth-limited topology",
       uTotalSlotAmplitude: { value: 0.42 },
     },
   };
-  const effectiveFrame = {
-    activeModeCount: 48,
-    activeModalFieldModeCount: 48,
-    modalDescriptor: {
-      fieldAuthority: "bandwidth-limited",
-      counts: { modalFieldModeCount: 48 },
-    },
-  };
 
-  expect(
-    resolveRaymarchGovernorFrameInputs(runtimeState, effectiveFrame),
-  ).toEqual({
-    modalFieldCapacity: 12,
-    productUploadCapacity: 12,
-    activeModeCount: 0,
-    uploadedModeCount: 0,
-  });
+  for (const fieldAuthority of ["bandwidth-limited", "blocked"]) {
+    expect(
+      resolveRaymarchGovernorFrameInputs(runtimeState, {
+        activeModeCount: 48,
+        activeModalFieldModeCount: 48,
+        modalDescriptor: {
+          fieldAuthority,
+          counts: { modalFieldModeCount: 48 },
+        },
+      }),
+    ).toEqual({
+      modalFieldCapacity: 12,
+      productUploadCapacity: 12,
+      activeModeCount: 0,
+      uploadedModeCount: 0,
+    });
+  }
 });
 
 test("syncRenderSurfacePixelRatio applies effective render scale to DPR", () => {

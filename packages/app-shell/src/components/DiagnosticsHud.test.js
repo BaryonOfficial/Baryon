@@ -62,7 +62,7 @@ describe("shouldRenderDiagnosticsHud", () => {
       shouldRenderDiagnosticsHud({
         devtoolsEnabled: false,
         enabledOverride: true,
-        overlayState: {
+        diagnosticsHudState: {
           enabled: true,
           snapshot: { visualizationMethod: "raymarch" },
         },

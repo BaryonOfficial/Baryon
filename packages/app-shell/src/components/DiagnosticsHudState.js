@@ -30,9 +30,9 @@ export function resolveDiagnosticsHudState({
 export function shouldRenderDiagnosticsHud({
   devtoolsEnabled = DEVTOOLS_ENABLED,
   enabledOverride,
-  overlayState,
+  diagnosticsHudState,
 }) {
-  if (!overlayState?.enabled || !overlayState.snapshot) {
+  if (!diagnosticsHudState?.enabled || !diagnosticsHudState.snapshot) {
     return false;
   }
 

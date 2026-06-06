@@ -596,6 +596,8 @@ const SPECTRAL_LANE_CACHE_CURRENT_RETAINED_REASON =
   "spectral-lane-cache-current-retained";
 const SPECTRAL_LANE_EMPTY_PACKET_RETAINED_REASON =
   "spectral-lane-empty-packet-retained";
+const SPECTRAL_LANE_CACHE_UNAVAILABLE_RETAINED_REASON =
+  "spectral-lane-cache-unavailable-retained";
 
 function hasCommittedLiveFieldProjectionCache(runtimeState) {
   const liveFieldProjectionCache = runtimeState?.liveFieldProjectionCache;
@@ -904,9 +906,10 @@ function buildRuntimeModalDescriptor(
   const slotViews = sourceDescriptor?.slotViews ?? {};
   const basisAtlasPageCapacity =
     resolveProductBasisAtlasPageCapacity(runtimeState);
-  if (sourceDescriptor?.fieldAuthority === "bandwidth-limited") {
+  if (sourceDescriptor && sourceDescriptor.fieldAuthority !== "complete") {
     return sourceDescriptor;
   }
+
   if (slotViews.modalFieldSlots) {
     if (
       sourceDescriptor?.diagnostics?.basisAtlasPageCapacity ===
@@ -934,10 +937,7 @@ function buildRuntimeModalDescriptor(
     modalFieldSpectralMeta: featureFrame?.modalFieldSpectralMeta,
     modalFieldMetadataSlots: featureFrame?.modalFieldMetadataSlots,
     activeModalFieldModeCount:
-      sourceDescriptor?.fieldAuthority === "complete"
-        ? (sourceDescriptor?.counts?.validModeCount ??
-          featureFrame?.activeModeCount)
-        : featureFrame?.activeModeCount,
+      sourceDescriptor?.counts?.validModeCount ?? featureFrame?.activeModeCount,
     observerCandidateModeCount:
       sourceDescriptor?.diagnostics?.observerCandidateModeCount ??
       featureFrame?.debug?.excitedModeCount ??
@@ -965,12 +965,26 @@ function buildRuntimeModalDescriptor(
   });
 }
 
+function resolveFatalModalDescriptorBlockReason(fieldAuthority) {
+  if (
+    !fieldAuthority ||
+    fieldAuthority === "complete" ||
+    fieldAuthority === "capacity-limited"
+  ) {
+    return null;
+  }
+
+  return fieldAuthority === "bandwidth-limited"
+    ? "bandwidth-limited"
+    : "descriptor-blocked";
+}
+
 function blockNonAuthoritativeModalDescriptor(
   runtimeState,
   featureFrame,
   fieldState,
   renderAuthority,
-  reason = "descriptor-overflow",
+  reason,
 ) {
   clearBufferNode(runtimeState.modalFieldModeBuffer);
   clearBufferNode(runtimeState.modalFieldColorBuffer);
@@ -2668,8 +2682,54 @@ function buildRuntimeSpectralLaneCacheDescriptor(
   };
 }
 
-function retainSpectralLaneCache(spectralLaneCache, reason) {
+function readCommittedSpectralLaneCache(spectralLaneCache) {
+  const descriptor =
+    spectralLaneCache?.descriptor ?? spectralLaneCache?.activeDescriptor ?? null;
+  if (
+    spectralLaneCache?.ready !== true ||
+    !descriptor ||
+    !spectralLaneCache.spectralLaneTextureA ||
+    !spectralLaneCache.spectralLaneTextureB ||
+    !spectralLaneCache.spectralLaneStatsTexture
+  ) {
+    return null;
+  }
+
+  return {
+    descriptor,
+    activeDescriptor: spectralLaneCache.activeDescriptor ?? descriptor,
+    activeCacheBuiltAtSec: spectralLaneCache.activeCacheBuiltAtSec ?? null,
+    lastComputedAtSec: spectralLaneCache.lastComputedAtSec ?? null,
+  };
+}
+
+function hasRadiantSpectralLaneDescriptor(descriptor) {
+  return (
+    (descriptor?.spectralLaneActivePacketCount ?? 0) > 0 &&
+    (descriptor?.spectralLaneRadianceInputTotal ?? 0) > 1e-8
+  );
+}
+
+function canRetainSpectralLaneCacheAfterMiss(committedCache, reason) {
+  return (
+    Boolean(committedCache) &&
+    hasRadiantSpectralLaneDescriptor(committedCache.descriptor) &&
+    (reason === "renderer-unavailable" ||
+      reason === "compute-node-unavailable")
+  );
+}
+
+function retainSpectralLaneCache(spectralLaneCache, reason, committedCache) {
+  if (committedCache?.descriptor) {
+    spectralLaneCache.descriptor = committedCache.descriptor;
+    spectralLaneCache.activeDescriptor =
+      committedCache.activeDescriptor ?? committedCache.descriptor;
+    spectralLaneCache.activeCacheBuiltAtSec =
+      committedCache.activeCacheBuiltAtSec;
+    spectralLaneCache.lastComputedAtSec = committedCache.lastComputedAtSec;
+  }
   spectralLaneCache.active = true;
+  spectralLaneCache.ready = true;
   spectralLaneCache.lastComputeReason = reason;
   return { computed: false, reason };
 }
@@ -2769,13 +2829,14 @@ function updateSpectralLaneCache(
     modalBasisCacheDescriptor,
     { modalFieldCapacity },
   );
+  const committedCache = readCommittedSpectralLaneCache(spectralLaneCache);
   if (shouldRetainCommittedSpectralLaneCache(spectralLaneCache, descriptor)) {
     return retainSpectralLaneCache(
       spectralLaneCache,
       resolveSpectralLaneRetentionReason(spectralLaneCache, descriptor),
     );
   }
-  return computeRaymarchSpectralLaneCache(spectralLaneCache, renderer, {
+  const result = computeRaymarchSpectralLaneCache(spectralLaneCache, renderer, {
     descriptor,
     modalBasisAtlasTexture,
     modalFieldCoefficientBuffer: runtimeState.modalFieldCoefficientBuffer,
@@ -2786,6 +2847,14 @@ function updateSpectralLaneCache(
     uniforms: runtimeState.uniforms,
     schedulerTimeSec,
   });
+  if (canRetainSpectralLaneCacheAfterMiss(committedCache, result.reason)) {
+    return retainSpectralLaneCache(
+      spectralLaneCache,
+      SPECTRAL_LANE_CACHE_UNAVAILABLE_RETAINED_REASON,
+      committedCache,
+    );
+  }
+  return result;
 }
 
 function resolveSpectralLightEvaluationMode(
@@ -2911,11 +2980,18 @@ function updateLiveFieldProjectionCache(
 }
 
 function readModalResponseEnergy(featureFrame) {
-  return (
-    featureFrame?.modalResponseEnergy ??
-    featureFrame?.modalResponseRenderEnergy ??
-    featureFrame?.debug?.modalResponseEnergy ??
-    0
+  return clamp01(
+    Math.max(
+      readFiniteNumber(featureFrame?.modalResponseEnergy, 0),
+      readFiniteNumber(featureFrame?.modalResponseRenderEnergy, 0),
+      readFiniteNumber(
+        featureFrame?.modalResponseRenderSourceCoupledEnergy,
+        0,
+      ),
+      readFiniteNumber(featureFrame?.modalResponseRenderResonantEnergy, 0),
+      readFiniteNumber(featureFrame?.debug?.modalResponseEnergy, 0),
+      readFiniteNumber(featureFrame?.debug?.modalResponseRenderEnergy, 0),
+    ),
   );
 }
 
@@ -3384,17 +3460,18 @@ export function tickRaymarchRuntime(
       runtimeState.fieldStateValues.idle,
   );
 
-  if (
-    !renderAuthority &&
-    featureFrame?.modalDescriptor?.fieldAuthority === "bandwidth-limited"
-  ) {
+  const fatalModalDescriptorBlockReason =
+    resolveFatalModalDescriptorBlockReason(
+      featureFrame?.modalDescriptor?.fieldAuthority,
+    );
+  if (!renderAuthority && fatalModalDescriptorBlockReason) {
     runtimeState.currentModalDescriptor = featureFrame.modalDescriptor;
     blockNonAuthoritativeModalDescriptor(
       runtimeState,
       featureFrame,
       fieldState,
       renderAuthority,
-      "bandwidth-limited",
+      fatalModalDescriptorBlockReason,
     );
     return;
   }
@@ -3472,17 +3549,15 @@ export function tickRaymarchRuntime(
     },
   );
   runtimeState.currentModalDescriptor = modalDescriptor;
-  if (modalDescriptor.fieldAuthority !== "complete") {
-    const blockedReason =
-      modalDescriptor.fieldAuthority === "bandwidth-limited"
-        ? "bandwidth-limited"
-        : "descriptor-overflow";
+  const rebuiltFatalModalDescriptorBlockReason =
+    resolveFatalModalDescriptorBlockReason(modalDescriptor.fieldAuthority);
+  if (rebuiltFatalModalDescriptorBlockReason) {
     blockNonAuthoritativeModalDescriptor(
       runtimeState,
       featureFrame,
       fieldState,
       renderAuthority,
-      blockedReason,
+      rebuiltFatalModalDescriptorBlockReason,
     );
     return;
   }
