@@ -174,7 +174,7 @@ describe("control schema", () => {
     expect(state.spectralMix).toBe(0.96);
     expect(state.volumeColor).toBe("#5be3f4");
     expect(state.surfaceColor).toBe("#f7fdff");
-    expect(state.zeroPointPrecision).toBe(0.08);
+    expect(state.zeroPointPrecision).toBe(0.064);
     expect(state).not.toHaveProperty("structureMin");
     expect(state).not.toHaveProperty("structureMax");
     expect(state.boundaryMode).toBe("neumann");
@@ -188,7 +188,7 @@ describe("control schema", () => {
     expect(state.holographicFresnelPower).toBe(4.8);
     expect(state.bloomStrength).toBe(0.8);
     expect(state.bloomRadius).toBe(0);
-    expect(state.bloomThreshold).toBe(0.24);
+    expect(state.bloomThreshold).toBe(0.12);
     expect(state.smaaEnabled).toBe(RENDER_DEFAULTS.smaaEnabled);
     expect(state.performanceHudEnabled).toBe(
       RENDER_DEFAULTS.performanceHudEnabled,
@@ -199,6 +199,8 @@ describe("control schema", () => {
     );
     expect(state.traaEnabled).toBe(RENDER_DEFAULTS.traaEnabled);
     expect(state.bloomResponseBias).toBe(1);
+    expect(state.rimBloomBias).toBe(1.2);
+    expect(state.rimCompression).toBe(1.2);
   });
 
   it("does not expose contour sharpness as a control", () => {

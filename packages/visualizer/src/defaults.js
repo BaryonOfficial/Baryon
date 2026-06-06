@@ -32,7 +32,7 @@ export const CAVITY_ACOUSTIC_DEFAULTS = Object.freeze({
 export const SIMULATION_DEFAULTS = Object.freeze({
   radius: 3.0,
   cavityAcousticScale: CAVITY_ACOUSTIC_DEFAULTS,
-  zeroPointPrecision: 0.08,
+  zeroPointPrecision: 0.064,
   boundaryMode: "neumann",
   cavityGeometry: DEFAULT_REQUESTED_CAVITY_GEOMETRY,
 });
@@ -55,7 +55,7 @@ export const RENDER_DEFAULTS = Object.freeze({
   bloomEnabled: true,
   bloomStrength: 0.8,
   bloomRadius: 0,
-  bloomThreshold: 0.24,
+  bloomThreshold: 0.12,
   bloomResponseBias: 1,
   smaaEnabled: true,
   performanceHudEnabled: false,
@@ -87,7 +87,7 @@ export const RAYMARCH_DEFAULTS = Object.freeze({
   absorption: 4,
   opacityGain: 3,
   contourSharpness: 8,
-  rimBloomBias: 0.39,
+  rimBloomBias: 1.2,
   rimCompression: 1.2,
   holographicIntensity: 0.52,
   holographicShift: 0.42,
