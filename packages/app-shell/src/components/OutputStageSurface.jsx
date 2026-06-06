@@ -2,7 +2,7 @@ import { Suspense, useEffect, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { BaryonScene, CAMERA_CONTROL_MODES } from "./BaryonScene.jsx";
 import { RendererErrorBoundary } from "./RendererErrorBoundary.jsx";
-import { resolvePresetCameraPose } from "./cameraPosePresets.js";
+import { DEFAULT_ACTIVE_CAMERA_POSE } from "./cameraPosePresets.js";
 import {
   createBaryonRenderer,
   WEBGPU_RENDERER_INIT_ERROR,
@@ -11,7 +11,6 @@ import {
   DEFAULT_PERFORMANCE_PROFILE,
   RENDER_CONTEXTS,
 } from "@baryon/visualizer/render/outputPipeline";
-import { VISUALIZATION_METHODS } from "@baryon/visualizer/visualization/types";
 
 function StageInvalidateBridge({ registerRenderRequester }) {
   const { invalidate } = useThree();
@@ -39,7 +38,7 @@ function StageInvalidateBridge({ registerRenderRequester }) {
  */
 
 const defaultStageCameraConfig = (() => {
-  const cameraPose = resolvePresetCameraPose("top-down");
+  const cameraPose = DEFAULT_ACTIVE_CAMERA_POSE;
   return /** @type {StageCameraConfig} */ ({
     position: /** @type {[number, number, number]} */ ([
       cameraPose.position.x,
@@ -55,23 +54,12 @@ const defaultStageCameraConfig = (() => {
   });
 })();
 
-const fullscreen2dCameraPose = resolvePresetCameraPose("side");
-
-function resolveStageCameraPose(visualizationMethod, cameraPose) {
-  if (visualizationMethod === VISUALIZATION_METHODS.cymatics2d) {
-    return fullscreen2dCameraPose;
-  }
-
-  return cameraPose;
-}
-
 /**
  * @param {{
  *   controlsRef: import("react").MutableRefObject<Record<string, unknown>>,
  *   visualizationMethod: string,
  *   renderQualityPreset?: string,
  *   resolvedRenderProfile?: import("@baryon/visualizer/render/outputPipeline").RenderQualityProfile | null,
- *   renderProfileOverrides?: { renderScale?: number, traaEnabled?: boolean, bloomAllowed?: boolean } | null,
  *   externalFrameRef?: import("react").MutableRefObject<any>,
  *   cameraPose?: {
  *     position?: { x?: number, y?: number, z?: number },
@@ -97,7 +85,6 @@ export function OutputStageSurface({
   visualizationMethod,
   renderQualityPreset = DEFAULT_PERFORMANCE_PROFILE,
   resolvedRenderProfile = null,
-  renderProfileOverrides = null,
   externalFrameRef = null,
   cameraPose = null,
   backgroundColor: backgroundColorProp = null,
@@ -113,10 +100,7 @@ export function OutputStageSurface({
   onAuditSnapshotChange = null,
 }) {
   const [rendererError, setRendererError] = useState(null);
-  const resolvedCameraPose = resolveStageCameraPose(
-    visualizationMethod,
-    cameraPose,
-  );
+  const resolvedCameraPose = cameraPose;
   const cameraConfig = /** @type {StageCameraConfig} */ (
     resolvedCameraPose == null
       ? defaultStageCameraConfig
@@ -139,6 +123,7 @@ export function OutputStageSurface({
     (typeof controlsRef.current?.backgroundColor === "string"
       ? controlsRef.current.backgroundColor
       : "#0D0A07");
+  const traaEnabled = controlsRef.current?.traaEnabled !== false;
 
   const handleCanvasError = (error) => {
     if (error?.name !== WEBGPU_RENDERER_INIT_ERROR) {
@@ -168,7 +153,7 @@ export function OutputStageSurface({
             alignItems: "center",
             justifyContent: "center",
             color: "rgba(255, 255, 255, 0.8)",
-            fontFamily: "monospace",
+            fontFamily: "var(--baryon-type-mono-family)",
             fontSize: "0.9rem",
           }}
         >
@@ -214,8 +199,8 @@ export function OutputStageSurface({
                 controlsRef={controlsRef}
                 visualizationMethod={visualizationMethod}
                 renderQualityPreset={renderQualityPreset}
+                traaEnabled={traaEnabled}
                 resolvedRenderProfile={resolvedRenderProfile}
-                renderProfileOverrides={renderProfileOverrides}
                 onPerformanceHudSnapshotChange={onPerformanceHudSnapshotChange}
                 onAuditSnapshotChange={onAuditSnapshotChange}
                 externalFrameRef={externalFrameRef}

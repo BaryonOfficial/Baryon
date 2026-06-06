@@ -10,6 +10,7 @@
   },
   "exports": {
     ".": "./src/index.js",
+    "./camera-control-model": "./src/components/cameraControlModel.js",
     "./camera-pose-presets": "./src/components/cameraPosePresets.js",
     "./index.css": "./src/index.css",
     "./live-input-runtime-status": "./src/context/liveInputRuntimeStatus.js",
@@ -31,8 +32,10 @@
   },
   "devDependencies": {
     "@baryon/config": "workspace:*",
+    "@types/react": "^19.2.14",
     "jsdom": "^29.0.1",
     "tailwindcss": "^4.2.2",
+    "three-stdlib": "^2.36.1",
     "vitest": "^4.1.2"
   }
 }

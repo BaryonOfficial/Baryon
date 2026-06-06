@@ -13,10 +13,26 @@ declare global {
       getState(): Record<string, unknown>;
       setControl(key: string, value: unknown): Record<string, unknown>;
     };
+    __baryonCameraControls?: {
+      setPreset(preset: "top-down" | "side"): void;
+      setPose(cameraPose: {
+        position?: { x?: number; y?: number; z?: number };
+        target?: { x?: number; y?: number; z?: number };
+        up?: { x?: number; y?: number; z?: number };
+        fov?: number;
+      }): void;
+    };
     __baryonControlState?: Record<string, unknown>;
     __baryonAuditSnapshot?: Record<string, unknown>;
+    __baryonTailDiagnostics?: {
+      start(): Record<string, unknown>;
+      stop(): Record<string, unknown>;
+      reset(): Record<string, unknown>;
+      dump(): Record<string, unknown>;
+      copy(): Promise<Record<string, unknown>>;
+    };
+    __baryonPerfMetrics?: Record<string, unknown> | null;
     __baryonExternalOutputDiagnostics?: Record<string, unknown> | null;
-    __baryonFieldCacheOverride?: "direct" | "cached";
     __baryonRendererInfo?: {
       forceWebGLFallbackTest: boolean;
       backendType: "webgl" | "webgpu" | null;

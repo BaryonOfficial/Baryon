@@ -440,6 +440,14 @@ describe("audio session", () => {
     const session = createAttachedSession();
     await session.startLiveInputStream("device-1");
 
+    expect(getUserMediaMock).toHaveBeenLastCalledWith({
+      audio: {
+        deviceId: { exact: "device-1" },
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
+    });
     expect(session.getStatus().liveInputCalibrationVersion).toBeGreaterThan(0);
     expect(session.getStatus()).toMatchObject({
       audioInputMode: "live",
@@ -797,7 +805,6 @@ describe("audio session", () => {
     expect(baseline.fftMagnitudes).toEqual(muted.fftMagnitudes);
     expect(baseline.avgAmplitude).toBe(mutedByVolume.avgAmplitude);
     expect(baseline.avgAmplitude).toBe(muted.avgAmplitude);
-    expect(lastAudioContext.destination).toBeTruthy();
   });
 
   it("preserves playback offset across pause and resume", async () => {

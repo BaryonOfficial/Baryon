@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   CONTROL_DEFINITIONS,
   CONTROL_HANDLERS,
@@ -26,19 +27,16 @@ const EXPECTED_CONTROL_KEYS = [
   "autoGainControl",
   // Shape
   "zeroPointPrecision",
-  "structureMin",
-  "structureMax",
   "boundaryMode",
   "densityGain",
   "absorption",
   "opacityGain",
-  "contourSharpness",
   "raymarchSteps",
   // Color
   "volumeColor",
   "surfaceColor",
   "colorMode",
-  "chromesthesiaMix",
+  "spectralMix",
   "holographicIntensity",
   "holographicShift",
   "holographicFresnelPower",
@@ -50,7 +48,6 @@ const EXPECTED_CONTROL_KEYS = [
   "rotationSpeed",
   "reactivity",
   "motionAmount",
-  "structurePersistence",
   // Display
   "bloomEnabled",
   "bloomStrength",
@@ -65,21 +62,72 @@ const EXPECTED_CONTROL_KEYS = [
   "performanceHudEnabled",
   // Display (continued)
   "visualizationMethod",
-  // Diagnostics
+  "cameraLocked",
   "bloomResponseBias",
   "rimBloomBias",
   "rimCompression",
+  // Diagnostics
+  "traaEnabled",
+  "smaaEnabled",
   "auditEnabled",
   "freezeModeSlots",
   "forceWebGLFallbackTest",
   "lowLoadPlaybackDiagnostics",
-  "fieldCacheOverride",
   "cavityGeometry",
   "injectTestTone",
   "testToneHz",
+  "testToneSignal",
   "testToneAmplitude",
   "logEveryFrames",
 ];
+
+const CONTROLS_REFERENCE_URL = new URL(
+  "../../../../documentation/public/reference/controls.md",
+  import.meta.url,
+);
+const CONTROLS_REFERENCE = readFileSync(CONTROLS_REFERENCE_URL, "utf8");
+
+function getPublicControlsReferenceHeading(group) {
+  return group === "PresetsArea" ? "Inline Stage Controls" : group;
+}
+
+function readPublicControlsReferenceHeadings(controlsReference) {
+  return Array.from(controlsReference.matchAll(/^## (.+)$/gm)).map(
+    (match) => match[1],
+  );
+}
+
+function readPublicControlsReferenceSectionLabels(controlsReference, heading) {
+  const headingMarker = `## ${heading}`;
+  const headingStart = controlsReference.indexOf(`${headingMarker}\n`);
+  if (headingStart < 0) {
+    return [];
+  }
+  const sectionStart = headingStart + headingMarker.length;
+  const remainingReference = controlsReference.slice(sectionStart);
+  const nextHeadingOffset = remainingReference.search(/\n## /);
+  const section =
+    nextHeadingOffset >= 0
+      ? remainingReference.slice(0, nextHeadingOffset)
+      : remainingReference;
+
+  return Array.from(section.matchAll(/^\| \*\*(.+?)\*\*.*\|$/gm)).map(
+    (match) => match[1],
+  );
+}
+
+function getPublicControlsReferenceSchemaHeadings() {
+  return Array.from(
+    CONTROL_DEFINITIONS.reduce((groups, definition) => {
+      if (definition.group) {
+        groups.set(definition.group, definition.groupOrder);
+      }
+      return groups;
+    }, new Map()),
+  )
+    .sort(([, leftOrder], [, rightOrder]) => leftOrder - rightOrder)
+    .map(([group]) => getPublicControlsReferenceHeading(group));
+}
 
 describe("control schema", () => {
   it("enumerates the current pane surface", () => {
@@ -93,26 +141,55 @@ describe("control schema", () => {
     expect(Object.keys(state)).toEqual(EXPECTED_CONTROL_KEYS);
   });
 
-  it("defaults the raymarch surface to the cyan laser baseline", () => {
+  it("keeps the public controls reference aligned with grouped control labels", () => {
+    for (const group of new Set(
+      CONTROL_DEFINITIONS.map((definition) => definition.group).filter(Boolean),
+    )) {
+      const heading = getPublicControlsReferenceHeading(group);
+      const expectedLabels = CONTROL_DEFINITIONS.filter(
+        (definition) => definition.group === group,
+      ).map((definition) => definition.label);
+      const actualLabels = readPublicControlsReferenceSectionLabels(
+        CONTROLS_REFERENCE,
+        heading,
+      );
+
+      expect(actualLabels).toEqual(expectedLabels);
+    }
+  });
+
+  it("orders public controls reference sections by schema group order", () => {
+    const expectedHeadings = getPublicControlsReferenceSchemaHeadings();
+    const actualSchemaHeadings = readPublicControlsReferenceHeadings(
+      CONTROLS_REFERENCE,
+    ).filter((heading) => expectedHeadings.includes(heading));
+
+    expect(actualSchemaHeadings).toEqual(expectedHeadings);
+  });
+
+  it("defaults the raymarch surface to the current baseline", () => {
     const state = createControlState();
 
-    expect(state.volumeColor).toBe("#56d7ff");
+    expect(state.colorMode).toBe("static");
+    expect(state.spectralMix).toBe(0.96);
+    expect(state.volumeColor).toBe("#5be3f4");
     expect(state.surfaceColor).toBe("#f7fdff");
-    expect(state.zeroPointPrecision).toBe(0.026);
-    expect(state.structureMin).toBe(0.3);
-    expect(state.structureMax).toBe(0.35);
+    expect(state.zeroPointPrecision).toBe(0.064);
+    expect(state).not.toHaveProperty("structureMin");
+    expect(state).not.toHaveProperty("structureMax");
     expect(state.boundaryMode).toBe("neumann");
     expect(state.raymarchSteps).toBe(RAYMARCH_DEFAULTS.raymarchSteps);
-    expect(state.densityGain).toBe(3.72);
+    expect(state.densityGain).toBe(4);
     expect(state.absorption).toBe(RAYMARCH_DEFAULTS.absorption);
     expect(state.opacityGain).toBe(3);
-    expect(state.contourSharpness).toBe(8);
-    expect(state.holographicIntensity).toBe(0.61);
-    expect(state.holographicShift).toBe(0.35);
-    expect(state.holographicFresnelPower).toBe(3.2);
-    expect(state.bloomStrength).toBe(1.07);
+    expect(state).not.toHaveProperty("contourSharpness");
+    expect(state.holographicIntensity).toBe(0.52);
+    expect(state.holographicShift).toBe(0.42);
+    expect(state.holographicFresnelPower).toBe(4.8);
+    expect(state.bloomStrength).toBe(0.8);
     expect(state.bloomRadius).toBe(0);
-    expect(state.bloomThreshold).toBe(0.38);
+    expect(state.bloomThreshold).toBe(0.12);
+    expect(state.smaaEnabled).toBe(RENDER_DEFAULTS.smaaEnabled);
     expect(state.performanceHudEnabled).toBe(
       RENDER_DEFAULTS.performanceHudEnabled,
     );
@@ -120,7 +197,18 @@ describe("control schema", () => {
     expect(state.customPerformanceTargetFps).toBe(
       RENDER_DEFAULTS.customPerformanceTargetFps,
     );
-    expect(state.bloomResponseBias).toBe(0.52);
+    expect(state.traaEnabled).toBe(RENDER_DEFAULTS.traaEnabled);
+    expect(state.bloomResponseBias).toBe(1);
+    expect(state.rimBloomBias).toBe(1.2);
+    expect(state.rimCompression).toBe(1.2);
+  });
+
+  it("does not expose contour sharpness as a control", () => {
+    const contourSharpness = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "contourSharpness",
+    );
+
+    expect(contourSharpness).toBeUndefined();
   });
 
   it("keeps the node-threshold slider wide enough for cymatic tuning", () => {
@@ -171,23 +259,19 @@ describe("control schema", () => {
     expect(outputFillControl?.runtimePath).toBe("program.backgroundColor");
   });
 
-  it("exposes a debug selector for 3d field evaluation mode", () => {
-    const fieldCacheOverrideControl = CONTROL_DEFINITIONS.find(
-      (definition) => definition.key === "fieldCacheOverride",
+  it("exposes SMAA as a live diagnostics post-process toggle", () => {
+    const smaaControl = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "smaaEnabled",
     );
 
-    expect(fieldCacheOverrideControl).toMatchObject({
-      label: "3D Field Eval",
-      defaultValue: "cached",
-      targetType: CONTROL_TARGET_TYPES.audit,
-      handler: CONTROL_HANDLERS.audit,
-      runtimePath: "controls.fieldCacheOverride",
-      status: CONTROL_STATUSES.debugOnly,
-      methods: [VISUALIZATION_METHODS.raymarch],
-    });
-    expect(fieldCacheOverrideControl?.binding?.options).toEqual({
-      Direct: "direct",
-      Cached: "cached",
+    expect(smaaControl).toMatchObject({
+      label: "SMAA",
+      group: "Diagnostics",
+      defaultValue: true,
+      targetType: CONTROL_TARGET_TYPES.pipeline,
+      handler: CONTROL_HANDLERS.output,
+      runtimePath: "program.smaaEnabled",
+      status: CONTROL_STATUSES.live,
     });
   });
 
@@ -230,8 +314,30 @@ describe("control schema", () => {
           Object.values(VISUALIZATION_METHODS).includes(method),
         ),
       ).toBe(true);
-      expect(definition.runtimePath).toBeTruthy();
+      expect(definition.runtimePath).toEqual(expect.any(String));
+      expect(definition.runtimePath).not.toBe("");
     }
+  });
+
+  it("exposes Spectral Light as the live dynamic color mode", () => {
+    const colorMode = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "colorMode",
+    );
+    const spectralMix = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "spectralMix",
+    );
+
+    expect(colorMode?.binding?.options).toEqual({
+      Static: "static",
+      Spectral: "spectral",
+    });
+    expect(colorMode?.runtimePath).toBe("runtime.spectralLight.colorMode");
+    expect(spectralMix).toMatchObject({
+      label: "Color Mix",
+      defaultValue: 0.96,
+      binding: { min: 0.01, max: 1, step: 0.01 },
+      runtimePath: "runtime.uniforms.uSpectralMix.value",
+    });
   });
 
   it("defaults current controls to the raymarch method surface", () => {
@@ -268,7 +374,6 @@ describe("control schema", () => {
       "renderQualityPreset",
       "customPerformanceTargetFps",
       "outputMode",
-      "visualizationMethod",
     ]);
     expect(
       getControlsForFolder("Shape", DEFAULT_VISUALIZATION_METHOD).map(
@@ -276,12 +381,9 @@ describe("control schema", () => {
       ),
     ).toEqual([
       "zeroPointPrecision",
-      "structureMin",
-      "structureMax",
       "densityGain",
       "absorption",
       "opacityGain",
-      "contourSharpness",
       "raymarchSteps",
     ]);
     expect(
@@ -291,7 +393,7 @@ describe("control schema", () => {
     ).toEqual([
       "volumeColor",
       "surfaceColor",
-      "chromesthesiaMix",
+      "spectralMix",
       "holographicIntensity",
       "holographicShift",
       "holographicFresnelPower",
@@ -312,6 +414,9 @@ describe("control schema", () => {
       "bloomThreshold",
       "backgroundColor",
       "outputBackgroundColor",
+      "bloomResponseBias",
+      "rimBloomBias",
+      "rimCompression",
     ]);
     expect(
       getControlsForFolder("PresetsArea", DEFAULT_VISUALIZATION_METHOD).map(
@@ -319,15 +424,28 @@ describe("control schema", () => {
       ),
     ).toEqual(["performanceHudEnabled"]);
     expect(
-      getControlsForFolder("Motion", DEFAULT_VISUALIZATION_METHOD).map(
+      getControlsForFolder("Diagnostics", DEFAULT_VISUALIZATION_METHOD).map(
         (definition) => definition.key,
       ),
     ).toEqual([
-      "rotationSpeed",
-      "reactivity",
-      "motionAmount",
-      "structurePersistence",
+      "traaEnabled",
+      "smaaEnabled",
+      "auditEnabled",
+      "freezeModeSlots",
+      "forceWebGLFallbackTest",
+      "lowLoadPlaybackDiagnostics",
+      "cavityGeometry",
+      "injectTestTone",
+      "testToneHz",
+      "testToneSignal",
+      "testToneAmplitude",
+      "logEveryFrames",
     ]);
+    expect(
+      getControlsForFolder("Motion", DEFAULT_VISUALIZATION_METHOD).map(
+        (definition) => definition.key,
+      ),
+    ).toEqual(["rotationSpeed", "reactivity", "motionAmount"]);
   });
 
   it("maps every live control to runtime coverage", () => {
@@ -341,97 +459,10 @@ describe("control schema", () => {
     }
   });
 
-  it("filters out 3d-only controls from the fullscreen 2d method", () => {
-    const cymatics2dControls = getControlsForMethod(
-      VISUALIZATION_METHODS.cymatics2d,
-    ).map((definition) => definition.key);
-
-    expect(getControlsForMethod(VISUALIZATION_METHODS.cymatics2d)).not.toEqual(
-      getControlsForMethod(VISUALIZATION_METHODS.raymarch),
+  it("keeps fine-grained glow controls live while preserving method scope", () => {
+    const bloomResponseBias = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "bloomResponseBias",
     );
-    expect(cymatics2dControls).not.toContain("rotationMode");
-    expect(cymatics2dControls).not.toContain("rotationSpeed");
-    expect(cymatics2dControls).not.toContain("raymarchSteps");
-    expect(cymatics2dControls).not.toContain("absorption");
-    expect(cymatics2dControls).not.toContain("rimBloomBias");
-    expect(cymatics2dControls).not.toContain("rimCompression");
-    expect(cymatics2dControls).not.toContain("holographicIntensity");
-    expect(cymatics2dControls).not.toContain("holographicShift");
-    expect(cymatics2dControls).not.toContain("holographicFresnelPower");
-    expect(cymatics2dControls).toContain("visualizationMethod");
-    expect(cymatics2dControls).toContain("bloomThreshold");
-    expect(cymatics2dControls).toContain("densityGain");
-    expect(cymatics2dControls).toContain("boundaryMode");
-    expect(cymatics2dControls).toContain("structurePersistence");
-    expect(getControlFolders(VISUALIZATION_METHODS.cymatics2d)).toEqual([
-      "Mode",
-      "Shape",
-      "Color",
-      "Logo",
-      "Motion",
-      "Display",
-      "PresetsArea",
-      "Diagnostics",
-    ]);
-    expect(
-      getControlsForFolder("Shape", VISUALIZATION_METHODS.cymatics2d).map(
-        (definition) => definition.key,
-      ),
-    ).toEqual([
-      "zeroPointPrecision",
-      "structureMin",
-      "structureMax",
-      "densityGain",
-      "opacityGain",
-      "contourSharpness",
-    ]);
-    expect(
-      getControlsForFolder("Mode", VISUALIZATION_METHODS.cymatics2d).map(
-        (definition) => definition.key,
-      ),
-    ).toEqual([
-      "boundaryMode",
-      "colorMode",
-      "renderQualityPreset",
-      "customPerformanceTargetFps",
-      "outputMode",
-      "visualizationMethod",
-    ]);
-    expect(
-      getControlsForFolder("Color", VISUALIZATION_METHODS.cymatics2d).map(
-        (definition) => definition.key,
-      ),
-    ).toEqual(["volumeColor", "surfaceColor", "chromesthesiaMix"]);
-    expect(
-      getControlsForFolder("Logo", VISUALIZATION_METHODS.cymatics2d).map(
-        (definition) => definition.key,
-      ),
-    ).toEqual(["idleLogoIntensity", "idleLogoSize"]);
-    expect(
-      getControlsForFolder("Display", VISUALIZATION_METHODS.cymatics2d).map(
-        (definition) => definition.key,
-      ),
-    ).toEqual([
-      "bloomEnabled",
-      "bloomStrength",
-      "bloomRadius",
-      "bloomThreshold",
-      "backgroundColor",
-      "outputBackgroundColor",
-    ]);
-    expect(
-      getControlsForFolder("PresetsArea", VISUALIZATION_METHODS.cymatics2d).map(
-        (definition) => definition.key,
-      ),
-    ).toEqual(["performanceHudEnabled"]);
-    expect(
-      getControlsForFolder("Motion", VISUALIZATION_METHODS.cymatics2d).map(
-        (definition) => definition.key,
-      ),
-    ).toEqual(["reactivity", "motionAmount", "structurePersistence"]);
-  });
-
-  it("keeps 3d-only debug controls scoped to the raymarch method", () => {
     const rimBloomBias = CONTROL_DEFINITIONS.find(
       (definition) => definition.key === "rimBloomBias",
     );
@@ -448,8 +479,21 @@ describe("control schema", () => {
       (definition) => definition.key === "holographicFresnelPower",
     );
 
-    expect(rimBloomBias?.methods).toEqual([VISUALIZATION_METHODS.raymarch]);
-    expect(rimCompression?.methods).toEqual([VISUALIZATION_METHODS.raymarch]);
+    expect(bloomResponseBias).toMatchObject({
+      group: "Display",
+      status: CONTROL_STATUSES.live,
+      methods: [VISUALIZATION_METHODS.raymarch],
+    });
+    expect(rimBloomBias).toMatchObject({
+      group: "Display",
+      status: CONTROL_STATUSES.live,
+      methods: [VISUALIZATION_METHODS.raymarch],
+    });
+    expect(rimCompression).toMatchObject({
+      group: "Display",
+      status: CONTROL_STATUSES.live,
+      methods: [VISUALIZATION_METHODS.raymarch],
+    });
     expect(holographicIntensity?.methods).toEqual([
       VISUALIZATION_METHODS.raymarch,
     ]);

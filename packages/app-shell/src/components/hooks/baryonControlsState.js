@@ -14,7 +14,6 @@ import { DEFAULT_VISUALIZATION_METHOD } from "@baryon/visualizer/visualization/t
 export const SETTINGS_KEY = "baryon:settings";
 export const PRESETS_KEY = "baryon:presets";
 const CONTROLS_PERSIST_DELAY_MS = 500;
-const MODE_GROUP = "Mode";
 const PRESETS_AREA_GROUP = "PresetsArea";
 const PRESETS_AREA_CONTROL_ORDER = Object.freeze([
   "performanceHudEnabled",
@@ -30,67 +29,6 @@ function createOperatorControlKeySet(operatorControlKeys = []) {
   );
 }
 
-function cloneControlDefinition(definition, overrides = {}) {
-  return {
-    ...definition,
-    ...overrides,
-    binding:
-      Object.prototype.hasOwnProperty.call(overrides, "binding") &&
-      overrides.binding !== undefined
-        ? overrides.binding
-        : definition.binding,
-  };
-}
-
-function getControlDefinitionForMethod(key, method) {
-  return (
-    CONTROL_DEFINITIONS.find(
-      (definition) =>
-        definition.key === key && definition.methods.includes(method),
-    ) ?? null
-  );
-}
-
-function createPromotedModeControls(method) {
-  const promotedControls = [];
-  const fieldCacheOverride = getControlDefinitionForMethod(
-    "fieldCacheOverride",
-    method,
-  );
-
-  if (fieldCacheOverride) {
-    promotedControls.push(
-      cloneControlDefinition(fieldCacheOverride, {
-        title:
-          "Cached is faster and usually looks the same. Direct recomputes the field live instead of using the 3D cache, so it costs more.",
-        group: MODE_GROUP,
-        folder: MODE_GROUP,
-      }),
-    );
-  }
-
-  return promotedControls;
-}
-
-function insertModeControlsAfterBoundary(controls, promotedControls) {
-  if (promotedControls.length === 0) {
-    return controls;
-  }
-
-  const boundaryIndex = controls.findIndex(
-    (definition) => definition.key === "boundaryMode",
-  );
-  if (boundaryIndex === -1) {
-    return [...controls, ...promotedControls];
-  }
-
-  return [
-    ...controls.slice(0, boundaryIndex + 1),
-    ...promotedControls,
-    ...controls.slice(boundaryIndex + 1),
-  ];
-}
-
 function createVisibleFolderGroups({
   devtoolsEnabled,
   method = DEFAULT_VISUALIZATION_METHOD,
@@ -98,33 +36,26 @@ function createVisibleFolderGroups({
 }) {
   const operatorControlKeySet =
     createOperatorControlKeySet(operatorControlKeys);
-  return getControlFolders(method)
-    .map((title) => {
-      let controls = getControlsForFolder(title, method).filter(
-        (definition) =>
-          devtoolsEnabled ||
-          operatorControlKeySet.has(definition.key) ||
-          definition.status !== CONTROL_STATUSES.debugOnly,
-      );
+  return getControlFolders(method).flatMap((title) => {
+    const controls = getControlsForFolder(title, method).filter(
+      (definition) =>
+        devtoolsEnabled ||
+        operatorControlKeySet.has(definition.key) ||
+        definition.status !== CONTROL_STATUSES.debugOnly,
+    );
 
-      if (title === MODE_GROUP) {
-        controls = insertModeControlsAfterBoundary(
-          controls,
-          createPromotedModeControls(method),
-        );
-      }
+    if (controls.length === 0) {
+      return [];
+    }
 
-      if (controls.length === 0) {
-        return null;
-      }
-
-      return {
+    return [
+      {
         title,
         expanded: controls[0]?.groupExpanded ?? false,
         controls,
-      };
-    })
-    .filter(Boolean);
+      },
+    ];
+  });
 }
 
 function splitPresentationGroups(folderGroups) {
@@ -135,20 +66,20 @@ function splitPresentationGroups(folderGroups) {
     }
   }
 
-  const presetsAreaControls = PRESETS_AREA_CONTROL_ORDER.map((key) =>
-    controlByKey.get(key),
-  ).filter(Boolean);
+  const presetsAreaControls = PRESETS_AREA_CONTROL_ORDER.flatMap((key) => {
+    const control = controlByKey.get(key);
+    return control ? [control] : [];
+  });
   const presetsAreaControlKeys = new Set(PRESETS_AREA_CONTROL_ORDER);
-  const visibleGroups = folderGroups
-    .map((group) => ({
-      ...group,
-      controls: group.controls.filter(
-        (definition) => !presetsAreaControlKeys.has(definition.key),
-      ),
-    }))
-    .filter(
-      (group) => group.title !== PRESETS_AREA_GROUP && group.controls.length,
+  const visibleGroups = folderGroups.flatMap((group) => {
+    const controls = group.controls.filter(
+      (definition) => !presetsAreaControlKeys.has(definition.key),
     );
+    if (group.title === PRESETS_AREA_GROUP || controls.length === 0) {
+      return [];
+    }
+    return [{ ...group, controls }];
+  });
 
   return {
     folderGroups: visibleGroups,
@@ -196,9 +127,48 @@ export function createInitialControlState(storage) {
   return controls;
 }
 
+function sanitizeStoredPreset(preset) {
+  if (!preset || typeof preset !== "object" || Array.isArray(preset)) {
+    return null;
+  }
+
+  const record = /** @type {Record<string, unknown>} */ (preset);
+  if (typeof record.name !== "string" || record.name.trim() === "") {
+    return null;
+  }
+
+  const controls = serializeControls(
+    deserializeControls(record.controls, CONTROL_DEFINITIONS),
+    CONTROL_DEFINITIONS,
+  );
+
+  if (
+    typeof record.createdAt === "number" &&
+    Number.isFinite(record.createdAt)
+  ) {
+    return {
+      name: record.name,
+      createdAt: record.createdAt,
+      controls,
+    };
+  }
+
+  return {
+    name: record.name,
+    controls,
+  };
+}
+
 export function loadStoredPresets(storage) {
   const presets = readStoredJson(storage, PRESETS_KEY);
-  return Array.isArray(presets) ? presets : [];
+  if (!Array.isArray(presets)) {
+    return [];
+  }
+
+  return presets.flatMap((preset) => {
+    const sanitized = sanitizeStoredPreset(preset);
+    return sanitized ? [sanitized] : [];
+  });
 }
 
 export function getVisibleControlLayout({

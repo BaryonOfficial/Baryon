@@ -64,7 +64,7 @@ describe("ListenerControls compact dock layout", () => {
     };
   }
 
-  function renderControls(audioOverrides = {}) {
+  function renderControls(audioOverrides = {}, { viewportWidth = 900 } = {}) {
     useDraggableFloatingUiMock.mockReturnValue({
       dragOffset: { x: 0, y: 0 },
       isDragging: false,
@@ -75,7 +75,7 @@ describe("ListenerControls compact dock layout", () => {
 
     useAudioMock.mockReturnValue({
       soundCloudEnabled: false,
-      activeSource: "upload",
+      playbackSource: "local-file",
       selectedSource: "file",
       displayName: "Upload Audio",
       liveReturnLocalFile: null,
@@ -129,7 +129,7 @@ describe("ListenerControls compact dock layout", () => {
     const originalInnerWidth = window.innerWidth;
     Object.defineProperty(window, "innerWidth", {
       configurable: true,
-      value: 900,
+      value: viewportWidth,
     });
 
     act(() => {
@@ -142,23 +142,52 @@ describe("ListenerControls compact dock layout", () => {
     });
   }
 
-  it("shows source and system when the system source is selected", () => {
+  it("shows the source control without the compact file dock in system mode", () => {
     renderControls({
-      activeSource: "upload",
+      playbackSource: "local-file",
       selectedSource: "system",
       liveInputDeviceKind: "live",
+      recentUploads: [createRecentUpload()],
     });
 
-    const trackMeta = container.querySelector(".am-compact-track-meta");
-    const trackTitle = container.querySelector(".am-compact-track-title");
+    const sourceControl = container.querySelector(
+      '[data-testid="source-mode-control"]',
+    );
 
-    expect(trackMeta?.textContent).toBe("Source");
-    expect(trackTitle?.textContent).toBe("System");
+    expect(sourceControl).not.toBeNull();
+    expect(
+      sourceControl?.querySelector('[data-testid="file-source-tab"]'),
+    ).not.toBeNull();
+    expect(
+      sourceControl?.querySelector('[data-testid="live-input-source-tab"]'),
+    ).not.toBeNull();
+    expect(container.querySelector(".am-player-shell")).toBeNull();
+    expect(container.querySelector(".am-compact-header-button")).toBeNull();
+    expect(container.querySelector('[aria-label="Play"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Stop"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Recent uploads"]')).toBeNull();
+    expect(container.querySelector(".am-compact-volume-row")).toBeNull();
+  });
+
+  it("aligns the standalone source control to the top-right overlay rail", () => {
+    renderControls({
+      playbackSource: "local-file",
+      selectedSource: "system",
+      liveInputDeviceKind: "system",
+    });
+
+    const injectedCss = Array.from(document.querySelectorAll("style"))
+      .map((style) => style.textContent ?? "")
+      .join("\n");
+
+    expect(injectedCss).toContain(`.am-source-mode-shell {
+  position: fixed;
+  right: 0.9rem;`);
   });
 
   it("shows upload-audio placeholder copy for the file source before a file is loaded", () => {
     renderControls({
-      activeSource: "upload",
+      playbackSource: "local-file",
       selectedSource: "file",
       displayName: "Upload Audio",
     });
@@ -170,9 +199,97 @@ describe("ListenerControls compact dock layout", () => {
     expect(trackTitle?.textContent).toBe("Upload Audio File");
   });
 
+  it("uses a semantic button for the full track upload trigger", () => {
+    renderControls(
+      {
+        playbackSource: "local-file",
+        selectedSource: "file",
+        displayName: "Upload Audio",
+      },
+      { viewportWidth: 1200 },
+    );
+
+    const trackTrigger = container.querySelector(".am-track");
+
+    expect(trackTrigger?.tagName).toBe("BUTTON");
+    expect(trackTrigger?.getAttribute("type")).toBe("button");
+  });
+
+  it("removes the full file dock when system is selected", () => {
+    renderControls(
+      {
+        selectedSource: "system",
+        recentUploads: [createRecentUpload()],
+        isAudioLoaded: true,
+      },
+      { viewportWidth: 1200 },
+    );
+
+    expect(
+      container.querySelector('[data-testid="source-mode-control"]'),
+    ).not.toBeNull();
+    expect(container.querySelector(".am-player-shell")).toBeNull();
+    expect(container.querySelector(".am-track")).toBeNull();
+    expect(container.querySelector(".am-source-icon")).toBeNull();
+    expect(container.querySelector(".am-transport")).toBeNull();
+    expect(container.querySelector(".am-volume-row")).toBeNull();
+    expect(container.querySelector(".am-recent-panel")).toBeNull();
+  });
+
+  it("marks the full play button active from playback state", () => {
+    renderControls(
+      {
+        selectedSource: "file",
+        isPlaying: true,
+        isAudioLoaded: true,
+      },
+      { viewportWidth: 1200 },
+    );
+
+    const playButton = container.querySelector(".am-btn--play");
+
+    expect(playButton?.classList.contains("am-btn--play-active")).toBe(true);
+    expect(playButton?.getAttribute("aria-label")).toBe("Pause");
+  });
+
+  it("keeps the full dock stop button bare while using shared pill metrics", () => {
+    renderControls(
+      {
+        selectedSource: "file",
+        isAudioLoaded: false,
+      },
+      { viewportWidth: 1200 },
+    );
+
+    const stopButton = container.querySelector(".am-btn--stop");
+    const transport = container.querySelector(".am-transport");
+    const divider = container.querySelector(".am-divider");
+    const terminalDivider = container.querySelector(".am-divider--terminal");
+    const injectedCss = Array.from(document.querySelectorAll("style"))
+      .map((style) => style.textContent ?? "")
+      .join("\n");
+
+    expect(stopButton?.disabled).toBe(true);
+    expect(injectedCss).toContain(".am-btn--stop:disabled");
+    expect(injectedCss).toContain("border-color: transparent;");
+    expect(injectedCss).toContain("gap: var(--baryon-audio-pill-gap);");
+    expect(injectedCss).toContain("padding: var(--baryon-audio-pill-padding);");
+    expect(injectedCss).toContain(
+      "border-radius: var(--baryon-audio-pill-radius);",
+    );
+    expect(injectedCss).toContain(
+      "min-height: var(--baryon-audio-pill-min-height);",
+    );
+    expect(window.getComputedStyle(transport).gap).toBe("8px");
+    expect(window.getComputedStyle(divider).marginLeft).toBe("8px");
+    expect(window.getComputedStyle(divider).marginRight).toBe("8px");
+    expect(window.getComputedStyle(terminalDivider).marginLeft).toBe("8px");
+    expect(window.getComputedStyle(terminalDivider).marginRight).toBe("0px");
+  });
+
   it("shows the loaded file name for the file source on compact layouts", () => {
     renderControls({
-      activeSource: "upload",
+      playbackSource: "local-file",
       selectedSource: "file",
       displayName: "set-break-live.wav",
       isAudioLoaded: true,
@@ -185,7 +302,7 @@ describe("ListenerControls compact dock layout", () => {
     expect(trackTitle?.textContent).toBe("set-break-live.wav");
   });
 
-  it("disables compact playback controls when system is selected", () => {
+  it("keeps the compact file dock out of system mode", () => {
     renderControls({
       selectedSource: "system",
       isAudioLoaded: true,
@@ -197,8 +314,12 @@ describe("ListenerControls compact dock layout", () => {
       '[data-testid="playback-timeline"]',
     );
 
-    expect(playButton?.hasAttribute("disabled")).toBe(true);
-    expect(stopButton?.hasAttribute("disabled")).toBe(true);
+    expect(
+      container.querySelector('[data-testid="source-mode-control"]'),
+    ).not.toBeNull();
+    expect(container.querySelector(".am-player-shell--compact")).toBeNull();
+    expect(playButton).toBeNull();
+    expect(stopButton).toBeNull();
     expect(timeline).toBeNull();
   });
 
@@ -222,18 +343,57 @@ describe("ListenerControls compact dock layout", () => {
     expect(window.getComputedStyle(title).whiteSpace).toBe("nowrap");
   });
 
-  it("reserves a stable compact status slot width for longer playing copy", () => {
+  it("keeps playback status in the separate source mode control", () => {
     renderControls({
       isPlaying: true,
       isAudioLoaded: true,
     });
 
-    const stateChip = container.querySelector(".am-compact-state-chip");
+    const sourceControl = container.querySelector(
+      '[data-testid="source-mode-control"]',
+    );
+    const statusLight = sourceControl?.querySelector(".am-source-mode-light");
 
-    expect(stateChip).not.toBeNull();
-    expect(stateChip.textContent).toContain("Playing");
-    expect(window.getComputedStyle(stateChip).minWidth).toBe("4.5rem");
-    expect(window.getComputedStyle(stateChip).justifyContent).toBe("center");
+    expect(sourceControl).not.toBeNull();
+    expect(statusLight?.getAttribute("aria-label")).toBe("Playing");
+    expect(container.querySelector(".am-compact-state-chip")).toBeNull();
+  });
+
+  it("integrates the source-mode status light with the selector spacing", () => {
+    renderControls({
+      isAudioLoaded: false,
+    });
+
+    const sourceControl = container.querySelector(
+      '[data-testid="source-mode-control"]',
+    );
+    const statusLight = sourceControl?.querySelector(".am-source-mode-light");
+    const statusDot = sourceControl?.querySelector(".am-status-dot");
+    const sourceSelector = sourceControl?.querySelector(".ac-source-selector");
+    const sourceCluster = sourceControl?.querySelector(".ac-source-cluster");
+    const sourceTabs = sourceControl?.querySelector(".ac-source-tabs");
+
+    expect(sourceControl).not.toBeNull();
+    expect(sourceControl?.firstElementChild).toBe(sourceSelector);
+    expect(sourceControl?.lastElementChild).toBe(statusLight);
+    expect(window.getComputedStyle(sourceControl).gap).toBe(
+      "var(--baryon-source-selector-gap)",
+    );
+    expect(window.getComputedStyle(statusLight).width).toBe("12px");
+    expect(window.getComputedStyle(statusLight).height).toBe(
+      "var(--baryon-source-selector-inner-min-height)",
+    );
+    expect(window.getComputedStyle(statusLight).justifyContent).toBe("center");
+    expect(statusDot).not.toBeNull();
+    expect(window.getComputedStyle(sourceCluster).gap).toBe("6px");
+    expect(
+      window.getComputedStyle(sourceTabs).getPropertyValue("--tab-file-width"),
+    ).toBe("2.86rem");
+    expect(
+      window
+        .getComputedStyle(sourceTabs)
+        .getPropertyValue("--tab-system-width"),
+    ).toBe("4rem");
   });
 
   it("keeps recent uploads in the transport cluster and out of the source cluster", () => {
@@ -283,13 +443,15 @@ describe("ListenerControls compact dock layout", () => {
     expect(
       playbackGroup?.querySelector(".am-compact-header-button"),
     ).toBeNull();
-    expect(playbackGroup?.querySelector(".ac-source-compact-btn")).toBeNull();
+    expect(
+      playbackGroup?.querySelector('[data-testid="file-source-tab"]'),
+    ).toBeNull();
     expect(
       playbackGroup?.querySelector('[aria-label="Recent uploads"]'),
     ).toBeNull();
   });
 
-  it("places compact source controls before the transport group in the unified action row", () => {
+  it("keeps source mode controls outside the compact file dock", () => {
     renderControls({
       recentUploads: [createRecentUpload()],
       isAudioLoaded: true,
@@ -304,18 +466,28 @@ describe("ListenerControls compact dock layout", () => {
     const transportControls = container.querySelector(
       ".am-compact-unified-actions .am-compact-transport-right",
     );
+    const sourceModeControl = container.querySelector(
+      '[data-testid="source-mode-control"]',
+    );
 
     expect(unifiedActions?.firstElementChild).toBe(sourceControls);
     expect(sourceControls).not.toBeNull();
     expect(transportControls).not.toBeNull();
+    expect(sourceModeControl).not.toBeNull();
     expect(
       sourceControls?.querySelector(".am-compact-header-button"),
     ).not.toBeNull();
     expect(
-      sourceControls?.querySelector('[aria-label="Use file source"]'),
+      sourceControls?.querySelector('[data-testid="file-source-tab"]'),
+    ).toBeNull();
+    expect(
+      sourceControls?.querySelector('[data-testid="live-input-source-tab"]'),
+    ).toBeNull();
+    expect(
+      sourceModeControl?.querySelector('[data-testid="file-source-tab"]'),
     ).not.toBeNull();
     expect(
-      sourceControls?.querySelector('[aria-label="Use system source"]'),
+      sourceModeControl?.querySelector('[data-testid="live-input-source-tab"]'),
     ).not.toBeNull();
   });
 

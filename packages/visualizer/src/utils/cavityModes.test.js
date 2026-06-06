@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { SIMULATION_DEFAULTS } from "../defaults.js";
 import {
-  LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ,
+  getCavityAcousticFloorHz,
   getCavityModeFrequency,
-  getLegacyAnalysisFloorHz,
-  getLegacyAnalysisRadius,
   getMinimumCavityFrequency,
+  resolveCavityModeFamilyForPitch,
   sampleFFTAmplitudeForFrequency,
   solveCavityModeFamilyForPitch,
   solveCavityModeForPitch,
@@ -98,6 +98,84 @@ describe("getMinimumCavityFrequency", () => {
   });
 });
 
+describe("acoustic cavity scale", () => {
+  it("uses the default acoustic scale to keep bass in resolved cavity families", () => {
+    const options = {
+      acousticScale: SIMULATION_DEFAULTS.cavityAcousticScale,
+      boundaryMode: SIMULATION_DEFAULTS.boundaryMode,
+    };
+    const mappings = [60, 80, 120, 180, 220, 320].map(
+      (pitch) => resolveCavityModeFamilyForPitch(pitch, options, 1)[0],
+    );
+
+    expect(getCavityAcousticFloorHz(options)).toBeLessThanOrEqual(60);
+    expect(
+      new Set(mappings.map((mode) => `${mode.u}:${mode.v}:${mode.w}`)).size,
+    ).toBeGreaterThan(3);
+    expect(mappings.every((mode) => mode.subfloorProjectionActive)).toBe(false);
+  });
+
+  it("uses boundary-aware zero index modes for the neumann acoustic floor", () => {
+    const options = {
+      acousticScale: {
+        radiusMeters: 3,
+        soundSpeedMetersPerSecond: 1480,
+        subfloorPolicy: "project-subfundamental",
+      },
+      boundaryMode: "neumann",
+    };
+
+    expect(getCavityAcousticFloorHz(options)).toBeCloseTo(1480 / 6);
+    expect(resolveCavityModeFamilyForPitch(1480 / 6, options, 1)[0]).toMatchObject(
+      {
+        u: 0,
+        v: 0,
+        w: 1,
+        subfloorProjectionActive: false,
+      },
+    );
+  });
+
+  it("reports subfloor projection instead of silently pretending bass is resolved", () => {
+    const options = {
+      acousticScale: {
+        radiusMeters: 3,
+        soundSpeedMetersPerSecond: 1480,
+        subfloorPolicy: "project-subfundamental",
+      },
+      boundaryMode: "dirichlet",
+    };
+    const [mode] = resolveCavityModeFamilyForPitch(60, options, 1);
+
+    expect(getCavityAcousticFloorHz(options)).toBeGreaterThan(60);
+    expect(mode).toMatchObject({
+      u: 1,
+      v: 1,
+      w: 1,
+      subfloorProjectionActive: true,
+      subfloorPolicy: "project-subfundamental",
+    });
+    expect(mode.subfloorFrequencyHz).toBeCloseTo(getCavityAcousticFloorHz(options));
+  });
+
+  it("translates the retired subfloor policy name only at the cavity boundary", () => {
+    const options = {
+      acousticScale: {
+        radiusMeters: 3,
+        soundSpeedMetersPerSecond: 1480,
+        subfloorPolicy: "project-low-q",
+      },
+      boundaryMode: "dirichlet",
+    };
+    const [mode] = resolveCavityModeFamilyForPitch(60, options, 1);
+
+    expect(mode).toMatchObject({
+      subfloorProjectionActive: true,
+      subfloorPolicy: "project-subfundamental",
+    });
+  });
+});
+
 describe("getCavityModeFrequency", () => {
   it("returns the expected frequency for a known cavity triplet", () => {
     expect(getCavityModeFrequency(1, 2, 2, RADIUS)).toBeCloseTo(2220);
@@ -177,38 +255,5 @@ describe("solveCavityModeFamilyForPitch", () => {
     expect(solveCavityModeFamilyForPitch(0, RADIUS, 4)).toStrictEqual([]);
     expect(solveCavityModeFamilyForPitch(440, 0, 4)).toStrictEqual([]);
     expect(solveCavityModeFamilyForPitch(440, RADIUS, 0)).toStrictEqual([]);
-  });
-});
-
-describe("getLegacyAnalysisRadius", () => {
-  it("yields a legacy floor of approximately LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ for small radii", () => {
-    const legacyRadius = getLegacyAnalysisRadius(0.1);
-    expect(legacyRadius).toBeGreaterThan(0.1);
-    expect(getLegacyAnalysisFloorHz(0.1)).toBeCloseTo(
-      LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ,
-      1,
-    );
-  });
-
-  it("is a no-op when the physical floor is already at or below LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ", () => {
-    // radius large enough that physical floor < 180 Hz
-    const largeRadius = 10;
-    expect(getLegacyAnalysisRadius(largeRadius)).toBe(largeRadius);
-    expect(getMinimumCavityFrequency(largeRadius)).toBeLessThan(
-      LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ,
-    );
-  });
-
-  it("is a no-op when the physical floor equals exactly LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ", () => {
-    const exactRadius = getLegacyAnalysisRadius(0.1);
-    expect(getLegacyAnalysisRadius(exactRadius)).toBeCloseTo(exactRadius, 6);
-  });
-
-  it("clamps upward so the resulting legacy floor never exceeds LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ", () => {
-    for (const r of [0.01, 0.1, 0.5, 1, 2, 3]) {
-      expect(getLegacyAnalysisFloorHz(r)).toBeLessThanOrEqual(
-        LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ + 0.01,
-      );
-    }
   });
 });

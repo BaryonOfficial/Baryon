@@ -38,10 +38,10 @@ export {
   VISUALIZATION_METHODS,
 } from "./visualization/types.js";
 export {
-  RAYMARCH_FIELD_CACHE_OVERRIDE_MODES,
-  normalizeRaymarchFieldCacheOverride,
-  resolveRaymarchFieldCacheOverride,
-} from "./visualization/fieldEvaluation.js";
+  OBSERVATION_TRANSFER_REFERENCE,
+  deriveObservationTransfer,
+  deriveObservationTransferParameters,
+} from "./core/raymarch/observationTransfer.js";
 export { createVisualizationRuntime } from "./visualization/runtimeFactory.js";
 
 // Three
@@ -51,11 +51,8 @@ export * from "./three/loaders/setupLoaders.js";
 export {
   createAudioFeatureState,
   buildAudioFeatureFrame,
-  createAudioFeatureAnalyzer,
   createAudioFeatureEngine,
-  createNoopAudioFeatureAnalyzer,
   createNoopAudioFeatureEngine,
-  DEFAULT_FEATURE_ANALYSIS_SETTINGS,
 } from "./utils/audioFeatures.js";
 export { AudioControlsView } from "./react/AudioControlsView.jsx";
 export { useSharedAudioLogic } from "./react/useSharedAudioLogic.js";

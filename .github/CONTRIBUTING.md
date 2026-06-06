@@ -21,7 +21,7 @@ one-time step — all future PRs from your GitHub account will be auto-approved.
 
 ## Setup
 
-Prerequisites: Node.js `24.14.1` from [`.nvmrc`](../.nvmrc), `pnpm`, and Chrome or Edge for the primary WebGPU path.
+Prerequisites: Node.js `24` from [`.nvmrc`](../.nvmrc), `pnpm`, and Chrome or Edge for the primary WebGPU path.
 
 ```bash
 # Clone the repo (or your fork)
@@ -125,4 +125,4 @@ New GUI controls must be added through the shared control schema and documented 
 
 - **Questions:** [GitHub Discussions](https://github.com/BaryonOfficial/Baryon/discussions)
 - **Bugs:** [GitHub Issues](https://github.com/BaryonOfficial/Baryon/issues) — use the bug report template
-- **Security vulnerabilities:** email kyledcollins@proton.me privately (see [SECURITY.md](SECURITY.md))
+- **Security vulnerabilities:** email security@baryon.live privately (see [SECURITY.md](SECURITY.md))

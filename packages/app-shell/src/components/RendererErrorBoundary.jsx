@@ -1,7 +1,17 @@
 import { Component } from "react";
 
+/**
+ * @extends {Component<{
+ *   resetKey: string,
+ *   onError?: (error: unknown) => void,
+ *   children?: import("react").ReactNode,
+ * }, { hasError: boolean }>}
+ */
 export class RendererErrorBoundary extends Component {
-  state = { hasError: false };
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
 
   static getDerivedStateFromError() {
     return { hasError: true };

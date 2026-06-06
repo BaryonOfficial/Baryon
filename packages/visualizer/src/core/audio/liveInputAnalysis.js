@@ -113,22 +113,24 @@ export function normalizeResolvedLiveInputAnalysisClass(value) {
  */
 export function normalizeLiveInputAnalysisOverrides(overrides) {
   if (!overrides || typeof overrides !== "object" || Array.isArray(overrides)) {
-    return {};
+    return /** @type {Record<string, ResolvedLiveInputAnalysisClass>} */ ({});
   }
 
-  return Object.fromEntries(
-    Object.entries(overrides)
-      .map(([deviceId, analysisClass]) => [
-        deviceId,
-        normalizeLiveInputAnalysisClass(analysisClass),
-      ])
-      .filter(
-        ([deviceId, analysisClass]) =>
-          typeof deviceId === "string" &&
-          deviceId.length > 0 &&
-          analysisClass !== LIVE_INPUT_ANALYSIS_CLASSES.auto,
-      ),
-  );
+  /** @type {Record<string, ResolvedLiveInputAnalysisClass>} */
+  const normalizedOverrides = {};
+  for (const [deviceId, analysisClass] of Object.entries(overrides)) {
+    const normalizedAnalysisClass =
+      normalizeLiveInputAnalysisClass(analysisClass);
+    if (
+      typeof deviceId === "string" &&
+      deviceId.length > 0 &&
+      normalizedAnalysisClass !== LIVE_INPUT_ANALYSIS_CLASSES.auto
+    ) {
+      normalizedOverrides[deviceId] = normalizedAnalysisClass;
+    }
+  }
+
+  return normalizedOverrides;
 }
 
 export function isLikelyLineFeedDeviceLabel(label = "") {

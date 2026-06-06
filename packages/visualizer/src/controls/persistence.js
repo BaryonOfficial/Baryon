@@ -1,6 +1,7 @@
 import { CONTROL_STATUSES } from "./schema.js";
 import { normalizeLiveInputAcousticIntent } from "../core/audio/liveInputAnalysis.js";
 import { normalizePerformanceProfile } from "../render/outputProfilePolicy.js";
+import { normalizeVisualizationMethod } from "../visualization/types.js";
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -39,14 +40,6 @@ function normalizeLegacyReactivity(raw) {
     typeof beatSensitivity === "number"
   ) {
     next.motionAmount = clamp(beatSensitivity / 0.78, 0, 3);
-  }
-
-  const pulseDecayMs = raw.pulseDecayMs;
-  if (
-    !Object.prototype.hasOwnProperty.call(next, "structurePersistence") &&
-    typeof pulseDecayMs === "number"
-  ) {
-    next.structurePersistence = clamp(pulseDecayMs / 180, 0.2, 3);
   }
 
   if (raw.pulseEnabled === false) {
@@ -94,6 +87,82 @@ function normalizeLegacyPerformanceProfile(raw) {
   };
 }
 
+function normalizeLegacySpectralLight(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return raw;
+  }
+
+  const next = { ...raw };
+  if (raw.colorMode === "chromesthesia") {
+    next.colorMode = "spectral";
+  }
+
+  if (
+    !Object.prototype.hasOwnProperty.call(next, "spectralMix") &&
+    typeof raw.chromesthesiaMix === "number"
+  ) {
+    next.spectralMix = clamp(raw.chromesthesiaMix, 0, 1);
+  }
+
+  return next;
+}
+
+function normalizeLegacyRaymarchPresentation(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return raw;
+  }
+
+  const next = { ...raw };
+  delete next.contourSharpness;
+  return next;
+}
+
+function normalizeLegacyVisualizationMethod(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return raw;
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(raw, "visualizationMethod")) {
+    return raw;
+  }
+
+  return {
+    ...raw,
+    visualizationMethod: normalizeVisualizationMethod(raw.visualizationMethod),
+  };
+}
+
+function resolveDefaultControlValue(definitions, key, fallback) {
+  const definition = definitions.find((item) => item.key === key);
+  return definition?.defaultValue ?? fallback;
+}
+
+function hasPositiveNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+export function normalizeSpectralLightActivationControls(
+  controls,
+  definitions,
+) {
+  if (!controls || typeof controls !== "object" || Array.isArray(controls)) {
+    return controls;
+  }
+
+  if (controls.colorMode !== "spectral") {
+    return controls;
+  }
+
+  if (hasPositiveNumber(controls.spectralMix)) {
+    return controls;
+  }
+
+  return {
+    ...controls,
+    spectralMix: resolveDefaultControlValue(definitions, "spectralMix", 1),
+  };
+}
+
 /**
  * Serialize a control state object to a plain JSON-safe object.
  * Only live (non-debug) controls are included so that audit/dev settings
@@ -104,16 +173,21 @@ function normalizeLegacyPerformanceProfile(raw) {
  * @returns {Record<string, unknown>}
  */
 export function serializeControls(controls, definitions) {
-  return Object.fromEntries(
-    definitions
-      .filter((d) => d.status === CONTROL_STATUSES.live)
-      .map((d) => [
-        d.key,
-        d.key === "renderQualityPreset"
-          ? normalizePerformanceProfile(controls[d.key])
-          : controls[d.key],
-      ]),
-  );
+  /** @type {Record<string, unknown>} */
+  const serialized = {};
+
+  for (const definition of definitions) {
+    if (definition.status !== CONTROL_STATUSES.live) {
+      continue;
+    }
+
+    serialized[definition.key] =
+      definition.key === "renderQualityPreset"
+        ? normalizePerformanceProfile(controls[definition.key])
+        : controls[definition.key];
+  }
+
+  return serialized;
 }
 
 /**
@@ -131,8 +205,14 @@ export function deserializeControls(raw, definitions) {
   const result = Object.fromEntries(
     definitions.map((d) => [d.key, d.defaultValue]),
   );
-  const normalizedRaw = normalizeLegacyLiveInputAnalysis(
-    normalizeLegacyPerformanceProfile(normalizeLegacyReactivity(raw)),
+  const normalizedRaw = normalizeLegacyVisualizationMethod(
+    normalizeLegacySpectralLight(
+      normalizeLegacyRaymarchPresentation(
+        normalizeLegacyLiveInputAnalysis(
+          normalizeLegacyPerformanceProfile(normalizeLegacyReactivity(raw)),
+        ),
+      ),
+    ),
   );
   if (
     !normalizedRaw ||
@@ -152,7 +232,7 @@ export function deserializeControls(raw, definitions) {
       }
     }
   }
-  return result;
+  return normalizeSpectralLightActivationControls(result, definitions);
 }
 
 /**

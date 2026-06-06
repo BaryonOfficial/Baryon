@@ -1,5 +1,3 @@
-import { VISUALIZATION_METHODS } from "@baryon/visualizer/visualization/types";
-
 /** @typedef {"preview-local" | "external-synced"} CameraControlMode */
 
 export const CAMERA_CONTROL_MODES = Object.freeze({
@@ -30,6 +28,22 @@ function serializeCameraPoseForExport({ orbitControls, camera }) {
     up: resolveVector3(camera?.up, { x: 0, y: 1, z: 0 }),
     fov: resolveFiniteNumber(camera?.fov, 65),
   };
+}
+
+function applyCameraPoseToCamera(cameraPose, camera) {
+  camera.position?.set?.(
+    cameraPose.position?.x ?? 0,
+    cameraPose.position?.y ?? 0,
+    cameraPose.position?.z ?? 0,
+  );
+  camera.up?.set?.(
+    cameraPose.up?.x ?? 0,
+    cameraPose.up?.y ?? 1,
+    cameraPose.up?.z ?? 0,
+  );
+  if ("fov" in camera && Number.isFinite(cameraPose.fov)) {
+    camera.fov = /** @type {number} */ (cameraPose.fov);
+  }
 }
 
 /**
@@ -65,14 +79,32 @@ export function augmentFrameStateWithCameraSync(
   };
 }
 
-export function shouldMountOrbitControls(
-  visualizationMethod,
-  cameraControlMode,
-) {
-  return (
-    visualizationMethod !== VISUALIZATION_METHODS.cymatics2d &&
-    cameraControlMode !== CAMERA_CONTROL_MODES.externalSynced
-  );
+export function shouldMountOrbitControls(cameraControlMode) {
+  return cameraControlMode !== CAMERA_CONTROL_MODES.externalSynced;
+}
+
+export function commitOrbitControlsCameraPose(controls, applyPose) {
+  if (!controls) {
+    return;
+  }
+
+  const hasDampingToggle = "enableDamping" in controls;
+  if (hasDampingToggle) {
+    const previousEnableDamping = controls.enableDamping;
+
+    // three-stdlib keeps damping deltas in closure state; one undamped update
+    // drains that residue before the requested pose is saved as the new state.
+    controls.enableDamping = false;
+    try {
+      controls.update?.();
+    } finally {
+      controls.enableDamping = previousEnableDamping;
+    }
+    applyPose?.();
+  }
+
+  controls.update?.();
+  controls.saveState?.();
 }
 
 /**
@@ -93,6 +125,8 @@ export function shouldMountOrbitControls(
  * @param {{
  *   target?: { set?: ((x: number, y: number, z: number) => void) | undefined } | null,
  *   update?: (() => void) | undefined,
+ *   saveState?: (() => void) | undefined,
+ *   enableDamping?: boolean,
  * } | null} [controls]
  * @returns {boolean}
  */
@@ -101,27 +135,20 @@ export function applyExternalCameraPose(cameraPose, camera, controls = null) {
     return false;
   }
 
-  camera.position?.set?.(
-    cameraPose.position?.x ?? 0,
-    cameraPose.position?.y ?? 0,
-    cameraPose.position?.z ?? 0,
-  );
-  camera.up?.set?.(
-    cameraPose.up?.x ?? 0,
-    cameraPose.up?.y ?? 1,
-    cameraPose.up?.z ?? 0,
-  );
-  if ("fov" in camera && Number.isFinite(cameraPose.fov)) {
-    camera.fov = /** @type {number} */ (cameraPose.fov);
-  }
   if (controls?.target?.set) {
-    controls.target.set(
-      cameraPose.target?.x ?? 0,
-      cameraPose.target?.y ?? 0,
-      cameraPose.target?.z ?? 0,
-    );
-    controls.update?.();
+    const applyControlledPose = () => {
+      applyCameraPoseToCamera(cameraPose, camera);
+      controls.target.set(
+        cameraPose.target?.x ?? 0,
+        cameraPose.target?.y ?? 0,
+        cameraPose.target?.z ?? 0,
+      );
+    };
+
+    applyControlledPose();
+    commitOrbitControlsCameraPose(controls, applyControlledPose);
   } else {
+    applyCameraPoseToCamera(cameraPose, camera);
     camera.lookAt?.(
       cameraPose.target?.x ?? 0,
       cameraPose.target?.y ?? 0,

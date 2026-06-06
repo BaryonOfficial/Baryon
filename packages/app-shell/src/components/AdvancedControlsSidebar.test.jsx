@@ -1,6 +1,7 @@
 /* @vitest-environment jsdom */
 
 import React from "react";
+import { readFileSync } from "node:fs";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -42,7 +43,7 @@ describe("AdvancedControlsSidebar info links", () => {
     }
   });
 
-  function renderSidebar() {
+  function renderSidebar(overrides = {}) {
     act(() => {
       root.render(
         <AdvancedControlsSidebar
@@ -60,10 +61,29 @@ describe("AdvancedControlsSidebar info links", () => {
           deletePreset={() => {}}
           onClose={() => {}}
           dockWidth="360px"
+          {...overrides}
         />,
       );
     });
   }
+
+  it("does not attach React wheel handlers inside the scroll panel", () => {
+    const source = readFileSync(
+      "src/components/AdvancedControlsSidebar.jsx",
+      "utf8",
+    );
+
+    expect(source).not.toContain("onWheel=");
+  });
+
+  it("does not reposition help tooltips from capture-phase scroll listeners", () => {
+    const source = readFileSync(
+      "src/components/AdvancedControlsSidebar.jsx",
+      "utf8",
+    );
+
+    expect(source).not.toContain('addEventListener("scroll"');
+  });
 
   it("renders source, license, and social profile links", () => {
     renderSidebar();
@@ -90,5 +110,308 @@ describe("AdvancedControlsSidebar info links", () => {
     ]);
 
     expect(container.querySelector(".baryon-controls-footer img")).toBeNull();
+  });
+
+  it("gives the icon-only close button a specific accessible name", () => {
+    renderSidebar();
+
+    const closeButton = container.querySelector(
+      ".baryon-controls-close-button",
+    );
+
+    expect(closeButton?.getAttribute("aria-label")).toBe(
+      "Close advanced controls",
+    );
+    expect(closeButton?.getAttribute("title")).toBe("Close advanced controls");
+  });
+
+  it("does not offer deletion when no user preset is selected", () => {
+    const deletePreset = vi.fn();
+
+    renderSidebar({
+      presets: [],
+      selectedPresetName: "",
+      deletePreset,
+    });
+
+    const deleteButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Delete selected",
+    );
+
+    expect(deleteButton?.disabled).toBe(true);
+    deleteButton?.click();
+    expect(deletePreset).not.toHaveBeenCalled();
+  });
+
+  it("renders only the placeholder option when there are no user presets", () => {
+    renderSidebar({ presets: [] });
+
+    const select = container.querySelector('select[aria-label="Load preset"]');
+    expect(select).toBeInstanceOf(HTMLSelectElement);
+    expect(Array.from(select.options).map((option) => option.value)).toEqual([
+      "",
+    ]);
+  });
+
+  it("adds extra separation between preset name and load controls", () => {
+    renderSidebar();
+
+    const loadField = container.querySelector(
+      ".baryon-controls-presets-load-field",
+    );
+
+    expect(loadField).not.toBeNull();
+    expect(window.getComputedStyle(loadField).marginTop).toBe("0.22rem");
+  });
+
+  it("does not let sidebar scrolling step focused numeric controls", () => {
+    const updateControl = vi.fn();
+    renderSidebar({
+      folderGroups: [
+        {
+          title: "Shape",
+          expanded: true,
+          controls: [
+            {
+              key: "densityGain",
+              label: "Density",
+              title: "Density",
+              defaultValue: 3,
+              binding: { min: 0.1, max: 4, step: 0.01 },
+            },
+          ],
+        },
+      ],
+      controlsState: { densityGain: 2.85 },
+      updateControl,
+    });
+
+    const input = container.querySelector('input[aria-label="Density value"]');
+    expect(input).toBeInstanceOf(HTMLInputElement);
+    input.focus();
+
+    const wheelEvent = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      deltaY: 320,
+    });
+    const dispatchResult = input.dispatchEvent(wheelEvent);
+
+    expect(dispatchResult).toBe(true);
+    expect(wheelEvent.defaultPrevented).toBe(false);
+    expect(document.activeElement).not.toBe(input);
+    expect(input.value).toBe("2.85");
+    expect(updateControl).not.toHaveBeenCalled();
+  });
+
+  it("marks sidebar pointer entry as UI interaction without scroll handlers", () => {
+    const interactions = [];
+    const handleInteraction = (event) => {
+      interactions.push(event.detail);
+    };
+    window.addEventListener("__baryon-ui-interaction", handleInteraction);
+    try {
+      renderSidebar({
+        folderGroups: [
+          {
+            title: "Shape",
+            expanded: true,
+            controls: [
+              {
+                key: "densityGain",
+                label: "Density",
+                title: "Density",
+                defaultValue: 3,
+                binding: { min: 0.1, max: 4, step: 0.01 },
+              },
+            ],
+          },
+        ],
+        controlsState: { densityGain: 2.85 },
+      });
+
+      const scrollContainer = container.querySelector(
+        ".baryon-controls-scroll",
+      );
+      expect(scrollContainer).toBeInstanceOf(HTMLDivElement);
+      scrollContainer.dispatchEvent(
+        new PointerEvent("pointerover", {
+          bubbles: true,
+        }),
+      );
+
+      expect(interactions).toContainEqual({
+        source: "advanced-controls",
+        kind: "hover",
+      });
+    } finally {
+      window.removeEventListener("__baryon-ui-interaction", handleInteraction);
+    }
+  });
+
+  it("marks sidebar wheel scrolling as passive UI interaction", () => {
+    const interactions = [];
+    const handleInteraction = (event) => {
+      interactions.push(event.detail);
+    };
+    window.addEventListener("__baryon-ui-interaction", handleInteraction);
+    try {
+      renderSidebar({
+        folderGroups: [
+          {
+            title: "Shape",
+            expanded: true,
+            controls: [
+              {
+                key: "densityGain",
+                label: "Density",
+                title: "Density",
+                defaultValue: 3,
+                binding: { min: 0.1, max: 4, step: 0.01 },
+              },
+            ],
+          },
+        ],
+        controlsState: { densityGain: 2.85 },
+      });
+
+      const scrollContainer = container.querySelector(
+        ".baryon-controls-scroll",
+      );
+      expect(scrollContainer).toBeInstanceOf(HTMLDivElement);
+
+      const wheelEvent = new WheelEvent("wheel", {
+        bubbles: true,
+        cancelable: true,
+        deltaY: 320,
+      });
+      const dispatchResult = scrollContainer.dispatchEvent(wheelEvent);
+
+      expect(dispatchResult).toBe(true);
+      expect(wheelEvent.defaultPrevented).toBe(false);
+      expect(interactions).toContainEqual({
+        source: "advanced-controls",
+        kind: "scroll",
+      });
+    } finally {
+      window.removeEventListener("__baryon-ui-interaction", handleInteraction);
+    }
+  });
+
+  it("coalesces bursty sidebar wheel interaction markers", () => {
+    const interactions = [];
+    const handleInteraction = (event) => {
+      interactions.push(event.detail);
+    };
+    window.addEventListener("__baryon-ui-interaction", handleInteraction);
+    try {
+      renderSidebar({
+        folderGroups: [
+          {
+            title: "Shape",
+            expanded: true,
+            controls: [
+              {
+                key: "densityGain",
+                label: "Density",
+                title: "Density",
+                defaultValue: 3,
+                binding: { min: 0.1, max: 4, step: 0.01 },
+              },
+            ],
+          },
+        ],
+        controlsState: { densityGain: 2.85 },
+      });
+
+      const scrollContainer = container.querySelector(
+        ".baryon-controls-scroll",
+      );
+      expect(scrollContainer).toBeInstanceOf(HTMLDivElement);
+
+      for (const deltaY of [320, -320, 320]) {
+        scrollContainer.dispatchEvent(
+          new WheelEvent("wheel", {
+            bubbles: true,
+            cancelable: true,
+            deltaY,
+          }),
+        );
+      }
+
+      expect(
+        interactions.filter((detail) => detail.kind === "scroll"),
+      ).toHaveLength(1);
+    } finally {
+      window.removeEventListener("__baryon-ui-interaction", handleInteraction);
+    }
+  });
+
+  it("does not let sidebar scrolling step focused slider controls", () => {
+    const updateControl = vi.fn();
+    renderSidebar({
+      folderGroups: [
+        {
+          title: "Shape",
+          expanded: true,
+          controls: [
+            {
+              key: "densityGain",
+              label: "Density",
+              title: "Density",
+              defaultValue: 3,
+              binding: { min: 0.1, max: 4, step: 0.01 },
+            },
+          ],
+        },
+      ],
+      controlsState: { densityGain: 2.85 },
+      updateControl,
+    });
+
+    const slider = container.querySelector(
+      'input[aria-label="Density slider"]',
+    );
+    expect(slider).toBeInstanceOf(HTMLInputElement);
+    slider.focus();
+
+    const wheelEvent = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      deltaY: 320,
+    });
+    const dispatchResult = slider.dispatchEvent(wheelEvent);
+
+    expect(dispatchResult).toBe(true);
+    expect(wheelEvent.defaultPrevented).toBe(false);
+    expect(document.activeElement).not.toBe(slider);
+    expect(slider.value).toBe("2.85");
+    expect(updateControl).not.toHaveBeenCalled();
+  });
+
+  it("does not let sidebar scrolling change a focused select control", () => {
+    const loadPreset = vi.fn();
+    renderSidebar({
+      presets: [{ name: "Saved Haze", controls: {} }],
+      selectedPresetName: "Saved Haze",
+      loadPreset,
+    });
+
+    const select = container.querySelector('select[aria-label="Load preset"]');
+    expect(select).toBeInstanceOf(HTMLSelectElement);
+    select.focus();
+
+    const wheelEvent = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      deltaY: 320,
+    });
+    const dispatchResult = select.dispatchEvent(wheelEvent);
+
+    expect(dispatchResult).toBe(true);
+    expect(wheelEvent.defaultPrevented).toBe(false);
+    expect(document.activeElement).not.toBe(select);
+    expect(select.value).toBe("Saved Haze");
+    expect(loadPreset).not.toHaveBeenCalled();
   });
 });

@@ -48,7 +48,9 @@ describe("LiveInputStatusPanel", () => {
       ],
       selectedDevice: "loopback-1",
       selectedSystemDevice: "loopback-1",
+      selectedLiveDeviceId: "loopback-1",
       selectedLiveInputDeviceKind: "system",
+      selectedLiveInputDeviceKindOverride: null,
       liveInputAcousticIntent: "ambient",
       setLiveInputAcousticIntent: vi.fn(),
       setSelectedSystemDevice: vi.fn(),
@@ -83,12 +85,13 @@ describe("LiveInputStatusPanel", () => {
     expect(container.textContent).not.toContain("Listening");
   });
 
-  it("keeps Go Live enabled when canonical runtime status still owns the selected device", () => {
+  it("keeps Go Live enabled when canonical audio context owns the selected device", () => {
     renderPanel(
       {
         audioDevices: [],
         selectedDevice: null,
         selectedSystemDevice: null,
+        selectedLiveDeviceId: "loopback-1",
         liveInputRuntimeStatus: {
           active: false,
           phase: "idle",
@@ -108,7 +111,7 @@ describe("LiveInputStatusPanel", () => {
     expect(liveButton?.disabled).toBe(false);
   });
 
-  it("seeds the canonical runtime-selected device before Go Live when local selection is empty", async () => {
+  it("seeds the canonical context-selected device before Go Live when local selection is empty", async () => {
     const setSelectedSystemDevice = vi.fn();
     const handleSystemToggle = vi.fn();
     renderPanel(
@@ -116,6 +119,7 @@ describe("LiveInputStatusPanel", () => {
         audioDevices: [],
         selectedDevice: null,
         selectedSystemDevice: null,
+        selectedLiveDeviceId: "loopback-1",
         setSelectedSystemDevice,
         handleSystemToggle,
         liveInputRuntimeStatus: {
@@ -184,6 +188,7 @@ describe("LiveInputStatusPanel", () => {
       ],
       selectedDevice: "mic-1",
       selectedSystemDevice: "mic-1",
+      selectedLiveDeviceId: "mic-1",
     });
 
     const intentSelect = /** @type {HTMLSelectElement | null} */ (
@@ -215,5 +220,21 @@ describe("LiveInputStatusPanel", () => {
         '[data-testid="live-input-acoustic-intent-select"]',
       ),
     ).toBeNull();
+  });
+
+  it("renders manual device type from the audio context owner", () => {
+    renderPanel({
+      selectedLiveInputDeviceKind: "live",
+      selectedLiveInputDeviceKindOverride: "live",
+    });
+
+    const typeSelect = /** @type {HTMLSelectElement | null} */ (
+      container.querySelector('[data-testid="live-input-device-type-select"]')
+    );
+
+    expect(typeSelect).not.toBeNull();
+    expect(typeSelect?.value).toBe("live");
+    expect(container.textContent).toContain("manual");
+    expect(container.textContent).toContain("Acoustic Mic");
   });
 });

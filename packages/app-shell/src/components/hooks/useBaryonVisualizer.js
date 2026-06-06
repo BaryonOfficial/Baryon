@@ -1,21 +1,41 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { resolveRaymarchFieldCacheOverride } from "@baryon/visualizer";
-import { getRenderQualityProfileKey } from "@baryon/visualizer/render/outputPipeline";
+import {
+  advanceRenderOutputTemporalHistoryBypass,
+  consumeRenderOutputVisualIdle,
+  getRenderOutputSmaaGraphEnabled,
+  getRenderOutputTemporalHistoryGraphEnabled,
+  getRenderQualityProfileKey,
+  markRenderOutputContentChange,
+  syncRenderOutputNodeTopology,
+} from "@baryon/visualizer/render/outputPipeline";
 import {
   applyAudioControls,
   applySceneControls,
 } from "@baryon/visualizer/controls/runtime";
-import { DEFAULT_VISUALIZATION_METHOD } from "@baryon/visualizer/visualization/types";
+import {
+  DEFAULT_VISUALIZATION_METHOD,
+  usesRaymarchVolumePipeline,
+} from "@baryon/visualizer/visualization/types";
 import { getDefaultAudioSession } from "@baryon/visualizer/audio";
 import { RENDER_DEFAULTS } from "@baryon/visualizer/defaults";
 import { DEVTOOLS_ENABLED } from "../../devtools/config.js";
 import {
+  BARYON_UI_INTERACTION_EVENT,
+  UI_INTERACTION_ADAPTIVE_SUPPRESSION_MS,
+} from "../uiInteractionEvents.js";
+import {
   markBaryonTestRuntimeReady,
   resetBaryonTestReady,
 } from "../../devtools/testReady.js";
-import { shouldSkipChromesthesiaStaticColorInvalidation } from "./controlInvalidation.js";
+import {
+  createTailDiagnosticsRecorder,
+  installTailDiagnosticsWindowApi,
+  isTailDiagnosticsRecorderActive,
+  recordTailDiagnosticsSample,
+} from "./tailDiagnostics.js";
+import { shouldSkipSpectralStaticColorInvalidation } from "./controlInvalidation.js";
 import {
   clearAdaptiveRaymarchResumeState,
   maybePublishRuntimePerfSnapshot,
@@ -23,7 +43,7 @@ import {
   createRuntimeDiagnostics,
   recordRuntimePerfSample,
   shouldRenderExternalFrame,
-  shouldPreservePausedFrameOnControlsChange,
+  updateObservationTransferRenderDiagnostics,
 } from "./baryonVisualizerRuntimeState.js";
 import { createLiveInputRuntimeStatus } from "../../context/liveInputRuntimeStatus.js";
 import { createCaptureOutputSession } from "@baryon/visualizer/render/outputPipeline";
@@ -31,23 +51,36 @@ import {
   applyCachedControlSnapshots,
   applyReactiveBloomState,
   getPlaybackDiagnosticDpr,
-  getEffectiveAdaptiveRenderScale,
+  getRenderTargetPixelRatio,
+  getEffectiveRenderScale,
   publishPerformanceHudSnapshot,
   publishDevtoolsSnapshots,
+  applyLiveInputRenderIntent,
+  finalizeTerminalVisualIdleState,
   resolveFeatureFrame,
+  shouldBypassTemporalHistoryForRaymarchFrame,
   syncLiveInputRuntimeStatus,
+  updateModalEnvelopeDiagnostics,
+  updateModalFreshnessDiagnostics,
   updateAdaptiveRaymarchStepBudget,
   updateRendererDiagnostics,
+  syncRenderSurfacePixelRatio,
+  syncUploadedRenderQuantities,
 } from "./baryonVisualizerRenderLoop.js";
 import { useVisualizationRuntimeLifecycle } from "./useVisualizationRuntimeLifecycle.js";
 import { getSourceAuthoritativeClock } from "./externalFrameClock.js";
-
-function resolveFieldCacheOverrideControls(input, fallbackControls) {
-  return input?.detail ?? input ?? fallbackControls;
-}
+import { createRenderCommandQueue } from "./renderCommandQueue.js";
 
 function clearCachedControlsSnapshot(cachedControlSnapshotsRef) {
   cachedControlSnapshotsRef.current.controlsSnapshot = null;
+}
+
+function clearPausedRenderFrameCaches(frameCacheRefs) {
+  frameCacheRefs.lastActiveFrameRef.current = null;
+  frameCacheRefs.lastIdleFrameRef.current = null;
+  if (frameCacheRefs.pausedFileFrameRef) {
+    frameCacheRefs.pausedFileFrameRef.current = null;
+  }
 }
 
 function getWallTimeMs() {
@@ -91,22 +124,27 @@ export function useBaryonVisualizer({
   onStageRender = null,
   suppressRender = false,
   enableControlEventSync = true,
+  cameraRenderKey = null,
 }) {
   const { invalidate } = useThree();
   const audioRef = useRef(getDefaultAudioSession());
+  const renderControlsRef = useRef(
+    controlsRef?.current ? { ...controlsRef.current } : {},
+  );
+  const renderCommandQueueRef = useRef(createRenderCommandQueue());
   const outputSessionRef = useRef(null);
   const outputCaptureInFlightRef = useRef(false);
+  const tailDiagnosticsRef = useRef(createTailDiagnosticsRecorder());
   const lastAppliedExternalFrameSequenceRef = useRef(null);
   const performanceHudStateRef = useRef({
     lastPublishedAtMs: Number.NEGATIVE_INFINITY,
-    wasVisible: false,
+    wasPublishing: false,
   });
   const {
     points,
     runtimeRef,
     runtimeStateRef,
     audioFeatureRef,
-    audioFeatureAnalyzerRef,
     audioFeatureEngineRef,
     runtimeDiagnosticsRef,
     frameCacheRefs,
@@ -118,12 +156,11 @@ export function useBaryonVisualizer({
   } = useVisualizationRuntimeLifecycle({
     audioRef,
     baryonGeometry,
-    controlsRef,
+    controlsRef: renderControlsRef,
     visualizationMethod,
     setIsEngineReady,
     setLiveInputRuntimeStatus,
   });
-  const { lastActiveFrameRef, lastIdleFrameRef } = frameCacheRefs;
   const {
     controlVersionRef,
     appliedControlVersionRef,
@@ -146,13 +183,14 @@ export function useBaryonVisualizer({
     runtimeRef,
     runtimeStateRef,
     audioFeatureRef,
-    audioFeatureAnalyzerRef,
     audioFeatureEngineRef,
-    controlsRef,
+    controlsRef: renderControlsRef,
   };
   const renderProfileRef = useRef(renderProfile);
   renderProfileRef.current = renderProfile;
   const renderProfileKeyRef = useRef(getRenderQualityProfileKey(renderProfile));
+  const uiInteractionUntilMsRef = useRef(0);
+  const latestUiInteractionRef = useRef({ source: null, kind: null });
   const lastObservedLiveControlSignalVersionRef = useRef(
     liveControlSignalRef?.current?.version ?? 0,
   );
@@ -160,6 +198,7 @@ export function useBaryonVisualizer({
 
   useEffect(() => {
     const audio = audioRef.current;
+    const renderCommandQueue = renderCommandQueueRef.current;
 
     audio.attach(camera);
     gl.setClearColor(new THREE.Color(0x000000), 0);
@@ -174,10 +213,11 @@ export function useBaryonVisualizer({
       runtimeDiagnosticsRef.current = createRuntimeDiagnostics();
       performanceHudStateRef.current = {
         lastPublishedAtMs: Number.NEGATIVE_INFINITY,
-        wasVisible: false,
+        wasPublishing: false,
       };
       lastAudioIssueSignatureRef.current = null;
       clearCachedControlsSnapshot(cachedControlSnapshotsRef);
+      renderCommandQueue.clear();
       onPerformanceHudSnapshotChange?.(null);
       onAuditSnapshotChange?.({
         enabled: false,
@@ -191,7 +231,6 @@ export function useBaryonVisualizer({
       if (DEVTOOLS_ENABLED && typeof window !== "undefined") {
         delete window.__baryonAuditSnapshot;
         delete window.__baryonControlState;
-        delete window.__baryonFieldCacheOverride;
       }
       resetBaryonTestReady();
     };
@@ -216,6 +255,60 @@ export function useBaryonVisualizer({
     forcedExternalRenderPendingRef.current = true;
     invalidate();
   }, [adaptiveResetNonce, invalidate, runtimeStateRef]);
+
+  useEffect(() => {
+    if (cameraRenderKey == null) {
+      return;
+    }
+
+    forcedExternalRenderPendingRef.current = true;
+    invalidate();
+  }, [cameraRenderKey, invalidate]);
+
+  useEffect(() => {
+    return installTailDiagnosticsWindowApi({
+      recorder: tailDiagnosticsRef.current,
+      getNowMs: getWallTimeMs,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const handlePerfMetricsReset = () => {
+      runtimeDiagnosticsRef.current = createRuntimeDiagnostics();
+      performanceHudStateRef.current = {
+        lastPublishedAtMs: Number.NEGATIVE_INFINITY,
+        wasPublishing: false,
+      };
+      lastAudioIssueSignatureRef.current = null;
+      uiInteractionUntilMsRef.current = 0;
+      latestUiInteractionRef.current = { source: null, kind: null };
+      clearFrameCache(frameCacheRefs);
+      audioFeatureEngineRef.current?.resetMetrics?.("dev-perf-probe-reset");
+      delete window.__baryonPerfMetrics;
+      onPerformanceHudSnapshotChange?.(null);
+    };
+
+    window.addEventListener(
+      "__baryon-reset-perf-metrics",
+      handlePerfMetricsReset,
+    );
+    return () => {
+      window.removeEventListener(
+        "__baryon-reset-perf-metrics",
+        handlePerfMetricsReset,
+      );
+    };
+  }, [
+    audioFeatureEngineRef,
+    frameCacheRefs,
+    lastAudioIssueSignatureRef,
+    onPerformanceHudSnapshotChange,
+    runtimeDiagnosticsRef,
+  ]);
 
   useEffect(() => {
     const nextRenderProfileKey = getRenderQualityProfileKey(renderProfile);
@@ -265,36 +358,30 @@ export function useBaryonVisualizer({
   }, [runtimeDiagnosticsRef]);
 
   useEffect(() => {
-    if (!enableControlEventSync) {
-      return undefined;
-    }
-
     if (typeof window === "undefined") {
       return undefined;
     }
 
-    const syncFieldCacheOverride = (input = controlsRef.current) => {
-      const nextControls = resolveFieldCacheOverrideControls(
-        input,
-        controlsRef.current,
+    const handleUiInteraction = (event) => {
+      const nowMs = getWallTimeMs();
+      uiInteractionUntilMsRef.current = Math.max(
+        uiInteractionUntilMsRef.current,
+        nowMs + UI_INTERACTION_ADAPTIVE_SUPPRESSION_MS,
       );
-      window.__baryonFieldCacheOverride = resolveRaymarchFieldCacheOverride(
-        nextControls?.fieldCacheOverride,
-      );
+      latestUiInteractionRef.current = {
+        source: event?.detail?.source ?? null,
+        kind: event?.detail?.kind ?? null,
+      };
     };
 
-    syncFieldCacheOverride();
-    window.addEventListener("__baryon-controls-change", syncFieldCacheOverride);
+    window.addEventListener(BARYON_UI_INTERACTION_EVENT, handleUiInteraction);
     return () => {
       window.removeEventListener(
-        "__baryon-controls-change",
-        syncFieldCacheOverride,
+        BARYON_UI_INTERACTION_EVENT,
+        handleUiInteraction,
       );
-      if (DEVTOOLS_ENABLED) {
-        delete window.__baryonFieldCacheOverride;
-      }
     };
-  }, [controlsRef, enableControlEventSync]);
+  }, []);
 
   useEffect(() => {
     if (!enableControlEventSync) {
@@ -333,11 +420,10 @@ export function useBaryonVisualizer({
     (nextControls, { clearPausedFrameCache = false } = {}) => {
       const previousControls =
         cachedControlSnapshotsRef.current.controlsSnapshot;
-      const shouldSkipInvalidation =
-        shouldSkipChromesthesiaStaticColorInvalidation(
-          previousControls,
-          nextControls,
-        );
+      const shouldSkipInvalidation = shouldSkipSpectralStaticColorInvalidation(
+        previousControls,
+        nextControls,
+      );
       cachedControlSnapshotsRef.current.controlsSnapshot = nextControls
         ? { ...nextControls }
         : null;
@@ -349,14 +435,7 @@ export function useBaryonVisualizer({
       controlVersionRef.current += 1;
       appliedControlVersionRef.current = -1;
       if (clearPausedFrameCache) {
-        const preservePausedFrame = shouldPreservePausedFrameOnControlsChange(
-          previousControls,
-          nextControls,
-        );
-        if (!preservePausedFrame) {
-          lastActiveFrameRef.current = null;
-          lastIdleFrameRef.current = null;
-        }
+        clearPausedRenderFrameCaches(frameCacheRefs);
       }
       return true;
     },
@@ -364,8 +443,7 @@ export function useBaryonVisualizer({
       appliedControlVersionRef,
       cachedControlSnapshotsRef,
       controlVersionRef,
-      lastActiveFrameRef,
-      lastIdleFrameRef,
+      frameCacheRefs,
     ],
   );
 
@@ -377,10 +455,12 @@ export function useBaryonVisualizer({
       return;
     }
 
-    applyControlInvalidation(controlsRef.current, {
+    renderCommandQueueRef.current.enqueueControlsChanged(controlsRef.current, {
       clearPausedFrameCache: true,
+      source: "structural-version",
     });
-  }, [applyControlInvalidation, structuralControlVersion, controlsRef]);
+    invalidate();
+  }, [structuralControlVersion, controlsRef, invalidate]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -388,9 +468,14 @@ export function useBaryonVisualizer({
     }
 
     const handleControlsChange = (event) => {
-      applyControlInvalidation(event?.detail ?? controlsRef.current, {
-        clearPausedFrameCache: true,
-      });
+      renderCommandQueueRef.current.enqueueControlsChanged(
+        event?.detail ?? controlsRef.current,
+        {
+          clearPausedFrameCache: true,
+          source: "controls-change",
+        },
+      );
+      invalidate();
     };
 
     window.addEventListener("__baryon-controls-change", handleControlsChange);
@@ -400,9 +485,18 @@ export function useBaryonVisualizer({
         handleControlsChange,
       );
     };
-  }, [applyControlInvalidation, controlsRef]);
+  }, [controlsRef, invalidate]);
 
   useFrame((state, rfDelta) => {
+    const pendingControlsCommand =
+      renderCommandQueueRef.current.drainControlsChanged();
+    if (pendingControlsCommand) {
+      renderControlsRef.current = pendingControlsCommand.controls;
+      applyControlInvalidation(renderControlsRef.current, {
+        clearPausedFrameCache: pendingControlsCommand.clearPausedFrameCache,
+      });
+    }
+
     const pipeline = renderLoopContext.ensurePipeline();
     const runtime = renderLoopContext.runtimeRef.current;
     const runtimeState = renderLoopContext.runtimeStateRef.current;
@@ -413,6 +507,11 @@ export function useBaryonVisualizer({
     }
 
     const controls = renderLoopContext.controlsRef.current;
+    const tailDiagnosticsActive = isTailDiagnosticsRecorderActive(
+      tailDiagnosticsRef.current,
+    );
+    runtimeState.renderProbeEnabled =
+      controls.auditEnabled === true || tailDiagnosticsActive;
     const nextLiveControlSignalVersion =
       liveControlSignalRef?.current?.version ?? 0;
     if (
@@ -443,7 +542,7 @@ export function useBaryonVisualizer({
       fallbackClockSnapshot,
     });
     const requestedRenderScale = renderProfileRef.current?.renderScale ?? 1;
-    const currentEffectiveRenderScale = getEffectiveAdaptiveRenderScale(
+    const currentEffectiveRenderScale = getEffectiveRenderScale(
       runtimeDiagnosticsRef.current,
       requestedRenderScale,
     );
@@ -459,30 +558,46 @@ export function useBaryonVisualizer({
         renderLoopRefs,
       },
       {
-        getTargetDpr: () => basePixelRatio ?? getPlaybackDiagnosticDpr(),
+        getTargetDpr: () =>
+          getRenderTargetPixelRatio(
+            renderProfileRef.current?.qualityPreset,
+            basePixelRatio,
+          ),
         renderScale: currentEffectiveRenderScale,
       },
     );
-    if (controls.performanceHudEnabled) {
+    const uiInteractionActive =
+      uiInteractionUntilMsRef.current > getWallTimeMs();
+    if (runtimeDiagnostics.uiInteraction) {
+      runtimeDiagnostics.uiInteraction.active = uiInteractionActive;
+      runtimeDiagnostics.uiInteraction.holdUntilWallTimeMs =
+        uiInteractionUntilMsRef.current;
+      runtimeDiagnostics.uiInteraction.lastSource =
+        latestUiInteractionRef.current.source;
+      runtimeDiagnostics.uiInteraction.lastKind =
+        latestUiInteractionRef.current.kind;
+    }
+    const shouldPublishHudSnapshot =
+      controls.performanceHudEnabled || controls.auditEnabled;
+    if (shouldPublishHudSnapshot) {
       publishPerformanceHudSnapshot({
         runtimeDiagnostics,
         onPerformanceHudSnapshotChange,
         performanceHudState: performanceHudStateRef.current,
       });
-      performanceHudStateRef.current.wasVisible = true;
-    } else if (performanceHudStateRef.current.wasVisible) {
-      performanceHudStateRef.current.wasVisible = false;
+      performanceHudStateRef.current.wasPublishing = true;
+    } else if (performanceHudStateRef.current.wasPublishing) {
+      performanceHudStateRef.current.wasPublishing = false;
       performanceHudStateRef.current.lastPublishedAtMs =
         Number.NEGATIVE_INFINITY;
       onPerformanceHudSnapshotChange?.(null);
     }
-    const chromesthesiaEnabled =
-      controls.colorMode === "chromesthesia" &&
-      (controls.chromesthesiaMix ?? RENDER_DEFAULTS.chromesthesiaMix) > 0;
+    const spectralLightEnabled =
+      controls.colorMode === "spectral" &&
+      (controls.spectralMix ?? RENDER_DEFAULTS.spectralMix) > 0;
     const applyCachedControlSnapshotsStartedAt = getWallTimeMs();
     const controlSnapshots = applyCachedControlSnapshots({
       controls,
-      runtime,
       runtimeState,
       featureState,
       gl: renderLoopContext.gl,
@@ -514,7 +629,7 @@ export function useBaryonVisualizer({
     ) {
       return;
     }
-    const { featureFrame, effectiveFrame } = externalFrameState?.featureFrame
+    const resolvedFrame = externalFrameState?.featureFrame
       ? {
           featureFrame: externalFrameState.featureFrame,
           effectiveFrame: externalFrameState.featureFrame,
@@ -522,7 +637,6 @@ export function useBaryonVisualizer({
       : resolveFeatureFrame({
           audio,
           featureState,
-          featureAnalyzer: renderLoopContext.audioFeatureAnalyzerRef.current,
           featureEngine: renderLoopContext.audioFeatureEngineRef.current,
           runtimeDiagnostics,
           runtimeState,
@@ -531,12 +645,30 @@ export function useBaryonVisualizer({
           time,
           clockMode,
           renderLoopRefs,
-          chromesthesiaEnabled,
+          spectralLightEnabled,
         });
+    const featureFrame = applyLiveInputRenderIntent(
+      resolvedFrame.featureFrame,
+      {
+        status,
+        liveInputUiState,
+        liveControlSignal: liveControlSignalRef?.current,
+      },
+    );
+    const effectiveFrame = applyLiveInputRenderIntent(
+      resolvedFrame.effectiveFrame,
+      {
+        status,
+        liveInputUiState,
+        liveControlSignal: liveControlSignalRef?.current,
+      },
+    );
 
     if (!featureFrame || !effectiveFrame) {
       return;
     }
+
+    updateModalFreshnessDiagnostics(runtimeDiagnostics, effectiveFrame);
 
     const effectiveRaymarchSteps = updateAdaptiveRaymarchStepBudget({
       controls,
@@ -547,6 +679,16 @@ export function useBaryonVisualizer({
       status,
       runtimeDiagnostics,
     });
+    syncRenderSurfacePixelRatio({
+      gl: renderLoopContext.gl,
+      renderLoopRefs,
+      runtimeDiagnostics,
+      renderProfile: renderProfileRef.current,
+      controls,
+      status,
+      requestedRenderScale,
+      basePixelRatio,
+    });
 
     const bloomGovernorAllowed =
       runtimeState?.performanceGovernor?.bloomAllowed ?? true;
@@ -556,7 +698,7 @@ export function useBaryonVisualizer({
       bloomGovernorAllowed,
     );
     if (runtimeDiagnostics?.render) {
-      const effectiveRenderScale = getEffectiveAdaptiveRenderScale(
+      const effectiveRenderScale = getEffectiveRenderScale(
         runtimeDiagnostics,
         requestedRenderScale,
       );
@@ -576,10 +718,11 @@ export function useBaryonVisualizer({
         Math.round(controls.raymarchSteps ?? 0);
       runtimeDiagnostics.render.effectiveRaymarchSteps =
         runtimeState?.effectiveRaymarchSteps ?? effectiveRaymarchSteps;
-      runtimeDiagnostics.render.raymarchStepBudget =
-        runtime.method === "raymarch"
-          ? runtimeDiagnostics.render.effectiveRaymarchSteps
-          : 0;
+      runtimeDiagnostics.render.raymarchStepBudget = usesRaymarchVolumePipeline(
+        runtime.method,
+      )
+        ? runtimeDiagnostics.render.effectiveRaymarchSteps
+        : 0;
       runtimeDiagnostics.render.adaptiveRaymarchActive = Boolean(
         runtimeDiagnostics.adaptiveRaymarch?.adaptiveRaymarchActive,
       );
@@ -591,14 +734,11 @@ export function useBaryonVisualizer({
         runtimeDiagnostics.adaptiveRaymarch?.targetFps ?? 60;
       runtimeDiagnostics.render.targetFrameTimeMs =
         runtimeDiagnostics.adaptiveRaymarch?.targetFrameTimeMs ?? 1000 / 60;
-      runtimeDiagnostics.render.activeBackboneModeCount =
-        effectiveFrame?.activeBackboneModeCount ?? 0;
-      runtimeDiagnostics.render.activeDetailModeCount =
-        effectiveFrame?.activeDetailModeCount ?? 0;
       runtimeDiagnostics.render.activeModeCount =
         effectiveFrame?.activeModeCount ??
-        (effectiveFrame?.activeBackboneModeCount ?? 0) +
-          (effectiveFrame?.activeDetailModeCount ?? 0);
+        effectiveFrame?.activeModalFieldModeCount ??
+        effectiveFrame?.modalDescriptor?.counts?.modalFieldModeCount ??
+        0;
       runtimeDiagnostics.render.complexityScore =
         runtimeState?.performanceGovernor?.complexityScore ?? 0;
       runtimeDiagnostics.render.uploadedModeCount =
@@ -625,6 +765,13 @@ export function useBaryonVisualizer({
         renderLoopContext.postNodesRef.current?.bloomPass &&
         effectiveBloomEnabled,
       );
+      const postNodes = renderLoopContext.postNodesRef.current;
+      runtimeDiagnostics.postProcess.smaaGraphEnabled =
+        getRenderOutputSmaaGraphEnabled(postNodes);
+      runtimeDiagnostics.postProcess.temporalHistoryBlend =
+        postNodes?.temporalHistoryBlendUniform?.value ?? null;
+      runtimeDiagnostics.postProcess.temporalHistoryGraphEnabled =
+        getRenderOutputTemporalHistoryGraphEnabled(postNodes);
     }
 
     if (externalFrameState?.featureFrame) {
@@ -655,11 +802,31 @@ export function useBaryonVisualizer({
       time,
       deltaTime,
     });
+    const visualIdleFinalizer = finalizeTerminalVisualIdleState({
+      featureFrame: effectiveFrame,
+      runtimeState,
+      postNodes: renderLoopContext.postNodesRef.current,
+    });
+    syncUploadedRenderQuantities(runtimeDiagnostics, runtimeState);
+    updateObservationTransferRenderDiagnostics(
+      runtimeDiagnostics,
+      runtimeState?.debugSnapshot,
+      runtimeState,
+    );
+    if (tailDiagnosticsActive) {
+      recordTailDiagnosticsSample(tailDiagnosticsRef.current, {
+        runtimeDiagnostics,
+        featureFrame: effectiveFrame,
+        runtimeState,
+        nowMs: getWallTimeMs(),
+      });
+    }
     recordMeasuredRuntimePerf(
       runtimeDiagnostics,
       "runtimeTickMs",
       runtimeTickStartedAt,
     );
+    updateModalEnvelopeDiagnostics(runtimeDiagnostics, runtimeState);
 
     const reactiveBloomStartedAt = getWallTimeMs();
     const reactiveBloom = applyReactiveBloomState({
@@ -680,7 +847,6 @@ export function useBaryonVisualizer({
       controls,
       deltaTime,
       featureFrame,
-      status,
     );
     recordMeasuredRuntimePerf(
       runtimeDiagnostics,
@@ -724,13 +890,52 @@ export function useBaryonVisualizer({
       backgroundColor: controls.backgroundColor,
     });
 
+    const shouldBypassTemporalHistory =
+      shouldBypassTemporalHistoryForRaymarchFrame({
+        runtimeMethod: runtime.method,
+        featureFrame: effectiveFrame,
+        sceneSnapshot,
+      });
+
     if (suppressRender) {
       outputSessionRef.current?.dispose?.();
       outputSessionRef.current = null;
       outputCaptureInFlightRef.current = false;
     } else if (pipeline) {
       const pipelineRenderStartedAt = getWallTimeMs();
+      const temporalHistoryBypassRequested =
+        shouldBypassTemporalHistory ||
+        visualIdleFinalizer.resumedFromVisualIdle;
+      if (temporalHistoryBypassRequested) {
+        markRenderOutputContentChange(renderLoopContext.postNodesRef.current);
+        if (visualIdleFinalizer.resumedFromVisualIdle) {
+          consumeRenderOutputVisualIdle(renderLoopContext.postNodesRef.current);
+        }
+      }
+      syncRenderOutputNodeTopology(
+        pipeline,
+        renderLoopContext.postNodesRef.current,
+        {
+          bloomEnabled: effectiveBloomEnabled,
+          outputMode: controls.outputMode,
+          bloomActive: effectiveBloomEnabled,
+          temporalHistoryEnabled: !temporalHistoryBypassRequested,
+          smaaEnabled: controls.smaaEnabled !== false,
+        },
+      );
+      if (runtimeDiagnostics?.postProcess) {
+        const postNodes = renderLoopContext.postNodesRef.current;
+        runtimeDiagnostics.postProcess.smaaGraphEnabled =
+          getRenderOutputSmaaGraphEnabled(postNodes);
+        runtimeDiagnostics.postProcess.temporalHistoryGraphEnabled =
+          getRenderOutputTemporalHistoryGraphEnabled(postNodes);
+      }
+      renderLoopContext.gl.setRenderTarget?.(null);
+      renderLoopContext.gl.setMRT?.(null);
       pipeline.render();
+      advanceRenderOutputTemporalHistoryBypass(
+        renderLoopContext.postNodesRef.current,
+      );
       recordMeasuredRuntimePerf(
         runtimeDiagnostics,
         "pipelineRenderMs",
@@ -784,6 +989,8 @@ export function useBaryonVisualizer({
       outputSessionRef.current = null;
       outputCaptureInFlightRef.current = false;
       const pipelineRenderStartedAt = getWallTimeMs();
+      renderLoopContext.gl.setRenderTarget?.(null);
+      renderLoopContext.gl.setMRT?.(null);
       renderLoopContext.gl.render(state.scene, state.camera);
       recordMeasuredRuntimePerf(
         runtimeDiagnostics,

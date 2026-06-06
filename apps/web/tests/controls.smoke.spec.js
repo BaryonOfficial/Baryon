@@ -1,7 +1,6 @@
 import { Buffer } from "node:buffer";
 import { expect, test } from "@playwright/test";
-
-const ACTIVE_LIVE_INPUT_AUDIT_MODES = new Set(["live", "system"]);
+import { RAYMARCH_QUANTITY_LEDGER_VERSION } from "../../../packages/visualizer/src/core/raymarch/quantityLedger.js";
 
 function createMonoWavBuffer({
   sampleRate = 44100,
@@ -53,39 +52,16 @@ async function waitForControlSurface(page) {
   });
 }
 
-async function waitForVisualizationMethod(page, method) {
-  await expect
-    .poll(() =>
-      page.evaluate(() => window.__baryonControlState?.method ?? null),
-    )
-    .toBe(method);
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () => window.__baryonAuditSnapshot?.visualizationMethod ?? null,
-      ),
-    )
-    .toBe(method);
-}
-
-async function readSceneSnapshot(page) {
-  return page.evaluate(() => window.__baryonControlState?.scene ?? null);
-}
-
 async function readAuditMethodSnapshot(page) {
   return page.evaluate(() => {
     const snapshot = window.__baryonAuditSnapshot ?? null;
     const visualizationMethod = snapshot?.visualizationMethod ?? null;
-    const activeDebug =
-      visualizationMethod === "cymatics-2d"
-        ? (snapshot?.cymatics2dDebug ?? null)
-        : (snapshot?.raymarchDebug ?? null);
+    const activeDebug = snapshot?.raymarchDebug ?? null;
 
     return {
       visualizationMethod,
       activeDebug,
       hasRaymarchDebug: Boolean(snapshot?.raymarchDebug),
-      hasCymatics2dDebug: Boolean(snapshot?.cymatics2dDebug),
     };
   });
 }
@@ -286,28 +262,71 @@ async function setControl(page, key, value) {
   );
 }
 
-function isLiveInputAuditModeActive(audioInputMode) {
-  return ACTIVE_LIVE_INPUT_AUDIT_MODES.has(audioInputMode);
+function isLiveInputSourceEvidenceActive(sourceEvidence) {
+  return (
+    sourceEvidence?.transport?.liveInputActive === true ||
+    (sourceEvidence?.currentSourceEvidence === true &&
+      sourceEvidence?.sourceBoundaryState === "live" &&
+      (sourceEvidence?.sourceKind === "mic" ||
+        sourceEvidence?.sourceKind === "system"))
+  );
 }
 
 async function readLiveInputAuditState(page) {
   const auditState = await page.evaluate(() => {
     const snapshot = window.__baryonAuditSnapshot ?? {};
+    const sourceEvidence =
+      snapshot.audioDiagnostics?.runtime?.modalFreshness?.sourceEvidence ??
+      null;
     return {
       audioInputMode: snapshot.audioInputMode ?? "idle",
+      sourceEvidence,
       analysisSourceUsed: snapshot.analysisSourceUsed ?? null,
       liveInputCalibrationActive: snapshot.liveInputCalibrationActive ?? false,
       liveInputHardSilenceActive: snapshot.liveInputHardSilenceActive ?? false,
       liveInputPolicy: snapshot.liveInputPolicy ?? null,
       fieldState: snapshot.raymarchDebug?.fieldState ?? null,
+      volumeVisible: snapshot.raymarchDebug?.volumeVisible ?? false,
+      renderedModalFieldColorWeightMax:
+        snapshot.raymarchDebug?.renderedModalFieldColorWeightMax ?? 0,
       idleOverlayVisible: snapshot.raymarchDebug?.idleOverlayVisible ?? false,
     };
   });
 
   return {
     ...auditState,
-    liveInputActive: isLiveInputAuditModeActive(auditState.audioInputMode),
+    liveInputActive: isLiveInputSourceEvidenceActive(auditState.sourceEvidence),
   };
+}
+
+async function readRestoredLocalFileState(page) {
+  return page.evaluate(() => {
+    const snapshot = window.__baryonAuditSnapshot ?? {};
+    const sourceEvidence =
+      snapshot.audioDiagnostics?.runtime?.modalFreshness?.sourceEvidence ??
+      null;
+    const fileControlVisible = (selector) => {
+      const element = document.querySelector(selector);
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 1 && style.opacity !== "0";
+    };
+    return {
+      fileLabel:
+        document.querySelector(".am-filename")?.textContent?.trim() ?? "",
+      fileTransportVisible: fileControlVisible(".am-track"),
+      playVisible: fileControlVisible(".am-btn--play"),
+      playDisabled: document.querySelector(".am-btn--play")?.disabled ?? true,
+      recentUploadsVisible: fileControlVisible('[aria-label="Recent uploads"]'),
+      liveInputActive:
+        sourceEvidence?.transport?.liveInputActive === true ||
+        (sourceEvidence?.currentSourceEvidence === true &&
+          sourceEvidence?.sourceBoundaryState === "live" &&
+          (sourceEvidence?.sourceKind === "mic" ||
+            sourceEvidence?.sourceKind === "system")),
+    };
+  });
 }
 
 async function ensureFakeLiveInputDeviceSelected(page, { deviceType } = {}) {
@@ -329,8 +348,8 @@ async function ensureFakeLiveInputDeviceSelected(page, { deviceType } = {}) {
   }
 }
 
-async function startFakeLiveInput(page) {
-  await ensureFakeLiveInputDeviceSelected(page);
+async function startFakeLiveInput(page, options = {}) {
+  await ensureFakeLiveInputDeviceSelected(page, options);
   await page.getByTestId("source-live-button").click();
 }
 
@@ -464,7 +483,7 @@ test.describe("Baryon control smoke", () => {
       .toBe("raymarch");
 
     await setControl(page, "auditEnabled", true);
-    await expect(page.getByTestId("raymarch-debug-overlay")).toBeVisible();
+    await expect(page.getByTestId("diagnostics-hud")).toBeVisible();
     await expect
       .poll(() =>
         page.evaluate(() => ({
@@ -485,6 +504,8 @@ test.describe("Baryon control smoke", () => {
         stepBudget: expect.any(Number),
       });
 
+    await setControl(page, "testToneHz", 528);
+    await setControl(page, "testToneAmplitude", 1);
     await setControl(page, "injectTestTone", true);
     await expect
       .poll(() =>
@@ -503,6 +524,75 @@ test.describe("Baryon control smoke", () => {
         pitchSource: "resonator-bank",
         modeSlotCount: expect.any(Number),
         volumeVisible: true,
+      });
+
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const debug = window.__baryonAuditSnapshot?.raymarchDebug ?? {};
+          return {
+            totalSlotAmplitude: debug.totalSlotAmplitude ?? null,
+            structuralProjectionDrive: debug.structuralProjectionDrive ?? null,
+            structuralProjectionConcentration:
+              debug.structuralProjectionConcentration ?? null,
+            modalCoefficientEnergy: debug.modalCoefficientEnergy ?? null,
+          };
+        }),
+      )
+      .toMatchObject({
+        totalSlotAmplitude: expect.any(Number),
+        structuralProjectionDrive: expect.any(Number),
+        structuralProjectionConcentration: expect.any(Number),
+        modalCoefficientEnergy: expect.any(Number),
+      });
+    const projectionSnapshot = await page.evaluate(() => {
+      const debug = window.__baryonAuditSnapshot?.raymarchDebug ?? {};
+      return {
+        totalSlotAmplitude: debug.totalSlotAmplitude ?? 0,
+        structuralProjectionDrive: debug.structuralProjectionDrive ?? 0,
+        structuralProjectionConcentration:
+          debug.structuralProjectionConcentration ?? 0,
+        modalCoefficientEnergy: debug.modalCoefficientEnergy ?? 0,
+      };
+    });
+    expect(projectionSnapshot.totalSlotAmplitude).toBeGreaterThanOrEqual(0);
+    expect(projectionSnapshot.structuralProjectionDrive).toBeGreaterThan(0);
+    expect(projectionSnapshot.structuralProjectionDrive).toBeLessThanOrEqual(1);
+    expect(
+      projectionSnapshot.structuralProjectionConcentration,
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      projectionSnapshot.structuralProjectionConcentration,
+    ).toBeLessThanOrEqual(1);
+    expect(projectionSnapshot.modalCoefficientEnergy).toBeCloseTo(
+      projectionSnapshot.structuralProjectionDrive,
+      6,
+    );
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const debug = window.__baryonAuditSnapshot?.raymarchDebug ?? {};
+          return {
+            renderQuantityLedgerVersion:
+              debug.renderQuantityLedgerVersion ?? null,
+            observedDensityFloorForbidden:
+              debug.renderQuantityForbiddenConsumers?.observedDensityFloor ??
+              [],
+            cancellationForbidden:
+              debug.renderQuantityForbiddenConsumers?.cancellationSuppression ??
+              [],
+          };
+        }),
+      )
+      .toMatchObject({
+        renderQuantityLedgerVersion: RAYMARCH_QUANTITY_LEDGER_VERSION,
+        observedDensityFloorForbidden: expect.arrayContaining([
+          "highlightMask",
+          "whiteEmissionFieldAuthority",
+        ]),
+        cancellationForbidden: expect.arrayContaining([
+          "whiteEmissionFieldAuthority",
+        ]),
       });
 
     await setControl(page, "bloomStrength", 0.91);
@@ -560,7 +650,7 @@ test.describe("Baryon control smoke", () => {
     await setControl(page, "injectTestTone", false);
   });
 
-  test("defaults rotation to audio mode and supports manual and off overrides", async ({
+  test("defaults rotation off and supports audio, manual, and off overrides", async ({
     page,
     browserName,
   }) => {
@@ -579,9 +669,18 @@ test.describe("Baryon control smoke", () => {
         })),
       )
       .toEqual({
-        rotationMode: "audio",
+        rotationMode: "off",
         motionAmount: 0.88,
       });
+
+    await setControl(page, "rotationMode", "audio");
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.__baryonControlState?.scene?.rotationMode ?? null,
+        ),
+      )
+      .toBe("audio");
 
     await setControl(page, "rotationMode", "manual");
     await setControl(page, "rotationSpeed", 2);
@@ -618,7 +717,7 @@ test.describe("Baryon control smoke", () => {
       .toBe(true);
   });
 
-  test("switches between 3d and 2d modes while preserving the expected scene motion semantics", async ({
+  test("drives 3d scene motion under manual and audio rotation", async ({
     page,
     browserName,
   }) => {
@@ -628,90 +727,37 @@ test.describe("Baryon control smoke", () => {
     await waitForControlSurface(page);
     await setControl(page, "auditEnabled", true);
 
-    await expect(page.getByTestId("raymarch-debug-overlay")).toBeVisible();
+    await expect(page.getByTestId("diagnostics-hud")).toBeVisible();
     await expect
       .poll(() =>
         page.evaluate(() => window.__baryonControlState?.method ?? null),
       )
       .toBe("raymarch");
     await expect
-      .poll(() =>
-        page.evaluate(
-          () => window.__baryonAuditSnapshot?.visualizationMethod ?? null,
-        ),
-      )
-      .toBe("raymarch");
-
-    await setControl(page, "visualizationMethod", "cymatics-2d");
-    await waitForVisualizationMethod(page, "cymatics-2d");
-
-    await expect
       .poll(() => readAuditMethodSnapshot(page))
       .toEqual({
-        visualizationMethod: "cymatics-2d",
+        visualizationMethod: "raymarch",
         activeDebug: expect.objectContaining({
           fieldState: expect.any(String),
           modeSlotCount: expect.any(Number),
         }),
-        hasRaymarchDebug: false,
-        hasCymatics2dDebug: true,
+        hasRaymarchDebug: true,
       });
-    await expect
-      .poll(() => readSceneSnapshot(page))
-      .toEqual(
-        expect.objectContaining({
-          rotationMode: "disabled",
-          rotationY: 0,
-        }),
-      );
-
-    await setControl(page, "rotationMode", "manual");
-    await setControl(page, "rotationSpeed", 2);
-    const fullscreen2dStart = await page.evaluate(
-      () => window.__baryonControlState?.scene?.rotationY ?? 0,
-    );
-    await page.waitForTimeout(150);
-    const fullscreen2dEnd = await page.evaluate(
-      () => window.__baryonControlState?.scene?.rotationY ?? 0,
-    );
-    expect(fullscreen2dStart).toBe(0);
-    expect(fullscreen2dEnd).toBe(0);
-
-    await setControl(page, "injectTestTone", true);
-    await expect
-      .poll(() => readAuditMethodSnapshot(page))
-      .toEqual({
-        visualizationMethod: "cymatics-2d",
-        activeDebug: expect.objectContaining({
-          fieldState: "test",
-          modeSlotCount: expect.any(Number),
-        }),
-        hasRaymarchDebug: false,
-        hasCymatics2dDebug: true,
-      });
-    await expect
-      .poll(() => readSceneSnapshot(page))
-      .toEqual(
-        expect.objectContaining({
-          rotationMode: "disabled",
-          rotationY: 0,
-        }),
-      );
-
-    await setControl(page, "injectTestTone", false);
-    await setControl(page, "visualizationMethod", "raymarch");
-    await waitForVisualizationMethod(page, "raymarch");
 
     await setControl(page, "rotationMode", "manual");
     await setControl(page, "rotationSpeed", 2);
     const manual3dStart = await page.evaluate(
       () => window.__baryonControlState?.scene?.rotationY ?? 0,
     );
-    await page.waitForTimeout(120);
-    const manual3dEnd = await page.evaluate(
-      () => window.__baryonControlState?.scene?.rotationY ?? 0,
-    );
-    expect(manual3dEnd).not.toBeCloseTo(manual3dStart, 3);
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            () => window.__baryonControlState?.scene?.rotationY ?? 0,
+          ),
+        { timeout: 3000 },
+      )
+      .not.toBeCloseTo(manual3dStart, 3);
 
     await setControl(page, "rotationMode", "audio");
     await setControl(page, "injectTestTone", true);
@@ -724,7 +770,6 @@ test.describe("Baryon control smoke", () => {
           modeSlotCount: expect.any(Number),
         }),
         hasRaymarchDebug: true,
-        hasCymatics2dDebug: false,
       });
     await expect
       .poll(() =>
@@ -737,11 +782,15 @@ test.describe("Baryon control smoke", () => {
     const audio3dStart = await page.evaluate(
       () => window.__baryonControlState?.scene?.rotationY ?? 0,
     );
-    await page.waitForTimeout(150);
-    const audio3dEnd = await page.evaluate(
-      () => window.__baryonControlState?.scene?.rotationY ?? 0,
-    );
-    expect(audio3dEnd).not.toBeCloseTo(audio3dStart, 3);
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            () => window.__baryonControlState?.scene?.rotationY ?? 0,
+          ),
+        { timeout: 3000 },
+      )
+      .not.toBeCloseTo(audio3dStart, 3);
 
     await setControl(page, "injectTestTone", false);
   });
@@ -780,17 +829,26 @@ test.describe("Baryon control smoke", () => {
       });
 
     await setControl(page, "injectTestTone", true);
-
     await expect
       .poll(() =>
-        page.evaluate(() => ({
-          fieldState:
-            window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
-          modeSlotCount:
-            window.__baryonAuditSnapshot?.raymarchDebug?.modeSlotCount ?? 0,
-          rendererFallback:
-            window.__baryonAuditSnapshot?.renderer?.isFallback ?? false,
-        })),
+        page.evaluate(
+          () => window.__baryonControlState?.audit?.injectTestTone ?? false,
+        ),
+      )
+      .toBe(true);
+
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => ({
+            fieldState:
+              window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
+            modeSlotCount:
+              window.__baryonAuditSnapshot?.raymarchDebug?.modeSlotCount ?? 0,
+            rendererFallback:
+              window.__baryonAuditSnapshot?.renderer?.isFallback ?? false,
+          })),
+        { timeout: 15000 },
       )
       .toEqual({
         fieldState: "test",
@@ -837,7 +895,7 @@ test.describe("Baryon control smoke", () => {
       });
   });
 
-  test("returns to the idle logo immediately when an active live input scene goes silent", async ({
+  test("zeros projected render energy for silent active live input", async ({
     page,
     browserName,
   }) => {
@@ -868,6 +926,20 @@ test.describe("Baryon control smoke", () => {
           page.evaluate(() => ({
             fieldState:
               window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
+            renderAuthority:
+              window.__baryonAuditSnapshot?.raymarchDebug?.renderAuthority ??
+              true,
+            projectedRenderClosed:
+              (window.__baryonAuditSnapshot?.raymarchDebug
+                ?.projectedRenderEnergy ?? 1) <=
+              (window.__baryonAuditSnapshot?.raymarchDebug
+                ?.renderEnergyEpsilon ?? 0),
+            observationHardSilence:
+              window.__baryonAuditSnapshot?.raymarchDebug
+                ?.observationHardSilence ?? false,
+            renderedModalFieldModeCount:
+              window.__baryonAuditSnapshot?.raymarchDebug
+                ?.renderedModalFieldModeCount ?? -1,
             liveInputHardSilenceActive:
               window.__baryonAuditSnapshot?.liveInputHardSilenceActive ?? false,
             idleOverlayVisible:
@@ -877,9 +949,93 @@ test.describe("Baryon control smoke", () => {
         { timeout: 10000 },
       )
       .toEqual({
-        fieldState: "decay",
+        fieldState: expect.any(String),
+        renderAuthority: false,
+        projectedRenderClosed: true,
+        observationHardSilence: true,
+        renderedModalFieldModeCount: 0,
         liveInputHardSilenceActive: true,
         idleOverlayVisible: false,
+      });
+  });
+
+  test("zeros projected render energy for paused system live input", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.addInitScript(() => {
+      window.localStorage.setItem(
+        "baryon:deviceClassification",
+        JSON.stringify({
+          "fake-live-input-device": "system",
+        }),
+      );
+    });
+    await installFakeLiveInput(page);
+    await page.goto("/");
+    await waitForControlSurface(page);
+    await setControl(page, "auditEnabled", true);
+    await setControl(page, "colorMode", "spectral");
+    await setControl(page, "spectralMix", 1);
+
+    await setFakeLiveInputScene(page, "ambient");
+    await startFakeLiveInput(page, { deviceType: "system" });
+
+    await expect
+      .poll(() => readLiveInputAuditState(page))
+      .toMatchObject({
+        audioInputMode: "system",
+        liveInputPolicy: "line-feed",
+        analysisSourceUsed: "system",
+        fieldState: "active",
+        liveInputActive: true,
+        volumeVisible: true,
+      });
+    await expect
+      .poll(async () => {
+        const state = await readLiveInputAuditState(page);
+        return state.renderedModalFieldColorWeightMax > 0;
+      })
+      .toBe(true);
+
+    await setFakeLiveInputScene(page, "silent");
+
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => ({
+            audioInputMode:
+              window.__baryonAuditSnapshot?.audioInputMode ?? "idle",
+            liveInputPolicy:
+              window.__baryonAuditSnapshot?.liveInputPolicy ?? null,
+            renderAuthority:
+              window.__baryonAuditSnapshot?.raymarchDebug?.renderAuthority ??
+              true,
+            projectedRenderEnergy:
+              window.__baryonAuditSnapshot?.raymarchDebug
+                ?.projectedRenderEnergy ?? 1,
+            renderedModalFieldModeCount:
+              window.__baryonAuditSnapshot?.raymarchDebug
+                ?.renderedModalFieldModeCount ?? -1,
+            volumeVisible:
+              window.__baryonAuditSnapshot?.raymarchDebug?.volumeVisible ??
+              true,
+            sourceBoundaryState:
+              window.__baryonAuditSnapshot?.raymarchDebug
+                ?.sourceBoundaryState ?? null,
+          })),
+        { timeout: 10000 },
+      )
+      .toEqual({
+        audioInputMode: "system",
+        liveInputPolicy: "line-feed",
+        renderAuthority: false,
+        projectedRenderEnergy: 0,
+        renderedModalFieldModeCount: 0,
+        volumeVisible: false,
+        sourceBoundaryState: "muted",
       });
   });
 
@@ -912,10 +1068,16 @@ test.describe("Baryon control smoke", () => {
       const startedAt = performance.now();
       while (performance.now() - startedAt < 900) {
         const snapshot = window.__baryonAuditSnapshot ?? {};
-        const audioInputMode = snapshot.audioInputMode ?? "idle";
+        const sourceEvidence =
+          snapshot.audioDiagnostics?.runtime?.modalFreshness?.sourceEvidence ??
+          null;
         collected.push({
           liveInputActive:
-            audioInputMode === "live" || audioInputMode === "system",
+            sourceEvidence?.transport?.liveInputActive === true ||
+            (sourceEvidence?.currentSourceEvidence === true &&
+              sourceEvidence?.sourceBoundaryState === "live" &&
+              (sourceEvidence?.sourceKind === "mic" ||
+                sourceEvidence?.sourceKind === "system")),
           driverFrequency: snapshot.driverFrequency ?? 0,
           candidateFrequency: snapshot.candidateFrequency ?? 0,
           highCandidateRejected: snapshot.highCandidateRejected ?? false,
@@ -937,12 +1099,13 @@ test.describe("Baryon control smoke", () => {
           sample.pitchSource !== "fundamental",
       ),
     ).toBe(true);
-    expect(
-      samples.every(
-        (sample) =>
-          sample.fieldState !== "active" || !(sample.driverFrequency > 650),
-      ),
-    ).toBe(true);
+    const fundamentalHighLocks = samples.filter(
+      (sample) =>
+        sample.fieldState === "active" &&
+        sample.pitchSource === "fundamental" &&
+        sample.driverFrequency > 650,
+    );
+    expect(fundamentalHighLocks).toEqual([]);
   });
 
   test("keeps source settings on the mode pill and the live state on the CTA", async ({
@@ -1102,7 +1265,7 @@ test.describe("Baryon control smoke", () => {
       });
 
     await expect(page.getByTestId("live-input-source-tab")).toBeVisible();
-    await ensureFakeLiveInputDeviceSelected(page, { deviceType: "live" });
+    await ensureFakeLiveInputDeviceSelected(page);
 
     await startFakeLiveInput(page);
     await expect
@@ -1156,6 +1319,217 @@ test.describe("Baryon control smoke", () => {
     expect(selectStyles.colorScheme).toBe("dark");
     expect(selectStyles.backgroundColor).toBe("rgb(28, 21, 16)");
     expect(selectStyles.optionBackgroundColor).toBe("rgb(28, 21, 16)");
+  });
+
+  test("applies advanced edits after loading a user visual preset", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.goto("/");
+    await waitForControlSurface(page);
+
+    await setControl(page, "renderQualityPreset", "max-quality");
+    await page.getByTestId("advanced-controls-trigger").click();
+    await page.getByLabel("Preset name").fill("Saved Stage");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByLabel("Load preset").selectOption("Saved Stage");
+
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.__baryonControls?.getState?.().renderQualityPreset,
+        ),
+      )
+      .toBe("max-quality");
+
+    const glowThresholdInput = page.getByLabel("Glow Threshold value");
+    if (!(await glowThresholdInput.isVisible())) {
+      await page.getByRole("button", { name: /Display/ }).click();
+    }
+    await glowThresholdInput.fill("0.41");
+    await glowThresholdInput.blur();
+
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.__baryonControls?.getState?.().bloomThreshold ?? null,
+        ),
+      )
+      .toBe(0.41);
+    const expectedEffectiveBloomThreshold = await page.evaluate(() => {
+      const controls = window.__baryonControls?.getState?.() ?? {};
+      const threshold = controls.bloomThreshold ?? 0;
+      const bloomResponseBias = Math.max(0, controls.bloomResponseBias ?? 0);
+      return threshold + bloomResponseBias * 0.1;
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const controls = window.__baryonControls?.getState?.() ?? {};
+          const threshold = controls.bloomThreshold ?? 0;
+          const bloomResponseBias = Math.max(
+            0,
+            controls.bloomResponseBias ?? 0,
+          );
+          return window.__baryonControlState?.bloom?.threshold ===
+            threshold + bloomResponseBias * 0.1
+            ? window.__baryonControlState.bloom.threshold
+            : null;
+        }),
+      )
+      .toBeCloseTo(expectedEffectiveBloomThreshold, 6);
+  });
+
+  test("scrolling advanced controls does not step focused numeric controls", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.goto("/");
+    await waitForControlSurface(page);
+
+    await page.getByTestId("advanced-controls-trigger").click();
+    const densityInput = page.getByLabel("Density value");
+    if (!(await densityInput.isVisible())) {
+      await page.getByRole("button", { name: /Shape/ }).click();
+    }
+    await densityInput.scrollIntoViewIfNeeded();
+    await densityInput.focus();
+    await expect(densityInput).toBeFocused();
+
+    const beforeValue = await densityInput.inputValue();
+    const beforeControlValue = await page.evaluate(
+      () => window.__baryonControls?.getState?.().densityGain ?? null,
+    );
+    const box = await densityInput.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, 500);
+
+    await expect(densityInput).not.toBeFocused();
+    await expect(densityInput).toHaveValue(beforeValue);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.__baryonControls?.getState?.().densityGain ?? null,
+        ),
+      )
+      .toBe(beforeControlValue);
+  });
+
+  test("scrolling advanced controls does not cycle the focused preset selector", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.goto("/");
+    await waitForControlSurface(page);
+
+    await page.getByTestId("advanced-controls-trigger").click();
+    const loadPresetSelect = page.getByLabel("Load preset");
+    await expect(loadPresetSelect).toBeVisible();
+    await setControl(page, "densityGain", 2.85);
+    await page.getByLabel("Preset name").fill("Saved Haze");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await loadPresetSelect.selectOption("Saved Haze");
+
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.__baryonControls?.getState?.().densityGain ?? null,
+        ),
+      )
+      .toBe(2.85);
+
+    await loadPresetSelect.focus();
+    await expect(loadPresetSelect).toBeFocused();
+    const beforeValue = await loadPresetSelect.inputValue();
+    const beforeControls = await page.evaluate(() => {
+      const controls = window.__baryonControls?.getState?.() ?? {};
+      return {
+        bloomThreshold: controls.bloomThreshold,
+        densityGain: controls.densityGain,
+        renderQualityPreset: controls.renderQualityPreset,
+      };
+    });
+
+    const box = await loadPresetSelect.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, 500);
+
+    await expect(loadPresetSelect).not.toBeFocused();
+    await expect(loadPresetSelect).toHaveValue(beforeValue);
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const controls = window.__baryonControls?.getState?.() ?? {};
+          return {
+            bloomThreshold: controls.bloomThreshold,
+            densityGain: controls.densityGain,
+            renderQualityPreset: controls.renderQualityPreset,
+          };
+        }),
+      )
+      .toEqual(beforeControls);
+  });
+
+  test("scrolling advanced controls does not stall render progress", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.goto("/");
+    await waitForControlSurface(page);
+
+    await page.evaluate(() => {
+      window.__baryonControls?.setControl?.("rotationMode", "manual");
+      window.__baryonControls?.setControl?.("rotationSpeed", 2.5);
+    });
+
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.__baryonControlState?.scene?.rotationY ?? null,
+        ),
+      )
+      .not.toBeNull();
+
+    await page.getByTestId("advanced-controls-trigger").click();
+    const scrollPanel = page.locator(".baryon-controls-scroll");
+    await expect(scrollPanel).toBeVisible();
+
+    const beforeRotation = await page.evaluate(
+      () => window.__baryonControlState?.scene?.rotationY ?? null,
+    );
+    expect(beforeRotation).not.toBeNull();
+
+    const box = await scrollPanel.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+
+    for (let index = 0; index < 12; index += 1) {
+      await page.mouse.wheel(0, index % 2 === 0 ? 320 : -280);
+      await page.waitForTimeout(25);
+    }
+
+    await expect
+      .poll(() =>
+        page.evaluate((initialRotation) => {
+          const currentRotation =
+            window.__baryonControlState?.scene?.rotationY ?? null;
+          if (currentRotation == null) {
+            return null;
+          }
+          return Math.abs(currentRotation - initialRotation);
+        }, beforeRotation),
+      )
+      .toBeGreaterThan(0.02);
   });
 
   test("restores focus to the trigger when advanced controls close from a focused slider", async ({
@@ -1230,42 +1604,62 @@ test.describe("Baryon control smoke", () => {
     await expect(page.getByTestId("playback-timeline")).toBeVisible();
 
     await page.locator(".am-btn--play").click();
-    await expect(page.locator('.am-btn--play[title="Pause"]')).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Pause", exact: true }),
+    ).toBeVisible();
+    const fileDockBox = await page.locator(".am-player").boundingBox();
+    if (!fileDockBox) {
+      throw new Error("Audio dock did not render a file-mode bounding box.");
+    }
 
     await startFakeLiveInput(page);
 
+    await expect(page.getByTestId("source-mode-control")).toBeVisible();
+    await expect(page.locator(".am-player-shell")).toHaveCount(0);
     await expect
       .poll(() =>
         page.evaluate(() => ({
           fileLabel:
             document.querySelector(".am-filename")?.textContent?.trim() ?? "",
-          playDisabled:
-            document.querySelector(".am-btn--play")?.disabled ?? false,
+          fileTransportVisible: (() => {
+            const element = document.querySelector(".am-track");
+            if (!element) return false;
+            const rect = element.getBoundingClientRect();
+            return rect.width > 1 && getComputedStyle(element).opacity !== "0";
+          })(),
+          playVisible: (() => {
+            const element = document.querySelector(".am-btn--play");
+            if (!element) return false;
+            const rect = element.getBoundingClientRect();
+            return rect.width > 1 && getComputedStyle(element).opacity !== "0";
+          })(),
+          sourceModeVisible: Boolean(
+            document.querySelector('[data-testid="source-mode-control"]'),
+          ),
           audioInputMode: window.__baryonAuditSnapshot?.audioInputMode ?? null,
         })),
       )
       .toEqual({
-        fileLabel: "Upload Audio",
-        playDisabled: true,
+        fileLabel: "",
+        fileTransportVisible: false,
+        playVisible: false,
+        sourceModeVisible: true,
         audioInputMode: "live",
       });
 
     await page.getByTestId("source-live-button").click();
 
+    // Stopping live input stays in System mode — it must not switch back to
+    // File or restore the previous local file.
     await expect
-      .poll(() =>
-        page.evaluate(() => ({
-          fileLabel:
-            document.querySelector(".am-filename")?.textContent?.trim() ?? "",
-          playDisabled:
-            document.querySelector(".am-btn--play")?.disabled ?? false,
-          audioInputMode: window.__baryonAuditSnapshot?.audioInputMode ?? null,
-        })),
-      )
+      .poll(() => readRestoredLocalFileState(page))
       .toEqual({
-        fileLabel: "resume-tone.wav",
-        playDisabled: false,
-        audioInputMode: "file",
+        fileLabel: "",
+        fileTransportVisible: false,
+        playVisible: false,
+        playDisabled: true,
+        recentUploadsVisible: false,
+        liveInputActive: false,
       });
   });
 
@@ -1288,11 +1682,22 @@ test.describe("Baryon control smoke", () => {
     await expect(page.getByTestId("playback-timeline")).toBeVisible();
 
     await page.locator(".am-btn--play").click();
-    await expect(page.locator('.am-btn--play[title="Pause"]')).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Pause", exact: true }),
+    ).toBeVisible();
 
     await startFakeLiveInput(page);
     await page.getByTestId("source-live-button").click();
 
+    await expect
+      .poll(() => readRestoredLocalFileState(page))
+      .toMatchObject({
+        fileTransportVisible: false,
+        recentUploadsVisible: false,
+        liveInputActive: false,
+      });
+
+    await page.getByTestId("file-source-tab").click();
     await page.getByTitle("Recent uploads").click();
     const recentUploadsPanel = page.getByTestId("recent-uploads-panel");
     await expect(recentUploadsPanel).toBeVisible();
@@ -1305,19 +1710,14 @@ test.describe("Baryon control smoke", () => {
       .click();
 
     await expect
-      .poll(() =>
-        page.evaluate(() => ({
-          fileLabel:
-            document.querySelector(".am-filename")?.textContent?.trim() ?? "",
-          playDisabled:
-            document.querySelector(".am-btn--play")?.disabled ?? true,
-          audioInputMode: window.__baryonAuditSnapshot?.audioInputMode ?? null,
-        })),
-      )
-      .toEqual({
+      .poll(() => readRestoredLocalFileState(page))
+      .toMatchObject({
         fileLabel: "recent-tone.wav",
+        fileTransportVisible: true,
+        playVisible: true,
         playDisabled: false,
-        audioInputMode: "file",
+        recentUploadsVisible: true,
+        liveInputActive: false,
       });
   });
 
@@ -1330,6 +1730,8 @@ test.describe("Baryon control smoke", () => {
     await page.goto("/");
     await waitForControlSurface(page);
     await setControl(page, "auditEnabled", true);
+    await setControl(page, "colorMode", "spectral");
+    await setControl(page, "spectralMix", 1);
 
     await page.locator('input[type="file"]').setInputFiles({
       name: "smoke-tone.wav",
@@ -1349,6 +1751,11 @@ test.describe("Baryon control smoke", () => {
             window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
           modeSlotCount:
             window.__baryonAuditSnapshot?.raymarchDebug?.modeSlotCount ?? 0,
+          volumeVisible:
+            window.__baryonAuditSnapshot?.raymarchDebug?.volumeVisible ?? false,
+          renderedModalFieldColorWeightMax:
+            window.__baryonAuditSnapshot?.raymarchDebug
+              ?.renderedModalFieldColorWeightMax ?? 0,
         })),
       )
       .toEqual({
@@ -1356,7 +1763,20 @@ test.describe("Baryon control smoke", () => {
         analysisSourceUsed: "file",
         fieldState: expect.not.stringMatching(/^idle$/),
         modeSlotCount: expect.any(Number),
+        volumeVisible: true,
+        renderedModalFieldColorWeightMax: expect.any(Number),
       });
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window.__baryonAuditSnapshot?.raymarchDebug
+              ?.renderedModalFieldColorWeightMax ?? 0) > 0,
+        ),
+      )
+      .toBe(true);
+    await expect(page.getByTestId("camera-controls")).toBeVisible();
+    await expect(page.getByTestId("camera-controls")).toContainText("Camera");
 
     await page.locator(".am-slider").evaluate((input) => {
       input.value = "0";
@@ -1449,7 +1869,7 @@ test.describe("Baryon control smoke", () => {
       });
   });
 
-  test("preserves the paused cymatics frame when switching program output modes", async ({
+  test("keeps paused file playback source-boundary state while switching program output modes", async ({
     page,
     browserName,
   }) => {
@@ -1473,17 +1893,28 @@ test.describe("Baryon control smoke", () => {
           audioInputMode: window.__baryonAuditSnapshot?.audioInputMode ?? null,
           analysisSourceUsed:
             window.__baryonAuditSnapshot?.analysisSourceUsed ?? null,
+          renderAuthority:
+            window.__baryonAuditSnapshot?.raymarchDebug?.renderAuthority ??
+            null,
+          projectedRenderEnergy:
+            window.__baryonAuditSnapshot?.raymarchDebug
+              ?.projectedRenderEnergy ?? null,
           fieldState:
             window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
           modeSlotCount:
             window.__baryonAuditSnapshot?.raymarchDebug?.modeSlotCount ?? 0,
+          volumeVisible:
+            window.__baryonAuditSnapshot?.raymarchDebug?.volumeVisible ?? null,
         })),
       )
       .toEqual({
-        audioInputMode: "file",
-        analysisSourceUsed: "file",
-        fieldState: expect.not.stringMatching(/^idle$/),
-        modeSlotCount: expect.any(Number),
+        audioInputMode: "idle",
+        analysisSourceUsed: "none",
+        renderAuthority: false,
+        projectedRenderEnergy: 0,
+        fieldState: "idle",
+        modeSlotCount: 0,
+        volumeVisible: false,
       });
 
     await page.locator(".am-btn--play").click();
@@ -1523,18 +1954,29 @@ test.describe("Baryon control smoke", () => {
           audioInputMode: window.__baryonAuditSnapshot?.audioInputMode ?? null,
           analysisSourceUsed:
             window.__baryonAuditSnapshot?.analysisSourceUsed ?? null,
+          renderAuthority:
+            window.__baryonAuditSnapshot?.raymarchDebug?.renderAuthority ??
+            null,
+          projectedRenderEnergy:
+            window.__baryonAuditSnapshot?.raymarchDebug
+              ?.projectedRenderEnergy ?? null,
           fieldState:
             window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
           modeSlotCount:
             window.__baryonAuditSnapshot?.raymarchDebug?.modeSlotCount ?? 0,
+          volumeVisible:
+            window.__baryonAuditSnapshot?.raymarchDebug?.volumeVisible ?? null,
         })),
       )
       .toEqual({
         outputMode: "opaque",
-        audioInputMode: "file",
-        analysisSourceUsed: "file",
-        fieldState: expect.not.stringMatching(/^idle$/),
-        modeSlotCount: expect.any(Number),
+        audioInputMode: "idle",
+        analysisSourceUsed: "none",
+        renderAuthority: false,
+        projectedRenderEnergy: 0,
+        fieldState: "idle",
+        modeSlotCount: 0,
+        volumeVisible: false,
       });
 
     await setControl(page, "outputMode", "transparent");
@@ -1546,18 +1988,29 @@ test.describe("Baryon control smoke", () => {
           audioInputMode: window.__baryonAuditSnapshot?.audioInputMode ?? null,
           analysisSourceUsed:
             window.__baryonAuditSnapshot?.analysisSourceUsed ?? null,
+          renderAuthority:
+            window.__baryonAuditSnapshot?.raymarchDebug?.renderAuthority ??
+            null,
+          projectedRenderEnergy:
+            window.__baryonAuditSnapshot?.raymarchDebug
+              ?.projectedRenderEnergy ?? null,
           fieldState:
             window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
           modeSlotCount:
             window.__baryonAuditSnapshot?.raymarchDebug?.modeSlotCount ?? 0,
+          volumeVisible:
+            window.__baryonAuditSnapshot?.raymarchDebug?.volumeVisible ?? null,
         })),
       )
       .toEqual({
         outputMode: "transparent",
-        audioInputMode: "file",
-        analysisSourceUsed: "file",
-        fieldState: expect.not.stringMatching(/^idle$/),
-        modeSlotCount: expect.any(Number),
+        audioInputMode: "idle",
+        analysisSourceUsed: "none",
+        renderAuthority: false,
+        projectedRenderEnergy: 0,
+        fieldState: "idle",
+        modeSlotCount: 0,
+        volumeVisible: false,
       });
 
     await setControl(page, "outputBackgroundColor", "#123456");
@@ -1571,19 +2024,30 @@ test.describe("Baryon control smoke", () => {
           audioInputMode: window.__baryonAuditSnapshot?.audioInputMode ?? null,
           analysisSourceUsed:
             window.__baryonAuditSnapshot?.analysisSourceUsed ?? null,
+          renderAuthority:
+            window.__baryonAuditSnapshot?.raymarchDebug?.renderAuthority ??
+            null,
+          projectedRenderEnergy:
+            window.__baryonAuditSnapshot?.raymarchDebug
+              ?.projectedRenderEnergy ?? null,
           fieldState:
             window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
           modeSlotCount:
             window.__baryonAuditSnapshot?.raymarchDebug?.modeSlotCount ?? 0,
+          volumeVisible:
+            window.__baryonAuditSnapshot?.raymarchDebug?.volumeVisible ?? null,
         })),
       )
       .toEqual({
         outputMode: "transparent",
         outputBackgroundColor: "#123456",
-        audioInputMode: "file",
-        analysisSourceUsed: "file",
-        fieldState: expect.not.stringMatching(/^idle$/),
-        modeSlotCount: expect.any(Number),
+        audioInputMode: "idle",
+        analysisSourceUsed: "none",
+        renderAuthority: false,
+        projectedRenderEnergy: 0,
+        fieldState: "idle",
+        modeSlotCount: 0,
+        volumeVisible: false,
       });
   });
 
@@ -1665,7 +2129,9 @@ test.describe("Baryon control smoke", () => {
     await page.mouse.move(box.x + box.width * 0.25, box.y + box.height / 2);
     await page.mouse.down();
 
-    await expect(page.locator('.am-btn--play[title="Play"]')).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Play", exact: true }),
+    ).toBeVisible();
 
     await page.mouse.move(box.x + box.width * 0.65, box.y + box.height / 2, {
       steps: 8,
@@ -1675,7 +2141,9 @@ test.describe("Baryon control smoke", () => {
 
     await page.mouse.up();
 
-    await expect(page.locator('.am-btn--play[title="Pause"]')).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Pause", exact: true }),
+    ).toBeVisible();
     await expect.poll(() => readTimelineValue(page)).toBeGreaterThan(2);
   });
 

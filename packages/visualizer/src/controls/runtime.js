@@ -1,12 +1,9 @@
 import * as THREE from "three";
 import { CONTROL_HANDLERS } from "./schema.js";
-import {
-  DEFAULT_VISUALIZATION_METHOD,
-  VISUALIZATION_METHODS,
-} from "../visualization/types.js";
+import { DEFAULT_VISUALIZATION_METHOD } from "../visualization/types.js";
 import {
   AUDIO_DEFAULTS,
-  AUDIT_DEFAULTS,
+  RAYMARCH_DEFAULTS,
   REACTIVITY_DEFAULTS,
   RENDER_DEFAULTS,
 } from "../defaults.js";
@@ -19,6 +16,10 @@ import {
   normalizePerformanceProfile,
 } from "../render/outputProfilePolicy.js";
 import {
+  syncRenderOutputBloomPassUniforms,
+  syncRenderOutputNodeTopology,
+} from "../render/outputPipeline.js";
+import {
   deriveLowStepBloomGuard,
   deriveStepCompensation,
   normalizeStepBudget,
@@ -28,6 +29,7 @@ import {
   getBoundaryModeValue,
   normalizeBoundaryMode,
 } from "../core/modeFamily.js";
+import { allowsAudioMotion } from "../core/renderAuthorityContract.js";
 import {
   setRaymarchCavityGeometry,
   setRaymarchBoundaryMode,
@@ -35,7 +37,6 @@ import {
 } from "../core/raymarch/material.js";
 import {
   buildSceneSnapshot,
-  createDisabledSceneSnapshot,
   createSceneMotionState,
   deriveAutoMotionAmount,
   deriveSceneSignals,
@@ -45,6 +46,7 @@ import {
   stepAudioSceneMotion,
   stepManualSceneMotion,
   stepSettlingSceneMotion,
+  stopAudioSceneMotion,
   syncIdleOverlayRotation,
 } from "./sceneMotion.js";
 
@@ -53,7 +55,6 @@ const IDLE_LOGO_ALPHA_RATIO =
     ? RENDER_DEFAULTS.idleLogoAlpha / RENDER_DEFAULTS.idleLogoIntensity
     : 1;
 const TRANSPARENT_CLEAR_COLOR = new THREE.Color(0x000000);
-const OUTPUT_TOPOLOGY_KEY_FIELD = "__baryonOutputTopologyKey";
 
 function deriveIdleLogoAlpha(intensity) {
   return Math.min(1, intensity * IDLE_LOGO_ALPHA_RATIO);
@@ -67,39 +68,8 @@ function clamp01(value) {
   return clamp(value, 0, 1);
 }
 
-function derivePerceptualChromesthesiaMix(mix) {
+function derivePerceptualSpectralMix(mix) {
   return Math.sqrt(clamp01(mix));
-}
-
-function resolveOutputTopologyKey({ bloomEnabled, outputMode }) {
-  return `${bloomEnabled ? 1 : 0}:${outputMode}`;
-}
-
-function rebuildOutputNodeTopologyIfNeeded(
-  pipeline,
-  postNodes,
-  { bloomEnabled, outputMode, bloomActive },
-) {
-  const nextTopologyKey = resolveOutputTopologyKey({
-    bloomEnabled,
-    outputMode,
-  });
-  if (postNodes?.[OUTPUT_TOPOLOGY_KEY_FIELD] === nextTopologyKey) {
-    return false;
-  }
-
-  const { sceneColor, bloomPass, composeOutputNode } = postNodes ?? {};
-  pipeline.outputNode = composeOutputNode
-    ? composeOutputNode({
-        bloomEnabled,
-        outputMode,
-      })
-    : bloomActive && bloomPass
-      ? sceneColor.add(bloomPass)
-      : sceneColor;
-  pipeline.needsUpdate = true;
-  postNodes[OUTPUT_TOPOLOGY_KEY_FIELD] = nextTopologyKey;
-  return true;
 }
 
 function deriveBloomResponse(controls, stepBudget) {
@@ -140,29 +110,28 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "performanceHudEnabled",
     "renderQualityPreset",
     "customPerformanceTargetFps",
+    "traaEnabled",
     "visualizationMethod",
+    "cameraLocked",
   ]),
   [CONTROL_HANDLERS.output]: Object.freeze([
     "outputMode",
     "outputBackgroundColor",
+    "smaaEnabled",
   ]),
   [CONTROL_HANDLERS.raymarch]: Object.freeze([
     "volumeColor",
     "surfaceColor",
     "colorMode",
-    "chromesthesiaMix",
+    "spectralMix",
     "zeroPointPrecision",
-    "structureMin",
-    "structureMax",
     "boundaryMode",
     "cavityGeometry",
     "raymarchSteps",
     "densityGain",
     "absorption",
     "opacityGain",
-    "contourSharpness",
     "reactivity",
-    "structurePersistence",
     "rimBloomBias",
     "rimCompression",
     "holographicIntensity",
@@ -188,9 +157,9 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "freezeModeSlots",
     "forceWebGLFallbackTest",
     "lowLoadPlaybackDiagnostics",
-    "fieldCacheOverride",
     "injectTestTone",
     "testToneHz",
+    "testToneSignal",
     "testToneAmplitude",
     "logEveryFrames",
   ]),
@@ -238,8 +207,10 @@ export function applySharedControls(gl, controls) {
     customPerformanceTargetFps:
       controls.customPerformanceTargetFps ??
       RENDER_DEFAULTS.customPerformanceTargetFps,
+    traaEnabled: controls.traaEnabled !== false,
     clearAlpha: 0,
     visualizationMethod: controls.visualizationMethod,
+    cameraLocked: Boolean(controls.cameraLocked),
   };
 }
 
@@ -249,6 +220,7 @@ export function applyOutputControls(pipelineState, controls) {
     controls.outputBackgroundColor ?? RENDER_DEFAULTS.outputBackgroundColor;
   const bloomAllowed = pipelineState.renderProfileRef?.current?.bloomAllowed;
   const effectiveBloomEnabled = controls.bloomEnabled && bloomAllowed !== false;
+  const smaaEnabled = controls.smaaEnabled !== false;
   const pipeline = pipelineState.ensurePipeline();
   const postNodes = pipelineState.postNodesRef.current;
 
@@ -257,6 +229,7 @@ export function applyOutputControls(pipelineState, controls) {
       bloomEnabled: effectiveBloomEnabled,
       outputMode,
       outputBackgroundColor,
+      smaaEnabled,
     };
   }
 
@@ -268,6 +241,7 @@ export function applyOutputControls(pipelineState, controls) {
     bloomEnabled: effectiveBloomEnabled,
     outputMode,
     outputBackgroundColor,
+    smaaEnabled,
   };
 }
 
@@ -277,12 +251,11 @@ function applyCommonVisualizationControls(runtimeState, controls) {
   const stepBudget = normalizeStepBudget(
     controls.raymarchSteps ?? STEP_REFERENCE,
   );
-  const colorMode =
-    controls.colorMode === "chromesthesia" ? "chromesthesia" : "static";
-  const chromesthesiaMix =
-    colorMode === "chromesthesia"
-      ? derivePerceptualChromesthesiaMix(
-          controls.chromesthesiaMix ?? RENDER_DEFAULTS.chromesthesiaMix,
+  const colorMode = controls.colorMode === "spectral" ? "spectral" : "static";
+  const spectralMix =
+    colorMode === "spectral"
+      ? derivePerceptualSpectralMix(
+          controls.spectralMix ?? RENDER_DEFAULTS.spectralMix,
         )
       : 0;
   const boundaryMode = normalizeBoundaryMode(controls.boundaryMode);
@@ -295,35 +268,25 @@ function applyCommonVisualizationControls(runtimeState, controls) {
 
   uniforms.uColor.value.set(controls.volumeColor);
   uniforms.uSurfaceColor.value.set(controls.surfaceColor);
-  uniforms.uChromesthesiaMix.value = chromesthesiaMix;
+  uniforms.uSpectralMix.value = spectralMix;
   uniforms.uThreshold.value = controls.zeroPointPrecision;
-  uniforms.uStructureMin.value = controls.structureMin;
-  uniforms.uStructureMax.value = controls.structureMax;
   if (uniforms.uBoundaryMode) {
     uniforms.uBoundaryMode.value = getBoundaryModeValue(boundaryMode);
   }
-  if (runtimeState?.method !== VISUALIZATION_METHODS.cymatics2d) {
-    setRaymarchBoundaryMode(runtimeState?.volumeMesh, boundaryMode);
-    setRaymarchCavityGeometry(
-      runtimeState?.volumeMesh,
-      effectiveCavityGeometry,
-    );
-  }
+  setRaymarchBoundaryMode(runtimeState?.volumeMesh, boundaryMode);
+  setRaymarchCavityGeometry(runtimeState?.volumeMesh, effectiveCavityGeometry);
   uniforms.uIdleLogoIntensity.value = controls.idleLogoIntensity;
   uniforms.uIdleLogoAlpha.value = idleLogoAlpha;
   uniforms.uIdleLogoSize.value = controls.idleLogoSize;
   uniforms.uDensityGain.value = controls.densityGain;
   uniforms.uOpacityGain.value = controls.opacityGain;
-  uniforms.uContourSharpness.value = controls.contourSharpness;
+  uniforms.uContourSharpness.value = RAYMARCH_DEFAULTS.contourSharpness;
   runtimeState.baseDensityGain = controls.densityGain;
   runtimeState.baseThreshold = controls.zeroPointPrecision;
-  runtimeState.baseContourSharpness = controls.contourSharpness;
+  runtimeState.baseContourSharpness = RAYMARCH_DEFAULTS.contourSharpness;
   runtimeState.reactivityTuning = {
-    ...(runtimeState.reactivityTuning ?? {}),
     reactivity: controls.reactivity ?? REACTIVITY_DEFAULTS.reactivity,
     motionAmount: controls.motionAmount ?? REACTIVITY_DEFAULTS.motionAmount,
-    structurePersistence:
-      controls.structurePersistence ?? REACTIVITY_DEFAULTS.structurePersistence,
   };
   runtimeState.requestedRaymarchSteps = stepBudget;
   runtimeState.requestedCavityGeometry = requestedCavityGeometry;
@@ -335,10 +298,10 @@ function applyCommonVisualizationControls(runtimeState, controls) {
     lowStepBloomGuard: deriveLowStepBloomGuard(stepBudget),
   };
   applyEffectiveRaymarchStepBudget(runtimeState, controls, stepBudget);
-  runtimeState.chromesthesia = {
-    ...(runtimeState.chromesthesia ?? {}),
+  runtimeState.spectralLight = {
+    ...(runtimeState.spectralLight ?? {}),
     colorMode,
-    chromesthesiaMix,
+    spectralMix,
   };
 
   if (runtimeState.idleOverlay) {
@@ -356,7 +319,7 @@ function applyCommonVisualizationControls(runtimeState, controls) {
     idleLogoAlpha,
     stepBudget,
     colorMode,
-    chromesthesiaMix,
+    spectralMix,
     boundaryMode,
     requestedCavityGeometry,
     effectiveCavityGeometry,
@@ -381,13 +344,20 @@ export function applyEffectiveRaymarchStepBudget(
   const effectiveStepBudget = normalizeStepBudget(
     nextStepBudget ?? requestedStepBudget,
   );
+  const previousEffectiveStepBudget = runtimeState.effectiveRaymarchSteps;
 
   runtimeState.requestedRaymarchSteps = requestedStepBudget;
   runtimeState.effectiveRaymarchSteps = effectiveStepBudget;
-  if (runtimeState.uniforms?.uRaymarchSteps) {
+  if (
+    runtimeState.uniforms?.uRaymarchSteps &&
+    runtimeState.uniforms.uRaymarchSteps.value !== effectiveStepBudget
+  ) {
     runtimeState.uniforms.uRaymarchSteps.value = effectiveStepBudget;
   }
-  if (runtimeState.volumeMesh?.material) {
+  if (
+    runtimeState.volumeMesh?.material &&
+    previousEffectiveStepBudget !== effectiveStepBudget
+  ) {
     syncRaymarchMaterialSteps(runtimeState.volumeMesh, effectiveStepBudget);
   }
 
@@ -400,7 +370,7 @@ function buildVisualizationControlSnapshot({
   uniforms,
   idleLogoAlpha,
   colorMode,
-  chromesthesiaMix,
+  spectralMix,
   boundaryMode,
   requestedCavityGeometry,
   effectiveCavityGeometry,
@@ -411,13 +381,11 @@ function buildVisualizationControlSnapshot({
       volumeColor: controls.volumeColor,
       surfaceColor: controls.surfaceColor,
       colorMode,
-      chromesthesiaMix,
+      spectralMix,
       boundaryMode,
       requestedCavityGeometry,
       effectiveCavityGeometry,
       threshold: uniforms.uThreshold.value,
-      structureMin: uniforms.uStructureMin.value,
-      structureMax: uniforms.uStructureMax.value,
       idleLogoIntensity: uniforms.uIdleLogoIntensity.value,
       idleLogoAlpha,
       idleLogoSize: uniforms.uIdleLogoSize.value,
@@ -426,7 +394,6 @@ function buildVisualizationControlSnapshot({
       contourSharpness: uniforms.uContourSharpness.value,
       reactivity: runtimeState.reactivityTuning?.reactivity,
       motionAmount: runtimeState.reactivityTuning?.motionAmount,
-      structurePersistence: runtimeState.reactivityTuning?.structurePersistence,
       ...extraUniforms,
     },
     overlay: {
@@ -441,7 +408,7 @@ export function applyRaymarchControls(runtimeState, controls) {
     uniforms,
     idleLogoAlpha,
     colorMode,
-    chromesthesiaMix,
+    spectralMix,
     boundaryMode,
     requestedCavityGeometry,
     effectiveCavityGeometry,
@@ -460,7 +427,7 @@ export function applyRaymarchControls(runtimeState, controls) {
     uniforms,
     idleLogoAlpha,
     colorMode,
-    chromesthesiaMix,
+    spectralMix,
     boundaryMode,
     requestedCavityGeometry,
     effectiveCavityGeometry,
@@ -476,40 +443,9 @@ export function applyRaymarchControls(runtimeState, controls) {
   });
 }
 
-export function applyCymatics2dControls(runtimeState, controls) {
-  const {
-    uniforms,
-    idleLogoAlpha,
-    colorMode,
-    chromesthesiaMix,
-    boundaryMode,
-    requestedCavityGeometry,
-    effectiveCavityGeometry,
-  } = applyCommonVisualizationControls(runtimeState, controls);
-
-  return buildVisualizationControlSnapshot({
-    controls,
-    runtimeState,
-    uniforms,
-    idleLogoAlpha,
-    colorMode,
-    chromesthesiaMix,
-    boundaryMode,
-    requestedCavityGeometry,
-    effectiveCavityGeometry,
-    extraUniforms: {
-      slicePosition: uniforms.uSlicePosition?.value ?? 0,
-    },
-  });
-}
-
 export function applyVisualizationControls(method, runtimeState, controls) {
   if (!runtimeState) {
     return null;
-  }
-
-  if (method === VISUALIZATION_METHODS.cymatics2d) {
-    return applyCymatics2dControls(runtimeState, controls);
   }
 
   return applyRaymarchControls(runtimeState, controls);
@@ -567,18 +503,18 @@ export function applyBloomControls(pipelineState, controls) {
 
   const { bloomPass } = postNodes;
   const bloomActive = effectiveBloomEnabled && effective.strength > 1e-4;
-  if (bloomPass) {
-    bloomPass.strength.value = effective.strength;
-    bloomPass.radius.value = effective.radius;
-    bloomPass.threshold.value = bloomActive ? effective.threshold : 999;
-  }
-  // Only rebuild the output node topology when bloomEnabled or outputMode
-  // actually changes. Rebuilding on every frame (e.g. during continuous slider
-  // drag) keeps the WebGPU pipeline in perpetual recompile, starving the OSR.
-  rebuildOutputNodeTopologyIfNeeded(pipeline, postNodes, {
+  syncRenderOutputBloomPassUniforms(postNodes, {
+    strength: effective.strength,
+    radius: effective.radius,
+    threshold: bloomActive ? effective.threshold : 999,
+  });
+  // Control changes request a topology sync; the output-pipeline owner preserves
+  // the current temporal-history graph state unless the render loop overrides it.
+  syncRenderOutputNodeTopology(pipeline, postNodes, {
     bloomEnabled: effectiveBloomEnabled,
     outputMode,
     bloomActive,
+    smaaEnabled: controls.smaaEnabled !== false,
   });
 
   return {
@@ -594,10 +530,8 @@ export function applyBloomControls(pipelineState, controls) {
 }
 
 export function applyAuditControls(featureState, controls) {
-  const fieldCacheOverride =
-    controls.fieldCacheOverride ?? AUDIT_DEFAULTS.fieldCacheOverride;
   if (!featureState?.audit?.settings) {
-    return { fieldCacheOverride };
+    return {};
   }
 
   Object.assign(featureState.audit.settings, {
@@ -607,57 +541,43 @@ export function applyAuditControls(featureState, controls) {
     lowLoadPlaybackDiagnostics: controls.lowLoadPlaybackDiagnostics,
     injectTestTone: controls.injectTestTone,
     testToneHz: controls.testToneHz,
+    testToneSignal: controls.testToneSignal,
     testToneAmplitude: controls.testToneAmplitude,
     logEveryFrames: controls.logEveryFrames,
   });
 
   return {
     ...featureState.audit.settings,
-    fieldCacheOverride,
   };
 }
 
-export function applySceneControls(
-  target,
-  controls,
-  deltaTime,
-  featureFrame,
-  status,
-) {
+export function applySceneControls(target, controls, deltaTime, featureFrame) {
   const runtimeState = target?.points ? target : null;
   const points = runtimeState?.points ?? target;
   if (!points?.rotation) return null;
-  if (runtimeState?.method === VISUALIZATION_METHODS.cymatics2d) {
-    return createDisabledSceneSnapshot(
-      runtimeState,
-      points,
-      controls,
-      featureFrame,
-      deltaTime,
-    );
-  }
 
   const sceneMotion =
     runtimeState?.sceneMotion ?? createSceneMotionState(points.rotation.y ?? 0);
   const rotationMode = normalizeRotationMode(controls.rotationMode);
   const manualVelocity = getManualVelocity(controls);
   const userScale = getMotionAmount(controls, runtimeState);
-  const audioActive =
-    status?.isPlaying ||
-    status?.isLiveInputActive ||
-    featureFrame?.fieldState === "test";
-  const fieldDriven =
-    featureFrame?.fieldState && featureFrame.fieldState !== "idle";
+  const audioMotionDriven = allowsAudioMotion(featureFrame);
   const signals = deriveSceneSignals(
     featureFrame,
     runtimeState?.responseEnvelope ?? 0,
     sceneMotion.lastMotionSignal,
   );
 
+  sceneMotion.pitch = Number.isFinite(points.rotation.x)
+    ? points.rotation.x
+    : (sceneMotion.pitch ?? 0);
   sceneMotion.yaw = points.rotation.y ?? sceneMotion.yaw ?? 0;
+  sceneMotion.roll = Number.isFinite(points.rotation.z)
+    ? points.rotation.z
+    : (sceneMotion.roll ?? 0);
 
   let effectiveMotionAmount;
-  if (rotationMode === "audio" && audioActive && fieldDriven) {
+  if (rotationMode === "audio" && audioMotionDriven) {
     const autoBase = deriveAutoMotionAmount(
       sceneMotion,
       signals.energySignal,
@@ -670,24 +590,30 @@ export function applySceneControls(
 
   if (rotationMode === "manual") {
     stepManualSceneMotion(sceneMotion, manualVelocity, deltaTime);
-  } else if (rotationMode === "audio" && audioActive && fieldDriven) {
+  } else if (rotationMode === "audio" && audioMotionDriven) {
     stepAudioSceneMotion(sceneMotion, {
       motionAmount: effectiveMotionAmount,
       shapedDrive: signals.shapedDrive,
       reactiveSignal: signals.reactiveSignal,
       motionImpulse: signals.motionImpulse,
+      torqueImpulse: signals.torqueImpulse,
+      attitudeImpulse: signals.attitudeImpulse,
       beatPulseId: featureFrame?.beatPulseId ?? 0,
       beatStrength: clamp01(featureFrame?.beatStrength ?? 0),
       beatConfidence: clamp01(featureFrame?.beatConfidence ?? 0),
       beatDetected: featureFrame?.beatDetected,
       deltaTime,
     });
+  } else if (rotationMode === "audio" && featureFrame && !audioMotionDriven) {
+    stopAudioSceneMotion(sceneMotion);
   } else {
     stepSettlingSceneMotion(sceneMotion, deltaTime);
   }
   sceneMotion.lastMotionSignal = signals.motionSignal;
 
+  points.rotation.x = sceneMotion.pitch;
   points.rotation.y = sceneMotion.yaw;
+  points.rotation.z = sceneMotion.roll;
   syncIdleOverlayRotation(runtimeState, sceneMotion, manualVelocity, deltaTime);
   if (runtimeState) {
     runtimeState.sceneMotion = sceneMotion;
@@ -699,7 +625,9 @@ export function applySceneControls(
     motionAmount: effectiveMotionAmount,
     signals,
     sceneMotion,
+    rotationX: points.rotation.x,
     rotationY: points.rotation.y,
+    rotationZ: points.rotation.z,
   });
 }
 

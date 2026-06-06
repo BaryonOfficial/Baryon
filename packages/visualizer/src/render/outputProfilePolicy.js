@@ -41,8 +41,8 @@ export const RENDER_CONTEXTS = Object.freeze({
 /**
  * @typedef {{
  *   renderScale?: number,
- *   traaEnabled?: boolean,
  *   bloomAllowed?: boolean,
+ *   traaEnabled?: boolean,
  * }} RenderQualityProfileOverrides
  */
 
@@ -51,6 +51,9 @@ export const RENDER_CONTEXTS = Object.freeze({
  * @returns {PerformanceProfile}
  */
 export function normalizePerformanceProfile(value) {
+  if (value === PERFORMANCE_PROFILES.auto) {
+    return PERFORMANCE_PROFILES.auto;
+  }
   if (value === PERFORMANCE_PROFILES.custom) {
     return PERFORMANCE_PROFILES.custom;
   }
@@ -264,11 +267,11 @@ export function normalizeRenderQualityProfileOverrides(overrides) {
   ) {
     nextOverrides.renderScale = renderScaleCandidate;
   }
-  if (typeof candidate.traaEnabled === "boolean") {
-    nextOverrides.traaEnabled = candidate.traaEnabled;
-  }
   if (typeof candidate.bloomAllowed === "boolean") {
     nextOverrides.bloomAllowed = candidate.bloomAllowed;
+  }
+  if (typeof candidate.traaEnabled === "boolean") {
+    nextOverrides.traaEnabled = candidate.traaEnabled;
   }
 
   return Object.keys(nextOverrides).length > 0 ? nextOverrides : null;
@@ -289,13 +292,12 @@ export function applyRenderQualityProfileOverrides(profile, overrides) {
   if (Number.isFinite(normalizedOverrides.renderScale)) {
     nextProfile.renderScale = normalizedOverrides.renderScale;
   }
-  if (typeof normalizedOverrides.traaEnabled === "boolean") {
-    nextProfile.traaEnabled = normalizedOverrides.traaEnabled;
-  }
   if (typeof normalizedOverrides.bloomAllowed === "boolean") {
     nextProfile.bloomAllowed = normalizedOverrides.bloomAllowed;
   }
-  nextProfile.traaEnabled = true;
+  if (typeof normalizedOverrides.traaEnabled === "boolean") {
+    nextProfile.traaEnabled = normalizedOverrides.traaEnabled;
+  }
 
   return nextProfile;
 }
@@ -317,8 +319,7 @@ export function normalizeResolvedRenderQualityProfile(profile) {
     renderScaleCandidate > 0
       ? renderScaleCandidate
       : null;
-  const traaEnabled = candidate.traaEnabled;
-  if (renderScale == null || typeof traaEnabled !== "boolean") {
+  if (renderScale == null) {
     return null;
   }
 
@@ -326,7 +327,10 @@ export function normalizeResolvedRenderQualityProfile(profile) {
     qualityPreset: normalizePerformanceProfile(candidate.qualityPreset),
     targetFps: normalizePerformanceTargetFps(candidate.targetFps),
     renderScale,
-    traaEnabled,
+    traaEnabled:
+      typeof candidate.traaEnabled === "boolean"
+        ? candidate.traaEnabled
+        : true,
     bloomAllowed:
       typeof candidate.bloomAllowed === "boolean"
         ? candidate.bloomAllowed
@@ -346,8 +350,8 @@ export function normalizeResolvedRenderQualityProfile(profile) {
  *   outputHeight?: number,
  *   overrides?: RenderQualityProfileOverrides | null,
  *   renderScale?: number,
- *   traaEnabled?: boolean,
  *   bloomAllowed?: boolean,
+ *   traaEnabled?: boolean,
  *   renderContext?: RenderContext,
  * }=} param0
  * @returns {RenderQualityProfile}
@@ -359,19 +363,21 @@ export function resolveRenderQualityProfile({
   outputHeight = 0,
   overrides = null,
   renderScale,
-  traaEnabled,
   bloomAllowed,
+  traaEnabled,
   renderContext = RENDER_CONTEXTS.preview,
 } = {}) {
+  const hasInlineOverrides =
+    Number.isFinite(renderScale) ||
+    typeof bloomAllowed === "boolean" ||
+    typeof traaEnabled === "boolean";
   const effectiveOverrides =
     overrides ??
-    (Number.isFinite(renderScale) ||
-    typeof traaEnabled === "boolean" ||
-    typeof bloomAllowed === "boolean"
+    (hasInlineOverrides
       ? {
           renderScale,
-          traaEnabled,
           bloomAllowed,
+          traaEnabled,
         }
       : null);
   const normalizedPerformanceProfile =

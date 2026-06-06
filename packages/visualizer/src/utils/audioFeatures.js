@@ -3,6 +3,7 @@ export {
   buildAudioFeatureFrame,
   buildAudioFeatureAnalysisSnapshot,
   buildCurrentAudioFeatureAnalysisResult,
+  buildFastSignalPatchedAudioFeatureAnalysisResult,
   composeAudioFeatureFrame,
   prepareAudioFeatureFrameInputs,
   runHeavyAudioFeatureAnalysis,
@@ -11,14 +12,7 @@ export {
   updateAudioFeatureChromaState,
   updateAudioFeatureTempoState,
 } from "./audio/buildFeatureFrame.js";
-export {
-  buildCompactAnalyzerFrame,
-  buildAnalysisSessionKey,
-  createAudioFeatureAnalyzer,
-  createNoopAudioFeatureAnalyzer,
-  DEFAULT_FEATURE_ANALYSIS_SETTINGS,
-  normalizeFeatureAnalysisSettings,
-} from "./audio/featureAnalyzer.js";
+export { buildAnalysisSessionKey } from "./audio/analysisSession.js";
 export {
   reviveSerializedReplayFrame,
   reviveSerializedReplayFrames,
