@@ -23,7 +23,7 @@ license.
 
 ## How to Obtain a Commercial License
 
-Contact: **kyledcollins@proton.me**
+Contact: **licensing@baryon.live**
 
 Please include a brief description of your intended use case. Commercial
 licenses are available at two tiers:

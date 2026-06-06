@@ -125,4 +125,4 @@ New GUI controls must be added through the shared control schema and documented 
 
 - **Questions:** [GitHub Discussions](https://github.com/BaryonOfficial/Baryon/discussions)
 - **Bugs:** [GitHub Issues](https://github.com/BaryonOfficial/Baryon/issues) — use the bug report template
-- **Security vulnerabilities:** email kyledcollins@proton.me privately (see [SECURITY.md](SECURITY.md))
+- **Security vulnerabilities:** email security@baryon.live privately (see [SECURITY.md](SECURITY.md))
