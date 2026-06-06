@@ -1,6 +1,7 @@
 import {
   getRaymarchModalBasisCacheDescriptorStaleReason,
   isRaymarchModalBasisCacheReadyForDescriptor,
+  RAYMARCH_PRESSURE_RADIATION_SEMANTIC,
 } from "@baryon/visualizer/core/raymarch/fieldCache";
 import {
   RENDER_PROBE_SCHEMA_VERSION,
@@ -400,6 +401,10 @@ const MODAL_BASIS_CACHE_RENDER_DIAGNOSTIC_DEFAULTS = Object.freeze({
   liveSynthesisSupportDiagnosticSampleCount: 0,
   liveSynthesisSupportDiagnosticSupportedSampleCount: 0,
   liveSynthesisSupportDiagnosticCoverage: 0,
+  liveFieldProjectionPressureRadiationReady: false,
+  liveFieldProjectionPressureRadiationSemantic:
+    RAYMARCH_PRESSURE_RADIATION_SEMANTIC,
+  radiationMaterialContrastSemantic: "unavailable-no-material-contrast",
   modalBasisCacheRebuildPending: false,
   modalBasisCacheBackend: "compute",
   modalBasisCacheResolution: 0,
@@ -610,6 +615,11 @@ export function updateObservationTransferRenderDiagnostics(
 
   const raymarchDebug = debugSnapshot?.raymarchDebug ?? debugSnapshot ?? {};
   const modalBasisCache = runtimeState?.modalBasisCache ?? null;
+  const liveFieldProjectionCache =
+    runtimeState?.liveFieldProjectionCache ?? null;
+  const pressureRadiationTexture =
+    liveFieldProjectionCache?.pressureRadiationTexture ??
+    runtimeState?.volumeMesh?.userData?.raymarchModalPressureRadiationTexture;
   const modalBasisCacheDescriptor =
     runtimeState?.currentModalBasisCacheDescriptor ?? null;
   renderDiagnostics.observationEnergy = readFiniteNumber(
@@ -745,6 +755,21 @@ export function updateObservationTransferRenderDiagnostics(
       modalBasisCache?.liveSynthesisSupportDiagnosticCoverage ??
       modalBasisCacheDescriptor?.liveSynthesisSupportDiagnosticCoverage,
   );
+  renderDiagnostics.liveFieldProjectionPressureRadiationReady =
+    typeof raymarchDebug.liveFieldProjectionPressureRadiationReady === "boolean"
+      ? raymarchDebug.liveFieldProjectionPressureRadiationReady
+      : Boolean(
+          liveFieldProjectionCache?.ready === true &&
+            pressureRadiationTexture,
+        );
+  renderDiagnostics.liveFieldProjectionPressureRadiationSemantic =
+    raymarchDebug.liveFieldProjectionPressureRadiationSemantic ??
+    liveFieldProjectionCache?.pressureRadiationSemantic ??
+    MODAL_BASIS_CACHE_RENDER_DIAGNOSTIC_DEFAULTS.liveFieldProjectionPressureRadiationSemantic;
+  renderDiagnostics.radiationMaterialContrastSemantic =
+    raymarchDebug.radiationMaterialContrastSemantic ??
+    liveFieldProjectionCache?.radiationMaterialContrast?.semantic ??
+    MODAL_BASIS_CACHE_RENDER_DIAGNOSTIC_DEFAULTS.radiationMaterialContrastSemantic;
   renderDiagnostics.modalBasisCacheRebuildPending = Boolean(
     raymarchDebug.modalBasisCacheRebuildPending ??
     modalBasisCache?.rebuildPending,

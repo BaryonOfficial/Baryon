@@ -34,6 +34,7 @@ import {
   shouldRebuildRaymarchModalBasisCache,
   sumLiveSynthesisRepresentableUploadWeight,
   RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
+  RAYMARCH_PRESSURE_RADIATION_SEMANTIC,
 } from "./fieldCache.js";
 import {
   buildRaymarchPhaseSlotSignature,
@@ -606,7 +607,8 @@ function hasCommittedLiveFieldProjectionCache(runtimeState) {
     liveFieldProjectionCache?.active === true &&
     liveFieldProjectionCache?.ready === true &&
     volumeUserData?.raymarchModalLiveFieldTexture &&
-    volumeUserData?.raymarchModalLiveSupportTexture,
+    volumeUserData?.raymarchModalLiveSupportTexture &&
+    volumeUserData?.raymarchModalPressureRadiationTexture,
   );
 }
 
@@ -1362,6 +1364,19 @@ function buildRaymarchDebugSnapshot(
     runtimeState?.lastModalBasisAuditDiagnostics ??
     modalBasisCache?.lastAuditDiagnostics ??
     null;
+  const liveFieldPressureRadiationReady = Boolean(
+    liveFieldProjectionCache?.ready === true &&
+      liveFieldProjectionCache?.pressureRadiationTexture,
+  );
+  const liveFieldPressureRadiationSemantic =
+    liveFieldProjectionCache?.pressureRadiationSemantic ??
+    RAYMARCH_PRESSURE_RADIATION_SEMANTIC;
+  const radiationMaterialContrast =
+    liveFieldProjectionCache?.radiationMaterialContrast ?? null;
+  const radiationMaterialContrastSemantic =
+    typeof radiationMaterialContrast?.semantic === "string"
+      ? radiationMaterialContrast.semantic
+      : "unavailable-no-material-contrast";
   const liveSynthesisUnsignedSupportMean = readFiniteNumber(
     liveSynthesisSupportDiagnostics?.liveSynthesisUnsignedSupportMean,
     0,
@@ -1792,6 +1807,11 @@ function buildRaymarchDebugSnapshot(
       liveFieldProjectionCache?.lastComputeReason ?? "uninitialized",
     liveFieldProjectionCacheComputedAtSec:
       liveFieldProjectionCache?.lastComputedAtSec ?? null,
+    liveFieldProjectionPressureRadiationReady:
+      liveFieldPressureRadiationReady,
+    liveFieldProjectionPressureRadiationSemantic:
+      liveFieldPressureRadiationSemantic,
+    radiationMaterialContrastSemantic,
     modalBasisCacheDescriptorFresh,
     modalBasisCacheDescriptorStaleReason,
     modalBasisCacheQueuedDescriptorPending: Boolean(

@@ -99,6 +99,8 @@ export function setupRaymarch(
     modalBasisAtlasTexture: modalBasisCache.texture,
     modalLiveFieldTexture: liveFieldProjectionCache.fieldTexture,
     modalLiveSupportTexture: liveFieldProjectionCache.supportTexture,
+    modalPressureRadiationTexture:
+      liveFieldProjectionCache.pressureRadiationTexture,
     modalPhaseInterferenceTexture:
       liveFieldProjectionCache.phaseInterferenceTexture,
     spectralLaneTextureA: spectralLaneCache.spectralLaneTextureA,

@@ -20,6 +20,7 @@ import {
   uint,
   max,
   sin,
+  sqrt,
   vec3,
   vec4,
 } from "three/tsl";
@@ -41,6 +42,21 @@ const FIELD_CACHE_COMPUTE_WORKGROUP_SIZE = Object.freeze([8, 8, 4]);
 export const MODAL_BASIS_CACHE_ENERGY_EPSILON = 0.01;
 export const STRUCTURAL_PROJECTION_REFERENCE_ENERGY = 0.01;
 const STRUCTURAL_PROJECTION_EPSILON = 1e-12;
+export const RAYMARCH_PRESSURE_RADIATION_SEMANTIC =
+  "normalized-pressure-velocity-radiation-potential";
+const RAYMARCH_UNAVAILABLE_RADIATION_MATERIAL_CONTRAST = Object.freeze({
+  pressureEnergyWeight: 0,
+  velocityEnergyWeight: 0,
+  semantic: "unavailable-no-material-contrast",
+  ready: false,
+});
+export const RAYMARCH_VISUALIZATION_RADIATION_MATERIAL_CONTRAST =
+  Object.freeze({
+    pressureEnergyWeight: 1,
+    velocityEnergyWeight: 1,
+    semantic: "visualization-only-normalized-pressure-velocity-balance",
+    ready: true,
+  });
 
 export function deriveLiveSynthesisCancellationRatio(field, unsignedSupport) {
   if (!(unsignedSupport > MODAL_BASIS_CACHE_ENERGY_EPSILON)) {
@@ -48,6 +64,86 @@ export function deriveLiveSynthesisCancellationRatio(field, unsignedSupport) {
   }
 
   return Math.min(1, Math.max(0, 1 - Math.abs(field) / unsignedSupport));
+}
+
+function readFiniteNumber(value, fallback = 0) {
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function clampSignedUnit(value) {
+  return Math.max(-1, Math.min(1, readFiniteNumber(value, 0)));
+}
+
+function normalizeRadiationMaterialContrast(radiationMaterialContrast) {
+  if (!radiationMaterialContrast || typeof radiationMaterialContrast !== "object") {
+    return RAYMARCH_UNAVAILABLE_RADIATION_MATERIAL_CONTRAST;
+  }
+
+  const pressureEnergyWeight = Math.max(
+    0,
+    readFiniteNumber(radiationMaterialContrast.pressureEnergyWeight, 0),
+  );
+  const velocityEnergyWeight = Math.max(
+    0,
+    readFiniteNumber(radiationMaterialContrast.velocityEnergyWeight, 0),
+  );
+  if (!(pressureEnergyWeight > 0 || velocityEnergyWeight > 0)) {
+    return RAYMARCH_UNAVAILABLE_RADIATION_MATERIAL_CONTRAST;
+  }
+
+  return {
+    pressureEnergyWeight,
+    velocityEnergyWeight,
+    semantic:
+      typeof radiationMaterialContrast.semantic === "string" &&
+      radiationMaterialContrast.semantic
+        ? radiationMaterialContrast.semantic
+        : "normalized-pressure-velocity-material-contrast",
+    ready: true,
+  };
+}
+
+export function deriveNormalizedPressureRadiationFields({
+  normalizedPressure,
+  gradX,
+  gradY,
+  gradZ,
+  radiationMaterialContrast = null,
+}) {
+  const pressure = clampSignedUnit(normalizedPressure);
+  const normalizedVelocityProxy = clamp01(
+    Math.hypot(
+      readFiniteNumber(gradX, 0),
+      readFiniteNumber(gradY, 0),
+      readFiniteNumber(gradZ, 0),
+    ),
+  );
+  const normalizedPressureEnergy = clamp01(pressure * pressure);
+  const normalizedVelocityEnergy = clamp01(
+    normalizedVelocityProxy * normalizedVelocityProxy,
+  );
+  const materialContrast = normalizeRadiationMaterialContrast(
+    radiationMaterialContrast,
+  );
+  const normalizedRadiationPotential = materialContrast.ready
+    ? clampSignedUnit(
+        normalizedPressureEnergy * materialContrast.pressureEnergyWeight -
+          normalizedVelocityEnergy * materialContrast.velocityEnergyWeight,
+      )
+    : 0;
+
+  return {
+    normalizedPressure: pressure,
+    normalizedPressureProvenance: "coherent-signed-modal-summation",
+    normalizedVelocityProxy,
+    normalizedPressureEnergy,
+    normalizedVelocityEnergy,
+    normalizedRadiationPotential,
+    radiationPotentialReady: materialContrast.ready,
+    radiationMaterialContrastSemantic: materialContrast.semantic,
+    radiationPressureEnergyWeight: materialContrast.pressureEnergyWeight,
+    radiationVelocityEnergyWeight: materialContrast.velocityEnergyWeight,
+  };
 }
 const MODAL_BASIS_SUPPORT_DIAGNOSTIC_SAMPLE_POINTS = Object.freeze([
   [0, 0, 0],
@@ -1250,6 +1346,7 @@ export function createRaymarchLiveFieldProjectionCache({
   const normalizedResolution = normalizeModalBasisCacheResolution(resolution);
   const fieldTexture = createCacheTexture(normalizedResolution);
   const supportTexture = createCacheTexture(normalizedResolution);
+  const pressureRadiationTexture = createCacheTexture(normalizedResolution);
   const phaseInterferenceTexture = createCacheTexture(normalizedResolution);
 
   return {
@@ -1261,6 +1358,10 @@ export function createRaymarchLiveFieldProjectionCache({
     semantic: "frame-current-modal-field-projection",
     fieldTexture,
     supportTexture,
+    pressureRadiationTexture,
+    pressureRadiationSemantic: RAYMARCH_PRESSURE_RADIATION_SEMANTIC,
+    radiationMaterialContrast:
+      RAYMARCH_VISUALIZATION_RADIATION_MATERIAL_CONTRAST,
     phaseInterferenceTexture,
     lastComputedAtSec: null,
     lastComputeReason: "uninitialized",
@@ -1325,6 +1426,7 @@ export function disposeRaymarchLiveFieldProjectionCache(
 ) {
   disposeRaymarchFieldCache(liveFieldProjectionCache);
   liveFieldProjectionCache?.supportTexture?.dispose?.();
+  liveFieldProjectionCache?.pressureRadiationTexture?.dispose?.();
   liveFieldProjectionCache?.phaseInterferenceTexture?.dispose?.();
 }
 
@@ -2256,6 +2358,7 @@ export function evaluateRaymarchLiveSynthesisFieldPoint({
   y = 0,
   z = 0,
   resolution = RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
+  radiationMaterialContrast = null,
 }) {
   const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
   const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
@@ -2288,19 +2391,30 @@ export function evaluateRaymarchLiveSynthesisFieldPoint({
     liveSynthesisDiagnostics.contributingRawModalEnergy +
     liveSynthesisDiagnostics.bandwidthRejectedRawModalEnergy;
   const field = modalField.field / amplitudeNorm;
+  const gradX = modalField.gradX / amplitudeNorm;
+  const gradY = modalField.gradY / amplitudeNorm;
+  const gradZ = modalField.gradZ / amplitudeNorm;
   const unsignedSupport = modalField.unsignedSupport / amplitudeNorm;
   const cancellationRatio = deriveLiveSynthesisCancellationRatio(
     field,
     unsignedSupport,
   );
+  const pressureRadiationFields = deriveNormalizedPressureRadiationFields({
+    normalizedPressure: field,
+    gradX,
+    gradY,
+    gradZ,
+    radiationMaterialContrast,
+  });
 
   return {
     field,
-    gradX: modalField.gradX / amplitudeNorm,
-    gradY: modalField.gradY / amplitudeNorm,
-    gradZ: modalField.gradZ / amplitudeNorm,
+    gradX,
+    gradY,
+    gradZ,
     unsignedSupport,
     cancellationRatio,
+    ...pressureRadiationFields,
     modalBasisCachePhaseAuthority: Math.min(
       1,
       Math.max(
@@ -2521,8 +2635,13 @@ function createLiveFieldProjectionComputeKernel({
   modalFieldCapacity,
   uniforms,
 }) {
-  const { resolution, fieldTexture, supportTexture, phaseInterferenceTexture } =
-    liveFieldProjectionCache;
+  const {
+    resolution,
+    fieldTexture,
+    supportTexture,
+    pressureRadiationTexture,
+    phaseInterferenceTexture,
+  } = liveFieldProjectionCache;
   const modalFieldActiveCount = int(uniforms.uModalFieldModeCount);
   const resolutionUint = uint(resolution);
   const resolutionFloat = float(resolution);
@@ -2613,6 +2732,52 @@ function createLiveFieldProjectionComputeKernel({
       );
 
       const amplitudeNorm = max(uniforms.uTotalSlotAmplitude, float(0.01));
+      const normalizedSignedField = fieldSum.div(amplitudeNorm).toVar();
+      const normalizedPressure = clamp(
+        normalizedSignedField,
+        float(-1.0),
+        one,
+      ).toVar();
+      const normalizedGradX = gradXSum.div(amplitudeNorm).toVar();
+      const normalizedGradY = gradYSum.div(amplitudeNorm).toVar();
+      const normalizedGradZ = gradZSum.div(amplitudeNorm).toVar();
+      const normalizedVelocityProxy = clamp(
+        sqrt(
+          normalizedGradX
+            .mul(normalizedGradX)
+            .add(normalizedGradY.mul(normalizedGradY))
+            .add(normalizedGradZ.mul(normalizedGradZ)),
+        ),
+        zero,
+        one,
+      ).toVar();
+      const normalizedPressureEnergy = clamp(
+        normalizedPressure.mul(normalizedPressure),
+        zero,
+        one,
+      );
+      const normalizedVelocityEnergy = clamp(
+        normalizedVelocityProxy.mul(normalizedVelocityProxy),
+        zero,
+        one,
+      );
+      const normalizedRadiationPotential = clamp(
+        normalizedPressureEnergy
+          .mul(
+            float(
+              RAYMARCH_VISUALIZATION_RADIATION_MATERIAL_CONTRAST.pressureEnergyWeight,
+            ),
+          )
+          .sub(
+            normalizedVelocityEnergy.mul(
+              float(
+                RAYMARCH_VISUALIZATION_RADIATION_MATERIAL_CONTRAST.velocityEnergyWeight,
+              ),
+            ),
+          ),
+        float(-1.0),
+        one,
+      );
       const supportEnergyNorm = max(
         supportSum.mul(supportSum),
         float(STRUCTURAL_PROJECTION_EPSILON),
@@ -2669,16 +2834,26 @@ function createLiveFieldProjectionComputeKernel({
         fieldTexture,
         voxelCoord,
         vec4(
-          fieldSum.div(amplitudeNorm),
-          gradXSum.div(amplitudeNorm),
-          gradYSum.div(amplitudeNorm),
-          gradZSum.div(amplitudeNorm),
+          normalizedSignedField,
+          normalizedGradX,
+          normalizedGradY,
+          normalizedGradZ,
         ),
       ).toWriteOnly();
       textureStore(
         supportTexture,
         voxelCoord,
         vec4(supportSum.div(amplitudeNorm), zero, zero, one),
+      ).toWriteOnly();
+      textureStore(
+        pressureRadiationTexture,
+        voxelCoord,
+        vec4(
+          normalizedPressure,
+          normalizedVelocityProxy,
+          normalizedRadiationPotential,
+          one,
+        ),
       ).toWriteOnly();
       textureStore(
         phaseInterferenceTexture,

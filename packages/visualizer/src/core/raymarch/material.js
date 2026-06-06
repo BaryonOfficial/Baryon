@@ -202,6 +202,7 @@ function normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) {
  *   modalBasisAtlasTexture?: any,
  *   modalLiveFieldTexture?: any,
  *   modalLiveSupportTexture?: any,
+ *   modalPressureRadiationTexture?: any,
  *   modalPhaseInterferenceTexture?: any,
  *   spectralLaneTextureA?: any,
  *   spectralLaneTextureB?: any,
@@ -261,14 +262,47 @@ function sampleBasisAtlasPageNode({
   };
 }
 
+function samplePressureRadiationCarrierNode({
+  basisUv,
+  modalPressureRadiationTexture,
+}) {
+  const pressureRadiationSample = texture3D(modalPressureRadiationTexture).sample(
+    basisUv,
+  );
+  const normalizedPressure = clamp(
+    pressureRadiationSample.x,
+    float(-1.0),
+    float(1.0),
+  );
+  const velocityProxy = clamp(pressureRadiationSample.y, float(0.0), float(1.0));
+  const radiationPotential = clamp(
+    pressureRadiationSample.z,
+    float(-1.0),
+    float(1.0),
+  );
+  const ready = smoothstep(float(0.5), float(1.0), pressureRadiationSample.w);
+
+  return {
+    pressure: normalizedPressure,
+    velocityProxy,
+    radiationPotential,
+    ready,
+  };
+}
+
 function sampleLiveFieldProjectionCacheNode({
   basisUv,
   modalLiveFieldTexture,
   modalLiveSupportTexture,
+  modalPressureRadiationTexture,
 }) {
   const fieldSample = texture3D(modalLiveFieldTexture).sample(basisUv);
   const supportSample = texture3D(modalLiveSupportTexture).sample(basisUv);
-  const normalizedField = fieldSample.x;
+  const pressureRadiationCarrier = samplePressureRadiationCarrierNode({
+    basisUv,
+    modalPressureRadiationTexture,
+  });
+  const normalizedField = pressureRadiationCarrier.pressure;
   const normalizedUnsignedSupport = max(supportSample.x, float(0.0));
   const cancellationSupportEpsilon = float(MODAL_BASIS_CACHE_ENERGY_EPSILON);
   const cancellationRatio = normalizedUnsignedSupport
@@ -287,6 +321,9 @@ function sampleLiveFieldProjectionCacheNode({
     gradient: vec3(fieldSample.y, fieldSample.z, fieldSample.w),
     unsignedSupport: normalizedUnsignedSupport,
     cancellationRatio,
+    velocityProxy: pressureRadiationCarrier.velocityProxy,
+    radiationPotential: pressureRadiationCarrier.radiationPotential,
+    radiationReady: pressureRadiationCarrier.ready,
   };
 }
 
@@ -705,6 +742,7 @@ function createScatteringNode({
   modalBasisAtlasTexture = null,
   modalLiveFieldTexture = null,
   modalLiveSupportTexture = null,
+  modalPressureRadiationTexture = null,
   modalPhaseInterferenceTexture = null,
   spectralLaneTextureA = null,
   spectralLaneTextureB = null,
@@ -925,6 +963,9 @@ function createScatteringNode({
       const gradZ = float(0.0).toVar();
       const effectiveUnsignedSupport = float(0.0).toVar();
       const effectiveCancellationRatio = float(0.0).toVar();
+      const normalizedVelocityProxy = float(0.0).toVar();
+      const normalizedRadiationPotential = float(0.0).toVar();
+      const radiationPotentialReady = float(0.0).toVar();
       const basisUv = getBasisLocalUvNode({
         localPosition,
         uRadius,
@@ -953,6 +994,15 @@ function createScatteringNode({
         gradZ.assign(liveFieldSample.gradient.z);
         effectiveUnsignedSupport.assign(liveFieldSample.unsignedSupport);
         effectiveCancellationRatio.assign(liveFieldSample.cancellationRatio);
+        normalizedVelocityProxy.assign(
+          liveFieldSample.velocityProxy ?? float(0.0),
+        );
+        normalizedRadiationPotential.assign(
+          liveFieldSample.radiationPotential ?? float(0.0),
+        );
+        radiationPotentialReady.assign(
+          liveFieldSample.radiationReady ?? float(0.0),
+        );
       };
       const canSynthesizeLiveField =
         modalBasisAtlasTexture && modalFieldModeBuffer;
@@ -970,13 +1020,18 @@ function createScatteringNode({
           }),
         );
       };
-      if (modalLiveFieldTexture && modalLiveSupportTexture) {
+      if (
+        modalLiveFieldTexture &&
+        modalLiveSupportTexture &&
+        modalPressureRadiationTexture
+      ) {
         If(uLiveFieldCacheActive.greaterThan(float(0.5)), () => {
           assignLiveFieldSample(
             sampleLiveFieldProjectionCacheNode({
               basisUv,
               modalLiveFieldTexture,
               modalLiveSupportTexture,
+              modalPressureRadiationTexture,
             }),
           );
         }).Else(() => {
@@ -1081,6 +1136,15 @@ function createScatteringNode({
         float(0.0),
         float(1.0),
       );
+      const radiationTransferAuthority = radiationPotentialReady.mul(
+        localFieldSupportAuthority,
+      );
+      const radiationPotentialMagnitude = abs(normalizedRadiationPotential).mul(
+        radiationTransferAuthority,
+      );
+      const velocityProxyAuthority = normalizedVelocityProxy.mul(
+        radiationTransferAuthority,
+      );
       const boundaryMask = smoothstep(
         float(RAYMARCH_BOUNDARY_START),
         float(RAYMARCH_BOUNDARY_END),
@@ -1150,7 +1214,12 @@ function createScatteringNode({
             gradientFieldAuthority.mul(modalStructureSupport),
             shellFocus.mul(modalStructureSupport).mul(shellFieldAuthority),
           ),
-          shellFocus.mul(supportStructureAuthority),
+          max(
+            shellFocus.mul(supportStructureAuthority),
+            radiationPotentialMagnitude
+              .mul(max(velocityProxyAuthority, localGradientEvidence))
+              .mul(modalStructureSupport),
+          ),
         ),
         float(0.0),
         float(1.0),
@@ -1891,6 +1960,7 @@ export function createRaymarchVolumeMesh({
   modalBasisAtlasTexture = null,
   modalLiveFieldTexture = null,
   modalLiveSupportTexture = null,
+  modalPressureRadiationTexture = null,
   modalPhaseInterferenceTexture = null,
   spectralLaneTextureA = null,
   spectralLaneTextureB = null,
@@ -1909,6 +1979,7 @@ export function createRaymarchVolumeMesh({
     modalBasisAtlasTexture,
     modalLiveFieldTexture,
     modalLiveSupportTexture,
+    modalPressureRadiationTexture,
     modalPhaseInterferenceTexture,
     spectralLaneTextureA,
     spectralLaneTextureB,
@@ -1937,6 +2008,8 @@ export function createRaymarchVolumeMesh({
       modalBasisAtlasTexture: modalResourceBindings.modalBasisAtlasTexture,
       modalLiveFieldTexture: modalResourceBindings.modalLiveFieldTexture,
       modalLiveSupportTexture: modalResourceBindings.modalLiveSupportTexture,
+      modalPressureRadiationTexture:
+        modalResourceBindings.modalPressureRadiationTexture,
       modalPhaseInterferenceTexture:
         modalResourceBindings.modalPhaseInterferenceTexture,
       spectralLaneTextureA: modalResourceBindings.spectralLaneTextureA,
@@ -1955,6 +2028,8 @@ export function createRaymarchVolumeMesh({
       modalResourceBindings.modalLiveFieldTexture;
     material.modalLiveSupportTexture =
       modalResourceBindings.modalLiveSupportTexture;
+    material.modalPressureRadiationTexture =
+      modalResourceBindings.modalPressureRadiationTexture;
     material.modalPhaseInterferenceTexture =
       modalResourceBindings.modalPhaseInterferenceTexture;
     material.spectralLaneTextureA = modalResourceBindings.spectralLaneTextureA;
@@ -1996,6 +2071,8 @@ export function createRaymarchVolumeMesh({
   mesh.userData.raymarchModalBasisAtlasTexture = modalBasisAtlasTexture;
   mesh.userData.raymarchModalLiveFieldTexture = modalLiveFieldTexture;
   mesh.userData.raymarchModalLiveSupportTexture = modalLiveSupportTexture;
+  mesh.userData.raymarchModalPressureRadiationTexture =
+    modalPressureRadiationTexture;
   mesh.userData.raymarchModalPhaseInterferenceTexture =
     modalPhaseInterferenceTexture;
   mesh.userData.raymarchSpectralLaneTextureA = spectralLaneTextureA;

@@ -252,6 +252,8 @@ function createRuntimeState({ withFieldCache = false } = {}) {
               liveFieldProjectionCache.fieldTexture,
             raymarchModalLiveSupportTexture:
               liveFieldProjectionCache.supportTexture,
+            raymarchModalPressureRadiationTexture:
+              liveFieldProjectionCache.pressureRadiationTexture,
           }
         : undefined,
     },

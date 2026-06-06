@@ -1,4 +1,4 @@
-export const RAYMARCH_QUANTITY_LEDGER_VERSION = "raymarch-render-quantity-v2";
+export const RAYMARCH_QUANTITY_LEDGER_VERSION = "raymarch-render-quantity-v3";
 
 function freezeStringArray(values = []) {
   return Object.freeze([...values]);
@@ -312,20 +312,120 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
     lane: "field",
     surface: "pipeline",
     represents: "signed modal field after coefficient-weighted basis summation",
-    deepOwner: "fieldCache.js and material.js live field synthesis",
+    deepOwner:
+      "fieldCache.js live projection cache; material.js direct synthesis only while no committed cache is active",
     transforms: ["basis evaluation", "coefficient weighting", "normalization"],
     allowedConsumerPath: [
       "live buffers",
       "field/support carriers",
+      "pressure/radiation carrier",
       "material transfer",
     ],
     allowedConsumers: [
+      "normalizedPressure",
       "cancellation",
       "causticRidgeAuthority",
       "physicalCausticDensity",
       "diagnostics",
     ],
     forbiddenConsumers: ["displayCompression", "modalIdentityTopology"],
+  }),
+  normalizedPressure: createQuantityContract({
+    quantity: "normalizedPressure",
+    lane: "field",
+    surface: "pipeline",
+    represents:
+      "normalized signed pressure proxy derived from coherent modal summation, not calibrated pascals",
+    deepOwner: "fieldCache.js pressure/radiation carrier",
+    transforms: [
+      "coherent signed modal summation",
+      "slot-amplitude normalization",
+      "signed-unit clamp",
+      "pressure/radiation texture write",
+    ],
+    allowedConsumerPath: [
+      "field/support carriers",
+      "pressure/radiation carrier",
+      "material transfer",
+    ],
+    allowedConsumers: [
+      "cancellation",
+      "normalizedRadiationPotential",
+      "causticRidgeAuthority",
+      "radiationPotentialTransfer",
+      "diagnostics",
+    ],
+    forbiddenConsumers: [
+      "displayCompression",
+      "modalIdentityTopology",
+      "modalAmplitudeCoefficient",
+      "supportVisibleDensity",
+      "whiteEmissionFieldAuthority",
+    ],
+  }),
+  normalizedVelocityProxy: createQuantityContract({
+    quantity: "normalizedVelocityProxy",
+    lane: "field",
+    surface: "pipeline",
+    represents:
+      "normalized gradient-magnitude proxy for particle velocity, not calibrated fluid velocity",
+    deepOwner: "fieldCache.js pressure/radiation carrier",
+    transforms: [
+      "coherent modal gradient summation",
+      "slot-amplitude normalization",
+      "gradient magnitude",
+      "clamp01",
+    ],
+    allowedConsumerPath: [
+      "field gradients",
+      "pressure/radiation carrier",
+      "material transfer",
+    ],
+    allowedConsumers: [
+      "normalizedRadiationPotential",
+      "causticRidgeAuthority",
+      "radiationPotentialTransfer",
+      "diagnostics",
+    ],
+    forbiddenConsumers: [
+      "displayCompression",
+      "modalIdentityTopology",
+      "modalAmplitudeCoefficient",
+      "supportVisibleDensity",
+      "whiteEmissionFieldAuthority",
+    ],
+  }),
+  normalizedRadiationPotential: createQuantityContract({
+    quantity: "normalizedRadiationPotential",
+    lane: "field",
+    surface: "pipeline",
+    represents:
+      "visualization-only normalized pressure-energy minus velocity-energy balance gated by explicit material contrast",
+    deepOwner: "fieldCache.js pressure/radiation carrier",
+    transforms: [
+      "normalized pressure energy",
+      "normalized velocity-proxy energy",
+      "explicit material-contrast weighting",
+      "signed-unit clamp",
+    ],
+    allowedConsumerPath: [
+      "pressure/radiation carrier",
+      "bounded material transfer",
+      "diagnostics",
+    ],
+    allowedConsumers: [
+      "causticRidgeAuthority",
+      "radiationPotentialTransfer",
+      "diagnostics",
+    ],
+    forbiddenConsumers: [
+      "displayCompression",
+      "modalIdentityTopology",
+      "modalAmplitudeCoefficient",
+      "supportVisibleDensity",
+      "whiteEmissionFieldAuthority",
+      "topologyAdmission",
+    ],
   }),
   unsignedSupport: createQuantityContract({
     quantity: "unsignedSupport",
@@ -995,6 +1095,48 @@ export const RAYMARCH_RENDER_SURFACE_AUDITS = Object.freeze({
       "modalFieldColorBuffer",
       "spectralLightCacheTexture",
       "cachedSpectralLightEnabled",
+    ],
+  }),
+  fieldCachePressureRadiationCarrier: createSourceSurfaceAudit({
+    surface: "fieldCachePressureRadiationCarrier",
+    file: "fieldCache.js",
+    owner: "normalized pressure/velocity/radiation carrier",
+    startToken: "function createLiveFieldProjectionComputeKernel({",
+    endToken: "function createSpectralLaneCacheComputeKernel({",
+    requiredTokens: [
+      "pressureRadiationTexture",
+      "normalizedPressure",
+      "normalizedVelocityProxy",
+      "normalizedRadiationPotential",
+      "RAYMARCH_VISUALIZATION_RADIATION_MATERIAL_CONTRAST",
+    ],
+    forbiddenTokens: [
+      "uColor",
+      "uSurfaceColor",
+      "modalFieldColorBuffer",
+      "spectralLightCacheTexture",
+      "cachedSpectralLightEnabled",
+    ],
+  }),
+  materialPressureRadiationCarrier: createSourceSurfaceAudit({
+    surface: "materialPressureRadiationCarrier",
+    file: "material.js",
+    owner: "normalized pressure/velocity/radiation carrier consumer",
+    startToken: "function samplePressureRadiationCarrierNode({",
+    endToken: "function samplePhaseInterferenceCarrierNode({",
+    requiredTokens: [
+      "modalPressureRadiationTexture",
+      "texture3D(modalPressureRadiationTexture).sample",
+      "normalizedPressure",
+      "velocityProxy",
+      "radiationPotential",
+      "pressureRadiationCarrier.pressure",
+    ],
+    forbiddenTokens: [
+      "uColor",
+      "uSurfaceColor",
+      "modalFieldColorBuffer",
+      "spectralLightCacheTexture",
     ],
   }),
   materialSpectralLaneProjection: createSourceSurfaceAudit({

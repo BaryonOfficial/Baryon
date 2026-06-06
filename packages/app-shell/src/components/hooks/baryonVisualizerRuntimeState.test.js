@@ -288,6 +288,11 @@ test("publishes modal basis cache diagnostics in render perf snapshots", () => {
         liveSynthesisSupportDiagnosticSampleCount: 9,
         liveSynthesisSupportDiagnosticSupportedSampleCount: 5,
         liveSynthesisSupportDiagnosticCoverage: 5 / 9,
+        liveFieldProjectionPressureRadiationReady: true,
+        liveFieldProjectionPressureRadiationSemantic:
+          "normalized-pressure-velocity-radiation-potential",
+        radiationMaterialContrastSemantic:
+          "visualization-only-normalized-pressure-velocity-balance",
         modalBasisCacheRebuildPending: false,
         modalBasisCacheBackend: "compute",
         modalBasisCacheResolution: 32,
@@ -340,6 +345,15 @@ test("publishes modal basis cache diagnostics in render perf snapshots", () => {
       snapshot.render.liveSynthesisSupportDiagnosticSupportedSampleCount,
     ).toBe(5);
     expect(snapshot.render.liveSynthesisSupportDiagnosticCoverage).toBe(5 / 9);
+    expect(
+      snapshot.render.liveFieldProjectionPressureRadiationReady,
+    ).toBe(true);
+    expect(
+      snapshot.render.liveFieldProjectionPressureRadiationSemantic,
+    ).toBe("normalized-pressure-velocity-radiation-potential");
+    expect(snapshot.render.radiationMaterialContrastSemantic).toBe(
+      "visualization-only-normalized-pressure-velocity-balance",
+    );
     expect(snapshot.render.modalBasisCacheRebuildPending).toBe(false);
     expect(snapshot.render.modalBasisCacheBackend).toBe("compute");
     expect(snapshot.render.modalBasisCacheResolution).toBe(32);
@@ -455,6 +469,16 @@ test("publishes modal basis cache diagnostics from runtime state when audit is d
         basisAtlasDepth: 384,
         liveSynthesisModeCount: 12,
       },
+      liveFieldProjectionCache: {
+        ready: true,
+        pressureRadiationTexture: { texture: "pressure-radiation" },
+        pressureRadiationSemantic:
+          "normalized-pressure-velocity-radiation-potential",
+        radiationMaterialContrast: {
+          semantic:
+            "visualization-only-normalized-pressure-velocity-balance",
+        },
+      },
     });
 
     const snapshot = maybePublishRuntimePerfSnapshot(runtimeDiagnostics, {
@@ -475,6 +499,15 @@ test("publishes modal basis cache diagnostics from runtime state when audit is d
       snapshot.render.liveSynthesisSupportDiagnosticSupportedSampleCount,
     ).toBe(4);
     expect(snapshot.render.liveSynthesisSupportDiagnosticCoverage).toBe(4 / 9);
+    expect(
+      snapshot.render.liveFieldProjectionPressureRadiationReady,
+    ).toBe(true);
+    expect(
+      snapshot.render.liveFieldProjectionPressureRadiationSemantic,
+    ).toBe("normalized-pressure-velocity-radiation-potential");
+    expect(snapshot.render.radiationMaterialContrastSemantic).toBe(
+      "visualization-only-normalized-pressure-velocity-balance",
+    );
     expect(snapshot.render.modalBasisCacheRebuildPending).toBe(false);
     expect(snapshot.render.modalBasisCacheBackend).toBe("compute");
     expect(snapshot.render.modalBasisCacheResolution).toBe(32);

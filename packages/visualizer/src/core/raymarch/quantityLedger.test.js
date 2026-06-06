@@ -52,6 +52,13 @@ describe("raymarch quantity ownership ledger", () => {
           "phaseAuthorityCoherence",
           "interferenceContrast",
         ]),
+        field: expect.arrayContaining([
+          "signedField",
+          "normalizedPressure",
+          "normalizedVelocityProxy",
+          "normalizedRadiationPotential",
+          "cancellation",
+        ]),
         display: expect.arrayContaining([
           "displayCompression",
           "displayProjectionAmplitude",
@@ -98,6 +105,9 @@ describe("raymarch quantity ownership ledger", () => {
       "phaseState",
       "phaseAuthorityCoherence",
       "signedField",
+      "normalizedPressure",
+      "normalizedVelocityProxy",
+      "normalizedRadiationPotential",
       "unsignedSupport",
       "cancellation",
       "interferenceContrast",
@@ -226,6 +236,34 @@ describe("raymarch quantity ownership ledger", () => {
           forbiddenTokens: expect.arrayContaining([
             "colorSum.div",
             "displayEnergy",
+          ]),
+        }),
+        fieldCachePressureRadiationCarrier: expect.objectContaining({
+          file: "fieldCache.js",
+          owner: "normalized pressure/velocity/radiation carrier",
+          requiredTokens: expect.arrayContaining([
+            "pressureRadiationTexture",
+            "normalizedPressure",
+            "normalizedVelocityProxy",
+            "normalizedRadiationPotential",
+          ]),
+          forbiddenTokens: expect.arrayContaining([
+            "modalFieldColorBuffer",
+            "spectralLightCacheTexture",
+          ]),
+        }),
+        materialPressureRadiationCarrier: expect.objectContaining({
+          file: "material.js",
+          owner: "normalized pressure/velocity/radiation carrier consumer",
+          requiredTokens: expect.arrayContaining([
+            "modalPressureRadiationTexture",
+            "pressureRadiationCarrier.pressure",
+            "velocityProxy",
+            "radiationPotential",
+          ]),
+          forbiddenTokens: expect.arrayContaining([
+            "modalFieldColorBuffer",
+            "spectralLightCacheTexture",
           ]),
         }),
         materialSpectralLaneProjection: expect.objectContaining({
@@ -365,6 +403,38 @@ describe("raymarch quantity ownership ledger", () => {
     ).toContain("interferenceContrast");
   });
 
+  it("keeps pressure and radiation fields downstream of modal topology", () => {
+    for (const pressureQuantity of [
+      "normalizedPressure",
+      "normalizedVelocityProxy",
+      "normalizedRadiationPotential",
+    ]) {
+      for (const consumer of [
+        "modalIdentityTopology",
+        "modalAmplitudeCoefficient",
+        "displayCompression",
+        "supportVisibleDensity",
+        "whiteEmissionFieldAuthority",
+      ]) {
+        expect(
+          isRaymarchQuantityConsumerAllowed(pressureQuantity, consumer),
+          `${pressureQuantity} -> ${consumer}`,
+        ).toBe(false);
+      }
+    }
+
+    expect(
+      getRaymarchQuantityContract("normalizedPressure").allowedConsumers,
+    ).toContain("normalizedRadiationPotential");
+    expect(
+      getRaymarchQuantityContract("normalizedVelocityProxy").allowedConsumers,
+    ).toContain("normalizedRadiationPotential");
+    expect(
+      getRaymarchQuantityContract("normalizedRadiationPotential")
+        .allowedConsumers,
+    ).toContain("radiationPotentialTransfer");
+  });
+
   it("prevents diagnostics and runtime authority from creating energy or liveness", () => {
     for (const consumer of [
       "renderAuthority",
@@ -425,5 +495,8 @@ describe("raymarch quantity ownership ledger", () => {
     expect(RAYMARCH_FORBIDDEN_CONSUMER_SUMMARY.physicalCausticDensity).toEqual(
       expect.arrayContaining(["highlightMask", "hotCoreInput"]),
     );
+    expect(
+      RAYMARCH_FORBIDDEN_CONSUMER_SUMMARY.normalizedRadiationPotential,
+    ).toEqual(expect.arrayContaining(["modalIdentityTopology"]));
   });
 });

@@ -118,6 +118,84 @@ describe("live synthesis cancellation ratio", () => {
   });
 });
 
+describe("normalized pressure and radiation potential", () => {
+  it("derives pressure and velocity proxy from coherent modal summation before radiation material transfer", () => {
+    const commonOptions = {
+      backboneSlots: new Float32Array([
+        1, 2, 3, 0.8, 2, 1, 1, 0.4,
+      ]),
+      detailSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array([0, 0, 1, 1, 0, 0, 1, 1]),
+      detailPhaseSlots: new Float32Array(0),
+      backboneCount: 2,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 0.45,
+      y: -0.2,
+      z: 0.7,
+      resolution: 16,
+    };
+    const pressureOnly = evaluateRaymarchLiveSynthesisFieldPoint(commonOptions);
+    const expectedVelocityProxy = Math.min(
+      1,
+      Math.hypot(pressureOnly.gradX, pressureOnly.gradY, pressureOnly.gradZ),
+    );
+
+    expect(pressureOnly.normalizedPressure).toBeCloseTo(
+      pressureOnly.field,
+      6,
+    );
+    expect(pressureOnly.normalizedPressureProvenance).toBe(
+      "coherent-signed-modal-summation",
+    );
+    expect(pressureOnly.normalizedVelocityProxy).toBeCloseTo(
+      expectedVelocityProxy,
+      6,
+    );
+    expect(pressureOnly.normalizedPressureEnergy).toBeCloseTo(
+      Math.min(1, pressureOnly.normalizedPressure ** 2),
+      6,
+    );
+    expect(pressureOnly.normalizedVelocityEnergy).toBeCloseTo(
+      Math.min(1, expectedVelocityProxy ** 2),
+      6,
+    );
+    expect(pressureOnly.radiationPotentialReady).toBe(false);
+    expect(pressureOnly.normalizedRadiationPotential).toBe(0);
+    expect(pressureOnly.radiationMaterialContrastSemantic).toBe(
+      "unavailable-no-material-contrast",
+    );
+
+    const withContrast = evaluateRaymarchLiveSynthesisFieldPoint({
+      ...commonOptions,
+      radiationMaterialContrast:
+        raymarchFieldCache.RAYMARCH_VISUALIZATION_RADIATION_MATERIAL_CONTRAST,
+    });
+    const expectedRadiationPotential = Math.max(
+      -1,
+      Math.min(
+        1,
+        withContrast.normalizedPressureEnergy *
+          raymarchFieldCache.RAYMARCH_VISUALIZATION_RADIATION_MATERIAL_CONTRAST
+            .pressureEnergyWeight -
+          withContrast.normalizedVelocityEnergy *
+            raymarchFieldCache.RAYMARCH_VISUALIZATION_RADIATION_MATERIAL_CONTRAST
+              .velocityEnergyWeight,
+      ),
+    );
+
+    expect(withContrast.radiationPotentialReady).toBe(true);
+    expect(withContrast.radiationMaterialContrastSemantic).toBe(
+      "visualization-only-normalized-pressure-velocity-balance",
+    );
+    expect(withContrast.normalizedRadiationPotential).toBeCloseTo(
+      expectedRadiationPotential,
+      6,
+    );
+  });
+});
+
 describe("phase interference contrast", () => {
   it("keeps one phase-authoritative mode neutral against its independent baseline", () => {
     const response =
@@ -880,6 +958,27 @@ describe("fieldCache", () => {
     expect(computeSource).toContain(".mul(invCapacity)");
     expect(computeSource).toContain("fieldSum.addAssign");
     expect(computeSource).toContain("supportSum.addAssign");
+    expect(computeSource).toContain("pressureRadiationTexture");
+    expect(computeSource).toContain(
+      "const normalizedSignedField = fieldSum.div(amplitudeNorm).toVar();",
+    );
+    expect(computeSource).toContain("const normalizedPressure = clamp(");
+    expect(computeSource).toContain("normalizedSignedField,");
+    expect(computeSource).toContain("normalizedPressure");
+    expect(computeSource).toContain("normalizedVelocityProxy");
+    expect(computeSource).toContain("normalizedRadiationPotential");
+    expect(computeSource).toContain(`vec4(
+          normalizedSignedField,
+          normalizedGradX,
+          normalizedGradY,
+          normalizedGradZ,
+        )`);
+    expect(computeSource).toContain(`vec4(
+          normalizedPressure,
+          normalizedVelocityProxy,
+          normalizedRadiationPotential,
+          one,
+        )`);
     expect(computeSource).toContain("phaseInterferenceTexture");
     expect(computeSource).toContain("modalFieldPhaseBuffer.element(i)");
     expect(computeSource).toContain("phaseInterferenceSumReal");
@@ -898,21 +997,33 @@ describe("fieldCache", () => {
     expect(computeSource).not.toContain("evaluateModeNode({");
   });
 
-  it("creates and disposes a named phase-interference carrier with the live projection cache", () => {
+  it("creates and disposes named pressure/radiation and phase-interference carriers with the live projection cache", () => {
     const cache = raymarchFieldCache.createRaymarchLiveFieldProjectionCache({
       resolution: 8,
     });
-    const dispose = vi.fn();
-    cache.phaseInterferenceTexture.dispose = dispose;
+    const disposePressureRadiation = vi.fn();
+    const disposePhaseInterference = vi.fn();
+    cache.pressureRadiationTexture.dispose = disposePressureRadiation;
+    cache.phaseInterferenceTexture.dispose = disposePhaseInterference;
 
+    expect(cache.pressureRadiationTexture).toBeTruthy();
+    expect(cache.pressureRadiationTexture).not.toBe(cache.fieldTexture);
+    expect(cache.pressureRadiationTexture).not.toBe(cache.supportTexture);
     expect(cache.phaseInterferenceTexture).toBeTruthy();
     expect(cache.phaseInterferenceTexture).not.toBe(cache.fieldTexture);
     expect(cache.phaseInterferenceTexture).not.toBe(cache.supportTexture);
+    expect(cache.phaseInterferenceTexture).not.toBe(
+      cache.pressureRadiationTexture,
+    );
+    expect(cache.pressureRadiationSemantic).toBe(
+      "normalized-pressure-velocity-radiation-potential",
+    );
     expect(cache).not.toHaveProperty("phaseResponseTexture");
 
     raymarchFieldCache.disposeRaymarchLiveFieldProjectionCache(cache);
 
-    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(disposePressureRadiation).toHaveBeenCalledTimes(1);
+    expect(disposePhaseInterference).toHaveBeenCalledTimes(1);
   });
 
   it("treats phase offsets as live-synthesis state", () => {

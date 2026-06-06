@@ -1187,6 +1187,38 @@ describe("raymarch volume material", () => {
     expect(source).not.toContain("phaseProjectionResponse");
   });
 
+  it("samples normalized pressure from the named pressure/radiation carrier", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const carrierStart = expectSourceIndex(
+      source,
+      "function samplePressureRadiationCarrierNode",
+    );
+    const liveSampleStart = expectSourceIndex(
+      source,
+      "function sampleLiveFieldProjectionCacheNode",
+    );
+    const scatteringStart = expectSourceIndex(
+      source,
+      "function createScatteringNode({",
+    );
+    const carrierBlock = source.slice(carrierStart, liveSampleStart);
+    const liveSampleBlock = source.slice(liveSampleStart, scatteringStart);
+
+    expect(carrierBlock).toContain("modalPressureRadiationTexture");
+    expect(carrierBlock).toContain("texture3D(modalPressureRadiationTexture)");
+    expect(carrierBlock).toContain("normalizedPressure");
+    expect(carrierBlock).toContain("velocityProxy");
+    expect(carrierBlock).toContain("radiationPotential");
+    expect(liveSampleBlock).toContain("pressureRadiationCarrier.pressure");
+    expect(liveSampleBlock).toContain("velocityProxy");
+    expect(liveSampleBlock).toContain("radiationPotential");
+    expect(liveSampleBlock).not.toContain("field: fieldSample.x");
+    expect(liveSampleBlock).not.toContain("pressure: fieldSample.x");
+  });
+
   it("routes white emission through the adaptive highlight target in static color", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
@@ -1745,7 +1777,7 @@ describe("raymarch volume material", () => {
     expect(mesh.userData).not.toHaveProperty("raymarchDetailPhaseBuffer");
   });
 
-  it("binds the phase-interference texture without exposing raw phase slots to material", () => {
+  it("binds pressure/radiation and phase-interference textures without exposing raw phase slots to material", () => {
     const liveFieldProjectionCache = createRaymarchLiveFieldProjectionCache({
       resolution: 8,
     });
@@ -1754,11 +1786,19 @@ describe("raymarch volume material", () => {
       radius: 3,
       modalLiveFieldTexture: liveFieldProjectionCache.fieldTexture,
       modalLiveSupportTexture: liveFieldProjectionCache.supportTexture,
+      modalPressureRadiationTexture:
+        liveFieldProjectionCache.pressureRadiationTexture,
       modalPhaseInterferenceTexture:
         liveFieldProjectionCache.phaseInterferenceTexture,
       uniforms,
     });
 
+    expect(mesh.userData.raymarchModalPressureRadiationTexture).toBe(
+      liveFieldProjectionCache.pressureRadiationTexture,
+    );
+    expect(mesh.material.modalPressureRadiationTexture).toBe(
+      liveFieldProjectionCache.pressureRadiationTexture,
+    );
     expect(mesh.userData.raymarchModalPhaseInterferenceTexture).toBe(
       liveFieldProjectionCache.phaseInterferenceTexture,
     );
