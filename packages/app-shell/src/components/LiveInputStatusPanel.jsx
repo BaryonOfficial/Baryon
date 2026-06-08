@@ -194,7 +194,9 @@ export default function LiveInputStatusPanel({
 
   // Resolved type label — describes what auto detected or what was manually set
   const resolvedTypeLabel =
-    selectedLiveInputDeviceKind === "system" ? "Loopback" : "Acoustic Mic";
+    selectedLiveInputDeviceKind === "system"
+      ? "Line / Loopback"
+      : "Acoustic Mic";
   const resolvedTypeLabelStyle =
     selectedLiveInputDeviceKind === "system"
       ? { color: "var(--nd-success)" }
@@ -528,7 +530,7 @@ export default function LiveInputStatusPanel({
               >
                 <option value="auto">Auto detect</option>
                 <option value="live">Acoustic Mic</option>
-                <option value="system">Loopback</option>
+                <option value="system">Line / Loopback</option>
               </select>
             </div>
 
@@ -674,8 +676,10 @@ export default function LiveInputStatusPanel({
                   }}
                 >
                   Using an audio interface? Set{" "}
-                  <strong style={{ fontWeight: 650 }}>Type → Loopback</strong>{" "}
-                  above to skip mic processing.
+                  <strong style={{ fontWeight: 650 }}>
+                    Type → Line / Loopback
+                  </strong>{" "}
+                  above to skip acoustic mic processing.
                 </div>
               ) : null}
               <div style={{ display: "grid", gap: "0.18rem" }}>
