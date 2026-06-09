@@ -2090,6 +2090,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
     );
     expect(invalidFrame.debug.liveInputCalibrationActive).toBe(true);
     expect(invalidFrame.debug.liveInputNoiseGateActive).toBe(true);
+    expect(invalidFrame.debug.liveInputBaselinePeakSpread).toBe(0);
     expect(invalidFrame.fieldState).toBe("active");
   });
 
@@ -2306,31 +2307,35 @@ describe("buildAudioFeatureFrame modal contract", () => {
     expect(secondVoice.fieldState).toBe("active");
   });
 
-  it("derives a line-feed runtime policy from the resolved live-input class", () => {
-    const featureState = createAudioFeatureState();
-    const preparedInputs = prepareAudioFeatureFrameInputs({
-      analysisSnapshot: createSnapshot({
-        sourceMode: "live",
-        avgAmplitude: 6.4,
-        fftMagnitudes: makeFft([
-          [110, 0.22],
-          [220, 0.31],
-          [330, 0.16],
-        ]),
-        timeData: makeTimeData({ frequency: 110, amplitude: 0.18 }),
-        rms: 0.01,
-      }),
-      featureState,
-      radius: 3,
-      status: makeResolvedLineFeedLiveStatus(),
-      frameTimeMs: LIVE_INPUT_POST_CALIBRATION_MS,
-      liveInputAnalysisSettings: { acousticIntent: "vocal" },
-    });
+  it.each(["ambient", "vocal"])(
+    "derives a line-feed runtime policy from the resolved live-input class for %s intent",
+    (acousticIntent) => {
+      const featureState = createAudioFeatureState();
+      const preparedInputs = prepareAudioFeatureFrameInputs({
+        analysisSnapshot: createSnapshot({
+          sourceMode: "live",
+          avgAmplitude: 6.4,
+          fftMagnitudes: makeFft([
+            [110, 0.22],
+            [220, 0.31],
+            [330, 0.16],
+          ]),
+          timeData: makeTimeData({ frequency: 110, amplitude: 0.18 }),
+          rms: 0.01,
+        }),
+        featureState,
+        radius: 3,
+        status: makeResolvedLineFeedLiveStatus(),
+        frameTimeMs: LIVE_INPUT_POST_CALIBRATION_MS,
+        liveInputAnalysisSettings: { acousticIntent },
+      });
 
-    expect(preparedInputs.resolvedLiveInputAnalysisClass).toBe("line-feed");
-    expect(preparedInputs.liveInputPolicy).toBe("line-feed");
-    expect(preparedInputs.isAcousticLiveInput).toBe(false);
-  });
+      expect(preparedInputs.resolvedLiveInputAnalysisClass).toBe("line-feed");
+      expect(preparedInputs.liveInputPolicy).toBe("line-feed");
+      expect(preparedInputs.analysisInputMode).toBe("file");
+      expect(preparedInputs.isAcousticLiveInput).toBe(false);
+    },
+  );
 
   it("builds modal backbone/detail slots from spectral peaks", () => {
     const featureState = createAudioFeatureState();
@@ -3668,6 +3673,21 @@ describe("live input noise gate", () => {
 
     expect(frame.debug.liveInputHardSilenceActive).toBe(false);
     expect(frame.debug.liveInputNoiseGateActive).toBe(false);
+    expect(frame.debug.liveInputEvidenceUnits).toEqual(
+      expect.objectContaining({
+        rms: expect.any(Number),
+        peak: expect.any(Number),
+        spectralCentroid: expect.any(Number),
+        lowBand: expect.any(Number),
+      }),
+    );
+    expect(frame.debug.liveInputEvidenceUnits.rms).toBeGreaterThan(1);
+    expect(frame.debug.liveInputEvidenceUnits.peak).toBeGreaterThan(1);
+    expect(frame.debug.liveInputSourceConfidence).toBeGreaterThanOrEqual(
+      frame.debug.liveInputConfidenceOpenThreshold,
+    );
+    expect(frame.debug.liveInputBaselineRmsSpread).toBeGreaterThanOrEqual(0);
+    expect(frame.debug.liveInputBaselinePeakSpread).toBeGreaterThanOrEqual(0);
     expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBeGreaterThan(0.01);
   });
 
@@ -3750,47 +3770,57 @@ describe("live input noise gate", () => {
     expect(silence.debug.liveInputHardSilenceActive).toBe(true);
   });
 
-  it("keeps weak ambient mic noise and low hum gated", () => {
-    const featureState = createAudioFeatureState();
-    calibrateLiveInput(featureState, {
-      acousticIntent: "ambient",
-      peaks: [
-        [90, 0.025],
-        [180, 0.018],
-      ],
-      avgAmplitude: 0.8,
-      rms: 0.0016,
-    });
+  it.each(["ambient", "vocal"])(
+    "keeps weak acoustic %s mic noise and low hum gated",
+    (acousticIntent) => {
+      const featureState = createAudioFeatureState();
+      calibrateLiveInput(featureState, {
+        acousticIntent,
+        peaks: [
+          [90, 0.025],
+          [180, 0.018],
+        ],
+        avgAmplitude: 0.8,
+        rms: 0.0016,
+      });
 
-    const lowHum = buildLiveInputFrame({
-      featureState,
-      acousticIntent: "ambient",
-      peaks: [[60, 0.052]],
-      avgAmplitude: 1.05,
-      rms: 0.0008,
-      frameTimeMs: LIVE_INPUT_POST_CALIBRATION_MS,
-      timeData: makeTimeData({
-        frequency: 60,
-        amplitude: 0.012,
-      }),
-    });
-    const weakBroadband = buildLiveInputFrame({
-      featureState,
-      acousticIntent: "ambient",
-      peaks: [
-        [360, 0.028],
-        [940, 0.025],
-        [1800, 0.023],
-        [3600, 0.02],
-      ],
-      avgAmplitude: 1.05,
-      rms: 0.0008,
-      frameTimeMs: LIVE_INPUT_POST_CALIBRATION_NEXT_MS,
-    });
+      const lowHum = buildLiveInputFrame({
+        featureState,
+        acousticIntent,
+        peaks: [[60, 0.052]],
+        avgAmplitude: 1.05,
+        rms: 0.0008,
+        frameTimeMs: LIVE_INPUT_POST_CALIBRATION_MS,
+        timeData: makeTimeData({
+          frequency: 60,
+          amplitude: 0.012,
+        }),
+      });
+      const weakBroadband = buildLiveInputFrame({
+        featureState,
+        acousticIntent,
+        peaks: [
+          [360, 0.028],
+          [940, 0.025],
+          [1800, 0.023],
+          [3600, 0.02],
+        ],
+        avgAmplitude: 1.05,
+        rms: 0.0008,
+        frameTimeMs: LIVE_INPUT_POST_CALIBRATION_NEXT_MS,
+      });
 
-    expect(lowHum.debug.liveInputNoiseGateActive).toBe(true);
-    expect(weakBroadband.debug.liveInputNoiseGateActive).toBe(true);
-  });
+      expect(lowHum.debug.liveInputNoiseGateActive).toBe(true);
+      expect(lowHum.debug.liveInputHumPenalty).toBeGreaterThan(0);
+      expect(lowHum.debug.liveInputSourceConfidence).toBeLessThan(
+        lowHum.debug.liveInputConfidenceOpenThreshold,
+      );
+      expect(weakBroadband.debug.liveInputNoiseGateActive).toBe(true);
+      expect(weakBroadband.debug.liveInputSourceConfidence).toBeLessThan(
+        weakBroadband.debug.liveInputConfidenceOpenThreshold,
+      );
+    },
+  );
 
   it("matches file analysis for system-classified live input", () => {
     const fileFeatureState = createAudioFeatureState();

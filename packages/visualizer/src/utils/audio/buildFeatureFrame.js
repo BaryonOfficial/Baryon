@@ -53,7 +53,6 @@ import {
   DEFAULT_LIVE_INPUT_ACOUSTIC_INTENT,
   DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
   DEFAULT_RESOLVED_LIVE_INPUT_ANALYSIS_CLASS,
-  LIVE_INPUT_ACOUSTIC_INTENTS,
   LIVE_INPUT_ANALYSIS_CLASSES,
   normalizeLiveInputAcousticIntent,
   normalizeLiveInputAnalysisClass,
@@ -98,7 +97,6 @@ const MODAL_FIELD_CONTINUITY_MAX_BASIS_MODE_ORDER =
 
 const {
   liveInputSilenceAvgAmplitude: LIVE_INPUT_SILENCE_AVG_AMPLITUDE,
-  liveInputSignalPeakAmplitude: LIVE_INPUT_SIGNAL_PEAK_AMPLITUDE,
   requestedPitchSource: REQUESTED_PITCH_SOURCE,
 } = AUDIO_ANALYSIS_POLICY;
 const TEST_TONE_HARMONIC_ATTENUATION =
@@ -198,93 +196,118 @@ const EMPTY_MODAL_OBSERVER_VISIBILITY = Object.freeze({
   highQSparseResonatorEvidence: 0,
   highQProjectionLoad: 0,
 });
-const LIVE_INPUT_ACOUSTIC_INTENT_CONFIGS = Object.freeze({
+const LIVE_INPUT_ACOUSTIC_GATE_BASE_CONFIG = Object.freeze({
+  absoluteAvgAmplitude: Math.max(2.2, LIVE_INPUT_SILENCE_AVG_AMPLITUDE * 0.3),
+  absoluteRmsFloor: 0.0065,
+  absolutePeakFloor: 0.075,
+  absoluteCentroidFloor: 0.006,
+  absoluteLowBandFloor: 0.012,
+  openFrames: 1,
+  releaseFrames: 4,
+  evidenceFloorScale: 0.08,
+  evidenceOpenUnits: 3,
+  confidenceOpenThreshold: 0.45,
+  confidenceCloseThreshold: 0.3,
+  hardSilenceRmsMultiplier: 1.02,
+  hardSilenceRmsOffset: 0.00005,
+  hardSilencePeakMultiplier: 1.02,
+  hardSilencePeakOffset: 0.004,
+  hardSilenceAvgMultiplier: 0.28,
+  hardSilenceAvgOffset: 0.2,
+  confidenceWeights: Object.freeze({
+    avgAmplitude: 0.22,
+    rms: 0.28,
+    peak: 0.2,
+    spectralCentroid: 0.1,
+    lowBand: 0.06,
+    peakClarity: 0.14,
+  }),
+  humPenaltyWeight: 0.65,
+  ambientResonanceWeight: 0,
+  ambientResonanceSupport: false,
+});
+const LIVE_INPUT_ACOUSTIC_INTENT_PRESETS = Object.freeze({
   ambient: Object.freeze({
-    absoluteAvgAmplitude: Math.max(2.2, LIVE_INPUT_SILENCE_AVG_AMPLITUDE * 0.3),
-    absoluteRmsFloor: 0.0065,
-    absolutePeakFloor: 0.075,
-    absoluteCentroidFloor: 0.006,
-    openFrames: 1,
-    closeFrames: 4,
-    rmsOpenMultiplier: 1.04,
-    rmsOpenOffset: 0.00008,
-    peakOpenMultiplier: 1.1,
-    peakOpenOffset: 0.01,
-    centroidOpenMultiplier: 1,
-    centroidOpenOffset: 0.0008,
-    lowBandOpenMultiplier: 1.08,
-    lowBandOpenOffset: 0.0006,
-    rmsCloseMultiplier: 0.98,
-    rmsCloseOffset: 0.00005,
-    peakCloseMultiplier: 1.02,
-    peakCloseOffset: 0.006,
-    minPeakClarity: 0.14,
-    hardSilenceRmsMultiplier: 1.02,
-    hardSilenceRmsOffset: 0.00005,
-    hardSilencePeakMultiplier: 1.02,
-    hardSilencePeakOffset: 0.004,
-    hardSilenceAvgMultiplier: 0.28,
-    hardSilenceAvgOffset: 0.2,
-    latchHoldFrames: 5,
-    pitchMinHz: 70,
-    pitchMaxHz: 1400,
-    pitchAutocorrelationMaxHz: 650,
-    pitchConfidence: 0.22,
-    pitchLatchConfidence: 0.16,
-    pitchLowEnergyRms: 0.014,
-    pitchStrongPeriodicity: 0.5,
-    highPitchMinHz: 650,
-    highPitchMinConfidence: 0.28,
-    highPitchMinPeriodicity: 0.48,
-    highPitchMinHarmonicSupport: 0.18,
-    highPitchMinSupportSources: 2,
-    highPitchStableFrames: 2,
-    highPitchStableConfidence: 0.28,
-    spectralPeakMaxHz: 8000,
+    confidenceOpenThreshold: 0.42,
+    confidenceCloseThreshold: 0.24,
+    releaseFrames: 7,
+    ambientResonanceSupport: true,
+    ambientResonanceWeight: 0.18,
   }),
   vocal: Object.freeze({
-    absoluteAvgAmplitude: Math.max(2.2, LIVE_INPUT_SILENCE_AVG_AMPLITUDE * 0.3),
-    absoluteRmsFloor: 0.0065,
-    absolutePeakFloor: 0.075,
-    absoluteCentroidFloor: 0.006,
-    openFrames: 1,
-    closeFrames: 4,
-    rmsOpenMultiplier: 1.04,
-    rmsOpenOffset: 0.00008,
-    peakOpenMultiplier: 1.1,
-    peakOpenOffset: 0.01,
-    centroidOpenMultiplier: 1,
-    centroidOpenOffset: 0.0008,
-    lowBandOpenMultiplier: 1.08,
-    lowBandOpenOffset: 0.0006,
-    rmsCloseMultiplier: 0.98,
-    rmsCloseOffset: 0.00005,
-    peakCloseMultiplier: 1.02,
-    peakCloseOffset: 0.006,
-    minPeakClarity: 0.14,
-    hardSilenceRmsMultiplier: 1.02,
-    hardSilenceRmsOffset: 0.00005,
-    hardSilencePeakMultiplier: 1.02,
-    hardSilencePeakOffset: 0.004,
-    hardSilenceAvgMultiplier: 0.28,
-    hardSilenceAvgOffset: 0.2,
-    latchHoldFrames: 5,
-    pitchMinHz: 70,
-    pitchMaxHz: 1400,
-    pitchAutocorrelationMaxHz: 650,
-    pitchConfidence: 0.24,
-    pitchLatchConfidence: 0.18,
-    pitchLowEnergyRms: 0.014,
-    pitchStrongPeriodicity: 0.52,
-    highPitchMinHz: 650,
-    highPitchMinConfidence: 0.3,
-    highPitchMinPeriodicity: 0.5,
-    highPitchMinHarmonicSupport: 0.2,
-    highPitchMinSupportSources: 2,
-    highPitchStableFrames: 2,
-    highPitchStableConfidence: 0.3,
-    spectralPeakMaxHz: 8000,
+    confidenceOpenThreshold: 0.45,
+    confidenceCloseThreshold: 0.3,
+    releaseFrames: 4,
+    ambientResonanceSupport: false,
+    ambientResonanceWeight: 0,
   }),
+});
+const LIVE_INPUT_ACOUSTIC_INTENT_CONFIGS = Object.freeze(
+  Object.fromEntries(
+    Object.entries(LIVE_INPUT_ACOUSTIC_INTENT_PRESETS).map(
+      ([intent, preset]) => [
+        intent,
+        Object.freeze({
+          ...LIVE_INPUT_ACOUSTIC_GATE_BASE_CONFIG,
+          ...preset,
+        }),
+      ],
+    ),
+  ),
+);
+
+/**
+ * @typedef {{
+ *   avgAmplitude: number,
+ *   rms: number,
+ *   peak: number,
+ *   spectralCentroid: number,
+ *   lowBand: number,
+ *   peakClarity?: number,
+ * }} LiveInputEvidenceUnits
+ *
+ * @typedef {{
+ *   evidenceUnits: LiveInputEvidenceUnits,
+ *   evidenceSupports: LiveInputEvidenceUnits,
+ *   sourceConfidence: number,
+ *   confidenceOpenThreshold: number,
+ *   confidenceCloseThreshold: number,
+ *   humPenalty: number,
+ *   ambientResonanceSupport: number,
+ *   baselineAvgAmplitudeSpread: number,
+ *   baselineRmsSpread: number,
+ *   baselinePeakSpread: number,
+ *   baselineCentroidSpread: number,
+ *   baselineLowBandSpread: number,
+ *   openFrames: number,
+ *   releaseFrames: number,
+ * }} LiveInputGateDiagnostics
+ */
+
+/** @type {Readonly<LiveInputEvidenceUnits>} */
+const EMPTY_LIVE_INPUT_EVIDENCE_UNITS = Object.freeze({
+  avgAmplitude: 0,
+  rms: 0,
+  peak: 0,
+  spectralCentroid: 0,
+  lowBand: 0,
+});
+/** @type {Readonly<LiveInputGateDiagnostics>} */
+const EMPTY_LIVE_INPUT_GATE_DIAGNOSTICS = Object.freeze({
+  evidenceUnits: EMPTY_LIVE_INPUT_EVIDENCE_UNITS,
+  evidenceSupports: EMPTY_LIVE_INPUT_EVIDENCE_UNITS,
+  sourceConfidence: 0,
+  confidenceOpenThreshold: 0,
+  confidenceCloseThreshold: 0,
+  humPenalty: 0,
+  ambientResonanceSupport: 0,
+  baselineAvgAmplitudeSpread: 0,
+  baselineRmsSpread: 0,
+  baselinePeakSpread: 0,
+  baselineCentroidSpread: 0,
+  baselineLowBandSpread: 0,
+  openFrames: 0,
+  releaseFrames: 0,
 });
 const LOW_BAND_PRIMARY_WEIGHT = 0.7;
 const LOW_BAND_SECONDARY_WEIGHT = 0.3;
@@ -574,8 +597,7 @@ function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
     acousticResonantTarget,
     modalExcitationState: analysisMemory.modalExcitationState,
     modalFieldContinuityState: analysisMemory.modalFieldContinuityState,
-    modalDescriptorAuthorityState:
-      analysisMemory.modalDescriptorAuthorityState,
+    modalDescriptorAuthorityState: analysisMemory.modalDescriptorAuthorityState,
     sourceCoupledState: analysisMemory.sourceCoupledState,
     resonantState: analysisMemory.resonantState,
     bandState: analysisMemory.bandState,
@@ -738,10 +760,17 @@ function resetLiveInputGateState(
   bandState.liveInputCalibrationInvalid = invalid;
   bandState.liveInputCalibrationInvalidReason = invalidReason;
   bandState.liveInputPreviousFrameAtMs = 0;
+  bandState.liveInputBaselineAvgAmplitude = 0;
   bandState.liveInputBaselineRms = 0;
   bandState.liveInputBaselinePeak = 0;
   bandState.liveInputBaselineCentroid = 0;
   bandState.liveInputBaselineLowBandEnergy = 0;
+  bandState.liveInputBaselineAvgAmplitudeSpread = 0;
+  bandState.liveInputBaselineRmsSpread = 0;
+  bandState.liveInputBaselinePeakSpread = 0;
+  bandState.liveInputBaselineCentroidSpread = 0;
+  bandState.liveInputBaselineLowBandEnergySpread = 0;
+  bandState.liveInputGateDiagnostics = EMPTY_LIVE_INPUT_GATE_DIAGNOSTICS;
   bandState.liveInputOpenFrames = 0;
   bandState.liveInputQuietFrames = 0;
 }
@@ -1095,6 +1124,7 @@ function buildDebugSummary({
   liveInputCalibrationActive = false,
   liveInputCalibrationInvalid = false,
   liveInputCalibrationInvalidReason = "none",
+  liveInputGateDiagnostics = EMPTY_LIVE_INPUT_GATE_DIAGNOSTICS,
   liveInputAnalysisClass = DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
   resolvedLiveInputAnalysisClass = DEFAULT_RESOLVED_LIVE_INPUT_ANALYSIS_CLASS,
   liveInputAcousticIntent = DEFAULT_LIVE_INPUT_ACOUSTIC_INTENT,
@@ -1200,6 +1230,8 @@ function buildDebugSummary({
     modalCoefficientEnergy,
     modalResponseEnergy,
   );
+  const gateDiagnostics =
+    liveInputGateDiagnostics ?? EMPTY_LIVE_INPUT_GATE_DIAGNOSTICS;
 
   return {
     audioInputMode: inputMode,
@@ -1220,6 +1252,29 @@ function buildDebugSummary({
     liveInputCalibrationActive,
     liveInputCalibrationInvalid,
     liveInputCalibrationInvalidReason,
+    liveInputEvidenceUnits: {
+      ...(gateDiagnostics.evidenceUnits ?? EMPTY_LIVE_INPUT_EVIDENCE_UNITS),
+    },
+    liveInputEvidenceSupports: {
+      ...(gateDiagnostics.evidenceSupports ?? EMPTY_LIVE_INPUT_EVIDENCE_UNITS),
+    },
+    liveInputSourceConfidence: gateDiagnostics.sourceConfidence ?? 0,
+    liveInputConfidenceOpenThreshold:
+      gateDiagnostics.confidenceOpenThreshold ?? 0,
+    liveInputConfidenceCloseThreshold:
+      gateDiagnostics.confidenceCloseThreshold ?? 0,
+    liveInputHumPenalty: gateDiagnostics.humPenalty ?? 0,
+    liveInputAmbientResonanceSupport:
+      gateDiagnostics.ambientResonanceSupport ?? 0,
+    liveInputBaselineAvgAmplitudeSpread:
+      gateDiagnostics.baselineAvgAmplitudeSpread ?? 0,
+    liveInputBaselineRmsSpread: gateDiagnostics.baselineRmsSpread ?? 0,
+    liveInputBaselinePeakSpread: gateDiagnostics.baselinePeakSpread ?? 0,
+    liveInputBaselineCentroidSpread:
+      gateDiagnostics.baselineCentroidSpread ?? 0,
+    liveInputBaselineLowBandSpread: gateDiagnostics.baselineLowBandSpread ?? 0,
+    liveInputOpenFramesRequired: gateDiagnostics.openFrames ?? 0,
+    liveInputReleaseFrames: gateDiagnostics.releaseFrames ?? 0,
     liveInputAnalysisClass,
     resolvedLiveInputAnalysisClass,
     liveInputAcousticIntent,
@@ -1917,6 +1972,7 @@ function computeLiveInputMetrics({
     peakAmplitude > 0
       ? peakAmplitude / Math.max(peakAmplitude, totalPeakAmplitude)
       : 0;
+  const peakFrequency = peaks[0]?.frequency ?? 0;
   const bandEnergies = computeBandEnergies(spectrum, sampleRate, fftSize);
   const lowBandEnergy =
     (bandEnergies[0] ?? 0) * LOW_BAND_PRIMARY_WEIGHT +
@@ -1926,6 +1982,7 @@ function computeLiveInputMetrics({
     avgAmplitude,
     rms,
     peakAmplitude,
+    peakFrequency,
     peakClarity,
     spectralCentroid: Number.isFinite(providedSpectralCentroid)
       ? clamp01(providedSpectralCentroid)
@@ -1978,29 +2035,82 @@ export function detectLiveInputNoiseGate({
   );
 }
 
-function updateLiveInputCalibrationBaseline(bandState, metrics, deltaMs) {
-  const alpha = computeEmaAlpha(deltaMs, LIVE_INPUT_CALIBRATION_SMOOTHING_MS);
-  if (
+function isLiveInputCalibrationBaselineEmpty(bandState) {
+  return (
+    !(bandState.liveInputBaselineAvgAmplitude > 0) &&
     !(bandState.liveInputBaselineRms > 0) &&
     !(bandState.liveInputBaselinePeak > 0) &&
     !(bandState.liveInputBaselineCentroid > 0) &&
     !(bandState.liveInputBaselineLowBandEnergy > 0)
-  ) {
+  );
+}
+
+function updateLiveInputBaselineMetric(
+  bandState,
+  valueField,
+  spreadField,
+  nextValue,
+  alpha,
+) {
+  const previousValue = Math.max(0, bandState[valueField] ?? 0);
+  const previousSpread = Math.max(0, bandState[spreadField] ?? 0);
+  const deviation = Math.abs(Math.max(0, nextValue) - previousValue);
+  bandState[valueField] = previousValue + (nextValue - previousValue) * alpha;
+  bandState[spreadField] =
+    previousSpread + (deviation - previousSpread) * alpha;
+}
+
+function updateLiveInputCalibrationBaseline(bandState, metrics, deltaMs) {
+  const alpha = computeEmaAlpha(deltaMs, LIVE_INPUT_CALIBRATION_SMOOTHING_MS);
+  if (isLiveInputCalibrationBaselineEmpty(bandState)) {
+    bandState.liveInputBaselineAvgAmplitude = metrics.avgAmplitude;
     bandState.liveInputBaselineRms = metrics.rms;
     bandState.liveInputBaselinePeak = metrics.peakAmplitude;
     bandState.liveInputBaselineCentroid = metrics.spectralCentroid;
     bandState.liveInputBaselineLowBandEnergy = metrics.lowBandEnergy;
+    bandState.liveInputBaselineAvgAmplitudeSpread = 0;
+    bandState.liveInputBaselineRmsSpread = 0;
+    bandState.liveInputBaselinePeakSpread = 0;
+    bandState.liveInputBaselineCentroidSpread = 0;
+    bandState.liveInputBaselineLowBandEnergySpread = 0;
     return;
   }
 
-  bandState.liveInputBaselineRms +=
-    (metrics.rms - bandState.liveInputBaselineRms) * alpha;
-  bandState.liveInputBaselinePeak +=
-    (metrics.peakAmplitude - bandState.liveInputBaselinePeak) * alpha;
-  bandState.liveInputBaselineCentroid +=
-    (metrics.spectralCentroid - bandState.liveInputBaselineCentroid) * alpha;
-  bandState.liveInputBaselineLowBandEnergy +=
-    (metrics.lowBandEnergy - bandState.liveInputBaselineLowBandEnergy) * alpha;
+  updateLiveInputBaselineMetric(
+    bandState,
+    "liveInputBaselineAvgAmplitude",
+    "liveInputBaselineAvgAmplitudeSpread",
+    metrics.avgAmplitude,
+    alpha,
+  );
+  updateLiveInputBaselineMetric(
+    bandState,
+    "liveInputBaselineRms",
+    "liveInputBaselineRmsSpread",
+    metrics.rms,
+    alpha,
+  );
+  updateLiveInputBaselineMetric(
+    bandState,
+    "liveInputBaselinePeak",
+    "liveInputBaselinePeakSpread",
+    metrics.peakAmplitude,
+    alpha,
+  );
+  updateLiveInputBaselineMetric(
+    bandState,
+    "liveInputBaselineCentroid",
+    "liveInputBaselineCentroidSpread",
+    metrics.spectralCentroid,
+    alpha,
+  );
+  updateLiveInputBaselineMetric(
+    bandState,
+    "liveInputBaselineLowBandEnergy",
+    "liveInputBaselineLowBandEnergySpread",
+    metrics.lowBandEnergy,
+    alpha,
+  );
 }
 
 function classifyLiveInputCalibrationInvalid(bandState, metrics) {
@@ -2024,31 +2134,8 @@ function classifyLiveInputCalibrationInvalid(bandState, metrics) {
   return "none";
 }
 
-function deriveLiveInputThresholds(bandState, profileConfig) {
+function deriveLiveInputHardSilenceThresholds(bandState, profileConfig) {
   return {
-    openRms: Math.max(
-      profileConfig.absoluteRmsFloor * 0.2,
-      bandState.liveInputBaselineRms * profileConfig.rmsOpenMultiplier +
-        profileConfig.rmsOpenOffset,
-    ),
-    closeRms: Math.max(
-      profileConfig.absoluteRmsFloor * 0.15,
-      bandState.liveInputBaselineRms * profileConfig.rmsCloseMultiplier +
-        profileConfig.rmsCloseOffset,
-    ),
-    openPeak: profileConfig.absolutePeakFloor,
-    closePeak: Math.max(
-      LIVE_INPUT_SIGNAL_PEAK_AMPLITUDE * 0.7,
-      profileConfig.absolutePeakFloor * 0.85,
-    ),
-    openCentroid:
-      bandState.liveInputBaselineCentroid *
-        profileConfig.centroidOpenMultiplier +
-      profileConfig.centroidOpenOffset,
-    openLowBand:
-      bandState.liveInputBaselineLowBandEnergy *
-        profileConfig.lowBandOpenMultiplier +
-      profileConfig.lowBandOpenOffset,
     hardSilenceRms: Math.max(
       profileConfig.absoluteRmsFloor * 0.8,
       bandState.liveInputBaselineRms * profileConfig.hardSilenceRmsMultiplier +
@@ -2067,55 +2154,210 @@ function deriveLiveInputThresholds(bandState, profileConfig) {
   };
 }
 
-function qualifiesLiveInputOpen(
+function computeLiveInputEvidenceDelta(spread, safetyFloor, profileConfig) {
+  return Math.max(
+    Math.max(0, spread ?? 0),
+    Math.max(0, safetyFloor ?? 0) * profileConfig.evidenceFloorScale,
+    1e-6,
+  );
+}
+
+function computePositiveLiveInputEvidenceUnit({
+  value,
+  baseline,
+  spread,
+  safetyFloor,
+  profileConfig,
+}) {
+  const delta = computeLiveInputEvidenceDelta(
+    spread,
+    safetyFloor,
+    profileConfig,
+  );
+  return Math.max(0, (Math.max(0, value) - Math.max(0, baseline ?? 0)) / delta);
+}
+
+function computeLiveInputEvidenceUnits(bandState, metrics, profileConfig) {
+  return {
+    avgAmplitude: computePositiveLiveInputEvidenceUnit({
+      value: metrics.avgAmplitude,
+      baseline: bandState.liveInputBaselineAvgAmplitude,
+      spread: bandState.liveInputBaselineAvgAmplitudeSpread,
+      safetyFloor: profileConfig.absoluteAvgAmplitude,
+      profileConfig,
+    }),
+    rms: computePositiveLiveInputEvidenceUnit({
+      value: metrics.rms,
+      baseline: bandState.liveInputBaselineRms,
+      spread: bandState.liveInputBaselineRmsSpread,
+      safetyFloor: profileConfig.absoluteRmsFloor,
+      profileConfig,
+    }),
+    peak: computePositiveLiveInputEvidenceUnit({
+      value: metrics.peakAmplitude,
+      baseline: bandState.liveInputBaselinePeak,
+      spread: bandState.liveInputBaselinePeakSpread,
+      safetyFloor: profileConfig.absolutePeakFloor,
+      profileConfig,
+    }),
+    spectralCentroid: computePositiveLiveInputEvidenceUnit({
+      value: metrics.spectralCentroid,
+      baseline: bandState.liveInputBaselineCentroid,
+      spread: bandState.liveInputBaselineCentroidSpread,
+      safetyFloor: profileConfig.absoluteCentroidFloor,
+      profileConfig,
+    }),
+    lowBand: computePositiveLiveInputEvidenceUnit({
+      value: metrics.lowBandEnergy,
+      baseline: bandState.liveInputBaselineLowBandEnergy,
+      spread: bandState.liveInputBaselineLowBandEnergySpread,
+      safetyFloor: profileConfig.absoluteLowBandFloor,
+      profileConfig,
+    }),
+  };
+}
+
+function liveInputEvidenceUnitToSupport(evidenceUnit, profileConfig) {
+  return clamp01(
+    evidenceUnit / Math.max(1e-6, profileConfig.evidenceOpenUnits),
+  );
+}
+
+function computeLiveInputAmbientResonanceSupport(metrics, profileConfig) {
+  if (!profileConfig.ambientResonanceSupport) {
+    return 0;
+  }
+
+  return Math.min(
+    smoothstep(
+      LIVE_INPUT_AMBIENT_RESONANCE_MIN_AVG * 0.8,
+      LIVE_INPUT_AMBIENT_RESONANCE_MIN_AVG,
+      metrics.avgAmplitude,
+    ),
+    smoothstep(
+      LIVE_INPUT_AMBIENT_RESONANCE_MIN_PEAK * 0.8,
+      LIVE_INPUT_AMBIENT_RESONANCE_MIN_PEAK,
+      metrics.peakAmplitude,
+    ),
+    smoothstep(
+      LIVE_INPUT_AMBIENT_RESONANCE_MIN_CLARITY * 0.75,
+      LIVE_INPUT_AMBIENT_RESONANCE_MIN_CLARITY,
+      metrics.peakClarity,
+    ),
+    smoothstep(
+      LIVE_INPUT_AMBIENT_RESONANCE_MIN_CENTROID * 0.75,
+      LIVE_INPUT_AMBIENT_RESONANCE_MIN_CENTROID,
+      metrics.spectralCentroid,
+    ),
+  );
+}
+
+function computeLiveInputHumPenalty(metrics, evidenceSupports) {
+  const lowCentroid = 1 - smoothstep(0.006, 0.0132, metrics.spectralCentroid);
+  const narrowLowPeak = evidenceSupports.peak * clamp01(metrics.peakClarity);
+  const lowBandOrPeakSupport = Math.max(
+    evidenceSupports.lowBand,
+    narrowLowPeak,
+  );
+  const weakRms = 1 - evidenceSupports.rms;
+  const missingSpectralSpread = 1 - evidenceSupports.spectralCentroid;
+  return clamp01(
+    lowCentroid *
+      lowBandOrPeakSupport *
+      weakRms *
+      Math.max(clamp01(metrics.peakClarity), missingSpectralSpread),
+  );
+}
+
+function computeLiveInputSourceConfidence(
   metrics,
-  thresholds,
-  acousticIntent,
-  acousticIntentConfig,
+  evidenceUnits,
+  profileConfig,
 ) {
-  if (acousticIntent === LIVE_INPUT_ACOUSTIC_INTENTS.ambient) {
-    return (
-      metrics.rms >= thresholds.openRms ||
-      metrics.peakAmplitude >= thresholds.openPeak ||
-      metrics.lowBandEnergy >= thresholds.openLowBand
-    );
-  }
-
-  return (
-    metrics.rms >= thresholds.openRms &&
-    metrics.peakAmplitude >= thresholds.openPeak &&
-    (metrics.spectralCentroid >= thresholds.openCentroid ||
-      metrics.peakClarity >= acousticIntentConfig.minPeakClarity)
+  const rawSupports = {
+    avgAmplitude: liveInputEvidenceUnitToSupport(
+      evidenceUnits.avgAmplitude,
+      profileConfig,
+    ),
+    rms: liveInputEvidenceUnitToSupport(evidenceUnits.rms, profileConfig),
+    peak: liveInputEvidenceUnitToSupport(evidenceUnits.peak, profileConfig),
+    spectralCentroid: liveInputEvidenceUnitToSupport(
+      evidenceUnits.spectralCentroid,
+      profileConfig,
+    ),
+    lowBand: liveInputEvidenceUnitToSupport(
+      evidenceUnits.lowBand,
+      profileConfig,
+    ),
+  };
+  const ambientResonanceSupport = computeLiveInputAmbientResonanceSupport(
+    metrics,
+    profileConfig,
   );
+  const coherenceSupport = Math.max(
+    rawSupports.spectralCentroid,
+    ambientResonanceSupport,
+    rawSupports.rms * 0.5,
+  );
+  const sourceEnvelopeSupport = Math.max(
+    rawSupports.rms,
+    rawSupports.peak,
+    rawSupports.avgAmplitude * 0.5,
+  );
+  const evidenceSupports = {
+    ...rawSupports,
+    lowBand:
+      rawSupports.lowBand *
+      Math.max(rawSupports.spectralCentroid, ambientResonanceSupport),
+    peakClarity:
+      clamp01(metrics.peakClarity) * coherenceSupport * sourceEnvelopeSupport,
+  };
+  const humPenalty = computeLiveInputHumPenalty(metrics, rawSupports);
+  const weights = profileConfig.confidenceWeights;
+  const weightedConfidence =
+    weights.avgAmplitude * evidenceSupports.avgAmplitude +
+    weights.rms * evidenceSupports.rms +
+    weights.peak * evidenceSupports.peak +
+    weights.spectralCentroid * evidenceSupports.spectralCentroid +
+    weights.lowBand * evidenceSupports.lowBand +
+    weights.peakClarity * evidenceSupports.peakClarity +
+    profileConfig.ambientResonanceWeight * ambientResonanceSupport -
+    profileConfig.humPenaltyWeight * humPenalty;
+
+  return {
+    evidenceSupports,
+    sourceConfidence: clamp01(weightedConfidence),
+    humPenalty,
+    ambientResonanceSupport,
+  };
 }
 
-function qualifiesLiveInputHold(metrics, thresholds, acousticIntent) {
-  if (acousticIntent === LIVE_INPUT_ACOUSTIC_INTENTS.ambient) {
-    return (
-      metrics.rms >= thresholds.closeRms ||
-      metrics.peakAmplitude >= thresholds.closePeak ||
-      metrics.lowBandEnergy >= thresholds.openLowBand * 0.8 ||
-      hasAmbientResonancePresence(metrics, thresholds)
-    );
-  }
-
-  return (
-    metrics.rms >= thresholds.closeRms ||
-    metrics.peakAmplitude >= thresholds.closePeak
-  );
-}
-
-function hasAmbientResonancePresence(metrics, thresholds) {
-  return (
-    metrics.avgAmplitude >=
-      Math.max(
-        thresholds.hardSilenceAvg * 1.1,
-        LIVE_INPUT_AMBIENT_RESONANCE_MIN_AVG,
-      ) &&
-    metrics.peakAmplitude >= LIVE_INPUT_AMBIENT_RESONANCE_MIN_PEAK &&
-    metrics.peakClarity >= LIVE_INPUT_AMBIENT_RESONANCE_MIN_CLARITY &&
-    metrics.spectralCentroid >= LIVE_INPUT_AMBIENT_RESONANCE_MIN_CENTROID
-  );
+function buildLiveInputGateDiagnostics({
+  bandState,
+  profileConfig,
+  evidenceUnits = EMPTY_LIVE_INPUT_EVIDENCE_UNITS,
+  evidenceSupports = EMPTY_LIVE_INPUT_EVIDENCE_UNITS,
+  sourceConfidence = 0,
+  humPenalty = 0,
+  ambientResonanceSupport = 0,
+}) {
+  return {
+    evidenceUnits: { ...evidenceUnits },
+    evidenceSupports: { ...evidenceSupports },
+    sourceConfidence,
+    confidenceOpenThreshold: profileConfig.confidenceOpenThreshold,
+    confidenceCloseThreshold: profileConfig.confidenceCloseThreshold,
+    humPenalty,
+    ambientResonanceSupport,
+    baselineAvgAmplitudeSpread:
+      bandState.liveInputBaselineAvgAmplitudeSpread ?? 0,
+    baselineRmsSpread: bandState.liveInputBaselineRmsSpread ?? 0,
+    baselinePeakSpread: bandState.liveInputBaselinePeakSpread ?? 0,
+    baselineCentroidSpread: bandState.liveInputBaselineCentroidSpread ?? 0,
+    baselineLowBandSpread: bandState.liveInputBaselineLowBandEnergySpread ?? 0,
+    openFrames: profileConfig.openFrames,
+    releaseFrames: profileConfig.releaseFrames,
+  };
 }
 
 function resolveLiveInputNoiseGate({
@@ -2136,17 +2378,24 @@ function resolveLiveInputNoiseGate({
   const bandState = analysisMemory.bandState;
   const { acousticIntent } =
     normalizeLiveInputAnalysisSettings(micAnalysisSettings);
+  const acousticIntentConfig = getLiveInputAcousticIntentConfig(acousticIntent);
   if (injectTestTone || inputMode !== "live") {
     resetLiveInputGateState(bandState, {
       inputMode,
       policy: acousticIntent,
       calibrationVersion,
     });
+    const gateDiagnostics = buildLiveInputGateDiagnostics({
+      bandState,
+      profileConfig: acousticIntentConfig,
+    });
+    bandState.liveInputGateDiagnostics = gateDiagnostics;
     return {
       active: false,
       hardSilence: false,
       invalid: false,
       invalidReason: "none",
+      gateDiagnostics,
     };
   }
 
@@ -2161,7 +2410,6 @@ function resolveLiveInputNoiseGate({
     });
   }
 
-  const acousticIntentConfig = getLiveInputAcousticIntentConfig(acousticIntent);
   const metrics = computeLiveInputMetrics({
     avgAmplitude,
     rms,
@@ -2181,6 +2429,11 @@ function resolveLiveInputNoiseGate({
 
   if (bandState.liveInputCalibrationActive) {
     updateLiveInputCalibrationBaseline(bandState, metrics, deltaMs);
+    const gateDiagnostics = buildLiveInputGateDiagnostics({
+      bandState,
+      profileConfig: acousticIntentConfig,
+    });
+    bandState.liveInputGateDiagnostics = gateDiagnostics;
     if (
       currentFrameAtMs - bandState.liveInputCalibrationStartedAtMs <
       LIVE_INPUT_CALIBRATION_WINDOW_MS
@@ -2190,6 +2443,7 @@ function resolveLiveInputNoiseGate({
         hardSilence: true,
         invalid: bandState.liveInputCalibrationInvalid,
         invalidReason: bandState.liveInputCalibrationInvalidReason ?? "none",
+        gateDiagnostics,
       };
     }
 
@@ -2203,11 +2457,17 @@ function resolveLiveInputNoiseGate({
         invalid: true,
         invalidReason: calibrationInvalidReason,
       });
+      const invalidGateDiagnostics = buildLiveInputGateDiagnostics({
+        bandState,
+        profileConfig: acousticIntentConfig,
+      });
+      bandState.liveInputGateDiagnostics = invalidGateDiagnostics;
       return {
         active: true,
         hardSilence: true,
         invalid: true,
         invalidReason: calibrationInvalidReason,
+        gateDiagnostics: invalidGateDiagnostics,
       };
     }
 
@@ -2229,11 +2489,17 @@ function resolveLiveInputNoiseGate({
       invalid: true,
       invalidReason: invalidCalibrationReason,
     });
+    const invalidGateDiagnostics = buildLiveInputGateDiagnostics({
+      bandState,
+      profileConfig: acousticIntentConfig,
+    });
+    bandState.liveInputGateDiagnostics = invalidGateDiagnostics;
     return {
       active: true,
       hardSilence: true,
       invalid: true,
       invalidReason: invalidCalibrationReason,
+      gateDiagnostics: invalidGateDiagnostics,
     };
   }
 
@@ -2246,8 +2512,34 @@ function resolveLiveInputNoiseGate({
       hardSilencePeak: acousticIntentConfig.absolutePeakFloor,
     }) &&
     metrics.spectralCentroid < acousticIntentConfig.absoluteCentroidFloor;
-  const thresholds = deriveLiveInputThresholds(bandState, acousticIntentConfig);
-  const hardSilence = detectLiveInputHardSilence(metrics, thresholds);
+  const hardSilenceThresholds = deriveLiveInputHardSilenceThresholds(
+    bandState,
+    acousticIntentConfig,
+  );
+  const evidenceUnits = computeLiveInputEvidenceUnits(
+    bandState,
+    metrics,
+    acousticIntentConfig,
+  );
+  const confidenceResult = computeLiveInputSourceConfidence(
+    metrics,
+    evidenceUnits,
+    acousticIntentConfig,
+  );
+  const gateDiagnostics = buildLiveInputGateDiagnostics({
+    bandState,
+    profileConfig: acousticIntentConfig,
+    evidenceUnits,
+    evidenceSupports: confidenceResult.evidenceSupports,
+    sourceConfidence: confidenceResult.sourceConfidence,
+    humPenalty: confidenceResult.humPenalty,
+    ambientResonanceSupport: confidenceResult.ambientResonanceSupport,
+  });
+  bandState.liveInputGateDiagnostics = gateDiagnostics;
+  const hardSilence = detectLiveInputHardSilence(
+    metrics,
+    hardSilenceThresholds,
+  );
 
   if (hardSilence) {
     bandState.liveInputGateState = "closed";
@@ -2258,13 +2550,15 @@ function resolveLiveInputNoiseGate({
       hardSilence: true,
       invalid: false,
       invalidReason: "none",
+      gateDiagnostics,
     };
   }
 
   if (bandState.liveInputGateState === "open") {
     if (
       !hardGateActive &&
-      qualifiesLiveInputHold(metrics, thresholds, acousticIntent)
+      confidenceResult.sourceConfidence >=
+        acousticIntentConfig.confidenceCloseThreshold
     ) {
       bandState.liveInputQuietFrames = 0;
       return {
@@ -2272,16 +2566,18 @@ function resolveLiveInputNoiseGate({
         hardSilence: false,
         invalid: false,
         invalidReason: "none",
+        gateDiagnostics,
       };
     }
 
     bandState.liveInputQuietFrames += 1;
-    if (bandState.liveInputQuietFrames < acousticIntentConfig.closeFrames) {
+    if (bandState.liveInputQuietFrames < acousticIntentConfig.releaseFrames) {
       return {
         active: false,
         hardSilence: false,
         invalid: false,
         invalidReason: "none",
+        gateDiagnostics,
       };
     }
 
@@ -2293,17 +2589,14 @@ function resolveLiveInputNoiseGate({
       hardSilence: false,
       invalid: false,
       invalidReason: "none",
+      gateDiagnostics,
     };
   }
 
   if (
     !hardGateActive &&
-    qualifiesLiveInputOpen(
-      metrics,
-      thresholds,
-      acousticIntent,
-      acousticIntentConfig,
-    )
+    confidenceResult.sourceConfidence >=
+      acousticIntentConfig.confidenceOpenThreshold
   ) {
     bandState.liveInputOpenFrames += 1;
     if (bandState.liveInputOpenFrames >= acousticIntentConfig.openFrames) {
@@ -2313,11 +2606,17 @@ function resolveLiveInputNoiseGate({
       return {
         active: false,
         hardSilence: false,
+        invalid: false,
+        invalidReason: "none",
+        gateDiagnostics,
       };
     }
     return {
       active: true,
       hardSilence: false,
+      invalid: false,
+      invalidReason: "none",
+      gateDiagnostics,
     };
   }
 
@@ -2327,6 +2626,7 @@ function resolveLiveInputNoiseGate({
     hardSilence: false,
     invalid: false,
     invalidReason: "none",
+    gateDiagnostics,
   };
 }
 
@@ -3981,6 +4281,7 @@ function finalizeFeatureDebugSnapshot({
   liveInputCalibrationActive,
   liveInputCalibrationInvalid = false,
   liveInputCalibrationInvalidReason = "none",
+  liveInputGateDiagnostics = EMPTY_LIVE_INPUT_GATE_DIAGNOSTICS,
   liveInputAnalysisClass,
   resolvedLiveInputAnalysisClass,
   liveInputAcousticIntent,
@@ -4052,6 +4353,7 @@ function finalizeFeatureDebugSnapshot({
     liveInputCalibrationActive,
     liveInputCalibrationInvalid,
     liveInputCalibrationInvalidReason,
+    liveInputGateDiagnostics,
     liveInputAnalysisClass,
     resolvedLiveInputAnalysisClass,
     liveInputAcousticIntent,
@@ -4559,6 +4861,7 @@ export function prepareAudioFeatureFrameInputs({
     hardSilence: liveInputHardSilenceActive,
     invalid: liveInputCalibrationInvalid,
     invalidReason: liveInputCalibrationInvalidReason,
+    gateDiagnostics: liveInputGateDiagnostics,
   } = isAcousticLiveInput
     ? resolveLiveInputNoiseGate({
         analysisMemory,
@@ -4586,6 +4889,7 @@ export function prepareAudioFeatureFrameInputs({
           hardSilence: false,
           invalid: false,
           invalidReason: "none",
+          gateDiagnostics: EMPTY_LIVE_INPUT_GATE_DIAGNOSTICS,
         };
       })();
 
@@ -4738,6 +5042,8 @@ export function prepareAudioFeatureFrameInputs({
     liveInputHardSilenceActive,
     liveInputCalibrationInvalid,
     liveInputCalibrationInvalidReason,
+    liveInputGateDiagnostics:
+      liveInputGateDiagnostics ?? EMPTY_LIVE_INPUT_GATE_DIAGNOSTICS,
     lineFeedProgramActive: lineFeedProgramActivity.programActive === true,
     lineFeedProgramExcitation: lineFeedProgramActivity.programExcitation ?? 0,
     lineFeedDeviceFloorAvg: lineFeedProgramActivity.deviceFloorAvg ?? 0,
@@ -6129,6 +6435,7 @@ export function buildCurrentAudioFeatureAnalysisResult({
     liveInputCalibrationInvalid: preparedInputs.liveInputCalibrationInvalid,
     liveInputCalibrationInvalidReason:
       preparedInputs.liveInputCalibrationInvalidReason,
+    liveInputGateDiagnostics: preparedInputs.liveInputGateDiagnostics,
     liveInputCalibrationActive: Boolean(
       preparedInputs.bandState.liveInputCalibrationActive,
     ),
@@ -6187,6 +6494,7 @@ export function buildFastSignalPatchedAudioFeatureAnalysisResult({
     liveInputCalibrationInvalid: preparedInputs.liveInputCalibrationInvalid,
     liveInputCalibrationInvalidReason:
       preparedInputs.liveInputCalibrationInvalidReason,
+    liveInputGateDiagnostics: preparedInputs.liveInputGateDiagnostics,
     liveInputCalibrationActive: Boolean(
       preparedInputs.bandState.liveInputCalibrationActive,
     ),
@@ -6331,6 +6639,17 @@ export function buildAudioFeatureAnalysisSnapshot({
       liveInputCalibrationInvalid: analysisResult.liveInputCalibrationInvalid,
       liveInputCalibrationInvalidReason:
         analysisResult.liveInputCalibrationInvalidReason,
+      liveInputGateDiagnostics: analysisResult.liveInputGateDiagnostics
+        ? {
+            ...analysisResult.liveInputGateDiagnostics,
+            evidenceUnits: {
+              ...analysisResult.liveInputGateDiagnostics.evidenceUnits,
+            },
+            evidenceSupports: {
+              ...analysisResult.liveInputGateDiagnostics.evidenceSupports,
+            },
+          }
+        : EMPTY_LIVE_INPUT_GATE_DIAGNOSTICS,
       liveInputCalibrationActive: analysisResult.liveInputCalibrationActive,
       liveInputAcousticIntent:
         analysisResult.bandState?.liveInputPolicy ??
@@ -7028,6 +7347,9 @@ export function composeAudioFeatureFrame({
       liveInputCalibrationInvalid: analysisResult.liveInputCalibrationInvalid,
       liveInputCalibrationInvalidReason:
         analysisResult.liveInputCalibrationInvalidReason,
+      liveInputGateDiagnostics:
+        analysisResult.liveInputGateDiagnostics ??
+        EMPTY_LIVE_INPUT_GATE_DIAGNOSTICS,
       liveInputAnalysisClass:
         preparedInputs.status?.liveInputAnalysisClass ??
         DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,

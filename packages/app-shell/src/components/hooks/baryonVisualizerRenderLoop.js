@@ -725,6 +725,61 @@ function hasSpectralLightFeatureFrameRequest(featureFrame) {
   return featureFrame?.spectralLightRequested === true;
 }
 
+function hasPositiveSpectralLaneWeight(laneWeights) {
+  if (!laneWeights?.length) {
+    return false;
+  }
+
+  for (let index = 0; index < laneWeights.length; index += 1) {
+    if ((laneWeights[index] ?? 0) > 1e-8) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function hasRenderableSpectralLanePayload(analysisResult) {
+  const activeModeCount = Math.max(
+    analysisResult?.activeModeCount ?? 0,
+    analysisResult?.activeSourceCoupledModeCount ?? 0,
+    analysisResult?.activeResonantModeCount ?? 0,
+  );
+
+  return (
+    activeModeCount > 0 &&
+    (hasPositiveSpectralLaneWeight(analysisResult?.sourceCoupledSpectralLaneA) ||
+      hasPositiveSpectralLaneWeight(analysisResult?.sourceCoupledSpectralLaneB) ||
+      hasPositiveSpectralLaneWeight(analysisResult?.resonantSpectralLaneA) ||
+      hasPositiveSpectralLaneWeight(analysisResult?.resonantSpectralLaneB))
+  );
+}
+
+function hasPreparedSourceActivity({ preparedInputs, controls }) {
+  return Boolean(
+    controls?.injectTestTone ||
+      preparedInputs?.soundActive ||
+      preparedInputs?.micActive ||
+      preparedInputs?.lineFeedProgramActive,
+  );
+}
+
+function shouldRebuildEmptySpectralLaneSnapshot({
+  spectralLightEnabled,
+  engineSnapshot,
+  preparedInputs,
+  status,
+  controls,
+}) {
+  return (
+    spectralLightEnabled === true &&
+    preparedInputs?.shouldBuildSpectralLight === true &&
+    hasAudioSourceRenderIntent({ status, controls }) &&
+    hasPreparedSourceActivity({ preparedInputs, controls }) &&
+    !hasRenderableSpectralLanePayload(engineSnapshot?.analysisResult)
+  );
+}
+
 function shouldRefreshSpectralLightFeatureFrame({
   spectralLightEnabled,
   status,
@@ -2347,8 +2402,21 @@ export function resolveFeatureFrame(
               preparedInputs,
               status,
             });
+          const shouldRefreshSpectralLightWorkerSnapshot =
+            workerSnapshotMatches &&
+            shouldRebuildEmptySpectralLaneSnapshot({
+              spectralLightEnabled,
+              engineSnapshot,
+              preparedInputs,
+              status,
+              controls,
+            });
 
-          if (workerSnapshotMatches && !shouldRefreshProgramSnapshot) {
+          if (
+            workerSnapshotMatches &&
+            !shouldRefreshProgramSnapshot &&
+            !shouldRefreshSpectralLightWorkerSnapshot
+          ) {
             const fastComposeStartedAt = getRenderLoopWallTimeMs();
             const snapshotFrameTimeMs = engineSnapshot?.frameTimeMs;
             const shouldPatchCurrentFastSignals =
@@ -2399,7 +2467,7 @@ export function resolveFeatureFrame(
                 status,
                 controls,
                 lastLiveFrame: lastLiveFrameRef.current,
-              });
+              }) || shouldRefreshSpectralLightWorkerSnapshot;
 
             if (
               shouldRefreshProgramSnapshot ||

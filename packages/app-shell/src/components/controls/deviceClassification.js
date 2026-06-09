@@ -1,6 +1,6 @@
 /**
  * Device classification: determines whether an audio input device is a
- * physical microphone (`"live"`) or a virtual/loopback device (`"system"`).
+ * physical microphone (`"live"`) or a direct line/loopback device (`"system"`).
  *
  * The string values are kept for compatibility with existing UI/session state,
  * but semantically they mean:

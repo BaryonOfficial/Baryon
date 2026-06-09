@@ -3041,6 +3041,113 @@ test("resolveFeatureFrame refreshes a preserved live frame when Spectral Light t
   );
 });
 
+test("resolveFeatureFrame refreshes matching live Spectral snapshots with empty lanes", () => {
+  const deadSpectralFrame = {
+    fieldState: "idle",
+    renderAuthority: false,
+    spectralLightRequested: true,
+    modalFieldColorSlots: new Float32Array([0, 0, 0, 0]),
+    modalFieldSpectralLaneA: new Float32Array([0, 0, 0, 0]),
+    modalFieldSpectralLaneB: new Float32Array([0, 0, 0, 0]),
+    modalFieldSpectralMeta: new Float32Array([0, 0, 0, 0]),
+  };
+  const liveSpectralFrame = {
+    fieldState: "active",
+    renderAuthority: true,
+    spectralLightRequested: true,
+    modalFieldColorSlots: new Float32Array([0.1, 0.8, 1, 0.9]),
+    modalFieldSpectralLaneA: new Float32Array([0.1, 0.7, 0.2, 0]),
+    modalFieldSpectralLaneB: new Float32Array([0, 0, 0, 0]),
+    modalFieldSpectralMeta: new Float32Array([0.2, 0.05, 0.9, 0.6]),
+    ...createLiveRenderFrameEvidence(),
+  };
+  const staleAnalysisResult = {
+    activeModeCount: 0,
+    activeSourceCoupledModeCount: 0,
+    activeResonantModeCount: 0,
+    sourceCoupledSpectralLaneA: new Float32Array([0, 0, 0, 0]),
+    sourceCoupledSpectralLaneB: new Float32Array([0, 0, 0, 0]),
+    resonantSpectralLaneA: new Float32Array([0, 0, 0, 0]),
+    resonantSpectralLaneB: new Float32Array([0, 0, 0, 0]),
+  };
+  const liveAnalysisResult = {
+    activeModeCount: 1,
+    activeSourceCoupledModeCount: 1,
+    activeResonantModeCount: 0,
+    sourceCoupledSpectralLaneA: new Float32Array([0.1, 0.7, 0.2, 0]),
+    sourceCoupledSpectralLaneB: new Float32Array([0, 0, 0, 0]),
+    resonantSpectralLaneA: new Float32Array([0, 0, 0, 0]),
+    resonantSpectralLaneB: new Float32Array([0, 0, 0, 0]),
+  };
+  const featureEngine = {
+    enqueueTransportFrame: vi.fn(),
+    readLatestSnapshot: vi.fn(() => ({
+      analysisSessionKey: "live:device-1",
+      analysisInputsSignature: '"spectral-on"',
+      frameTimeMs: 1000,
+      analysisResult: staleAnalysisResult,
+    })),
+    getStatus: vi.fn(() => ({})),
+  };
+  const { args } = createResolveFeatureFrameHarness({
+    featureEngine,
+    spectralLightEnabled: true,
+    status: {
+      audioInputMode: "live",
+      isPlaying: false,
+      isLiveInputActive: true,
+      playbackSessionId: null,
+    },
+    renderLoopRefs: {
+      frameCacheRefs: {
+        lastLiveFrameRef: { current: null },
+        lastActiveFrameRef: { current: null },
+        lastIdleFrameRef: { current: null },
+        analysisSchedulerRef: { current: null },
+      },
+    },
+  });
+  const runHeavyFeatureAnalysis = vi.fn(() => liveAnalysisResult);
+  const buildFastSignalAnalysisResult = vi.fn(() => staleAnalysisResult);
+  const composeFeatureFrame = vi.fn(({ reuseHeavyAnalysis }) =>
+    reuseHeavyAnalysis ? deadSpectralFrame : liveSpectralFrame,
+  );
+
+  const result = resolveFeatureFrame(args, {
+    prepareFeatureFrame() {
+      return {
+        currentFrameAtMs: 1000,
+        analysisSessionKey: "live:device-1",
+        analysisInputsSignature: '"spectral-on"',
+        inputMode: "live",
+        resolvedLiveInputAnalysisClass: "acoustic-mic",
+        shouldBuildSpectralLight: true,
+        soundActive: true,
+        micActive: true,
+        silentFeatureFrame: null,
+      };
+    },
+    runHeavyFeatureAnalysis,
+    buildFastSignalAnalysisResult,
+    composeFeatureFrame,
+  });
+
+  expect(result.effectiveFrame).toBe(liveSpectralFrame);
+  expect(result.effectiveFrame.modalFieldSpectralLaneA[1]).toBeGreaterThan(0);
+  expect(runHeavyFeatureAnalysis).toHaveBeenCalledTimes(1);
+  expect(buildFastSignalAnalysisResult).not.toHaveBeenCalled();
+  expect(composeFeatureFrame).toHaveBeenCalledWith(
+    expect.objectContaining({
+      analysisResult: liveAnalysisResult,
+      reuseHeavyAnalysis: false,
+    }),
+  );
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
+    "live-warmup",
+  );
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticFresh).toBe(true);
+});
+
 test("resolveFeatureFrame does not reuse stale live cache without current source evidence", () => {
   const silentFeatureFrame = {
     fieldState: "idle",
