@@ -10,9 +10,6 @@ minimumReleaseAgeExclude:
 
 blockExoticSubdeps: false
 
-overrides:
-  "extract-zip>yauzl": "3.3.1"
-
 allowBuilds:
   "@ast-grep/cli": true
   electron: true
