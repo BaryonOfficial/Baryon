@@ -2623,6 +2623,9 @@ function readCommittedSpectralLaneCache(spectralLaneCache) {
     activeDescriptor: spectralLaneCache.activeDescriptor ?? descriptor,
     activeCacheBuiltAtSec: spectralLaneCache.activeCacheBuiltAtSec ?? null,
     lastComputedAtSec: spectralLaneCache.lastComputedAtSec ?? null,
+    modalBasisCacheDescriptor:
+      spectralLaneCache.modalBasisCacheDescriptor ?? null,
+    modalBasisAtlasTexture: spectralLaneCache.modalBasisAtlasTexture ?? null,
   };
 }
 
@@ -2633,9 +2636,42 @@ function hasRadiantSpectralLaneDescriptor(descriptor) {
   );
 }
 
-function canRetainSpectralLaneCacheAfterMiss(committedCache, reason) {
+function spectralLaneCacheHasCurrentModalBasisSource(
+  committedCache,
+  modalBasisAtlasTexture,
+  modalBasisCacheDescriptor,
+) {
+  const committedModalBasisDescriptor =
+    committedCache?.modalBasisCacheDescriptor ?? null;
+  const modalBasisDescriptorFresh = Boolean(
+    committedModalBasisDescriptor &&
+      modalBasisCacheDescriptor &&
+      getRaymarchModalBasisCacheDescriptorStaleReason({
+        activeDescriptor: committedModalBasisDescriptor,
+        nextDescriptor: modalBasisCacheDescriptor,
+      }) == null,
+  );
+  return Boolean(
+    committedCache?.modalBasisAtlasTexture &&
+      modalBasisAtlasTexture &&
+      committedCache.modalBasisAtlasTexture === modalBasisAtlasTexture &&
+      modalBasisDescriptorFresh,
+  );
+}
+
+function canRetainSpectralLaneCacheAfterMiss(
+  committedCache,
+  reason,
+  modalBasisAtlasTexture,
+  modalBasisCacheDescriptor,
+) {
   return (
     Boolean(committedCache) &&
+    spectralLaneCacheHasCurrentModalBasisSource(
+      committedCache,
+      modalBasisAtlasTexture,
+      modalBasisCacheDescriptor,
+    ) &&
     hasRadiantSpectralLaneDescriptor(committedCache.descriptor) &&
     (reason === "renderer-unavailable" || reason === "compute-node-unavailable")
   );
@@ -2649,6 +2685,10 @@ function retainSpectralLaneCache(spectralLaneCache, reason, committedCache) {
     spectralLaneCache.activeCacheBuiltAtSec =
       committedCache.activeCacheBuiltAtSec;
     spectralLaneCache.lastComputedAtSec = committedCache.lastComputedAtSec;
+    spectralLaneCache.modalBasisCacheDescriptor =
+      committedCache.modalBasisCacheDescriptor ?? null;
+    spectralLaneCache.modalBasisAtlasTexture =
+      committedCache.modalBasisAtlasTexture ?? null;
   }
   spectralLaneCache.active = true;
   spectralLaneCache.ready = true;
@@ -2659,22 +2699,34 @@ function retainSpectralLaneCache(spectralLaneCache, reason, committedCache) {
 function shouldRetainCommittedSpectralLaneCache(
   spectralLaneCache,
   nextDescriptor,
+  modalBasisAtlasTexture,
+  modalBasisCacheDescriptor,
 ) {
   if (spectralLaneCache?.ready !== true || !nextDescriptor) {
     return false;
   }
   const committedDescriptor =
     spectralLaneCache.descriptor ?? spectralLaneCache.activeDescriptor ?? null;
+  const retainEmptyPacket = Boolean(
+    nextDescriptor.spectralLaneActivePacketCount === 0 &&
+      nextDescriptor.spectralLaneRadianceInputTotal <= 1e-8 &&
+      (nextDescriptor.modalFieldCount ?? 0) > 0 &&
+      (committedDescriptor?.spectralLaneActivePacketCount ?? 0) > 0 &&
+      (committedDescriptor?.spectralLaneRadianceInputTotal ?? 0) > 1e-8,
+  );
+  if (
+    !spectralLaneCacheHasCurrentModalBasisSource(
+      spectralLaneCache,
+      modalBasisAtlasTexture,
+      modalBasisCacheDescriptor,
+    )
+  ) {
+    return retainEmptyPacket;
+  }
   if (committedDescriptor?.hash === nextDescriptor.hash) {
     return true;
   }
-  return Boolean(
-    nextDescriptor.spectralLaneActivePacketCount === 0 &&
-    nextDescriptor.spectralLaneRadianceInputTotal <= 1e-8 &&
-    (nextDescriptor.modalFieldCount ?? 0) > 0 &&
-    (committedDescriptor?.spectralLaneActivePacketCount ?? 0) > 0 &&
-    (committedDescriptor?.spectralLaneRadianceInputTotal ?? 0) > 1e-8,
-  );
+  return retainEmptyPacket;
 }
 
 function resolveSpectralLaneRetentionReason(spectralLaneCache, nextDescriptor) {
@@ -2752,7 +2804,14 @@ function updateSpectralLaneCache(
     { modalFieldCapacity },
   );
   const committedCache = readCommittedSpectralLaneCache(spectralLaneCache);
-  if (shouldRetainCommittedSpectralLaneCache(spectralLaneCache, descriptor)) {
+  if (
+    shouldRetainCommittedSpectralLaneCache(
+      spectralLaneCache,
+      descriptor,
+      modalBasisAtlasTexture,
+      modalBasisCacheDescriptor,
+    )
+  ) {
     return retainSpectralLaneCache(
       spectralLaneCache,
       resolveSpectralLaneRetentionReason(spectralLaneCache, descriptor),
@@ -2760,6 +2819,7 @@ function updateSpectralLaneCache(
   }
   const result = computeRaymarchSpectralLaneCache(spectralLaneCache, renderer, {
     descriptor,
+    modalBasisCacheDescriptor,
     modalBasisAtlasTexture,
     modalFieldCoefficientBuffer: runtimeState.modalFieldCoefficientBuffer,
     modalFieldSpectralLaneABuffer: runtimeState.modalFieldSpectralLaneABuffer,
@@ -2769,7 +2829,14 @@ function updateSpectralLaneCache(
     uniforms: runtimeState.uniforms,
     schedulerTimeSec,
   });
-  if (canRetainSpectralLaneCacheAfterMiss(committedCache, result.reason)) {
+  if (
+    canRetainSpectralLaneCacheAfterMiss(
+      committedCache,
+      result.reason,
+      modalBasisAtlasTexture,
+      modalBasisCacheDescriptor,
+    )
+  ) {
     return retainSpectralLaneCache(
       spectralLaneCache,
       SPECTRAL_LANE_CACHE_UNAVAILABLE_RETAINED_REASON,

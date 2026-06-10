@@ -312,6 +312,78 @@ function seedRuntimeCacheNodes(runtimeState) {
   }
 }
 
+function createSpectralLaneCacheHarness() {
+  const runtimeState = createRuntimeState({ withFieldCache: true });
+  seedRuntimeCacheNodes(runtimeState);
+  runtimeState.uniforms.uSpectralMix.value = 0.85;
+  runtimeState.liveFieldProjectionCache.computeNodesByKey[
+    "live-field-projection:capacity=16"
+  ] = { id: "live-field" };
+  runtimeState.spectralLaneCache.computeNodesByKey[
+    "spectral-lane-cache:capacity=16"
+  ] = { id: "spectral-lane" };
+
+  const computeCalls = [];
+  const renderer = {
+    compute: vi.fn((node) => {
+      computeCalls.push(node?.id ?? null);
+    }),
+    computeAsync: vi.fn(async (node) => {
+      computeCalls.push(node?.id ?? null);
+    }),
+  };
+
+  return {
+    runtimeState,
+    renderer,
+    spectralComputeCount: () =>
+      computeCalls.filter((id) => id === "spectral-lane").length,
+  };
+}
+
+function createSpectralLaneCacheFrame({
+  spectralLaneA = [0.2, 0.8, 0, 0],
+  spectralLaneB = [0, 0, 0, 0],
+  spectralMeta = [0.18, 0.04, 0.9, 0.7],
+} = {}) {
+  return {
+    fieldState: "active",
+    renderAuthority: true,
+    averageAmplitude: 48,
+    modalFieldSlots: new Float32Array([3, 4, 6, 0.8]),
+    modalFieldPhaseSlots: new Float32Array([0, 0, 1, 1]),
+    modalFieldColorSlots: new Float32Array([9, 9, 9, 1]),
+    modalFieldSpectralLaneA: new Float32Array(spectralLaneA),
+    modalFieldSpectralLaneB: new Float32Array(spectralLaneB),
+    modalFieldSpectralMeta: new Float32Array(spectralMeta),
+    modalFieldMetadataSlots: new Float32Array(4),
+    activeModeCount: 1,
+    activeModalFieldModeCount: 1,
+    modalResponseEnergy: 0.5,
+  };
+}
+
+function createEmptySpectralLaneCacheFrame() {
+  return createSpectralLaneCacheFrame({
+    spectralLaneA: [0, 0, 0, 0],
+    spectralLaneB: [0, 0, 0, 0],
+    spectralMeta: [0, 0, 0, 0],
+  });
+}
+
+function expectSpectralLaneCacheModalBasisSource(
+  runtimeState,
+  expectedAtlasTexture,
+  expectedModalBasisDescriptor = runtimeState.modalBasisCache.activeDescriptor,
+) {
+  expect(runtimeState.spectralLaneCache.modalBasisAtlasTexture).toBe(
+    expectedAtlasTexture,
+  );
+  expect(runtimeState.spectralLaneCache.modalBasisCacheDescriptor).toEqual(
+    expectedModalBasisDescriptor,
+  );
+}
+
 function expectNoSpectralLightCache(runtimeState) {
   expect(runtimeState).not.toHaveProperty("spectralLightCache");
 }
@@ -4393,6 +4465,142 @@ describe("tickRaymarchRuntime", () => {
     expect(
       runtimeState.debugSnapshot.spectralLaneCacheRadianceInputTotal,
     ).toBeGreaterThan(0);
+  });
+
+  it("recomputes the Spectral lane cache after modal-basis atlas promotion", async () => {
+    const { runtimeState, renderer, spectralComputeCount } =
+      createSpectralLaneCacheHarness();
+    const frame = createSpectralLaneCacheFrame();
+
+    tickRaymarchRuntime(runtimeState, frame, 1, 1 / 60, renderer);
+    await flushMicrotasks();
+    tickRaymarchRuntime(runtimeState, frame, 1 + 1 / 60, 1 / 60, renderer);
+
+    const committedSpectralDescriptor =
+      runtimeState.spectralLaneCache.descriptor;
+    const rectangularAtlasTexture = runtimeState.modalBasisCache.texture;
+    expect(spectralComputeCount()).toBe(1);
+    expect(runtimeState.spectralLaneCache.ready).toBe(true);
+    expectSpectralLaneCacheModalBasisSource(
+      runtimeState,
+      rectangularAtlasTexture,
+    );
+
+    runtimeState.effectiveCavityGeometry = "spherical";
+    tickRaymarchRuntime(runtimeState, frame, 2, 1 / 60, renderer);
+    expect(runtimeState.debugSnapshot.modalBasisCacheStaleWhileRebuilding).toBe(
+      true,
+    );
+    expect(spectralComputeCount()).toBe(1);
+
+    await flushMicrotasks();
+    tickRaymarchRuntime(runtimeState, frame, 2 + 1 / 60, 1 / 60, renderer);
+
+    const promotedAtlasTexture = runtimeState.modalBasisCache.texture;
+    expect(promotedAtlasTexture).not.toBe(rectangularAtlasTexture);
+    expect(runtimeState.volumeMesh.userData.raymarchModalBasisAtlasTexture).toBe(
+      promotedAtlasTexture,
+    );
+    expect(runtimeState.spectralLaneCache.descriptor).not.toBe(
+      committedSpectralDescriptor,
+    );
+    expect(runtimeState.spectralLaneCache.descriptor.hash).toBe(
+      committedSpectralDescriptor.hash,
+    );
+    expect(spectralComputeCount()).toBe(2);
+    expectSpectralLaneCacheModalBasisSource(
+      runtimeState,
+      promotedAtlasTexture,
+    );
+    expect(runtimeState.spectralLaneCache.lastComputeReason).toBe(
+      "frame-current",
+    );
+  });
+
+  it("recomputes the Spectral lane cache when atlas identity rotates back with new basis contents", async () => {
+    const { runtimeState, renderer, spectralComputeCount } =
+      createSpectralLaneCacheHarness();
+    const radiantFrame = createSpectralLaneCacheFrame();
+    const emptySpectralFrame = createEmptySpectralLaneCacheFrame();
+
+    tickRaymarchRuntime(runtimeState, radiantFrame, 1, 1 / 60, renderer);
+    await flushMicrotasks();
+    tickRaymarchRuntime(
+      runtimeState,
+      radiantFrame,
+      1 + 1 / 60,
+      1 / 60,
+      renderer,
+    );
+
+    const initialAtlasTexture = runtimeState.modalBasisCache.texture;
+    const initialModalBasisDescriptor =
+      runtimeState.modalBasisCache.activeDescriptor;
+    const initialSpectralDescriptor = runtimeState.spectralLaneCache.descriptor;
+    expect(spectralComputeCount()).toBe(1);
+    expectSpectralLaneCacheModalBasisSource(
+      runtimeState,
+      initialAtlasTexture,
+      initialModalBasisDescriptor,
+    );
+
+    runtimeState.effectiveCavityGeometry = "spherical";
+    tickRaymarchRuntime(runtimeState, emptySpectralFrame, 2, 1 / 60, renderer);
+    expect(spectralComputeCount()).toBe(1);
+    await flushMicrotasks();
+    tickRaymarchRuntime(
+      runtimeState,
+      emptySpectralFrame,
+      2 + 1 / 60,
+      1 / 60,
+      renderer,
+    );
+
+    const firstPromotedAtlasTexture = runtimeState.modalBasisCache.texture;
+    expect(firstPromotedAtlasTexture).not.toBe(initialAtlasTexture);
+    expect(spectralComputeCount()).toBe(1);
+    expectSpectralLaneCacheModalBasisSource(
+      runtimeState,
+      initialAtlasTexture,
+      initialModalBasisDescriptor,
+    );
+
+    runtimeState.uniforms.uRadius.value = 1.25;
+    tickRaymarchRuntime(runtimeState, emptySpectralFrame, 3, 1 / 60, renderer);
+    expect(spectralComputeCount()).toBe(1);
+    await flushMicrotasks();
+    tickRaymarchRuntime(
+      runtimeState,
+      emptySpectralFrame,
+      3 + 1 / 60,
+      1 / 60,
+      renderer,
+    );
+
+    const rotatedAtlasTexture = runtimeState.modalBasisCache.texture;
+    expect(rotatedAtlasTexture).toBe(initialAtlasTexture);
+    expect(runtimeState.modalBasisCache.activeDescriptor).not.toEqual(
+      initialModalBasisDescriptor,
+    );
+    expect(spectralComputeCount()).toBe(1);
+    expectSpectralLaneCacheModalBasisSource(
+      runtimeState,
+      initialAtlasTexture,
+      initialModalBasisDescriptor,
+    );
+
+    tickRaymarchRuntime(runtimeState, radiantFrame, 4, 1 / 60, renderer);
+    expect(runtimeState.spectralLaneCache.descriptor.hash).toBe(
+      initialSpectralDescriptor.hash,
+    );
+    expect(spectralComputeCount()).toBe(2);
+    expectSpectralLaneCacheModalBasisSource(
+      runtimeState,
+      rotatedAtlasTexture,
+    );
+    expect(runtimeState.spectralLaneCache.lastComputeReason).toBe(
+      "frame-current",
+    );
   });
 
   it("keeps Spectral lane color drawable for bounded capacity-limited descriptors", async () => {
