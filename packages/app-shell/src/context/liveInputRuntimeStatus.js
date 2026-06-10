@@ -272,12 +272,10 @@ function readSourceBoundaryState(featureFrame) {
   );
 }
 
-function hasLiveSourceEvidence(sourceEvidence) {
+function hasLiveSourceBoundary(sourceEvidence) {
   return (
     sourceEvidence?.currentSourceEvidence === true &&
-    sourceEvidence?.sourceBoundaryState === "live" &&
-    Number.isFinite(sourceEvidence?.sourceEnergy) &&
-    sourceEvidence.sourceEnergy > 0
+    sourceEvidence?.sourceBoundaryState === "live"
   );
 }
 
@@ -320,7 +318,7 @@ export function buildLiveInputRuntimeStatus({
   const sourceBoundaryState = readSourceBoundaryState(featureFrame);
   const lineFeedSourceLive =
     resolvedAnalysisClass === "line-feed" &&
-    hasLiveSourceEvidence(sourceEvidence);
+    hasLiveSourceBoundary(sourceEvidence);
   const providerErrorCode = normalizeErrorCode(
     liveInputErrorCode !== LIVE_INPUT_ERROR_CODES.none
       ? liveInputErrorCode
