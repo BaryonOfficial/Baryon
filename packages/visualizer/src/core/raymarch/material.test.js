@@ -1208,7 +1208,9 @@ describe("raymarch volume material", () => {
     const liveSampleBlock = source.slice(liveSampleStart, scatteringStart);
 
     expect(carrierBlock).toContain("modalPressureRadiationTexture");
-    expect(carrierBlock).toContain("texture3D(modalPressureRadiationTexture)");
+    expect(carrierBlock).toMatch(
+      /pressureRadiationSample\s*=\s*texture3D\(\s*modalPressureRadiationTexture,?\s*\)\.sample\(\s*basisUv,?\s*\)/,
+    );
     expect(carrierBlock).toContain("normalizedPressure");
     expect(carrierBlock).toContain("velocityProxy");
     expect(carrierBlock).toContain("radiationPotential");
