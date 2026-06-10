@@ -3147,7 +3147,11 @@ function getOrCreateRaymarchLiveFieldProjectionCacheComputeNode(
     "live-field-projection",
     `capacity=${normalizedModalFieldCapacity}`,
   ].join(":");
-  const cachedNode = liveFieldProjectionCache.computeNodesByKey?.[nodeKey];
+  const cachedNode = getCachedModalBasisConsumerComputeNode(
+    liveFieldProjectionCache,
+    nodeKey,
+    modalBasisAtlasTexture,
+  );
   if (cachedNode) {
     return cachedNode;
   }
@@ -3160,6 +3164,7 @@ function getOrCreateRaymarchLiveFieldProjectionCacheComputeNode(
     modalFieldCapacity: normalizedModalFieldCapacity,
     uniforms,
   });
+  tagModalBasisConsumerComputeNode(computeNode, modalBasisAtlasTexture);
   liveFieldProjectionCache.computeNodesByKey[nodeKey] = computeNode;
   return computeNode;
 }
@@ -3193,7 +3198,11 @@ function getOrCreateRaymarchSpectralLaneCacheComputeNode(
     "spectral-lane-cache",
     `capacity=${normalizedModalFieldCapacity}`,
   ].join(":");
-  const cachedNode = spectralLaneCache.computeNodesByKey?.[nodeKey];
+  const cachedNode = getCachedModalBasisConsumerComputeNode(
+    spectralLaneCache,
+    nodeKey,
+    modalBasisAtlasTexture,
+  );
   if (cachedNode) {
     return cachedNode;
   }
@@ -3208,8 +3217,45 @@ function getOrCreateRaymarchSpectralLaneCacheComputeNode(
     modalFieldCapacity: normalizedModalFieldCapacity,
     uniforms,
   });
+  tagModalBasisConsumerComputeNode(computeNode, modalBasisAtlasTexture);
   spectralLaneCache.computeNodesByKey[nodeKey] = computeNode;
   return computeNode;
+}
+
+function getCachedModalBasisConsumerComputeNode(
+  cache,
+  nodeKey,
+  modalBasisAtlasTexture,
+) {
+  const cachedNode = cache.computeNodesByKey?.[nodeKey];
+  if (!cachedNode) {
+    return null;
+  }
+
+  const cachedModalBasisAtlasTexture =
+    /** @type {{ raymarchModalBasisAtlasTexture?: unknown }} */ (cachedNode)
+      .raymarchModalBasisAtlasTexture;
+  if (
+    cachedModalBasisAtlasTexture &&
+    cachedModalBasisAtlasTexture !== modalBasisAtlasTexture
+  ) {
+    cachedNode.dispose?.();
+    delete cache.computeNodesByKey[nodeKey];
+    return null;
+  }
+
+  return cachedNode;
+}
+
+function tagModalBasisConsumerComputeNode(computeNode, modalBasisAtlasTexture) {
+  if (
+    computeNode &&
+    (typeof computeNode === "object" || typeof computeNode === "function")
+  ) {
+    /** @type {{ raymarchModalBasisAtlasTexture?: unknown }} */ (
+      computeNode
+    ).raymarchModalBasisAtlasTexture = modalBasisAtlasTexture;
+  }
 }
 
 export function computeRaymarchLiveFieldProjectionCache(
@@ -3448,21 +3494,30 @@ export function isRaymarchModalBasisCachePendingReadyForDescriptor(
 export function commitRaymarchModalBasisCachePendingDescriptor(
   modalBasisCache,
 ) {
-  if (
-    !modalBasisCache?.pendingReady ||
-    !modalBasisCache.pendingDescriptor ||
-    !modalBasisCache.pendingTexture
-  ) {
+  if (!modalBasisCache?.pendingReady || !modalBasisCache.pendingDescriptor) {
     return { committed: false, reason: "pending-unavailable" };
+  }
+  if (!modalBasisCache.texture || !modalBasisCache.pendingTexture) {
+    modalBasisCache.lastError = "cache-texture-missing";
+    modalBasisCache.lastRebuildReason = "texture-missing";
+    return { committed: false, reason: "texture-missing" };
+  }
+  if (modalBasisCache.pendingTexture === modalBasisCache.texture) {
+    modalBasisCache.lastError = "cache-texture-alias";
+    modalBasisCache.lastRebuildReason = "texture-alias";
+    return { committed: false, reason: "texture-alias" };
   }
 
   const descriptor = modalBasisCache.pendingDescriptor;
+  const promotedTexture = modalBasisCache.pendingTexture;
+  modalBasisCache.pendingTexture = modalBasisCache.texture;
+  modalBasisCache.texture = promotedTexture;
   applyCommittedModalBasisDescriptor(modalBasisCache, descriptor);
   dispatchQueuedRaymarchModalBasisCacheRebuild(modalBasisCache);
   return {
     committed: true,
     descriptor,
-    texture: modalBasisCache.texture,
+    texture: promotedTexture,
   };
 }
 

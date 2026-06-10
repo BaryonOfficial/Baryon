@@ -241,6 +241,15 @@ function getBasisAtlasUvNode({
   );
 }
 
+function getTexture3DNode(textureLike) {
+  if (!textureLike) {
+    return null;
+  }
+  return textureLike.isTexture3DNode === true
+    ? textureLike
+    : texture3D(textureLike);
+}
+
 function sampleBasisAtlasPageNode({
   basisUv,
   basisSlot,
@@ -252,7 +261,7 @@ function sampleBasisAtlasPageNode({
     basisSlot,
     invLiveSynthesisModeCount,
   });
-  const basisSample = texture3D(modalBasisAtlasTexture).sample(atlasUv);
+  const basisSample = getTexture3DNode(modalBasisAtlasTexture).sample(atlasUv);
   const basisSupport = abs(basisSample.x);
 
   return {
@@ -840,8 +849,11 @@ function createScatteringNode({
   const boundaryWhiteEmission = isDirichletBoundary
     ? float(RAYMARCH_BOUNDARY_TUNING.dirichletWhiteEmission)
     : float(1.0);
+  const modalBasisAtlasTextureNode = getTexture3DNode(modalBasisAtlasTexture);
+  const modalBasisAtlasTextureValue =
+    modalBasisAtlasTextureNode?.value ?? modalBasisAtlasTexture;
   const liveFieldSampleResolution =
-    modalBasisAtlasTexture?.image?.width ??
+    modalBasisAtlasTextureValue?.image?.width ??
     RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION;
   const spectralColorBiasHintOffset = uModeCoherence
     .mul(0.05)
@@ -924,7 +936,7 @@ function createScatteringNode({
   const amplitudeNorm = max(uTotalSlotAmplitude, float(0.01));
   const modalFieldCount = float(uModalFieldModeCount);
   const activeMask = smoothstep(float(0.0), float(1.0), modalFieldCount);
-  const convergenceSampleStep = modalBasisAtlasTexture
+  const convergenceSampleStep = modalBasisAtlasTextureNode
     ? uRadius.mul(float(2.0)).div(float(liveFieldSampleResolution))
     : uRadius.mul(float(2.0)).div(max(uRaymarchSteps, float(1.0)));
   const convergenceSampleUvStep = convergenceSampleStep.div(
@@ -1009,7 +1021,7 @@ function createScatteringNode({
         );
       };
       const canSynthesizeLiveField =
-        modalBasisAtlasTexture && modalFieldModeBuffer;
+        modalBasisAtlasTextureNode && modalFieldModeBuffer;
       const assignSynthesizedLiveField = () => {
         assignLiveFieldSample(
           synthesizeLiveModalFieldNode({
@@ -1017,7 +1029,7 @@ function createScatteringNode({
             uRadius,
             uModalFieldModeCount,
             amplitudeNorm,
-            modalBasisAtlasTexture,
+            modalBasisAtlasTexture: modalBasisAtlasTextureNode,
             modalFieldModeBuffer,
             modalFieldCoefficientBuffer,
             liveSynthesisModeCount,
@@ -1979,8 +1991,10 @@ export function createRaymarchVolumeMesh({
   // SphereGeometry: TRAA vertex velocities match the sphere surface during rotation.
   const geometry = new THREE.SphereGeometry(radius * 1.01, 32, 32);
   const sharedOffsetNode = createRaymarchOffsetNode();
+  const modalBasisAtlasTextureNode = getTexture3DNode(modalBasisAtlasTexture);
   const modalResourceBindings = {
     modalBasisAtlasTexture,
+    modalBasisAtlasTextureNode,
     modalLiveFieldTexture,
     modalLiveSupportTexture,
     modalPressureRadiationTexture,
@@ -2009,7 +2023,7 @@ export function createRaymarchVolumeMesh({
     material.scatteringNode = createScatteringNode({
       uniforms,
       boundaryMode,
-      modalBasisAtlasTexture: modalResourceBindings.modalBasisAtlasTexture,
+      modalBasisAtlasTexture: modalResourceBindings.modalBasisAtlasTextureNode,
       modalLiveFieldTexture: modalResourceBindings.modalLiveFieldTexture,
       modalLiveSupportTexture: modalResourceBindings.modalLiveSupportTexture,
       modalPressureRadiationTexture:
@@ -2095,6 +2109,40 @@ export function createRaymarchVolumeMesh({
 
 export function getRaymarchMaterialCache(mesh) {
   return mesh?.userData?.raymarchMaterialCache ?? null;
+}
+
+export function setRaymarchModalBasisAtlasTexture(mesh, texture) {
+  if (!mesh?.userData) {
+    return;
+  }
+
+  mesh.userData.raymarchModalBasisAtlasTexture = texture;
+  const bindings = mesh.userData.raymarchModalResourceBindings;
+  if (bindings) {
+    bindings.modalBasisAtlasTexture = texture;
+    if (!bindings.modalBasisAtlasTextureNode && texture) {
+      bindings.modalBasisAtlasTextureNode = texture3D(texture);
+    }
+    if (bindings.modalBasisAtlasTextureNode) {
+      bindings.modalBasisAtlasTextureNode.value = texture;
+    }
+  }
+
+  const materialCache = getRaymarchMaterialCache(mesh);
+  if (!materialCache) {
+    if (mesh.material) {
+      mesh.material.modalBasisAtlasTexture = texture;
+    }
+    return;
+  }
+
+  Object.values(materialCache).forEach((boundaryMaterials) => {
+    Object.values(boundaryMaterials).forEach((material) => {
+      if (material) {
+        material.modalBasisAtlasTexture = texture;
+      }
+    });
+  });
 }
 
 function getOrCreateRaymarchMaterial(

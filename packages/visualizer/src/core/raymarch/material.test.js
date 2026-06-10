@@ -9,6 +9,7 @@ import {
   getRaymarchMaterialCache,
   setRaymarchBoundaryMode,
   setRaymarchCavityGeometry,
+  setRaymarchModalBasisAtlasTexture,
   setRaymarchSpectralLightEvaluationMode,
 } from "./material.js";
 import { createVisualizationUniforms } from "../visualizationUniforms.js";
@@ -1872,6 +1873,64 @@ describe("raymarch volume material", () => {
     expect(mesh.userData).not.toHaveProperty("raymarchDetailPhaseBuffer");
     expect(mesh.userData).not.toHaveProperty("raymarchFieldEvaluationMode");
     expect(mesh.material).not.toHaveProperty("fieldEvaluationMode");
+  });
+
+  it("retargets the shared modal-basis atlas node across material variants", () => {
+    const modalBasisCache = createRaymarchModalBasisCache({
+      resolution: 8,
+    });
+    const promotedTexture = modalBasisCache.pendingTexture;
+    const spectralLaneTextureA = {};
+    const spectralLaneTextureB = {};
+    const spectralLaneStatsTexture = {};
+    const uniforms = makeMeshUniforms();
+    const mesh = createRaymarchVolumeMesh({
+      radius: 3,
+      modalBasisAtlasTexture: modalBasisCache.texture,
+      spectralLaneTextureA,
+      spectralLaneTextureB,
+      spectralLaneStatsTexture,
+      spectralLightEvaluationMode: RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
+      uniforms,
+    });
+    const materialCache = getRaymarchMaterialCache(mesh);
+    const textureNode =
+      mesh.userData.raymarchModalResourceBindings.modalBasisAtlasTextureNode;
+
+    expect(textureNode?.isTexture3DNode).toBe(true);
+    expect(textureNode.value).toBe(modalBasisCache.texture);
+
+    setRaymarchModalBasisAtlasTexture(mesh, promotedTexture);
+
+    expect(mesh.userData.raymarchModalBasisAtlasTexture).toBe(promotedTexture);
+    expect(
+      mesh.userData.raymarchModalResourceBindings.modalBasisAtlasTexture,
+    ).toBe(promotedTexture);
+    expect(textureNode.value).toBe(promotedTexture);
+    expect(materialCache.neumann.off.modalBasisAtlasTexture).toBe(
+      promotedTexture,
+    );
+    expect(materialCache.dirichlet.off.modalBasisAtlasTexture).toBe(
+      promotedTexture,
+    );
+
+    setRaymarchSpectralLightEvaluationMode(
+      mesh,
+      RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.laneCache,
+    );
+    expect(mesh.material.modalBasisAtlasTexture).toBe(promotedTexture);
+    expect(materialCache.neumann["lane-cache"].modalBasisAtlasTexture).toBe(
+      promotedTexture,
+    );
+
+    setRaymarchBoundaryMode(mesh, "dirichlet");
+    expect(mesh.material.modalBasisAtlasTexture).toBe(promotedTexture);
+    expect(materialCache.dirichlet["lane-cache"].modalBasisAtlasTexture).toBe(
+      promotedTexture,
+    );
+    expect(
+      mesh.userData.raymarchModalResourceBindings.modalBasisAtlasTextureNode,
+    ).toBe(textureNode);
   });
 
   it("constructs the material without modal buffers", () => {
