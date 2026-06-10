@@ -52,6 +52,7 @@ function createSourceSurfaceAudit({
   startToken,
   endToken,
   requiredTokens = [],
+  requiredPatterns = [],
   forbiddenTokens = [],
 }) {
   return Object.freeze({
@@ -61,6 +62,7 @@ function createSourceSurfaceAudit({
     startToken,
     endToken,
     requiredTokens: freezeStringArray(requiredTokens),
+    requiredPatterns: freezeStringArray(requiredPatterns),
     forbiddenTokens: freezeStringArray(forbiddenTokens),
   });
 }
@@ -1126,11 +1128,13 @@ export const RAYMARCH_RENDER_SURFACE_AUDITS = Object.freeze({
     endToken: "function samplePhaseInterferenceCarrierNode({",
     requiredTokens: [
       "modalPressureRadiationTexture",
-      "texture3D(modalPressureRadiationTexture).sample",
       "normalizedPressure",
       "velocityProxy",
       "radiationPotential",
       "pressureRadiationCarrier.pressure",
+    ],
+    requiredPatterns: [
+      "pressureRadiationSample\\s*=\\s*texture3D\\(\\s*modalPressureRadiationTexture,?\\s*\\)\\.sample\\(\\s*basisUv,?\\s*\\)",
     ],
     forbiddenTokens: [
       "uColor",
@@ -1325,6 +1329,13 @@ export function auditRaymarchSourceSurface(surfaceName, source) {
     if (!surfaceSource.includes(requiredToken)) {
       throw new Error(
         `Raymarch source surface audit ${surfaceName} is missing required token: ${requiredToken}.`,
+      );
+    }
+  }
+  for (const requiredPattern of audit.requiredPatterns) {
+    if (!new RegExp(requiredPattern, "m").test(surfaceSource)) {
+      throw new Error(
+        `Raymarch source surface audit ${surfaceName} is missing required pattern: ${requiredPattern}.`,
       );
     }
   }
