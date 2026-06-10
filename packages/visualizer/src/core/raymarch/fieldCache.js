@@ -3332,6 +3332,7 @@ export function computeRaymarchSpectralLaneCache(
   renderer,
   {
     descriptor = null,
+    modalBasisCacheDescriptor = null,
     modalBasisAtlasTexture,
     modalFieldCoefficientBuffer,
     modalFieldSpectralLaneABuffer,
@@ -3395,6 +3396,8 @@ export function computeRaymarchSpectralLaneCache(
   spectralLaneCache.backend = "compute";
   spectralLaneCache.descriptor = descriptor;
   spectralLaneCache.activeDescriptor = descriptor;
+  spectralLaneCache.modalBasisCacheDescriptor = modalBasisCacheDescriptor;
+  spectralLaneCache.modalBasisAtlasTexture = modalBasisAtlasTexture;
   spectralLaneCache.lastError = null;
   spectralLaneCache.activeCacheBuiltAtSec = Number.isFinite(schedulerTimeSec)
     ? schedulerTimeSec
