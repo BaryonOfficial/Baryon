@@ -68,6 +68,7 @@ import {
 } from "./performanceGovernor.js";
 import {
   RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES,
+  setRaymarchModalBasisAtlasTexture,
   setRaymarchSpectralLightEvaluationMode,
   setRaymarchCavityGeometry,
 } from "./material.js";
@@ -2528,72 +2529,6 @@ function updateModalBasisCache(
   return "unavailable";
 }
 
-function resolveCacheTextureCopyRegion(cache) {
-  const sourceData =
-    cache?.pendingTexture?.source?.data ?? cache?.pendingTexture?.image ?? {};
-  const width = Math.max(
-    1,
-    Math.round(sourceData.width ?? cache?.resolution ?? 1),
-  );
-  const height = Math.max(
-    1,
-    Math.round(sourceData.height ?? cache?.resolution ?? width),
-  );
-  const depth = Math.max(
-    1,
-    Math.round(sourceData.depth ?? cache?.depth ?? cache?.resolution ?? width),
-  );
-  return new THREE.Box3(
-    new THREE.Vector3(0, 0, 0),
-    new THREE.Vector3(width, height, depth),
-  );
-}
-
-function copyPendingCacheTextureToActive(renderer, cache) {
-  const texturePairs = [
-    ["pendingTexture", "texture"],
-    ...(cache?.pendingCausticTexture || cache?.causticTexture
-      ? [["pendingCausticTexture", "causticTexture"]]
-      : []),
-  ];
-  if (!cache || texturePairs.length <= 0) {
-    return false;
-  }
-  if (typeof renderer?.copyTextureToTexture !== "function") {
-    cache.lastError = "renderer-copy-unavailable";
-    cache.lastRebuildReason = "copy-unavailable";
-    return false;
-  }
-
-  for (const [pendingKey, activeKey] of texturePairs) {
-    const pendingTexture = cache[pendingKey];
-    const activeTexture = cache[activeKey];
-    if (!pendingTexture || !activeTexture) {
-      cache.lastError = "cache-texture-missing";
-      cache.lastRebuildReason = "texture-missing";
-      return false;
-    }
-    if (pendingTexture === activeTexture) {
-      cache.lastError = "cache-texture-alias";
-      cache.lastRebuildReason = "texture-alias";
-      return false;
-    }
-  }
-
-  const copyRegion = resolveCacheTextureCopyRegion(cache);
-  for (const [pendingKey, activeKey] of texturePairs) {
-    renderer.copyTextureToTexture(
-      cache[pendingKey],
-      cache[activeKey],
-      copyRegion,
-      new THREE.Vector3(0, 0, 0),
-      0,
-      0,
-    );
-  }
-  return true;
-}
-
 function buildRuntimeSpectralLaneCacheDescriptor(
   runtimeState,
   modalBasisCacheDescriptor,
@@ -2880,11 +2815,7 @@ function updateRaymarchEvaluationModes(
   updateModalBasisCache(runtimeState, renderer, capacities, {
     modalBasisCacheDescriptor,
   });
-  reconcileReadyModalBasisRenderPacket(
-    runtimeState,
-    renderer,
-    modalBasisCacheDescriptor,
-  );
+  reconcileReadyModalBasisRenderPacket(runtimeState, modalBasisCacheDescriptor);
   updateSpectralLaneCache(runtimeState, renderer, {
     spectralLightEnabled,
     modalBasisCacheDescriptor,
@@ -3164,11 +3095,7 @@ function syncModalRenderPacketState(runtimeState, featureFrame) {
   }
 }
 
-function reconcileReadyModalBasisRenderPacket(
-  runtimeState,
-  renderer,
-  descriptor,
-) {
+function reconcileReadyModalBasisRenderPacket(runtimeState, descriptor) {
   const modalBasisCache = runtimeState?.modalBasisCache;
   if (!modalBasisCache?.pendingReady) {
     return false;
@@ -3196,14 +3123,12 @@ function reconcileReadyModalBasisRenderPacket(
     return false;
   }
 
-  if (!copyPendingCacheTextureToActive(renderer, modalBasisCache)) {
-    return false;
-  }
   const result =
     commitRaymarchModalBasisCachePendingDescriptor(modalBasisCache);
   if (result.committed !== true) {
     return false;
   }
+  setRaymarchModalBasisAtlasTexture(runtimeState.volumeMesh, result.texture);
 
   setModalBasisCacheDrawableAuthority(
     runtimeState,
