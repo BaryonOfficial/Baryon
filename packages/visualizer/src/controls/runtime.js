@@ -49,6 +49,7 @@ import {
   stopAudioSceneMotion,
   syncIdleOverlayRotation,
 } from "./sceneMotion.js";
+import { clamp01 } from "../utils/math.js";
 
 const IDLE_LOGO_ALPHA_RATIO =
   RENDER_DEFAULTS.idleLogoIntensity > 0
@@ -58,14 +59,6 @@ const TRANSPARENT_CLEAR_COLOR = new THREE.Color(0x000000);
 
 function deriveIdleLogoAlpha(intensity) {
   return Math.min(1, intensity * IDLE_LOGO_ALPHA_RATIO);
-}
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function clamp01(value) {
-  return clamp(value, 0, 1);
 }
 
 function derivePerceptualSpectralMix(mix) {

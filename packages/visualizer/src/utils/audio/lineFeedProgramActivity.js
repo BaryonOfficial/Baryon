@@ -1,3 +1,5 @@
+import { clamp01, smoothstep } from "../math.js";
+
 /**
  * Line-feed upstream program activity: separates virtual-device meter floor
  * (BlackHole idle) from fresh program excitation (Apple Music / OS mix bus).
@@ -20,29 +22,12 @@ const LINE_FEED_PROGRAM_EXCESS_RMS_SCALE = 0.14;
 const LINE_FEED_PROGRAM_PEAK_SCALE = 0.22;
 const LINE_FEED_PROGRAM_TIME_DOMAIN_SIGNAL_PEAK = 1e-5;
 
-function clamp01(value) {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-
-  return Math.min(1, Math.max(0, value));
-}
-
 function computeEmaAlpha(deltaMs, smoothingMs) {
   if (!(deltaMs > 0) || !(smoothingMs > 0)) {
     return 1;
   }
 
   return 1 - Math.exp(-deltaMs / smoothingMs);
-}
-
-function smoothstep(edge0, edge1, value) {
-  if (edge0 === edge1) {
-    return value < edge0 ? 0 : 1;
-  }
-
-  const t = clamp01((value - edge0) / (edge1 - edge0));
-  return t * t * (3 - 2 * t);
 }
 
 /**

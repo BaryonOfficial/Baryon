@@ -30,6 +30,7 @@ import { getModalGeometryBackend } from "../modalGeometryBackend.js";
 import { buildRaymarchModalBasisPhaseSignature } from "./phaseSlotSemantics.js";
 import { normalizePhaseRad } from "../../utils/audio/modalPhaseSlots.js";
 import { SPECTRAL_LIGHT_LANE_COUNT } from "../../utils/audio/spectralLight.js";
+import { clamp01 } from "../../utils/math.js";
 
 export const RAYMARCH_FIELD_CACHE_RESOLUTION = 64;
 export const RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION =
@@ -355,10 +356,6 @@ function hashCanonicalModalFieldTopology(entries) {
   }
 
   return hash >>> 0;
-}
-
-function clamp01(value) {
-  return Math.min(1, Math.max(0, value));
 }
 
 function submitRaymarchCacheCompute(renderer, computeNode) {

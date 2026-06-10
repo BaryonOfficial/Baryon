@@ -1,15 +1,5 @@
 import { deriveObservationTransfer } from "./observationTransfer.js";
-
-function clamp(value, min, max) {
-  if (!Number.isFinite(value)) {
-    return min;
-  }
-  return Math.min(max, Math.max(min, value));
-}
-
-function clamp01(value) {
-  return clamp(value, 0, 1);
-}
+import { clamp01 } from "../../utils/math.js";
 
 function readPositiveFinite(value, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback;

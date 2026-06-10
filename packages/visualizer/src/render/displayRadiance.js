@@ -1,4 +1,5 @@
 import { float, max, min, vec3 } from "three/tsl";
+import { clamp01 } from "../utils/math.js";
 
 const DISPLAY_RADIANCE_DEFAULTS = Object.freeze({
   displayKneeStart: 0.72,
@@ -11,10 +12,6 @@ const DISPLAY_RADIANCE_DEFAULTS = Object.freeze({
   maxBloomSceneRatio: 0.55,
   bloomSceneFloor: 0.08,
 });
-
-function clamp01(value) {
-  return Math.min(1, Math.max(0, value));
-}
 
 function finiteOr(value, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;

@@ -2,10 +2,7 @@ import { CONTROL_STATUSES } from "./schema.js";
 import { normalizeLiveInputAcousticIntent } from "../core/audio/liveInputAnalysis.js";
 import { normalizePerformanceProfile } from "../render/outputProfilePolicy.js";
 import { normalizeVisualizationMethod } from "../visualization/types.js";
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
+import { clamp } from "../utils/math.js";
 
 function normalizeLegacyReactivity(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {

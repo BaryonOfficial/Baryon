@@ -1,3 +1,5 @@
+import { clamp01 } from "../utils/math.js";
+
 const COORDINATE_NAMES = ["u", "v", "w"];
 
 /**
@@ -14,11 +16,6 @@ const COORDINATE_NAMES = ["u", "v", "w"];
  *   skipZeroCoefficient?: boolean,
  * }} ModalSlotTopologyRangeOptions
  */
-
-function clamp01(value) {
-  if (!Number.isFinite(value)) return 0;
-  return Math.min(1, Math.max(0, value));
-}
 
 export function normalizeModalTopologyCoordinate(value) {
   return Number.isFinite(value) ? Math.round(value) : 0;

@@ -1,3 +1,5 @@
+import { clamp01 } from "../math.js";
+
 export const DEFAULT_RENDER_ENERGY_EPSILON = 1e-6;
 export const ENERGY_OWNER_VERSION = "av-energy-ledger:v1";
 
@@ -17,14 +19,6 @@ function shouldSignalCapProjection({
     Number.isFinite(currentSignalAmplitude) &&
     currentSignalAmplitude <= renderEnergyEpsilon
   );
-}
-
-function clamp01(value) {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-
-  return Math.min(1, Math.max(0, value));
 }
 
 export function sumProjectedSlotEnergy(slots, capacity = undefined) {

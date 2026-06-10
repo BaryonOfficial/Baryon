@@ -1,15 +1,4 @@
-function clamp01(value) {
-  if (!Number.isFinite(value)) return 0;
-  return Math.max(0, Math.min(1, value));
-}
-
-function smoothstep(edge0, edge1, value) {
-  if (edge0 === edge1) {
-    return value >= edge1 ? 1 : 0;
-  }
-  const t = clamp01((value - edge0) / (edge1 - edge0));
-  return t * t * (3 - 2 * t);
-}
+import { clamp01, smoothstep } from "../math.js";
 
 export function countNonZeroFftBins(fftMagnitudes, threshold = 0.001) {
   if (!fftMagnitudes?.length) return 0;

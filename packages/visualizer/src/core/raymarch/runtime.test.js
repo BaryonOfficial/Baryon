@@ -269,7 +269,6 @@ function createRuntimeState({ withFieldCache = false } = {}) {
     stabilityStats: {
       avgRaySegmentLength: 1.2,
       missRatio: 0.15,
-      avgSilhouetteSuppression: 0,
     },
     auditEnabled: true,
     modalBasisCache,
@@ -1307,9 +1306,6 @@ describe("tickRaymarchRuntime", () => {
     expect(
       runtimeState.debugSnapshot.raymarchDebug.holographicFresnelPower,
     ).toBe(3.2);
-    expect(
-      runtimeState.debugSnapshot.raymarchDebug.avgSilhouetteSuppression,
-    ).toBe(0);
     expect(runtimeState.debugSnapshot.raymarchDebug.bloomResponseBias).toBe(
       0.4,
     );
@@ -2141,6 +2137,65 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.modalFieldModeBuffer.value.needsUpdate).toBe(false);
     expect(runtimeState.modalFieldColorBuffer.value.needsUpdate).toBe(false);
     expect(runtimeState.modalFieldPhaseBuffer.value.needsUpdate).toBe(false);
+  });
+
+  it("retains the committed atlas across a render-authority blip and resumes without a rebuild", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 0;
+    const renderer = { computeAsync: vi.fn(async () => undefined) };
+    const activeFrame = createActiveFeatureFrame({
+      backboneSlots: new Float32Array([1, 1, 1, 0.9]),
+      detailSlots: new Float32Array(0),
+      backboneColorSlots: new Float32Array(4),
+      detailColorSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array([0, 0, 1, 1]),
+      detailPhaseSlots: new Float32Array(0),
+      modalPhaseAuthority: 1,
+    });
+
+    // Build and commit the coefficient-invariant atlas.
+    tickRaymarchRuntime(runtimeState, activeFrame, 1, 1 / 60, renderer);
+    await flushMicrotasks();
+    tickRaymarchRuntime(runtimeState, activeFrame, 1 + 1 / 60, 1 / 60, renderer);
+    expect(runtimeState.modalBasisCache.ready).toBe(true);
+    const committedDescriptor = runtimeState.modalBasisCache.activeDescriptor;
+    expect(committedDescriptor).toBeTruthy();
+    const committedRebuildCount = runtimeState.modalBasisCache.rebuildCount;
+
+    // Render-authority blip (silence / source cut): nothing visible, but the
+    // committed atlas survives — basis pages carry no audio semantics.
+    tickRaymarchRuntime(
+      runtimeState,
+      {
+        fieldState: "idle",
+        renderAuthority: false,
+        averageAmplitude: 0,
+        bandEnergies: new Float32Array(4),
+        debug: {},
+      },
+      2,
+      1 / 60,
+      renderer,
+    );
+    expect(runtimeState.volumeMesh.visible).toBe(false);
+    expect(runtimeState.modalBasisCache.activeDescriptor).toBe(
+      committedDescriptor,
+    );
+    expect(runtimeState.modalBasisCache.ready).toBe(true);
+    expect(runtimeState.modalBasisCache.rebuildPending).toBe(false);
+
+    // The same topology returns: drawable immediately from the retained
+    // atlas, with no atlas rebuild dispatched and no dropped frames.
+    tickRaymarchRuntime(runtimeState, activeFrame, 3, 1 / 60, renderer);
+    expect(runtimeState.modalBasisCacheDrawableAuthority?.drawable).toBe(true);
+    expect(runtimeState.modalBasisCacheDrawableAuthority?.state).toBe(
+      "modal-basis-cache-ready-current",
+    );
+    expect(runtimeState.modalBasisCache.rebuildPending).toBe(false);
+    expect(runtimeState.modalBasisCache.rebuildCount).toBe(
+      committedRebuildCount,
+    );
   });
 
   it("hides retained modal diagnostics without projected render authority", () => {

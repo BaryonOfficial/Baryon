@@ -5,6 +5,7 @@ import {
 import { DEFAULT_EFFECTIVE_CAVITY_GEOMETRY } from "./cavityGeometry.js";
 import { getModalGeometryBackend } from "./modalGeometryBackend.js";
 import { normalizeModalTopologyCoordinate } from "./modalTopology.js";
+import { clamp01 } from "../utils/math.js";
 
 export const TOPOLOGY_ADMIT_EVIDENCE = 0.08;
 export const TOPOLOGY_PROMOTE_SECONDS = 0.05;
@@ -24,11 +25,6 @@ const STRUCTURAL_ADMISSION_MIN_COMPLIANCE = 0.12;
 const DETAIL_ADMISSION_MAX_FRACTION = 0.25;
 const DEFAULT_MAX_BASIS_MODE_ORDER =
   getModalBasisCacheMaxRepresentableModeIndex(MODAL_BASIS_CACHE_RESOLUTION);
-
-function clamp01(value) {
-  if (!Number.isFinite(value)) return 0;
-  return Math.min(1, Math.max(0, value));
-}
 
 function normalizeDeltaTimeSec(deltaTimeSec) {
   if (!Number.isFinite(deltaTimeSec) || deltaTimeSec <= 0) {
