@@ -142,6 +142,13 @@ Canonical public/shared docs:
 - [`documentation/public/architecture/output-sync.md`](documentation/public/architecture/output-sync.md)
 - [`documentation/public/reference/controls.md`](documentation/public/reference/controls.md)
 
+Canonical marketing/design docs:
+
+- [`documentation/marketing/site-v1-brief.md`](documentation/marketing/site-v1-brief.md)
+- [`documentation/marketing/seo-geo/page-briefs.md`](documentation/marketing/seo-geo/page-briefs.md)
+- [`documentation/marketing/seo-geo/baryon-seo-geo-operating-playbook.md`](documentation/marketing/seo-geo/baryon-seo-geo-operating-playbook.md)
+- [`documentation/design/baryon-design-system/README.md`](documentation/design/baryon-design-system/README.md)
+
 
 ## Contributing
 
