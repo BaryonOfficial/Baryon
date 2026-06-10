@@ -201,8 +201,24 @@ describe("audio session", () => {
     mockTrackApplyConstraints.mockReset();
     mockTrackListeners = new Map();
     mockTrack = {
+      id: "track-1",
+      kind: "audio",
+      label: "Built-in Mic",
+      enabled: true,
+      readyState: "live",
       stop: mockTrackStop,
       applyConstraints: mockTrackApplyConstraints,
+      getSettings: vi.fn(() => ({
+        deviceId: "device-1",
+        sampleRate: 48000,
+        channelCount: 2,
+      })),
+      getConstraints: vi.fn(() => ({
+        deviceId: { exact: "device-1" },
+      })),
+      getCapabilities: vi.fn(() => ({
+        channelCount: { min: 1, max: 2 },
+      })),
       muted: false,
       addEventListener: vi.fn((type, listener) => {
         const listeners = mockTrackListeners.get(type) ?? new Set();
@@ -453,6 +469,27 @@ describe("audio session", () => {
       audioInputMode: "live",
       isLiveInputActive: true,
       analysisSource: "live",
+      liveInputTrack: {
+        present: true,
+        streamActive: true,
+        id: "track-1",
+        label: "Built-in Mic",
+        kind: "audio",
+        enabled: true,
+        muted: false,
+        readyState: "live",
+        settings: {
+          deviceId: "device-1",
+          sampleRate: 48000,
+          channelCount: 2,
+        },
+        constraints: {
+          deviceId: { exact: "device-1" },
+        },
+        capabilities: {
+          channelCount: { min: 1, max: 2 },
+        },
+      },
       liveInputSettings: {
         echoCancellation: false,
         noiseSuppression: false,
@@ -587,6 +624,9 @@ describe("audio session", () => {
     expect(getUserMediaMock).toHaveBeenLastCalledWith({
       audio: {
         deviceId: { exact: "device-1" },
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
       },
     });
     expect(session.getStatus()).toMatchObject({
@@ -641,6 +681,9 @@ describe("audio session", () => {
     expect(getUserMediaMock).toHaveBeenLastCalledWith({
       audio: {
         deviceId: { exact: "stage-device-1" },
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
       },
     });
     expect(session.getStatus()).toMatchObject({
