@@ -50,13 +50,14 @@ const RAYMARCH_UNAVAILABLE_RADIATION_MATERIAL_CONTRAST = Object.freeze({
   semantic: "unavailable-no-material-contrast",
   ready: false,
 });
-export const RAYMARCH_VISUALIZATION_RADIATION_MATERIAL_CONTRAST =
-  Object.freeze({
+export const RAYMARCH_VISUALIZATION_RADIATION_MATERIAL_CONTRAST = Object.freeze(
+  {
     pressureEnergyWeight: 1,
     velocityEnergyWeight: 1,
     semantic: "visualization-only-normalized-pressure-velocity-balance",
     ready: true,
-  });
+  },
+);
 
 export function deriveLiveSynthesisCancellationRatio(field, unsignedSupport) {
   if (!(unsignedSupport > MODAL_BASIS_CACHE_ENERGY_EPSILON)) {
@@ -75,7 +76,10 @@ function clampSignedUnit(value) {
 }
 
 function normalizeRadiationMaterialContrast(radiationMaterialContrast) {
-  if (!radiationMaterialContrast || typeof radiationMaterialContrast !== "object") {
+  if (
+    !radiationMaterialContrast ||
+    typeof radiationMaterialContrast !== "object"
+  ) {
     return RAYMARCH_UNAVAILABLE_RADIATION_MATERIAL_CONTRAST;
   }
 

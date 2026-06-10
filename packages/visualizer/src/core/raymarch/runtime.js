@@ -1366,7 +1366,7 @@ function buildRaymarchDebugSnapshot(
     null;
   const liveFieldPressureRadiationReady = Boolean(
     liveFieldProjectionCache?.ready === true &&
-      liveFieldProjectionCache?.pressureRadiationTexture,
+    liveFieldProjectionCache?.pressureRadiationTexture,
   );
   const liveFieldPressureRadiationSemantic =
     liveFieldProjectionCache?.pressureRadiationSemantic ??
@@ -1807,8 +1807,7 @@ function buildRaymarchDebugSnapshot(
       liveFieldProjectionCache?.lastComputeReason ?? "uninitialized",
     liveFieldProjectionCacheComputedAtSec:
       liveFieldProjectionCache?.lastComputedAtSec ?? null,
-    liveFieldProjectionPressureRadiationReady:
-      liveFieldPressureRadiationReady,
+    liveFieldProjectionPressureRadiationReady: liveFieldPressureRadiationReady,
     liveFieldProjectionPressureRadiationSemantic:
       liveFieldPressureRadiationSemantic,
     radiationMaterialContrastSemantic,
@@ -2704,7 +2703,9 @@ function buildRuntimeSpectralLaneCacheDescriptor(
 
 function readCommittedSpectralLaneCache(spectralLaneCache) {
   const descriptor =
-    spectralLaneCache?.descriptor ?? spectralLaneCache?.activeDescriptor ?? null;
+    spectralLaneCache?.descriptor ??
+    spectralLaneCache?.activeDescriptor ??
+    null;
   if (
     spectralLaneCache?.ready !== true ||
     !descriptor ||
@@ -2734,8 +2735,7 @@ function canRetainSpectralLaneCacheAfterMiss(committedCache, reason) {
   return (
     Boolean(committedCache) &&
     hasRadiantSpectralLaneDescriptor(committedCache.descriptor) &&
-    (reason === "renderer-unavailable" ||
-      reason === "compute-node-unavailable")
+    (reason === "renderer-unavailable" || reason === "compute-node-unavailable")
   );
 }
 
@@ -3004,10 +3004,7 @@ function readModalResponseEnergy(featureFrame) {
     Math.max(
       readFiniteNumber(featureFrame?.modalResponseEnergy, 0),
       readFiniteNumber(featureFrame?.modalResponseRenderEnergy, 0),
-      readFiniteNumber(
-        featureFrame?.modalResponseRenderSourceCoupledEnergy,
-        0,
-      ),
+      readFiniteNumber(featureFrame?.modalResponseRenderSourceCoupledEnergy, 0),
       readFiniteNumber(featureFrame?.modalResponseRenderResonantEnergy, 0),
       readFiniteNumber(featureFrame?.debug?.modalResponseEnergy, 0),
       readFiniteNumber(featureFrame?.debug?.modalResponseRenderEnergy, 0),

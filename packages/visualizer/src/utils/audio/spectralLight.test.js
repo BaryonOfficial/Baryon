@@ -74,7 +74,9 @@ describe("Spectral Light color science", () => {
       phase: foldAudioFrequencyToSpectralPhase(880),
     });
     const laneTotal = lowDistribution.reduce((total, lane) => total + lane, 0);
-    const activeLaneCount = lowDistribution.filter((lane) => lane > 0.001).length;
+    const activeLaneCount = lowDistribution.filter(
+      (lane) => lane > 0.001,
+    ).length;
 
     expect(SPECTRAL_LIGHT_LANE_COUNT).toBe(8);
     expect(lowDistribution).toBeInstanceOf(Float32Array);
@@ -89,9 +91,7 @@ describe("Spectral Light color science", () => {
   it("exports CIE-derived lane centers and display matrix for material transfer", () => {
     const matrix = createSpectralLightLaneDisplayMatrix();
 
-    expect(SPECTRAL_LIGHT_LANE_CENTERS).toHaveLength(
-      SPECTRAL_LIGHT_LANE_COUNT,
-    );
+    expect(SPECTRAL_LIGHT_LANE_CENTERS).toHaveLength(SPECTRAL_LIGHT_LANE_COUNT);
     expect(SPECTRAL_LIGHT_LANE_DISPLAY_RGB).toHaveLength(
       SPECTRAL_LIGHT_LANE_COUNT,
     );

@@ -34,7 +34,9 @@ vi.mock("../components/hooks/useAudioLogic", () => ({
       options.setAudioDevices?.(audioInputs);
       if (
         audioInputs.length > 0 &&
-        !audioInputs.some((device) => device.deviceId === options.selectedDevice)
+        !audioInputs.some(
+          (device) => device.deviceId === options.selectedDevice,
+        )
       ) {
         options.setSelectedDevice?.(audioInputs[0].deviceId);
       }

@@ -377,9 +377,7 @@ describe("blendColorStack", () => {
       colorSlots: new Float32Array(4),
       referenceColorSlots: new Float32Array(4),
     };
-    const targetSlots = new Float32Array([
-      2, 2, 2, 0.4, 2, 2, 2, 0.3,
-    ]);
+    const targetSlots = new Float32Array([2, 2, 2, 0.4, 2, 2, 2, 0.3]);
     const targetColors = new Float32Array([1, 0, 0, 0.5, 0, 1, 1, 1]);
 
     blendColorStack(state, targetSlots, targetColors, 1, {
@@ -408,15 +406,9 @@ describe("blendColorStack", () => {
       referenceSpectralLaneB: new Float32Array(4),
       referenceSpectralMeta: new Float32Array(4),
     };
-    const targetSlots = new Float32Array([
-      2, 2, 2, 0.4, 2, 2, 2, 0.6,
-    ]);
-    const targetColors = new Float32Array([
-      0.5, 0.5, 0.5, 1, 0.5, 0.5, 0.5, 1,
-    ]);
-    const targetSpectralLaneA = new Float32Array([
-      1, 0, 0, 0, 0, 1, 0, 0,
-    ]);
+    const targetSlots = new Float32Array([2, 2, 2, 0.4, 2, 2, 2, 0.6]);
+    const targetColors = new Float32Array([0.5, 0.5, 0.5, 1, 0.5, 0.5, 0.5, 1]);
+    const targetSpectralLaneA = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0]);
     const targetSpectralLaneB = new Float32Array(8);
     const targetSpectralMeta = new Float32Array([
       0.1, 0.04, 0.5, 0.5, 0.8, 0.04, 1, 0.5,

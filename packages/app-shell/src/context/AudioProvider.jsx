@@ -196,7 +196,9 @@ function isLiveInputPermissionUnsupported(error) {
 }
 
 function normalizeAudioInputDeviceLabel(value) {
-  return String(value ?? "").trim().toLowerCase();
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
 }
 
 function getPreferredAudioInputDevice(
@@ -232,8 +234,9 @@ function getAudioInputDeviceLabelById(audioInputs, deviceId) {
     return "";
   }
   return (
-    audioInputs.find((device) => device.deviceId === deviceId)?.label?.trim?.() ??
-    ""
+    audioInputs
+      .find((device) => device.deviceId === deviceId)
+      ?.label?.trim?.() ?? ""
   );
 }
 
@@ -589,7 +592,12 @@ export function AudioProvider({ children, platform = "web" }) {
       currentLoadedLocalFile.file,
       getDefaultAudioSession().getTransportState().currentTimeSeconds,
     );
-  }, [playbackSource, currentLoadedLocalFile, isAudioLoaded, isLiveInputActive]);
+  }, [
+    playbackSource,
+    currentLoadedLocalFile,
+    isAudioLoaded,
+    isLiveInputActive,
+  ]);
 
   const syncTransportState = useCallback((options = {}) => {
     const { includeSeekState = true } = options;
@@ -686,7 +694,8 @@ export function AudioProvider({ children, platform = "web" }) {
     return status;
   }, [clearScrubState]);
 
-  const selectedLocalLiveDeviceId = selectedSystemDevice ?? selectedDevice ?? null;
+  const selectedLocalLiveDeviceId =
+    selectedSystemDevice ?? selectedDevice ?? null;
   const runtimeSelectedLiveDeviceId =
     liveInputRuntimeStatus.selectedDeviceId ?? null;
   const runtimeSelectedLiveDeviceLabel =
@@ -722,10 +731,10 @@ export function AudioProvider({ children, platform = "web" }) {
     selectedLiveInputDeviceKindOverride ??
     (selectedLocalLiveDevice
       ? getLiveInputDeviceKind(selectedLocalLiveDevice)
-      : runtimeSelectedLiveInputDeviceKind ??
+      : (runtimeSelectedLiveInputDeviceKind ??
         (selectedRuntimeLiveDevice
           ? getLiveInputDeviceKind(selectedRuntimeLiveDevice)
-          : getLiveInputDeviceKindById(audioDevices, selectedLiveDeviceId)));
+          : getLiveInputDeviceKindById(audioDevices, selectedLiveDeviceId))));
   const selectedLiveInputAnalysisOverride =
     selectedLiveDeviceId != null
       ? normalizeLiveInputAnalysisClass(
