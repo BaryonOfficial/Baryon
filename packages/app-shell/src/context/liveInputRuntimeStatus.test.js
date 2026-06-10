@@ -128,6 +128,37 @@ test("treats line feed input as listening without mic calibration states", () =>
   expect(getLiveInputStatusLabel(runtimeStatus)).toBe("Live Input: Line Feed");
 });
 
+test("treats line feed live boundary as listening when source energy is zero", () => {
+  const runtimeStatus = buildLiveInputRuntimeStatus({
+    status: createStatus({
+      isLiveInputActive: true,
+      liveInputKind: "system",
+      resolvedLiveInputAnalysisClass: "line-feed",
+      selectedLiveInputDeviceLabel: "BlackHole 2ch",
+    }),
+    featureFrame: createLineFeedFeatureFrame({
+      sourceEnergy: 0,
+      metrics: {
+        avgAmplitude: 0,
+        analyserRms: 0,
+        preModalFftPeak: 0,
+        timeDomainPeakAmplitude: 0.002,
+        nonZeroFftBinCount: 0,
+      },
+      transport: {
+        lineFeedProgramActive: true,
+      },
+    }),
+    liveInputUiState: LIVE_INPUT_UI_STATES.active,
+  });
+
+  expect(runtimeStatus.phase).toBe(LIVE_INPUT_PHASES.listening);
+  expect(runtimeStatus.gateOpen).toBe(true);
+  expect(runtimeStatus.signalState).toBe(LIVE_INPUT_SIGNAL_STATES.ok);
+  expect(runtimeStatus.sourceBoundaryState).toBe("live");
+  expect(getLiveInputStatusLabel(runtimeStatus)).toBe("Live Input: Line Feed");
+});
+
 test("treats active line feed with muted source evidence as silent", () => {
   const runtimeStatus = buildLiveInputRuntimeStatus({
     status: createStatus({
