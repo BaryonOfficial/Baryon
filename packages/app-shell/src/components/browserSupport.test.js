@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
   BROWSER_FAILURE_CODES,
   BROWSER_FAMILY,
@@ -13,6 +13,7 @@ import {
   getBrowserSupportStatus,
   getInitialBrowserSupportStatus,
   getSupportProbeTechnicalDetails,
+  isLockdownModeSuspected,
   isMobileDevice,
   probeBrowserSupport,
 } from "./browserSupport.js";
@@ -79,6 +80,38 @@ test("reports missing navigator.gpu with Linux Chromium guidance", async () => {
   expect(result.diagnostics).toStrictEqual([
     "`navigator.gpu` is not available in this browser.",
   ]);
+});
+
+test("reports insecure-context detail when navigator.gpu is missing", async () => {
+  const originalSecureContext = globalThis.isSecureContext;
+  Object.defineProperty(globalThis, "isSecureContext", {
+    configurable: true,
+    value: false,
+  });
+
+  try {
+    const result = await probeBrowserSupport(false, {
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 26_5) AppleWebKit/605.1.15 Version/26.5 Safari/605.1.15",
+    });
+
+    expect(result.failureCode).toBe(BROWSER_FAILURE_CODES.gpuMissing);
+    expect(result.platform).toBe(BROWSER_PLATFORM.macos);
+    expect(result.browserFamily).toBe(BROWSER_FAMILY.safari);
+    expect(result.diagnostics).toContain("Secure context: no.");
+    expect(result.diagnostics).toContain(
+      "WebGPU is only exposed in secure contexts such as HTTPS or localhost.",
+    );
+  } finally {
+    if (typeof originalSecureContext === "undefined") {
+      delete globalThis.isSecureContext;
+    } else {
+      Object.defineProperty(globalThis, "isSecureContext", {
+        configurable: true,
+        value: originalSecureContext,
+      });
+    }
+  }
 });
 
 test("reports missing requestAdapter with Linux Chromium guidance", async () => {
@@ -170,6 +203,56 @@ test("builds mobile guidance when the failure code is mobile-unsupported", () =>
   });
 
   expect(guidance.summary).toMatch(/desktop/i);
+});
+
+test("builds short macOS Safari guidance without version-specific detours", () => {
+  const guidance = buildBrowserGuidance({
+    failureCode: BROWSER_FAILURE_CODES.gpuMissing,
+    platform: BROWSER_PLATFORM.macos,
+    browserFamily: BROWSER_FAMILY.safari,
+  });
+
+  expect(guidance.summary).toMatch(/Safari/i);
+  expect(guidance.steps.join(" ")).not.toMatch(/Tahoe|Safari 26\.5/i);
+  expect(guidance.steps[1]).toMatch(/Chrome or Edge/i);
+});
+
+test("suspects Lockdown Mode only when WebAssembly is missing", () => {
+  expect(isLockdownModeSuspected({})).toBe(true);
+  expect(isLockdownModeSuspected({ WebAssembly: {} })).toBe(false);
+});
+
+test("builds macOS Safari Lockdown Mode guidance when lockdown is suspected", () => {
+  const guidance = buildBrowserGuidance({
+    failureCode: BROWSER_FAILURE_CODES.gpuMissing,
+    platform: BROWSER_PLATFORM.macos,
+    browserFamily: BROWSER_FAMILY.safari,
+    lockdownSuspected: true,
+  });
+
+  expect(guidance.summary).toMatch(/Lockdown Mode/i);
+  expect(guidance.steps[0]).toMatch(/Settings for This Website/i);
+});
+
+test("reports Lockdown Mode when Safari hides both WebGPU and WebAssembly", async () => {
+  vi.stubGlobal("WebAssembly", undefined);
+
+  try {
+    const result = await probeBrowserSupport(false, {
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Safari/605.1.15",
+    });
+
+    expect(result.failureCode).toBe(BROWSER_FAILURE_CODES.gpuMissing);
+    expect(result.platform).toBe(BROWSER_PLATFORM.macos);
+    expect(result.browserFamily).toBe(BROWSER_FAMILY.safari);
+    expect(result.diagnostics).toContain(
+      "`WebAssembly` is also missing; Safari's Lockdown Mode removes both WebGPU and WebAssembly.",
+    );
+    expect(result.guidance.summary).toMatch(/Lockdown Mode/i);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
 
 test("formats support probes into stable technical detail lines", () => {
