@@ -111,6 +111,9 @@ function buildLiveConstraints(deviceId, liveInputSettings) {
 function buildSystemConstraints(deviceId) {
   return {
     ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+    echoCancellation: false,
+    noiseSuppression: false,
+    autoGainControl: false,
   };
 }
 
@@ -260,6 +263,69 @@ function clonePlaybackDiagnostics(diagnostics) {
 
 function cloneLiveInputInterruptionDiagnostics(diagnostics) {
   return diagnostics ? { ...diagnostics } : null;
+}
+
+function cloneTrackRecord(value) {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => {
+      if (Array.isArray(entry)) {
+        return [key, [...entry]];
+      }
+      if (entry && typeof entry === "object") {
+        return [key, { ...entry }];
+      }
+      return [key, entry];
+    }),
+  );
+}
+
+function readTrackMethodRecord(track, methodName) {
+  try {
+    const method = track?.[methodName];
+    return typeof method === "function"
+      ? cloneTrackRecord(method.call(track))
+      : {};
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function buildLiveInputTrackDiagnostics(track, stream) {
+  if (!track) {
+    return {
+      present: false,
+      streamActive: Boolean(stream?.active),
+      id: null,
+      label: "",
+      kind: null,
+      enabled: null,
+      muted: null,
+      readyState: null,
+      settings: {},
+      constraints: {},
+      capabilities: {},
+    };
+  }
+
+  return {
+    present: true,
+    streamActive: Boolean(stream?.active),
+    id: typeof track.id === "string" ? track.id : null,
+    label: typeof track.label === "string" ? track.label : "",
+    kind: typeof track.kind === "string" ? track.kind : null,
+    enabled: typeof track.enabled === "boolean" ? track.enabled : null,
+    muted: typeof track.muted === "boolean" ? track.muted : null,
+    readyState: typeof track.readyState === "string" ? track.readyState : null,
+    settings: readTrackMethodRecord(track, "getSettings"),
+    constraints: readTrackMethodRecord(track, "getConstraints"),
+    capabilities: readTrackMethodRecord(track, "getCapabilities"),
+  };
 }
 
 export function createAudioSession() {
@@ -1006,6 +1072,7 @@ export function createAudioSession() {
     const isLiveInputActive = Boolean(
       state.gumStream?.active && state.liveInputAnalyser,
     );
+    const liveInputTrack = getActiveLiveInputTrack();
     const liveInputDeviceKind = isLiveInputActive
       ? normalizeLiveInputDeviceKind(state.liveInputKind)
       : null;
@@ -1055,6 +1122,10 @@ export function createAudioSession() {
       liveInputCalibrationVersion: state.liveInputCalibrationVersion,
       selectedLiveInputDeviceId: state.selectedLiveInputDeviceId,
       selectedLiveInputDeviceLabel: state.selectedLiveInputDeviceLabel,
+      liveInputTrack: buildLiveInputTrackDiagnostics(
+        liveInputTrack,
+        state.gumStream,
+      ),
       sourceKind,
       sourceLabel: state.sourceMetadata.label || "",
       playbackSessionId:
