@@ -1,4 +1,5 @@
 import { frequencyToBinIndex } from "./binFrequency.js";
+import { clamp01, smoothstep } from "../math.js";
 
 const HIGH_Q_OBSERVER_HARMONIC_DRIVER_MIN_HZ = 140;
 const HIGH_Q_OBSERVER_HARMONIC_DRIVER_MAX_HZ = 480;
@@ -14,22 +15,6 @@ const HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MAX_DISTRIBUTION = 0.18;
 const RESONANT_COUPLING_MIN_HARMONIC = 2;
 const RESONANT_COUPLING_MAX_HARMONIC = 64;
 const RESONANT_COUPLING_MODE_HARMONIC_TOLERANCE = 0.22;
-
-function clamp01(value) {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-
-  return Math.min(1, Math.max(0, value));
-}
-
-function smoothstep(edge0, edge1, value) {
-  if (edge0 === edge1) {
-    return value < edge0 ? 0 : 1;
-  }
-  const t = clamp01((value - edge0) / (edge1 - edge0));
-  return t * t * (3 - 2 * t);
-}
 
 function isHighQHarmonicDriverFrequency(
   frequencyHz,

@@ -1,19 +1,6 @@
 export const RAYMARCH_BOUNDARY_START = 0.74;
 export const RAYMARCH_BOUNDARY_END = 0.98;
 
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function smoothstep(edge0, edge1, value) {
-  if (edge0 === edge1) {
-    return value < edge0 ? 0 : 1;
-  }
-
-  const t = clamp((value - edge0) / (edge1 - edge0), 0, 1);
-  return t * t * (3 - 2 * t);
-}
-
 export function intersectRaySphereSegment(
   origin,
   direction,
@@ -50,12 +37,7 @@ export function intersectRaySphereSegment(
   };
 }
 
-export function estimateProjectedSphereStats({
-  radius,
-  samples = 33,
-  boundaryStart = RAYMARCH_BOUNDARY_START,
-  boundaryEnd = RAYMARCH_BOUNDARY_END,
-}) {
+export function estimateProjectedSphereStats({ radius, samples = 33 }) {
   let hits = 0;
   let misses = 0;
   let totalLength = 0;
@@ -72,18 +54,9 @@ export function estimateProjectedSphereStats({
         continue;
       }
 
-      const segmentLength =
-        2 * Math.sqrt(radius * radius - radialDistance * radialDistance);
-      const normalizedRadialDistance = radialDistance / radius;
-      const boundaryMask = smoothstep(
-        boundaryStart,
-        boundaryEnd,
-        normalizedRadialDistance,
-      );
-
       hits += 1;
-      totalLength += segmentLength;
-      void boundaryMask;
+      totalLength +=
+        2 * Math.sqrt(radius * radius - radialDistance * radialDistance);
     }
   }
 
@@ -92,7 +65,5 @@ export function estimateProjectedSphereStats({
   return {
     avgRaySegmentLength: hits > 0 ? totalLength / hits : 0,
     missRatio: sampleCount > 0 ? misses / sampleCount : 0,
-    // Kept for debug-contract compatibility after removing camera-angle suppression.
-    avgSilhouetteSuppression: 0,
   };
 }

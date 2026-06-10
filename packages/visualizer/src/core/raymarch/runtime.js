@@ -72,6 +72,7 @@ import {
   setRaymarchCavityGeometry,
 } from "./material.js";
 import { resolveIdleOverlayVisible } from "../idleLogoVisibility.js";
+import { clamp, clamp01, smoothstep } from "../../utils/math.js";
 const EMPTY_BAND_ENERGIES = Object.freeze([0, 0, 0, 0]);
 const RESPONSE_ATTACK = 7;
 const RESPONSE_RELEASE = 3.6;
@@ -101,22 +102,6 @@ const FNV_OFFSET_BASIS = 2166136261;
 const FNV_PRIME = 16777619;
 const HASH_FLOAT_VIEW = new Float32Array(1);
 const HASH_UINT_VIEW = new Uint32Array(HASH_FLOAT_VIEW.buffer);
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function clamp01(value) {
-  return clamp(value, 0, 1);
-}
-
-function smoothstep(edge0, edge1, value) {
-  if (edge0 === edge1) {
-    return value >= edge1 ? 1 : 0;
-  }
-  const t = clamp01((value - edge0) / (edge1 - edge0));
-  return t * t * (3 - 2 * t);
-}
 
 function damp(current, target, smoothing, deltaTime) {
   const factor = 1 - Math.exp(-Math.max(0, smoothing) * Math.max(0, deltaTime));
@@ -480,33 +465,6 @@ function resetCacheActivity(cache) {
   clearQueuedRaymarchCacheRebuild(cache);
 }
 
-function resetModalBasisCacheRuntimeDiagnostics(modalBasisCache) {
-  if (!modalBasisCache) {
-    return;
-  }
-
-  modalBasisCache.activeBasisPageModeCount = 0;
-  modalBasisCache.modalBasisCachePhaseAuthority = 0;
-  modalBasisCache.contributingBasisPageModeCount = 0;
-  modalBasisCache.zeroAmplitudeSkippedModeCount = 0;
-  modalBasisCache.contributingRawModalEnergy = 0;
-  modalBasisCache.bandwidthRejectedModeCount = 0;
-  modalBasisCache.bandwidthRejectedRawModalEnergy = 0;
-  modalBasisCache.contributingStructuralModalEnergy = 0;
-  modalBasisCache.bandwidthRejectedStructuralModalEnergy = 0;
-  modalBasisCache.liveSynthesisResolvedRawModalEnergyRatio = 1;
-  modalBasisCache.liveSynthesisResolvedStructuralModalEnergyRatio = 1;
-  modalBasisCache.liveSynthesisRawGradientEnvelope = 0;
-  modalBasisCache.liveSynthesisStructuralGradientEnvelope = 0;
-  modalBasisCache.liveSynthesisUnsignedSupportMean = 0;
-  modalBasisCache.liveSynthesisCancellationRatioMean = 0;
-  modalBasisCache.liveSynthesisCancellationRatioMax = 0;
-  modalBasisCache.liveSynthesisSupportDiagnosticSampleCount = 0;
-  modalBasisCache.liveSynthesisSupportDiagnosticSupportedSampleCount = 0;
-  modalBasisCache.liveSynthesisSupportDiagnosticCoverage = 0;
-  modalBasisCache.lastAuditDiagnostics = null;
-}
-
 function applyModalBasisAuditDiagnostics(runtimeState, auditDiagnostics) {
   if (!runtimeState) {
     return;
@@ -557,25 +515,32 @@ function setModalBasisCacheDrawableAuthority(runtimeState, authority) {
   return normalizedAuthority;
 }
 
-function blockModalBasisCacheForDescriptor(modalBasisCache, reason) {
+function suspendModalBasisCacheRebuilds(modalBasisCache, reason) {
   if (!modalBasisCache) {
     return;
   }
 
+  // Cancel in-flight and queued rebuild work but retain the committed atlas.
+  // Basis pages are coefficient-invariant — cache freshness is semantic
+  // topology — so silence, source cuts, and momentarily blocked descriptors
+  // do not invalidate them. Fail-closed visibility is owned by drawable and
+  // display authority; discarding the atlas here only forced a multi-frame
+  // rebuild gap (dropped frames) when the same topology returned.
   advanceRaymarchCacheGeneration(modalBasisCache);
-  modalBasisCache.ready = false;
+  modalBasisCache.ready = Boolean(modalBasisCache.activeDescriptor);
   modalBasisCache.rebuildPending = false;
-  modalBasisCache.activeDescriptor = null;
   modalBasisCache.pendingDescriptor = null;
   modalBasisCache.pendingReady = false;
   modalBasisCache.pendingCacheBuiltAtSec = null;
   modalBasisCache.pendingRebuildReason = null;
-  modalBasisCache.activePhaseSampleTimeSec = null;
   modalBasisCache.pendingPhaseSampleTimeSec = null;
-  modalBasisCache.activeCacheBuiltAtSec = null;
   clearQueuedRaymarchCacheRebuild(modalBasisCache);
+  if (modalBasisCache.backend === "unavailable") {
+    // Allow a compute retry after the suspension instead of staying blocked.
+    modalBasisCache.backend = "compute";
+  }
   modalBasisCache.lastError = null;
-  modalBasisCache.lastRebuildReason = reason ?? "blocked";
+  modalBasisCache.lastRebuildReason = reason ?? "suspended";
 }
 
 function deactivateLiveFieldProjectionCache(runtimeState, reason = "inactive") {
@@ -696,14 +661,19 @@ function resetRenderAuthorityState(runtimeState) {
   runtimeState.activeModalRenderPacket = null;
   runtimeState.modalRenderPacketRetained = null;
   resetRaymarchUploadState(runtimeState);
-  resetCacheActivity(runtimeState.modalBasisCache);
+  suspendModalBasisCacheRebuilds(
+    runtimeState.modalBasisCache,
+    "render-authority-reset",
+  );
+  if (runtimeState.modalBasisCache) {
+    runtimeState.modalBasisCache.active = false;
+  }
   resetCacheActivity(runtimeState.liveFieldProjectionCache);
   resetCacheActivity(runtimeState.spectralLaneCache);
   if (runtimeState.spectralLaneCache) {
     runtimeState.spectralLaneCache.descriptor = null;
     runtimeState.spectralLaneCache.activeDescriptor = null;
   }
-  resetModalBasisCacheRuntimeDiagnostics(runtimeState.modalBasisCache);
   deactivateLiveFieldProjectionCache(runtimeState, "render-authority-reset");
   setRaymarchSpectralLightEvaluationMode(
     runtimeState.volumeMesh,
@@ -1008,11 +978,12 @@ function blockNonAuthoritativeModalDescriptor(
   runtimeState.activeModalRenderPacket = null;
   runtimeState.modalRenderPacketRetained = null;
   resetRaymarchUploadState(runtimeState);
-  resetCacheActivity(runtimeState.modalBasisCache);
+  suspendModalBasisCacheRebuilds(runtimeState.modalBasisCache, reason);
+  if (runtimeState.modalBasisCache) {
+    runtimeState.modalBasisCache.active = false;
+  }
   resetCacheActivity(runtimeState.liveFieldProjectionCache);
   resetCacheActivity(runtimeState.spectralLaneCache);
-  blockModalBasisCacheForDescriptor(runtimeState.modalBasisCache, reason);
-  resetModalBasisCacheRuntimeDiagnostics(runtimeState.modalBasisCache);
   deactivateLiveFieldProjectionCache(runtimeState, reason);
   setIfChanged(runtimeState.uniforms.uModalFieldModeCount, 0);
   setIfChanged(runtimeState.uniforms.uTotalSlotAmplitude, 0);
@@ -1204,11 +1175,8 @@ function buildRaymarchDebugSnapshot(
     1,
     avgAmplitude * densityGain * absorption * (0.75 + transientEnergy * 0.2),
   );
-  const {
-    avgRaySegmentLength = 0,
-    missRatio = 0,
-    avgSilhouetteSuppression = 0,
-  } = runtimeState.stabilityStats ?? {};
+  const { avgRaySegmentLength = 0, missRatio = 0 } =
+    runtimeState.stabilityStats ?? {};
   const primaryLightIntensity =
     runtimeState.sceneLighting?.primary?.intensity ?? 0;
   const secondaryLightIntensity =
@@ -1863,7 +1831,6 @@ function buildRaymarchDebugSnapshot(
     holographicReferenceStrength,
     avgRaySegmentLength,
     missRatio,
-    avgSilhouetteSuppression,
     primaryLightIntensity,
     secondaryLightIntensity,
     sceneLightAsymmetry: deriveLightAsymmetry(
@@ -2515,7 +2482,7 @@ function updateModalBasisCache(
       modalBasisCacheDescriptor,
     );
   if (descriptorBlockedReason) {
-    blockModalBasisCacheForDescriptor(modalBasisCache, descriptorBlockedReason);
+    suspendModalBasisCacheRebuilds(modalBasisCache, descriptorBlockedReason);
     const drawableAuthority = setModalBasisCacheDrawableAuthority(
       runtimeState,
       resolveRaymarchModalBasisCacheDrawableAuthority(

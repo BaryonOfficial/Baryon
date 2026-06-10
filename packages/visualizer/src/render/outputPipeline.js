@@ -550,6 +550,11 @@ export function createCaptureOutputSession(
     outputCamera,
     { renderProfile },
   );
+
+  if (!pipelineState) {
+    return null;
+  }
+
   const target = new RenderTarget(width, height, {
     format: THREE.RGBAFormat,
     type: THREE.UnsignedByteType,
@@ -558,10 +563,6 @@ export function createCaptureOutputSession(
     generateMipmaps: false,
     depthBuffer: false,
   });
-
-  if (!pipelineState) {
-    return null;
-  }
 
   return {
     width,

@@ -42,10 +42,14 @@ function refreshSpectrumCache(reader) {
   }
 
   const frequencyBinCount = analyserNode.frequencyBinCount;
+  // Preserve the reader's raw buffer type (Uint8Array for byte readers,
+  // Float32Array for float readers) — getFloatFrequencyData requires a
+  // Float32Array, so re-allocating as bytes would corrupt float readers.
+  const RawType = reader._rawFrequencyData?.constructor ?? Uint8Array;
   reader._rawFrequencyData = ensureTypedBuffer(
     reader._rawFrequencyData,
     frequencyBinCount,
-    Uint8Array,
+    RawType,
   );
 
   const sourceData =

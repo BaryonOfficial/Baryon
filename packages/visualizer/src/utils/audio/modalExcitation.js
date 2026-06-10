@@ -57,6 +57,7 @@ import {
   buildStaleResonantTrackingOverrides,
   computeStaleResonantPressure,
 } from "./modalStaleResonant.js";
+import { clamp01, smoothstep } from "../math.js";
 
 const SOURCE_COUPLED_MAX_HZ = 3200;
 const SOURCE_COUPLED_MIN_HZ = 60;
@@ -305,22 +306,6 @@ const MODAL_OBSERVATION_RESPONSE_FULL = 0.012;
 const MODAL_OBSERVATION_TRANSIENT_START = 0.018;
 const MODAL_OBSERVATION_TRANSIENT_FULL = 0.16;
 const MODAL_OBSERVATION_TRANSIENT_WEIGHT = 0.32;
-function clamp01(value) {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-
-  return Math.min(1, Math.max(0, value));
-}
-
-function smoothstep(edge0, edge1, value) {
-  if (edge0 === edge1) {
-    return value < edge0 ? 0 : 1;
-  }
-  const t = clamp01((value - edge0) / (edge1 - edge0));
-  return t * t * (3 - 2 * t);
-}
-
 function deriveModalObservationCoherence({
   preparedInputs,
   modalObserverMetrics,
@@ -2044,12 +2029,13 @@ function updateObservedModalModes({
   const sortedModes = Array.from(nextModes.values()).sort(
     (left, right) => (right.retainedEnergy ?? 0) - (left.retainedEnergy ?? 0),
   );
-  const currentObservationCount = sortedModes.filter((entry) =>
+  const observedEntries = sortedModes.filter((entry) =>
     hasObservedModalDrive(entry, getModalObserverProfile(entry.layer)),
-  ).length;
+  );
+  const currentObservationCount = observedEntries.length;
   const averageCurrentObservedDrive =
     currentObservationCount > 0
-      ? sortedModes.reduce(
+      ? observedEntries.reduce(
           (total, entry) => total + Math.max(0, entry.observedDrive ?? 0),
           0,
         ) / currentObservationCount

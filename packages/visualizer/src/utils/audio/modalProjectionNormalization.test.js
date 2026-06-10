@@ -72,8 +72,13 @@ describe("projection energy normalization", () => {
       getModalObserverProfile: () => ({ snrFull: 1 }),
     });
 
+    // Protection is telemetry: it must appear in metrics without changing the
+    // finite budget, the allocated energy, or any published amplitude.
     expect(protectedDetail.metrics.projectionHighQProtection).toBeGreaterThan(
       0,
+    );
+    expect(protectedDetail.metrics.projectionEnergyBudgetResonant).toBe(
+      unprotected.metrics.projectionEnergyBudgetResonant,
     );
     expect(
       protectedDetail.metrics.projectionAllocatedEnergyResonant,

@@ -3,6 +3,7 @@ import {
   RAYMARCH_DEFAULTS,
 } from "../../defaults.js";
 import { deriveStepCompensation } from "./stepStability.js";
+import { clamp, clamp01, smoothstep } from "../../utils/math.js";
 
 export const OBSERVATION_TRANSFER_REFERENCE = Object.freeze({
   referenceRaymarchSteps: RAYMARCH_DEFAULTS.raymarchSteps,
@@ -30,31 +31,10 @@ export const OBSERVATION_TRANSFER_REFERENCE = Object.freeze({
   lowDriveVisibilityStart: 0.12,
   lowDriveVisibilityEnd: 0.45,
   maxLowDriveExposureBoost: 1.7,
-  modalResponseUnitEnergy: 1,
-  epsilon: 1e-4,
 });
-
-function clamp(value, min, max) {
-  if (!Number.isFinite(value)) {
-    return min;
-  }
-  return Math.min(max, Math.max(min, value));
-}
-
-function clamp01(value) {
-  return clamp(value, 0, 1);
-}
 
 function readPositiveFinite(value, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback;
-}
-
-function smoothstep(edge0, edge1, value) {
-  if (edge0 === edge1) {
-    return value < edge0 ? 0 : 1;
-  }
-  const t = clamp01((value - edge0) / (edge1 - edge0));
-  return t * t * (3 - 2 * t);
 }
 
 export function deriveObservationVisibilityDrive(featureFrame) {
@@ -78,7 +58,6 @@ export function deriveObservationTransferParameters({
   contourSharpness = OBSERVATION_TRANSFER_REFERENCE.referenceContourSharpness,
   fieldNoiseFloor = 0,
   visibilityDrive = 1,
-  modalResponseUnitEnergy = OBSERVATION_TRANSFER_REFERENCE.modalResponseUnitEnergy,
 } = {}) {
   const safeOpacityGain = readPositiveFinite(
     opacityGain,
@@ -91,10 +70,6 @@ export function deriveObservationTransferParameters({
   const safeContourSharpness = readPositiveFinite(
     contourSharpness,
     OBSERVATION_TRANSFER_REFERENCE.referenceContourSharpness,
-  );
-  const safeModalResponseUnitEnergy = readPositiveFinite(
-    modalResponseUnitEnergy,
-    OBSERVATION_TRANSFER_REFERENCE.modalResponseUnitEnergy,
   );
   const safeFieldNoiseFloor = clamp(
     Math.max(0, Number.isFinite(fieldNoiseFloor) ? fieldNoiseFloor : 0),
@@ -144,14 +119,6 @@ export function deriveObservationTransferParameters({
     densityFadeStart + OBSERVATION_TRANSFER_REFERENCE.minDensityFadeWidth,
     OBSERVATION_TRANSFER_REFERENCE.maxDensityFadeEnd,
   );
-  const targetUnitSupport =
-    1 - Math.exp(-OBSERVATION_TRANSFER_REFERENCE.transferGain);
-  const transferGain =
-    -Math.log(1 - targetUnitSupport) /
-    Math.max(
-      safeModalResponseUnitEnergy,
-      OBSERVATION_TRANSFER_REFERENCE.epsilon,
-    );
   const densityFloor = clamp(
     Math.max(
       OBSERVATION_TRANSFER_REFERENCE.densityFloor,
@@ -175,7 +142,7 @@ export function deriveObservationTransferParameters({
   return {
     densityFadeStart,
     densityFadeEnd,
-    transferGain,
+    transferGain: OBSERVATION_TRANSFER_REFERENCE.transferGain,
     densityFloor,
     contourSupportScale,
     exposureScale,
