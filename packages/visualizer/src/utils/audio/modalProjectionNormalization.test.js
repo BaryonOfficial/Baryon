@@ -36,9 +36,9 @@ describe("projection energy normalization", () => {
     const dense = normalizeWithDenseLoad(1);
 
     expect(dense.metrics.projectionLoad).toBe(1);
-    expect(
-      dense.metrics.projectionAllocatedEnergyResonant,
-    ).toBeCloseTo(sparse.metrics.projectionAllocatedEnergyResonant);
+    expect(dense.metrics.projectionAllocatedEnergyResonant).toBeCloseTo(
+      sparse.metrics.projectionAllocatedEnergyResonant,
+    );
     expect(dense.entries[0].displayAmplitude).toBeCloseTo(
       sparse.entries[0].displayAmplitude,
     );

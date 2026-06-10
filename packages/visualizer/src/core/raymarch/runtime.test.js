@@ -907,9 +907,9 @@ describe("tickRaymarchRuntime", () => {
     );
     expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(2);
     expect(runtimeState.volumeMesh.visible).toBe(false);
-    expect(runtimeState.currentModalBasisCacheDescriptor.descriptorOverflow).toBe(
-      true,
-    );
+    expect(
+      runtimeState.currentModalBasisCacheDescriptor.descriptorOverflow,
+    ).toBe(true);
     expect(runtimeState.modalBasisCache.lastRebuildReason).not.toBe(
       "descriptor-overflow",
     );
@@ -6144,9 +6144,7 @@ describe("tickRaymarchRuntime", () => {
     expect(rawOnlyRuntimeState.uniforms.uModalResponseEnergy.value).toBeCloseTo(
       0.03,
     );
-    expect(runtimeState.uniforms.uModalResponseEnergy.value).toBeCloseTo(
-      0.31,
-    );
+    expect(runtimeState.uniforms.uModalResponseEnergy.value).toBeCloseTo(0.31);
     expect(runtimeState.debugSnapshot.raymarchDebug.modalResponseEnergy).toBe(
       0.31,
     );

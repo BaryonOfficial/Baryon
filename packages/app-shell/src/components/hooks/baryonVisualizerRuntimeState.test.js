@@ -345,12 +345,12 @@ test("publishes modal basis cache diagnostics in render perf snapshots", () => {
       snapshot.render.liveSynthesisSupportDiagnosticSupportedSampleCount,
     ).toBe(5);
     expect(snapshot.render.liveSynthesisSupportDiagnosticCoverage).toBe(5 / 9);
-    expect(
-      snapshot.render.liveFieldProjectionPressureRadiationReady,
-    ).toBe(true);
-    expect(
-      snapshot.render.liveFieldProjectionPressureRadiationSemantic,
-    ).toBe("normalized-pressure-velocity-radiation-potential");
+    expect(snapshot.render.liveFieldProjectionPressureRadiationReady).toBe(
+      true,
+    );
+    expect(snapshot.render.liveFieldProjectionPressureRadiationSemantic).toBe(
+      "normalized-pressure-velocity-radiation-potential",
+    );
     expect(snapshot.render.radiationMaterialContrastSemantic).toBe(
       "visualization-only-normalized-pressure-velocity-balance",
     );
@@ -475,8 +475,7 @@ test("publishes modal basis cache diagnostics from runtime state when audit is d
         pressureRadiationSemantic:
           "normalized-pressure-velocity-radiation-potential",
         radiationMaterialContrast: {
-          semantic:
-            "visualization-only-normalized-pressure-velocity-balance",
+          semantic: "visualization-only-normalized-pressure-velocity-balance",
         },
       },
     });
@@ -499,12 +498,12 @@ test("publishes modal basis cache diagnostics from runtime state when audit is d
       snapshot.render.liveSynthesisSupportDiagnosticSupportedSampleCount,
     ).toBe(4);
     expect(snapshot.render.liveSynthesisSupportDiagnosticCoverage).toBe(4 / 9);
-    expect(
-      snapshot.render.liveFieldProjectionPressureRadiationReady,
-    ).toBe(true);
-    expect(
-      snapshot.render.liveFieldProjectionPressureRadiationSemantic,
-    ).toBe("normalized-pressure-velocity-radiation-potential");
+    expect(snapshot.render.liveFieldProjectionPressureRadiationReady).toBe(
+      true,
+    );
+    expect(snapshot.render.liveFieldProjectionPressureRadiationSemantic).toBe(
+      "normalized-pressure-velocity-radiation-potential",
+    );
     expect(snapshot.render.radiationMaterialContrastSemantic).toBe(
       "visualization-only-normalized-pressure-velocity-balance",
     );

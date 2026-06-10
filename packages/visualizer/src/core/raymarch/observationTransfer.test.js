@@ -56,10 +56,7 @@ describe("observation transfer", () => {
     });
 
     expect(transfer.observationDensity).toBe(
-      Math.max(
-        transfer.physicalVisibleDensity,
-        transfer.observedDensityFloor,
-      ),
+      Math.max(transfer.physicalVisibleDensity, transfer.observedDensityFloor),
     );
     expect(transfer.visibleDensity).toBe(transfer.observationDensity);
   });

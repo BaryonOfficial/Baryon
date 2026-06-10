@@ -11,10 +11,7 @@ export function readRenderFacingModalResponseEnergy(featureFrame = null) {
     Math.max(
       readFiniteNumber(featureFrame?.modalResponseEnergy, 0),
       readFiniteNumber(featureFrame?.modalResponseRenderEnergy, 0),
-      readFiniteNumber(
-        featureFrame?.modalResponseRenderSourceCoupledEnergy,
-        0,
-      ),
+      readFiniteNumber(featureFrame?.modalResponseRenderSourceCoupledEnergy, 0),
       readFiniteNumber(featureFrame?.modalResponseRenderResonantEnergy, 0),
       readFiniteNumber(featureFrame?.debug?.modalResponseEnergy, 0),
       readFiniteNumber(featureFrame?.debug?.modalResponseRenderEnergy, 0),

@@ -266,15 +266,19 @@ function samplePressureRadiationCarrierNode({
   basisUv,
   modalPressureRadiationTexture,
 }) {
-  const pressureRadiationSample = texture3D(modalPressureRadiationTexture).sample(
-    basisUv,
-  );
+  const pressureRadiationSample = texture3D(
+    modalPressureRadiationTexture,
+  ).sample(basisUv);
   const normalizedPressure = clamp(
     pressureRadiationSample.x,
     float(-1.0),
     float(1.0),
   );
-  const velocityProxy = clamp(pressureRadiationSample.y, float(0.0), float(1.0));
+  const velocityProxy = clamp(
+    pressureRadiationSample.y,
+    float(0.0),
+    float(1.0),
+  );
   const radiationPotential = clamp(
     pressureRadiationSample.z,
     float(-1.0),

@@ -10,7 +10,8 @@ const SPEED_OF_LIGHT_M_PER_S = 299_792_458;
 const D65_WHITE = Object.freeze({ x: 0.95047, y: 1, z: 1.08883 });
 const CIE_TABLE_MIN_NM = SPECTRAL_VISIBLE_VIOLET_NM;
 const CIE_TABLE_MAX_NM = SPECTRAL_VISIBLE_RED_NM;
-const SPECTRAL_LIGHT_LANE_DEFAULT_SPREAD = 1 / (SPECTRAL_LIGHT_LANE_COUNT * 2.5);
+const SPECTRAL_LIGHT_LANE_DEFAULT_SPREAD =
+  1 / (SPECTRAL_LIGHT_LANE_COUNT * 2.5);
 
 export const SPECTRAL_CIE_1931_2DEG_5NM = Object.freeze([
   { x: 0.0014, y: 0.0, z: 0.0065 },
@@ -333,7 +334,9 @@ export function createSpectralLightLaneDistribution({
 } = {}) {
   const laneCount = SPECTRAL_LIGHT_LANE_COUNT;
   const lanes = new Float32Array(laneCount);
-  const safePhase = fract(Number.isFinite(phase) ? phase : SPECTRAL_PHASE_DEFAULT);
+  const safePhase = fract(
+    Number.isFinite(phase) ? phase : SPECTRAL_PHASE_DEFAULT,
+  );
   const safeSpread = Number.isFinite(spread) ? Math.max(0, spread) : 0;
 
   if (safeSpread <= SPECTRAL_EPSILON) {

@@ -121,9 +121,7 @@ describe("live synthesis cancellation ratio", () => {
 describe("normalized pressure and radiation potential", () => {
   it("derives pressure and velocity proxy from coherent modal summation before radiation material transfer", () => {
     const commonOptions = {
-      backboneSlots: new Float32Array([
-        1, 2, 3, 0.8, 2, 1, 1, 0.4,
-      ]),
+      backboneSlots: new Float32Array([1, 2, 3, 0.8, 2, 1, 1, 0.4]),
       detailSlots: new Float32Array(0),
       backbonePhaseSlots: new Float32Array([0, 0, 1, 1, 0, 0, 1, 1]),
       detailPhaseSlots: new Float32Array(0),
@@ -142,10 +140,7 @@ describe("normalized pressure and radiation potential", () => {
       Math.hypot(pressureOnly.gradX, pressureOnly.gradY, pressureOnly.gradZ),
     );
 
-    expect(pressureOnly.normalizedPressure).toBeCloseTo(
-      pressureOnly.field,
-      6,
-    );
+    expect(pressureOnly.normalizedPressure).toBeCloseTo(pressureOnly.field, 6);
     expect(pressureOnly.normalizedPressureProvenance).toBe(
       "coherent-signed-modal-summation",
     );
@@ -180,7 +175,8 @@ describe("normalized pressure and radiation potential", () => {
           raymarchFieldCache.RAYMARCH_VISUALIZATION_RADIATION_MATERIAL_CONTRAST
             .pressureEnergyWeight -
           withContrast.normalizedVelocityEnergy *
-            raymarchFieldCache.RAYMARCH_VISUALIZATION_RADIATION_MATERIAL_CONTRAST
+            raymarchFieldCache
+              .RAYMARCH_VISUALIZATION_RADIATION_MATERIAL_CONTRAST
               .velocityEnergyWeight,
       ),
     );
