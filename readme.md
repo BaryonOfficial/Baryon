@@ -142,6 +142,5 @@ Canonical public/shared docs:
 - [`documentation/public/architecture/output-sync.md`](documentation/public/architecture/output-sync.md)
 - [`documentation/public/reference/controls.md`](documentation/public/reference/controls.md)
 
-## Contributing
 
-See [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) for contributor setup and PR workflow.
+## Contributing

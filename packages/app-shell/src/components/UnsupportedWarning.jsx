@@ -1,155 +1,188 @@
-import React, { useState } from "react";
 import {
-  formatSupportProbeForClipboard,
-  getSupportProbeTechnicalDetails,
+  BROWSER_FAILURE_CODES,
+  BROWSER_FAMILY,
+  BROWSER_PLATFORM,
 } from "./browserSupport.js";
 
 /** @type {import("react").CSSProperties} */
 const containerStyle = {
   position: "fixed",
-  bottom: 0,
-  left: 0,
-  right: 0,
-  backgroundColor: "rgba(120, 8, 8, 0.94)",
-  color: "white",
-  padding: "14px 16px",
+  inset: 0,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  boxSizing: "border-box",
+  overflowY: "auto",
+  height: "100vh",
+  minHeight: "100dvh",
+  padding: "24px",
+  background:
+    "linear-gradient(180deg, rgba(13, 10, 7, 0.98) 0%, rgba(21, 16, 10, 0.96) 100%)",
+  color: "var(--nd-text-primary)",
   zIndex: 1000,
-  boxShadow: "0 -10px 30px rgba(0, 0, 0, 0.35)",
   fontFamily: "var(--baryon-type-interface-family)",
+};
+
+/** @type {import("react").CSSProperties} */
+const panelStyle = {
+  width: "min(100%, 520px)",
+  boxSizing: "border-box",
+  border: "1px solid var(--nd-border-visible)",
+  borderRadius: "8px",
+  background: "var(--nd-surface)",
+  boxShadow: "var(--nd-shell-shadow)",
+  padding: "clamp(22px, 4vw, 34px)",
+};
+
+/** @type {import("react").CSSProperties} */
+const brandRowStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: "10px",
+  marginBottom: "16px",
+};
+
+/** @type {import("react").CSSProperties} */
+const logoStyle = {
+  flex: "0 0 auto",
+  width: "28px",
+  height: "24px",
+  opacity: 0.92,
+};
+
+/** @type {import("react").CSSProperties} */
+const eyebrowStyle = {
+  margin: 0,
+  color: "var(--nd-text-secondary)",
+  fontFamily: "var(--baryon-type-mono-family)",
+  fontSize: "11px",
+  fontWeight: 600,
+  letterSpacing: "var(--baryon-type-action-letter-spacing)",
+  lineHeight: 1.2,
+  textTransform: "uppercase",
 };
 
 /** @type {import("react").CSSProperties} */
 const headingStyle = {
   margin: 0,
-  fontSize: "15px",
+  color: "var(--nd-text-display)",
+  fontSize: "24px",
   fontWeight: 600,
-  lineHeight: 1.4,
+  lineHeight: 1.12,
 };
 
 /** @type {import("react").CSSProperties} */
-const listStyle = {
-  margin: "10px 0 0 18px",
-  padding: 0,
+const messageStyle = {
+  margin: "12px 0 0",
+  color: "var(--nd-text-secondary)",
+  fontSize: "14px",
+  lineHeight: 1.55,
+};
+
+/** @type {import("react").CSSProperties} */
+const recommendationStyle = {
+  margin: "16px 0 0",
+  borderLeft: "2px solid var(--nd-warning)",
+  paddingLeft: "14px",
+  color: "var(--nd-text-primary)",
+  fontSize: "13px",
   lineHeight: 1.5,
 };
 
-/** @type {import("react").CSSProperties} */
-const metaListStyle = {
-  margin: "10px 0 0",
-  padding: 0,
-  listStyle: "none",
-  fontFamily: "var(--baryon-type-mono-family)",
-  fontSize: "12px",
-  lineHeight: 1.5,
-  opacity: 0.96,
+const DESKTOP_BROWSER_RECOMMENDATION =
+  "Use a Chromium-based desktop browser, such as Brave, Chrome, or Edge.";
+
+const DEFAULT_WARNING_COPY = {
+  eyebrow: "Compatibility",
+  title: "Open Baryon on desktop",
+  message:
+    "This device or browser does not provide the graphics support the visualizer needs.",
+  recommendation: DESKTOP_BROWSER_RECOMMENDATION,
 };
 
-/** @type {import("react").CSSProperties} */
-const actionRowStyle = {
-  display: "flex",
-  gap: "10px",
-  alignItems: "center",
-  marginTop: "12px",
-  flexWrap: "wrap",
-};
+function getWarningCopy(reason, probe) {
+  const failureCode = probe?.failureCode;
+  const platform = probe?.platform;
+  const browserFamily = probe?.browserFamily;
+  const guidanceSummary = probe?.guidance?.summary ?? "";
 
-/** @type {import("react").CSSProperties} */
-const buttonStyle = {
-  border: "1px solid rgba(255, 255, 255, 0.28)",
-  background: "rgba(255, 255, 255, 0.12)",
-  color: "white",
-  borderRadius: "999px",
-  padding: "6px 12px",
-  cursor: "pointer",
-  fontFamily: "var(--baryon-type-mono-family)",
-  fontSize: "12px",
-  letterSpacing: "var(--baryon-type-action-letter-spacing)",
-  textTransform: "uppercase",
-};
-
-function fallbackCopyText(text) {
-  const textArea = document.createElement("textarea");
-  textArea.value = text;
-  textArea.setAttribute("readonly", "");
-  textArea.style.position = "fixed";
-  textArea.style.opacity = "0";
-  document.body.appendChild(textArea);
-  textArea.focus();
-  textArea.select();
-  document.execCommand("copy");
-  document.body.removeChild(textArea);
-}
-
-async function copyText(text) {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
+  if (
+    reason === "mobile" ||
+    failureCode === BROWSER_FAILURE_CODES.mobileUnsupported
+  ) {
+    return DEFAULT_WARNING_COPY;
   }
 
-  fallbackCopyText(text);
+  if (
+    platform === BROWSER_PLATFORM.macos &&
+    browserFamily === BROWSER_FAMILY.safari &&
+    /Lockdown Mode/i.test(guidanceSummary)
+  ) {
+    return {
+      eyebrow: "Compatibility",
+      title: "Open Baryon on desktop",
+      message:
+        "Safari is hiding required browser features for this site, so Baryon cannot start here.",
+      recommendation:
+        "Turn off Lockdown Mode for this site, then reload, or use a Chromium-based desktop browser such as Brave, Chrome, or Edge.",
+    };
+  }
+
+  if (
+    platform === BROWSER_PLATFORM.macos &&
+    browserFamily === BROWSER_FAMILY.safari
+  ) {
+    return DEFAULT_WARNING_COPY;
+  }
+
+  if (
+    platform === BROWSER_PLATFORM.linux &&
+    browserFamily === BROWSER_FAMILY.chromium
+  ) {
+    return DEFAULT_WARNING_COPY;
+  }
+
+  if (
+    platform === BROWSER_PLATFORM.linux &&
+    browserFamily === BROWSER_FAMILY.firefox
+  ) {
+    return DEFAULT_WARNING_COPY;
+  }
+
+  return DEFAULT_WARNING_COPY;
 }
 
 const UnsupportedWarning = ({ reason = "browser", probe = null }) => {
-  const [copyStatus, setCopyStatus] = useState("idle");
-  const guidance = probe?.guidance;
-  const technicalDetails = getSupportProbeTechnicalDetails(probe);
-
-  const handleCopyDiagnostics = async () => {
-    try {
-      await copyText(formatSupportProbeForClipboard(probe));
-      setCopyStatus("copied");
-    } catch {
-      setCopyStatus("failed");
-    }
-  };
-
-  const headline =
-    reason === "mobile"
-      ? "Baryon runs best on desktop. Mobile browser support is currently degraded."
-      : guidance?.summary ||
-        "The music visualizer requires a working WebGPU stack before it can start.";
+  const warningCopy = getWarningCopy(reason, probe);
 
   return (
-    <div style={containerStyle}>
-      <p style={headingStyle}>{headline}</p>
+    <section
+      aria-describedby="unsupported-warning-message"
+      aria-labelledby="unsupported-warning-title"
+      role="alert"
+      style={containerStyle}
+    >
+      <div style={panelStyle}>
+        <div style={brandRowStyle}>
+          <img
+            alt="Baryon"
+            src="/assets/BaryonLogoWhite.svg"
+            style={logoStyle}
+          />
+          <p style={eyebrowStyle}>{warningCopy.eyebrow}</p>
+        </div>
 
-      {guidance?.steps?.length > 0 && (
-        <ul style={listStyle}>
-          {guidance.steps.map((step) => (
-            <li key={step}>{step}</li>
-          ))}
-        </ul>
-      )}
+        <h1 id="unsupported-warning-title" style={headingStyle}>
+          {warningCopy.title}
+        </h1>
 
-      {guidance?.caveat && (
-        <p style={{ margin: "10px 0 0" }}>{guidance.caveat}</p>
-      )}
+        <p id="unsupported-warning-message" style={messageStyle}>
+          {warningCopy.message}
+        </p>
 
-      <div style={actionRowStyle}>
-        <button
-          type="button"
-          style={buttonStyle}
-          onClick={handleCopyDiagnostics}
-        >
-          Copy diagnostics
-        </button>
-        {copyStatus === "copied" && <span>Diagnostics copied.</span>}
-        {copyStatus === "failed" && (
-          <span>Diagnostics could not be copied automatically.</span>
-        )}
+        <p style={recommendationStyle}>{warningCopy.recommendation}</p>
       </div>
-
-      {technicalDetails.length > 0 && (
-        <details style={{ marginTop: "10px" }}>
-          <summary style={{ cursor: "pointer" }}>Technical details</summary>
-          <ul style={metaListStyle} aria-label="WebGPU diagnostics">
-            {technicalDetails.map((detail) => (
-              <li key={detail}>{detail}</li>
-            ))}
-          </ul>
-        </details>
-      )}
-    </div>
+    </section>
   );
 };
 
