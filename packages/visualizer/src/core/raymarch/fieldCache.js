@@ -267,17 +267,24 @@ function buildCanonicalModalFieldShape(slots, activeCount) {
   );
 }
 
-function buildModalBasisPageEntriesFromSlots(
+// Single allocation-free pass over the page slots feeding both topology
+// hashes; this runs every runtime tick.
+function hashModalBasisPageTopology({
   modalFieldSlots,
   activeCount,
   resolution,
   basisCapacity,
-) {
+}) {
   const normalizedResolution = normalizeModalBasisCacheResolution(resolution);
   const normalizedBasisCapacity = normalizeBasisCapacity(basisCapacity);
   const maxRepresentableModeIndex =
     getModalBasisCacheMaxRepresentableModeIndex(normalizedResolution);
-  const entries = [];
+  const normalizedActiveCount = Math.max(0, Math.round(activeCount || 0));
+  let pageAssignmentHash = FNV_OFFSET_BASIS;
+  let domainHash = FNV_OFFSET_BASIS;
+  domainHash = hashUint32(normalizedResolution, domainHash);
+  domainHash = hashUint32(normalizedBasisCapacity, domainHash);
+  domainHash = hashUint32(normalizedBasisCapacity, domainHash);
 
   for (let pageIndex = 0; pageIndex < normalizedBasisCapacity; pageIndex += 1) {
     const offset = pageIndex * 4;
@@ -286,53 +293,25 @@ function buildModalBasisPageEntriesFromSlots(
     const w = readModalFieldCoordinate(modalFieldSlots, offset, 2);
     const amplitude = Math.max(0, modalFieldSlots?.[offset + 3] ?? 0);
     const representable =
-      pageIndex < Math.max(0, Math.round(activeCount || 0)) &&
+      pageIndex < normalizedActiveCount &&
       amplitude > 0 &&
       Math.max(Math.abs(u), Math.abs(v), Math.abs(w)) <=
         maxRepresentableModeIndex;
 
-    entries.push({
-      identityKey: getModalFieldIdentityKey(u, v, w),
-      u,
-      v,
-      w,
-      pageIndex,
-      atlasZStart: pageIndex * normalizedResolution,
-      atlasZCount: normalizedResolution,
-      basisNorm: 1,
-      gradientNorm: 1,
-      representable,
-    });
+    pageAssignmentHash = hashUint32(pageIndex, pageAssignmentHash);
+    pageAssignmentHash = hashFloat32(u, pageAssignmentHash);
+    pageAssignmentHash = hashFloat32(v, pageAssignmentHash);
+    pageAssignmentHash = hashFloat32(w, pageAssignmentHash);
+    domainHash = hashFloat32(u, domainHash);
+    domainHash = hashFloat32(v, domainHash);
+    domainHash = hashFloat32(w, domainHash);
+    domainHash = hashUint32(representable ? 1 : 0, domainHash);
   }
 
-  return entries;
-}
-
-function hashModalBasisPageAssignment(entries) {
-  let hash = FNV_OFFSET_BASIS;
-  for (const entry of entries) {
-    hash = hashUint32(entry.pageIndex, hash);
-    hash = hashFloat32(entry.u, hash);
-    hash = hashFloat32(entry.v, hash);
-    hash = hashFloat32(entry.w, hash);
-  }
-
-  return hash >>> 0;
-}
-
-function hashRepresentableDomain({ entries, resolution, basisCapacity }) {
-  let hash = FNV_OFFSET_BASIS;
-  hash = hashUint32(normalizeModalBasisCacheResolution(resolution), hash);
-  hash = hashUint32(normalizeBasisCapacity(basisCapacity), hash);
-  hash = hashUint32(entries.length, hash);
-  for (const entry of entries) {
-    hash = hashFloat32(entry.u, hash);
-    hash = hashFloat32(entry.v, hash);
-    hash = hashFloat32(entry.w, hash);
-    hash = hashUint32(entry.representable ? 1 : 0, hash);
-  }
-
-  return hash >>> 0;
+  return {
+    identityPageAssignmentHash: pageAssignmentHash >>> 0,
+    representableDomainHash: domainHash >>> 0,
+  };
 }
 
 function hashCanonicalModalFieldShape(entries) {
@@ -964,6 +943,8 @@ function summarizeLiveSynthesisDiagnostics({
 }) {
   const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
   const basisScale = getModalBasisGradientBasisScale(scale, boundaryMode);
+  const maxRepresentableModeIndex =
+    getModalBasisCacheMaxRepresentableModeIndex(resolution);
   const canonicalTerms = collectCanonicalLiveSynthesisDiagnosticTerms({
     slots,
     activeCount: clampedActiveCount,
@@ -987,7 +968,7 @@ function summarizeLiveSynthesisDiagnostics({
       term.structuralCoefficient * term.structuralCoefficient;
 
     if (
-      getModalBasisCacheMaxRepresentableModeIndex(resolution) <
+      maxRepresentableModeIndex <
       Math.max(Math.abs(term.u), Math.abs(term.v), Math.abs(term.w))
     ) {
       bandwidthRejectedModeCount += 1;
@@ -1014,8 +995,7 @@ function summarizeLiveSynthesisDiagnostics({
     contributingStructuralModalEnergy + bandwidthRejectedStructuralModalEnergy;
 
   return {
-    modalBasisCacheMaxRepresentableModeIndex:
-      getModalBasisCacheMaxRepresentableModeIndex(resolution),
+    modalBasisCacheMaxRepresentableModeIndex: maxRepresentableModeIndex,
     contributingBasisPageModeCount,
     zeroAmplitudeSkippedModeCount,
     bandwidthRejectedModeCount,
@@ -1866,22 +1846,16 @@ export function buildRaymarchModalBasisCacheDescriptor({
   const modalBasisCacheTopology = buildCanonicalIdentityEntries(
     representableBasisPageTerms,
   );
-  const basisPageMetadata = buildModalBasisPageEntriesFromSlots(
-    modalFieldSlots,
-    normalizedUploadedModalFieldCount,
-    normalizedResolution,
-    normalizedBasisCapacity,
-  );
   const identitySetHash = hashCanonicalModalFieldTopology(
     modalBasisCacheTopology,
   );
-  const identityPageAssignmentHash =
-    hashModalBasisPageAssignment(basisPageMetadata);
-  const representableDomainHash = hashRepresentableDomain({
-    entries: basisPageMetadata,
-    resolution: normalizedResolution,
-    basisCapacity: normalizedBasisCapacity,
-  });
+  const { identityPageAssignmentHash, representableDomainHash } =
+    hashModalBasisPageTopology({
+      modalFieldSlots,
+      activeCount: normalizedUploadedModalFieldCount,
+      resolution: normalizedResolution,
+      basisCapacity: normalizedBasisCapacity,
+    });
   const basisAtlasDepth = getRaymarchBasisAtlasDepth(
     normalizedResolution,
     normalizedBasisCapacity,
@@ -1912,7 +1886,6 @@ export function buildRaymarchModalBasisCacheDescriptor({
       pageDepth: normalizedResolution,
       pageCount: normalizedBasisCapacity,
     },
-    basisPageMetadata,
     liveSynthesisModeCount: Math.min(
       normalizedBasisCapacity,
       RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
