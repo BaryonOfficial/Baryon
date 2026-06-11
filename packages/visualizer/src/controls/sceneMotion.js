@@ -1,4 +1,5 @@
 import { REACTIVITY_DEFAULTS, RENDER_DEFAULTS } from "../defaults.js";
+import { clamp, clamp01 } from "../utils/math.js";
 
 const MANUAL_ROTATION_RATE_SCALE = -0.5;
 const AUDIO_ROTATION_MIN_SPEED = 0.03;
@@ -25,14 +26,6 @@ const AUTO_MOTION_ENVELOPE_ATTACK = 3.0;
 const AUTO_MOTION_ENVELOPE_RELEASE = 0.22;
 const AUTO_MOTION_AMOUNT_MIN = 0.6;
 const AUTO_MOTION_AMOUNT_MAX = 2.0;
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function clamp01(value) {
-  return clamp(value, 0, 1);
-}
 
 function damp(current, target, smoothing, deltaTime) {
   const factor = 1 - Math.exp(-Math.max(0, smoothing) * Math.max(0, deltaTime));

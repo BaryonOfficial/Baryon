@@ -40,6 +40,7 @@ import {
  *   hardSilence: boolean,
  *   calibrationInvalid: boolean,
  *   calibrationInvalidReason: string,
+ *   sourceBoundaryState: string,
  *   signalState: LiveInputSignalState,
  *   errorCode: LiveInputErrorCode,
  * }} LiveInputRuntimeStatus
@@ -135,6 +136,7 @@ export function createLiveInputRuntimeStatus(overrides = {}) {
     hardSilence: false,
     calibrationInvalid: false,
     calibrationInvalidReason: "none",
+    sourceBoundaryState: "unknown",
     signalState: LIVE_INPUT_SIGNAL_STATES.ok,
     errorCode: LIVE_INPUT_ERROR_CODES.none,
     ...overrides,
@@ -254,6 +256,37 @@ function deriveSignalState({
   return LIVE_INPUT_SIGNAL_STATES.ok;
 }
 
+function readSourceEvidence(featureFrame) {
+  return (
+    featureFrame?.sourceEvidence ?? featureFrame?.debug?.sourceEvidence ?? null
+  );
+}
+
+function readSourceBoundaryState(featureFrame) {
+  const sourceEvidence = readSourceEvidence(featureFrame);
+  return (
+    sourceEvidence?.sourceBoundaryState ??
+    featureFrame?.energyLedger?.sourceBoundaryState ??
+    featureFrame?.debug?.sourceBoundaryState ??
+    "unknown"
+  );
+}
+
+function hasLiveSourceBoundary(sourceEvidence) {
+  return (
+    sourceEvidence?.currentSourceEvidence === true &&
+    sourceEvidence?.sourceBoundaryState === "live"
+  );
+}
+
+function isClosedLineFeedBoundary(sourceBoundaryState) {
+  return (
+    sourceBoundaryState === "absent" ||
+    sourceBoundaryState === "muted" ||
+    sourceBoundaryState === "zero"
+  );
+}
+
 /**
  * @param {{
  *   status?: any,
@@ -281,6 +314,11 @@ export function buildLiveInputRuntimeStatus({
   const calibrationInvalid = Boolean(debug?.liveInputCalibrationInvalid);
   const calibrationInvalidReason =
     debug?.liveInputCalibrationInvalidReason ?? "none";
+  const sourceEvidence = readSourceEvidence(featureFrame);
+  const sourceBoundaryState = readSourceBoundaryState(featureFrame);
+  const lineFeedSourceLive =
+    resolvedAnalysisClass === "line-feed" &&
+    hasLiveSourceBoundary(sourceEvidence);
   const providerErrorCode = normalizeErrorCode(
     liveInputErrorCode !== LIVE_INPUT_ERROR_CODES.none
       ? liveInputErrorCode
@@ -292,13 +330,18 @@ export function buildLiveInputRuntimeStatus({
     active &&
     resolvedAnalysisClass === "acoustic-mic" &&
     Boolean(debug?.liveInputCalibrationActive);
-  const hardSilence = active && Boolean(debug?.liveInputHardSilenceActive);
+  const hardSilence =
+    active &&
+    (resolvedAnalysisClass === "line-feed"
+      ? isClosedLineFeedBoundary(sourceBoundaryState)
+      : Boolean(debug?.liveInputHardSilenceActive));
   const gateOpen =
     active &&
-    (resolvedAnalysisClass === "line-feed" ||
-      (!debug?.liveInputNoiseGateActive &&
+    (resolvedAnalysisClass === "line-feed"
+      ? lineFeedSourceLive
+      : !debug?.liveInputNoiseGateActive &&
         !calibrationActive &&
-        !calibrationInvalid));
+        !calibrationInvalid);
   const phase = deriveLiveInputPhase({
     active,
     liveInputUiState: normalizedUiState,
@@ -322,6 +365,7 @@ export function buildLiveInputRuntimeStatus({
     hardSilence,
     calibrationInvalid,
     calibrationInvalidReason,
+    sourceBoundaryState,
     signalState: deriveSignalState({
       phase,
       hardSilence,
@@ -381,6 +425,12 @@ export function getLiveInputStatusLabel(runtimeStatus) {
     return "Calibrating mic";
   }
   if (status.phase === LIVE_INPUT_PHASES.weakSignal) {
+    if (
+      status.resolvedAnalysisClass === "line-feed" &&
+      status.signalState === LIVE_INPUT_SIGNAL_STATES.silent
+    ) {
+      return "Line feed silent";
+    }
     return "Input too weak";
   }
   if (!status.active) {

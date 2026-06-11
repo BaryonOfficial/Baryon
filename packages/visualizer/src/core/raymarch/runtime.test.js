@@ -269,7 +269,6 @@ function createRuntimeState({ withFieldCache = false } = {}) {
     stabilityStats: {
       avgRaySegmentLength: 1.2,
       missRatio: 0.15,
-      avgSilhouetteSuppression: 0,
     },
     auditEnabled: true,
     modalBasisCache,
@@ -311,6 +310,78 @@ function seedRuntimeCacheNodes(runtimeState) {
       id: "field",
     };
   }
+}
+
+function createSpectralLaneCacheHarness() {
+  const runtimeState = createRuntimeState({ withFieldCache: true });
+  seedRuntimeCacheNodes(runtimeState);
+  runtimeState.uniforms.uSpectralMix.value = 0.85;
+  runtimeState.liveFieldProjectionCache.computeNodesByKey[
+    "live-field-projection:capacity=16"
+  ] = { id: "live-field" };
+  runtimeState.spectralLaneCache.computeNodesByKey[
+    "spectral-lane-cache:capacity=16"
+  ] = { id: "spectral-lane" };
+
+  const computeCalls = [];
+  const renderer = {
+    compute: vi.fn((node) => {
+      computeCalls.push(node?.id ?? null);
+    }),
+    computeAsync: vi.fn(async (node) => {
+      computeCalls.push(node?.id ?? null);
+    }),
+  };
+
+  return {
+    runtimeState,
+    renderer,
+    spectralComputeCount: () =>
+      computeCalls.filter((id) => id === "spectral-lane").length,
+  };
+}
+
+function createSpectralLaneCacheFrame({
+  spectralLaneA = [0.2, 0.8, 0, 0],
+  spectralLaneB = [0, 0, 0, 0],
+  spectralMeta = [0.18, 0.04, 0.9, 0.7],
+} = {}) {
+  return {
+    fieldState: "active",
+    renderAuthority: true,
+    averageAmplitude: 48,
+    modalFieldSlots: new Float32Array([3, 4, 6, 0.8]),
+    modalFieldPhaseSlots: new Float32Array([0, 0, 1, 1]),
+    modalFieldColorSlots: new Float32Array([9, 9, 9, 1]),
+    modalFieldSpectralLaneA: new Float32Array(spectralLaneA),
+    modalFieldSpectralLaneB: new Float32Array(spectralLaneB),
+    modalFieldSpectralMeta: new Float32Array(spectralMeta),
+    modalFieldMetadataSlots: new Float32Array(4),
+    activeModeCount: 1,
+    activeModalFieldModeCount: 1,
+    modalResponseEnergy: 0.5,
+  };
+}
+
+function createEmptySpectralLaneCacheFrame() {
+  return createSpectralLaneCacheFrame({
+    spectralLaneA: [0, 0, 0, 0],
+    spectralLaneB: [0, 0, 0, 0],
+    spectralMeta: [0, 0, 0, 0],
+  });
+}
+
+function expectSpectralLaneCacheModalBasisSource(
+  runtimeState,
+  expectedAtlasTexture,
+  expectedModalBasisDescriptor = runtimeState.modalBasisCache.activeDescriptor,
+) {
+  expect(runtimeState.spectralLaneCache.modalBasisAtlasTexture).toBe(
+    expectedAtlasTexture,
+  );
+  expect(runtimeState.spectralLaneCache.modalBasisCacheDescriptor).toEqual(
+    expectedModalBasisDescriptor,
+  );
 }
 
 function expectNoSpectralLightCache(runtimeState) {
@@ -907,9 +978,9 @@ describe("tickRaymarchRuntime", () => {
     );
     expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(2);
     expect(runtimeState.volumeMesh.visible).toBe(false);
-    expect(runtimeState.currentModalBasisCacheDescriptor.descriptorOverflow).toBe(
-      true,
-    );
+    expect(
+      runtimeState.currentModalBasisCacheDescriptor.descriptorOverflow,
+    ).toBe(true);
     expect(runtimeState.modalBasisCache.lastRebuildReason).not.toBe(
       "descriptor-overflow",
     );
@@ -1307,9 +1378,6 @@ describe("tickRaymarchRuntime", () => {
     expect(
       runtimeState.debugSnapshot.raymarchDebug.holographicFresnelPower,
     ).toBe(3.2);
-    expect(
-      runtimeState.debugSnapshot.raymarchDebug.avgSilhouetteSuppression,
-    ).toBe(0);
     expect(runtimeState.debugSnapshot.raymarchDebug.bloomResponseBias).toBe(
       0.4,
     );
@@ -2141,6 +2209,71 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.modalFieldModeBuffer.value.needsUpdate).toBe(false);
     expect(runtimeState.modalFieldColorBuffer.value.needsUpdate).toBe(false);
     expect(runtimeState.modalFieldPhaseBuffer.value.needsUpdate).toBe(false);
+  });
+
+  it("retains the committed atlas across a render-authority blip and resumes without a rebuild", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 0;
+    const renderer = { computeAsync: vi.fn(async () => undefined) };
+    const activeFrame = createActiveFeatureFrame({
+      backboneSlots: new Float32Array([1, 1, 1, 0.9]),
+      detailSlots: new Float32Array(0),
+      backboneColorSlots: new Float32Array(4),
+      detailColorSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array([0, 0, 1, 1]),
+      detailPhaseSlots: new Float32Array(0),
+      modalPhaseAuthority: 1,
+    });
+
+    // Build and commit the coefficient-invariant atlas.
+    tickRaymarchRuntime(runtimeState, activeFrame, 1, 1 / 60, renderer);
+    await flushMicrotasks();
+    tickRaymarchRuntime(
+      runtimeState,
+      activeFrame,
+      1 + 1 / 60,
+      1 / 60,
+      renderer,
+    );
+    expect(runtimeState.modalBasisCache.ready).toBe(true);
+    const committedDescriptor = runtimeState.modalBasisCache.activeDescriptor;
+    expect(committedDescriptor).toBeTruthy();
+    const committedRebuildCount = runtimeState.modalBasisCache.rebuildCount;
+
+    // Render-authority blip (silence / source cut): nothing visible, but the
+    // committed atlas survives — basis pages carry no audio semantics.
+    tickRaymarchRuntime(
+      runtimeState,
+      {
+        fieldState: "idle",
+        renderAuthority: false,
+        averageAmplitude: 0,
+        bandEnergies: new Float32Array(4),
+        debug: {},
+      },
+      2,
+      1 / 60,
+      renderer,
+    );
+    expect(runtimeState.volumeMesh.visible).toBe(false);
+    expect(runtimeState.modalBasisCache.activeDescriptor).toBe(
+      committedDescriptor,
+    );
+    expect(runtimeState.modalBasisCache.ready).toBe(true);
+    expect(runtimeState.modalBasisCache.rebuildPending).toBe(false);
+
+    // The same topology returns: drawable immediately from the retained
+    // atlas, with no atlas rebuild dispatched and no dropped frames.
+    tickRaymarchRuntime(runtimeState, activeFrame, 3, 1 / 60, renderer);
+    expect(runtimeState.modalBasisCacheDrawableAuthority?.drawable).toBe(true);
+    expect(runtimeState.modalBasisCacheDrawableAuthority?.state).toBe(
+      "modal-basis-cache-ready-current",
+    );
+    expect(runtimeState.modalBasisCache.rebuildPending).toBe(false);
+    expect(runtimeState.modalBasisCache.rebuildCount).toBe(
+      committedRebuildCount,
+    );
   });
 
   it("hides retained modal diagnostics without projected render authority", () => {
@@ -3264,6 +3397,7 @@ describe("tickRaymarchRuntime", () => {
     const committedLiveFieldComputedAt =
       runtimeState.liveFieldProjectionCache.lastComputedAtSec;
     const activeBasisTexture = runtimeState.modalBasisCache.texture;
+    const standbyBasisTexture = runtimeState.modalBasisCache.pendingTexture;
     const activeMaterial = runtimeState.volumeMesh.material;
     renderer.copyTextureToTexture.mockClear();
 
@@ -3329,6 +3463,9 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.volumeMesh.material.modalBasisAtlasTexture).toBe(
       activeBasisTexture,
     );
+    expect(runtimeState.modalBasisCache.pendingTexture).toBe(
+      standbyBasisTexture,
+    );
     expect(renderer.copyTextureToTexture).not.toHaveBeenCalled();
 
     tickRaymarchRuntime(
@@ -3344,21 +3481,18 @@ describe("tickRaymarchRuntime", () => {
     );
     expect(runtimeState.modalBasisCache.pendingDescriptor).toBeNull();
     expect(runtimeState.modalBasisCache.pendingReady).toBe(false);
-    expect(runtimeState.modalBasisCache.texture).toBe(activeBasisTexture);
+    expect(runtimeState.modalBasisCache.texture).toBe(standbyBasisTexture);
+    expect(runtimeState.modalBasisCache.pendingTexture).toBe(
+      activeBasisTexture,
+    );
     expect(
       runtimeState.volumeMesh.userData.raymarchModalBasisAtlasTexture,
-    ).toBe(activeBasisTexture);
+    ).toBe(standbyBasisTexture);
     expect(runtimeState.volumeMesh.material.modalBasisAtlasTexture).toBe(
-      activeBasisTexture,
+      standbyBasisTexture,
     );
     expect(runtimeState.volumeMesh.material).toBe(activeMaterial);
-    expect(renderer.copyTextureToTexture).toHaveBeenCalledTimes(1);
-    expect(renderer.copyTextureToTexture.mock.calls[0][0]).toBe(
-      runtimeState.modalBasisCache.pendingTexture,
-    );
-    expect(renderer.copyTextureToTexture.mock.calls[0][1]).toBe(
-      activeBasisTexture,
-    );
+    expect(renderer.copyTextureToTexture).not.toHaveBeenCalled();
     expect(
       Array.from(runtimeState.modalFieldModeBuffer.value.array.slice(0, 8)),
     ).toEqual(Array.from(pendingFrame.modalFieldSlots.slice(0, 8)));
@@ -3904,7 +4038,7 @@ describe("tickRaymarchRuntime", () => {
     );
     expect(runtimeState.debugSnapshot.spectralLightEnabled).toBe(true);
     expect(runtimeState.debugSnapshot.spectralLightLaneDrawable).toBe(false);
-    expect(renderer.copyTextureToTexture).toHaveBeenCalledTimes(1);
+    expect(renderer.copyTextureToTexture).not.toHaveBeenCalled();
   });
 
   it("keeps modal commits independent from removed Spectral texture promotion", async () => {
@@ -3976,10 +4110,7 @@ describe("tickRaymarchRuntime", () => {
 
     expect(runtimeState.modalBasisCache.rebuildPending).toBe(false);
     expectNoSpectralLightCache(runtimeState);
-    expect(renderer.copyTextureToTexture).toHaveBeenCalledTimes(1);
-    expect(renderer.copyTextureToTexture.mock.calls[0][0]).toBe(
-      runtimeState.modalBasisCache.pendingTexture,
-    );
+    expect(renderer.copyTextureToTexture).not.toHaveBeenCalled();
   });
 
   it("keeps cache resources bounded across repeated modal commits with Spectral requested", async () => {
@@ -4013,7 +4144,8 @@ describe("tickRaymarchRuntime", () => {
       renderer,
     );
 
-    const activeModalTexture = runtimeState.modalBasisCache.texture;
+    const modalAtlasTextureA = runtimeState.modalBasisCache.texture;
+    const modalAtlasTextureB = runtimeState.modalBasisCache.pendingTexture;
     const activeMaterial = runtimeState.volumeMesh.material;
     expect(runtimeState.volumeMesh.material).toBe(activeMaterial);
     const initialMaterialCacheSize = materialCacheSize();
@@ -4029,7 +4161,21 @@ describe("tickRaymarchRuntime", () => {
       await flushMicrotasks();
       tickRaymarchRuntime(runtimeState, frame, time + 1 / 60, 1 / 60, renderer);
 
-      expect(runtimeState.modalBasisCache.texture).toBe(activeModalTexture);
+      expect([modalAtlasTextureA, modalAtlasTextureB]).toContain(
+        runtimeState.modalBasisCache.texture,
+      );
+      expect([modalAtlasTextureA, modalAtlasTextureB]).toContain(
+        runtimeState.modalBasisCache.pendingTexture,
+      );
+      expect(runtimeState.modalBasisCache.texture).not.toBe(
+        runtimeState.modalBasisCache.pendingTexture,
+      );
+      expect(
+        runtimeState.volumeMesh.userData.raymarchModalBasisAtlasTexture,
+      ).toBe(runtimeState.modalBasisCache.texture);
+      expect(runtimeState.volumeMesh.material.modalBasisAtlasTexture).toBe(
+        runtimeState.modalBasisCache.texture,
+      );
       expect(runtimeState.volumeMesh.material).toBe(activeMaterial);
       expectNoSpectralLightCache(runtimeState);
       expect(materialCacheSize()).toBe(initialMaterialCacheSize);
@@ -4038,16 +4184,10 @@ describe("tickRaymarchRuntime", () => {
       ).toHaveLength(initialModalComputeNodeCount);
     }
 
-    expect(renderer.copyTextureToTexture).toHaveBeenCalledTimes(100);
-    renderer.copyTextureToTexture.mock.calls.forEach(
-      ([source, destination]) => {
-        expect(source).toBe(runtimeState.modalBasisCache.pendingTexture);
-        expect(destination).toBe(activeModalTexture);
-      },
-    );
+    expect(renderer.copyTextureToTexture).not.toHaveBeenCalled();
   });
 
-  it("does not promote pending modal-basis descriptors without texture-copy support", async () => {
+  it("promotes pending modal-basis descriptors without texture-copy support", async () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     seedRuntimeCacheNodes(runtimeState);
     runtimeState.uniforms.uSpectralMix.value = 0;
@@ -4061,18 +4201,28 @@ describe("tickRaymarchRuntime", () => {
       backboneColorSlots: new Float32Array(4),
       detailColorSlots: new Float32Array(0),
     });
+    const initialActiveTexture = runtimeState.modalBasisCache.texture;
+    const initialStandbyTexture = runtimeState.modalBasisCache.pendingTexture;
 
     tickRaymarchRuntime(runtimeState, frame, 1, 1 / 60, renderer);
     await flushMicrotasks();
     tickRaymarchRuntime(runtimeState, frame, 1 + 1 / 60, 1 / 60, renderer);
 
-    expect(runtimeState.modalBasisCache.activeDescriptor).toBeNull();
-    expect(runtimeState.modalBasisCache.ready).toBe(false);
-    expect(runtimeState.modalBasisCache.pendingReady).toBe(true);
-    expect(runtimeState.modalBasisCache.lastError).toBe(
-      "renderer-copy-unavailable",
+    expect(runtimeState.modalBasisCache.activeDescriptor).toBeTruthy();
+    expect(runtimeState.modalBasisCache.ready).toBe(true);
+    expect(runtimeState.modalBasisCache.pendingReady).toBe(false);
+    expect(runtimeState.modalBasisCache.lastError).toBeNull();
+    expect(runtimeState.modalBasisCache.texture).toBe(initialStandbyTexture);
+    expect(runtimeState.modalBasisCache.pendingTexture).toBe(
+      initialActiveTexture,
     );
-    expect(runtimeState.debugSnapshot.modalBasisCacheDrawable).toBe(false);
+    expect(
+      runtimeState.volumeMesh.userData.raymarchModalBasisAtlasTexture,
+    ).toBe(initialStandbyTexture);
+    expect(runtimeState.volumeMesh.material.modalBasisAtlasTexture).toBe(
+      initialStandbyTexture,
+    );
+    expect(runtimeState.debugSnapshot.modalBasisCacheDrawable).toBe(true);
   });
 
   it("does not promote pending modal-basis descriptors when cache textures alias", async () => {
@@ -4315,6 +4465,136 @@ describe("tickRaymarchRuntime", () => {
     expect(
       runtimeState.debugSnapshot.spectralLaneCacheRadianceInputTotal,
     ).toBeGreaterThan(0);
+  });
+
+  it("recomputes the Spectral lane cache after modal-basis atlas promotion", async () => {
+    const { runtimeState, renderer, spectralComputeCount } =
+      createSpectralLaneCacheHarness();
+    const frame = createSpectralLaneCacheFrame();
+
+    tickRaymarchRuntime(runtimeState, frame, 1, 1 / 60, renderer);
+    await flushMicrotasks();
+    tickRaymarchRuntime(runtimeState, frame, 1 + 1 / 60, 1 / 60, renderer);
+
+    const committedSpectralDescriptor =
+      runtimeState.spectralLaneCache.descriptor;
+    const rectangularAtlasTexture = runtimeState.modalBasisCache.texture;
+    expect(spectralComputeCount()).toBe(1);
+    expect(runtimeState.spectralLaneCache.ready).toBe(true);
+    expectSpectralLaneCacheModalBasisSource(
+      runtimeState,
+      rectangularAtlasTexture,
+    );
+
+    runtimeState.effectiveCavityGeometry = "spherical";
+    tickRaymarchRuntime(runtimeState, frame, 2, 1 / 60, renderer);
+    expect(runtimeState.debugSnapshot.modalBasisCacheStaleWhileRebuilding).toBe(
+      true,
+    );
+    expect(spectralComputeCount()).toBe(1);
+
+    await flushMicrotasks();
+    tickRaymarchRuntime(runtimeState, frame, 2 + 1 / 60, 1 / 60, renderer);
+
+    const promotedAtlasTexture = runtimeState.modalBasisCache.texture;
+    expect(promotedAtlasTexture).not.toBe(rectangularAtlasTexture);
+    expect(
+      runtimeState.volumeMesh.userData.raymarchModalBasisAtlasTexture,
+    ).toBe(promotedAtlasTexture);
+    expect(runtimeState.spectralLaneCache.descriptor).not.toBe(
+      committedSpectralDescriptor,
+    );
+    expect(runtimeState.spectralLaneCache.descriptor.hash).toBe(
+      committedSpectralDescriptor.hash,
+    );
+    expect(spectralComputeCount()).toBe(2);
+    expectSpectralLaneCacheModalBasisSource(runtimeState, promotedAtlasTexture);
+    expect(runtimeState.spectralLaneCache.lastComputeReason).toBe(
+      "frame-current",
+    );
+  });
+
+  it("recomputes the Spectral lane cache when atlas identity rotates back with new basis contents", async () => {
+    const { runtimeState, renderer, spectralComputeCount } =
+      createSpectralLaneCacheHarness();
+    const radiantFrame = createSpectralLaneCacheFrame();
+    const emptySpectralFrame = createEmptySpectralLaneCacheFrame();
+
+    tickRaymarchRuntime(runtimeState, radiantFrame, 1, 1 / 60, renderer);
+    await flushMicrotasks();
+    tickRaymarchRuntime(
+      runtimeState,
+      radiantFrame,
+      1 + 1 / 60,
+      1 / 60,
+      renderer,
+    );
+
+    const initialAtlasTexture = runtimeState.modalBasisCache.texture;
+    const initialModalBasisDescriptor =
+      runtimeState.modalBasisCache.activeDescriptor;
+    const initialSpectralDescriptor = runtimeState.spectralLaneCache.descriptor;
+    expect(spectralComputeCount()).toBe(1);
+    expectSpectralLaneCacheModalBasisSource(
+      runtimeState,
+      initialAtlasTexture,
+      initialModalBasisDescriptor,
+    );
+
+    runtimeState.effectiveCavityGeometry = "spherical";
+    tickRaymarchRuntime(runtimeState, emptySpectralFrame, 2, 1 / 60, renderer);
+    expect(spectralComputeCount()).toBe(1);
+    await flushMicrotasks();
+    tickRaymarchRuntime(
+      runtimeState,
+      emptySpectralFrame,
+      2 + 1 / 60,
+      1 / 60,
+      renderer,
+    );
+
+    const firstPromotedAtlasTexture = runtimeState.modalBasisCache.texture;
+    expect(firstPromotedAtlasTexture).not.toBe(initialAtlasTexture);
+    expect(spectralComputeCount()).toBe(1);
+    expectSpectralLaneCacheModalBasisSource(
+      runtimeState,
+      initialAtlasTexture,
+      initialModalBasisDescriptor,
+    );
+
+    runtimeState.uniforms.uRadius.value = 1.25;
+    tickRaymarchRuntime(runtimeState, emptySpectralFrame, 3, 1 / 60, renderer);
+    expect(spectralComputeCount()).toBe(1);
+    await flushMicrotasks();
+    tickRaymarchRuntime(
+      runtimeState,
+      emptySpectralFrame,
+      3 + 1 / 60,
+      1 / 60,
+      renderer,
+    );
+
+    const rotatedAtlasTexture = runtimeState.modalBasisCache.texture;
+    expect(rotatedAtlasTexture).toBe(initialAtlasTexture);
+    expect(runtimeState.modalBasisCache.activeDescriptor).not.toEqual(
+      initialModalBasisDescriptor,
+    );
+    expect(spectralComputeCount()).toBe(1);
+    expectSpectralLaneCacheModalBasisSource(
+      runtimeState,
+      initialAtlasTexture,
+      initialModalBasisDescriptor,
+    );
+
+    tickRaymarchRuntime(runtimeState, radiantFrame, 4, 1 / 60, renderer);
+    expect(runtimeState.spectralLaneCache.descriptor.hash).toBe(
+      initialSpectralDescriptor.hash,
+    );
+    expect(spectralComputeCount()).toBe(2);
+    expectSpectralLaneCacheModalBasisSource(runtimeState, rotatedAtlasTexture);
+    expect(runtimeState.spectralLaneCache.lastComputeReason).toBe(
+      "frame-current",
+    );
   });
 
   it("keeps Spectral lane color drawable for bounded capacity-limited descriptors", async () => {
@@ -4719,6 +4999,85 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.uniforms.uModalResponseEnergy.value).toBeCloseTo(0.52);
     expect(runtimeState.responseEnvelope).toBeGreaterThan(0.24);
     expect(runtimeState.visibilityDriveEnvelope).toBeGreaterThan(0.4);
+  });
+
+  it("restores the latest snapshot after re-snapshotting changed mode data", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 0;
+    runtimeState.liveFieldProjectionCache.computeNodesByKey[
+      "live-field-projection:capacity=16"
+    ] = { id: "live-field" };
+    const renderer = {
+      compute: vi.fn(),
+      computeAsync: vi.fn(async () => undefined),
+    };
+    const buildFrame = ({ modalFieldSlots, modalResponseEnergy }) => ({
+      fieldState: "active",
+      renderAuthority: true,
+      averageAmplitude: 48,
+      modalFieldSlots,
+      modalFieldPhaseSlots: new Float32Array([0.1, 0.2, 1, 1]),
+      modalFieldColorSlots: new Float32Array([9, 9, 9, 1]),
+      modalFieldSpectralLaneA: new Float32Array(4),
+      modalFieldSpectralLaneB: new Float32Array(4),
+      modalFieldSpectralMeta: new Float32Array(4),
+      modalFieldMetadataSlots: new Float32Array(4),
+      activeModeCount: 1,
+      activeModalFieldModeCount: 1,
+      modalResponseEnergy,
+    });
+    // Same (u,v,w) identity so the second frame re-snapshots without forcing
+    // an atlas rebuild; only the amplitude differs.
+    const initialFrame = buildFrame({
+      modalFieldSlots: new Float32Array([3, 4, 6, 0.8]),
+      modalResponseEnergy: 0.52,
+    });
+    const changedFrame = buildFrame({
+      modalFieldSlots: new Float32Array([3, 4, 6, 0.4]),
+      modalResponseEnergy: 0.52,
+    });
+    const rebuildingFrame = buildFrame({
+      modalFieldSlots: new Float32Array([5, 7, 8, 0.7]),
+      modalResponseEnergy: 0,
+    });
+    rebuildingFrame.averageAmplitude = 0;
+
+    tickRaymarchRuntime(runtimeState, initialFrame, 1, 1 / 60, renderer);
+    await flushMicrotasks();
+    tickRaymarchRuntime(
+      runtimeState,
+      initialFrame,
+      1 + 1 / 60,
+      1 / 60,
+      renderer,
+    );
+    const initialModeSlots = Array.from(
+      runtimeState.modalFieldModeBuffer.value.array.slice(0, 4),
+    );
+    expect(runtimeState.activeModalRenderPacket).toBeTruthy();
+
+    tickRaymarchRuntime(
+      runtimeState,
+      changedFrame,
+      1 + 2 / 60,
+      1 / 60,
+      renderer,
+    );
+    const changedModeSlots = Array.from(
+      runtimeState.modalFieldModeBuffer.value.array.slice(0, 4),
+    );
+    expect(changedModeSlots).not.toEqual(initialModeSlots);
+
+    tickRaymarchRuntime(runtimeState, rebuildingFrame, 2, 1 / 60, renderer);
+
+    expect(runtimeState.debugSnapshot.modalBasisCacheStaleWhileRebuilding).toBe(
+      true,
+    );
+    expect(runtimeState.modalRenderPacketRetained).toBeTruthy();
+    expect(
+      Array.from(runtimeState.modalFieldModeBuffer.value.array.slice(0, 4)),
+    ).toEqual(changedModeSlots);
   });
 
   it("retains the committed Spectral lane cache through an active empty packet frame", async () => {
@@ -6144,9 +6503,7 @@ describe("tickRaymarchRuntime", () => {
     expect(rawOnlyRuntimeState.uniforms.uModalResponseEnergy.value).toBeCloseTo(
       0.03,
     );
-    expect(runtimeState.uniforms.uModalResponseEnergy.value).toBeCloseTo(
-      0.31,
-    );
+    expect(runtimeState.uniforms.uModalResponseEnergy.value).toBeCloseTo(0.31);
     expect(runtimeState.debugSnapshot.raymarchDebug.modalResponseEnergy).toBe(
       0.31,
     );

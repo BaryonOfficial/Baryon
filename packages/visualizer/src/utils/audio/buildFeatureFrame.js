@@ -89,6 +89,7 @@ import {
   collectAudioSourceEvidenceInputs,
   resolveAudioRenderBoundary,
 } from "./audioSourceEvidence.js";
+import { clamp, clamp01, smoothstep } from "../math.js";
 
 const MODAL_FIELD_CONTINUITY_MAX_BASIS_MODE_ORDER =
   getModalBasisCacheMaxRepresentableModeIndex(MODAL_BASIS_CACHE_RESOLUTION);
@@ -607,23 +608,6 @@ function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
 
 function getFrameTimestamp() {
   return performance.now();
-}
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function clamp01(value) {
-  if (!Number.isFinite(value)) return 0;
-  return clamp(value, 0, 1);
-}
-
-function smoothstep(edge0, edge1, x) {
-  if (edge0 === edge1) {
-    return x < edge0 ? 0 : 1;
-  }
-  const t = clamp01((x - edge0) / (edge1 - edge0));
-  return t * t * (3 - 2 * t);
 }
 
 function averageArray(values) {

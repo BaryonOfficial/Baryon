@@ -9,6 +9,7 @@ import {
 } from "../utils/audio/spectralLanePacket.js";
 import { DEFAULT_EFFECTIVE_CAVITY_GEOMETRY } from "./cavityGeometry.js";
 import { getModalGeometryBackend } from "./modalGeometryBackend.js";
+import { clamp01 } from "../utils/math.js";
 
 const FNV_OFFSET_BASIS = 2166136261;
 const FNV_PRIME = 16777619;
@@ -18,10 +19,6 @@ const OVER_BANDWIDTH_DOMINANCE_EPSILON = 1e-9;
 const OVER_BANDWIDTH_SEMANTIC_DOMINANCE_RATIO = 0.85;
 const OVER_BANDWIDTH_AUTHORITY_ENTER_RATIO = 1.05;
 const OVER_BANDWIDTH_AUTHORITY_EXIT_RATIO = 0.9;
-
-function clamp01(value) {
-  return Math.min(1, Math.max(0, value));
-}
 
 function hashUint32(value, hash) {
   return Math.imul(hash ^ (value >>> 0), FNV_PRIME) >>> 0;

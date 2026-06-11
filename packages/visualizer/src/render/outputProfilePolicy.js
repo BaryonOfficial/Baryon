@@ -328,9 +328,7 @@ export function normalizeResolvedRenderQualityProfile(profile) {
     targetFps: normalizePerformanceTargetFps(candidate.targetFps),
     renderScale,
     traaEnabled:
-      typeof candidate.traaEnabled === "boolean"
-        ? candidate.traaEnabled
-        : true,
+      typeof candidate.traaEnabled === "boolean" ? candidate.traaEnabled : true,
     bloomAllowed:
       typeof candidate.bloomAllowed === "boolean"
         ? candidate.bloomAllowed

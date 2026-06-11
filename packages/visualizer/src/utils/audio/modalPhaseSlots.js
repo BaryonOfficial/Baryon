@@ -1,3 +1,5 @@
+import { clamp01 } from "../math.js";
+
 const RESONANT_PHASE_MAX_VELOCITY_RAD_PER_SEC = Math.PI * 1.25;
 const SOURCE_COUPLED_PHASE_MAX_VELOCITY_RAD_PER_SEC = Math.PI * 0.65;
 const RESONANT_PHASE_ATTACK = 0.32;
@@ -8,14 +10,6 @@ const SOURCE_COUPLED_PHASE_RELEASE = 0.84;
 export const PHASE_VELOCITY_BLEND = 0.18;
 export const PHASE_VELOCITY_RELEASE = 0.92;
 export const PHASE_AUTHORITY_MIN = 0.015;
-
-function clamp01(value) {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-
-  return Math.min(1, Math.max(0, value));
-}
 
 const TWO_PI = Math.PI * 2;
 // Largest finite phase magnitude for which `phase + Math.PI` does not lose

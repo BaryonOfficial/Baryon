@@ -577,10 +577,8 @@ test.describe("laser cymatic optical measurement visual audit", () => {
                 debug.spectralLightEvaluationMode ?? null,
               spectralLightImplementationState:
                 debug.spectralLightImplementationState ?? null,
-              spectralLaneCacheReady:
-                debug.spectralLaneCacheReady ?? false,
-              spectralLaneCacheActive:
-                debug.spectralLaneCacheActive ?? false,
+              spectralLaneCacheReady: debug.spectralLaneCacheReady ?? false,
+              spectralLaneCacheActive: debug.spectralLaneCacheActive ?? false,
               spectralLaneCacheComputedAtSec:
                 debug.spectralLaneCacheComputedAtSec ?? null,
               spectralLaneCacheBuiltAtSec:

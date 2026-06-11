@@ -1,5 +1,6 @@
 import { getModalGeometryBackend } from "../modalGeometryBackend.js";
 import { deriveObservationVisibilityDrive } from "./observationTransfer.js";
+import { clamp, clamp01, smoothstep } from "../../utils/math.js";
 
 export const MIN_COMPLEXITY_RENDER_SCALE = 0.84;
 
@@ -40,22 +41,6 @@ export function deriveRaymarchBloomAllowed({
     effectiveStepBudget <= BLOOM_GUARD_STEP_BUDGET_CUTOFF &&
     effectiveRenderScale <= BLOOM_GUARD_RENDER_SCALE_CUTOFF
   );
-}
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function clamp01(value) {
-  return clamp(value, 0, 1);
-}
-
-function smoothstep(edge0, edge1, value) {
-  if (edge0 === edge1) {
-    return value >= edge1 ? 1 : 0;
-  }
-  const t = clamp01((value - edge0) / (edge1 - edge0));
-  return t * t * (3 - 2 * t);
 }
 
 function copySlot4(source, sourceOffset, target, targetOffset) {

@@ -1,15 +1,5 @@
 import { deriveObservationTransfer } from "./observationTransfer.js";
-
-function clamp(value, min, max) {
-  if (!Number.isFinite(value)) {
-    return min;
-  }
-  return Math.min(max, Math.max(min, value));
-}
-
-function clamp01(value) {
-  return clamp(value, 0, 1);
-}
+import { clamp01 } from "../../utils/math.js";
 
 function readPositiveFinite(value, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback;
@@ -30,8 +20,7 @@ export function deriveRaymarchDiagnosticVisibility({
   const safeRawDensity = clamp01(rawDensityEstimate);
   const safeObservationAnchor = clamp01(observationAnchor);
   const safeSignedRadianceAuthority = clamp01(signedRadianceAuthority);
-  const diagnosticSupport =
-    safeObservationAnchor * safeSignedRadianceAuthority;
+  const diagnosticSupport = safeObservationAnchor * safeSignedRadianceAuthority;
   const supportedPhysicalDensity = safeRawDensity * diagnosticSupport;
   const observationTransfer = deriveObservationTransfer({
     density: supportedPhysicalDensity,

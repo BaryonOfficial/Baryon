@@ -1,3 +1,5 @@
+import { clamp, clamp01, smoothstep } from "../math.js";
+
 export const SPECTRAL_VISIBLE_RED_NM = 780;
 export const SPECTRAL_VISIBLE_VIOLET_NM = 380;
 export const SPECTRAL_CIE_STEP_NM = 5;
@@ -10,7 +12,8 @@ const SPEED_OF_LIGHT_M_PER_S = 299_792_458;
 const D65_WHITE = Object.freeze({ x: 0.95047, y: 1, z: 1.08883 });
 const CIE_TABLE_MIN_NM = SPECTRAL_VISIBLE_VIOLET_NM;
 const CIE_TABLE_MAX_NM = SPECTRAL_VISIBLE_RED_NM;
-const SPECTRAL_LIGHT_LANE_DEFAULT_SPREAD = 1 / (SPECTRAL_LIGHT_LANE_COUNT * 2.5);
+const SPECTRAL_LIGHT_LANE_DEFAULT_SPREAD =
+  1 / (SPECTRAL_LIGHT_LANE_COUNT * 2.5);
 
 export const SPECTRAL_CIE_1931_2DEG_5NM = Object.freeze([
   { x: 0.0014, y: 0.0, z: 0.0065 },
@@ -96,27 +99,10 @@ export const SPECTRAL_CIE_1931_2DEG_5NM = Object.freeze([
   { x: 0.0, y: 0.0, z: 0.0 },
 ]);
 
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function clamp01(value) {
-  if (!Number.isFinite(value)) return 0;
-  return clamp(value, 0, 1);
-}
-
 const SPECTRAL_LIGHT_STRENGTH_GATE_START = 0.04;
 const SPECTRAL_LIGHT_STRENGTH_GATE_END = 0.32;
 const SPECTRAL_OBSERVER_LUMINANCE_TARGET = 0.42;
 const SPECTRAL_OBSERVER_LUMINANCE_MIN_SCALE = 0.62;
-
-function smoothstep(edge0, edge1, value) {
-  if (edge1 <= edge0) {
-    return value >= edge1 ? 1 : 0;
-  }
-  const normalized = clamp01((value - edge0) / (edge1 - edge0));
-  return normalized * normalized * (3 - 2 * normalized);
-}
 
 function fract(value) {
   return value - Math.floor(value);
@@ -333,7 +319,9 @@ export function createSpectralLightLaneDistribution({
 } = {}) {
   const laneCount = SPECTRAL_LIGHT_LANE_COUNT;
   const lanes = new Float32Array(laneCount);
-  const safePhase = fract(Number.isFinite(phase) ? phase : SPECTRAL_PHASE_DEFAULT);
+  const safePhase = fract(
+    Number.isFinite(phase) ? phase : SPECTRAL_PHASE_DEFAULT,
+  );
   const safeSpread = Number.isFinite(spread) ? Math.max(0, spread) : 0;
 
   if (safeSpread <= SPECTRAL_EPSILON) {

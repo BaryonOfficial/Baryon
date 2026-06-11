@@ -1,3 +1,5 @@
+import { clamp01 } from "../math.js";
+
 export const AUDIO_SOURCE_EVIDENCE_VERSION = "audio-source-evidence:v1";
 
 const CURRENT_SOURCE_AVG_FLOOR = 0.02;
@@ -11,14 +13,6 @@ const FILE_WEAK_SPECTRAL_FALLBACK_RMS_MAX = 0.025;
 const FILE_WEAK_RESONANT_AVG_MIN = 5;
 const FILE_WEAK_RESONANT_AVG_MAX = 10;
 const FILE_WEAK_RESONANT_RMS_MAX = 0.03;
-
-function clamp01(value) {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-
-  return Math.min(1, Math.max(0, value));
-}
 
 function readFinite(value, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;

@@ -32,6 +32,12 @@ Current modal visibility semantics:
   density wash, spherical eigenmode switch, or independent mode promoter
 - the current physical model is:
   `audio drive -> rectangular water-cavity modes -> modal pressure field -> spherical render hull`
+- `Cavity Geometry` is a requested diagnostic/control surface today. Effective
+  modal evaluation remains rectangular until a real alternate backend provides
+  eigenfunctions, frequency families, field evaluation, and tests.
+- pressure/radiation carriers are normalized visualization quantities. They are
+  not calibrated pascals, calibrated particle velocity, or proof of physical
+  particle trapping.
 - appearance descriptors are deterministic audio-derived fields. They may
   affect color, iridescence, and style, but must not drive modal promotion,
   core structure signals, visibility, density, or performance salience.
@@ -66,8 +72,8 @@ The intended shape is:
 - a color value must not independently promote a mode
 - the main render path must not add a global Spectral Light fallback tint
 
-Detailed Spectral Light design notes and the engine whitepaper live in private
-internal documentation and are intentionally not exported with the public repo.
+The detailed Spectral Light architecture lives in the internal engine
+whitepaper and is intentionally not exported with the public repo.
 
 ## Internal Optimization Boundary: Audio Engine Transport Frames
 
@@ -245,6 +251,12 @@ That distinction affects:
 - expected visualization behavior under live input
 
 Changes that “simplify” these paths into a single live-input mode are high risk unless the task explicitly intends a semantic merge.
+
+Acoustic mic intent is a policy layer inside acoustic mic semantics. `Ambient`
+and `Vocal` should remain small gate-policy deltas over one shared acoustic
+input engine; they should not become separate analyzers, modal engines, or
+renderer branches. Acoustic source confidence is input evidence only. It is not
+render authority.
 
 ### Line-feed program activity vs session intent vs render authority
 

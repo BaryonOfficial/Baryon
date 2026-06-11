@@ -748,8 +748,12 @@ function hasRenderableSpectralLanePayload(analysisResult) {
 
   return (
     activeModeCount > 0 &&
-    (hasPositiveSpectralLaneWeight(analysisResult?.sourceCoupledSpectralLaneA) ||
-      hasPositiveSpectralLaneWeight(analysisResult?.sourceCoupledSpectralLaneB) ||
+    (hasPositiveSpectralLaneWeight(
+      analysisResult?.sourceCoupledSpectralLaneA,
+    ) ||
+      hasPositiveSpectralLaneWeight(
+        analysisResult?.sourceCoupledSpectralLaneB,
+      ) ||
       hasPositiveSpectralLaneWeight(analysisResult?.resonantSpectralLaneA) ||
       hasPositiveSpectralLaneWeight(analysisResult?.resonantSpectralLaneB))
   );
@@ -758,9 +762,9 @@ function hasRenderableSpectralLanePayload(analysisResult) {
 function hasPreparedSourceActivity({ preparedInputs, controls }) {
   return Boolean(
     controls?.injectTestTone ||
-      preparedInputs?.soundActive ||
-      preparedInputs?.micActive ||
-      preparedInputs?.lineFeedProgramActive,
+    preparedInputs?.soundActive ||
+    preparedInputs?.micActive ||
+    preparedInputs?.lineFeedProgramActive,
   );
 }
 

@@ -68,10 +68,12 @@ import {
 } from "./performanceGovernor.js";
 import {
   RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES,
+  setRaymarchModalBasisAtlasTexture,
   setRaymarchSpectralLightEvaluationMode,
   setRaymarchCavityGeometry,
 } from "./material.js";
 import { resolveIdleOverlayVisible } from "../idleLogoVisibility.js";
+import { clamp, clamp01, smoothstep } from "../../utils/math.js";
 const EMPTY_BAND_ENERGIES = Object.freeze([0, 0, 0, 0]);
 const RESPONSE_ATTACK = 7;
 const RESPONSE_RELEASE = 3.6;
@@ -101,22 +103,6 @@ const FNV_OFFSET_BASIS = 2166136261;
 const FNV_PRIME = 16777619;
 const HASH_FLOAT_VIEW = new Float32Array(1);
 const HASH_UINT_VIEW = new Uint32Array(HASH_FLOAT_VIEW.buffer);
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function clamp01(value) {
-  return clamp(value, 0, 1);
-}
-
-function smoothstep(edge0, edge1, value) {
-  if (edge0 === edge1) {
-    return value >= edge1 ? 1 : 0;
-  }
-  const t = clamp01((value - edge0) / (edge1 - edge0));
-  return t * t * (3 - 2 * t);
-}
 
 function damp(current, target, smoothing, deltaTime) {
   const factor = 1 - Math.exp(-Math.max(0, smoothing) * Math.max(0, deltaTime));
@@ -437,9 +423,22 @@ function clearBufferNode(bufferNode) {
   bufferNode.value.needsUpdate = true;
 }
 
-function snapshotBufferArray(bufferNode) {
+// Reuses the displaced packet's snapshot storage when shapes match: the
+// active render packet is re-snapshotted every coherent tick, and fresh
+// clones of seven mode buffers per frame are measurable GC churn.
+function snapshotBufferArray(bufferNode, reusableSnapshot = null) {
   const array = bufferNode?.value?.array;
-  return array ? new Float32Array(array) : null;
+  if (!array) {
+    return null;
+  }
+  if (
+    reusableSnapshot instanceof Float32Array &&
+    reusableSnapshot.length === array.length
+  ) {
+    reusableSnapshot.set(array);
+    return reusableSnapshot;
+  }
+  return new Float32Array(array);
 }
 
 function restoreBufferArray(bufferNode, snapshot) {
@@ -478,33 +477,6 @@ function resetCacheActivity(cache) {
   }
   advanceRaymarchCacheGeneration(cache);
   clearQueuedRaymarchCacheRebuild(cache);
-}
-
-function resetModalBasisCacheRuntimeDiagnostics(modalBasisCache) {
-  if (!modalBasisCache) {
-    return;
-  }
-
-  modalBasisCache.activeBasisPageModeCount = 0;
-  modalBasisCache.modalBasisCachePhaseAuthority = 0;
-  modalBasisCache.contributingBasisPageModeCount = 0;
-  modalBasisCache.zeroAmplitudeSkippedModeCount = 0;
-  modalBasisCache.contributingRawModalEnergy = 0;
-  modalBasisCache.bandwidthRejectedModeCount = 0;
-  modalBasisCache.bandwidthRejectedRawModalEnergy = 0;
-  modalBasisCache.contributingStructuralModalEnergy = 0;
-  modalBasisCache.bandwidthRejectedStructuralModalEnergy = 0;
-  modalBasisCache.liveSynthesisResolvedRawModalEnergyRatio = 1;
-  modalBasisCache.liveSynthesisResolvedStructuralModalEnergyRatio = 1;
-  modalBasisCache.liveSynthesisRawGradientEnvelope = 0;
-  modalBasisCache.liveSynthesisStructuralGradientEnvelope = 0;
-  modalBasisCache.liveSynthesisUnsignedSupportMean = 0;
-  modalBasisCache.liveSynthesisCancellationRatioMean = 0;
-  modalBasisCache.liveSynthesisCancellationRatioMax = 0;
-  modalBasisCache.liveSynthesisSupportDiagnosticSampleCount = 0;
-  modalBasisCache.liveSynthesisSupportDiagnosticSupportedSampleCount = 0;
-  modalBasisCache.liveSynthesisSupportDiagnosticCoverage = 0;
-  modalBasisCache.lastAuditDiagnostics = null;
 }
 
 function applyModalBasisAuditDiagnostics(runtimeState, auditDiagnostics) {
@@ -557,25 +529,32 @@ function setModalBasisCacheDrawableAuthority(runtimeState, authority) {
   return normalizedAuthority;
 }
 
-function blockModalBasisCacheForDescriptor(modalBasisCache, reason) {
+function suspendModalBasisCacheRebuilds(modalBasisCache, reason) {
   if (!modalBasisCache) {
     return;
   }
 
+  // Cancel in-flight and queued rebuild work but retain the committed atlas.
+  // Basis pages are coefficient-invariant — cache freshness is semantic
+  // topology — so silence, source cuts, and momentarily blocked descriptors
+  // do not invalidate them. Fail-closed visibility is owned by drawable and
+  // display authority; discarding the atlas here only forced a multi-frame
+  // rebuild gap (dropped frames) when the same topology returned.
   advanceRaymarchCacheGeneration(modalBasisCache);
-  modalBasisCache.ready = false;
+  modalBasisCache.ready = Boolean(modalBasisCache.activeDescriptor);
   modalBasisCache.rebuildPending = false;
-  modalBasisCache.activeDescriptor = null;
   modalBasisCache.pendingDescriptor = null;
   modalBasisCache.pendingReady = false;
   modalBasisCache.pendingCacheBuiltAtSec = null;
   modalBasisCache.pendingRebuildReason = null;
-  modalBasisCache.activePhaseSampleTimeSec = null;
   modalBasisCache.pendingPhaseSampleTimeSec = null;
-  modalBasisCache.activeCacheBuiltAtSec = null;
   clearQueuedRaymarchCacheRebuild(modalBasisCache);
+  if (modalBasisCache.backend === "unavailable") {
+    // Allow a compute retry after the suspension instead of staying blocked.
+    modalBasisCache.backend = "compute";
+  }
   modalBasisCache.lastError = null;
-  modalBasisCache.lastRebuildReason = reason ?? "blocked";
+  modalBasisCache.lastRebuildReason = reason ?? "suspended";
 }
 
 function deactivateLiveFieldProjectionCache(runtimeState, reason = "inactive") {
@@ -696,14 +675,19 @@ function resetRenderAuthorityState(runtimeState) {
   runtimeState.activeModalRenderPacket = null;
   runtimeState.modalRenderPacketRetained = null;
   resetRaymarchUploadState(runtimeState);
-  resetCacheActivity(runtimeState.modalBasisCache);
+  suspendModalBasisCacheRebuilds(
+    runtimeState.modalBasisCache,
+    "render-authority-reset",
+  );
+  if (runtimeState.modalBasisCache) {
+    runtimeState.modalBasisCache.active = false;
+  }
   resetCacheActivity(runtimeState.liveFieldProjectionCache);
   resetCacheActivity(runtimeState.spectralLaneCache);
   if (runtimeState.spectralLaneCache) {
     runtimeState.spectralLaneCache.descriptor = null;
     runtimeState.spectralLaneCache.activeDescriptor = null;
   }
-  resetModalBasisCacheRuntimeDiagnostics(runtimeState.modalBasisCache);
   deactivateLiveFieldProjectionCache(runtimeState, "render-authority-reset");
   setRaymarchSpectralLightEvaluationMode(
     runtimeState.volumeMesh,
@@ -1008,11 +992,12 @@ function blockNonAuthoritativeModalDescriptor(
   runtimeState.activeModalRenderPacket = null;
   runtimeState.modalRenderPacketRetained = null;
   resetRaymarchUploadState(runtimeState);
-  resetCacheActivity(runtimeState.modalBasisCache);
+  suspendModalBasisCacheRebuilds(runtimeState.modalBasisCache, reason);
+  if (runtimeState.modalBasisCache) {
+    runtimeState.modalBasisCache.active = false;
+  }
   resetCacheActivity(runtimeState.liveFieldProjectionCache);
   resetCacheActivity(runtimeState.spectralLaneCache);
-  blockModalBasisCacheForDescriptor(runtimeState.modalBasisCache, reason);
-  resetModalBasisCacheRuntimeDiagnostics(runtimeState.modalBasisCache);
   deactivateLiveFieldProjectionCache(runtimeState, reason);
   setIfChanged(runtimeState.uniforms.uModalFieldModeCount, 0);
   setIfChanged(runtimeState.uniforms.uTotalSlotAmplitude, 0);
@@ -1204,11 +1189,8 @@ function buildRaymarchDebugSnapshot(
     1,
     avgAmplitude * densityGain * absorption * (0.75 + transientEnergy * 0.2),
   );
-  const {
-    avgRaySegmentLength = 0,
-    missRatio = 0,
-    avgSilhouetteSuppression = 0,
-  } = runtimeState.stabilityStats ?? {};
+  const { avgRaySegmentLength = 0, missRatio = 0 } =
+    runtimeState.stabilityStats ?? {};
   const primaryLightIntensity =
     runtimeState.sceneLighting?.primary?.intensity ?? 0;
   const secondaryLightIntensity =
@@ -1366,7 +1348,7 @@ function buildRaymarchDebugSnapshot(
     null;
   const liveFieldPressureRadiationReady = Boolean(
     liveFieldProjectionCache?.ready === true &&
-      liveFieldProjectionCache?.pressureRadiationTexture,
+    liveFieldProjectionCache?.pressureRadiationTexture,
   );
   const liveFieldPressureRadiationSemantic =
     liveFieldProjectionCache?.pressureRadiationSemantic ??
@@ -1807,8 +1789,7 @@ function buildRaymarchDebugSnapshot(
       liveFieldProjectionCache?.lastComputeReason ?? "uninitialized",
     liveFieldProjectionCacheComputedAtSec:
       liveFieldProjectionCache?.lastComputedAtSec ?? null,
-    liveFieldProjectionPressureRadiationReady:
-      liveFieldPressureRadiationReady,
+    liveFieldProjectionPressureRadiationReady: liveFieldPressureRadiationReady,
     liveFieldProjectionPressureRadiationSemantic:
       liveFieldPressureRadiationSemantic,
     radiationMaterialContrastSemantic,
@@ -1864,7 +1845,6 @@ function buildRaymarchDebugSnapshot(
     holographicReferenceStrength,
     avgRaySegmentLength,
     missRatio,
-    avgSilhouetteSuppression,
     primaryLightIntensity,
     secondaryLightIntensity,
     sceneLightAsymmetry: deriveLightAsymmetry(
@@ -2516,7 +2496,7 @@ function updateModalBasisCache(
       modalBasisCacheDescriptor,
     );
   if (descriptorBlockedReason) {
-    blockModalBasisCacheForDescriptor(modalBasisCache, descriptorBlockedReason);
+    suspendModalBasisCacheRebuilds(modalBasisCache, descriptorBlockedReason);
     const drawableAuthority = setModalBasisCacheDrawableAuthority(
       runtimeState,
       resolveRaymarchModalBasisCacheDrawableAuthority(
@@ -2560,72 +2540,6 @@ function updateModalBasisCache(
     return "modal-basis-cached";
   }
   return "unavailable";
-}
-
-function resolveCacheTextureCopyRegion(cache) {
-  const sourceData =
-    cache?.pendingTexture?.source?.data ?? cache?.pendingTexture?.image ?? {};
-  const width = Math.max(
-    1,
-    Math.round(sourceData.width ?? cache?.resolution ?? 1),
-  );
-  const height = Math.max(
-    1,
-    Math.round(sourceData.height ?? cache?.resolution ?? width),
-  );
-  const depth = Math.max(
-    1,
-    Math.round(sourceData.depth ?? cache?.depth ?? cache?.resolution ?? width),
-  );
-  return new THREE.Box3(
-    new THREE.Vector3(0, 0, 0),
-    new THREE.Vector3(width, height, depth),
-  );
-}
-
-function copyPendingCacheTextureToActive(renderer, cache) {
-  const texturePairs = [
-    ["pendingTexture", "texture"],
-    ...(cache?.pendingCausticTexture || cache?.causticTexture
-      ? [["pendingCausticTexture", "causticTexture"]]
-      : []),
-  ];
-  if (!cache || texturePairs.length <= 0) {
-    return false;
-  }
-  if (typeof renderer?.copyTextureToTexture !== "function") {
-    cache.lastError = "renderer-copy-unavailable";
-    cache.lastRebuildReason = "copy-unavailable";
-    return false;
-  }
-
-  for (const [pendingKey, activeKey] of texturePairs) {
-    const pendingTexture = cache[pendingKey];
-    const activeTexture = cache[activeKey];
-    if (!pendingTexture || !activeTexture) {
-      cache.lastError = "cache-texture-missing";
-      cache.lastRebuildReason = "texture-missing";
-      return false;
-    }
-    if (pendingTexture === activeTexture) {
-      cache.lastError = "cache-texture-alias";
-      cache.lastRebuildReason = "texture-alias";
-      return false;
-    }
-  }
-
-  const copyRegion = resolveCacheTextureCopyRegion(cache);
-  for (const [pendingKey, activeKey] of texturePairs) {
-    renderer.copyTextureToTexture(
-      cache[pendingKey],
-      cache[activeKey],
-      copyRegion,
-      new THREE.Vector3(0, 0, 0),
-      0,
-      0,
-    );
-  }
-  return true;
 }
 
 function buildRuntimeSpectralLaneCacheDescriptor(
@@ -2704,7 +2618,9 @@ function buildRuntimeSpectralLaneCacheDescriptor(
 
 function readCommittedSpectralLaneCache(spectralLaneCache) {
   const descriptor =
-    spectralLaneCache?.descriptor ?? spectralLaneCache?.activeDescriptor ?? null;
+    spectralLaneCache?.descriptor ??
+    spectralLaneCache?.activeDescriptor ??
+    null;
   if (
     spectralLaneCache?.ready !== true ||
     !descriptor ||
@@ -2720,6 +2636,9 @@ function readCommittedSpectralLaneCache(spectralLaneCache) {
     activeDescriptor: spectralLaneCache.activeDescriptor ?? descriptor,
     activeCacheBuiltAtSec: spectralLaneCache.activeCacheBuiltAtSec ?? null,
     lastComputedAtSec: spectralLaneCache.lastComputedAtSec ?? null,
+    modalBasisCacheDescriptor:
+      spectralLaneCache.modalBasisCacheDescriptor ?? null,
+    modalBasisAtlasTexture: spectralLaneCache.modalBasisAtlasTexture ?? null,
   };
 }
 
@@ -2730,12 +2649,44 @@ function hasRadiantSpectralLaneDescriptor(descriptor) {
   );
 }
 
-function canRetainSpectralLaneCacheAfterMiss(committedCache, reason) {
+function spectralLaneCacheHasCurrentModalBasisSource(
+  committedCache,
+  modalBasisAtlasTexture,
+  modalBasisCacheDescriptor,
+) {
+  const committedModalBasisDescriptor =
+    committedCache?.modalBasisCacheDescriptor ?? null;
+  const modalBasisDescriptorFresh = Boolean(
+    committedModalBasisDescriptor &&
+    modalBasisCacheDescriptor &&
+    getRaymarchModalBasisCacheDescriptorStaleReason({
+      activeDescriptor: committedModalBasisDescriptor,
+      nextDescriptor: modalBasisCacheDescriptor,
+    }) == null,
+  );
+  return Boolean(
+    committedCache?.modalBasisAtlasTexture &&
+    modalBasisAtlasTexture &&
+    committedCache.modalBasisAtlasTexture === modalBasisAtlasTexture &&
+    modalBasisDescriptorFresh,
+  );
+}
+
+function canRetainSpectralLaneCacheAfterMiss(
+  committedCache,
+  reason,
+  modalBasisAtlasTexture,
+  modalBasisCacheDescriptor,
+) {
   return (
     Boolean(committedCache) &&
+    spectralLaneCacheHasCurrentModalBasisSource(
+      committedCache,
+      modalBasisAtlasTexture,
+      modalBasisCacheDescriptor,
+    ) &&
     hasRadiantSpectralLaneDescriptor(committedCache.descriptor) &&
-    (reason === "renderer-unavailable" ||
-      reason === "compute-node-unavailable")
+    (reason === "renderer-unavailable" || reason === "compute-node-unavailable")
   );
 }
 
@@ -2747,6 +2698,10 @@ function retainSpectralLaneCache(spectralLaneCache, reason, committedCache) {
     spectralLaneCache.activeCacheBuiltAtSec =
       committedCache.activeCacheBuiltAtSec;
     spectralLaneCache.lastComputedAtSec = committedCache.lastComputedAtSec;
+    spectralLaneCache.modalBasisCacheDescriptor =
+      committedCache.modalBasisCacheDescriptor ?? null;
+    spectralLaneCache.modalBasisAtlasTexture =
+      committedCache.modalBasisAtlasTexture ?? null;
   }
   spectralLaneCache.active = true;
   spectralLaneCache.ready = true;
@@ -2757,22 +2712,34 @@ function retainSpectralLaneCache(spectralLaneCache, reason, committedCache) {
 function shouldRetainCommittedSpectralLaneCache(
   spectralLaneCache,
   nextDescriptor,
+  modalBasisAtlasTexture,
+  modalBasisCacheDescriptor,
 ) {
   if (spectralLaneCache?.ready !== true || !nextDescriptor) {
     return false;
   }
   const committedDescriptor =
     spectralLaneCache.descriptor ?? spectralLaneCache.activeDescriptor ?? null;
-  if (committedDescriptor?.hash === nextDescriptor.hash) {
-    return true;
-  }
-  return Boolean(
+  const retainEmptyPacket = Boolean(
     nextDescriptor.spectralLaneActivePacketCount === 0 &&
     nextDescriptor.spectralLaneRadianceInputTotal <= 1e-8 &&
     (nextDescriptor.modalFieldCount ?? 0) > 0 &&
     (committedDescriptor?.spectralLaneActivePacketCount ?? 0) > 0 &&
     (committedDescriptor?.spectralLaneRadianceInputTotal ?? 0) > 1e-8,
   );
+  if (
+    !spectralLaneCacheHasCurrentModalBasisSource(
+      spectralLaneCache,
+      modalBasisAtlasTexture,
+      modalBasisCacheDescriptor,
+    )
+  ) {
+    return retainEmptyPacket;
+  }
+  if (committedDescriptor?.hash === nextDescriptor.hash) {
+    return true;
+  }
+  return retainEmptyPacket;
 }
 
 function resolveSpectralLaneRetentionReason(spectralLaneCache, nextDescriptor) {
@@ -2850,7 +2817,14 @@ function updateSpectralLaneCache(
     { modalFieldCapacity },
   );
   const committedCache = readCommittedSpectralLaneCache(spectralLaneCache);
-  if (shouldRetainCommittedSpectralLaneCache(spectralLaneCache, descriptor)) {
+  if (
+    shouldRetainCommittedSpectralLaneCache(
+      spectralLaneCache,
+      descriptor,
+      modalBasisAtlasTexture,
+      modalBasisCacheDescriptor,
+    )
+  ) {
     return retainSpectralLaneCache(
       spectralLaneCache,
       resolveSpectralLaneRetentionReason(spectralLaneCache, descriptor),
@@ -2858,6 +2832,7 @@ function updateSpectralLaneCache(
   }
   const result = computeRaymarchSpectralLaneCache(spectralLaneCache, renderer, {
     descriptor,
+    modalBasisCacheDescriptor,
     modalBasisAtlasTexture,
     modalFieldCoefficientBuffer: runtimeState.modalFieldCoefficientBuffer,
     modalFieldSpectralLaneABuffer: runtimeState.modalFieldSpectralLaneABuffer,
@@ -2867,7 +2842,14 @@ function updateSpectralLaneCache(
     uniforms: runtimeState.uniforms,
     schedulerTimeSec,
   });
-  if (canRetainSpectralLaneCacheAfterMiss(committedCache, result.reason)) {
+  if (
+    canRetainSpectralLaneCacheAfterMiss(
+      committedCache,
+      result.reason,
+      modalBasisAtlasTexture,
+      modalBasisCacheDescriptor,
+    )
+  ) {
     return retainSpectralLaneCache(
       spectralLaneCache,
       SPECTRAL_LANE_CACHE_UNAVAILABLE_RETAINED_REASON,
@@ -2913,11 +2895,7 @@ function updateRaymarchEvaluationModes(
   updateModalBasisCache(runtimeState, renderer, capacities, {
     modalBasisCacheDescriptor,
   });
-  reconcileReadyModalBasisRenderPacket(
-    runtimeState,
-    renderer,
-    modalBasisCacheDescriptor,
-  );
+  reconcileReadyModalBasisRenderPacket(runtimeState, modalBasisCacheDescriptor);
   updateSpectralLaneCache(runtimeState, renderer, {
     spectralLightEnabled,
     modalBasisCacheDescriptor,
@@ -3004,10 +2982,7 @@ function readModalResponseEnergy(featureFrame) {
     Math.max(
       readFiniteNumber(featureFrame?.modalResponseEnergy, 0),
       readFiniteNumber(featureFrame?.modalResponseRenderEnergy, 0),
-      readFiniteNumber(
-        featureFrame?.modalResponseRenderSourceCoupledEnergy,
-        0,
-      ),
+      readFiniteNumber(featureFrame?.modalResponseRenderSourceCoupledEnergy, 0),
       readFiniteNumber(featureFrame?.modalResponseRenderResonantEnergy, 0),
       readFiniteNumber(featureFrame?.debug?.modalResponseEnergy, 0),
       readFiniteNumber(featureFrame?.debug?.modalResponseRenderEnergy, 0),
@@ -3041,9 +3016,11 @@ function snapshotActiveModalRenderPacket(runtimeState, featureFrame) {
     0,
     Math.floor(runtimeState?.uniforms?.uModalFieldModeCount?.value ?? 0),
   );
+  // The displaced packet is unreachable once replaced, so its buffer
+  // snapshots are safe to recycle.
+  const displacedPacket = runtimeState?.activeModalRenderPacket ?? null;
   return {
-    generationId:
-      (runtimeState?.activeModalRenderPacket?.generationId ?? 0) + 1,
+    generationId: (displacedPacket?.generationId ?? 0) + 1,
     descriptor: runtimeState.currentModalBasisCacheDescriptor ?? null,
     spectralLightDescriptor:
       runtimeState.currentSpectralLightDescriptor ?? null,
@@ -3054,24 +3031,31 @@ function snapshotActiveModalRenderPacket(runtimeState, featureFrame) {
         ?.identityPageAssignmentHash ?? null,
     modalFieldModeBuffer: snapshotBufferArray(
       runtimeState.modalFieldModeBuffer,
+      displacedPacket?.modalFieldModeBuffer,
     ),
     modalFieldColorBuffer: snapshotBufferArray(
       runtimeState.modalFieldColorBuffer,
+      displacedPacket?.modalFieldColorBuffer,
     ),
     modalFieldSpectralLaneABuffer: snapshotBufferArray(
       runtimeState.modalFieldSpectralLaneABuffer,
+      displacedPacket?.modalFieldSpectralLaneABuffer,
     ),
     modalFieldSpectralLaneBBuffer: snapshotBufferArray(
       runtimeState.modalFieldSpectralLaneBBuffer,
+      displacedPacket?.modalFieldSpectralLaneBBuffer,
     ),
     modalFieldSpectralMetaBuffer: snapshotBufferArray(
       runtimeState.modalFieldSpectralMetaBuffer,
+      displacedPacket?.modalFieldSpectralMetaBuffer,
     ),
     modalFieldPhaseBuffer: snapshotBufferArray(
       runtimeState.modalFieldPhaseBuffer,
+      displacedPacket?.modalFieldPhaseBuffer,
     ),
     modalFieldCoefficientBuffer: snapshotBufferArray(
       runtimeState.modalFieldCoefficientBuffer,
+      displacedPacket?.modalFieldCoefficientBuffer,
     ),
     modalFieldModeCount: activeModeCount,
     modalBasisPhaseAuthorityModeCount:
@@ -3200,11 +3184,7 @@ function syncModalRenderPacketState(runtimeState, featureFrame) {
   }
 }
 
-function reconcileReadyModalBasisRenderPacket(
-  runtimeState,
-  renderer,
-  descriptor,
-) {
+function reconcileReadyModalBasisRenderPacket(runtimeState, descriptor) {
   const modalBasisCache = runtimeState?.modalBasisCache;
   if (!modalBasisCache?.pendingReady) {
     return false;
@@ -3232,14 +3212,12 @@ function reconcileReadyModalBasisRenderPacket(
     return false;
   }
 
-  if (!copyPendingCacheTextureToActive(renderer, modalBasisCache)) {
-    return false;
-  }
   const result =
     commitRaymarchModalBasisCachePendingDescriptor(modalBasisCache);
   if (result.committed !== true) {
     return false;
   }
+  setRaymarchModalBasisAtlasTexture(runtimeState.volumeMesh, result.texture);
 
   setModalBasisCacheDrawableAuthority(
     runtimeState,

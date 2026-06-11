@@ -121,9 +121,7 @@ describe("live synthesis cancellation ratio", () => {
 describe("normalized pressure and radiation potential", () => {
   it("derives pressure and velocity proxy from coherent modal summation before radiation material transfer", () => {
     const commonOptions = {
-      backboneSlots: new Float32Array([
-        1, 2, 3, 0.8, 2, 1, 1, 0.4,
-      ]),
+      backboneSlots: new Float32Array([1, 2, 3, 0.8, 2, 1, 1, 0.4]),
       detailSlots: new Float32Array(0),
       backbonePhaseSlots: new Float32Array([0, 0, 1, 1, 0, 0, 1, 1]),
       detailPhaseSlots: new Float32Array(0),
@@ -142,10 +140,7 @@ describe("normalized pressure and radiation potential", () => {
       Math.hypot(pressureOnly.gradX, pressureOnly.gradY, pressureOnly.gradZ),
     );
 
-    expect(pressureOnly.normalizedPressure).toBeCloseTo(
-      pressureOnly.field,
-      6,
-    );
+    expect(pressureOnly.normalizedPressure).toBeCloseTo(pressureOnly.field, 6);
     expect(pressureOnly.normalizedPressureProvenance).toBe(
       "coherent-signed-modal-summation",
     );
@@ -180,7 +175,8 @@ describe("normalized pressure and radiation potential", () => {
           raymarchFieldCache.RAYMARCH_VISUALIZATION_RADIATION_MATERIAL_CONTRAST
             .pressureEnergyWeight -
           withContrast.normalizedVelocityEnergy *
-            raymarchFieldCache.RAYMARCH_VISUALIZATION_RADIATION_MATERIAL_CONTRAST
+            raymarchFieldCache
+              .RAYMARCH_VISUALIZATION_RADIATION_MATERIAL_CONTRAST
               .velocityEnergyWeight,
       ),
     );
@@ -997,14 +993,243 @@ describe("fieldCache", () => {
     expect(computeSource).not.toContain("evaluateModeNode({");
   });
 
+  it("retargets dependent compute nodes after modal-basis atlas promotion", () => {
+    const modalBasisCache = raymarchFieldCache.createRaymarchModalBasisCache({
+      resolution: 8,
+    });
+    const liveFieldProjectionCache =
+      raymarchFieldCache.createRaymarchLiveFieldProjectionCache({
+        resolution: 8,
+      });
+    const spectralLaneCache =
+      raymarchFieldCache.createRaymarchSpectralLaneCache({
+        resolution: 8,
+      });
+    const activeTexture = modalBasisCache.texture;
+    const promotedTexture = modalBasisCache.pendingTexture;
+    const descriptor = buildRaymarchModalBasisCacheDescriptor({
+      modalFieldSlots: new Float32Array([1, 2, 3, 0.5]),
+      modalFieldPhaseSlots: new Float32Array([0.1, 0.1, 0.6, 0.7]),
+      modalFieldCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+      phaseModeCount: 1,
+      phaseAuthority: 0.42,
+      basisCapacity: 1,
+    });
+    const uniforms = {
+      uModalFieldModeCount: { value: 1 },
+      uPhaseEvaluationTime: { value: 0 },
+      uTime: { value: 1 },
+    };
+    const modalFieldCoefficientBuffer = {
+      value: { array: new Float32Array([1, 0, 0, 0]) },
+    };
+    const modalFieldPhaseBuffer = {
+      value: { array: new Float32Array([0.1, 0.1, 0.6, 0.7]) },
+    };
+    const modalFieldSpectralLaneABuffer = {
+      value: { array: new Float32Array([1, 0, 0, 0]) },
+    };
+    const modalFieldSpectralLaneBBuffer = {
+      value: { array: new Float32Array(4) },
+    };
+    const modalFieldSpectralMetaBuffer = {
+      value: { array: new Float32Array([0.1, 0.05, 0.9, 0.7]) },
+    };
+    const liveNodes = [];
+    const spectralNodes = [];
+    const liveRenderer = {
+      compute: vi.fn((node) => {
+        liveNodes.push(node);
+      }),
+    };
+    const spectralRenderer = {
+      compute: vi.fn((node) => {
+        spectralNodes.push(node);
+      }),
+    };
+
+    const firstLiveResult =
+      raymarchFieldCache.computeRaymarchLiveFieldProjectionCache(
+        liveFieldProjectionCache,
+        liveRenderer,
+        {
+          modalBasisAtlasTexture: activeTexture,
+          modalFieldCoefficientBuffer,
+          modalFieldPhaseBuffer,
+          modalFieldCapacity: 1,
+          uniforms,
+          schedulerTimeSec: 1,
+        },
+      );
+    const firstSpectralResult =
+      raymarchFieldCache.computeRaymarchSpectralLaneCache(
+        spectralLaneCache,
+        spectralRenderer,
+        {
+          descriptor,
+          modalBasisAtlasTexture: activeTexture,
+          modalFieldCoefficientBuffer,
+          modalFieldSpectralLaneABuffer,
+          modalFieldSpectralLaneBBuffer,
+          modalFieldSpectralMetaBuffer,
+          modalFieldCapacity: 1,
+          uniforms,
+          schedulerTimeSec: 1,
+        },
+      );
+    const firstLiveNode = liveNodes[0];
+    const firstSpectralNode = spectralNodes[0];
+    firstLiveNode.dispose = vi.fn();
+    firstSpectralNode.dispose = vi.fn();
+
+    expect(firstLiveResult).toMatchObject({ computed: true });
+    expect(firstSpectralResult).toMatchObject({ computed: true });
+    expect(firstLiveNode.raymarchModalBasisAtlasTexture).toBe(activeTexture);
+    expect(firstSpectralNode.raymarchModalBasisAtlasTexture).toBe(
+      activeTexture,
+    );
+
+    modalBasisCache.pendingDescriptor = descriptor;
+    modalBasisCache.pendingReady = true;
+    expect(
+      raymarchFieldCache.commitRaymarchModalBasisCachePendingDescriptor(
+        modalBasisCache,
+      ),
+    ).toMatchObject({ committed: true, texture: promotedTexture });
+
+    const secondLiveResult =
+      raymarchFieldCache.computeRaymarchLiveFieldProjectionCache(
+        liveFieldProjectionCache,
+        liveRenderer,
+        {
+          modalBasisAtlasTexture: modalBasisCache.texture,
+          modalFieldCoefficientBuffer,
+          modalFieldPhaseBuffer,
+          modalFieldCapacity: 1,
+          uniforms,
+          schedulerTimeSec: 2,
+        },
+      );
+    const secondSpectralResult =
+      raymarchFieldCache.computeRaymarchSpectralLaneCache(
+        spectralLaneCache,
+        spectralRenderer,
+        {
+          descriptor,
+          modalBasisAtlasTexture: modalBasisCache.texture,
+          modalFieldCoefficientBuffer,
+          modalFieldSpectralLaneABuffer,
+          modalFieldSpectralLaneBBuffer,
+          modalFieldSpectralMetaBuffer,
+          modalFieldCapacity: 1,
+          uniforms,
+          schedulerTimeSec: 2,
+        },
+      );
+    const secondLiveNode = liveNodes[1];
+    const secondSpectralNode = spectralNodes[1];
+
+    expect(secondLiveResult).toMatchObject({ computed: true });
+    expect(secondSpectralResult).toMatchObject({ computed: true });
+    expect(secondLiveNode).not.toBe(firstLiveNode);
+    expect(secondSpectralNode).not.toBe(firstSpectralNode);
+    expect(firstLiveNode.dispose).not.toHaveBeenCalled();
+    expect(firstSpectralNode.dispose).not.toHaveBeenCalled();
+    expect(secondLiveNode.raymarchModalBasisAtlasTexture).toBe(promotedTexture);
+    expect(secondSpectralNode.raymarchModalBasisAtlasTexture).toBe(
+      promotedTexture,
+    );
+    expect(Object.values(liveFieldProjectionCache.computeNodesByKey)).toEqual([
+      secondLiveNode,
+    ]);
+    expect(Object.values(spectralLaneCache.computeNodesByKey)).toEqual([
+      secondSpectralNode,
+    ]);
+    expect(
+      Object.values(liveFieldProjectionCache.standbyComputeNodesByKey),
+    ).toEqual([firstLiveNode]);
+    expect(Object.values(spectralLaneCache.standbyComputeNodesByKey)).toEqual([
+      firstSpectralNode,
+    ]);
+
+    // Swapping back to the original atlas must reuse the retained kernel
+    // instead of rebuilding it.
+    modalBasisCache.pendingDescriptor = descriptor;
+    modalBasisCache.pendingReady = true;
+    expect(
+      raymarchFieldCache.commitRaymarchModalBasisCachePendingDescriptor(
+        modalBasisCache,
+      ),
+    ).toMatchObject({ committed: true, texture: activeTexture });
+
+    const thirdLiveResult =
+      raymarchFieldCache.computeRaymarchLiveFieldProjectionCache(
+        liveFieldProjectionCache,
+        liveRenderer,
+        {
+          modalBasisAtlasTexture: modalBasisCache.texture,
+          modalFieldCoefficientBuffer,
+          modalFieldPhaseBuffer,
+          modalFieldCapacity: 1,
+          uniforms,
+          schedulerTimeSec: 3,
+        },
+      );
+    const thirdSpectralResult =
+      raymarchFieldCache.computeRaymarchSpectralLaneCache(
+        spectralLaneCache,
+        spectralRenderer,
+        {
+          descriptor,
+          modalBasisAtlasTexture: modalBasisCache.texture,
+          modalFieldCoefficientBuffer,
+          modalFieldSpectralLaneABuffer,
+          modalFieldSpectralLaneBBuffer,
+          modalFieldSpectralMetaBuffer,
+          modalFieldCapacity: 1,
+          uniforms,
+          schedulerTimeSec: 3,
+        },
+      );
+
+    expect(thirdLiveResult).toMatchObject({ computed: true });
+    expect(thirdSpectralResult).toMatchObject({ computed: true });
+    expect(liveNodes[2]).toBe(firstLiveNode);
+    expect(spectralNodes[2]).toBe(firstSpectralNode);
+    expect(firstLiveNode.dispose).not.toHaveBeenCalled();
+    expect(firstSpectralNode.dispose).not.toHaveBeenCalled();
+    expect(Object.values(liveFieldProjectionCache.computeNodesByKey)).toEqual([
+      firstLiveNode,
+    ]);
+    expect(
+      Object.values(liveFieldProjectionCache.standbyComputeNodesByKey),
+    ).toEqual([secondLiveNode]);
+    expect(Object.values(spectralLaneCache.computeNodesByKey)).toEqual([
+      firstSpectralNode,
+    ]);
+    expect(Object.values(spectralLaneCache.standbyComputeNodesByKey)).toEqual([
+      secondSpectralNode,
+    ]);
+  });
+
   it("creates and disposes named pressure/radiation and phase-interference carriers with the live projection cache", () => {
     const cache = raymarchFieldCache.createRaymarchLiveFieldProjectionCache({
       resolution: 8,
     });
     const disposePressureRadiation = vi.fn();
     const disposePhaseInterference = vi.fn();
+    const disposeActiveNode = vi.fn();
+    const disposeStandbyNode = vi.fn();
     cache.pressureRadiationTexture.dispose = disposePressureRadiation;
     cache.phaseInterferenceTexture.dispose = disposePhaseInterference;
+    cache.computeNodesByKey["live-field-projection:capacity=1"] = {
+      dispose: disposeActiveNode,
+    };
+    cache.standbyComputeNodesByKey = {
+      "live-field-projection:capacity=1": { dispose: disposeStandbyNode },
+    };
 
     expect(cache.pressureRadiationTexture).toBeTruthy();
     expect(cache.pressureRadiationTexture).not.toBe(cache.fieldTexture);
@@ -1024,6 +1249,8 @@ describe("fieldCache", () => {
 
     expect(disposePressureRadiation).toHaveBeenCalledTimes(1);
     expect(disposePhaseInterference).toHaveBeenCalledTimes(1);
+    expect(disposeActiveNode).toHaveBeenCalledTimes(1);
+    expect(disposeStandbyNode).toHaveBeenCalledTimes(1);
   });
 
   it("treats phase offsets as live-synthesis state", () => {
@@ -2427,6 +2654,223 @@ describe("fieldCache", () => {
     expect(commit).toMatchObject({ committed: true, descriptor });
     expect(modalBasisCache.activeDescriptor).toEqual(descriptor);
     expect(modalBasisCache.activePhaseSampleTimeSec).toBe(1);
+  });
+
+  it("promotes modal-basis rebuilds by swapping active and standby atlas textures", async () => {
+    const modalBasisCache = raymarchFieldCache.createRaymarchModalBasisCache({
+      resolution: 8,
+    });
+    const initialActiveTexture = modalBasisCache.texture;
+    const initialStandbyTexture = modalBasisCache.pendingTexture;
+    const descriptorA = buildRaymarchModalBasisCacheDescriptor({
+      modalFieldSlots: new Float32Array([1, 2, 3, 0.5]),
+      modalFieldPhaseSlots: new Float32Array([0.1, 0.1, 0.6, 0.7]),
+      modalFieldCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+      phaseModeCount: 1,
+      phaseAuthority: 0.42,
+      basisCapacity: 1,
+    });
+    const descriptorB = buildRaymarchModalBasisCacheDescriptor({
+      modalFieldSlots: new Float32Array([2, 3, 4, 0.5]),
+      modalFieldPhaseSlots: new Float32Array([0.2, 0.2, 0.7, 0.8]),
+      modalFieldCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+      phaseModeCount: 1,
+      phaseAuthority: 0.42,
+      basisCapacity: 1,
+    });
+    const options = {
+      modalFieldModeBuffer: { value: { array: new Float32Array(4) } },
+      modalFieldPhaseBuffer: { value: { array: new Float32Array(4) } },
+      modalFieldCapacity: 1,
+      uniforms: {
+        uTime: { value: 1 },
+        uRadius: { value: 3 },
+        uModalFieldModeCount: { value: 1 },
+      },
+    };
+    const renderer = {
+      computeAsync: async () => {},
+    };
+    modalBasisCache.computeNodesByKey[getTestComputeNodeKey(1)] = {
+      id: "effective",
+    };
+
+    expect(initialActiveTexture).toBeTruthy();
+    expect(initialStandbyTexture).toBeTruthy();
+    expect(initialActiveTexture).not.toBe(initialStandbyTexture);
+
+    enqueueRaymarchModalBasisCacheRebuild(
+      modalBasisCache,
+      renderer,
+      descriptorA,
+      "initial",
+      options,
+    );
+    await flushCacheMicrotasks();
+
+    expect(modalBasisCache.texture).toBe(initialActiveTexture);
+    expect(modalBasisCache.pendingTexture).toBe(initialStandbyTexture);
+
+    const commitA =
+      raymarchFieldCache.commitRaymarchModalBasisCachePendingDescriptor(
+        modalBasisCache,
+      );
+
+    expect(commitA).toMatchObject({
+      committed: true,
+      descriptor: descriptorA,
+      texture: initialStandbyTexture,
+    });
+    expect(modalBasisCache.texture).toBe(initialStandbyTexture);
+    expect(modalBasisCache.pendingTexture).toBe(initialActiveTexture);
+    expect(modalBasisCache.activeDescriptor).toEqual(descriptorA);
+    expect(modalBasisCache.pendingReady).toBe(false);
+
+    enqueueRaymarchModalBasisCacheRebuild(
+      modalBasisCache,
+      renderer,
+      descriptorB,
+      "modal-identity",
+      options,
+    );
+    await flushCacheMicrotasks();
+
+    const commitB =
+      raymarchFieldCache.commitRaymarchModalBasisCachePendingDescriptor(
+        modalBasisCache,
+      );
+
+    expect(commitB).toMatchObject({
+      committed: true,
+      descriptor: descriptorB,
+      texture: initialActiveTexture,
+    });
+    expect(modalBasisCache.texture).toBe(initialActiveTexture);
+    expect(modalBasisCache.pendingTexture).toBe(initialStandbyTexture);
+    expect(modalBasisCache.activeDescriptor).toEqual(descriptorB);
+    expect(
+      new Set([modalBasisCache.texture, modalBasisCache.pendingTexture]),
+    ).toEqual(new Set([initialActiveTexture, initialStandbyTexture]));
+    expect(modalBasisCache.lastError).toBeNull();
+  });
+
+  it("reuses retained basis kernels across ping-pong atlas promotions", async () => {
+    const modalBasisCache = raymarchFieldCache.createRaymarchModalBasisCache({
+      resolution: 8,
+    });
+    const initialStandbyTexture = modalBasisCache.pendingTexture;
+    const initialActiveTexture = modalBasisCache.texture;
+    const buildDescriptor = (modeIndex) =>
+      buildRaymarchModalBasisCacheDescriptor({
+        modalFieldSlots: new Float32Array([modeIndex, 2, 3, 0.5]),
+        modalFieldPhaseSlots: new Float32Array([0.1, 0.1, 0.6, 0.7]),
+        modalFieldCount: 1,
+        boundaryMode: "neumann",
+        radius: 3,
+        phaseModeCount: 1,
+        phaseAuthority: 0.42,
+        basisCapacity: 1,
+      });
+    const options = {
+      modalFieldModeBuffer: { value: { array: new Float32Array(4) } },
+      modalFieldPhaseBuffer: { value: { array: new Float32Array(4) } },
+      modalFieldCapacity: 1,
+      uniforms: {
+        uTime: { value: 1 },
+        uRadius: { value: 3 },
+        uModalFieldModeCount: { value: 1 },
+      },
+    };
+    const dispatchedNodes = [];
+    const renderer = {
+      computeAsync: async (node) => {
+        dispatchedNodes.push(node);
+      },
+    };
+    const nodeKey = getTestComputeNodeKey(1);
+    const standbyTargetNode = {
+      id: "kernel-standby-target",
+      dispose: vi.fn(),
+      raymarchModalBasisTargetTexture: initialStandbyTexture,
+    };
+    const activeTargetNode = {
+      id: "kernel-active-target",
+      dispose: vi.fn(),
+      raymarchModalBasisTargetTexture: initialActiveTexture,
+    };
+    modalBasisCache.computeNodesByKey[nodeKey] = standbyTargetNode;
+    modalBasisCache.standbyComputeNodesByKey = Object.create(null);
+    modalBasisCache.standbyComputeNodesByKey[nodeKey] = activeTargetNode;
+
+    for (const [index, expectedNode] of [
+      standbyTargetNode,
+      activeTargetNode,
+      standbyTargetNode,
+    ].entries()) {
+      enqueueRaymarchModalBasisCacheRebuild(
+        modalBasisCache,
+        renderer,
+        buildDescriptor(index + 1),
+        index === 0 ? "initial" : "modal-identity",
+        options,
+      );
+      await flushCacheMicrotasks();
+
+      expect(dispatchedNodes[index]).toBe(expectedNode);
+      expect(
+        raymarchFieldCache.commitRaymarchModalBasisCachePendingDescriptor(
+          modalBasisCache,
+        ),
+      ).toMatchObject({ committed: true });
+    }
+
+    expect(standbyTargetNode.dispose).not.toHaveBeenCalled();
+    expect(activeTargetNode.dispose).not.toHaveBeenCalled();
+    expect(Object.values(modalBasisCache.computeNodesByKey)).toEqual([
+      standbyTargetNode,
+    ]);
+    expect(Object.values(modalBasisCache.standbyComputeNodesByKey)).toEqual([
+      activeTargetNode,
+    ]);
+  });
+
+  it("does not promote modal-basis rebuilds when atlas textures are missing", () => {
+    const modalBasisCache = raymarchFieldCache.createRaymarchModalBasisCache({
+      resolution: 8,
+    });
+    const descriptor = buildRaymarchModalBasisCacheDescriptor({
+      modalFieldSlots: new Float32Array([1, 2, 3, 0.5]),
+      modalFieldPhaseSlots: new Float32Array([0.1, 0.1, 0.6, 0.7]),
+      modalFieldCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+      phaseModeCount: 1,
+      phaseAuthority: 0.42,
+      basisCapacity: 1,
+    });
+
+    modalBasisCache.pendingDescriptor = descriptor;
+    modalBasisCache.pendingReady = true;
+    modalBasisCache.texture = null;
+
+    const commit =
+      raymarchFieldCache.commitRaymarchModalBasisCachePendingDescriptor(
+        modalBasisCache,
+      );
+
+    expect(commit).toEqual({
+      committed: false,
+      reason: "texture-missing",
+    });
+    expect(modalBasisCache.pendingDescriptor).toEqual(descriptor);
+    expect(modalBasisCache.pendingReady).toBe(true);
+    expect(modalBasisCache.lastError).toBe("cache-texture-missing");
+    expect(modalBasisCache.lastRebuildReason).toBe("texture-missing");
+    expect(modalBasisCache.ready).toBe(false);
   });
 
   it("queues semantic topology rebuilds until pending cache commit", async () => {

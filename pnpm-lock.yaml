@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  extract-zip>yauzl: 3.3.1
+
 importers:
 
   .:

@@ -1,3 +1,5 @@
+import { clamp01 } from "../../utils/math.js";
+
 export const STEP_REFERENCE = 96;
 export const MIN_ADAPTIVE_STEPS = 16;
 const LOW_STEP_BLOOM_GUARD_START = 64;
@@ -9,10 +11,6 @@ const STABLE_STEP_JITTER_PHASE_SCALE = 27.173;
 const STABLE_STEP_JITTER_AMPLITUDE = 0.3995;
 const STABLE_STEP_JITTER_BIAS = 0.5;
 const STABLE_STEP_JITTER_SEED = Object.freeze([12.9898, 78.233, 37.719]);
-
-function clamp01(value) {
-  return Math.min(1, Math.max(0, value));
-}
 
 export function normalizeStepBudget(steps) {
   return Math.max(1, Math.round(steps || 0));

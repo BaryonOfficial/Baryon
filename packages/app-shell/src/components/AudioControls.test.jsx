@@ -359,6 +359,58 @@ describe("ListenerControls compact dock layout", () => {
     expect(container.querySelector(".am-compact-state-chip")).toBeNull();
   });
 
+  it("labels a silent line feed without showing the live-input error color", () => {
+    renderControls({
+      isLiveInputActive: true,
+      liveInputDeviceKind: "system",
+      liveInputRuntimeStatus: {
+        active: true,
+        phase: "weak-signal",
+        resolvedAnalysisClass: "line-feed",
+        signalState: "silent",
+        sourceBoundaryState: "muted",
+      },
+    });
+
+    const sourceControl = container.querySelector(
+      '[data-testid="source-mode-control"]',
+    );
+    const statusLight = sourceControl?.querySelector(".am-source-mode-light");
+    const statusDot = /** @type {HTMLElement | null} */ (
+      sourceControl?.querySelector(".am-status-dot")
+    );
+
+    expect(statusLight?.getAttribute("aria-label")).toBe("Line feed silent");
+    expect(statusDot?.style.background).not.toBe("rgb(215, 25, 33)");
+  });
+
+  it("uses green for a line feed with current source evidence", () => {
+    renderControls({
+      isLiveInputActive: true,
+      liveInputDeviceKind: "system",
+      liveInputRuntimeStatus: {
+        active: true,
+        phase: "listening",
+        resolvedAnalysisClass: "line-feed",
+        signalState: "ok",
+        sourceBoundaryState: "live",
+      },
+    });
+
+    const sourceControl = container.querySelector(
+      '[data-testid="source-mode-control"]',
+    );
+    const statusLight = sourceControl?.querySelector(".am-source-mode-light");
+    const statusDot = /** @type {HTMLElement | null} */ (
+      sourceControl?.querySelector(".am-status-dot")
+    );
+
+    expect(statusLight?.getAttribute("aria-label")).toBe(
+      "Line feed listening",
+    );
+    expect(statusDot?.style.background).toBe("rgb(74, 158, 92)");
+  });
+
   it("integrates the source-mode status light with the selector spacing", () => {
     renderControls({
       isAudioLoaded: false,

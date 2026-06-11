@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   BOUNDARY_MODES,
+  PERMUTATION_ORDERS,
   evaluatePermutationFamilyMode,
   evaluateSinglePermutationMode,
   getBoundaryModeFromValue,
@@ -147,5 +148,137 @@ describe("mode family helpers", () => {
     expect(
       Math.abs(family.field / Math.max(Math.abs(single.field), 1e-4)),
     ).toBeLessThan(8);
+  });
+});
+
+describe("permutation family gradients", () => {
+  const gradientTriples = [
+    [0, 0, 1],
+    [1, 1, 1],
+    [1, 1, 2],
+    [1, 2, 2],
+    [1, 2, 3],
+    [2, 3, 5],
+  ];
+  const samplePoints = [
+    [0.21, -0.17, 0.39],
+    [-0.62, 0.05, 0.88],
+    [0.0, 0.47, -0.33],
+  ];
+  const step = 1e-5;
+
+  const numericalGradient = (args, axis) => {
+    const fieldAt = (delta) =>
+      evaluatePermutationFamilyMode({
+        ...args,
+        [axis]: args[axis] + delta,
+      }).field;
+    return (fieldAt(step) - fieldAt(-step)) / (2 * step);
+  };
+
+  for (const boundaryMode of [
+    BOUNDARY_MODES.dirichlet,
+    BOUNDARY_MODES.neumann,
+  ]) {
+    it(`matches central-difference gradients for ${boundaryMode} families`, () => {
+      for (const [u, v, w] of gradientTriples) {
+        if (boundaryMode === BOUNDARY_MODES.dirichlet && u < 1) {
+          continue;
+        }
+        for (const [x, y, z] of samplePoints) {
+          const args = { u, v, w, x, y, z, scale: Math.PI, boundaryMode };
+          const analytic = evaluatePermutationFamilyMode(args);
+          expect(analytic.gradX).toBeCloseTo(numericalGradient(args, "x"), 4);
+          expect(analytic.gradY).toBeCloseTo(numericalGradient(args, "y"), 4);
+          expect(analytic.gradZ).toBeCloseTo(numericalGradient(args, "z"), 4);
+        }
+      }
+    });
+  }
+
+  it("satisfies the Neumann zero-normal-derivative condition at the faces", () => {
+    for (const x of [-1, 1]) {
+      const face = evaluatePermutationFamilyMode({
+        u: 2,
+        v: 3,
+        w: 4,
+        x,
+        y: 0.3,
+        z: -0.5,
+        scale: Math.PI,
+        boundaryMode: BOUNDARY_MODES.neumann,
+      });
+      expect(face.gradX).toBeCloseTo(0, 6);
+    }
+  });
+});
+
+describe("GPU permutation-family mask parity", () => {
+  // Plain-number mirror of createPermutationFamilySignature in
+  // modeFamilyNode.js. The GPU derives per-term weights from smoothstep
+  // equality masks and a positional weight list over
+  // PERMUTATION_ORDERS.distinct; for integer mode indices the masks are
+  // exactly 0 or 1 because unequal adjacent indices differ by at least 1,
+  // far above the GPU's FAMILY_EPSILON. This sweep pins the positional
+  // contract: reordering PERMUTATION_ORDERS.distinct would silently break
+  // the GPU weight assignment even though the CPU side adapts, and this
+  // test fails in that case.
+  const signatureTermWeights = (u, v, w) => {
+    const neqUV = u === v ? 0 : 1;
+    const neqVW = v === w ? 0 : 1;
+    const twoEqualUV = (1 - neqUV) * neqVW;
+    const twoEqualVW = neqUV * (1 - neqVW);
+    const allDistinct = neqUV * neqVW;
+    return {
+      termWeights: [
+        1,
+        twoEqualUV + allDistinct,
+        twoEqualVW + allDistinct,
+        twoEqualUV + allDistinct,
+        twoEqualVW + allDistinct,
+        allDistinct,
+      ],
+      uniquePermutationCount:
+        1 + (twoEqualUV + twoEqualVW) * 2 + allDistinct * 5,
+    };
+  };
+
+  const sortedTripleKeys = (triples) =>
+    triples.map((triple) => triple.join(":")).sort();
+
+  it("selects exactly the CPU permutation family for every canonical triple", () => {
+    for (let u = 0; u <= 4; u += 1) {
+      for (let v = u; v <= 4; v += 1) {
+        for (let w = v; w <= 4; w += 1) {
+          if (u + v + w === 0) {
+            continue;
+          }
+          const { termWeights, uniquePermutationCount } = signatureTermWeights(
+            u,
+            v,
+            w,
+          );
+          for (const weight of termWeights) {
+            expect([0, 1]).toContain(weight);
+          }
+          expect(uniquePermutationCount).toBe(
+            getUniquePermutationCount(u, v, w),
+          );
+
+          const triple = [u, v, w];
+          const selected = PERMUTATION_ORDERS.distinct
+            .filter((_, term) => termWeights[term] === 1)
+            .map(([xIndex, yIndex, zIndex]) => [
+              triple[xIndex],
+              triple[yIndex],
+              triple[zIndex],
+            ]);
+          expect(selected).toHaveLength(uniquePermutationCount);
+          expect(sortedTripleKeys(selected)).toEqual(
+            sortedTripleKeys(getPermutationFamily(u, v, w)),
+          );
+        }
+      }
+    }
   });
 });
