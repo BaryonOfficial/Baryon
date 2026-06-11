@@ -144,3 +144,5 @@ Canonical public/shared docs:
 
 
 ## Contributing
+
+See [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) for contributor setup and PR workflow.
