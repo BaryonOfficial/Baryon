@@ -1407,6 +1407,11 @@ export function disposeRaymarchFieldCache(fieldCache) {
       node?.dispose?.();
     });
   }
+  if (fieldCache?.standbyComputeNodesByKey) {
+    Object.values(fieldCache.standbyComputeNodesByKey).forEach((node) => {
+      node?.dispose?.();
+    });
+  }
   if (fieldCache?.computeInputsByKey) {
     Object.values(fieldCache.computeInputsByKey).forEach((inputs) => {
       inputs?.modalFieldModeBuffer?.dispose?.();
@@ -2528,6 +2533,7 @@ export function evaluateRaymarchSignedPotentialAtPoint({
 
 function createModalBasisCacheComputeKernel({
   modalBasisCache,
+  targetTexture,
   modalFieldModeBuffer,
   modalFieldCapacity,
   uniforms,
@@ -2535,7 +2541,7 @@ function createModalBasisCacheComputeKernel({
   cavityGeometry,
 }) {
   const { resolution } = modalBasisCache;
-  const texture = modalBasisCache.pendingTexture ?? modalBasisCache.texture;
+  const texture = targetTexture;
   const uRadius = uniforms.uRadius;
   const modalFieldActiveCount = int(uniforms.uModalFieldModeCount);
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
@@ -3092,32 +3098,30 @@ function getOrCreateRaymarchModalBasisCacheComputeNode(
       uniforms,
     },
   );
-  const cachedNode = modalBasisCache.computeNodesByKey?.[nodeKey];
+  const cachedNode = getCachedTexturedComputeNode(
+    modalBasisCache,
+    nodeKey,
+    "raymarchModalBasisTargetTexture",
+    targetTexture,
+  );
   if (cachedNode) {
-    const cachedTargetTexture =
-      /** @type {{ raymarchModalBasisTargetTexture?: unknown }} */ (cachedNode)
-        .raymarchModalBasisTargetTexture;
-    if (cachedTargetTexture && cachedTargetTexture !== targetTexture) {
-      cachedNode.dispose?.();
-      delete modalBasisCache.computeNodesByKey[nodeKey];
-    } else {
-      return cachedNode;
-    }
+    return cachedNode;
   }
 
   const computeNode = createModalBasisCacheComputeKernel({
     modalBasisCache,
+    targetTexture,
     modalFieldModeBuffer: computeInputs.modalFieldModeBuffer,
     modalFieldCapacity: normalizedModalFieldCapacity,
     uniforms: computeInputs.uniforms,
     boundaryMode: normalizedBoundaryMode,
     cavityGeometry: normalizedCavityGeometry,
   });
-  if (computeNode && typeof computeNode === "object") {
-    /** @type {{ raymarchModalBasisTargetTexture?: unknown }} */ (
-      computeNode
-    ).raymarchModalBasisTargetTexture = targetTexture;
-  }
+  tagTexturedComputeNode(
+    computeNode,
+    "raymarchModalBasisTargetTexture",
+    targetTexture,
+  );
   modalBasisCache.computeNodesByKey[nodeKey] = computeNode;
   return computeNode;
 }
@@ -3147,9 +3151,10 @@ function getOrCreateRaymarchLiveFieldProjectionCacheComputeNode(
     "live-field-projection",
     `capacity=${normalizedModalFieldCapacity}`,
   ].join(":");
-  const cachedNode = getCachedModalBasisConsumerComputeNode(
+  const cachedNode = getCachedTexturedComputeNode(
     liveFieldProjectionCache,
     nodeKey,
+    "raymarchModalBasisAtlasTexture",
     modalBasisAtlasTexture,
   );
   if (cachedNode) {
@@ -3164,7 +3169,11 @@ function getOrCreateRaymarchLiveFieldProjectionCacheComputeNode(
     modalFieldCapacity: normalizedModalFieldCapacity,
     uniforms,
   });
-  tagModalBasisConsumerComputeNode(computeNode, modalBasisAtlasTexture);
+  tagTexturedComputeNode(
+    computeNode,
+    "raymarchModalBasisAtlasTexture",
+    modalBasisAtlasTexture,
+  );
   liveFieldProjectionCache.computeNodesByKey[nodeKey] = computeNode;
   return computeNode;
 }
@@ -3198,9 +3207,10 @@ function getOrCreateRaymarchSpectralLaneCacheComputeNode(
     "spectral-lane-cache",
     `capacity=${normalizedModalFieldCapacity}`,
   ].join(":");
-  const cachedNode = getCachedModalBasisConsumerComputeNode(
+  const cachedNode = getCachedTexturedComputeNode(
     spectralLaneCache,
     nodeKey,
+    "raymarchModalBasisAtlasTexture",
     modalBasisAtlasTexture,
   );
   if (cachedNode) {
@@ -3217,44 +3227,67 @@ function getOrCreateRaymarchSpectralLaneCacheComputeNode(
     modalFieldCapacity: normalizedModalFieldCapacity,
     uniforms,
   });
-  tagModalBasisConsumerComputeNode(computeNode, modalBasisAtlasTexture);
+  tagTexturedComputeNode(
+    computeNode,
+    "raymarchModalBasisAtlasTexture",
+    modalBasisAtlasTexture,
+  );
   spectralLaneCache.computeNodesByKey[nodeKey] = computeNode;
   return computeNode;
 }
 
-function getCachedModalBasisConsumerComputeNode(
-  cache,
-  nodeKey,
-  modalBasisAtlasTexture,
-) {
-  const cachedNode = cache.computeNodesByKey?.[nodeKey];
-  if (!cachedNode) {
-    return null;
-  }
-
-  const cachedModalBasisAtlasTexture =
-    /** @type {{ raymarchModalBasisAtlasTexture?: unknown }} */ (cachedNode)
-      .raymarchModalBasisAtlasTexture;
-  if (
-    cachedModalBasisAtlasTexture &&
-    cachedModalBasisAtlasTexture !== modalBasisAtlasTexture
-  ) {
-    cachedNode.dispose?.();
-    delete cache.computeNodesByKey[nodeKey];
-    return null;
-  }
-
-  return cachedNode;
+function texturedComputeNodeMatches(computeNode, textureTagKey, texture) {
+  const taggedTexture = /** @type {Record<string, unknown>} */ (computeNode)[
+    textureTagKey
+  ];
+  return !taggedTexture || taggedTexture === texture;
 }
 
-function tagModalBasisConsumerComputeNode(computeNode, modalBasisAtlasTexture) {
+// The modal-basis atlas ping-pongs between exactly two textures, so each
+// kernel has at most two texture-bound variants. Retain the displaced variant
+// in a standby slot instead of disposing it: steady-state atlas promotions
+// then reuse compiled pipelines instead of rebuilding WGSL kernels.
+function getCachedTexturedComputeNode(cache, nodeKey, textureTagKey, texture) {
+  const activeNode = cache.computeNodesByKey?.[nodeKey] ?? null;
+  if (
+    activeNode &&
+    texturedComputeNodeMatches(activeNode, textureTagKey, texture)
+  ) {
+    return activeNode;
+  }
+
+  if (!cache.standbyComputeNodesByKey) {
+    cache.standbyComputeNodesByKey = Object.create(null);
+  }
+  const standbyNode = cache.standbyComputeNodesByKey[nodeKey] ?? null;
+  if (
+    standbyNode &&
+    texturedComputeNodeMatches(standbyNode, textureTagKey, texture)
+  ) {
+    if (activeNode) {
+      cache.standbyComputeNodesByKey[nodeKey] = activeNode;
+    } else {
+      delete cache.standbyComputeNodesByKey[nodeKey];
+    }
+    cache.computeNodesByKey[nodeKey] = standbyNode;
+    return standbyNode;
+  }
+
+  if (activeNode) {
+    standbyNode?.dispose?.();
+    cache.standbyComputeNodesByKey[nodeKey] = activeNode;
+    delete cache.computeNodesByKey[nodeKey];
+  }
+  return null;
+}
+
+function tagTexturedComputeNode(computeNode, textureTagKey, texture) {
   if (
     computeNode &&
     (typeof computeNode === "object" || typeof computeNode === "function")
   ) {
-    /** @type {{ raymarchModalBasisAtlasTexture?: unknown }} */ (
-      computeNode
-    ).raymarchModalBasisAtlasTexture = modalBasisAtlasTexture;
+    /** @type {Record<string, unknown>} */ (computeNode)[textureTagKey] =
+      texture;
   }
 }
 
