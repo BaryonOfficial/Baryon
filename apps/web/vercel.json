@@ -1,4 +1,3 @@
 {
-  "installCommand": "pnpm install --config.confirm-modules-purge=false",
   "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }
