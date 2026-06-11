@@ -261,6 +261,9 @@ describe("raymarch quantity ownership ledger", () => {
             "velocityProxy",
             "radiationPotential",
           ]),
+          requiredPatterns: expect.arrayContaining([
+            "pressureRadiationSample\\s*=\\s*texture3D\\(\\s*modalPressureRadiationTexture,?\\s*\\)\\.sample\\(\\s*basisUv,?\\s*\\)",
+          ]),
           forbiddenTokens: expect.arrayContaining([
             "modalFieldColorBuffer",
             "spectralLightCacheTexture",

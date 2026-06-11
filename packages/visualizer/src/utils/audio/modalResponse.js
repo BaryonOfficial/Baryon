@@ -1,5 +1,6 @@
 import { binIndexToFrequencyHz } from "./binFrequency.js";
 import { normalizePhaseRad } from "./modalPhaseSlots.js";
+import { clamp01, smoothstep } from "../math.js";
 
 const EPSILON = 1e-9;
 const TWO_PI = Math.PI * 2;
@@ -19,21 +20,6 @@ const MAX_MODAL_QUALITY_FACTOR = 50000;
 const DEFAULT_STORED_ENERGY_TAU_MS = 320;
 const MODAL_SPECTRAL_RESPONSE_CACHE = new Map();
 const MODAL_SPECTRAL_RESPONSE_CACHE_MAX_SIZE = 512;
-
-function clamp01(value) {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-  return Math.min(1, Math.max(0, value));
-}
-
-function smoothstep(edge0, edge1, value) {
-  if (edge0 === edge1) {
-    return value < edge0 ? 0 : 1;
-  }
-  const t = clamp01((value - edge0) / (edge1 - edge0));
-  return t * t * (3 - 2 * t);
-}
 
 function readPreviousModalResponseState(previous) {
   if (typeof previous === "number") {
@@ -222,37 +208,47 @@ function getInputEnergy(fftMagnitudes) {
   return total;
 }
 
-function buildSpectralDriveContext(fftMagnitudes, sampleRate) {
+const EMPTY_SPECTRAL_DRIVE_CONTEXT = Object.freeze({
+  binIndices: new Int32Array(0),
+  binEnergies: new Float64Array(0),
+  binCount: 0,
+  inputEnergy: 0,
+});
+
+// Scratch buffers reused across frames to avoid allocating thousands of
+// per-bin objects every analysis tick. Analysis is single-threaded and each
+// context is consumed synchronously within the frame that built it.
+let spectralDriveScratchIndices = new Int32Array(0);
+let spectralDriveScratchEnergies = new Float64Array(0);
+
+function buildSpectralDriveContext(fftMagnitudes) {
   if (!(fftMagnitudes instanceof Float32Array) || fftMagnitudes.length === 0) {
-    return {
-      bins: [],
-      inputEnergy: 0,
-    };
+    return EMPTY_SPECTRAL_DRIVE_CONTEXT;
   }
 
-  const bins = [];
+  if (spectralDriveScratchIndices.length < fftMagnitudes.length) {
+    spectralDriveScratchIndices = new Int32Array(fftMagnitudes.length);
+    spectralDriveScratchEnergies = new Float64Array(fftMagnitudes.length);
+  }
+  let binCount = 0;
   let inputEnergy = 0;
   for (let index = 1; index < fftMagnitudes.length; index += 1) {
-    const amplitude = Math.max(0, fftMagnitudes[index] ?? 0);
-    if (amplitude <= 0) {
+    const amplitude = fftMagnitudes[index] ?? 0;
+    if (!(amplitude > 0)) {
       continue;
     }
 
     const binEnergy = amplitude * amplitude;
     inputEnergy += binEnergy;
-    bins.push({
-      index,
-      binEnergy,
-      frequencyHz: binIndexToFrequencyHz(
-        index,
-        fftMagnitudes.length,
-        sampleRate,
-      ),
-    });
+    spectralDriveScratchIndices[binCount] = index;
+    spectralDriveScratchEnergies[binCount] = binEnergy;
+    binCount += 1;
   }
 
   return {
-    bins,
+    binIndices: spectralDriveScratchIndices,
+    binEnergies: spectralDriveScratchEnergies,
+    binCount,
     inputEnergy,
   };
 }
@@ -317,16 +313,16 @@ export function computeModalSpectralDrive({
   modeFrequencyHz,
   qualityFactor,
   inputEnergy = getInputEnergy(fftMagnitudes),
-  spectralBins = null,
+  spectralDriveContext = null,
 }) {
   if (sampleRate <= 0 || modeFrequencyHz <= 0 || inputEnergy <= EPSILON) {
     return 0;
   }
 
-  const bins = Array.isArray(spectralBins)
-    ? spectralBins
-    : buildSpectralDriveContext(fftMagnitudes, sampleRate).bins;
-  if (bins.length === 0) {
+  // The context must be built from the same magnitude buffer so its bin
+  // indices stay inside the response-weight table.
+  const context = spectralDriveContext ?? buildSpectralDriveContext(fftMagnitudes);
+  if (context.binCount === 0) {
     return 0;
   }
   const responseWeights = getModalSpectralResponseWeights({
@@ -338,20 +334,14 @@ export function computeModalSpectralDrive({
 
   let weightedEnergy = 0;
   let peakWeightedEnergy = 0;
-  for (const bin of bins) {
-    const responseWeight =
-      Number.isInteger(bin?.index) &&
-      bin.index >= 0 &&
-      bin.index < responseWeights.length
-        ? responseWeights[bin.index]
-        : computeModalFrequencyResponse({
-            binFrequencyHz: bin.frequencyHz,
-            modeFrequencyHz,
-            qualityFactor,
-          });
-    const weightedBinEnergy = bin.binEnergy * responseWeight;
+  for (let bin = 0; bin < context.binCount; bin += 1) {
+    const weightedBinEnergy =
+      context.binEnergies[bin] *
+      (responseWeights[context.binIndices[bin]] ?? 0);
     weightedEnergy += weightedBinEnergy;
-    peakWeightedEnergy = Math.max(peakWeightedEnergy, weightedBinEnergy);
+    if (weightedBinEnergy > peakWeightedEnergy) {
+      peakWeightedEnergy = weightedBinEnergy;
+    }
   }
 
   const baseDrive = weightedEnergy / Math.max(EPSILON, inputEnergy);
@@ -574,11 +564,8 @@ export function updateModalResponseFrame({
 } = {}) {
   const sourceHardSilent = hardSilence === true;
   const spectralDriveContext = sourceHardSilent
-    ? {
-        bins: [],
-        inputEnergy: 0,
-      }
-    : buildSpectralDriveContext(fftMagnitudes, sampleRate);
+    ? EMPTY_SPECTRAL_DRIVE_CONTEXT
+    : buildSpectralDriveContext(fftMagnitudes);
   const inputEnergy = spectralDriveContext.inputEnergy;
   const effectiveInputRms = sourceHardSilent ? 0 : inputRms;
   const hasInput =
@@ -604,7 +591,7 @@ export function updateModalResponseFrame({
           modeFrequencyHz,
           qualityFactor: profile.qualityFactor,
           inputEnergy,
-          spectralBins: spectralDriveContext.bins,
+          spectralDriveContext,
         })
       : 0;
     const physicalTransfer = computePhysicalModalTransfer({

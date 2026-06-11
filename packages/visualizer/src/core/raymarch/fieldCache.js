@@ -30,6 +30,7 @@ import { getModalGeometryBackend } from "../modalGeometryBackend.js";
 import { buildRaymarchModalBasisPhaseSignature } from "./phaseSlotSemantics.js";
 import { normalizePhaseRad } from "../../utils/audio/modalPhaseSlots.js";
 import { SPECTRAL_LIGHT_LANE_COUNT } from "../../utils/audio/spectralLight.js";
+import { clamp01 } from "../../utils/math.js";
 
 export const RAYMARCH_FIELD_CACHE_RESOLUTION = 64;
 export const RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION =
@@ -50,13 +51,14 @@ const RAYMARCH_UNAVAILABLE_RADIATION_MATERIAL_CONTRAST = Object.freeze({
   semantic: "unavailable-no-material-contrast",
   ready: false,
 });
-export const RAYMARCH_VISUALIZATION_RADIATION_MATERIAL_CONTRAST =
-  Object.freeze({
+export const RAYMARCH_VISUALIZATION_RADIATION_MATERIAL_CONTRAST = Object.freeze(
+  {
     pressureEnergyWeight: 1,
     velocityEnergyWeight: 1,
     semantic: "visualization-only-normalized-pressure-velocity-balance",
     ready: true,
-  });
+  },
+);
 
 export function deriveLiveSynthesisCancellationRatio(field, unsignedSupport) {
   if (!(unsignedSupport > MODAL_BASIS_CACHE_ENERGY_EPSILON)) {
@@ -75,7 +77,10 @@ function clampSignedUnit(value) {
 }
 
 function normalizeRadiationMaterialContrast(radiationMaterialContrast) {
-  if (!radiationMaterialContrast || typeof radiationMaterialContrast !== "object") {
+  if (
+    !radiationMaterialContrast ||
+    typeof radiationMaterialContrast !== "object"
+  ) {
     return RAYMARCH_UNAVAILABLE_RADIATION_MATERIAL_CONTRAST;
   }
 
@@ -262,17 +267,24 @@ function buildCanonicalModalFieldShape(slots, activeCount) {
   );
 }
 
-function buildModalBasisPageEntriesFromSlots(
+// Single allocation-free pass over the page slots feeding both topology
+// hashes; this runs every runtime tick.
+function hashModalBasisPageTopology({
   modalFieldSlots,
   activeCount,
   resolution,
   basisCapacity,
-) {
+}) {
   const normalizedResolution = normalizeModalBasisCacheResolution(resolution);
   const normalizedBasisCapacity = normalizeBasisCapacity(basisCapacity);
   const maxRepresentableModeIndex =
     getModalBasisCacheMaxRepresentableModeIndex(normalizedResolution);
-  const entries = [];
+  const normalizedActiveCount = Math.max(0, Math.round(activeCount || 0));
+  let pageAssignmentHash = FNV_OFFSET_BASIS;
+  let domainHash = FNV_OFFSET_BASIS;
+  domainHash = hashUint32(normalizedResolution, domainHash);
+  domainHash = hashUint32(normalizedBasisCapacity, domainHash);
+  domainHash = hashUint32(normalizedBasisCapacity, domainHash);
 
   for (let pageIndex = 0; pageIndex < normalizedBasisCapacity; pageIndex += 1) {
     const offset = pageIndex * 4;
@@ -281,53 +293,25 @@ function buildModalBasisPageEntriesFromSlots(
     const w = readModalFieldCoordinate(modalFieldSlots, offset, 2);
     const amplitude = Math.max(0, modalFieldSlots?.[offset + 3] ?? 0);
     const representable =
-      pageIndex < Math.max(0, Math.round(activeCount || 0)) &&
+      pageIndex < normalizedActiveCount &&
       amplitude > 0 &&
       Math.max(Math.abs(u), Math.abs(v), Math.abs(w)) <=
         maxRepresentableModeIndex;
 
-    entries.push({
-      identityKey: getModalFieldIdentityKey(u, v, w),
-      u,
-      v,
-      w,
-      pageIndex,
-      atlasZStart: pageIndex * normalizedResolution,
-      atlasZCount: normalizedResolution,
-      basisNorm: 1,
-      gradientNorm: 1,
-      representable,
-    });
+    pageAssignmentHash = hashUint32(pageIndex, pageAssignmentHash);
+    pageAssignmentHash = hashFloat32(u, pageAssignmentHash);
+    pageAssignmentHash = hashFloat32(v, pageAssignmentHash);
+    pageAssignmentHash = hashFloat32(w, pageAssignmentHash);
+    domainHash = hashFloat32(u, domainHash);
+    domainHash = hashFloat32(v, domainHash);
+    domainHash = hashFloat32(w, domainHash);
+    domainHash = hashUint32(representable ? 1 : 0, domainHash);
   }
 
-  return entries;
-}
-
-function hashModalBasisPageAssignment(entries) {
-  let hash = FNV_OFFSET_BASIS;
-  for (const entry of entries) {
-    hash = hashUint32(entry.pageIndex, hash);
-    hash = hashFloat32(entry.u, hash);
-    hash = hashFloat32(entry.v, hash);
-    hash = hashFloat32(entry.w, hash);
-  }
-
-  return hash >>> 0;
-}
-
-function hashRepresentableDomain({ entries, resolution, basisCapacity }) {
-  let hash = FNV_OFFSET_BASIS;
-  hash = hashUint32(normalizeModalBasisCacheResolution(resolution), hash);
-  hash = hashUint32(normalizeBasisCapacity(basisCapacity), hash);
-  hash = hashUint32(entries.length, hash);
-  for (const entry of entries) {
-    hash = hashFloat32(entry.u, hash);
-    hash = hashFloat32(entry.v, hash);
-    hash = hashFloat32(entry.w, hash);
-    hash = hashUint32(entry.representable ? 1 : 0, hash);
-  }
-
-  return hash >>> 0;
+  return {
+    identityPageAssignmentHash: pageAssignmentHash >>> 0,
+    representableDomainHash: domainHash >>> 0,
+  };
 }
 
 function hashCanonicalModalFieldShape(entries) {
@@ -351,10 +335,6 @@ function hashCanonicalModalFieldTopology(entries) {
   }
 
   return hash >>> 0;
-}
-
-function clamp01(value) {
-  return Math.min(1, Math.max(0, value));
 }
 
 function submitRaymarchCacheCompute(renderer, computeNode) {
@@ -963,6 +943,8 @@ function summarizeLiveSynthesisDiagnostics({
 }) {
   const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
   const basisScale = getModalBasisGradientBasisScale(scale, boundaryMode);
+  const maxRepresentableModeIndex =
+    getModalBasisCacheMaxRepresentableModeIndex(resolution);
   const canonicalTerms = collectCanonicalLiveSynthesisDiagnosticTerms({
     slots,
     activeCount: clampedActiveCount,
@@ -986,7 +968,7 @@ function summarizeLiveSynthesisDiagnostics({
       term.structuralCoefficient * term.structuralCoefficient;
 
     if (
-      getModalBasisCacheMaxRepresentableModeIndex(resolution) <
+      maxRepresentableModeIndex <
       Math.max(Math.abs(term.u), Math.abs(term.v), Math.abs(term.w))
     ) {
       bandwidthRejectedModeCount += 1;
@@ -1013,8 +995,7 @@ function summarizeLiveSynthesisDiagnostics({
     contributingStructuralModalEnergy + bandwidthRejectedStructuralModalEnergy;
 
   return {
-    modalBasisCacheMaxRepresentableModeIndex:
-      getModalBasisCacheMaxRepresentableModeIndex(resolution),
+    modalBasisCacheMaxRepresentableModeIndex: maxRepresentableModeIndex,
     contributingBasisPageModeCount,
     zeroAmplitudeSkippedModeCount,
     bandwidthRejectedModeCount,
@@ -1403,6 +1384,11 @@ export function disposeRaymarchFieldCache(fieldCache) {
   }
   if (fieldCache?.computeNodesByKey) {
     Object.values(fieldCache.computeNodesByKey).forEach((node) => {
+      node?.dispose?.();
+    });
+  }
+  if (fieldCache?.standbyComputeNodesByKey) {
+    Object.values(fieldCache.standbyComputeNodesByKey).forEach((node) => {
       node?.dispose?.();
     });
   }
@@ -1860,22 +1846,16 @@ export function buildRaymarchModalBasisCacheDescriptor({
   const modalBasisCacheTopology = buildCanonicalIdentityEntries(
     representableBasisPageTerms,
   );
-  const basisPageMetadata = buildModalBasisPageEntriesFromSlots(
-    modalFieldSlots,
-    normalizedUploadedModalFieldCount,
-    normalizedResolution,
-    normalizedBasisCapacity,
-  );
   const identitySetHash = hashCanonicalModalFieldTopology(
     modalBasisCacheTopology,
   );
-  const identityPageAssignmentHash =
-    hashModalBasisPageAssignment(basisPageMetadata);
-  const representableDomainHash = hashRepresentableDomain({
-    entries: basisPageMetadata,
-    resolution: normalizedResolution,
-    basisCapacity: normalizedBasisCapacity,
-  });
+  const { identityPageAssignmentHash, representableDomainHash } =
+    hashModalBasisPageTopology({
+      modalFieldSlots,
+      activeCount: normalizedUploadedModalFieldCount,
+      resolution: normalizedResolution,
+      basisCapacity: normalizedBasisCapacity,
+    });
   const basisAtlasDepth = getRaymarchBasisAtlasDepth(
     normalizedResolution,
     normalizedBasisCapacity,
@@ -1906,7 +1886,6 @@ export function buildRaymarchModalBasisCacheDescriptor({
       pageDepth: normalizedResolution,
       pageCount: normalizedBasisCapacity,
     },
-    basisPageMetadata,
     liveSynthesisModeCount: Math.min(
       normalizedBasisCapacity,
       RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
@@ -2527,6 +2506,7 @@ export function evaluateRaymarchSignedPotentialAtPoint({
 
 function createModalBasisCacheComputeKernel({
   modalBasisCache,
+  targetTexture,
   modalFieldModeBuffer,
   modalFieldCapacity,
   uniforms,
@@ -2534,7 +2514,7 @@ function createModalBasisCacheComputeKernel({
   cavityGeometry,
 }) {
   const { resolution } = modalBasisCache;
-  const texture = modalBasisCache.pendingTexture ?? modalBasisCache.texture;
+  const texture = targetTexture;
   const uRadius = uniforms.uRadius;
   const modalFieldActiveCount = int(uniforms.uModalFieldModeCount);
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
@@ -3091,32 +3071,30 @@ function getOrCreateRaymarchModalBasisCacheComputeNode(
       uniforms,
     },
   );
-  const cachedNode = modalBasisCache.computeNodesByKey?.[nodeKey];
+  const cachedNode = getCachedTexturedComputeNode(
+    modalBasisCache,
+    nodeKey,
+    "raymarchModalBasisTargetTexture",
+    targetTexture,
+  );
   if (cachedNode) {
-    const cachedTargetTexture =
-      /** @type {{ raymarchModalBasisTargetTexture?: unknown }} */ (cachedNode)
-        .raymarchModalBasisTargetTexture;
-    if (cachedTargetTexture && cachedTargetTexture !== targetTexture) {
-      cachedNode.dispose?.();
-      delete modalBasisCache.computeNodesByKey[nodeKey];
-    } else {
-      return cachedNode;
-    }
+    return cachedNode;
   }
 
   const computeNode = createModalBasisCacheComputeKernel({
     modalBasisCache,
+    targetTexture,
     modalFieldModeBuffer: computeInputs.modalFieldModeBuffer,
     modalFieldCapacity: normalizedModalFieldCapacity,
     uniforms: computeInputs.uniforms,
     boundaryMode: normalizedBoundaryMode,
     cavityGeometry: normalizedCavityGeometry,
   });
-  if (computeNode && typeof computeNode === "object") {
-    /** @type {{ raymarchModalBasisTargetTexture?: unknown }} */ (
-      computeNode
-    ).raymarchModalBasisTargetTexture = targetTexture;
-  }
+  tagTexturedComputeNode(
+    computeNode,
+    "raymarchModalBasisTargetTexture",
+    targetTexture,
+  );
   modalBasisCache.computeNodesByKey[nodeKey] = computeNode;
   return computeNode;
 }
@@ -3146,7 +3124,12 @@ function getOrCreateRaymarchLiveFieldProjectionCacheComputeNode(
     "live-field-projection",
     `capacity=${normalizedModalFieldCapacity}`,
   ].join(":");
-  const cachedNode = liveFieldProjectionCache.computeNodesByKey?.[nodeKey];
+  const cachedNode = getCachedTexturedComputeNode(
+    liveFieldProjectionCache,
+    nodeKey,
+    "raymarchModalBasisAtlasTexture",
+    modalBasisAtlasTexture,
+  );
   if (cachedNode) {
     return cachedNode;
   }
@@ -3159,6 +3142,11 @@ function getOrCreateRaymarchLiveFieldProjectionCacheComputeNode(
     modalFieldCapacity: normalizedModalFieldCapacity,
     uniforms,
   });
+  tagTexturedComputeNode(
+    computeNode,
+    "raymarchModalBasisAtlasTexture",
+    modalBasisAtlasTexture,
+  );
   liveFieldProjectionCache.computeNodesByKey[nodeKey] = computeNode;
   return computeNode;
 }
@@ -3192,7 +3180,12 @@ function getOrCreateRaymarchSpectralLaneCacheComputeNode(
     "spectral-lane-cache",
     `capacity=${normalizedModalFieldCapacity}`,
   ].join(":");
-  const cachedNode = spectralLaneCache.computeNodesByKey?.[nodeKey];
+  const cachedNode = getCachedTexturedComputeNode(
+    spectralLaneCache,
+    nodeKey,
+    "raymarchModalBasisAtlasTexture",
+    modalBasisAtlasTexture,
+  );
   if (cachedNode) {
     return cachedNode;
   }
@@ -3207,8 +3200,68 @@ function getOrCreateRaymarchSpectralLaneCacheComputeNode(
     modalFieldCapacity: normalizedModalFieldCapacity,
     uniforms,
   });
+  tagTexturedComputeNode(
+    computeNode,
+    "raymarchModalBasisAtlasTexture",
+    modalBasisAtlasTexture,
+  );
   spectralLaneCache.computeNodesByKey[nodeKey] = computeNode;
   return computeNode;
+}
+
+function texturedComputeNodeMatches(computeNode, textureTagKey, texture) {
+  const taggedTexture = /** @type {Record<string, unknown>} */ (computeNode)[
+    textureTagKey
+  ];
+  return !taggedTexture || taggedTexture === texture;
+}
+
+// The modal-basis atlas ping-pongs between exactly two textures, so each
+// kernel has at most two texture-bound variants. Retain the displaced variant
+// in a standby slot instead of disposing it: steady-state atlas promotions
+// then reuse compiled pipelines instead of rebuilding WGSL kernels.
+function getCachedTexturedComputeNode(cache, nodeKey, textureTagKey, texture) {
+  const activeNode = cache.computeNodesByKey?.[nodeKey] ?? null;
+  if (
+    activeNode &&
+    texturedComputeNodeMatches(activeNode, textureTagKey, texture)
+  ) {
+    return activeNode;
+  }
+
+  if (!cache.standbyComputeNodesByKey) {
+    cache.standbyComputeNodesByKey = Object.create(null);
+  }
+  const standbyNode = cache.standbyComputeNodesByKey[nodeKey] ?? null;
+  if (
+    standbyNode &&
+    texturedComputeNodeMatches(standbyNode, textureTagKey, texture)
+  ) {
+    if (activeNode) {
+      cache.standbyComputeNodesByKey[nodeKey] = activeNode;
+    } else {
+      delete cache.standbyComputeNodesByKey[nodeKey];
+    }
+    cache.computeNodesByKey[nodeKey] = standbyNode;
+    return standbyNode;
+  }
+
+  if (activeNode) {
+    standbyNode?.dispose?.();
+    cache.standbyComputeNodesByKey[nodeKey] = activeNode;
+    delete cache.computeNodesByKey[nodeKey];
+  }
+  return null;
+}
+
+function tagTexturedComputeNode(computeNode, textureTagKey, texture) {
+  if (
+    computeNode &&
+    (typeof computeNode === "object" || typeof computeNode === "function")
+  ) {
+    /** @type {Record<string, unknown>} */ (computeNode)[textureTagKey] =
+      texture;
+  }
 }
 
 export function computeRaymarchLiveFieldProjectionCache(
@@ -3285,6 +3338,7 @@ export function computeRaymarchSpectralLaneCache(
   renderer,
   {
     descriptor = null,
+    modalBasisCacheDescriptor = null,
     modalBasisAtlasTexture,
     modalFieldCoefficientBuffer,
     modalFieldSpectralLaneABuffer,
@@ -3348,6 +3402,8 @@ export function computeRaymarchSpectralLaneCache(
   spectralLaneCache.backend = "compute";
   spectralLaneCache.descriptor = descriptor;
   spectralLaneCache.activeDescriptor = descriptor;
+  spectralLaneCache.modalBasisCacheDescriptor = modalBasisCacheDescriptor;
+  spectralLaneCache.modalBasisAtlasTexture = modalBasisAtlasTexture;
   spectralLaneCache.lastError = null;
   spectralLaneCache.activeCacheBuiltAtSec = Number.isFinite(schedulerTimeSec)
     ? schedulerTimeSec
@@ -3447,21 +3503,30 @@ export function isRaymarchModalBasisCachePendingReadyForDescriptor(
 export function commitRaymarchModalBasisCachePendingDescriptor(
   modalBasisCache,
 ) {
-  if (
-    !modalBasisCache?.pendingReady ||
-    !modalBasisCache.pendingDescriptor ||
-    !modalBasisCache.pendingTexture
-  ) {
+  if (!modalBasisCache?.pendingReady || !modalBasisCache.pendingDescriptor) {
     return { committed: false, reason: "pending-unavailable" };
+  }
+  if (!modalBasisCache.texture || !modalBasisCache.pendingTexture) {
+    modalBasisCache.lastError = "cache-texture-missing";
+    modalBasisCache.lastRebuildReason = "texture-missing";
+    return { committed: false, reason: "texture-missing" };
+  }
+  if (modalBasisCache.pendingTexture === modalBasisCache.texture) {
+    modalBasisCache.lastError = "cache-texture-alias";
+    modalBasisCache.lastRebuildReason = "texture-alias";
+    return { committed: false, reason: "texture-alias" };
   }
 
   const descriptor = modalBasisCache.pendingDescriptor;
+  const promotedTexture = modalBasisCache.pendingTexture;
+  modalBasisCache.pendingTexture = modalBasisCache.texture;
+  modalBasisCache.texture = promotedTexture;
   applyCommittedModalBasisDescriptor(modalBasisCache, descriptor);
   dispatchQueuedRaymarchModalBasisCacheRebuild(modalBasisCache);
   return {
     committed: true,
     descriptor,
-    texture: modalBasisCache.texture,
+    texture: promotedTexture,
   };
 }
 

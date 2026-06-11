@@ -1,3 +1,5 @@
+import { clamp01, mix, smoothstep } from "../../utils/math.js";
+
 export const EDGE_FADE_START = 0.88;
 export const EDGE_FADE_END = 1.0;
 export const SHELL_WEIGHT_MIN = 0.54;
@@ -125,14 +127,6 @@ export const PHOTOGRAPHIC_BLACKFIELD_BODY_REDUCTION_MIN = 0.6;
 export const PHOTOGRAPHIC_COLOR_DENSITY_DELTA_MAX =
   OPTICAL_COLOR_DENSITY_DELTA_MAX;
 
-function clamp01(value) {
-  return Math.min(1, Math.max(0, value));
-}
-
-function mix(a, b, t) {
-  return a * (1 - t) + b * t;
-}
-
 function mixColor(left, right, t) {
   return left.map((channel, index) => mix(channel, right[index] ?? channel, t));
 }
@@ -149,14 +143,6 @@ function clampColor(color, minValue, maxValue) {
 
 function addColor(left, right) {
   return left.map((channel, index) => channel + (right[index] ?? 0));
-}
-
-function smoothstep(edge0, edge1, x) {
-  if (edge0 === edge1) {
-    return x < edge0 ? 0 : 1;
-  }
-  const t = clamp01((x - edge0) / (edge1 - edge0));
-  return t * t * (3 - 2 * t);
 }
 
 function safeFinite(value, fallback = 0) {

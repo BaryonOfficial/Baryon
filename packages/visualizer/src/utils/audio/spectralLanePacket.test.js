@@ -3,10 +3,7 @@ import { normalizeSpectralLanePacket } from "./spectralLanePacket.js";
 
 describe("normalizeSpectralLanePacket", () => {
   it("normalizes finite nonnegative lane weights across both packed lanes", () => {
-    const packet = normalizeSpectralLanePacket(
-      [2, 0, 1, 0],
-      [0, 1, 0, 0],
-    );
+    const packet = normalizeSpectralLanePacket([2, 0, 1, 0], [0, 1, 0, 0]);
 
     expect(packet.laneA).toEqual([0.5, 0, 0.25, 0]);
     expect(packet.laneB).toEqual([0, 0.25, 0, 0]);

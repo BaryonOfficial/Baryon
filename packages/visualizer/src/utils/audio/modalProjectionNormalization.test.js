@@ -36,9 +36,9 @@ describe("projection energy normalization", () => {
     const dense = normalizeWithDenseLoad(1);
 
     expect(dense.metrics.projectionLoad).toBe(1);
-    expect(
-      dense.metrics.projectionAllocatedEnergyResonant,
-    ).toBeCloseTo(sparse.metrics.projectionAllocatedEnergyResonant);
+    expect(dense.metrics.projectionAllocatedEnergyResonant).toBeCloseTo(
+      sparse.metrics.projectionAllocatedEnergyResonant,
+    );
     expect(dense.entries[0].displayAmplitude).toBeCloseTo(
       sparse.entries[0].displayAmplitude,
     );
@@ -72,8 +72,13 @@ describe("projection energy normalization", () => {
       getModalObserverProfile: () => ({ snrFull: 1 }),
     });
 
+    // Protection is telemetry: it must appear in metrics without changing the
+    // finite budget, the allocated energy, or any published amplitude.
     expect(protectedDetail.metrics.projectionHighQProtection).toBeGreaterThan(
       0,
+    );
+    expect(protectedDetail.metrics.projectionEnergyBudgetResonant).toBe(
+      unprotected.metrics.projectionEnergyBudgetResonant,
     );
     expect(
       protectedDetail.metrics.projectionAllocatedEnergyResonant,

@@ -106,6 +106,40 @@ function isBlocklistErrorMessage(message) {
   return /blocklist/i.test(message);
 }
 
+export function isLockdownModeSuspected(globalScope = globalThis) {
+  // Safari's Lockdown Mode removes WebAssembly along with WebGPU, while every
+  // browser that could otherwise run Baryon ships WebAssembly unconditionally.
+  return typeof globalScope.WebAssembly === "undefined";
+}
+
+function getLockdownModeDiagnostic() {
+  if (!isLockdownModeSuspected()) {
+    return [];
+  }
+
+  return [
+    "`WebAssembly` is also missing; Safari's Lockdown Mode removes both WebGPU and WebAssembly.",
+  ];
+}
+
+function getSecureContextDiagnostic() {
+  if (typeof globalThis.isSecureContext !== "boolean") {
+    return [];
+  }
+
+  const diagnostics = [
+    `Secure context: ${globalThis.isSecureContext ? "yes" : "no"}.`,
+  ];
+
+  if (!globalThis.isSecureContext) {
+    diagnostics.push(
+      "WebGPU is only exposed in secure contexts such as HTTPS or localhost.",
+    );
+  }
+
+  return diagnostics;
+}
+
 function buildGenericDesktopGuidance() {
   return {
     summary:
@@ -148,6 +182,32 @@ function buildLinuxFirefoxGuidance() {
   };
 }
 
+function buildMacSafariGuidance() {
+  return {
+    summary: "Safari is not exposing WebGPU to Baryon.",
+    steps: [
+      "Check Safari's WebGPU feature settings and restart Safari after changing them.",
+      "Use Chrome or Edge for Baryon's primary tested browser path.",
+    ],
+    caveat:
+      "`navigator.gpu` can be hidden by Safari settings, site policy, or platform support.",
+  };
+}
+
+function buildMacSafariLockdownGuidance() {
+  return {
+    summary:
+      "Safari's Lockdown Mode is enabled for this site, which removes WebGPU and other APIs Baryon needs.",
+    steps: [
+      'With Baryon open, choose Safari ▸ Settings for This Website… and uncheck "Enable Lockdown Mode", then reload the page.',
+      "Alternatively, open Safari ▸ Settings ▸ Websites ▸ Lockdown Mode and turn it off for this site.",
+      "To turn Lockdown Mode off everywhere, use System Settings ▸ Privacy & Security ▸ Lockdown Mode.",
+    ],
+    caveat:
+      "Lockdown Mode also removes WebAssembly, AudioWorklet, and WebGL2, so Baryon cannot run until this site is excluded from it.",
+  };
+}
+
 function buildMobileGuidance() {
   return {
     summary:
@@ -157,7 +217,12 @@ function buildMobileGuidance() {
   };
 }
 
-export function buildBrowserGuidance({ failureCode, platform, browserFamily }) {
+export function buildBrowserGuidance({
+  failureCode,
+  platform,
+  browserFamily,
+  lockdownSuspected = false,
+}) {
   if (!failureCode) {
     return null;
   }
@@ -172,6 +237,15 @@ export function buildBrowserGuidance({ failureCode, platform, browserFamily }) {
 
   if (isLinuxDesktop(platform) && isChromiumFamily(browserFamily)) {
     return buildLinuxChromiumGuidance();
+  }
+
+  if (
+    platform === BROWSER_PLATFORM.macos &&
+    browserFamily === BROWSER_FAMILY.safari
+  ) {
+    return lockdownSuspected
+      ? buildMacSafariLockdownGuidance()
+      : buildMacSafariGuidance();
   }
 
   return buildGenericDesktopGuidance();
@@ -213,6 +287,7 @@ function createProbe({
       failureCode,
       platform,
       browserFamily,
+      lockdownSuspected: isLockdownModeSuspected(),
     }),
   };
 }
@@ -324,7 +399,11 @@ export async function probeBrowserSupport(
     return createFailureProbe({
       failureCode: BROWSER_FAILURE_CODES.gpuMissing,
       navigatorObject: runtimeNavigator,
-      diagnostics: ["`navigator.gpu` is not available in this browser."],
+      diagnostics: [
+        "`navigator.gpu` is not available in this browser.",
+        ...getSecureContextDiagnostic(),
+        ...getLockdownModeDiagnostic(),
+      ],
     });
   }
 

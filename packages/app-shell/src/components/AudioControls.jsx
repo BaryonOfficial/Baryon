@@ -1,6 +1,11 @@
 import React, { useRef, useState, useEffect } from "react";
 import { useAudio } from "../context/AudioContext";
 import { useAudioTransportClock } from "../context/audioTransportClock.js";
+import {
+  createLiveInputRuntimeStatus,
+  LIVE_INPUT_PHASES,
+  LIVE_INPUT_SIGNAL_STATES,
+} from "../context/liveInputRuntimeStatus.js";
 import { SourceSelector } from "./controls/SourceSelector";
 import { useDraggableFloatingUi } from "./hooks/useDraggableFloatingUi.js";
 
@@ -212,14 +217,49 @@ function getStatusConfig(
   isPlaying,
   isLiveInputActive,
   liveInputDeviceKind,
+  liveInputRuntimeStatus,
 ) {
-  if (isLiveInputActive)
-    return {
-      color: "#D71921",
-      pulse: true,
-      label:
-        liveInputDeviceKind === "system" ? "System input active" : "Mic active",
-    };
+  const status = createLiveInputRuntimeStatus(liveInputRuntimeStatus);
+  if (isLiveInputActive) {
+    const isLineFeed = status.resolvedAnalysisClass === "line-feed";
+    if (
+      status.phase === LIVE_INPUT_PHASES.error ||
+      status.signalState === LIVE_INPUT_SIGNAL_STATES.clipped
+    ) {
+      return { color: "#D71921", pulse: true, label: "Input error" };
+    }
+    if (
+      status.phase === LIVE_INPUT_PHASES.starting ||
+      status.phase === LIVE_INPUT_PHASES.stopping
+    ) {
+      return { color: "#D4A843", pulse: true, label: "Input starting" };
+    }
+    if (status.phase === LIVE_INPUT_PHASES.calibrating) {
+      return { color: "#5B9BF6", pulse: true, label: "Calibrating mic" };
+    }
+    if (status.phase === LIVE_INPUT_PHASES.weakSignal) {
+      return {
+        color: "#D4A843",
+        pulse: true,
+        label:
+          isLineFeed && status.signalState === LIVE_INPUT_SIGNAL_STATES.silent
+            ? "Line feed silent"
+            : "Input weak",
+      };
+    }
+    if (status.phase === LIVE_INPUT_PHASES.listening) {
+      return {
+        color: "#4A9E5C",
+        pulse: true,
+        label: isLineFeed
+          ? "Line feed listening"
+          : liveInputDeviceKind === "system"
+            ? "System input listening"
+            : "Mic listening",
+      };
+    }
+    return { color: "#D4A843", pulse: true, label: "Input starting" };
+  }
   if (isPlaying) return { color: "#4A9E5C", pulse: true, label: "Playing" };
   if (isAudioLoaded) return { color: "#5B9BF6", pulse: false, label: "Loaded" };
   if (isEngineReady) return { color: "#4A9E5C", pulse: false, label: "Ready" };
@@ -1828,6 +1868,7 @@ export function ListenerControls({
     isPlaying,
     isLiveInputActive,
     liveInputDeviceKind,
+    liveInputRuntimeStatus,
     isAudioLoaded,
     volume,
     isMuted,
@@ -1883,6 +1924,7 @@ export function ListenerControls({
     isPlaying,
     isLiveInputActive,
     liveInputDeviceKind,
+    liveInputRuntimeStatus,
   );
   const volumePercent = Math.round(volume * 100);
   const soundCloudListStart = Math.max(0, soundCloudCurrentIndex - 1);

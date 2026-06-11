@@ -228,9 +228,7 @@ describe("buildCanonicalFullModalDescriptor", () => {
     const descriptor = buildCanonicalFullModalDescriptor({
       maxTotalModes: 4,
       basisAtlasPageCapacity: 4,
-      modalFieldSlots: makeSlots([
-        [2, 3, 5, 0.5],
-      ]),
+      modalFieldSlots: makeSlots([[2, 3, 5, 0.5]]),
       activeModalFieldModeCount: 1,
       overBandwidthRejectedModeCount: 2,
       overBandwidthRejectedModalEnergy: 0.25,
@@ -295,9 +293,7 @@ describe("buildCanonicalFullModalDescriptor", () => {
     const descriptor = buildCanonicalFullModalDescriptor({
       maxTotalModes: 4,
       basisAtlasPageCapacity: 4,
-      modalFieldSlots: makeSlots([
-        [2, 3, 5, 0.5],
-      ]),
+      modalFieldSlots: makeSlots([[2, 3, 5, 0.5]]),
       activeModalFieldModeCount: 1,
       overBandwidthRejectedModeCount: 2,
       overBandwidthRejectedModalEnergy: 0.24,

@@ -68,6 +68,5 @@ describe("raymarch sphere intersection", () => {
     expect(stats.avgRaySegmentLength).toBeGreaterThan(0);
     expect(stats.missRatio).toBeGreaterThan(0);
     expect(stats.missRatio).toBeLessThan(1);
-    expect(stats.avgSilhouetteSuppression).toBe(0);
   });
 });

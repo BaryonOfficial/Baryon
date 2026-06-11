@@ -1,3 +1,5 @@
+import { clamp01, smoothstep } from "../math.js";
+
 const PROJECTION_COMPETITION_SIGMA_SOURCE_COUPLED = 0.1;
 const PROJECTION_COMPETITION_SIGMA_RESONANT = 0.035;
 const PROJECTION_COMPETITION_LAMBDA_SOURCE_COUPLED = 0.55;
@@ -10,23 +12,6 @@ const PROJECTION_EVIDENCE_MIN = 0.12;
 const PROJECTION_RESONANT_LAYER_BUDGET = 0.34;
 const PROJECTION_HIGH_Q_PROTECTION_ENERGY_START = 0.00045;
 const PROJECTION_HIGH_Q_PROTECTION_ENERGY_FULL = 0.018;
-
-function clamp01(value) {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-
-  return Math.min(1, Math.max(0, value));
-}
-
-function smoothstep(edge0, edge1, value) {
-  if (edge0 === edge1) {
-    return value >= edge1 ? 1 : 0;
-  }
-
-  const t = clamp01((value - edge0) / (edge1 - edge0));
-  return t * t * (3 - 2 * t);
-}
 
 export function createEmptyProjectionNormalizationMetrics() {
   return {
@@ -186,11 +171,14 @@ export function applyProjectionEnergyNormalization({
     layer,
     modeCoherence,
   });
+  // Diagnostic telemetry only: high-Q protection is reported through metrics
+  // and probes but must never scale projected energy or the finite budget.
+  // The regression "keeps high-Q protection diagnostic from owning structural
+  // projection budget" enforces this contract.
   const highQProtection = getProjectionHighQProtection({
     layer,
     modalObserverMetrics,
   });
-  const structuralBudget = budget;
   const lambda =
     layer === "source-coupled"
       ? PROJECTION_COMPETITION_LAMBDA_SOURCE_COUPLED
@@ -255,8 +243,8 @@ export function applyProjectionEnergyNormalization({
     0,
   );
   const energyScale =
-    competitionAdjustedProjectedRenderEnergyTotal > structuralBudget
-      ? structuralBudget /
+    competitionAdjustedProjectedRenderEnergyTotal > budget
+      ? budget /
         Math.max(competitionAdjustedProjectedRenderEnergyTotal, 1e-9)
       : 1;
   const conservedEntries = competed.map((item) => ({
@@ -270,7 +258,7 @@ export function applyProjectionEnergyNormalization({
       total + item.competitionAdjustedProjectedRenderEnergy * energyScale,
     0,
   );
-  const used = Math.min(allocatedEnergy, structuralBudget);
+  const used = Math.min(allocatedEnergy, budget);
   const maxOverlapPressure = competed.reduce(
     (maxPressure, item) => Math.max(maxPressure, item.competitorPressure),
     0,
@@ -298,7 +286,7 @@ export function applyProjectionEnergyNormalization({
     metrics.projectionEnergyScaleSourceCoupled = energyScale;
     metrics.projectionOverlapPressureSourceCoupled = maxOverlapPressure;
   } else {
-    metrics.projectionEnergyBudgetResonant = structuralBudget;
+    metrics.projectionEnergyBudgetResonant = budget;
     metrics.projectionEnergyUsedResonant = used;
     metrics.projectionRawEnergyResonant = rawProjectedRenderEnergyTotal;
     metrics.projectionAllocatedEnergyResonant = used;
