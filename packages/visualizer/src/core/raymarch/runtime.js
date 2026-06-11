@@ -423,9 +423,22 @@ function clearBufferNode(bufferNode) {
   bufferNode.value.needsUpdate = true;
 }
 
-function snapshotBufferArray(bufferNode) {
+// Reuses the displaced packet's snapshot storage when shapes match: the
+// active render packet is re-snapshotted every coherent tick, and fresh
+// clones of seven mode buffers per frame are measurable GC churn.
+function snapshotBufferArray(bufferNode, reusableSnapshot = null) {
   const array = bufferNode?.value?.array;
-  return array ? new Float32Array(array) : null;
+  if (!array) {
+    return null;
+  }
+  if (
+    reusableSnapshot instanceof Float32Array &&
+    reusableSnapshot.length === array.length
+  ) {
+    reusableSnapshot.set(array);
+    return reusableSnapshot;
+  }
+  return new Float32Array(array);
 }
 
 function restoreBufferArray(bufferNode, snapshot) {
@@ -2645,17 +2658,17 @@ function spectralLaneCacheHasCurrentModalBasisSource(
     committedCache?.modalBasisCacheDescriptor ?? null;
   const modalBasisDescriptorFresh = Boolean(
     committedModalBasisDescriptor &&
-      modalBasisCacheDescriptor &&
-      getRaymarchModalBasisCacheDescriptorStaleReason({
-        activeDescriptor: committedModalBasisDescriptor,
-        nextDescriptor: modalBasisCacheDescriptor,
-      }) == null,
+    modalBasisCacheDescriptor &&
+    getRaymarchModalBasisCacheDescriptorStaleReason({
+      activeDescriptor: committedModalBasisDescriptor,
+      nextDescriptor: modalBasisCacheDescriptor,
+    }) == null,
   );
   return Boolean(
     committedCache?.modalBasisAtlasTexture &&
-      modalBasisAtlasTexture &&
-      committedCache.modalBasisAtlasTexture === modalBasisAtlasTexture &&
-      modalBasisDescriptorFresh,
+    modalBasisAtlasTexture &&
+    committedCache.modalBasisAtlasTexture === modalBasisAtlasTexture &&
+    modalBasisDescriptorFresh,
   );
 }
 
@@ -2709,10 +2722,10 @@ function shouldRetainCommittedSpectralLaneCache(
     spectralLaneCache.descriptor ?? spectralLaneCache.activeDescriptor ?? null;
   const retainEmptyPacket = Boolean(
     nextDescriptor.spectralLaneActivePacketCount === 0 &&
-      nextDescriptor.spectralLaneRadianceInputTotal <= 1e-8 &&
-      (nextDescriptor.modalFieldCount ?? 0) > 0 &&
-      (committedDescriptor?.spectralLaneActivePacketCount ?? 0) > 0 &&
-      (committedDescriptor?.spectralLaneRadianceInputTotal ?? 0) > 1e-8,
+    nextDescriptor.spectralLaneRadianceInputTotal <= 1e-8 &&
+    (nextDescriptor.modalFieldCount ?? 0) > 0 &&
+    (committedDescriptor?.spectralLaneActivePacketCount ?? 0) > 0 &&
+    (committedDescriptor?.spectralLaneRadianceInputTotal ?? 0) > 1e-8,
   );
   if (
     !spectralLaneCacheHasCurrentModalBasisSource(
@@ -3003,9 +3016,11 @@ function snapshotActiveModalRenderPacket(runtimeState, featureFrame) {
     0,
     Math.floor(runtimeState?.uniforms?.uModalFieldModeCount?.value ?? 0),
   );
+  // The displaced packet is unreachable once replaced, so its buffer
+  // snapshots are safe to recycle.
+  const displacedPacket = runtimeState?.activeModalRenderPacket ?? null;
   return {
-    generationId:
-      (runtimeState?.activeModalRenderPacket?.generationId ?? 0) + 1,
+    generationId: (displacedPacket?.generationId ?? 0) + 1,
     descriptor: runtimeState.currentModalBasisCacheDescriptor ?? null,
     spectralLightDescriptor:
       runtimeState.currentSpectralLightDescriptor ?? null,
@@ -3016,24 +3031,31 @@ function snapshotActiveModalRenderPacket(runtimeState, featureFrame) {
         ?.identityPageAssignmentHash ?? null,
     modalFieldModeBuffer: snapshotBufferArray(
       runtimeState.modalFieldModeBuffer,
+      displacedPacket?.modalFieldModeBuffer,
     ),
     modalFieldColorBuffer: snapshotBufferArray(
       runtimeState.modalFieldColorBuffer,
+      displacedPacket?.modalFieldColorBuffer,
     ),
     modalFieldSpectralLaneABuffer: snapshotBufferArray(
       runtimeState.modalFieldSpectralLaneABuffer,
+      displacedPacket?.modalFieldSpectralLaneABuffer,
     ),
     modalFieldSpectralLaneBBuffer: snapshotBufferArray(
       runtimeState.modalFieldSpectralLaneBBuffer,
+      displacedPacket?.modalFieldSpectralLaneBBuffer,
     ),
     modalFieldSpectralMetaBuffer: snapshotBufferArray(
       runtimeState.modalFieldSpectralMetaBuffer,
+      displacedPacket?.modalFieldSpectralMetaBuffer,
     ),
     modalFieldPhaseBuffer: snapshotBufferArray(
       runtimeState.modalFieldPhaseBuffer,
+      displacedPacket?.modalFieldPhaseBuffer,
     ),
     modalFieldCoefficientBuffer: snapshotBufferArray(
       runtimeState.modalFieldCoefficientBuffer,
+      displacedPacket?.modalFieldCoefficientBuffer,
     ),
     modalFieldModeCount: activeModeCount,
     modalBasisPhaseAuthorityModeCount:
