@@ -816,7 +816,7 @@ function hasClosedPreparedSourceEvidence(preparedInputs) {
   );
 }
 
-function shouldComposeInactiveSourceFeatureFrame({
+function shouldComposeSourceCutFeatureFrame({
   status,
   controls,
   preparedInputs,
@@ -2322,7 +2322,16 @@ export function resolveFeatureFrame(
         featureEngine?.reset?.("silent-frame");
         resetAnalysisSchedulerState(analysisSchedulerRef);
       } else {
-        if (featureEngine?.enqueueTransportFrame) {
+        const shouldComposeSourceCut =
+          shouldComposeSourceCutFeatureFrame({
+            status,
+            controls,
+            preparedInputs,
+          });
+        if (
+          featureEngine?.enqueueTransportFrame &&
+          !shouldComposeSourceCut
+        ) {
           const schedulerState =
             getAnalysisSchedulerState(analysisSchedulerRef);
           const engineEnqueueStartedAt = getRenderLoopWallTimeMs();
@@ -2448,12 +2457,6 @@ export function resolveFeatureFrame(
               getRenderLoopWallTimeMs() - fastComposeStartedAt,
             );
           } else {
-            const shouldComposeInactiveSource =
-              shouldComposeInactiveSourceFeatureFrame({
-                status,
-                controls,
-                preparedInputs,
-              });
             const shouldSeedLiveWarmup = shouldSeedLiveInputWarmupFrame({
               status,
               lastLiveFrame: lastLiveFrameRef.current,
@@ -2475,7 +2478,7 @@ export function resolveFeatureFrame(
 
             if (
               shouldRefreshProgramSnapshot ||
-              shouldComposeInactiveSource ||
+              shouldComposeSourceCut ||
               shouldSeedLiveWarmup ||
               shouldBootstrapActive ||
               shouldRefreshSpectralLight

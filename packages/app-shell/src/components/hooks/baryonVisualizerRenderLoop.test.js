@@ -2358,7 +2358,8 @@ test("resolveFeatureFrame composes a source-cut frame during paused playback", (
   });
 
   expect(prepareFeatureFrame).toHaveBeenCalled();
-  expect(featureEngine.enqueueTransportFrame).toHaveBeenCalled();
+  expect(featureEngine.enqueueTransportFrame).not.toHaveBeenCalled();
+  expect(featureEngine.readLatestSnapshot).not.toHaveBeenCalled();
   expect(runHeavyFeatureAnalysis).toHaveBeenCalled();
   expect(composeFeatureFrame).toHaveBeenCalled();
   expect(result.featureFrame).toBe(sourceCutFrame);
@@ -2475,7 +2476,8 @@ test("resolveFeatureFrame does not reuse last-live cache after system source evi
     composeFeatureFrame,
   });
 
-  expect(featureEngine.enqueueTransportFrame).toHaveBeenCalled();
+  expect(featureEngine.enqueueTransportFrame).not.toHaveBeenCalled();
+  expect(featureEngine.readLatestSnapshot).not.toHaveBeenCalled();
   expect(runHeavyFeatureAnalysis).toHaveBeenCalled();
   expect(composeFeatureFrame).toHaveBeenCalled();
   expect(result.effectiveFrame).toBe(sourceCutFrame);
@@ -2486,6 +2488,96 @@ test("resolveFeatureFrame does not reuse last-live cache after system source evi
   expect(
     args.renderLoopRefs.frameCacheRefs.lastLiveFrameRef.current,
   ).toBeNull();
+});
+
+test("resolveFeatureFrame keeps closed live-source frames out of the worker queue", () => {
+  const sourceCutFrame = {
+    fieldState: "idle",
+    renderAuthority: false,
+    sourceEvidence: {
+      sourceKind: "live",
+      sourceBoundaryState: "muted",
+      currentSourceEvidence: false,
+    },
+  };
+  const featureEngine = {
+    enqueueTransportFrame: vi.fn(),
+    readLatestSnapshot: vi.fn(() => null),
+    getStatus: vi.fn(() => ({})),
+  };
+  const frameCacheRefs = {
+    lastLiveFrameRef: { current: null },
+    lastActiveFrameRef: { current: null },
+    lastIdleFrameRef: { current: null },
+    analysisSchedulerRef: { current: {} },
+  };
+  let currentFrameAtMs = 1000;
+  const prepareFeatureFrame = vi.fn(() => ({
+    currentFrameAtMs,
+    inputMode: "live",
+    analysisSessionKey: "live:device-1",
+    analysisInputsSignature: '"muted-live-source"',
+    snapshot: {
+      fftMagnitudes: new Float32Array(4),
+      timeData: new Float32Array(8),
+    },
+    sourceEvidence: {
+      sourceKind: "live",
+      sourceBoundaryState: "muted",
+      currentSourceEvidence: false,
+    },
+    silentFeatureFrame: null,
+  }));
+  const runHeavyFeatureAnalysis = vi.fn(() => ({
+    fieldState: "idle",
+    renderAuthority: false,
+  }));
+  const composeFeatureFrame = vi.fn(() => sourceCutFrame);
+  const { args } = createResolveFeatureFrameHarness({
+    featureEngine,
+    status: {
+      audioInputMode: "live",
+      isPlaying: false,
+      isLiveInputActive: true,
+      liveInputDeviceKind: "live",
+      resolvedLiveInputAnalysisClass: "acoustic-mic",
+    },
+    clockMode: "realtime",
+    renderLoopRefs: {
+      frameCacheRefs,
+    },
+  });
+
+  const result = resolveFeatureFrame(args, {
+    prepareFeatureFrame,
+    runHeavyFeatureAnalysis,
+    composeFeatureFrame,
+  });
+
+  expect(featureEngine.enqueueTransportFrame).not.toHaveBeenCalled();
+  expect(featureEngine.readLatestSnapshot).not.toHaveBeenCalled();
+  expect(runHeavyFeatureAnalysis).toHaveBeenCalledTimes(1);
+  expect(composeFeatureFrame).toHaveBeenCalledTimes(1);
+  expect(result.effectiveFrame).toBe(sourceCutFrame);
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
+    "local-heavy-analysis",
+  );
+
+  currentFrameAtMs = 1010;
+  const secondResult = resolveFeatureFrame(args, {
+    prepareFeatureFrame,
+    runHeavyFeatureAnalysis,
+    composeFeatureFrame,
+  });
+
+  expect(featureEngine.enqueueTransportFrame).not.toHaveBeenCalled();
+  expect(featureEngine.readLatestSnapshot).not.toHaveBeenCalled();
+  expect(runHeavyFeatureAnalysis).toHaveBeenCalledTimes(1);
+  expect(composeFeatureFrame).toHaveBeenCalledTimes(2);
+  expect(secondResult.effectiveFrame).toBe(sourceCutFrame);
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
+    "scheduled-reuse",
+  );
 });
 
 test("resolveFeatureFrame does not fall back to cached active frames for inactive sources", () => {
