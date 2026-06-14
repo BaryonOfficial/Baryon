@@ -1,0 +1,21 @@
+---
+title: "Baryon docs"
+description: "Public engineering and product reference for Baryon's physics-based audio visualizer."
+---
+
+Baryon is a real-time cymatic audio visualizer. These docs cover first-session use, creative capture workflows, public architecture, runtime contracts, output integration, controls, and frequently asked questions.
+
+## Start here
+
+- [First session guide](/public/guides/first-session): connect audio, frame the scene, set rotation, and save a repeatable setup.
+- [Understanding the engine](/public/guides/understanding-the-engine): learn what Baryon is rendering and how the main settings affect the field.
+- [Creative workflows](/public/guides/creative-workflows): use nature recordings, capture stills or video, and understand current 3D export limits.
+- [Control panel reference](/public/reference/controls): review the current controls exposed by the Baryon GUI.
+- [FAQ](/public/reference/faq): answer common product and licensing questions.
+- [Architecture map](/public/architecture/system-overview): find the shared engine seams and ownership boundaries before changing behavior.
+- [Contracts and boundaries](/public/architecture/contracts): understand stable cross-host contracts such as `AudioFeatureFrame`, controls, persistence, and render profile policy.
+- [Output integration](/public/architecture/output-sync): trace how source surfaces, transport messages, sink surfaces, and host output backends stay synchronized.
+
+## Source of truth
+
+Mintlify reads this directory from Git. Keep `docs/docs.json` as the site configuration and add public pages to its navigation when they should appear in the sidebar.

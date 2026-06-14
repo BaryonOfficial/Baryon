@@ -82,6 +82,8 @@ pnpm verify               # Fast local pre-push gate
 pnpm verify:acceptance    # Fast gate plus packaged desktop output contracts
 pnpm verify:full          # Acceptance verification plus all builds
 pnpm docs:check           # Validate doc links, doc invariants, and repo-map freshness
+pnpm dev:docs             # Start Mintlify docs from docs/
+pnpm docs:mintlify:check  # Check Mintlify links and validate docs/
 ```
 
 Useful package-local commands:
@@ -133,14 +135,14 @@ That keeps the desktop app, web surface, and shared packages on one release numb
 
 ## Documentation
 
-Start with [`documentation/README.md`](documentation/README.md) for the docs map.
+Start with [`docs/README.md`](docs/README.md) for the docs map.
 
 Canonical public/shared docs:
 
-- [`documentation/public/architecture/system-overview.md`](documentation/public/architecture/system-overview.md)
-- [`documentation/public/architecture/contracts.md`](documentation/public/architecture/contracts.md)
-- [`documentation/public/architecture/output-sync.md`](documentation/public/architecture/output-sync.md)
-- [`documentation/public/reference/controls.md`](documentation/public/reference/controls.md)
+- [`docs/public/architecture/system-overview.mdx`](docs/public/architecture/system-overview.mdx)
+- [`docs/public/architecture/contracts.mdx`](docs/public/architecture/contracts.mdx)
+- [`docs/public/architecture/output-sync.mdx`](docs/public/architecture/output-sync.mdx)
+- [`docs/public/reference/controls.mdx`](docs/public/reference/controls.mdx)
 
 
 ## Contributing

@@ -115,9 +115,9 @@ Keep the first line under 72 characters. Use the body for context if needed.
 
 New GUI controls must be added through the shared control schema and documented in the canonical control reference:
 
-- [`documentation/public/reference/controls.md`](../documentation/public/reference/controls.md)
-- [`documentation/public/architecture/contracts.md`](../documentation/public/architecture/contracts.md)
-- [`documentation/README.md`](../documentation/README.md)
+- [`docs/public/reference/controls.mdx`](../docs/public/reference/controls.mdx)
+- [`docs/public/architecture/contracts.mdx`](../docs/public/architecture/contracts.mdx)
+- [`docs/README.md`](../docs/README.md)
 
 ---
 

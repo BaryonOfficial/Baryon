@@ -1,0 +1,61 @@
+---
+title: "Understanding the engine"
+description: "A plain-language map of what Baryon renders and how the main settings affect the cymatic field."
+---
+
+Baryon turns audio into a real-time cymatic field. The visual is not a waveform, bar graph, particle system, or point cloud. It is a continuous volumetric field rendered as a 3D cymatic structure.
+
+## What you are seeing
+
+At a high level:
+
+1. Baryon analyzes the incoming audio.
+2. The analysis excites a set of modal patterns.
+3. Those modes form a continuous 3D field inside a virtual cavity.
+4. The renderer samples that field through the volume and draws the visible glow, contours, color, and depth.
+
+That means the meaningful state is not a list of screen coordinates. The meaningful state is the current modal field: which modes are active, how strongly they are excited, and how the renderer samples the resulting volume.
+
+## Why settings matter
+
+Most controls are either analysis controls, field controls, render controls, or camera controls.
+
+| Setting area                       | What it changes                                                                                        |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **Audio Input Profile**            | How Baryon interprets the source before it becomes a modal field.                                      |
+| **Boundary**                       | The modal family. `Neumann` behaves like a reflective boundary; `Dirichlet` behaves like a fixed node. |
+| **Reactivity**                     | How strongly audio features drive the field.                                                           |
+| **Node Threshold**                 | How sharply the visible structures resolve into rings and contours.                                    |
+| **Density / Absorption / Opacity** | How thick, deep, and solid the raymarched volume appears.                                              |
+| **Color Mode**                     | Whether color is manually chosen or promoted from the audio spectrum.                                  |
+| **Rotation Mode**                  | Whether the cymatic volume is stationary, audio-driven, or manually spun.                              |
+| **Performance Profile**            | How much render quality Baryon trades for frame-rate stability.                                        |
+| **Camera controls**                | Your viewpoint only. They do not change the underlying modal field.                                    |
+
+## Camera versus rotation
+
+This distinction matters when you are trying to capture a specific expression:
+
+- **Camera orbit** changes where you view the field from.
+- **Rotation Mode** changes whether the rendered cymatic volume itself rotates.
+- **Manual Rotation** only applies when **Rotation Mode** is `Manual`.
+- **Motion Scale** only applies when **Rotation Mode** is `Audio`.
+- **Lock Camera** prevents accidental orbit dragging. It does not freeze the cymatic field.
+
+## Nature and coherent recordings
+
+Water, wind, trees, room tone, and other environmental recordings usually behave best as **Ambient** sources. They often contain several simultaneous textures instead of a single lead pitch.
+
+For the most faithful source:
+
+- Use clean recordings when possible.
+- Keep echo cancellation, noise suppression, and auto gain off for line feeds or clean files.
+- Use browser mic processing only when it solves a real capture problem.
+- Start with lower **Reactivity** and increase it until the field breathes with the recording.
+- Save presets by source type, such as water, wind, voice, or music.
+
+## What coordinates would mean
+
+Because Baryon renders a continuous field, an exportable "coordinate" set is not the same thing as a point cloud. A future geometry export would need to choose a moment in time, sample the field, extract a surface or volume, and convert that result into a mesh format that design and slicing tools understand.
+
+The current public app does not export raw coordinates, point clouds, STL, OBJ, GLTF, or other 3D-printable geometry. See [Creative workflows](/public/guides/creative-workflows) for the current capture path and the shape of a future export workflow.

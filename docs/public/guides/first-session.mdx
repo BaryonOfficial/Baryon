@@ -1,0 +1,81 @@
+---
+title: "First session guide"
+description: "A practical path for opening Baryon, connecting audio, framing the scene, and saving a useful setup."
+---
+
+Use this page when you want a fast, intentional setup before diving into the full control reference.
+
+## Choose an audio source
+
+Baryon can visualize an audio file, a microphone, a line input, or loopback audio from another app.
+
+For live microphone input, choose the profile that matches the material:
+
+| Source                                | Recommended profile | Why it helps                                                       |
+| ------------------------------------- | ------------------- | ------------------------------------------------------------------ |
+| Voice, singing, lead instrument       | **Voice**           | Tracks a dominant pitch and treats harmonics as supporting detail. |
+| Water, wind, room tone, field audio   | **Ambient**         | Allows several sources to contribute at once.                      |
+| Music playback or routed system audio | **Ambient**         | Avoids forcing mixed material into a single vocal driver.          |
+
+If you are routing a clean recording or line feed, leave browser mic processing such as echo cancellation, noise suppression, and auto gain off unless you need it. Those tools can make a noisy room easier to capture, but they also change the spectrum Baryon receives.
+
+## Frame the scene
+
+Use the floating camera controls to set the view before adjusting the pattern itself:
+
+- Drag to orbit the camera when the camera is unlocked.
+- Use top, side, and reset controls for repeatable views.
+- Lock the camera after framing so an accidental drag does not move the shot.
+
+Camera movement and cymatic rotation are separate concepts. Camera controls change your point of view. **Rotation Mode** changes whether the rendered cymatic volume rotates.
+
+## Set rotation
+
+Open the GUI in the top-right corner and use **Mode** and **Motion**:
+
+| Goal                       | Setting                                                           |
+| -------------------------- | ----------------------------------------------------------------- |
+| Still scene                | Set **Rotation Mode** to `Off`.                                   |
+| Scene moves with the audio | Set **Rotation Mode** to `Audio`, then tune **Motion Scale**.     |
+| Fixed spin for capture     | Set **Rotation Mode** to `Manual`, then tune **Manual Rotation**. |
+| Reverse the manual spin    | Use a negative **Manual Rotation** value.                         |
+
+<Note>
+  Baryon does not currently expose keyboard shortcuts for manually rotating the
+  cymatic representation. Use **Rotation Mode** and **Manual Rotation** in the
+  control panel.
+</Note>
+
+## Tune the pattern intentionally
+
+Start with these controls before fine-tuning color or diagnostics:
+
+| Control            | Use it for                                                                                          |
+| ------------------ | --------------------------------------------------------------------------------------------------- |
+| **Reactivity**     | How strongly the field responds to the incoming audio.                                              |
+| **Node Threshold** | How sharp or soft the ring structures feel. Lower values make crisper contours.                     |
+| **Density**        | Overall thickness and brightness of the volume.                                                     |
+| **Absorption**     | Internal depth contrast. Higher values reduce haze and reveal stronger layering.                    |
+| **Opacity**        | How solid the orb feels, especially over video or a transparent stage output.                       |
+| **Color Mode**     | `Static` for controlled color, `Spectral` when you want the audio spectrum to color promoted modes. |
+
+For subtle natural recordings, start lower on **Reactivity**, **Density**, and **Opacity**, then raise **Node Threshold** only if the field feels too diffuse.
+
+## Save a repeatable setup
+
+Use **Presets** to save named snapshots of your controls. This is the quickest way to keep separate looks for water, wind, voice, or a particular track.
+
+Baryon also auto-saves your latest control values in the browser so the next session opens close to where you left off.
+
+## Capture stills and video
+
+Baryon does not currently include a native still-image export button. For now, use your browser or operating system screenshot and screen-recording tools after the scene is framed.
+
+For cleaner captures:
+
+- Set **Rotation Mode** to `Off` for stills or `Manual` for a controlled spin.
+- Lock the camera after framing.
+- Choose **Output Mode** based on the destination: `Transparent` for compositing, `Opaque` for a filled background.
+- Save a preset once the look is stable.
+
+For 3D printing, mesh export, point clouds, and coordinate questions, see [Creative workflows](/public/guides/creative-workflows).
