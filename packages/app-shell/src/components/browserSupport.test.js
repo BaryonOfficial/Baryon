@@ -122,7 +122,8 @@ test("reports missing requestAdapter with Linux Chromium guidance", async () => 
   });
 
   expect(result.failureCode).toBe(BROWSER_FAILURE_CODES.requestAdapterMissing);
-  expect(result.guidance.steps[0]).toMatch(/enable-unsafe-webgpu/i);
+  expect(result.guidance.steps.join(" ")).toMatch(/graphics acceleration/i);
+  expect(result.guidance.steps.join(" ")).toMatch(/enable-unsafe-webgpu/i);
 });
 
 test("maps a null adapter to the adapter-null failure code", async () => {
@@ -136,6 +137,38 @@ test("maps a null adapter to the adapter-null failure code", async () => {
 
   expect(result.failureCode).toBe(BROWSER_FAILURE_CODES.adapterNull);
 });
+
+test.each([
+  [
+    "Windows",
+    BROWSER_PLATFORM.windows,
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/145.0.0.0 Safari/537.36",
+  ],
+  [
+    "macOS",
+    BROWSER_PLATFORM.macos,
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_5) AppleWebKit/537.36 Chrome/145.0.0.0 Safari/537.36",
+  ],
+])(
+  "reports %s Chromium adapter failures with graphics guidance",
+  async (_label, expectedPlatform, userAgent) => {
+    const result = await probeBrowserSupport(false, {
+      userAgent,
+      gpu: {
+        requestAdapter: async () => null,
+      },
+    });
+
+    expect(result.failureCode).toBe(BROWSER_FAILURE_CODES.adapterNull);
+    expect(result.platform).toBe(expectedPlatform);
+    expect(result.browserFamily).toBe(BROWSER_FAMILY.chromium);
+    expect(result.guidance.summary).toMatch(/Chromium-based browser/i);
+    expect(result.guidance.steps[0]).toBe(
+      "Turn on the browser's graphics acceleration setting, then relaunch.",
+    );
+    expect(result.guidance.steps[0]).not.toMatch(/Chrome|chrome:\/\//i);
+  },
+);
 
 test("classifies blocklisted Firefox adapters distinctly", async () => {
   const result = await probeBrowserSupport(false, {

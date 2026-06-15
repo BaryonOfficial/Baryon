@@ -91,8 +91,7 @@
         "group": "Architecture",
         "pages": [
           "public/architecture/system-overview",
-          "public/architecture/contracts",
-          "public/architecture/output-sync"
+          "public/architecture/contracts"
         ]
       },
       {

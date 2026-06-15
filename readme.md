@@ -141,7 +141,6 @@ Canonical public/shared docs:
 
 - [`docs/public/architecture/system-overview.mdx`](docs/public/architecture/system-overview.mdx)
 - [`docs/public/architecture/contracts.mdx`](docs/public/architecture/contracts.mdx)
-- [`docs/public/architecture/output-sync.mdx`](docs/public/architecture/output-sync.mdx)
 - [`docs/public/reference/controls.mdx`](docs/public/reference/controls.mdx)
 
 

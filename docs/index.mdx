@@ -3,7 +3,7 @@ title: "Baryon docs"
 description: "Public engineering and product reference for Baryon's physics-based audio visualizer."
 ---
 
-Baryon is a real-time cymatic audio visualizer. These docs cover first-session use, creative capture workflows, public architecture, runtime contracts, output integration, controls, and frequently asked questions.
+Baryon is a real-time cymatic audio visualizer. These docs cover first-session use, creative capture workflows, the engine architecture, runtime contracts, the full control reference, and frequently asked questions.
 
 ## Start here
 
@@ -12,10 +12,13 @@ Baryon is a real-time cymatic audio visualizer. These docs cover first-session u
 - [Creative workflows](/public/guides/creative-workflows): use nature recordings, capture stills or video, and understand current 3D export limits.
 - [Control panel reference](/public/reference/controls): review the current controls exposed by the Baryon GUI.
 - [FAQ](/public/reference/faq): answer common product and licensing questions.
-- [Architecture map](/public/architecture/system-overview): find the shared engine seams and ownership boundaries before changing behavior.
-- [Contracts and boundaries](/public/architecture/contracts): understand stable cross-host contracts such as `AudioFeatureFrame`, controls, persistence, and render profile policy.
-- [Output integration](/public/architecture/output-sync): trace how source surfaces, transport messages, sink surfaces, and host output backends stay synchronized.
+- [Architecture map](/public/architecture/system-overview): find the shared engine seams and ownership boundaries.
+- [Contracts and boundaries](/public/architecture/contracts): understand the stable engine contracts such as `AudioFeatureFrame`, controls, persistence, and render-profile policy.
 
-## Source of truth
+## How these docs are organized
 
-Mintlify reads this directory from Git. Keep `docs/docs.json` as the site configuration and add public pages to its navigation when they should appear in the sidebar.
+- **Guides** walk you through using Baryon, from your first session to creative capture workflows.
+- **Architecture** maps the open engine for developers reading or extending the source.
+- **Reference** is the exhaustive control panel and FAQ.
+
+New to Baryon? Start with the [first session guide](/public/guides/first-session). Want to know what it is actually rendering? Read [Understanding the engine](/public/guides/understanding-the-engine).
