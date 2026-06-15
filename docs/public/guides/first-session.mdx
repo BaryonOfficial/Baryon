@@ -11,11 +11,10 @@ Baryon can visualize an audio file, a microphone, a line input, or loopback audi
 
 For live microphone input, choose the profile that matches the material:
 
-| Source                                | Recommended profile | Why it helps                                                       |
-| ------------------------------------- | ------------------- | ------------------------------------------------------------------ |
-| Voice, singing, lead instrument       | **Voice**           | Tracks a dominant pitch and treats harmonics as supporting detail. |
-| Water, wind, room tone, field audio   | **Ambient**         | Allows several sources to contribute at once.                      |
-| Music playback or routed system audio | **Ambient**         | Avoids forcing mixed material into a single vocal driver.          |
+| Source                                          | Recommended profile | Why it helps                                                       |
+| ----------------------------------------------- | ------------------- | ------------------------------------------------------------------ |
+| A voice, singer, or lead instrument             | **Voice**           | Tracks a dominant pitch and treats harmonics as supporting detail. |
+| Music, a full mix, a live room, or system audio | **Ambient**         | Lets many simultaneous sources contribute instead of one driver.   |
 
 If you are routing a clean recording or line feed, leave browser mic processing such as echo cancellation, noise suppression, and auto gain off unless you need it. Those tools can make a noisy room easier to capture, but they also change the spectrum Baryon receives.
 
@@ -59,11 +58,11 @@ Start with these controls before fine-tuning color or diagnostics:
 | **Opacity**        | How solid the orb feels, especially over video or a transparent stage output.                       |
 | **Color Mode**     | `Static` for controlled color, `Spectral` when you want the audio spectrum to color promoted modes. |
 
-For subtle natural recordings, start lower on **Reactivity**, **Density**, and **Opacity**, then raise **Node Threshold** only if the field feels too diffuse.
+For quiet or sparse material, start lower on **Reactivity**, **Density**, and **Opacity**, then raise **Node Threshold** only if the field feels too diffuse.
 
 ## Save a repeatable setup
 
-Use **Presets** to save named snapshots of your controls. This is the quickest way to keep separate looks for water, wind, voice, or a particular track.
+Use **Presets** to save named snapshots of your controls. This is the quickest way to keep separate looks for a voice, a live set, or a particular track.
 
 Baryon also auto-saves your latest control values in the browser so the next session opens close to where you left off.
 

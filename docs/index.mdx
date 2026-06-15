@@ -3,22 +3,25 @@ title: "Baryon docs"
 description: "Public engineering and product reference for Baryon's physics-based audio visualizer."
 ---
 
-Baryon is a real-time cymatic audio visualizer. These docs cover first-session use, creative capture workflows, the engine architecture, runtime contracts, the full control reference, and frequently asked questions.
+Baryon is a real-time cymatic audio visualizer. These docs have three tracks: **Using Baryon** for everyone running the app, **Desktop** for the live-performance app, and **Developers** for anyone working on the open repo.
 
 ## Start here
 
+- [Quickstart](/public/guides/quickstart): render your first sound in about five minutes — no install.
 - [First session guide](/public/guides/first-session): connect audio, frame the scene, set rotation, and save a repeatable setup.
 - [Understanding the engine](/public/guides/understanding-the-engine): learn what Baryon is rendering and how the main settings affect the field.
-- [Creative workflows](/public/guides/creative-workflows): use nature recordings, capture stills or video, and understand current 3D export limits.
+- [Creative workflows](/public/guides/creative-workflows): choose source material, capture stills or video, and understand current 3D export limits.
 - [Control panel reference](/public/reference/controls): review the current controls exposed by the Baryon GUI.
 - [FAQ](/public/reference/faq): answer common product and licensing questions.
-- [Architecture map](/public/architecture/system-overview): find the shared engine seams and ownership boundaries.
-- [Contracts and boundaries](/public/architecture/contracts): understand the stable engine contracts such as `AudioFeatureFrame`, controls, persistence, and render-profile policy.
+
+## Building on Baryon?
+
+The engine is source-available on GitHub. The **Developers** tab covers [local setup and contributing](/public/develop/contributing) and the [engine architecture](/public/architecture/system-overview) — the pipeline, the audio-to-render seam, and the stable contracts such as `AudioFeatureFrame`.
 
 ## How these docs are organized
 
-- **Guides** walk you through using Baryon, from your first session to creative capture workflows.
-- **Architecture** maps the open engine for developers reading or extending the source.
-- **Reference** is the exhaustive control panel and FAQ.
+- **Using Baryon** — guides for running the app, from your first session to creative capture, plus the full control reference and FAQ.
+- **Desktop** — the desktop performance app: plans, the Performer License, and what to expect at launch.
+- **Developers** — how to work on the public repo and how the open engine is built.
 
-New to Baryon? Start with the [first session guide](/public/guides/first-session). Want to know what it is actually rendering? Read [Understanding the engine](/public/guides/understanding-the-engine).
+New to Baryon? Start with the [Quickstart](/public/guides/quickstart). Want to know what it is actually rendering? Read [Understanding the engine](/public/guides/understanding-the-engine).

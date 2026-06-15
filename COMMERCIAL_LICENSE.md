@@ -40,7 +40,11 @@ attribution: **"Powered by Baryon engine — baryon.live"**
 
 ## The Baryon Desktop App
 
-The Baryon desktop application is a separate commercial product available at
-[baryon.live](https://baryon.live). It is not covered by the PolyForm Strict
-License or this Commercial License document — it has its own end-user license
-presented at the time of purchase.
+The Baryon desktop application is free to download and evaluate. A paid Performer
+License unlocks Performer Mode and professional live-use features, and is available
+at [baryon.live](https://baryon.live). The desktop app is not covered by the
+PolyForm Strict License or this Commercial License document — it has its own
+end-user license presented at the time of purchase.
+
+This document still governs the separate case of **embedding or redistributing**
+the Baryon engine in another product, installation, hardware, service, or app.

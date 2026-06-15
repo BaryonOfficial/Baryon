@@ -1,0 +1,66 @@
+---
+title: "Local setup & contributing"
+description: "Run the open Baryon repo locally and contribute to the web app and shared engine."
+---
+
+This is the entry point for working on the open Baryon repo — the web app and the
+shared visualization engine. It is source-available under the
+[PolyForm Strict License 1.0.0](https://polyformproject.org/licenses/strict/1.0.0/),
+and contributions are welcome (a one-time CLA is required before your first pull
+request merges).
+
+## What lives in the public repo
+
+The public repo is the web app plus the shared engine:
+
+- **`apps/web`** — the browser product shell deployed at `app.baryon.live`.
+- **`packages/visualizer`** — the engine: audio analysis, `AudioFeatureFrame` construction, the control schema, render-profile policy, and the raymarch runtime.
+- **`packages/app-shell`** — the shared React orchestration around the engine.
+- **`packages/config`** — shared build and test config.
+- **`docs/public`** — the pages on this site.
+
+The desktop app is a separate commercial product and is not part of this repo. For
+how these pieces fit together, read the [engine architecture](/public/architecture/system-overview).
+
+## Run it locally
+
+Prerequisites: the Node version pinned in [`.nvmrc`](https://github.com/BaryonOfficial/Baryon/blob/main/.nvmrc), `pnpm`, and Chrome or Edge for the WebGPU path.
+
+```bash
+git clone https://github.com/BaryonOfficial/Baryon.git
+cd Baryon
+pnpm install
+pnpm dev          # start apps/web
+```
+
+Microphone input and `SharedArrayBuffer` need a secure context, so use the HTTPS dev
+server for that work:
+
+```bash
+cd apps/web && pnpm dev:https
+```
+
+## Before you open a pull request
+
+Run the fast verification gate — the same default checks CI runs — and fix any
+failures before pushing:
+
+```bash
+pnpm verify       # lint, typecheck, and unit tests
+```
+
+Branch from `develop` using a `feature/`, `fix/`, or `docs/` prefix, and follow
+[Conventional Commits](https://www.conventionalcommits.org/) (`feat`, `fix`, `docs`,
+`refactor`, `test`, `chore`) with a subject line under 72 characters.
+
+<Note>
+  New GUI controls must be added through the shared control schema and documented in
+  the [control panel reference](/public/reference/controls). The schema is the single
+  source of truth for keys, defaults, and live-vs-debug persistence.
+</Note>
+
+## Reference
+
+- [Contributing guide](https://github.com/BaryonOfficial/Baryon/blob/main/.github/CONTRIBUTING.md) — the full setup, CLA, branch, and PR flow.
+- [Engine whitepaper](https://github.com/BaryonOfficial/Baryon) — the governing equations and the modal model.
+- [GitHub Discussions](https://github.com/BaryonOfficial/Baryon/discussions) and [Issues](https://github.com/BaryonOfficial/Baryon/issues) — questions and bug reports.

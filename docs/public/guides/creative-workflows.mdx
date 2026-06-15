@@ -1,24 +1,22 @@
 ---
 title: "Creative workflows"
-description: "Guidance for nature recordings, still captures, video captures, and future 3D-printable cymatic exports."
+description: "Guidance for choosing source material, capturing stills and video, and future 3D-printable cymatic exports."
 ---
 
-This guide covers creative uses that sit between product controls and future export features: nature recordings, stills, video capture, sculptural references, and 3D-printing experiments.
+This guide covers creative uses that sit between the product controls and future export features: choosing source material, capturing stills and video, and 3D-printing experiments.
 
-## Elemental and nature recordings
+## Choosing source material
 
-Baryon can work well with close-up natural material: water, waves, wind, trees, insects, birds, and room ambience. Treat those sources as layered textures instead of lead voices.
+The first creative choice is the input profile, and it comes down to one question: does the audio have a single lead pitch, or many sounds at once?
 
-Recommended starting point:
+| Material                                 | Profile     | Why                                                        |
+| ---------------------------------------- | ----------- | ---------------------------------------------------------- |
+| A solo voice, singer, or lead instrument | **Voice**   | Tracks one dominant pitch and treats harmonics as texture. |
+| Music, a full mix, or a busy room        | **Ambient** | Lets many simultaneous sources shape the field at once.    |
 
-| Material                         | Profile                  | First controls to try                                               |
-| -------------------------------- | ------------------------ | ------------------------------------------------------------------- |
-| Water, waves, rain, streams      | **Ambient**              | Lower **Reactivity**, moderate **Density**, soft **Opacity**        |
-| Wind, leaves, room tone          | **Ambient**              | Lower **Density**, higher **Absorption** for internal detail        |
-| Animals or isolated calls        | **Voice** or **Ambient** | Use **Voice** for one clear call; **Ambient** for mixed soundscapes |
-| Music or field-recording collage | **Ambient**              | Try **Spectral** color and save presets per source                  |
+Good starting controls: lower **Reactivity**, **Density**, and **Opacity** for quiet or sparse material, then raise **Node Threshold** if the field feels too diffuse. For dense, layered music, try **Spectral** color so the field is colored by the spectrum.
 
-For clean field recordings, avoid browser audio cleanup unless it is needed. Echo cancellation, noise suppression, and auto gain can help with a noisy microphone setup, but they also alter the signal that drives the field.
+For clean recordings or a direct feed, avoid browser audio cleanup unless you need it. Echo cancellation, noise suppression, and auto gain can rescue a noisy microphone, but they also alter the signal that drives the field.
 
 ## Still shots
 

@@ -140,8 +140,8 @@ Start with [`docs/README.md`](docs/README.md) for the docs map.
 Canonical public/shared docs:
 
 - [`docs/public/architecture/system-overview.mdx`](docs/public/architecture/system-overview.mdx)
-- [`docs/public/architecture/contracts.mdx`](docs/public/architecture/contracts.mdx)
 - [`docs/public/reference/controls.mdx`](docs/public/reference/controls.mdx)
+- [`docs/public/develop/contributing.mdx`](docs/public/develop/contributing.mdx)
 
 
 ## Contributing

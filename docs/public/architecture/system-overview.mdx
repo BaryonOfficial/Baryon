@@ -1,88 +1,46 @@
 ---
-title: "Architecture map"
-description: "A public map of the Baryon engine: the shared audio-to-render pipeline, package ownership, and the seams that matter most."
+title: "Engine architecture"
+description: "How the open Baryon engine turns live audio into a volumetric cymatic field, and the contracts that keep it stable."
 ---
 
-This is an engineering map of the open Baryon engine. It helps you find the right
-seam quickly when reading or changing the shared visualization code.
-
-It is not a full code tour, and it is not the physics reference. For the governing
-equations and the modal model, read the engine whitepaper alongside this page.
+This is a conceptual map of the open Baryon engine: the pipeline, the one seam that
+matters most, and the contracts that stay stable across versions. For the governing
+equations and the modal physics, read the engine whitepaper; for the implementation,
+read the [source on GitHub](https://github.com/BaryonOfficial/Baryon).
 
 ## The pipeline
 
-The shared engine turns live audio into a volumetric cymatic field through one
-mostly linear path:
+The engine turns live audio into a volumetric cymatic field through one mostly linear
+path:
 
 ```text
 audio source
   -> Web Audio analyzers / live-input analysis
-  -> CPU-side feature building
+  -> feature building
   -> AudioFeatureFrame
   -> visualization runtime
-  -> render / output pipeline
+  -> render / output
   -> presentation
 ```
 
-The defining property is that Baryon is **not** a generic audio-reactive renderer.
-The audio side interprets musical and resonant structure first, and the render side
-consumes that interpreted structure. Most "the visuals look wrong" questions are
-really questions about which stage owns the behavior.
+The defining property is that Baryon is **not** a generic audio-reactive renderer. The
+audio side interprets musical and resonant structure first, and the render side consumes
+that interpreted structure. Most "the visuals look wrong" questions are really questions
+about which stage owns the behavior.
 
-## Package ownership
+## The packages
 
-The engine lives in two shared packages, consumed by the web app.
+The engine ships as two shared packages, consumed by the web app:
 
-### `packages/visualizer`
+- **`packages/visualizer`** — the engine and its domain semantics: audio analysis,
+  `AudioFeatureFrame` construction, the control schema, render-profile policy, and the
+  raymarch runtime.
+- **`packages/app-shell`** — the shared React orchestration around the engine:
+  control-state lifecycle, the render loop, runtime diagnostics, and scene mounting.
+- **`apps/web`** — the browser product shell.
 
-Owns the engine and most domain semantics:
-
-- audio analysis and feature extraction
-- `AudioFeatureFrame` construction
-- control schema, defaults, and runtime application
-- visualization runtime factories
-- render-quality / profile policy and output-pipeline composition
-- the `raymarch` runtime implementation
-
-Start here when a change affects shared visualization behavior.
-
-Key files:
-
-- `packages/visualizer/src/utils/audio/buildFeatureFrame.js`
-- `packages/visualizer/src/utils/audio/audioFeatureEngine.js`
-- `packages/visualizer/src/core/audio/`
-- `packages/visualizer/src/controls/schema.js`
-- `packages/visualizer/src/controls/runtime.js`
-- `packages/visualizer/src/render/outputPipeline.js`
-- `packages/visualizer/src/visualization/runtimeFactory.js`
-- `packages/visualizer/src/core/raymarch/`
-
-### `packages/app-shell`
-
-Owns the shared React orchestration around the visualizer:
-
-- control state lifecycle
-- render-loop orchestration
-- runtime diagnostics and performance-HUD state
-- scene mounting and visualization host components
-
-Start here when the engine itself is fine but state flow or render cadence looks wrong.
-
-Key files:
-
-- `packages/app-shell/src/components/hooks/baryonVisualizerRenderLoop.js`
-- `packages/app-shell/src/components/hooks/useBaryonVisualizer.js`
-- `packages/app-shell/src/components/hooks/baryonControlsState.js`
-- `packages/app-shell/src/components/ThreeScene.jsx`
-
-### `apps/web`
-
-Owns the browser product shell: web app composition, browser acceptance and unit
-tests, and web-only UX. Start here when the issue is web-shell-specific rather than
-shared-engine behavior.
-
-Host integrations that embed the engine wrap these shared packages rather than
-forking their semantics. Their internals are out of scope for this public map.
+Host integrations that embed the engine wrap these shared packages rather than forking
+their semantics.
 
 ## The main seam
 
@@ -92,97 +50,77 @@ The highest-value boundary in the engine is:
 audio analysis -> AudioFeatureFrame -> visualization runtime
 ```
 
-That seam exists so that:
+It exists so that audio interpretation stays renderer-agnostic, render bugs can be
+debugged without rewriting analysis semantics, and a new runtime can consume the same
+authoritative structure. When a render symptom appears, the first job is to locate which
+stage owns it: capture and live-input classification, feature construction, or render
+consumption.
 
-- audio interpretation stays renderer-agnostic
-- render bugs can be debugged without rewriting analysis semantics
-- a new runtime can consume the same authoritative feature structure
+## The contracts that stay stable
 
-When a render symptom appears, the first job is to locate which stage owns it:
+These boundaries should be treated as stable unless a change explicitly intends to move
+them. The goal is not "never refactor" — it is to avoid accidental breakage where Baryon
+has persisted settings and a shared engine that more than one host can consume.
 
-1. audio capture / live-input classification
-2. feature extraction / `AudioFeatureFrame`
-3. runtime / render consumption
+### `AudioFeatureFrame`
 
-See [Contracts and boundaries](/public/architecture/contracts) for what each of
-these guarantees.
+The authoritative boundary between audio interpretation and visualization. The audio side
+interprets signal structure; the render side consumes it; render code must not silently
+rebuild analysis from raw audio.
 
-## Runtime lanes
-
-### Audio ingestion and live-input semantics
-
-`packages/visualizer/src/core/audio/` owns analyzer setup, device/input
-classification, and live-input analysis policy — including the deliberate
-distinction between line-feed / system-style input and acoustic microphone input.
-Treat those input classes as intentionally distinct.
-
-### Feature construction
-
-`packages/visualizer/src/utils/audio/` builds two related but different artifacts:
-
-- `AudioFeatureFrame` — the authoritative render-facing structure
-- transport frames for the worker-backed audio feature engine
-
-The transport frame is an internal optimization boundary, not the same contract as
-`AudioFeatureFrame`.
-
-### Render-loop orchestration
-
-`packages/app-shell/src/components/hooks/baryonVisualizerRenderLoop.js` samples
-analyzer state, prepares heavy-analysis inputs, builds or reuses feature frames,
-drives adaptive raymarch behavior, and records runtime diagnostics. If frame pacing
-or active-vs-idle behavior looks wrong, this file is usually on the critical path.
-
-### Visualization runtime
-
-`packages/visualizer/src/visualization/` owns visualization-method selection.
-`raymarch` is the single supported method. Legacy persisted or synced values such as
-`fullscreen-volume` and `cymatics-2d` collapse to `raymarch` at ingress; the field
-is retained as a constant, with no user-facing visualizer selector.
-
-### Render-profile resolution
-
-`packages/visualizer/src/render/outputPipeline.js` is the public import path for
-performance-profile and render-quality policy: profile normalization, render-scale /
-TRAA / bloom resolution, and transparent-vs-opaque output composition. If a change
-affects "Performance Profile" semantics, this file is part of the contract surface.
-
-## State surfaces
+The mental model is one chain:
+`audio drive -> rectangular water-cavity modes -> modal pressure field -> spherical render hull`.
+Pressure and radiation values are normalized visualization quantities — not calibrated
+acoustic measurements. Adding fields that consumers can ignore, or restructuring internal
+stages, is safe; changing the meaning of an existing field without a coordinated migration
+is not.
 
 ### Control schema
 
-`packages/visualizer/src/controls/schema.js` is the source of truth for control
-keys, defaults, labels, runtime paths, method applicability, and whether a control
-is live or debug-only.
+The source of truth for control keys, defaults, applicability, and whether a control is
+live or debug-only. Changing a label is cheap. Changing a key that is persisted or synced
+is a compatibility change, because that key is effectively part of a stored format.
 
-### Persisted control state
+### Persistence
 
-Persistence lives in `packages/visualizer/src/controls/persistence.js` and
-`packages/app-shell/src/components/hooks/baryonControlsState.js`. Only live controls
-are serialized into presets and saved settings; debug-only controls are excluded.
+Only controls marked **live** are saved into presets and auto-save; debug-only controls
+are excluded. Loading starts from schema defaults, drops unknown keys, falls back to
+defaults for missing ones, and normalizes a few legacy fields forward. Adding a new live
+control with a correct default is usually safe; renaming or removing a persisted key needs
+explicit migration.
 
-### Runtime diagnostics
+### Visualization method
 
-Diagnostics are assembled across
-`packages/app-shell/src/components/hooks/baryonVisualizerRuntimeState.js`,
-`baryonVisualizerRenderLoop.js`, and
-`packages/app-shell/src/components/PerformanceHud.jsx`. Look here first when a report
-is really about pacing, adaptive rendering, or method/profile state.
+`raymarch` is the only supported method. Legacy values (`fullscreen-volume`, `cymatics-2d`)
+collapse to `raymarch` at ingress. The field is kept as a constant for forward
+compatibility; there is no user-facing visualizer selector.
 
-## Finding your way around
+### Performance profile
 
-A quick index from symptom to starting point:
+Three values: `auto` (adaptive behavior on), `custom` (adapts toward an explicit target
+frame rate), and `max-quality` (full quality, adaptation off). `none` is a legacy alias
+for `max-quality`. The user-facing wording is "Performance Profile," but some compatibility
+fields still use `qualityPreset` or `renderQualityPreset` — treat those as naming
+vocabulary that still matters, not as free renames.
 
-| If the issue is...                                      | Start in                                                                          |
-| ------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Wrong live-input behavior                               | `packages/visualizer/src/core/audio/`                                             |
-| Patterns look musically wrong                           | `packages/visualizer/src/utils/audio/buildFeatureFrame.js`                        |
-| Render looks wrong but analysis seems plausible         | `packages/visualizer/src/visualization/` and `core/raymarch/`                     |
-| Manual controls do not stick or load                   | `packages/visualizer/src/controls/` and `baryonControlsState.js`                  |
-| Performance collapses only during active visuals        | `baryonVisualizerRenderLoop.js` and `packages/visualizer/src/core/raymarch/`      |
+### Input semantics
 
-Before changing behavior near a seam, confirm whether you are changing **semantics**,
-**transport**, or **presentation**, and whether the real contract is `AudioFeatureFrame`,
-the control schema, or render-profile policy. When that is unclear, gather more context
-before editing — the [contracts page](/public/architecture/contracts) describes which
-boundaries are safe to move.
+Line-feed / system input and acoustic-microphone input are intentionally distinct analysis
+paths; collapsing them into a single live-input mode is high-risk. Within acoustic-mic
+input, the **Voice** and **Ambient** profiles are small policy deltas over one shared
+engine, not separate analyzers. Source confidence is input evidence only — it does not
+grant render authority.
+
+### Spectral Light color
+
+Color is part of audio interpretation: it is produced before the render boundary and
+carried through the modal color slots, never reconstructed from raw FFT bins inside the
+renderer. A color value must not promote a mode on its own. The detailed Spectral Light
+architecture lives in the engine whitepaper.
+
+## Changing the engine safely
+
+Before moving a boundary, ask whether the change is **semantic** or an **implementation
+detail**, whether the value crosses persistence or host boundaries, and whether tests
+already assert its shape. Prefer normalization layers and dual-read compatibility over
+broad renames — string churn at these boundaries is how cross-host breakage happens.

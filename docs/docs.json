@@ -74,29 +74,51 @@
     ]
   },
   "navigation": {
-    "groups": [
+    "tabs": [
       {
-        "group": "Start",
-        "pages": ["index", "public/reference/faq"]
-      },
-      {
-        "group": "Guides",
-        "pages": [
-          "public/guides/first-session",
-          "public/guides/understanding-the-engine",
-          "public/guides/creative-workflows"
+        "tab": "Using Baryon",
+        "groups": [
+          {
+            "group": "Get started",
+            "pages": [
+              "index",
+              "public/guides/quickstart",
+              "public/guides/first-session"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "public/guides/understanding-the-engine",
+              "public/guides/creative-workflows"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": ["public/reference/controls", "public/reference/faq"]
+          }
         ]
       },
       {
-        "group": "Architecture",
-        "pages": [
-          "public/architecture/system-overview",
-          "public/architecture/contracts"
+        "tab": "Desktop",
+        "groups": [
+          {
+            "group": "Baryon Desktop",
+            "pages": ["public/desktop/overview", "public/desktop/licensing"]
+          }
         ]
       },
       {
-        "group": "Reference",
-        "pages": ["public/reference/controls"]
+        "tab": "Developers",
+        "groups": [
+          {
+            "group": "Develop",
+            "pages": [
+              "public/develop/contributing",
+              "public/architecture/system-overview"
+            ]
+          }
+        ]
       }
     ]
   }
