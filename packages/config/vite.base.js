@@ -24,6 +24,7 @@ export const baryonCommonOptimizeDepsInclude = [
   "three/examples/jsm/loaders/DRACOLoader.js",
   "three/examples/jsm/loaders/GLTFLoader.js",
   "three/examples/jsm/tsl/display/BloomNode.js",
+  "three/examples/jsm/tsl/display/SMAANode.js",
   "three/examples/jsm/tsl/display/TRAANode.js",
   "three/tsl",
   "three/webgpu",
