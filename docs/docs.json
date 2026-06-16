@@ -89,6 +89,7 @@
           {
             "group": "Guides",
             "pages": [
+              "public/guides/routing-system-audio",
               "public/guides/understanding-the-engine",
               "public/guides/creative-workflows"
             ]
