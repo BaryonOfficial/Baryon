@@ -44,7 +44,7 @@ import {
   recordRuntimePerfSample,
   shouldRenderExternalFrame,
   updateObservationTransferRenderDiagnostics,
-} from "./baryonVisualizerRuntimeState.js";
+} from "./baryonEngineRuntimeState.js";
 import { createLiveInputRuntimeStatus } from "../../context/liveInputRuntimeStatus.js";
 import { createCaptureOutputSession } from "@baryon/engine/render/outputPipeline";
 import {
@@ -66,7 +66,7 @@ import {
   updateRendererDiagnostics,
   syncRenderSurfacePixelRatio,
   syncUploadedRenderQuantities,
-} from "./baryonVisualizerRenderLoop.js";
+} from "./baryonEngineRenderLoop.js";
 import { useVisualizationRuntimeLifecycle } from "./useVisualizationRuntimeLifecycle.js";
 import { getSourceAuthoritativeClock } from "./externalFrameClock.js";
 import { createRenderCommandQueue } from "./renderCommandQueue.js";
@@ -97,7 +97,7 @@ function recordMeasuredRuntimePerf(runtimeDiagnostics, key, startedAt) {
   );
 }
 
-export function useBaryonVisualizer({
+export function useBaryonEngine({
   baryonGeometry,
   camera,
   gl,

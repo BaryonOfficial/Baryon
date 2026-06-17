@@ -100,7 +100,7 @@ vi.mock("./controlInvalidation.js", () => ({
   shouldSkipSpectralStaticColorInvalidation: () => false,
 }));
 
-vi.mock("./baryonVisualizerRuntimeState.js", () => ({
+vi.mock("./baryonEngineRuntimeState.js", () => ({
   clearAdaptiveRaymarchResumeState: clearAdaptiveRaymarchResumeStateSpy,
   maybePublishRuntimePerfSnapshot: () => {},
   clearFrameCache: (...args) => runtimeStateSpies.clearFrameCacheSpy(...args),
@@ -128,7 +128,7 @@ vi.mock("@baryon/engine/render/outputPipeline", async () => {
   };
 });
 
-vi.mock("./baryonVisualizerRenderLoop.js", () => ({
+vi.mock("./baryonEngineRenderLoop.js", () => ({
   applyCachedControlSnapshots: (...args) =>
     renderLoopSpies.applyCachedControlSnapshotsSpy(...args),
   applyReactiveBloomState: () => ({}),
@@ -172,7 +172,7 @@ vi.mock("./externalFrameClock.js", () => ({
   }),
 }));
 
-import { useBaryonVisualizer } from "./useBaryonVisualizer.js";
+import { useBaryonEngine } from "./useBaryonEngine.js";
 
 function HookHarness({
   controlsRef = { current: {} },
@@ -190,7 +190,7 @@ function HookHarness({
     render: () => {},
   },
 }) {
-  useBaryonVisualizer({
+  useBaryonEngine({
     baryonGeometry: null,
     camera: {},
     gl,
@@ -211,7 +211,7 @@ function HookHarness({
   return null;
 }
 
-describe("useBaryonVisualizer", () => {
+describe("useBaryonEngine", () => {
   let container = null;
   let root = null;
 

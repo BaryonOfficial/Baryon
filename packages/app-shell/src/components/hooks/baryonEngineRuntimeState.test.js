@@ -6,7 +6,7 @@ import {
   maybePublishRuntimePerfSnapshot,
   shouldRenderExternalFrame,
   updateObservationTransferRenderDiagnostics,
-} from "./baryonVisualizerRuntimeState.js";
+} from "./baryonEngineRuntimeState.js";
 
 test("renders duplicate external frames only when controls changed", () => {
   expect(

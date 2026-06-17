@@ -13,7 +13,7 @@ const {
   invalidateSpy,
   postNodesRef,
   useBaryonPipelineSpy,
-  useBaryonVisualizerSpy,
+  useBaryonEngineSpy,
 } = vi.hoisted(() => ({
   cameraState: {
     positionSet: vi.fn(),
@@ -35,7 +35,7 @@ const {
       temporalHistoryBlendUniform: { value: 1 },
     },
   },
-  useBaryonVisualizerSpy: vi.fn(() => null),
+  useBaryonEngineSpy: vi.fn(() => null),
 }));
 
 vi.mock("@react-three/fiber", () => ({
@@ -76,8 +76,8 @@ vi.mock("./hooks/useBaryonPipeline", () => ({
   },
 }));
 
-vi.mock("./hooks/useBaryonVisualizer", () => ({
-  useBaryonVisualizer: (...args) => useBaryonVisualizerSpy(...args),
+vi.mock("./hooks/useBaryonEngine", () => ({
+  useBaryonEngine: (...args) => useBaryonEngineSpy(...args),
 }));
 
 vi.mock("./hooks/useDefaultBaryonGeometry", () => ({
@@ -184,7 +184,7 @@ afterEach(() => {
   controlsState.update.mockClear();
   disposePipelineSpy.mockClear();
   invalidateSpy.mockClear();
-  useBaryonVisualizerSpy.mockClear();
+  useBaryonEngineSpy.mockClear();
   postNodesRef.current = {
     traaNode: {},
     temporalHistoryBlendUniform: { value: 1 },

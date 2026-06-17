@@ -46,7 +46,7 @@ import {
   snapshotRuntimeDiagnostics,
   snapshotSourceEvidenceDiagnostics,
   snapshotWorkerPerfCounters,
-} from "./baryonVisualizerRuntimeState.js";
+} from "./baryonEngineRuntimeState.js";
 import { readRenderFacingModalResponseEnergy } from "./modalResponseDiagnostics.js";
 export { syncLiveInputRuntimeStatus } from "./liveInputRuntimeSync.js";
 
@@ -1253,7 +1253,7 @@ function readRaymarchFrameModeCount(featureFrame) {
 
 /**
  * Decide whether to flush TRAA temporal history (show the crisp scene color)
- * for this raymarch-pipeline frame. Delegates to visualizer's temporal
+ * for this raymarch-pipeline frame. Delegates to engine temporal
  * reprojection policy so app-shell does not own field-drive semantics.
  *
  * @param {{ runtimeMethod?: unknown, featureFrame?: any, sceneSnapshot?: any }} params
@@ -1785,7 +1785,7 @@ function resolveAdaptiveRenderScaleAtRung({ ladder, rung }) {
 }
 
 /**
- * Publish the integrator's committed budget to runtimeState so the visualizer
+ * Publish the integrator's committed budget to runtimeState so the engine
  * tick can build its governor self-sufficiently. Replaces the old prepare/take
  * governor handoff (which matched by reference equality and missed whenever the
  * committed budget and diagnostics were no longer read from one state owner).

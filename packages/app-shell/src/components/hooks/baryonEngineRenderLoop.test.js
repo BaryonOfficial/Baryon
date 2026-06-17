@@ -2,7 +2,7 @@ import { expect, test, vi } from "vitest";
 import {
   clearAdaptiveRaymarchResumeState,
   createRuntimeDiagnostics,
-} from "./baryonVisualizerRuntimeState.js";
+} from "./baryonEngineRuntimeState.js";
 import { syncLiveInputRuntimeStatus } from "./liveInputRuntimeSync.js";
 import {
   applyLiveInputRenderIntent,
@@ -20,7 +20,7 @@ import {
   resolveRaymarchGovernorFrameInputs,
   syncRenderSurfacePixelRatio,
   syncUploadedRenderQuantities,
-} from "./baryonVisualizerRenderLoop.js";
+} from "./baryonEngineRenderLoop.js";
 import { RENDER_CONTEXTS } from "@baryon/engine/render/outputPipeline";
 import { CAVITY_ACOUSTIC_DEFAULTS } from "@baryon/engine/defaults";
 import {
@@ -1528,7 +1528,7 @@ test("adaptive raymarch publishes the integrator budget for the runtime tick", (
   updateAdaptiveRaymarchStepBudget(args);
 
   // The integrator publishes its committed budget as plain scalars (no governor
-  // handoff); the visualizer tick rebuilds the governor from them.
+  // handoff); the engine tick rebuilds the governor from them.
   expect(runtimeState.effectiveRenderScale).toBe(
     runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale,
   );

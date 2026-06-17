@@ -14,7 +14,7 @@ import {
   createEmptyControlSnapshots,
   createRuntimeDiagnostics,
   initializeAdaptiveRaymarchRuntimeState,
-} from "./baryonVisualizerRuntimeState.js";
+} from "./baryonEngineRuntimeState.js";
 
 export function useVisualizationRuntimeLifecycle({
   audioRef,
