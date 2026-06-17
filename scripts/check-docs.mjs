@@ -207,6 +207,10 @@ if (scriptExists("scripts/sync-public.sh")) {
     errors.push("scripts/sync-public.sh: missing docs/public export");
   }
 
+  if (!syncPublic.includes("docs/README.md")) {
+    errors.push("scripts/sync-public.sh: missing public docs root map export");
+  }
+
   if (!syncPublic.includes("docs/docs.json")) {
     errors.push("scripts/sync-public.sh: missing Mintlify docs.json export");
   }
