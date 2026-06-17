@@ -9,17 +9,17 @@ import {
   getRenderQualityProfileKey,
   markRenderOutputContentChange,
   syncRenderOutputNodeTopology,
-} from "@baryon/visualizer/render/outputPipeline";
+} from "@baryon/engine/render/outputPipeline";
 import {
   applyAudioControls,
   applySceneControls,
-} from "@baryon/visualizer/controls/runtime";
+} from "@baryon/engine/controls/runtime";
 import {
   DEFAULT_VISUALIZATION_METHOD,
   usesRaymarchVolumePipeline,
-} from "@baryon/visualizer/visualization/types";
-import { getDefaultAudioSession } from "@baryon/visualizer/audio";
-import { RENDER_DEFAULTS } from "@baryon/visualizer/defaults";
+} from "@baryon/engine/visualization/types";
+import { getDefaultAudioSession } from "@baryon/engine/audio";
+import { RENDER_DEFAULTS } from "@baryon/engine/defaults";
 import { DEVTOOLS_ENABLED } from "../../devtools/config.js";
 import {
   BARYON_UI_INTERACTION_EVENT,
@@ -46,7 +46,7 @@ import {
   updateObservationTransferRenderDiagnostics,
 } from "./baryonVisualizerRuntimeState.js";
 import { createLiveInputRuntimeStatus } from "../../context/liveInputRuntimeStatus.js";
-import { createCaptureOutputSession } from "@baryon/visualizer/render/outputPipeline";
+import { createCaptureOutputSession } from "@baryon/engine/render/outputPipeline";
 import {
   applyCachedControlSnapshots,
   applyReactiveBloomState,

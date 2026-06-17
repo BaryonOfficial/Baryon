@@ -2,7 +2,7 @@
 
 ## Engine — PolyForm Strict License 1.0.0
 
-The Baryon engine (`packages/visualizer`, `packages/app-shell`,
+The Baryon engine (`packages/engine`, `packages/app-shell`,
 `packages/config`) and the web app (`apps/web`) are licensed under the
 **PolyForm Strict License 1.0.0**.
 

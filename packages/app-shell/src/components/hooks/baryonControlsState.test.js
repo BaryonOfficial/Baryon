@@ -1,4 +1,4 @@
-import { createControlState } from "@baryon/visualizer/controls/schema";
+import { createControlState } from "@baryon/engine/controls/schema";
 import { expect, test } from "vitest";
 import {
   SETTINGS_KEY,

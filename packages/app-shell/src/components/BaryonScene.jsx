@@ -21,8 +21,8 @@ export { CAMERA_CONTROL_MODES } from "./baryonSceneCameraSync.js";
 import {
   RENDER_CONTEXTS,
   markRenderOutputCameraCut,
-} from "@baryon/visualizer/render/outputPipeline";
-import { resolveTemporalReprojectionPolicy } from "@baryon/visualizer/render/temporalReprojectionPolicy";
+} from "@baryon/engine/render/outputPipeline";
+import { resolveTemporalReprojectionPolicy } from "@baryon/engine/render/temporalReprojectionPolicy";
 import {
   resolveSceneRenderQualityProfile,
   sanitizeRenderProfileOverrides,

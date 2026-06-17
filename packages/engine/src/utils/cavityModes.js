@@ -1,0 +1,319 @@
+import { frequencyToBinIndex } from "./audio/binFrequency.js";
+
+const SOUND_SPEED_WATER = 1480;
+const MIN_CAVITY_INDEX = 1;
+const MIN_CAVITY_MAGNITUDE = Math.sqrt(3);
+const MIN_NEUMANN_MAGNITUDE = 1;
+const INITIAL_SHELL_HALF_WIDTH = 0.5;
+const SHELL_HALF_WIDTH_STEP = 0.5;
+const MAX_SHELL_EXPANSIONS = 32;
+const DEFAULT_SUBFLOOR_POLICY = "project-subfundamental";
+const LEGACY_SUBFLOOR_POLICY = "project-low-q";
+
+export const CAVITY_SUBFLOOR_POLICIES = Object.freeze({
+  projectSubfundamental: DEFAULT_SUBFLOOR_POLICY,
+  diagnoseSubfloor: "diagnose-subfloor",
+  rejectSubfloor: "reject-subfloor",
+});
+
+function isOptionsObject(value) {
+  return value != null && typeof value === "object";
+}
+
+function normalizeBoundaryMode(value, legacyNumericRadius) {
+  if (value === "neumann" || value === "dirichlet") {
+    return value;
+  }
+  return legacyNumericRadius ? "dirichlet" : "neumann";
+}
+
+function normalizeSubfloorPolicy(value) {
+  if (value === LEGACY_SUBFLOOR_POLICY) {
+    return DEFAULT_SUBFLOOR_POLICY;
+  }
+  if (value === "diagnose-only") {
+    return CAVITY_SUBFLOOR_POLICIES.diagnoseSubfloor;
+  }
+  if (value === "reject") {
+    return CAVITY_SUBFLOOR_POLICIES.rejectSubfloor;
+  }
+  if (
+    value === CAVITY_SUBFLOOR_POLICIES.projectSubfundamental ||
+    value === CAVITY_SUBFLOOR_POLICIES.diagnoseSubfloor ||
+    value === CAVITY_SUBFLOOR_POLICIES.rejectSubfloor
+  ) {
+    return value;
+  }
+  return DEFAULT_SUBFLOOR_POLICY;
+}
+
+function normalizeCavityOptions(radiusOrOptions) {
+  const legacyNumericRadius = typeof radiusOrOptions === "number";
+  const acousticScale = isOptionsObject(radiusOrOptions?.acousticScale)
+    ? radiusOrOptions.acousticScale
+    : radiusOrOptions;
+  const radiusMeters = legacyNumericRadius
+    ? radiusOrOptions
+    : Number(
+        acousticScale?.radiusMeters ??
+          radiusOrOptions?.radiusMeters ??
+          radiusOrOptions?.radius ??
+          0,
+      );
+  const soundSpeedMetersPerSecond = legacyNumericRadius
+    ? SOUND_SPEED_WATER
+    : Number(acousticScale?.soundSpeedMetersPerSecond ?? SOUND_SPEED_WATER);
+  const boundaryMode = normalizeBoundaryMode(
+    radiusOrOptions?.boundaryMode,
+    legacyNumericRadius,
+  );
+  const subfloorPolicy = normalizeSubfloorPolicy(
+    acousticScale?.subfloorPolicy ??
+      radiusOrOptions?.subfloorPolicy ??
+      DEFAULT_SUBFLOOR_POLICY,
+  );
+
+  return {
+    radiusMeters,
+    soundSpeedMetersPerSecond,
+    boundaryMode,
+    subfloorPolicy,
+    legacyNumericRadius,
+  };
+}
+
+function isValidCavityOptions(options) {
+  return (
+    Number.isFinite(options.radiusMeters) &&
+    options.radiusMeters > 0 &&
+    Number.isFinite(options.soundSpeedMetersPerSecond) &&
+    options.soundSpeedMetersPerSecond > 0
+  );
+}
+
+function getTargetMagnitude(pitch, options) {
+  return (2 * pitch * options.radiusMeters) / options.soundSpeedMetersPerSecond;
+}
+
+function getFrequencyForMagnitude(magnitude, options) {
+  return (
+    (options.soundSpeedMetersPerSecond * 0.5 * magnitude) / options.radiusMeters
+  );
+}
+
+function getMinimumMagnitudeForBoundary(boundaryMode) {
+  return boundaryMode === "neumann"
+    ? MIN_NEUMANN_MAGNITUDE
+    : MIN_CAVITY_MAGNITUDE;
+}
+
+function getMinimumIndexForBoundary(boundaryMode) {
+  return boundaryMode === "neumann" ? 0 : MIN_CAVITY_INDEX;
+}
+
+function hasValidModeIndices(u, v, w, boundaryMode) {
+  if (!Number.isFinite(u) || !Number.isFinite(v) || !Number.isFinite(w)) {
+    return false;
+  }
+  if (boundaryMode === "neumann") {
+    return u >= 0 && v >= 0 && w >= 0 && u + v + w > 0;
+  }
+  return (
+    u >= MIN_CAVITY_INDEX && v >= MIN_CAVITY_INDEX && w >= MIN_CAVITY_INDEX
+  );
+}
+
+export function getCavityModeFrequency(u, v, w, radiusOrOptions) {
+  const options = normalizeCavityOptions(radiusOrOptions);
+  if (!hasValidModeIndices(u, v, w, options.boundaryMode)) {
+    return 0;
+  }
+  if (!isValidCavityOptions(options)) {
+    return 0;
+  }
+
+  return getFrequencyForMagnitude(Math.hypot(u, v, w), options);
+}
+
+export function getMinimumCavityFrequency(radiusOrOptions) {
+  const options = normalizeCavityOptions(radiusOrOptions);
+  if (!isValidCavityOptions(options)) return 0;
+  return getFrequencyForMagnitude(
+    getMinimumMagnitudeForBoundary(options.boundaryMode),
+    options,
+  );
+}
+
+export function getCavityAcousticFloorHz(radiusOrOptions) {
+  return getMinimumCavityFrequency(radiusOrOptions);
+}
+
+function compareCavityCandidates(left, right) {
+  if (Math.abs(left.frequencyError - right.frequencyError) > 1e-9) {
+    return left.frequencyError - right.frequencyError;
+  }
+  if (Math.abs(left.magnitudeError - right.magnitudeError) > 1e-9) {
+    return left.magnitudeError - right.magnitudeError;
+  }
+  if (left.modeIndexSum !== right.modeIndexSum) {
+    return left.modeIndexSum - right.modeIndexSum;
+  }
+  if (left.u !== right.u) return left.u - right.u;
+  if (left.v !== right.v) return left.v - right.v;
+  return left.w - right.w;
+}
+
+function enumerateCanonicalCavityModes(
+  targetMagnitude,
+  targetFrequency,
+  shellHalfWidth,
+  options,
+) {
+  const minimumMagnitude = getMinimumMagnitudeForBoundary(options.boundaryMode);
+  const minimumIndex = getMinimumIndexForBoundary(options.boundaryMode);
+  const lowerMagnitude = Math.max(
+    minimumMagnitude,
+    targetMagnitude - shellHalfWidth,
+  );
+  const upperMagnitude = Math.max(
+    minimumMagnitude,
+    targetMagnitude + shellHalfWidth,
+  );
+  const lowerSquared = lowerMagnitude * lowerMagnitude;
+  const upperSquared = upperMagnitude * upperMagnitude;
+  const candidates = [];
+  const maxU = Math.max(minimumIndex, Math.floor(Math.sqrt(upperSquared / 3)));
+
+  for (let u = minimumIndex; u <= maxU; u++) {
+    const uSquared = u * u;
+    const maxV = Math.floor(Math.sqrt((upperSquared - uSquared) / 2));
+    for (let v = u; v <= maxV; v++) {
+      const baseSquared = uSquared + v * v;
+      const minW = Math.max(
+        v,
+        Math.ceil(Math.sqrt(Math.max(0, lowerSquared - baseSquared))),
+      );
+      const maxW = Math.floor(
+        Math.sqrt(Math.max(0, upperSquared - baseSquared)),
+      );
+
+      for (let w = minW; w <= maxW; w++) {
+        if (!hasValidModeIndices(u, v, w, options.boundaryMode)) continue;
+        const magnitude = Math.hypot(u, v, w);
+        const frequency = getFrequencyForMagnitude(magnitude, options);
+        candidates.push({
+          u,
+          v,
+          w,
+          naturalFrequencyHz: frequency,
+          magnitudeError: Math.abs(magnitude - targetMagnitude),
+          frequencyError: Math.abs(frequency - targetFrequency),
+          modeIndexSum: u + v + w,
+        });
+      }
+    }
+  }
+
+  candidates.sort(compareCavityCandidates);
+  return candidates;
+}
+
+function resolveNearestCavityModes(pitch, radiusOrOptions, count) {
+  const options = normalizeCavityOptions(radiusOrOptions);
+  if (!Number.isFinite(pitch) || pitch <= 0) return [];
+  if (!isValidCavityOptions(options)) return [];
+  if (!Number.isFinite(count) || count <= 0) return [];
+
+  const targetMagnitude = getTargetMagnitude(pitch, options);
+  const targetFrequency = pitch;
+  const subfloorFrequencyHz = getMinimumCavityFrequency(options);
+  const subfloorProjectionActive = targetFrequency < subfloorFrequencyHz;
+  if (
+    subfloorProjectionActive &&
+    options.subfloorPolicy === CAVITY_SUBFLOOR_POLICIES.rejectSubfloor
+  ) {
+    return [];
+  }
+  let shellHalfWidth = INITIAL_SHELL_HALF_WIDTH;
+  let candidates = [];
+
+  for (let expansion = 0; expansion < MAX_SHELL_EXPANSIONS; expansion++) {
+    candidates = enumerateCanonicalCavityModes(
+      targetMagnitude,
+      targetFrequency,
+      shellHalfWidth,
+      options,
+    );
+    if (candidates.length >= count) {
+      return candidates.slice(0, count).map((candidate) => ({
+        ...candidate,
+        acousticRadiusMeters: options.radiusMeters,
+        soundSpeedMetersPerSecond: options.soundSpeedMetersPerSecond,
+        boundaryMode: options.boundaryMode,
+        subfloorFrequencyHz,
+        subfloorPolicy: options.subfloorPolicy,
+        subfloorProjectionActive,
+      }));
+    }
+    shellHalfWidth += SHELL_HALF_WIDTH_STEP;
+  }
+
+  return candidates.slice(0, count).map((candidate) => ({
+    ...candidate,
+    acousticRadiusMeters: options.radiusMeters,
+    soundSpeedMetersPerSecond: options.soundSpeedMetersPerSecond,
+    boundaryMode: options.boundaryMode,
+    subfloorFrequencyHz,
+    subfloorPolicy: options.subfloorPolicy,
+    subfloorProjectionActive,
+  }));
+}
+
+export function solveCavityModeForPitch(pitch, radius) {
+  const mode = resolveNearestCavityModes(pitch, radius, 1)[0];
+  if (!mode) return null;
+
+  return {
+    u: mode.u,
+    v: mode.v,
+    w: mode.w,
+  };
+}
+
+export function resolveCavityModeFamilyForPitch(
+  pitch,
+  radiusOrOptions,
+  count = 1,
+) {
+  return resolveNearestCavityModes(pitch, radiusOrOptions, count);
+}
+
+export function solveCavityModeFamilyForPitch(pitch, radius, count = 1) {
+  return resolveNearestCavityModes(pitch, radius, count).map(
+    ({ u, v, w, magnitudeError, frequencyError }) => ({
+      u,
+      v,
+      w,
+      magnitudeError,
+      frequencyError,
+    }),
+  );
+}
+
+export function sampleFFTAmplitudeForFrequency(
+  frequency,
+  fftMagnitudes,
+  sampleRate,
+  fftSize,
+) {
+  if (!fftMagnitudes?.length || !sampleRate || !fftSize || frequency <= 0) {
+    return 0;
+  }
+
+  const index = frequencyToBinIndex(
+    frequency,
+    fftMagnitudes.length,
+    sampleRate,
+  );
+  return fftMagnitudes[index] ?? 0;
+}

@@ -2,7 +2,7 @@ import {
   getRaymarchModalBasisCacheDescriptorStaleReason,
   isRaymarchModalBasisCacheReadyForDescriptor,
   RAYMARCH_PRESSURE_RADIATION_SEMANTIC,
-} from "@baryon/visualizer/core/raymarch/fieldCache";
+} from "@baryon/engine/core/raymarch/fieldCache";
 import {
   RENDER_PROBE_SCHEMA_VERSION,
   buildRenderProbeSnapshot,

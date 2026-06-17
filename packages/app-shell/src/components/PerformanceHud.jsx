@@ -2,8 +2,8 @@ import {
   PERFORMANCE_PROFILES,
   formatPerformanceProfileLabel,
   normalizePerformanceProfile,
-} from "@baryon/visualizer/render/outputProfilePolicy";
-import { usesRaymarchVolumePipeline } from "@baryon/visualizer/visualization/types";
+} from "@baryon/engine/render/outputProfilePolicy";
+import { usesRaymarchVolumePipeline } from "@baryon/engine/visualization/types";
 import { TOP_RIGHT_OVERLAY_PANEL_WIDTH } from "./topRightOverlayLayout.js";
 
 function formatNumber(value, digits = 1) {

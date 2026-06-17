@@ -1,4 +1,4 @@
-import { hasRenderAuthority } from "@baryon/visualizer/core/renderAuthorityContract";
+import { hasRenderAuthority } from "@baryon/engine/core/renderAuthorityContract";
 import {
   RENDER_PROBE_MATERIAL_FIELDS,
   buildRenderProbeSnapshot,

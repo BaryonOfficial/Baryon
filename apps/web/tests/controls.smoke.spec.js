@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 import { expect, test } from "@playwright/test";
-import { RAYMARCH_QUANTITY_LEDGER_VERSION } from "../../../packages/visualizer/src/core/raymarch/quantityLedger.js";
+import { RAYMARCH_QUANTITY_LEDGER_VERSION } from "../../../packages/engine/src/core/raymarch/quantityLedger.js";
 
 function createMonoWavBuffer({
   sampleRate = 44100,

@@ -3,7 +3,7 @@ import {
   createRenderOutputPipeline,
   disposeRenderOutputPostNodes,
   getRenderQualityProfileKey,
-} from "@baryon/visualizer/render/outputPipeline";
+} from "@baryon/engine/render/outputPipeline";
 
 export function useBaryonPipeline(gl, scene, camera, renderProfile) {
   const pipelineRef = useRef(null);

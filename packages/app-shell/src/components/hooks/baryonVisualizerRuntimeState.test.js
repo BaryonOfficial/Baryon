@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { RAYMARCH_QUANTITY_LEDGER_VERSION } from "@baryon/visualizer/core/raymarch/quantityLedger";
+import { RAYMARCH_QUANTITY_LEDGER_VERSION } from "@baryon/engine/core/raymarch/quantityLedger";
 import { RENDER_PROBE_SCHEMA_VERSION } from "./renderProbeSnapshot.js";
 import {
   createRuntimeDiagnostics,

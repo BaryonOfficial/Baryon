@@ -70,16 +70,16 @@ vi.mock("@react-three/fiber", () => ({
   },
 }));
 
-vi.mock("@baryon/visualizer/controls/runtime", () => ({
+vi.mock("@baryon/engine/controls/runtime", () => ({
   applyAudioControls: () => Promise.resolve(),
   applySceneControls: () => ({}),
 }));
 
-vi.mock("@baryon/visualizer/visualization/types", () => ({
+vi.mock("@baryon/engine/visualization/types", () => ({
   DEFAULT_VISUALIZATION_METHOD: "raymarch",
 }));
 
-vi.mock("@baryon/visualizer/audio", () => ({
+vi.mock("@baryon/engine/audio", () => ({
   getDefaultAudioSession: () => ({
     attach: () => {},
     getStatus: () => ({}),
@@ -116,9 +116,9 @@ vi.mock("../../context/liveInputRuntimeStatus.js", () => ({
   createLiveInputRuntimeStatus: () => ({}),
 }));
 
-vi.mock("@baryon/visualizer/render/outputPipeline", async () => {
+vi.mock("@baryon/engine/render/outputPipeline", async () => {
   const actual = await vi.importActual(
-    "@baryon/visualizer/render/outputPipeline",
+    "@baryon/engine/render/outputPipeline",
   );
   return {
     ...actual,

@@ -65,12 +65,12 @@ importers:
       '@baryon/app-shell':
         specifier: workspace:*
         version: link:../../packages/app-shell
+      '@baryon/engine':
+        specifier: workspace:*
+        version: link:../../packages/engine
       '@baryon/lumen':
         specifier: workspace:*
         version: link:../../packages/lumen
-      '@baryon/visualizer':
-        specifier: workspace:*
-        version: link:../../packages/visualizer
       '@react-three/drei':
         specifier: ^10.7.7
         version: 10.7.7(@react-three/fiber@9.6.1(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.184.0))(@types/react@19.2.16)(@types/three@0.184.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.184.0)
@@ -251,9 +251,9 @@ importers:
 
   packages/app-shell:
     dependencies:
-      '@baryon/visualizer':
+      '@baryon/engine':
         specifier: workspace:*
-        version: link:../visualizer
+        version: link:../engine
       '@react-three/drei':
         specifier: ^10.7.7
         version: 10.7.7(@react-three/fiber@9.6.1(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.184.0))(@types/react@19.2.16)(@types/three@0.184.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.184.0)
@@ -313,16 +313,7 @@ importers:
         specifier: ^4.1.2
         version: 4.1.8(@types/node@25.9.1)(jsdom@29.1.1)(vite@8.0.16(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(yaml@2.9.0))
 
-  packages/lumen:
-    dependencies:
-      bindings:
-        specifier: ^1.5.0
-        version: 1.5.0
-      node-addon-api:
-        specifier: ^8.3.0
-        version: 8.8.0
-
-  packages/visualizer:
+  packages/engine:
     dependencies:
       react:
         specifier: ^19.2.4
@@ -337,6 +328,15 @@ importers:
       vitest:
         specifier: ^4.1.2
         version: 4.1.8(@types/node@25.9.1)(jsdom@29.1.1)(vite@8.0.16(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(yaml@2.9.0))
+
+  packages/lumen:
+    dependencies:
+      bindings:
+        specifier: ^1.5.0
+        version: 1.5.0
+      node-addon-api:
+        specifier: ^8.3.0
+        version: 8.8.0
 
 packages:
 

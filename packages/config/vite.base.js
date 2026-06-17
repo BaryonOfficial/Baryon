@@ -39,7 +39,7 @@ export const baryonCommonOptimizeDepsInclude = [
 
 export function createBaryonWorkspaceAliases({ workspaceRoot }) {
   const appShellRoot = path.resolve(workspaceRoot, "packages/app-shell/src");
-  const visualizerRoot = path.resolve(workspaceRoot, "packages/visualizer/src");
+  const engineRoot = path.resolve(workspaceRoot, "packages/engine/src");
 
   return [
     {
@@ -51,67 +51,67 @@ export function createBaryonWorkspaceAliases({ workspaceRoot }) {
       replacement: path.join(appShellRoot, "index.css"),
     },
     {
-      find: /^@baryon\/visualizer$/,
-      replacement: path.join(visualizerRoot, "index.js"),
+      find: /^@baryon\/engine$/,
+      replacement: path.join(engineRoot, "index.js"),
     },
     {
-      find: /^@baryon\/visualizer\/audio$/,
-      replacement: path.join(visualizerRoot, "core/audio/audioSetup.js"),
+      find: /^@baryon\/engine\/audio$/,
+      replacement: path.join(engineRoot, "core/audio/audioSetup.js"),
     },
     {
-      find: /^@baryon\/visualizer\/audio-features$/,
-      replacement: path.join(visualizerRoot, "utils/audioFeatures.js"),
+      find: /^@baryon\/engine\/audio-features$/,
+      replacement: path.join(engineRoot, "utils/audioFeatures.js"),
     },
     {
-      find: /^@baryon\/visualizer\/controls\/persistence$/,
-      replacement: path.join(visualizerRoot, "controls/persistence.js"),
+      find: /^@baryon\/engine\/controls\/persistence$/,
+      replacement: path.join(engineRoot, "controls/persistence.js"),
     },
     {
-      find: /^@baryon\/visualizer\/controls\/runtime$/,
-      replacement: path.join(visualizerRoot, "controls/runtime.js"),
+      find: /^@baryon\/engine\/controls\/runtime$/,
+      replacement: path.join(engineRoot, "controls/runtime.js"),
     },
     {
-      find: /^@baryon\/visualizer\/controls\/schema$/,
-      replacement: path.join(visualizerRoot, "controls/schema.js"),
+      find: /^@baryon\/engine\/controls\/schema$/,
+      replacement: path.join(engineRoot, "controls/schema.js"),
     },
     {
-      find: /^@baryon\/visualizer\/core\/raymarch\/fieldCache$/,
-      replacement: path.join(visualizerRoot, "core/raymarch/fieldCache.js"),
+      find: /^@baryon\/engine\/core\/raymarch\/fieldCache$/,
+      replacement: path.join(engineRoot, "core/raymarch/fieldCache.js"),
     },
     {
-      find: /^@baryon\/visualizer\/core\/raymarch\/performanceGovernor$/,
+      find: /^@baryon\/engine\/core\/raymarch\/performanceGovernor$/,
       replacement: path.join(
-        visualizerRoot,
+        engineRoot,
         "core/raymarch/performanceGovernor.js",
       ),
     },
     {
-      find: /^@baryon\/visualizer\/defaults$/,
-      replacement: path.join(visualizerRoot, "defaults.js"),
+      find: /^@baryon\/engine\/defaults$/,
+      replacement: path.join(engineRoot, "defaults.js"),
     },
     {
-      find: /^@baryon\/visualizer\/render\/outputPipeline$/,
-      replacement: path.join(visualizerRoot, "render/outputPipeline.js"),
+      find: /^@baryon\/engine\/render\/outputPipeline$/,
+      replacement: path.join(engineRoot, "render/outputPipeline.js"),
     },
     {
-      find: /^@baryon\/visualizer\/react\/useSharedAudioLogic$/,
-      replacement: path.join(visualizerRoot, "react/useSharedAudioLogic.js"),
+      find: /^@baryon\/engine\/react\/useSharedAudioLogic$/,
+      replacement: path.join(engineRoot, "react/useSharedAudioLogic.js"),
     },
     {
-      find: /^@baryon\/visualizer\/three\/loaders$/,
-      replacement: path.join(visualizerRoot, "three/loaders/setupLoaders.js"),
+      find: /^@baryon\/engine\/three\/loaders$/,
+      replacement: path.join(engineRoot, "three/loaders/setupLoaders.js"),
     },
     {
-      find: /^@baryon\/visualizer\/visualization\/runtime$/,
-      replacement: path.join(visualizerRoot, "visualization/runtimeFactory.js"),
+      find: /^@baryon\/engine\/visualization\/runtime$/,
+      replacement: path.join(engineRoot, "visualization/runtimeFactory.js"),
     },
     {
-      find: /^@baryon\/visualizer\/visualization\/types$/,
-      replacement: path.join(visualizerRoot, "visualization/types.js"),
+      find: /^@baryon\/engine\/visualization\/types$/,
+      replacement: path.join(engineRoot, "visualization/types.js"),
     },
     {
-      find: /^@baryon\/visualizer\/styles\.css$/,
-      replacement: path.join(visualizerRoot, "styles.css"),
+      find: /^@baryon\/engine\/styles\.css$/,
+      replacement: path.join(engineRoot, "styles.css"),
     },
   ];
 }

@@ -1,6 +1,6 @@
 # Baryon
 
-Baryon is a monorepo for a real-time cymatic audio visualizer and its host applications. The shared engine lives in `packages/visualizer` and `packages/app-shell`; the current flagship renderer is the WebGPU volumetric raymarch path.
+Baryon is a real-time cymatic audiovisual engine for transforming live audio into spatial media. The shared engine lives in `packages/engine` and `packages/app-shell`; the current flagship renderer is the WebGPU volumetric raymarch path.
 
 This README is the repo entrypoint. It covers setup, common commands, and where the canonical docs live.
 
@@ -12,9 +12,9 @@ apps/
   desktop/    @baryon/desktop   Flagship Electron product
   marketing/  @baryon/marketing Static-first marketing site
 packages/
-  app-shell/  @baryon/app-shell Shared React shell and orchestration
-  visualizer/ @baryon/visualizer Shared audio + visualization engine
-  config/     @baryon/config    Shared Vite and Vitest config
+  app-shell/ @baryon/app-shell Shared React shell and orchestration
+  engine/    @baryon/engine    Shared audio + render engine
+  config/    @baryon/config    Shared Vite and Vitest config
 ```
 
 See [`ROADMAP.md`](ROADMAP.md) for product direction and release priorities.
@@ -73,7 +73,7 @@ pnpm nav -- entrypoints   # List curated entrypoints
 pnpm ast -- examples      # Show ast-grep examples
 pnpm lint                 # Workspace lint via turbo
 pnpm typecheck            # Workspace typecheck where configured
-pnpm test:visualizer      # Visualizer unit tests
+pnpm test:engine          # Engine unit tests
 pnpm test:app-shell       # Shared app-shell unit tests
 pnpm test:desktop         # Desktop unit tests
 pnpm acceptance:web       # Stable production browser acceptance
@@ -98,7 +98,7 @@ cd apps/desktop && pnpm acceptance:shell
 cd apps/desktop && pnpm acceptance:native-output
 cd apps/desktop && pnpm perf                # Canonical live-source desktop perf probe
 cd apps/desktop && pnpm perf:packaged       # Packaged desktop Syphon / OSR benchmark
-cd packages/visualizer && pnpm typecheck
+cd packages/engine && pnpm typecheck
 ```
 
 ## Runtime Notes

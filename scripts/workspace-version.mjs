@@ -13,7 +13,7 @@ const manifestPaths = [
   "apps/web/package.json",
   "packages/app-shell/package.json",
   "packages/config/package.json",
-  "packages/visualizer/package.json",
+  "packages/engine/package.json",
 ];
 const existingManifestPaths = manifestPaths.filter((relPath) =>
   fs.existsSync(path.join(rootDir, relPath)),

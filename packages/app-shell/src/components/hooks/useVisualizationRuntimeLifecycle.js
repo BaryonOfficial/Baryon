@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { createVisualizationRuntime } from "@baryon/visualizer/visualization/runtime";
+import { createVisualizationRuntime } from "@baryon/engine/visualization/runtime";
 import {
   createAudioFeatureEngine,
   createAudioFeatureState,
   createNoopAudioFeatureEngine,
-} from "@baryon/visualizer/audio-features";
-import { SIMULATION_DEFAULTS } from "@baryon/visualizer/defaults";
+} from "@baryon/engine/audio-features";
+import { SIMULATION_DEFAULTS } from "@baryon/engine/defaults";
 import { createLiveInputRuntimeStatus } from "../../context/liveInputRuntimeStatus.js";
 import {
   clearFrameCache,

@@ -21,8 +21,8 @@ import {
   syncRenderSurfacePixelRatio,
   syncUploadedRenderQuantities,
 } from "./baryonVisualizerRenderLoop.js";
-import { RENDER_CONTEXTS } from "@baryon/visualizer/render/outputPipeline";
-import { CAVITY_ACOUSTIC_DEFAULTS } from "@baryon/visualizer/defaults";
+import { RENDER_CONTEXTS } from "@baryon/engine/render/outputPipeline";
+import { CAVITY_ACOUSTIC_DEFAULTS } from "@baryon/engine/defaults";
 import {
   LIVE_INPUT_ERROR_CODES,
   LIVE_INPUT_PHASES,

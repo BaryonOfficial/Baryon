@@ -6,7 +6,7 @@ import {
   normalizeLiveInputDeviceKind,
   normalizeLiveInputAnalysisClass,
   normalizeResolvedLiveInputAnalysisClass,
-} from "@baryon/visualizer/audio/liveInputAnalysis";
+} from "@baryon/engine/audio/liveInputAnalysis";
 
 /**
  * @typedef {"idle" | "starting" | "active" | "stopping" | "error"} LiveInputUiState
@@ -28,13 +28,13 @@ import {
  * @typedef {{
  *   active: boolean,
  *   phase: LiveInputPhase,
- *   liveInputDeviceKind: import("@baryon/visualizer/audio/liveInputAnalysis").LiveInputDeviceKind | null,
+ *   liveInputDeviceKind: import("@baryon/engine/audio/liveInputAnalysis").LiveInputDeviceKind | null,
  *   liveInputKind: "live" | "system" | null,
  *   selectedDeviceId: string | null,
  *   selectedDeviceLabel: string,
- *   requestedAnalysisClass: import("@baryon/visualizer/audio/liveInputAnalysis").LiveInputAnalysisClass,
- *   acousticIntent: import("@baryon/visualizer/audio/liveInputAnalysis").LiveInputAcousticIntent,
- *   resolvedAnalysisClass: import("@baryon/visualizer/audio/liveInputAnalysis").ResolvedLiveInputAnalysisClass,
+ *   requestedAnalysisClass: import("@baryon/engine/audio/liveInputAnalysis").LiveInputAnalysisClass,
+ *   acousticIntent: import("@baryon/engine/audio/liveInputAnalysis").LiveInputAcousticIntent,
+ *   resolvedAnalysisClass: import("@baryon/engine/audio/liveInputAnalysis").ResolvedLiveInputAnalysisClass,
  *   calibrationActive: boolean,
  *   gateOpen: boolean,
  *   hardSilence: boolean,

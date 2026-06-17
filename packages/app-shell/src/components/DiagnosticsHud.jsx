@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { usesRaymarchVolumePipeline } from "@baryon/visualizer/visualization/types";
+import { usesRaymarchVolumePipeline } from "@baryon/engine/visualization/types";
 import { DEVTOOLS_ENABLED } from "../devtools/config.js";
 import {
   normalizeDiagnosticsHudItems,

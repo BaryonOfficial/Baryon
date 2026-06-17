@@ -5,7 +5,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { getDefaultAudioSession } from "@baryon/visualizer/audio";
+import { getDefaultAudioSession } from "@baryon/engine/audio";
 import {
   DEFAULT_LIVE_INPUT_ACOUSTIC_INTENT,
   DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
@@ -16,7 +16,7 @@ import {
   normalizeResolvedLiveInputAnalysisClass,
   normalizeLiveInputAnalysisOverrides,
   resolveLiveInputAnalysisClass,
-} from "@baryon/visualizer/audio/liveInputAnalysis";
+} from "@baryon/engine/audio/liveInputAnalysis";
 import { AudioContext, AudioSceneContext } from "./AudioContext";
 import {
   LIVE_INPUT_ERROR_CODES,
@@ -435,7 +435,7 @@ export function AudioProvider({ children, platform = "web" }) {
     ),
   );
   const [liveInputAnalysisClass, setLiveInputAnalysisClass] = useState(
-    /** @type {import("@baryon/visualizer/audio/liveInputAnalysis").LiveInputAnalysisClass} */ (
+    /** @type {import("@baryon/engine/audio/liveInputAnalysis").LiveInputAnalysisClass} */ (
       DEFAULT_LIVE_INPUT_ANALYSIS_CLASS
     ),
   );
@@ -1839,7 +1839,7 @@ export function AudioProvider({ children, platform = "web" }) {
     (nextAnalysisClass) => {
       const normalizedAnalysisClass =
         normalizeLiveInputAnalysisClass(nextAnalysisClass);
-      /** @type {Record<string, import("@baryon/visualizer/audio/liveInputAnalysis").ResolvedLiveInputAnalysisClass>} */
+      /** @type {Record<string, import("@baryon/engine/audio/liveInputAnalysis").ResolvedLiveInputAnalysisClass>} */
       const clearedOverrides = {};
 
       setLiveInputAnalysisClass(normalizedAnalysisClass);

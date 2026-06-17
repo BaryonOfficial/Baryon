@@ -4,12 +4,12 @@ import {
   createControlState,
   getControlFolders,
   getControlsForFolder,
-} from "@baryon/visualizer/controls/schema";
+} from "@baryon/engine/controls/schema";
 import {
   deserializeControls,
   serializeControls,
-} from "@baryon/visualizer/controls/persistence";
-import { DEFAULT_VISUALIZATION_METHOD } from "@baryon/visualizer/visualization/types";
+} from "@baryon/engine/controls/persistence";
+import { DEFAULT_VISUALIZATION_METHOD } from "@baryon/engine/visualization/types";
 
 export const SETTINGS_KEY = "baryon:settings";
 export const PRESETS_KEY = "baryon:presets";

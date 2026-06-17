@@ -3,15 +3,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 describe("PerformanceHud module boundaries", () => {
   afterEach(() => {
     vi.resetModules();
-    vi.doUnmock("@baryon/visualizer/render/outputPipeline");
-    vi.doUnmock("@baryon/visualizer/render/outputProfilePolicy");
+    vi.doUnmock("@baryon/engine/render/outputPipeline");
+    vi.doUnmock("@baryon/engine/render/outputProfilePolicy");
   });
 
   it("avoids the heavyweight outputPipeline import path", async () => {
-    vi.doMock("@baryon/visualizer/render/outputPipeline", () => {
+    vi.doMock("@baryon/engine/render/outputPipeline", () => {
       throw new Error("PerformanceHud must not import outputPipeline");
     });
-    vi.doMock("@baryon/visualizer/render/outputProfilePolicy", () => ({
+    vi.doMock("@baryon/engine/render/outputProfilePolicy", () => ({
       formatPerformanceProfileLabel: () => "Auto",
     }));
 

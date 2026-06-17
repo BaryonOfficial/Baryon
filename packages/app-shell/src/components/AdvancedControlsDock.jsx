@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { DEFAULT_VISUALIZATION_METHOD } from "@baryon/visualizer/visualization/types";
+import { DEFAULT_VISUALIZATION_METHOD } from "@baryon/engine/visualization/types";
 import { DEVTOOLS_ENABLED } from "../devtools/config.js";
 import AdvancedControlsSidebar from "./AdvancedControlsSidebar.jsx";
 import { getVisibleControlLayout } from "./hooks/baryonControlsState.js";

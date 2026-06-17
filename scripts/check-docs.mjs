@@ -262,7 +262,7 @@ const expectedLicenses = new Map([
   ["package.json", polyformLicense],
   ["apps/web/package.json", polyformLicense],
   ["packages/app-shell/package.json", polyformLicense],
-  ["packages/visualizer/package.json", polyformLicense],
+  ["packages/engine/package.json", polyformLicense],
   ["packages/config/package.json", polyformLicense],
   ["apps/desktop/package.json", "UNLICENSED"],
   ["apps/marketing/package.json", "UNLICENSED"],

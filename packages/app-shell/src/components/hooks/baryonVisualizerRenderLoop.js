@@ -6,7 +6,7 @@ import {
   applyRaymarchControls,
   applySharedControls,
   buildControlInspectionSnapshot,
-} from "@baryon/visualizer/controls/runtime";
+} from "@baryon/engine/controls/runtime";
 import {
   buildAudioFeatureTransportFrame,
   buildFastSignalPatchedAudioFeatureAnalysisResult,
@@ -14,17 +14,17 @@ import {
   composeAudioFeatureFrame,
   prepareAudioFeatureFrameInputs,
   runHeavyAudioFeatureAnalysis,
-} from "@baryon/visualizer/audio-features";
-import { CAVITY_ACOUSTIC_DEFAULTS } from "@baryon/visualizer/defaults";
+} from "@baryon/engine/audio-features";
+import { CAVITY_ACOUSTIC_DEFAULTS } from "@baryon/engine/defaults";
 import {
   allowsModalDescriptorRenderAuthority,
   allowsCurrentLiveRenderFrame,
   hasRenderAuthority,
-} from "@baryon/visualizer/core/renderAuthorityContract";
-import { RAYMARCH_MODAL_BASIS_CACHE_CAPACITY } from "@baryon/visualizer/core/raymarch/fieldCache";
-import * as raymarchPerformanceGovernor from "@baryon/visualizer/core/raymarch/performanceGovernor";
-import { usesRaymarchVolumePipeline } from "@baryon/visualizer/visualization/types";
-import { resolveTemporalReprojectionPolicy } from "@baryon/visualizer/render/temporalReprojectionPolicy";
+} from "@baryon/engine/core/renderAuthorityContract";
+import { RAYMARCH_MODAL_BASIS_CACHE_CAPACITY } from "@baryon/engine/core/raymarch/fieldCache";
+import * as raymarchPerformanceGovernor from "@baryon/engine/core/raymarch/performanceGovernor";
+import { usesRaymarchVolumePipeline } from "@baryon/engine/visualization/types";
+import { resolveTemporalReprojectionPolicy } from "@baryon/engine/render/temporalReprojectionPolicy";
 import {
   CUSTOM_TARGET_FPS_BANDS,
   DEFAULT_PERFORMANCE_TARGET_FPS,
@@ -35,7 +35,7 @@ import {
   resolveCustomTargetFpsBand,
   syncRenderOutputBloomPassUniforms,
   usesBalancedPerformanceBaseline,
-} from "@baryon/visualizer/render/outputPipeline";
+} from "@baryon/engine/render/outputPipeline";
 import {
   clearFrameCache,
   createEmptyAnalysisSchedulerState,

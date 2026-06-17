@@ -63,7 +63,7 @@ describe("Bebop XR design-system CSS", () => {
       "apps/desktop/src/components/DesktopModeToggle.jsx",
       "apps/desktop/src/components/OperatorShell.jsx",
       "apps/desktop/src/components/PerformerControls.jsx",
-      "packages/visualizer/src/styles.css",
+      "packages/engine/src/styles.css",
     ];
 
     for (const path of componentPaths) {
