@@ -1,0 +1,234 @@
+---
+title: "Routing system audio"
+description: "Send sound from another app — a player, DAW, browser tab, or DJ rig — into Baryon using a virtual audio cable on macOS, Windows, or Linux."
+---
+
+Baryon listens to an audio **input** — the same kind of device a microphone uses.
+To visualize sound that is playing in another app (Spotify, a DAW, a browser
+tab, a DJ player), you route that app's **output** into a virtual audio device,
+then pick that device as Baryon's input.
+
+A virtual audio cable is a small piece of software that shows up as both an
+output (where the source app sends sound) and an input (which Baryon can select).
+The signal path looks like this:
+
+```text
+source app  →  virtual audio device  →  Baryon input
+                       └──────────────→  your speakers / headphones (monitoring)
+```
+
+The monitoring branch is optional but usually wanted: by default, sending audio
+into the cable means you stop hearing it. Each platform section below covers both
+the route into Baryon and how to keep hearing the sound.
+
+<Info>
+  You only need a virtual cable for audio coming from another app. A microphone,
+  a line input, or an audio file loaded directly into Baryon already works without
+  any of this.
+</Info>
+
+## Install and route the cable
+
+<Tabs>
+  <Tab title="macOS — BlackHole">
+    [BlackHole](https://existential.audio/blackhole/) is a free virtual audio
+    driver. If you would rather pay for a friendlier setup, see
+    [Loopback](#loopback-paid-alternative) below.
+
+    <Steps>
+      <Step title="Install BlackHole">
+        With Homebrew:
+
+        ```bash
+        brew install blackhole-2ch
+        ```
+
+        Or download the installer from
+        [existential.audio/blackhole](https://existential.audio/blackhole/). After
+        installing, **BlackHole 2ch** appears as both an output and an input
+        device.
+      </Step>
+
+      <Step title="Send audio to BlackHole">
+        Open **System Settings → Sound → Output** and choose **BlackHole 2ch**.
+        Everything the system plays now goes into the cable instead of your
+        speakers.
+      </Step>
+
+      <Step title="Keep hearing it (recommended)">
+        Open **Audio MIDI Setup** (in `/Applications/Utilities`). Click the **+**
+        in the bottom-left and choose **Create Multi-Output Device**. Tick both
+        **BlackHole 2ch** and your real output (speakers or headphones). Put your
+        real output at the top as the primary device and enable **Drift
+        Correction** on BlackHole. Then set this **Multi-Output Device** as the
+        system output.
+
+        <Note>
+          Multi-Output Devices disable the keyboard volume keys. Adjust volume in
+          the source app, or monitor through an audio interface instead.
+        </Note>
+      </Step>
+    </Steps>
+
+    Then select **BlackHole 2ch** as the input in Baryon (see
+    [Select it in Baryon](#select-it-in-baryon)).
+
+    ### Loopback (paid alternative)
+
+    [Loopback](https://www.rogueamoeba.com/loopback/) by Rogue Amoeba is a paid
+    app that does the same job with a visual routing panel. It is worth it if you
+    want monitoring built in and per-app capture without the Audio MIDI Setup
+    dance.
+
+    <Steps>
+      <Step title="Create a virtual device">
+        In Loopback, click **New Virtual Device**. Under **Sources**, add the app
+        you want to capture (or **System Audio** / your whole output).
+      </Step>
+
+      <Step title="Add a monitor so you still hear it">
+        With the device selected, add your speakers or headphones as a
+        **Monitor**. The sound passes through to that output while Loopback also
+        exposes it as an input — no separate Multi-Output Device needed.
+      </Step>
+    </Steps>
+
+    Then select your Loopback device as the input in Baryon (see
+    [Select it in Baryon](#select-it-in-baryon)).
+  </Tab>
+
+  <Tab title="Windows — VB-CABLE">
+    [VB-CABLE](https://vb-audio.com/Cable/) is a free virtual audio cable
+    (donationware).
+
+    <Steps>
+      <Step title="Install VB-CABLE">
+        Download VB-CABLE from
+        [vb-audio.com/Cable](https://vb-audio.com/Cable/), unzip it, then
+        right-click **VBCABLE_Setup_x64.exe** and choose **Run as administrator →
+        Install Driver**. Reboot. This creates a **CABLE Input** playback device
+        and a **CABLE Output** recording device.
+      </Step>
+
+      <Step title="Send audio to the cable">
+        Open **Settings → System → Sound**. To route everything, set **CABLE
+        Input** as the output device. To route just one app, scroll to **Volume
+        mixer**, expand **Apps**, and set that app's output to **CABLE Input**.
+      </Step>
+
+      <Step title="Keep hearing it (recommended)">
+        Open **Sound → More sound settings → Recording** tab. Double-click **CABLE
+        Output**, open the **Listen** tab, tick **Listen to this device**, and
+        choose your speakers or headphones under **Playback through this device**.
+
+        <Note>
+          The Listen option adds a little latency. For tighter monitoring, use an
+          audio interface or a per-app output route instead.
+        </Note>
+      </Step>
+    </Steps>
+
+    Then select **CABLE Output** as the input in Baryon (see
+    [Select it in Baryon](#select-it-in-baryon)).
+  </Tab>
+
+  <Tab title="Linux — PipeWire / PulseAudio">
+    Linux is the simplest case: every output already exposes a **monitor** source
+    that captures whatever is playing, so no cable needs to be installed.
+
+    <Steps>
+      <Step title="Play to your normal output">
+        Leave the source app playing to your usual speakers or headphones. You do
+        not need to change the system output.
+      </Step>
+
+      <Step title="Point Baryon at the monitor source">
+        Open **pavucontrol** (PulseAudio Volume Control — it also drives PipeWire
+        through `pipewire-pulse`). Start live input in Baryon first so the browser
+        shows up, then open the **Recording** tab, find the browser/Baryon entry,
+        and set its source to **Monitor of &lt;your output device&gt;**.
+      </Step>
+
+      <Step title="Prefer an explicit cable? (optional)">
+        With PipeWire, use a patchbay like
+        [qpwgraph](https://gitlab.freedesktop.org/rncbc/qpwgraph) or
+        [Helvum](https://gitlab.freedesktop.org/pipewire/helvum) to wire the app's
+        output node into Baryon's input node. Or create a dedicated null sink and
+        capture its monitor:
+
+        ```bash
+        pactl load-module module-null-sink sink_name=baryon
+        ```
+
+        Send the app to the **baryon** sink, then choose **Monitor of baryon** as
+        Baryon's source.
+      </Step>
+    </Steps>
+
+    With monitoring you already hear the audio through your normal output, so no
+    extra step is needed.
+  </Tab>
+</Tabs>
+
+## Select it in Baryon
+
+<Steps>
+  <Step title="Start live input">
+    In the audio controls, start the microphone / live input and allow the
+    browser's permission prompt. Browsers only reveal device names after
+    permission is granted.
+  </Step>
+
+  <Step title="Open the device menu and pick the cable">
+    Open the input **device menu** and choose your virtual device:
+
+    | Platform | Choose                                       |
+    | -------- | -------------------------------------------- |
+    | macOS    | **BlackHole 2ch** or your **Loopback** device |
+    | Windows  | **CABLE Output**                             |
+    | Linux    | **Monitor of …** (your sink)                 |
+
+    If the device is not listed, grant microphone permission first, then reopen
+    the menu so the labels populate.
+  </Step>
+
+  <Step title="Pick a profile">
+    Choose **Ambient** for music, a full mix, or a live room — many sounds at
+    once. Choose **Voice** when the source is one clear lead tone, like a singer
+    or a single instrument. See
+    [Creative workflows](/public/guides/creative-workflows) for starting controls.
+  </Step>
+</Steps>
+
+<Check>
+  Within a second or two of audio playing, the orb starts moving with the sound.
+</Check>
+
+## Troubleshooting
+
+| Symptom                          | Likely cause and fix                                                                                                  |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Orb stays idle                   | The source app is not routed to the virtual device. Confirm the OS output (or per-app output) points at the cable.    |
+| You hear nothing                 | Expected until you set up monitoring — a Multi-Output Device (macOS), **Listen to this device** (Windows), or the monitor source (Linux). |
+| Device missing from Baryon's menu | Grant microphone permission once, then reopen the device menu. Some browsers hide device labels until you do.         |
+| Echo or feedback                 | Don't mirror your speakers into the same capture path. Monitor on headphones or an interface instead.                  |
+
+## Using this live
+
+Baryon behaves as a passive listener: it reads audio and produces video. For a
+real show, don't make Baryon the only path the room's sound travels through — if
+it stalls, the music should keep playing. Take a clean aux, record, or matrix send
+from your mixer into an audio interface, or use the interface's loopback, and keep
+your monitoring path separate. Mirrored "virtual cable plus laptop speakers"
+routing is fine for rehearsal but risky on stage.
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="First session guide" icon="compass" href="/public/guides/first-session">
+    Audio profiles, framing, and rotation, step by step.
+  </Card>
+  <Card title="Control panel reference" icon="sliders" href="/public/reference/controls">
+    Every control in the GUI, organized by folder.
+  </Card>
+</CardGroup>

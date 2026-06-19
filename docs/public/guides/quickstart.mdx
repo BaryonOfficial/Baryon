@@ -1,0 +1,109 @@
+---
+title: "Quickstart"
+description: "Render your first sound as a live cymatic field in about five minutes — no install."
+---
+
+<Card title="Try it now → app.baryon.live" icon="play" href="https://app.baryon.live" horizontal>
+  Baryon runs entirely in the browser. Open the web app and follow along — no
+  account, no download.
+</Card>
+
+By the end of this guide you will have live audio rendered as a cymatic field,
+framed the way you want, and saved as a preset you can reload any time.
+
+<Note>
+  Baryon needs a Chromium-based browser with WebGPU — Chrome, Edge, Brave, or
+  Arc. Microphone input requires a secure page, which `app.baryon.live` already
+  is. Safari and Firefox support is still uneven.
+</Note>
+
+## Render your first sound
+
+<Steps>
+  <Step title="Open the web app">
+    Go to [app.baryon.live](https://app.baryon.live). You will see the idle logo
+    orb, waiting for audio.
+  </Step>
+
+  <Step title="Connect an audio source">
+    Pick whichever is easiest:
+
+    - **An audio file** — load a track and press play.
+    - **Your microphone** — start the mic, allow access, and choose a profile:
+      **Voice** for a lead voice or instrument, **Ambient** for music, a full
+      mix, or a live room.
+    - **System audio** — route another app's output through a virtual audio
+      cable and select it as the input. See
+      [Routing system audio](/public/guides/routing-system-audio) for BlackHole
+      (macOS), VB-CABLE (Windows), and PipeWire/PulseAudio (Linux) setup.
+
+    **Checkpoint:** within a second or two, the orb starts moving with the sound.
+
+    {/* TODO: swap the SVG placeholder for a real 4–6s muted, looping clip of
+        audio coming alive into a field. Easiest: overwrite
+        docs/images/quickstart/first-render.svg with a small looping GIF and
+        point src at it. For an MP4 instead, replace the <img> with:
+        <video autoPlay loop muted playsInline
+          src="/images/quickstart/first-render.mp4" /> */}
+    <Frame caption="The moment it clicks: a sound becomes a field.">
+      <img
+        src="/images/quickstart/first-render.svg"
+        alt="Baryon rendering live audio as a volumetric cymatic field"
+      />
+    </Frame>
+  </Step>
+
+  <Step title="Frame the shot">
+    Drag to orbit the camera, or use the top / side / reset controls for a clean
+    angle. Then enable **Lock Camera** so an accidental drag does not move your
+    shot.
+  </Step>
+
+  <Step title="Shape the field">
+    Open the control panel in the top-right corner and try three controls first:
+
+    - **Reactivity** — how strongly the field responds to the audio.
+    - **Node Threshold** — lower values make crisper, sharper rings.
+    - **Density** — overall thickness and brightness of the orb.
+
+    Want the audio to color the visuals? Set **Color Mode** to `Spectral`.
+  </Step>
+
+  <Step title="Set the motion">
+    In the **Motion** controls, choose how the field moves:
+
+    - `Off` — a still scene, best for stills.
+    - `Audio` — the orb moves with the track (tune **Motion Scale**).
+    - `Manual` — a steady sculptural spin (tune **Manual Rotation**).
+  </Step>
+
+  <Step title="Save your look">
+    Open **Presets**, type a name, and press **Save**. You now have a reusable
+    look. Baryon also auto-saves your latest settings, so your next session opens
+    close to where you left off.
+  </Step>
+</Steps>
+
+## Capture it (optional)
+
+To grab a still or a clip, set **Output Mode** first — `Transparent` to composite
+over other footage, or `Opaque` for a filled background — then use your browser or
+operating-system screenshot and screen-recording tools. Baryon does not yet have a
+native export button.
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="First session guide" icon="compass" href="/public/guides/first-session">
+    A more deliberate setup: audio profiles, framing, and rotation in depth.
+  </Card>
+  <Card title="Understanding the engine" icon="atom" href="/public/guides/understanding-the-engine">
+    What Baryon is actually rendering, and why the settings behave as they do.
+  </Card>
+  <Card title="Control panel reference" icon="sliders" href="/public/reference/controls">
+    Every control in the GUI, organized by folder.
+  </Card>
+  <Card title="Creative workflows" icon="waves" href="/public/guides/creative-workflows">
+    Choosing source material, capture tips, and the shape of future 3D exports.
+  </Card>
+</CardGroup>

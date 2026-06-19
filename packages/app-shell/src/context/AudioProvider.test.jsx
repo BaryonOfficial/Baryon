@@ -17,7 +17,7 @@ const {
   refreshAudioInputsMock: vi.fn(async () => []),
 }));
 
-vi.mock("@baryon/visualizer/audio", () => ({
+vi.mock("@baryon/engine/audio", () => ({
   getDefaultAudioSession: getDefaultAudioSessionMock,
 }));
 

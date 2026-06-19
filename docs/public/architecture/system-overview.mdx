@@ -1,0 +1,126 @@
+---
+title: "Engine architecture"
+description: "How the open Baryon engine turns live audio into a volumetric cymatic field, and the contracts that keep it stable."
+---
+
+This is a conceptual map of the open Baryon engine: the pipeline, the one seam that
+matters most, and the contracts that stay stable across versions. For the governing
+equations and the modal physics, read the engine whitepaper; for the implementation,
+read the [source on GitHub](https://github.com/BaryonOfficial/Baryon).
+
+## The pipeline
+
+The engine turns live audio into a volumetric cymatic field through one mostly linear
+path:
+
+```text
+audio source
+  -> Web Audio analyzers / live-input analysis
+  -> feature building
+  -> AudioFeatureFrame
+  -> visualization runtime
+  -> render / output
+  -> presentation
+```
+
+The defining property is that Baryon is **not** a generic audio-reactive renderer. The
+audio side interprets musical and resonant structure first, and the render side consumes
+that interpreted structure. Most "the visuals look wrong" questions are really questions
+about which stage owns the behavior.
+
+## The packages
+
+The engine ships as two shared packages, consumed by the web app:
+
+- **`packages/engine`** — the engine and its domain semantics: audio analysis,
+  `AudioFeatureFrame` construction, the control schema, render-profile policy, and the
+  raymarch runtime.
+- **`packages/app-shell`** — the shared React orchestration around the engine:
+  control-state lifecycle, the render loop, runtime diagnostics, and scene mounting.
+- **`apps/web`** — the browser product shell.
+
+Host integrations that embed the engine wrap these shared packages rather than forking
+their semantics.
+
+## The main seam
+
+The highest-value boundary in the engine is:
+
+```text
+audio analysis -> AudioFeatureFrame -> visualization runtime
+```
+
+It exists so that audio interpretation stays renderer-agnostic, render bugs can be
+debugged without rewriting analysis semantics, and a new runtime can consume the same
+authoritative structure. When a render symptom appears, the first job is to locate which
+stage owns it: capture and live-input classification, feature construction, or render
+consumption.
+
+## The contracts that stay stable
+
+These boundaries should be treated as stable unless a change explicitly intends to move
+them. The goal is not "never refactor" — it is to avoid accidental breakage where Baryon
+has persisted settings and a shared engine that more than one host can consume.
+
+### `AudioFeatureFrame`
+
+The authoritative boundary between audio interpretation and visualization. The audio side
+interprets signal structure; the render side consumes it; render code must not silently
+rebuild analysis from raw audio.
+
+The mental model is one chain:
+`audio drive -> rectangular water-cavity modes -> modal pressure field -> spherical render hull`.
+Pressure and radiation values are normalized visualization quantities — not calibrated
+acoustic measurements. Adding fields that consumers can ignore, or restructuring internal
+stages, is safe; changing the meaning of an existing field without a coordinated migration
+is not.
+
+### Control schema
+
+The source of truth for control keys, defaults, applicability, and whether a control is
+live or debug-only. Changing a label is cheap. Changing a key that is persisted or synced
+is a compatibility change, because that key is effectively part of a stored format.
+
+### Persistence
+
+Only controls marked **live** are saved into presets and auto-save; debug-only controls
+are excluded. Loading starts from schema defaults, drops unknown keys, falls back to
+defaults for missing ones, and normalizes a few legacy fields forward. Adding a new live
+control with a correct default is usually safe; renaming or removing a persisted key needs
+explicit migration.
+
+### Visualization method
+
+`raymarch` is the only supported method. Legacy values (`fullscreen-volume`, `cymatics-2d`)
+collapse to `raymarch` at ingress. The field is kept as a constant for forward
+compatibility; there is no user-facing visualizer selector.
+
+### Performance profile
+
+Three values: `auto` (adaptive behavior on), `custom` (adapts toward an explicit target
+frame rate), and `max-quality` (full quality, adaptation off). `none` is a legacy alias
+for `max-quality`. The user-facing wording is "Performance Profile," but some compatibility
+fields still use `qualityPreset` or `renderQualityPreset` — treat those as naming
+vocabulary that still matters, not as free renames.
+
+### Input semantics
+
+Line-feed / system input and acoustic-microphone input are intentionally distinct analysis
+paths; collapsing them into a single live-input mode is high-risk. Within acoustic-mic
+input, the **Voice** and **Ambient** profiles are small policy deltas over one shared
+engine, not separate analyzers. Source confidence is input evidence only — it does not
+grant render authority.
+
+### Spectral Light color
+
+Color is part of audio interpretation: it is produced before the render boundary and
+carried through the modal color slots, never reconstructed from raw FFT bins inside the
+renderer. A color value must not promote a mode on its own. The detailed Spectral Light
+architecture lives in the engine whitepaper.
+
+## Changing the engine safely
+
+Before moving a boundary, ask whether the change is **semantic** or an **implementation
+detail**, whether the value crosses persistence or host boundaries, and whether tests
+already assert its shape. Prefer normalization layers and dual-read compatibility over
+broad renames — string churn at these boundaries is how cross-host breakage happens.

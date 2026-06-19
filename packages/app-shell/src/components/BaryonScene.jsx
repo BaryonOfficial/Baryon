@@ -9,7 +9,7 @@ import {
 import { useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { useBaryonPipeline } from "./hooks/useBaryonPipeline";
-import { useBaryonVisualizer } from "./hooks/useBaryonVisualizer";
+import { useBaryonEngine } from "./hooks/useBaryonEngine";
 import { useDefaultBaryonGeometry } from "./hooks/useDefaultBaryonGeometry";
 import {
   augmentFrameStateWithCameraSync,
@@ -21,8 +21,8 @@ export { CAMERA_CONTROL_MODES } from "./baryonSceneCameraSync.js";
 import {
   RENDER_CONTEXTS,
   markRenderOutputCameraCut,
-} from "@baryon/visualizer/render/outputPipeline";
-import { resolveTemporalReprojectionPolicy } from "@baryon/visualizer/render/temporalReprojectionPolicy";
+} from "@baryon/engine/render/outputPipeline";
+import { resolveTemporalReprojectionPolicy } from "@baryon/engine/render/temporalReprojectionPolicy";
 import {
   resolveSceneRenderQualityProfile,
   sanitizeRenderProfileOverrides,
@@ -226,7 +226,7 @@ export function BaryonScene({
     }
   }, [camera, cameraControlMode, cameraPose, invalidate, postNodesRef]);
 
-  const points = useBaryonVisualizer({
+  const points = useBaryonEngine({
     baryonGeometry,
     camera,
     gl,

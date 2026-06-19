@@ -4,7 +4,7 @@ import {
   normalizeResolvedRenderQualityProfile,
   RENDER_CONTEXTS,
   resolveRenderQualityProfile,
-} from "@baryon/visualizer/render/outputPipeline";
+} from "@baryon/engine/render/outputPipeline";
 
 /**
  * @param {unknown} overrides
@@ -32,7 +32,7 @@ export function shouldAllowLocalRenderProfileCommands(renderContext) {
  *   localRenderProfileOverrides?: unknown,
  *   traaEnabled?: boolean,
  * }} options
- * @returns {import("@baryon/visualizer/render/outputPipeline").RenderQualityProfile}
+ * @returns {import("@baryon/engine/render/outputPipeline").RenderQualityProfile}
  */
 export function resolveSceneRenderQualityProfile({
   performanceProfile,

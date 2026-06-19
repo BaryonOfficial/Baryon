@@ -17,7 +17,7 @@
     "./baryon-env": "./src/baryon-env.d.ts"
   },
   "dependencies": {
-    "@baryon/visualizer": "workspace:*",
+    "@baryon/engine": "workspace:*",
     "hls.js": "^1.6.15",
     "tailwindcss-animate": "^1.0.7"
   },

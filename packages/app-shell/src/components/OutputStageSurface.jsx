@@ -10,7 +10,7 @@ import {
 import {
   DEFAULT_PERFORMANCE_PROFILE,
   RENDER_CONTEXTS,
-} from "@baryon/visualizer/render/outputPipeline";
+} from "@baryon/engine/render/outputPipeline";
 
 function StageInvalidateBridge({ registerRenderRequester }) {
   const { invalidate } = useThree();
@@ -59,7 +59,7 @@ const defaultStageCameraConfig = (() => {
  *   controlsRef: import("react").MutableRefObject<Record<string, unknown>>,
  *   visualizationMethod: string,
  *   renderQualityPreset?: string,
- *   resolvedRenderProfile?: import("@baryon/visualizer/render/outputPipeline").RenderQualityProfile | null,
+ *   resolvedRenderProfile?: import("@baryon/engine/render/outputPipeline").RenderQualityProfile | null,
  *   externalFrameRef?: import("react").MutableRefObject<any>,
  *   cameraPose?: {
  *     position?: { x?: number, y?: number, z?: number },

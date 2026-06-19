@@ -159,12 +159,28 @@ function buildLinuxChromiumGuidance() {
     summary:
       "On Linux, Chromium-based browsers sometimes need WebGPU and Vulkan enabled manually before Baryon can start.",
     steps: [
+      "Turn on the browser's graphics acceleration setting, then relaunch.",
       "Open `chrome://flags/#enable-unsafe-webgpu` and enable it.",
       "Open `chrome://flags/#enable-vulkan` and enable it.",
       "Restart the browser after changing the flags.",
     ],
     caveat:
       "Even with those flags enabled, WebGPU support still depends on your GPU, drivers, and browser version.",
+  };
+}
+
+function buildDesktopChromiumGuidance() {
+  return {
+    summary:
+      "This Chromium-based browser is open, but it is not exposing a usable WebGPU adapter to Baryon.",
+    steps: [
+      "Turn on the browser's graphics acceleration setting, then relaunch.",
+      "Open the browser's GPU diagnostics page and confirm WebGPU is enabled without a driver, blocklist, or software-rendering warning.",
+      "Update the operating system and graphics driver, then restart the browser.",
+      "If this is a Remote Desktop, virtual machine, or managed browser session, test in a normal local browser window.",
+    ],
+    caveat:
+      "A powerful GPU is not enough by itself; the browser must expose a hardware WebGPU adapter to the page.",
   };
 }
 
@@ -237,6 +253,10 @@ export function buildBrowserGuidance({
 
   if (isLinuxDesktop(platform) && isChromiumFamily(browserFamily)) {
     return buildLinuxChromiumGuidance();
+  }
+
+  if (isChromiumFamily(browserFamily)) {
+    return buildDesktopChromiumGuidance();
   }
 
   if (
