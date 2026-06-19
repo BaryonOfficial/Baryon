@@ -65,21 +65,5 @@ module.exports = [
         ...cleanGlobals(globals.node),
       },
     },
-  },
-  {
-    // Electron main/preload processes run in Node.js.
-    // *_VITE_* are compile-time constants injected by electron-forge.
-    files: ["apps/desktop/electron/**/*.js"],
-    languageOptions: {
-      ecmaVersion: "latest",
-      sourceType: "module",
-      globals: {
-        ...cleanGlobals(globals.node),
-        MAIN_WINDOW_VITE_DEV_SERVER_URL: "readonly",
-        MAIN_WINDOW_VITE_NAME: "readonly",
-        OUTPUT_STAGE_VITE_DEV_SERVER_URL: "readonly",
-        OUTPUT_STAGE_VITE_NAME: "readonly",
-      },
-    },
-  },
+  }
 ];

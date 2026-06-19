@@ -8,8 +8,8 @@
 
 ## Testing
 
-- [ ] `pnpm --filter @baryon/visualizer test` passes
-- [ ] `pnpm exec eslint packages/visualizer/src apps/web/src/components/hooks` passes
+- [ ] `pnpm test:engine` passes
+- [ ] `pnpm lint:all` passes
 - [ ] Manually tested in Chrome or Edge with WebGPU
 
 ## CLA
@@ -19,5 +19,5 @@
 ## Checklist
 
 - [ ] Commit messages follow Conventional Commits (`feat:`, `fix:`, `docs:`, etc.)
-- [ ] New controls added through the schema in `packages/visualizer/src/controls/schema.js`, not inline
+- [ ] New controls added through the schema in `packages/engine/src/controls/schema.js`, not inline
 - [ ] No console.log or commented-out code left in
