@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { RENDER_CONTEXTS } from "@baryon/visualizer/render/outputPipeline";
+import { RENDER_CONTEXTS } from "@baryon/engine/render/outputPipeline";
 import {
   resolveSceneRenderQualityProfile,
   sanitizeRenderProfileOverrides,

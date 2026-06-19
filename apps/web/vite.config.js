@@ -48,9 +48,9 @@ export default defineConfig(() => {
       outDir: "dist",
     },
     optimizeDeps: {
-      // Visualizer sources use Vite-specific resource imports, so keep the linked
+      // Engine sources use Vite-specific resource imports, so keep the linked
       // package itself out of prebundling and seed its deep third-party imports.
-      exclude: ["@baryon/visualizer"],
+      exclude: ["@baryon/engine"],
       include: baryonCommonOptimizeDepsInclude,
       holdUntilCrawlEnd: true,
     },

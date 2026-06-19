@@ -1,0 +1,70 @@
+---
+title: "Creative workflows"
+description: "Guidance for choosing source material, capturing stills and video, and future 3D-printable cymatic exports."
+---
+
+This guide covers creative uses that sit between the product controls and future export features: choosing source material, capturing stills and video, and 3D-printing experiments.
+
+## Choosing source material
+
+The first creative choice is the input profile, and it comes down to one question: does the audio have a single lead pitch, or many sounds at once?
+
+| Material                                 | Profile     | Why                                                        |
+| ---------------------------------------- | ----------- | ---------------------------------------------------------- |
+| A solo voice, singer, or lead instrument | **Voice**   | Tracks one dominant pitch and treats harmonics as texture. |
+| Music, a full mix, or a busy room        | **Ambient** | Lets many simultaneous sources shape the field at once.    |
+
+Good starting controls: lower **Reactivity**, **Density**, and **Opacity** for quiet or sparse material, then raise **Node Threshold** if the field feels too diffuse. For dense, layered music, try **Spectral** color so the field is colored by the spectrum.
+
+For clean recordings or a direct feed, avoid browser audio cleanup unless you need it. Echo cancellation, noise suppression, and auto gain can rescue a noisy microphone, but they also alter the signal that drives the field.
+
+## Still shots
+
+For a still representation:
+
+1. Choose the source and let the visual settle.
+2. Set **Rotation Mode** to `Off`, or set it to `Manual` with a very slow **Manual Rotation**.
+3. Frame the scene with camera controls.
+4. Lock the camera.
+5. Use your browser or operating system screenshot tool.
+6. Save a preset if the look is worth returning to.
+
+Baryon does not currently provide a native still-image export button.
+
+## Video captures
+
+For a controlled video take:
+
+- Use **Manual** rotation when you want a steady sculptural spin.
+- Use **Audio** rotation when you want the scene to move with the recording.
+- Use **Transparent** output for compositing over another layer.
+- Use **Opaque** output when the capture should include a finished background.
+- Save the exact control state as a preset before recording.
+
+## 3D printing and mesh export
+
+The current public app does not export 3D-printable geometry. That includes raw coordinates, point clouds, STL, OBJ, GLTF, and direct slicer-ready files.
+
+This is an important distinction: Baryon is not rendering a point cloud. The visual comes from a continuous volumetric modal field. To make a physical object from it, an export feature would need to convert a chosen moment of that field into geometry.
+
+A credible 3D-print export workflow would need to answer these questions:
+
+| Decision                 | Why it matters                                                         |
+| ------------------------ | ---------------------------------------------------------------------- |
+| **Moment in time**       | A live field changes continuously; the export needs one frozen state.  |
+| **Field threshold**      | The mesh needs a surface boundary, not every sampled value.            |
+| **Scale and thickness**  | Printed material needs structural support and minimum wall thickness.  |
+| **Solid versus shell**   | A slicer needs watertight geometry, not only a visual surface.         |
+| **Orientation and base** | Sculptural prints often need a stable base or mounting strategy.       |
+| **File format**          | Slicers usually expect STL, OBJ, or 3MF; design tools may prefer GLTF. |
+
+The right export source would be the field state itself, not a screenshot. A screenshot can become a visual reference, but it cannot preserve the underlying 3D structure.
+
+## Current limits to know
+
+- Manual cymatic rotation is controlled through **Rotation Mode** and **Manual Rotation**, not keyboard shortcuts.
+- Camera controls change the viewpoint, not the underlying pattern.
+- Still and video capture currently use browser or operating-system tools.
+- Geometry export is not currently exposed in the public app.
+
+These limits are documented so creative workflows can stay grounded in what the current product actually supports.

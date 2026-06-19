@@ -16,7 +16,7 @@ const DEFAULT_OUTPUT_ROOT = path.join(
 const DENSE_POLYPHONIC_FIXTURE = JSON.parse(
   readFileSync(
     new URL(
-      "../../../packages/visualizer/src/utils/audio/fixtures/dense-polyphonic-12s.json",
+      "../../../packages/engine/src/utils/audio/fixtures/dense-polyphonic-12s.json",
       import.meta.url,
     ),
     "utf8",

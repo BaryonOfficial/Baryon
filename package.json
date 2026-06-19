@@ -14,6 +14,7 @@
     "dev": "turbo dev --filter=@baryon/web",
     "dev:desktop:packaged": "pnpm --filter @baryon/desktop acceptance:prepare && pnpm --filter @baryon/desktop run:packaged",
     "dev:marketing": "turbo dev --filter=@baryon/marketing",
+    "dev:docs": "cd docs && volta run --node 24.14.1 --pnpm 11.5.1 pnpm dev",
     "dev:desktop:probe": "BARYON_DEV_PERF_PROBE=1 pnpm --filter @baryon/desktop dev",
     "build": "turbo build",
     "build:web": "turbo build --filter=@baryon/web",
@@ -23,6 +24,7 @@
     "repo:map": "node scripts/generate-repo-map.mjs",
     "repo:map:check": "node scripts/generate-repo-map.mjs --check",
     "docs:check": "node scripts/check-docs.mjs",
+    "docs:mintlify:check": "cd docs && volta run --node 24.14.1 --pnpm 11.5.1 pnpm mintlify:check",
     "version:check": "node scripts/workspace-version.mjs --check",
     "version:set": "node scripts/workspace-version.mjs",
     "release:patch": "node scripts/release-bump.mjs patch",
@@ -49,9 +51,9 @@
     "test:lumen": "pnpm --filter @baryon/lumen test",
     "test:marketing": "pnpm --filter @baryon/marketing test",
     "test:scripts": "node --test scripts/*.test.mjs",
-    "test:visualizer": "pnpm --filter @baryon/visualizer test",
+    "test:engine": "pnpm --filter @baryon/engine test",
     "test:web:unit": "pnpm --filter @baryon/web test:unit",
-    "test:deterministic": "pnpm test:scripts && pnpm test:visualizer && pnpm test:app-shell && pnpm test:desktop && pnpm test:desktop:platform && pnpm test:web:unit && pnpm test:marketing && pnpm test:lumen",
+    "test:deterministic": "pnpm test:scripts && pnpm test:engine && pnpm test:app-shell && pnpm test:desktop && pnpm test:desktop:platform && pnpm test:web:unit && pnpm test:marketing && pnpm test:lumen",
     "perf:web:baseline": "pnpm --filter @baryon/web perf:baseline",
     "acceptance:web": "pnpm --filter @baryon/web acceptance:prod",
     "acceptance:web:dev": "pnpm --filter @baryon/web acceptance:dev",
@@ -85,6 +87,7 @@
   "devDependencies": {
     "@ast-grep/cli": "^0.42.0",
     "@eslint/js": "^9.39.4",
+    "convex": "^1.41.0",
     "dependency-cruiser": "^17.3.10",
     "eslint": "^9.39.4",
     "eslint-plugin-react": "^7.37.5",
@@ -100,5 +103,8 @@
     "turbo": "^2.9.3",
     "typescript": "^5.9.3"
   },
-  "packageManager": "pnpm@11.5.1"
+  "packageManager": "pnpm@11.5.1",
+  "dependencies": {
+    "libphonenumber-js": "^1.13.6"
+  }
 }

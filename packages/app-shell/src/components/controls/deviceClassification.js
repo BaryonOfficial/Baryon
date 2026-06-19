@@ -14,7 +14,7 @@
 import {
   LIVE_INPUT_DEVICE_KINDS,
   normalizeLiveInputDeviceKind,
-} from "@baryon/visualizer/audio/liveInputAnalysis";
+} from "@baryon/engine/audio/liveInputAnalysis";
 
 const SYSTEM_KEYWORDS = [
   "blackhole",
@@ -60,7 +60,7 @@ export function classifyLiveInputDeviceKind(device) {
  * Resolve the effective classification bucket for a device.
  * Manual overrides in localStorage take precedence over heuristics.
  * @param {LiveInputDeviceLike | null | undefined} device
- * @returns {import("@baryon/visualizer/audio/liveInputAnalysis").LiveInputDeviceKind}
+ * @returns {import("@baryon/engine/audio/liveInputAnalysis").LiveInputDeviceKind}
  */
 export function getLiveInputDeviceKind(device) {
   if (!device) {
@@ -77,7 +77,7 @@ export function getLiveInputDeviceKind(device) {
  * Falls back to mic semantics when the device is unknown.
  * @param {MediaDeviceInfo[]} devices
  * @param {string | null | undefined} deviceId
- * @returns {import("@baryon/visualizer/audio/liveInputAnalysis").LiveInputDeviceKind}
+ * @returns {import("@baryon/engine/audio/liveInputAnalysis").LiveInputDeviceKind}
  */
 export function getLiveInputDeviceKindById(devices, deviceId) {
   if (!deviceId) {
@@ -90,7 +90,7 @@ export function getLiveInputDeviceKindById(devices, deviceId) {
 /**
  * Manually assign a device to a bucket, persisted to localStorage.
  * @param {string} deviceId
- * @param {import("@baryon/visualizer/audio/liveInputAnalysis").LiveInputDeviceKind} bucket
+ * @param {import("@baryon/engine/audio/liveInputAnalysis").LiveInputDeviceKind} bucket
  */
 export function saveLiveInputDeviceKindOverride(deviceId, bucket) {
   const overrides = loadOverrides();
@@ -101,7 +101,7 @@ export function saveLiveInputDeviceKindOverride(deviceId, bucket) {
 /**
  * Get the manual override kind for a device, or null if none is set.
  * @param {string | null | undefined} deviceId
- * @returns {import("@baryon/visualizer/audio/liveInputAnalysis").LiveInputDeviceKind | null}
+ * @returns {import("@baryon/engine/audio/liveInputAnalysis").LiveInputDeviceKind | null}
  */
 export function getDeviceKindOverride(deviceId) {
   if (!deviceId) return null;

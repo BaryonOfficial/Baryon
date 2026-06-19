@@ -2,7 +2,7 @@
 
 ## Engine — PolyForm Strict License 1.0.0
 
-The Baryon engine (`packages/visualizer`, `packages/app-shell`,
+The Baryon engine (`packages/engine`, `packages/app-shell`,
 `packages/config`) and the web app (`apps/web`) are licensed under the
 **PolyForm Strict License 1.0.0**.
 
@@ -29,11 +29,18 @@ free — that incorporates or is substantially derived from the Baryon engine.
 See [`COMMERCIAL_LICENSE.md`](COMMERCIAL_LICENSE.md) for details and contact
 information.
 
-## Desktop App — Commercial Product
+## Desktop App — Free to Evaluate, Paid to Perform
 
-The Baryon desktop app is a separate commercial product. A license is required
-to use it and is purchased at [baryon.live](https://baryon.live). License terms
-are presented at the time of purchase.
+The Baryon desktop app is free to download and evaluate. A paid **Performer
+License** is required to unlock Performer Mode and professional live-use features
+— show-safe controls, external display output, saved performance presets, and
+commercial performance rights. The Performer License is purchased at
+[baryon.live](https://baryon.live), and its terms are presented at the time of
+purchase.
+
+Embedding or redistributing Baryon in another product, installation, hardware, or
+service requires a separate Commercial License (see below), not the Performer
+License.
 
 ## Contributing
 

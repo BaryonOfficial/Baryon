@@ -50,9 +50,25 @@ function scriptExists(relPath) {
   return fs.existsSync(path.join(rootDir, relPath));
 }
 
+function localLinkTargetExists(resolvedPath, allowExtensionless = false) {
+  if (fs.existsSync(resolvedPath)) {
+    return true;
+  }
+
+  if (!allowExtensionless || path.extname(resolvedPath)) {
+    return false;
+  }
+
+  return [".md", ".mdx", "/index.md", "/index.mdx"].some((suffix) =>
+    fs.existsSync(`${resolvedPath}${suffix}`),
+  );
+}
+
 for (const filePath of markdownFiles) {
   const text = fs.readFileSync(filePath, "utf8");
   const relPath = toRepoRelative(filePath);
+  const isMintlifyPage =
+    relPath.startsWith("docs/") && path.extname(filePath) === ".mdx";
 
   if (absoluteLocalPathPattern.test(text)) {
     errors.push(`${relPath}: contains an absolute local filesystem path`);
@@ -71,12 +87,22 @@ for (const filePath of markdownFiles) {
     }
 
     if (target.startsWith("/")) {
+      if (isMintlifyPage) {
+        const resolved = path.join(rootDir, "docs", target.slice(1));
+        if (!localLinkTargetExists(resolved, true)) {
+          errors.push(
+            `${relPath}: broken Mintlify root link '${target}' -> ${toRepoRelative(resolved)}`,
+          );
+        }
+        continue;
+      }
+
       errors.push(`${relPath}: non-portable absolute link target '${target}'`);
       continue;
     }
 
     const resolved = path.resolve(path.dirname(filePath), target);
-    if (!fs.existsSync(resolved)) {
+    if (!localLinkTargetExists(resolved, isMintlifyPage)) {
       errors.push(
         `${relPath}: broken relative link '${target}' -> ${toRepoRelative(resolved)}`,
       );
@@ -142,7 +168,7 @@ if (scriptExists("scripts/generate-repo-map.mjs")) {
     });
   } catch {
     errors.push(
-      "documentation/internal/generated/repo-map.md is stale; run 'pnpm repo:map' and commit the updated generated file",
+      "docs/internal/generated/repo-map.md is stale; run 'pnpm repo:map' and commit the updated generated file",
     );
   }
 }
@@ -155,7 +181,7 @@ if (scriptExists("scripts/contract-desktop-bridge.mjs")) {
     });
   } catch {
     errors.push(
-      "documentation/internal/generated/desktop-bridge-contract.md is stale or the desktop bridge contract has drifted; run 'pnpm contract:desktop-bridge' and resolve the mismatch",
+      "docs/internal/generated/desktop-bridge-contract.md is stale or the desktop bridge contract has drifted; run 'pnpm contract:desktop-bridge' and resolve the mismatch",
     );
   }
 }
@@ -177,8 +203,24 @@ if (scriptExists("scripts/sync-public.sh")) {
     "utf8",
   );
 
-  if (!syncPublic.includes("documentation/public")) {
-    errors.push("scripts/sync-public.sh: missing documentation/public export");
+  if (!syncPublic.includes("docs/public")) {
+    errors.push("scripts/sync-public.sh: missing docs/public export");
+  }
+
+  if (!syncPublic.includes("docs/README.md")) {
+    errors.push("scripts/sync-public.sh: missing public docs root map export");
+  }
+
+  if (!syncPublic.includes("docs/docs.json")) {
+    errors.push("scripts/sync-public.sh: missing Mintlify docs.json export");
+  }
+
+  if (!syncPublic.includes("docs/index.mdx")) {
+    errors.push("scripts/sync-public.sh: missing Mintlify index page export");
+  }
+
+  if (!syncPublic.includes("docs/package.json")) {
+    errors.push("scripts/sync-public.sh: missing Mintlify package export");
   }
 
   if (!syncPublic.includes(".nvmrc")) {
@@ -204,7 +246,7 @@ if (scriptExists("scripts/sync-public.sh")) {
   }
 
   if (
-    syncPublic.includes("documentation/internal") &&
+    syncPublic.includes("docs/internal") &&
     !syncPublic.includes(
       "Excluded: apps/desktop, apps/marketing, internal documentation",
     )
@@ -220,7 +262,7 @@ const expectedLicenses = new Map([
   ["package.json", polyformLicense],
   ["apps/web/package.json", polyformLicense],
   ["packages/app-shell/package.json", polyformLicense],
-  ["packages/visualizer/package.json", polyformLicense],
+  ["packages/engine/package.json", polyformLicense],
   ["packages/config/package.json", polyformLicense],
   ["apps/desktop/package.json", "UNLICENSED"],
   ["apps/marketing/package.json", "UNLICENSED"],

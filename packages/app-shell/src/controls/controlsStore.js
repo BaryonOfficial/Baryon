@@ -1,11 +1,11 @@
 import {
   deserializeControls,
   normalizeSpectralLightActivationControls,
-} from "@baryon/visualizer/controls/persistence";
+} from "@baryon/engine/controls/persistence";
 import {
   CONTROL_DEFINITIONS,
   createControlState,
-} from "@baryon/visualizer/controls/schema";
+} from "@baryon/engine/controls/schema";
 import {
   PRESETS_KEY,
   createControlsPersistScheduler,

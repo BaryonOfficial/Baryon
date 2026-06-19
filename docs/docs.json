@@ -1,0 +1,126 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "maple",
+  "name": "Baryon",
+  "description": "Public engineering and product reference for Baryon's physics-based audio visualizer.",
+  "colors": {
+    "primary": "#F2A05C",
+    "light": "#F5B47A",
+    "dark": "#C45824"
+  },
+  "logo": {
+    "light": "/images/baryon-logo-black.svg",
+    "dark": "/images/baryon-logo-white.svg",
+    "href": "https://baryon.live"
+  },
+  "favicon": "/images/baryon-logo-black.svg",
+  "appearance": {
+    "default": "system"
+  },
+  "fonts": {
+    "family": "Inter"
+  },
+  "icons": {
+    "library": "lucide"
+  },
+  "navbar": {
+    "links": [
+      {
+        "type": "github",
+        "href": "https://github.com/BaryonOfficial/Baryon"
+      },
+      {
+        "label": "Web app",
+        "href": "https://app.baryon.live"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Baryon site",
+      "href": "https://baryon.live/"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/BaryonOfficial/Baryon"
+    },
+    "links": [
+      {
+        "header": "Product",
+        "items": [
+          {
+            "label": "Baryon",
+            "href": "https://baryon.live"
+          },
+          {
+            "label": "Web app",
+            "href": "https://app.baryon.live"
+          }
+        ]
+      },
+      {
+        "header": "Reference",
+        "items": [
+          {
+            "label": "Controls",
+            "href": "/public/reference/controls"
+          },
+          {
+            "label": "FAQ",
+            "href": "/public/reference/faq"
+          }
+        ]
+      }
+    ]
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Using Baryon",
+        "groups": [
+          {
+            "group": "Get started",
+            "pages": [
+              "index",
+              "public/guides/quickstart",
+              "public/guides/first-session"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "public/guides/routing-system-audio",
+              "public/guides/understanding-the-engine",
+              "public/guides/creative-workflows"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": ["public/reference/controls", "public/reference/faq"]
+          }
+        ]
+      },
+      {
+        "tab": "Desktop",
+        "groups": [
+          {
+            "group": "Baryon Desktop",
+            "pages": ["public/desktop/overview", "public/desktop/licensing"]
+          }
+        ]
+      },
+      {
+        "tab": "Developers",
+        "groups": [
+          {
+            "group": "Develop",
+            "pages": [
+              "public/develop/contributing",
+              "public/architecture/system-overview"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
