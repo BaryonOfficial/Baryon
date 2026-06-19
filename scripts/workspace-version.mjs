@@ -6,18 +6,34 @@ import { fileURLToPath } from "node:url";
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(scriptDir, "..");
 
-const manifestPaths = [
-  "package.json",
-  "apps/desktop/package.json",
-  "apps/marketing/package.json",
-  "apps/web/package.json",
-  "packages/app-shell/package.json",
-  "packages/config/package.json",
-  "packages/engine/package.json",
-];
-const existingManifestPaths = manifestPaths.filter((relPath) =>
-  fs.existsSync(path.join(rootDir, relPath)),
-);
+function findWorkspaceManifestPaths() {
+  const workspaceRoots = ["apps", "packages"];
+  const manifestPaths = ["package.json"];
+
+  for (const workspaceRoot of workspaceRoots) {
+    const workspaceRootPath = path.join(rootDir, workspaceRoot);
+    if (!fs.existsSync(workspaceRootPath)) {
+      continue;
+    }
+
+    for (const entry of fs.readdirSync(workspaceRootPath, {
+      withFileTypes: true,
+    })) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+
+      const manifestPath = path.join(workspaceRoot, entry.name, "package.json");
+      if (fs.existsSync(path.join(rootDir, manifestPath))) {
+        manifestPaths.push(manifestPath);
+      }
+    }
+  }
+
+  return manifestPaths.sort();
+}
+
+const existingManifestPaths = findWorkspaceManifestPaths();
 
 const args = process.argv.slice(2);
 const checkOnly = args.includes("--check");

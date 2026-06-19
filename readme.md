@@ -9,8 +9,6 @@ This README is the repo entrypoint. It covers setup, common commands, and where 
 ```text
 apps/
   web/        @baryon/web       Free discovery surface
-  desktop/    @baryon/desktop   Flagship Electron product
-  marketing/  @baryon/marketing Static-first marketing site
 packages/
   app-shell/ @baryon/app-shell Shared React shell and orchestration
   engine/    @baryon/engine    Shared audio + render engine
@@ -57,11 +55,8 @@ BARYON_PREFLIGHT_VERCEL_BUILD=1 pnpm preflight:web:vercel
 
 ```bash
 pnpm dev                  # Start apps/web
-pnpm dev:desktop          # Start apps/desktop
-pnpm dev:marketing        # Start apps/marketing
 pnpm build                # Build all apps and packages
 pnpm build:web            # Build apps/web only
-pnpm build:marketing      # Build apps/marketing only
 pnpm preflight:public     # Fast public-repo CI preflight
 pnpm preflight:web:vercel # Fast web build check against the pnpm 9 Vercel path
 pnpm repo:map             # Refresh the generated workspace map
@@ -75,9 +70,7 @@ pnpm lint                 # Workspace lint via turbo
 pnpm typecheck            # Workspace typecheck where configured
 pnpm test:engine          # Engine unit tests
 pnpm test:app-shell       # Shared app-shell unit tests
-pnpm test:desktop         # Desktop unit tests
 pnpm acceptance:web       # Stable production browser acceptance
-pnpm acceptance:desktop   # Packaged desktop shell acceptance
 pnpm verify               # Fast local pre-push gate
 pnpm verify:acceptance    # Fast gate plus packaged desktop output contracts
 pnpm verify:full          # Acceptance verification plus all builds
@@ -90,14 +83,7 @@ Useful package-local commands:
 
 ```bash
 cd apps/web && pnpm dev:https    # HTTPS dev server for mic testing outside localhost
-cd apps/marketing && pnpm preview
 cd apps/web && pnpm acceptance:dev
-cd apps/desktop && pnpm test:platform
-cd apps/desktop && pnpm test:native:verify # Packaged desktop output contracts
-cd apps/desktop && pnpm acceptance:shell
-cd apps/desktop && pnpm acceptance:native-output
-cd apps/desktop && pnpm perf                # Canonical live-source desktop perf probe
-cd apps/desktop && pnpm perf:packaged       # Packaged desktop Syphon / OSR benchmark
 cd packages/engine && pnpm typecheck
 ```
 
