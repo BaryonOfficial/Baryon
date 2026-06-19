@@ -1,0 +1,35 @@
+name: Feature Request
+description: Suggest a new capability or improvement
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the need or limitation you're running into
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How would you like this to work?
+    validations:
+      required: true
+  - type: checkboxes
+    id: surfaces
+    attributes:
+      label: Which surfaces does this apply to?
+      options:
+        - label: Web app
+        - label: Desktop app
+        - label: Plugin (TouchDesigner / Resolume / Ableton)
+        - label: API
+        - label: VR
+        - label: VST
+        - label: Core engine (packages/engine)
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any other approaches you thought about?

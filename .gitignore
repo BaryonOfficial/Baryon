@@ -12,8 +12,6 @@ dist
 dist-ssr
 apps/*/dist
 apps/*/.astro/
-apps/desktop/out
-apps/desktop/.vite/
 *.local
 examples
 prompts
@@ -23,7 +21,6 @@ tmp/
 .venv
 .mcp.json
 .project-workflow/
-apps/marketing/Site Project/
 Baryon Design System.zip
 
 # Editor directories and files
@@ -66,5 +63,4 @@ playwright-report/
 
 # Private/internal notes that should never land in the public repo
 documentation/private/
-apps/desktop/private/
 .project-workflow/local/

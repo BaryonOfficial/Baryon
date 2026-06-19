@@ -50,6 +50,33 @@ function scriptExists(relPath) {
   return fs.existsSync(path.join(rootDir, relPath));
 }
 
+function findWorkspaceManifestPaths() {
+  const workspaceRoots = ["apps", "packages"];
+  const manifestPaths = ["package.json"];
+
+  for (const workspaceRoot of workspaceRoots) {
+    const workspaceRootPath = path.join(rootDir, workspaceRoot);
+    if (!fs.existsSync(workspaceRootPath)) {
+      continue;
+    }
+
+    for (const entry of fs.readdirSync(workspaceRootPath, {
+      withFileTypes: true,
+    })) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+
+      const manifestPath = path.join(workspaceRoot, entry.name, "package.json");
+      if (fs.existsSync(path.join(rootDir, manifestPath))) {
+        manifestPaths.push(manifestPath);
+      }
+    }
+  }
+
+  return manifestPaths.sort();
+}
+
 function localLinkTargetExists(resolvedPath, allowExtensionless = false) {
   if (fs.existsSync(resolvedPath)) {
     return true;
@@ -202,80 +229,81 @@ if (scriptExists("scripts/sync-public.sh")) {
     path.join(rootDir, "scripts/sync-public.sh"),
     "utf8",
   );
+  const hasProjectionHelper = scriptExists("scripts/lib/public-export.mjs");
+  const publicExportManifest = hasProjectionHelper
+    ? fs.readFileSync(
+        path.join(rootDir, "scripts/lib/public-export.mjs"),
+        "utf8",
+      )
+    : syncPublic;
 
-  if (!syncPublic.includes("docs/public")) {
-    errors.push("scripts/sync-public.sh: missing docs/public export");
+  if (!publicExportManifest.includes("docs/public")) {
+    errors.push("public export manifest: missing docs/public export");
   }
 
-  if (!syncPublic.includes("docs/README.md")) {
-    errors.push("scripts/sync-public.sh: missing public docs root map export");
+  if (!publicExportManifest.includes("docs/README.md")) {
+    errors.push("public export manifest: missing public docs root map export");
   }
 
-  if (!syncPublic.includes("docs/docs.json")) {
-    errors.push("scripts/sync-public.sh: missing Mintlify docs.json export");
+  if (!publicExportManifest.includes("docs/docs.json")) {
+    errors.push("public export manifest: missing Mintlify docs.json export");
   }
 
-  if (!syncPublic.includes("docs/index.mdx")) {
-    errors.push("scripts/sync-public.sh: missing Mintlify index page export");
+  if (!publicExportManifest.includes("docs/index.mdx")) {
+    errors.push("public export manifest: missing Mintlify index page export");
   }
 
-  if (!syncPublic.includes("docs/package.json")) {
-    errors.push("scripts/sync-public.sh: missing Mintlify package export");
+  if (!publicExportManifest.includes("docs/package.json")) {
+    errors.push("public export manifest: missing Mintlify package export");
   }
 
-  if (!syncPublic.includes(".nvmrc")) {
-    errors.push("scripts/sync-public.sh: missing .nvmrc export");
+  if (!publicExportManifest.includes(".nvmrc")) {
+    errors.push("public export manifest: missing .nvmrc export");
   }
 
-  if (!syncPublic.includes(".dependency-cruiser.cjs")) {
+  if (!publicExportManifest.includes(".dependency-cruiser.cjs")) {
     errors.push(
-      "scripts/sync-public.sh: missing .dependency-cruiser.cjs export",
+      "public export manifest: missing .dependency-cruiser.cjs export",
     );
   }
 
-  if (!syncPublic.includes("scripts/check-docs.mjs")) {
+  if (!publicExportManifest.includes("scripts/check-docs.mjs")) {
     errors.push(
-      "scripts/sync-public.sh: missing scripts/check-docs.mjs export",
+      "public export manifest: missing scripts/check-docs.mjs export",
     );
   }
 
-  if (!syncPublic.includes("scripts/workspace-version.mjs")) {
+  if (!publicExportManifest.includes("scripts/workspace-version.mjs")) {
     errors.push(
-      "scripts/sync-public.sh: missing scripts/workspace-version.mjs export",
+      "public export manifest: missing scripts/workspace-version.mjs export",
     );
   }
 
   if (
-    syncPublic.includes("docs/internal") &&
-    !syncPublic.includes(
-      "Excluded: apps/desktop, apps/marketing, internal documentation",
-    )
+    hasProjectionHelper &&
+    (!publicExportManifest.includes("validatePublicProjection") ||
+      !syncPublic.includes("--validate-only"))
+  ) {
+    errors.push("public export manifest: missing projection validation");
+  }
+
+  if (
+    publicExportManifest.includes("docs/internal") &&
+    !syncPublic.includes("Excluded: private application workspaces")
   ) {
     errors.push(
-      "scripts/sync-public.sh: internal documentation appears to be exported",
+      "public export manifest: internal documentation appears exported",
     );
   }
 }
 
 const polyformLicense = "LicenseRef-PolyForm-Strict-1.0";
-const expectedLicenses = new Map([
-  ["package.json", polyformLicense],
-  ["apps/web/package.json", polyformLicense],
-  ["packages/app-shell/package.json", polyformLicense],
-  ["packages/engine/package.json", polyformLicense],
-  ["packages/config/package.json", polyformLicense],
-  ["apps/desktop/package.json", "UNLICENSED"],
-  ["apps/marketing/package.json", "UNLICENSED"],
-]);
-
-for (const [relPath, expectedLicense] of expectedLicenses) {
-  if (!fs.existsSync(path.join(rootDir, relPath))) {
-    continue;
-  }
-
+for (const relPath of findWorkspaceManifestPaths()) {
   const packageJson = JSON.parse(
     fs.readFileSync(path.join(rootDir, relPath), "utf8"),
   );
+  const expectedLicense =
+    packageJson.license === "UNLICENSED" ? "UNLICENSED" : polyformLicense;
   const actualLicense = packageJson.license ?? null;
   if (actualLicense !== expectedLicense) {
     errors.push(

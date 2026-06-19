@@ -5,7 +5,6 @@ coverage
 .turbo
 .pnpm-store
 .husky/_
-apps/desktop/src-tauri/gen
 apps/web/public/draco
 apps/web/test-results
 apps/web/playwright-report
