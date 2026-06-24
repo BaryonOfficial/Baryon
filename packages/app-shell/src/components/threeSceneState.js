@@ -10,16 +10,30 @@ export function resolveLiveInputPanelConfig({ liveInputPanel = null } = {}) {
   };
 }
 
+const SHARED_TEXTURE_PREVIEW_DISABLED_REASON =
+  "Preview shared-texture transfer is disabled while native output is active.";
+
 export function resolvePreviewOverlayState(previewState = null) {
   if (previewState?.requested !== true || previewState.rendering) {
     return null;
   }
 
   if (!previewState.supported) {
+    const reason = previewState.failureReason ?? previewState.lastError ?? null;
+    if (reason === SHARED_TEXTURE_PREVIEW_DISABLED_REASON) {
+      return {
+        state: "preview-mirror-disabled",
+        title: "In-app preview disabled",
+        message:
+          "Native output is publishing directly. The app mirror is disabled to keep the output path stable.",
+      };
+    }
+
     return {
       state: "unsupported",
       title: "Preview unavailable",
       message:
+        reason ??
         "Perform requires the authoritative preview path on this platform and backend.",
     };
   }
@@ -101,11 +115,49 @@ export function composeAuthoritativePerformanceHudMetrics(
     return null;
   }
 
-  return {
-    ...(stageMetrics ?? {}),
-    outputTargetFps: outputMetrics?.outputTargetFps ?? null,
-    outputFps: outputMetrics?.outputFps ?? null,
-    outputPaintFps: outputMetrics?.outputPaintFps ?? null,
-    renderCompletedToPaintMs: outputMetrics?.renderCompletedToPaintMs ?? null,
-  };
+  const requiredOutputMetricFields = [
+    "outputTargetFps",
+    "outputFps",
+    "outputPaintFps",
+    "renderCompletedToPaintMs",
+  ];
+  const optionalOutputMetricFields = [
+    "lastInvalidateToPaintMs",
+    "stageRenderLeadMs",
+    "stageRenderCoalescedRequestCount",
+    "outputPublishAttemptCount",
+    "outputDeferredPublishCount",
+    "outputCoalescedPublishCount",
+    "outputDiscardedPendingPublishCount",
+    "outputDiscardedPublishResultCount",
+    "outputSuccessfulPublishCount",
+    "outputDroppedPublishCount",
+    "outputFailedPublishCount",
+    "outputPaintWithoutPublishCount",
+    "outputConsecutivePaintWithoutPublishCount",
+    "outputLastPublishDropReason",
+    "outputLastPublishDurationMs",
+    "outputAveragePublishDurationMs",
+  ];
+  const outputMetricFields = [
+    ...requiredOutputMetricFields,
+    ...optionalOutputMetricFields,
+  ];
+  const hasOutputMetrics =
+    outputMetrics &&
+    outputMetricFields.some((field) => outputMetrics[field] != null);
+  if (!hasOutputMetrics) {
+    return stageMetrics ? { ...stageMetrics } : null;
+  }
+
+  const composedMetrics = { ...(stageMetrics ?? {}) };
+  for (const field of requiredOutputMetricFields) {
+    composedMetrics[field] = outputMetrics[field] ?? null;
+  }
+  for (const field of optionalOutputMetricFields) {
+    if (outputMetrics[field] != null) {
+      composedMetrics[field] = outputMetrics[field];
+    }
+  }
+  return composedMetrics;
 }

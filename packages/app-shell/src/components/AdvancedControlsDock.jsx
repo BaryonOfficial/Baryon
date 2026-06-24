@@ -37,6 +37,7 @@ export default function AdvancedControlsDock({
   visible = true,
   operatorControlKeys = [],
   dockWidth = DEFAULT_DOCK_WIDTH,
+  brandAccessory = null,
   onOpenChange = null,
 }) {
   const controlsState = useControlsSnapshot(
@@ -65,12 +66,13 @@ export default function AdvancedControlsDock({
   const { folderGroups, presetsAreaControls } = useMemo(
     () =>
       getVisibleControlLayout({
+        controlsState,
         devtoolsEnabled: DEVTOOLS_ENABLED,
         method:
           controlsState.visualizationMethod ?? DEFAULT_VISUALIZATION_METHOD,
         operatorControlKeys,
       }),
-    [controlsState.visualizationMethod, operatorControlKeys],
+    [controlsState, operatorControlKeys],
   );
 
   useEffect(() => {
@@ -105,6 +107,7 @@ export default function AdvancedControlsDock({
 
   const isPhoneViewport = viewportWidth <= 640;
   const overlayTopInset = isPhoneViewport ? "0.7rem" : "0.9rem";
+  const showClosedAccessory = !isOpen && brandAccessory;
   const closedControlsToggleStyle =
     /** @type {import("react").CSSProperties} */ ({
       position: "absolute",
@@ -156,32 +159,36 @@ export default function AdvancedControlsDock({
         </div>
       ) : null}
 
-      {!isOpen && !isPhoneViewport ? (
+      {showClosedAccessory ? (
         <div
           style={{
             position: "absolute",
-            top: "var(--app-floating-control-top)",
+            top: isPhoneViewport
+              ? overlayTopInset
+              : "var(--app-floating-control-top)",
             left: `calc(var(--app-floating-control-left) + var(--app-floating-control-size) + 0.6rem)`,
             zIndex: 61,
             display: "flex",
             alignItems: "center",
+            gap: "0.55rem",
             height: "var(--app-floating-control-size)",
+            maxWidth: isPhoneViewport
+              ? "calc(100vw - var(--app-floating-control-left) - var(--app-floating-control-size) - 1.2rem)"
+              : "calc(100vw - var(--app-floating-control-left) - var(--app-floating-control-size) - 2rem)",
             pointerEvents: "none",
           }}
         >
-          <span
+          <div
+            data-testid="advanced-controls-brand-accessory"
             style={{
-              fontFamily: "var(--baryon-type-display-family)",
-              fontSize: "0.7rem",
-              fontWeight: 500,
-              letterSpacing: "var(--baryon-type-label-letter-spacing)",
-              color: "var(--nd-text-display)",
-              whiteSpace: "nowrap",
-              textTransform: "uppercase",
+              display: "inline-flex",
+              alignItems: "center",
+              minWidth: 0,
+              pointerEvents: "auto",
             }}
           >
-            Baryon | Cymatics
-          </span>
+            {brandAccessory}
+          </div>
         </div>
       ) : null}
 

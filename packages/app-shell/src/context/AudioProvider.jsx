@@ -1744,6 +1744,30 @@ export function AudioProvider({ children, platform = "web" }) {
     ],
   );
 
+  const startSelectedSystemLiveInput = useCallback(
+    async (liveReturnSnapshot) => {
+      setLiveReturnLocalFile(liveReturnSnapshot);
+      resetSoundCloudTransport();
+      const started = await startLiveInputSession({
+        deviceId: selectedLiveDeviceId,
+        deviceLabel: selectedLiveDevice?.label ?? "",
+        liveInputKind: selectedLiveInputDeviceKind,
+      });
+      if (started) {
+        setPlaybackSource("local-file");
+        setFileName(DEFAULT_FILE_NAME);
+      }
+      return started;
+    },
+    [
+      resetSoundCloudTransport,
+      selectedLiveDeviceId,
+      selectedLiveDevice,
+      selectedLiveInputDeviceKind,
+      startLiveInputSession,
+    ],
+  );
+
   const handleSystemToggle = useCallback(async () => {
     clearScrubState();
     const liveReturnSnapshot = createLiveReturnSnapshot();
@@ -1753,17 +1777,7 @@ export function AudioProvider({ children, platform = "web" }) {
         // previous local file, which would switch the source back to File.
         stopLiveInputSession();
       } else {
-        setLiveReturnLocalFile(liveReturnSnapshot);
-        resetSoundCloudTransport();
-        const started = await startLiveInputSession({
-          deviceId: selectedLiveDeviceId,
-          deviceLabel: selectedLiveDevice?.label ?? "",
-          liveInputKind: selectedLiveInputDeviceKind,
-        });
-        if (started) {
-          setPlaybackSource("local-file");
-          setFileName(DEFAULT_FILE_NAME);
-        }
+        await startSelectedSystemLiveInput(liveReturnSnapshot);
       }
     } catch (error) {
       console.error("Error toggling system audio:", error);
@@ -1786,13 +1800,67 @@ export function AudioProvider({ children, platform = "web" }) {
     createLiveReturnSnapshot,
     isLiveInputActive,
     loadImmediateLocalFile,
-    resetSoundCloudTransport,
-    selectedLiveDeviceId,
-    selectedLiveDevice,
-    selectedLiveInputDeviceKind,
-    startLiveInputSession,
+    startSelectedSystemLiveInput,
     stopLiveInputSession,
     syncSessionStatus,
+  ]);
+
+  const handleLiveInputAction = useCallback(async () => {
+    clearScrubState();
+    const liveReturnSnapshot = createLiveReturnSnapshot();
+    try {
+      if (isLiveInputActive) {
+        stopLiveInputSession();
+        return;
+      }
+
+      if (selectedSource !== "system") {
+        if (playbackSource === "soundcloud") {
+          getDefaultAudioSession().stopAudio();
+          syncSessionStatus();
+        } else if (isAudioLoaded) {
+          handleLocalStop();
+          syncTransportState();
+        }
+        setSelectedSource("system");
+      }
+
+      if (!selectedSystemDevice && selectedLiveDeviceId) {
+        setSelectedSystemDevice(selectedLiveDeviceId);
+      }
+
+      await startSelectedSystemLiveInput(liveReturnSnapshot);
+    } catch (error) {
+      console.error("Error toggling live input:", error);
+      const status = syncSessionStatus();
+      applyLiveInputUiState(
+        LIVE_INPUT_UI_STATES.error,
+        mapLiveInputStartError(error),
+        status,
+      );
+      if (!status.isLiveInputActive && liveReturnSnapshot?.file) {
+        await loadImmediateLocalFile(liveReturnSnapshot.file, {
+          seekTimeSeconds: liveReturnSnapshot.resumeTimeSeconds,
+          clearQueuedNext: false,
+        });
+      }
+    }
+  }, [
+    applyLiveInputUiState,
+    clearScrubState,
+    createLiveReturnSnapshot,
+    handleLocalStop,
+    isAudioLoaded,
+    isLiveInputActive,
+    loadImmediateLocalFile,
+    playbackSource,
+    selectedLiveDeviceId,
+    selectedSource,
+    selectedSystemDevice,
+    startSelectedSystemLiveInput,
+    stopLiveInputSession,
+    syncSessionStatus,
+    syncTransportState,
   ]);
 
   const setSelectedLiveInputAnalysisClass = useCallback(
@@ -2190,6 +2258,7 @@ export function AudioProvider({ children, platform = "web" }) {
       handleStop,
       handleLiveInputToggle,
       handleSystemToggle,
+      handleLiveInputAction,
       handleSourceChange,
       handleVolumeChange,
       handleMuteToggle,
@@ -2214,6 +2283,7 @@ export function AudioProvider({ children, platform = "web" }) {
       handleClearDeviceKindOverride,
       handleFileChange,
       handleLiveInputAnalysisClassChange,
+      handleLiveInputAction,
       handleLiveInputToggle,
       handleMuteToggle,
       handlePlayPause,

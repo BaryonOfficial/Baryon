@@ -8,7 +8,7 @@ import {
 } from "./DiagnosticsHudState.js";
 
 function formatNumber(value, digits = 3) {
-  if (typeof value !== "number" || Number.isNaN(value)) return "n/a";
+  if (!Number.isFinite(value)) return "n/a";
   return value.toFixed(digits);
 }
 
@@ -159,11 +159,7 @@ const DEBUG_METRIC_TOOLTIPS = {
     "Whether the visible preview is still locally rendered or is showing the shared external-output feed.",
   Output: "Current external-output frame size routed to Syphon.",
   Profile:
-    "Requested external-output quality profile after desktop output resolution and profile selection.",
-  "Req Scale":
-    "Requested internal render scale for the hidden Syphon output stage.",
-  "Live Scale":
-    "Current effective render scale reported by the hidden Syphon output stage runtime.",
+    "Requested external-output performance profile after desktop output resolution and profile selection.",
   FPS: "Current FPS reported by the hidden Syphon output stage runtime snapshot.",
   TRAA: "Whether temporal reprojection anti-aliasing is enabled in the render output graph.",
   SMAA: "Whether final screen-space morphological anti-aliasing is enabled in the render output graph.",

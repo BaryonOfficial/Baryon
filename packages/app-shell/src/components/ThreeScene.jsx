@@ -9,6 +9,10 @@ import {
   useState,
 } from "react";
 import { Canvas } from "@react-three/fiber";
+import {
+  normalizeOutputMode,
+  OUTPUT_MODES,
+} from "@baryon/engine/render/outputPipeline";
 import { BaryonScene, CAMERA_CONTROL_MODES } from "./BaryonScene";
 import AdvancedControlsDock from "./AdvancedControlsDock.jsx";
 import {
@@ -50,6 +54,22 @@ import {
 } from "./threeSceneState.js";
 
 const ADVANCED_CONTROLS_DOCK_WIDTH = "min(17.5rem, calc(100vw - 2.4rem))";
+const TRANSPARENT_PREVIEW_BACKDROP_COLOR = "#000000";
+
+function resolveSceneBackdropColor(controlsState) {
+  const backgroundColor = controlsState.backgroundColor ?? "#000000";
+  return normalizeOutputMode(controlsState.outputMode) === OUTPUT_MODES.opaque
+    ? (controlsState.outputBackgroundColor ?? backgroundColor)
+    : TRANSPARENT_PREVIEW_BACKDROP_COLOR;
+}
+
+function resolveCanvasDevicePixelRatio() {
+  if (typeof window === "undefined") {
+    return 1;
+  }
+
+  return Math.max(1, window.devicePixelRatio || 1);
+}
 
 function resolveDefaultCameraViewPreset({
   liveInputUiState = "idle",
@@ -95,6 +115,7 @@ function createCameraPoseDisplayKey(cameraPose) {
 /**
  * @param {{
  *   controlsOverlay?: import("react").ReactNode,
+ *   controlsBrandAccessory?: import("react").ReactNode,
  *   topRightOverlay?: import("react").ReactNode,
  *   liveInputPanel?: {
  *     forceVisible?: boolean,
@@ -139,6 +160,7 @@ function createCameraPoseDisplayKey(cameraPose) {
  */
 const ThreeScene = ({
   controlsOverlay = null,
+  controlsBrandAccessory = null,
   topRightOverlay = null,
   liveInputPanel = null,
   diagnosticsHudExtraItems = null,
@@ -399,7 +421,7 @@ const ThreeScene = ({
         height: "100vh",
         position: "absolute",
         zIndex: 1,
-        background: controlsState.backgroundColor,
+        background: resolveSceneBackdropColor(controlsState),
       }}
     >
       {previewVisible ? (
@@ -502,7 +524,7 @@ const ThreeScene = ({
               opacity: usingPreview ? 0 : 1,
               pointerEvents: usingPreview ? "none" : "auto",
             }}
-            dpr={[1, 2]}
+            dpr={resolveCanvasDevicePixelRatio()}
             camera={{
               position: cameraConfig.position,
               up: cameraConfig.up,
@@ -523,7 +545,8 @@ const ThreeScene = ({
                 liveInputErrorCode={liveInputErrorCode}
                 controlsRef={controlsRef}
                 visualizationMethod={controlsState.visualizationMethod}
-                renderQualityPreset={controlsState.renderQualityPreset}
+                performanceProfile={controlsState.renderQualityPreset}
+                customTargetFps={controlsState.customTargetFps}
                 traaEnabled={controlsState.traaEnabled !== false}
                 onPerformanceHudSnapshotChange={setPerformanceHudMetrics}
                 outputFrameConfig={outputFrameConfig}
@@ -562,6 +585,7 @@ const ThreeScene = ({
           visible={showOverlayUi}
           operatorControlKeys={operatorControlKeys}
           dockWidth={ADVANCED_CONTROLS_DOCK_WIDTH}
+          brandAccessory={controlsBrandAccessory}
           onOpenChange={setIsControlsDockOpen}
         />
       ) : null}

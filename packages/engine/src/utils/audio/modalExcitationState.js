@@ -34,6 +34,10 @@ export function createModalExcitationState(capacity = 16) {
     remappedSignalResonantRef: new Float32Array(layerCapacity * 4),
     previousSignalSourceCoupledSlots: new Float32Array(layerCapacity * 4),
     previousSignalResonantSlots: new Float32Array(layerCapacity * 4),
+    scratch: {
+      driveBuffer: new Float32Array(0),
+      periodicityPrefixSumSq: new Float64Array(0),
+    },
     previousShouldBuildSpectralLight: false,
     sourceCoupledCouplingFrequencyHz: 0,
     sourceCoupledProjectionSwitchFrames: 0,

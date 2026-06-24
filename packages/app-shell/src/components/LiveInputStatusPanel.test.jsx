@@ -150,6 +150,41 @@ describe("LiveInputStatusPanel", () => {
     expect(handleSystemToggle).toHaveBeenCalledTimes(1);
   });
 
+  it("delegates Go Live to the canonical context action when present", async () => {
+    const handleLiveInputAction = vi.fn(async () => {});
+    const setSelectedSystemDevice = vi.fn();
+    const handleSourceChange = vi.fn();
+    const handleSystemToggle = vi.fn();
+    renderPanel(
+      {
+        selectedSource: "file",
+        selectedSystemDevice: null,
+        handleLiveInputAction,
+        setSelectedSystemDevice,
+        handleSourceChange,
+        handleSystemToggle,
+      },
+      { showLiveAction: true },
+    );
+
+    const liveButton = /** @type {HTMLButtonElement | null} */ (
+      container.querySelector('[data-testid="source-live-button"]')
+    );
+    expect(liveButton).not.toBeNull();
+
+    await act(async () => {
+      liveButton?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+      await Promise.resolve();
+    });
+
+    expect(handleLiveInputAction).toHaveBeenCalledTimes(1);
+    expect(handleSourceChange).not.toHaveBeenCalled();
+    expect(setSelectedSystemDevice).not.toHaveBeenCalled();
+    expect(handleSystemToggle).not.toHaveBeenCalled();
+  });
+
   it("keeps the live button label canonical during a source-switch go-live path", () => {
     renderPanel(
       {

@@ -3,7 +3,7 @@ title: "Control panel reference"
 description: "Reference for the Baryon GUI controls and diagnostic settings."
 ---
 
-The Baryon GUI (top-right corner) lets you shape the visualizer in real time. Hover over any control in the panel to see its tooltip. This document provides the full reference for every control, organized by folder.
+The Baryon GUI (top-right corner) lets you shape the visualizer in real time. Hover over any control in the panel to see its tooltip. This document provides the full reference for every user-facing control, organized by folder.
 
 For a practical walkthrough, start with [First session guide](/public/guides/first-session). For the conceptual model behind these settings, see [Understanding the engine](/public/guides/understanding-the-engine).
 
@@ -55,20 +55,26 @@ Controls for live-input analysis and browser microphone processing.
 
 ---
 
-## Mode
+## Performance
 
-Controls for the modal family, color mode, rotation mode, performance profile, and output mode.
+Controls for render cadence, adaptive quality, and the performance HUD.
 
-| Label                   | Description                                                                                                                                    |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Boundary**            | Choose whether the modal family behaves like a reflective boundary (`Neumann`) or a fixed node at the boundary (`Dirichlet`).                  |
-| **Color Mode**          | `Static` uses the chosen colors. `Spectral` colors promoted cymatic modes from the audio spectrum.                                             |
-| **Rotation Mode**       | `Audio` rotates the orb with the music, `Manual` uses Manual Rotation, and `Off` keeps the scene stationary.                                   |
-| **Performance Profile** | `Auto` uses the app-chosen FPS budget, `Custom` adapts toward Custom Target FPS, and `Max Quality` keeps full quality at display-rate cadence. |
-| **Custom Target FPS**   | Frame-rate target used when Performance Profile is `Custom`.                                                                                   |
-| **Output Mode**         | `Transparent` composites over other content. `Opaque` renders with its own solid background.                                                   |
-| **Visualizer**          | Visualization method. The current product renderer is the single 3D Volume raymarch path.                                                      |
-| **Lock Camera**         | Lock the camera so orbit drag cannot accidentally move the view.                                                                               |
+| Label                   | Description                                                                                                                |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| **Profile**    | `Auto` adapts raymarch steps toward 60 FPS, `Custom` uses Target FPS, and `Max Quality` leaves raymarch steps ungoverned. |
+| **Target FPS** | Performer cadence and adaptive raymarch target used when Profile is `Custom`.                                             |
+| **HUD**        | Shows FPS and render resolution on screen.                                                                                |
+
+---
+
+## Output
+
+Controls for the published output mode and opaque output fill.
+
+| Label            | Description                                                                  |
+| ---------------- | ---------------------------------------------------------------------------- |
+| **Mode**          | `Transparent` composites over other content. `Opaque` renders solid output.  |
+| **Output Color** | Background fill color used in Opaque output mode.                            |
 
 ---
 
@@ -78,8 +84,9 @@ Controls for the raymarched modal volume.
 
 | Label              | Description                                                                                            |
 | ------------------ | ------------------------------------------------------------------------------------------------------ |
-| **Node Threshold** | How sharp the glowing ring structures appear — lower values create crisper, more defined rings.        |
-| **Density**        | How thick and bright the overall volume glow appears — raise for a bolder, denser orb.                 |
+| **Boundary**       | Choose whether the modal family behaves like a reflective boundary (`Neumann`) or a fixed node.        |
+| **Node Threshold** | How sharp the bright ring structures appear — lower values create crisper, more defined rings.         |
+| **Density**        | How thick and bright the overall volume body appears — raise for a bolder, denser orb.                 |
 | **Absorption**     | Depth contrast inside the orb — raise for crisper internal layers and less haze.                       |
 | **Opacity**        | How solid the orb appears — raise for a stronger presence, especially when compositing over video.     |
 | **Steps**          | Rendering quality versus speed — higher values look smoother but may reduce frame rate on slower GPUs. |
@@ -92,12 +99,42 @@ Controls for the orb color and Spectral Light transfer.
 
 | Label           | Description                                                                               |
 | --------------- | ----------------------------------------------------------------------------------------- |
-| **Volume**      | Main glow color of the orb interior.                                                      |
+| **Color Mode**  | `Static` uses the chosen colors. `Spectral` colors promoted cymatic modes from the audio spectrum. |
+| **Volume**      | Main volume color of the orb interior.                                                    |
 | **Contour**     | Color of the sharpest ring edges and contour highlights.                                  |
 | **Color Mix**   | Strength of Spectral Light coloring when Color Mode is `Spectral`.                        |
 | **Sheen**       | Adds a holographic sheen to the orb's surface edges.                                      |
 | **Sheen Color** | How far the sheen color shifts toward cool blue-green tones.                              |
 | **Sheen Edge**  | How tightly the sheen stays to the very edge — higher values confine it to a thinner rim. |
+
+---
+
+## Motion
+
+Controls for scene movement and audio reactivity.
+
+| Label               | Description                                                                                  |
+| ------------------- | -------------------------------------------------------------------------------------------- |
+| **Rotation Mode**   | `Audio` rotates the orb with music, `Manual` uses Manual Rotation, and `Off` keeps it still. |
+| **Manual Rotation** | Spin speed in Manual rotation mode — negative values reverse direction.                      |
+| **Motion Scale**    | Scales the auto-calibrated rotation in Audio mode. It has no effect in Manual rotation mode. |
+| **Reactivity**      | How strongly the visuals respond to the audio — raise for more dramatic reactions.           |
+
+---
+
+## Bloom
+
+Controls for bloom and fine-grained bloom shaping.
+
+| Label               | Description                                                                                             |
+| ------------------- | ------------------------------------------------------------------------------------------------------- |
+| **Bloom**           | Toggle the bloom or halo effect around bright parts of the orb.                                         |
+| **Bloom Strength**  | How bright the bloom halo is.                                                                           |
+| **Bloom Radius**    | How far the bloom spreads from bright areas.                                                            |
+| **Bloom Threshold** | Minimum brightness before a region contributes to bloom — raise to limit it to the brightest highlights. |
+| **Bloom Response**  | Makes the bloom smaller and more stable by trimming how easily bloom reacts during crowded frames.      |
+| **Rim Bloom**       | Pushes more brightness toward the outer rim before bloom is applied.                                    |
+| **Rim Compression** | Tames sharp edge spikes before they reach the bloom pass.                                               |
 
 ---
 
@@ -109,46 +146,6 @@ Idle-state overlay controls.
 | ------------------ | ------------------------------------------------------------- |
 | **Logo Intensity** | Brightness of the idle logo shown when no audio is playing.   |
 | **Logo Size**      | Size of the idle logo overlay shown when no audio is playing. |
-
----
-
-## Motion
-
-Controls for scene movement and audio reactivity.
-
-| Label               | Description                                                                                  |
-| ------------------- | -------------------------------------------------------------------------------------------- |
-| **Manual Rotation** | Spin speed in Manual rotation mode — negative values reverse direction.                      |
-| **Reactivity**      | How strongly the visuals respond to the audio — raise for more dramatic reactions.           |
-| **Motion Scale**    | Scales the auto-calibrated rotation in Audio mode. It has no effect in Manual rotation mode. |
-
----
-
-## Display
-
-Controls for bloom, background, output color, and fine-grained glow shaping.
-
-| Label               | Description                                                                                             |
-| ------------------- | ------------------------------------------------------------------------------------------------------- |
-| **Glow**            | Toggle the glow or halo effect around bright parts of the orb.                                          |
-| **Glow Strength**   | How bright the glow halo is.                                                                            |
-| **Glow Radius**     | How far the glow spreads from bright areas.                                                             |
-| **Glow Threshold**  | Minimum brightness before a region contributes to glow — raise to limit it to the brightest highlights. |
-| **Background**      | Backdrop color shown behind the orb in transparent output mode.                                         |
-| **Output Color**    | Background fill color used in Opaque output mode.                                                       |
-| **Glow Response**   | Makes the glow smaller and more stable by trimming how easily bloom reacts during crowded frames.       |
-| **Rim Glow**        | Pushes more brightness toward the outer rim before bloom is applied.                                    |
-| **Rim Compression** | Tames sharp edge spikes before they reach the bloom pass.                                               |
-
----
-
-## Inline Stage Controls
-
-These controls are defined in the shared control schema but may be rendered inline instead of inside a collapsible folder.
-
-| Label               | Description                                |
-| ------------------- | ------------------------------------------ |
-| **Performance HUD** | Shows FPS and render resolution on screen. |
 
 ---
 

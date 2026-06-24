@@ -74,6 +74,11 @@ Run the fast verification gate locally — the same default checks CI will run:
 pnpm verify
 ```
 
+The pre-push hook is cache-only by default. It allows a push only after the
+current tree has already passed `pnpm verify`, so verification failures happen
+before `git push` starts. If you intentionally want the hook to run the full gate
+inline, use `BARYON_PRE_PUSH_RUN_VERIFY=1 git push`.
+
 For desktop output/runtime changes or release/pass-boundary work, also run the
 packaged desktop acceptance gate:
 

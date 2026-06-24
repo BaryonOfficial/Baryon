@@ -22,19 +22,17 @@ import {
   hasRenderAuthority,
 } from "@baryon/engine/core/renderAuthorityContract";
 import { RAYMARCH_MODAL_BASIS_CACHE_CAPACITY } from "@baryon/engine/core/raymarch/fieldCache";
-import * as raymarchPerformanceGovernor from "@baryon/engine/core/raymarch/performanceGovernor";
+import * as raymarchFieldAnalysisModule from "@baryon/engine/core/raymarch/fieldAnalysis";
 import { usesRaymarchVolumePipeline } from "@baryon/engine/visualization/types";
 import { resolveTemporalReprojectionPolicy } from "@baryon/engine/render/temporalReprojectionPolicy";
 import {
-  CUSTOM_TARGET_FPS_BANDS,
   DEFAULT_PERFORMANCE_TARGET_FPS,
+  getRenderQualityProfileTargetFps,
+  isAdaptivePerformanceProfile,
   normalizePerformanceTargetFps,
   PERFORMANCE_PROFILES,
-  RENDER_CONTEXTS,
   markRenderOutputVisualIdle,
-  resolveCustomTargetFpsBand,
   syncRenderOutputBloomPassUniforms,
-  usesBalancedPerformanceBaseline,
 } from "@baryon/engine/render/outputPipeline";
 import {
   clearFrameCache,
@@ -61,23 +59,20 @@ const PERFORMANCE_HUD_SMOOTHING_ALPHA = 0.25;
 const ACTIVE_FEATURE_ANALYSIS_HZ = 30;
 const ACTIVE_FEATURE_ANALYSIS_INTERVAL_MS = 1000 / ACTIVE_FEATURE_ANALYSIS_HZ;
 const MAX_ANALYSIS_AGE_MS = 50;
-const ADAPTIVE_RAYMARCH_DECISION_WINDOW_SECONDS = 0.5;
-const ADAPTIVE_RAYMARCH_MIN_DECISION_WINDOW_FRAMES = 12;
-const ADAPTIVE_RAYMARCH_MAX_DECISION_WINDOW_FRAMES = 45;
-const ADAPTIVE_RAYMARCH_RECOVERY_WINDOWS = 4;
+const ADAPTIVE_RAYMARCH_DECISION_WINDOW_SECONDS = 0.33;
+const ADAPTIVE_RAYMARCH_MIN_DECISION_WINDOW_FRAMES = 8;
+const ADAPTIVE_RAYMARCH_MAX_DECISION_WINDOW_FRAMES = 80;
+const ADAPTIVE_RAYMARCH_RECOVERY_WINDOWS = 3;
 const ADAPTIVE_RAYMARCH_STEP_DOWN_LONG_FRAME_RATIO = 0.1;
-const ADAPTIVE_RAYMARCH_PRESSURE_SAFETY_MARGIN = 0.94;
-const ADAPTIVE_RAYMARCH_PRESSURE_FRAME_TIME_RATIO = 1.08;
-const ADAPTIVE_RAYMARCH_STABLE_FRAME_TIME_RATIO = 0.93;
-const ADAPTIVE_RAYMARCH_LONG_FRAME_TIME_RATIO = 1.5;
+const ADAPTIVE_RAYMARCH_PRESSURE_SAFETY_MARGIN = 0.9;
+const ADAPTIVE_RAYMARCH_PRESSURE_FRAME_TIME_RATIO = 1.03;
+const ADAPTIVE_RAYMARCH_STABLE_FRAME_TIME_RATIO = 0.9;
+const ADAPTIVE_RAYMARCH_LONG_FRAME_TIME_RATIO = 1.35;
 const ADAPTIVE_RAYMARCH_RECOVERY_MIN_RENDER_ENERGY = 0.08;
 const RAYMARCH_USER_TUNABLE_STEP_MIN = 16;
 const COHERENT_MODAL_RAYMARCH_STEP_FLOOR = RAYMARCH_USER_TUNABLE_STEP_MIN;
 const ADAPTIVE_RAYMARCH_STEP_LADDER = Object.freeze([
   16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192,
-]);
-const ADAPTIVE_RAYMARCH_RENDER_SCALE_LADDER = Object.freeze([
-  0.5, 0.59, 0.67, 0.75, 0.84, 0.92, 1,
 ]);
 const STAGE_ATTRIBUTION_TIEBREAK_ORDER = Object.freeze([
   "unattributed",
@@ -466,31 +461,20 @@ export function updateModalEnvelopeDiagnostics(
   return snapshotModalFreshnessDiagnostics(modalFreshness);
 }
 
-export function getPlaybackDiagnosticDpr() {
+export function getDevicePixelRatio() {
   if (typeof window === "undefined") {
     return 1;
   }
 
-  return Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+  return Math.max(1, window.devicePixelRatio || 1);
 }
 
-export function getRenderTargetPixelRatio(
-  qualityPreset,
-  basePixelRatio = null,
-) {
+export function getRenderTargetPixelRatio(basePixelRatio = null) {
   if (Number.isFinite(basePixelRatio) && basePixelRatio > 0) {
     return basePixelRatio;
   }
 
-  if (qualityPreset === PERFORMANCE_PROFILES.maxQuality) {
-    if (typeof window === "undefined") {
-      return 1;
-    }
-
-    return Math.max(1, window.devicePixelRatio || 1);
-  }
-
-  return getPlaybackDiagnosticDpr();
+  return getDevicePixelRatio();
 }
 
 function getRenderLoopWallTimeMs() {
@@ -1096,8 +1080,6 @@ export function buildPerformanceHudSnapshot(runtimeDiagnostics) {
     visualizationMethod: render?.visualizationMethod ?? null,
     qualityPreset: render?.qualityPreset ?? null,
     targetFps: render?.targetFps ?? DEFAULT_PERFORMANCE_TARGET_FPS,
-    requestedRenderScale: render?.requestedRenderScale ?? 1,
-    renderScale: render?.renderScale ?? 1,
     traaEnabled: render?.traaEnabled ?? false,
     smaaEnabled: runtimeDiagnostics?.postProcess?.smaaGraphEnabled ?? false,
     temporalHistoryBlend:
@@ -1124,20 +1106,19 @@ export function buildPerformanceHudSnapshot(runtimeDiagnostics) {
   };
 }
 
-function normalizeRenderScale(renderScale) {
-  if (!Number.isFinite(renderScale) || renderScale <= 0) {
-    return 1;
-  }
-
-  return Math.max(0.5, Math.min(1, renderScale));
-}
-
 function resolveAdaptiveTargetFps(renderProfile, controls) {
-  if (renderProfile?.qualityPreset === PERFORMANCE_PROFILES.custom) {
-    return normalizePerformanceTargetFps(controls?.customPerformanceTargetFps);
+  if (!isAdaptivePerformanceProfile(renderProfile?.qualityPreset)) {
+    return DEFAULT_PERFORMANCE_TARGET_FPS;
   }
 
-  return DEFAULT_PERFORMANCE_TARGET_FPS;
+  const profileTargetFps = getRenderQualityProfileTargetFps(renderProfile);
+  if (profileTargetFps != null) {
+    return profileTargetFps;
+  }
+
+  return renderProfile?.qualityPreset === PERFORMANCE_PROFILES.custom
+    ? normalizePerformanceTargetFps(controls?.customTargetFps)
+    : DEFAULT_PERFORMANCE_TARGET_FPS;
 }
 
 function buildAdaptiveRaymarchTuning(targetFps) {
@@ -1176,32 +1157,14 @@ export function syncRenderSurfacePixelRatio({
   gl,
   renderLoopRefs,
   runtimeDiagnostics,
-  renderProfile,
-  controls,
-  status,
-  requestedRenderScale = 1,
   basePixelRatio = null,
 }) {
   if (!gl || !runtimeDiagnostics) {
     return null;
   }
 
-  const effectiveRenderScale = getEffectiveRenderScale(
-    runtimeDiagnostics,
-    requestedRenderScale,
-  );
-  const lowLoadActive = Boolean(
-    controls?.lowLoadPlaybackDiagnostics && status?.isPlaying,
-  );
-  const resolvedBasePixelRatio = getRenderTargetPixelRatio(
-    renderProfile?.qualityPreset,
-    basePixelRatio,
-  );
-  const scaledPixelRatio = Math.max(
-    0.25,
-    resolvedBasePixelRatio * effectiveRenderScale,
-  );
-  const targetPixelRatio = lowLoadActive ? 1 : scaledPixelRatio;
+  const resolvedBasePixelRatio = getRenderTargetPixelRatio(basePixelRatio);
+  const targetPixelRatio = Math.max(0.25, resolvedBasePixelRatio);
 
   runtimeDiagnostics.currentPixelRatio = targetPixelRatio;
   runtimeDiagnostics.basePixelRatio = resolvedBasePixelRatio;
@@ -1215,23 +1178,6 @@ export function syncRenderSurfacePixelRatio({
   }
 
   return targetPixelRatio;
-}
-
-export function getEffectiveRenderScale(
-  runtimeDiagnostics,
-  requestedRenderScale = 1,
-) {
-  const normalizedRequestedRenderScale =
-    normalizeRenderScale(requestedRenderScale);
-  const effectiveRenderScale = Number.isFinite(
-    runtimeDiagnostics?.adaptiveRaymarch?.effectiveRenderScale,
-  )
-    ? runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale
-    : normalizedRequestedRenderScale;
-
-  return normalizeRenderScale(
-    Math.min(effectiveRenderScale, normalizedRequestedRenderScale),
-  );
 }
 
 function readRaymarchFrameModeCount(featureFrame) {
@@ -1354,7 +1300,7 @@ function updateRenderSurfaceDiagnostics(
 
 export function updateRendererDiagnostics(
   { state, controls, status, time, deltaTime, rfDelta, gl, renderLoopRefs },
-  { getTargetDpr = getPlaybackDiagnosticDpr, renderScale = 1 } = {},
+  { getRequestedPixelRatio = getDevicePixelRatio } = {},
 ) {
   const runtimeDiagnostics = renderLoopRefs.runtimeDiagnosticsRef.current;
   const rendererMode =
@@ -1371,12 +1317,15 @@ export function updateRendererDiagnostics(
     };
   }
 
-  const lowLoadActive = Boolean(
+  const lowLoadPlaybackDiagnosticsActive = Boolean(
     controls.lowLoadPlaybackDiagnostics && status.isPlaying,
   );
-  const basePixelRatio = getTargetDpr();
-  const scaledPixelRatio = Math.max(0.25, basePixelRatio * renderScale);
-  const targetPixelRatio = lowLoadActive ? 1 : scaledPixelRatio;
+  const targetPixelRatio = syncRenderSurfacePixelRatio({
+    gl,
+    renderLoopRefs,
+    runtimeDiagnostics,
+    basePixelRatio: getRequestedPixelRatio(),
+  });
   const frameTimeMs =
     typeof rfDelta === "number" && rfDelta > 0 && Number.isFinite(rfDelta)
       ? rfDelta * 1000
@@ -1429,8 +1378,6 @@ export function updateRendererDiagnostics(
       }
     }
   }
-  runtimeDiagnostics.currentPixelRatio = targetPixelRatio;
-  runtimeDiagnostics.basePixelRatio = basePixelRatio;
   const nextRenderSurfaceWidth = state?.size?.width ?? 0;
   const nextRenderSurfaceHeight = state?.size?.height ?? 0;
   const previousRenderSurfaceSize =
@@ -1438,10 +1385,6 @@ export function updateRendererDiagnostics(
   const renderSurfaceSizeChanged =
     previousRenderSurfaceSize?.width !== nextRenderSurfaceWidth ||
     previousRenderSurfaceSize?.height !== nextRenderSurfaceHeight;
-  if (renderLoopRefs.pixelRatioRef.current !== targetPixelRatio) {
-    gl.setPixelRatio(targetPixelRatio);
-    renderLoopRefs.pixelRatioRef.current = targetPixelRatio;
-  }
   if (renderSurfaceSizeChanged) {
     gl.setSize(state.size.width, state.size.height, false);
     renderLoopRefs.renderSurfaceSizeRef.current = {
@@ -1491,7 +1434,7 @@ export function updateRendererDiagnostics(
   }
 
   return {
-    lowLoadActive,
+    lowLoadPlaybackDiagnosticsActive,
     rendererMode,
     runtimeDiagnostics,
   };
@@ -1521,18 +1464,6 @@ function buildAdaptiveRaymarchLadder(requestedStepBudget) {
     ),
   );
   rungSet.add(normalizedRequestedStepBudget);
-  return Array.from(rungSet).sort((left, right) => left - right);
-}
-
-function buildAdaptiveRenderScaleLadder(requestedRenderScale) {
-  const normalizedRequestedRenderScale =
-    normalizeRenderScale(requestedRenderScale);
-  const rungSet = new Set(
-    ADAPTIVE_RAYMARCH_RENDER_SCALE_LADDER.filter(
-      (renderScale) => renderScale < normalizedRequestedRenderScale,
-    ),
-  );
-  rungSet.add(normalizedRequestedRenderScale);
   return Array.from(rungSet).sort((left, right) => left - right);
 }
 
@@ -1567,57 +1498,13 @@ function resolveAdaptiveStartInputs({ renderProfile, requestedStepBudget }) {
     };
   }
 
-  const renderContext =
-    renderProfile?.renderContext === RENDER_CONTEXTS.externalOutput
-      ? RENDER_CONTEXTS.externalOutput
-      : RENDER_CONTEXTS.preview;
-  const targetBand = resolveCustomTargetFpsBand(
-    renderProfile?.targetFps ?? DEFAULT_PERFORMANCE_TARGET_FPS,
-  );
-  const usesBalancedBaseline = usesBalancedPerformanceBaseline(
-    renderProfile?.qualityPreset,
-    renderProfile?.targetFps ?? DEFAULT_PERFORMANCE_TARGET_FPS,
-  );
-
-  if (renderContext === RENDER_CONTEXTS.externalOutput) {
-    if (usesBalancedBaseline) {
-      return {
-        startRung: findAdaptiveLadderRungForValue(stepLadder, 32),
-      };
-    }
-    if (targetBand === CUSTOM_TARGET_FPS_BANDS.low) {
-      return {
-        startRung: findAdaptiveLadderRungForValue(stepLadder, 40),
-      };
-    }
-    if (targetBand === CUSTOM_TARGET_FPS_BANDS.high) {
-      return {
-        startRung: findAdaptiveLadderRungForValue(stepLadder, 24),
-      };
-    }
-    return {
-      startRung: findAdaptiveLadderRungForValue(stepLadder, 16),
-    };
-  }
-
-  if (usesBalancedBaseline) {
-    return {
-      startRung: findAdaptiveLadderRungForValue(stepLadder, 40),
-    };
-  }
-  if (targetBand === CUSTOM_TARGET_FPS_BANDS.low) {
-    return {
-      startRung: findAdaptiveLadderRungForValue(stepLadder, 48),
-    };
-  }
-  if (targetBand === CUSTOM_TARGET_FPS_BANDS.high) {
-    return {
-      startRung: findAdaptiveLadderRungForValue(stepLadder, 32),
-    };
-  }
-
+  const startupRaymarchSteps = Number.isFinite(
+    renderProfile?.startupRaymarchSteps,
+  )
+    ? renderProfile.startupRaymarchSteps
+    : 32;
   return {
-    startRung: findAdaptiveLadderRungForValue(stepLadder, 24),
+    startRung: findAdaptiveLadderRungForValue(stepLadder, startupRaymarchSteps),
   };
 }
 
@@ -1642,24 +1529,15 @@ function resolveAdaptiveCurrentRung({
 function resetAdaptiveRaymarchState(
   adaptiveRaymarch,
   requestedStepBudget,
-  requestedRenderScale = 1,
   { preserveHistory = false, startRung = null } = {},
 ) {
   const ladder = buildAdaptiveRaymarchLadder(requestedStepBudget);
-  const renderScaleLadder =
-    buildAdaptiveRenderScaleLadder(requestedRenderScale);
-  const normalizedRequestedRenderScale =
-    normalizeRenderScale(requestedRenderScale);
   adaptiveRaymarch.requestedRaymarchSteps = requestedStepBudget;
-  adaptiveRaymarch.requestedRenderScale = normalizedRequestedRenderScale;
   const resolvedStartRung = Number.isFinite(startRung)
     ? clampAdaptiveLadderRung(startRung, ladder)
     : getAdaptiveLadderMaxRung(ladder);
   adaptiveRaymarch.currentRung = resolvedStartRung;
   adaptiveRaymarch.effectiveRaymarchSteps = ladder[resolvedStartRung];
-  adaptiveRaymarch.currentRenderScaleRung =
-    getAdaptiveLadderMaxRung(renderScaleLadder);
-  adaptiveRaymarch.effectiveRenderScale = normalizedRequestedRenderScale;
   adaptiveRaymarch.decisionFrameCount = 0;
   adaptiveRaymarch.longFrameCountInWindow = 0;
   adaptiveRaymarch.stableWindowCount = 0;
@@ -1668,12 +1546,9 @@ function resetAdaptiveRaymarchState(
   if (!preserveHistory) {
     adaptiveRaymarch.stepDownCount = 0;
     adaptiveRaymarch.stepUpCount = 0;
-    adaptiveRaymarch.renderScaleStepDownCount = 0;
-    adaptiveRaymarch.renderScaleStepUpCount = 0;
   }
   return {
     ladder,
-    renderScaleLadder,
   };
 }
 
@@ -1780,27 +1655,6 @@ function resolveAdaptiveStepBudgetAtRung({
   );
 }
 
-function resolveAdaptiveRenderScaleAtRung({ ladder, rung }) {
-  return ladder[clampAdaptiveLadderRung(rung, ladder)];
-}
-
-/**
- * Publish the integrator's committed budget to runtimeState so the engine
- * tick can build its governor self-sufficiently. Replaces the old prepare/take
- * governor handoff (which matched by reference equality and missed whenever the
- * committed budget and diagnostics were no longer read from one state owner).
- */
-function publishRaymarchIntegratorBudget(
-  runtimeState,
-  { effectiveRenderScale, bloomAdaptationActive },
-) {
-  if (!runtimeState) {
-    return;
-  }
-  runtimeState.effectiveRenderScale = effectiveRenderScale;
-  runtimeState.raymarchBloomAdaptationActive = bloomAdaptationActive === true;
-}
-
 function resolveProductBasisAtlasPageCapacity(runtimeState) {
   return Math.max(
     1,
@@ -1811,12 +1665,12 @@ function resolveProductBasisAtlasPageCapacity(runtimeState) {
   );
 }
 
-export function resolveRaymarchGovernorFrameInputs(
+export function resolveRaymarchFieldAnalysisFrameInputs(
   runtimeState,
   effectiveFrame,
 ) {
   const modalFieldCapacity =
-    raymarchPerformanceGovernor.inferModalFieldCapacity(
+    raymarchFieldAnalysisModule.inferModalFieldCapacity(
       runtimeState?.modalFieldCapacity,
       runtimeState?.modalFieldModeBuffer?.value?.array,
     );
@@ -1894,17 +1748,14 @@ export function updateAdaptiveRaymarchStepBudget({
     runtimeState,
     controls,
   );
-  const requestedRenderScale = normalizeRenderScale(
-    renderProfile?.renderScale ?? 1,
-  );
   const { productUploadCapacity, uploadedModeCount } =
-    resolveRaymarchGovernorFrameInputs(runtimeState, effectiveFrame);
+    resolveRaymarchFieldAnalysisFrameInputs(runtimeState, effectiveFrame);
   const frameModeCount = readRaymarchFrameModeCount(effectiveFrame);
   const cavityGeometry =
     runtimeState?.effectiveCavityGeometry ??
     runtimeState?.volumeMesh?.userData?.raymarchCavityGeometry ??
     "rectangular";
-  const governorSlots =
+  const modalFieldAnalysisSlots =
     effectiveFrame?.modalDescriptor?.slotViews?.modalFieldSlots ??
     effectiveFrame?.modalFieldSlots;
   const activeRaymarchFrame = Boolean(
@@ -1912,54 +1763,39 @@ export function updateAdaptiveRaymarchStepBudget({
     allowsCurrentLiveRenderFrame(effectiveFrame) &&
     Math.max(frameModeCount, uploadedModeCount) > 0,
   );
-  const profileAllowsAdaptiveQuality = Boolean(
-    renderProfile?.qualityPreset === PERFORMANCE_PROFILES.auto ||
-    renderProfile?.qualityPreset === PERFORMANCE_PROFILES.custom,
+  const profileAllowsAdaptiveRaymarch = isAdaptivePerformanceProfile(
+    renderProfile?.qualityPreset,
   );
   const adaptiveRaymarch = runtimeDiagnostics.adaptiveRaymarch;
   const adaptiveQualityActive =
-    profileAllowsAdaptiveQuality && activeRaymarchFrame;
-  // The observation integrator owns adaptive quality: steps are lowered first;
-  // render scale/DPR are lowered only after the step ladder reaches its floor.
-  // The governor stays bloom-only while there is an active raymarch frame.
-  const performanceGovernor =
-    raymarchPerformanceGovernor.buildRaymarchPerformanceGovernor({
-      modalFieldSlots: governorSlots,
+    profileAllowsAdaptiveRaymarch && activeRaymarchFrame;
+  // The observation integrator owns adaptive quality only through the raymarch
+  // step budget. Render scale/DPR remain the user-selected output resolution.
+  const raymarchFieldAnalysis =
+    raymarchFieldAnalysisModule.buildRaymarchFieldAnalysis({
+      modalFieldSlots: modalFieldAnalysisSlots,
       modalFieldCapacity: productUploadCapacity,
       featureFrame: effectiveFrame,
-      requestedStepBudget,
-      requestedRenderScale,
       cavityGeometry,
-      stepScaleAdaptationEnabled: false,
-      bloomAdaptationEnabled: activeRaymarchFrame,
     });
-  runtimeState.performanceGovernor = {
-    ...runtimeState.performanceGovernor,
-    ...performanceGovernor,
-  };
-  // The ladder ceiling is the user cap; the governor no longer pre-reduces it.
-  const governedStepBudget = requestedStepBudget;
-  const governedRenderScale = requestedRenderScale;
+  runtimeState.raymarchFieldAnalysis = raymarchFieldAnalysis;
   const adaptiveTuning = buildAdaptiveRaymarchTuning(
     resolveAdaptiveTargetFps(renderProfile, controls),
   );
   adaptiveRaymarch.targetFps = adaptiveTuning.targetFps;
   adaptiveRaymarch.targetFrameTimeMs = adaptiveTuning.targetFrameTimeMs;
 
-  let ladder = buildAdaptiveRaymarchLadder(governedStepBudget);
-  let renderScaleLadder = buildAdaptiveRenderScaleLadder(governedRenderScale);
+  let ladder = buildAdaptiveRaymarchLadder(requestedStepBudget);
   const adaptiveStartInputs = resolveAdaptiveStartInputs({
     renderProfile,
-    requestedStepBudget: governedStepBudget,
+    requestedStepBudget,
   });
   const requestedChanged =
-    adaptiveRaymarch.requestedRaymarchSteps !== governedStepBudget ||
-    adaptiveRaymarch.requestedRenderScale !== governedRenderScale;
+    adaptiveRaymarch.requestedRaymarchSteps !== requestedStepBudget;
   if (requestedChanged) {
-    ({ ladder, renderScaleLadder } = resetAdaptiveRaymarchState(
+    ({ ladder } = resetAdaptiveRaymarchState(
       adaptiveRaymarch,
-      governedStepBudget,
-      governedRenderScale,
+      requestedStepBudget,
       {
         startRung: Number.isFinite(runtimeState.adaptiveRaymarchResumeRung)
           ? runtimeState.adaptiveRaymarchResumeRung
@@ -1969,7 +1805,7 @@ export function updateAdaptiveRaymarchStepBudget({
   }
 
   if (!adaptiveQualityActive) {
-    const inactiveStepRung = profileAllowsAdaptiveQuality
+    const inactiveStepRung = profileAllowsAdaptiveRaymarch
       ? resolveAdaptiveCurrentRung({
           currentRung: adaptiveRaymarch.currentRung,
           ladder,
@@ -1977,44 +1813,22 @@ export function updateAdaptiveRaymarchStepBudget({
       : getAdaptiveLadderMaxRung(ladder);
     const inactiveStepBudget = resolveAdaptiveStepBudgetAtRung({
       activeRaymarchFrame,
-      requestedStepBudget: governedStepBudget,
+      requestedStepBudget,
       ladder,
       rung: inactiveStepRung,
     });
-    const inactiveRenderScaleRung = profileAllowsAdaptiveQuality
-      ? resolveAdaptiveCurrentRung({
-          currentRung: adaptiveRaymarch.currentRenderScaleRung,
-          ladder: renderScaleLadder,
-        })
-      : getAdaptiveLadderMaxRung(renderScaleLadder);
-    const inactiveRenderScale = resolveAdaptiveRenderScaleAtRung({
-      ladder: renderScaleLadder,
-      rung: inactiveRenderScaleRung,
-    });
     runtimeState.adaptiveRaymarchResumeRung = inactiveStepRung;
     adaptiveRaymarch.adaptiveRaymarchActive = false;
-    adaptiveRaymarch.requestedRaymarchSteps = governedStepBudget;
-    adaptiveRaymarch.requestedRenderScale = governedRenderScale;
+    adaptiveRaymarch.requestedRaymarchSteps = requestedStepBudget;
     adaptiveRaymarch.currentRung = inactiveStepRung;
     adaptiveRaymarch.effectiveRaymarchSteps = inactiveStepBudget;
-    adaptiveRaymarch.effectiveRenderScale = inactiveRenderScale;
-    adaptiveRaymarch.currentRenderScaleRung = inactiveRenderScaleRung;
     applyEffectiveRaymarchStepBudget(
       runtimeState,
       controls,
       inactiveStepBudget,
     );
     // Non-adaptive profiles hold the user cap; adaptive profiles hold their
-    // committed ladder rungs across transient inactive frames.
-    publishRaymarchIntegratorBudget(runtimeState, {
-      effectiveRenderScale: inactiveRenderScale,
-      bloomAdaptationActive: activeRaymarchFrame,
-    });
-    runtimeState.performanceGovernor = {
-      ...runtimeState.performanceGovernor,
-      effectiveRenderScale: inactiveRenderScale,
-      effectiveStepBudget: inactiveStepBudget,
-    };
+    // committed step rung across transient inactive frames.
     return inactiveStepBudget;
   }
 
@@ -2024,11 +1838,6 @@ export function updateAdaptiveRaymarchStepBudget({
     currentRung: adaptiveRaymarch.currentRung,
     resumeRung: runtimeState.adaptiveRaymarchResumeRung,
     ladder,
-    reactivating: !wasAdaptiveActive,
-  });
-  adaptiveRaymarch.currentRenderScaleRung = resolveAdaptiveCurrentRung({
-    currentRung: adaptiveRaymarch.currentRenderScaleRung,
-    ladder: renderScaleLadder,
     reactivating: !wasAdaptiveActive,
   });
   const recoveryState = deriveAdaptiveRecoveryState({
@@ -2086,10 +1895,6 @@ export function updateAdaptiveRaymarchStepBudget({
               adaptiveRaymarch.currentRung - nextPressureRung;
             adaptiveRaymarch.currentRung = nextPressureRung;
           }
-        } else if (adaptiveRaymarch.currentRenderScaleRung > 0) {
-          adaptiveRaymarch.currentRenderScaleRung -= 1;
-          adaptiveRaymarch.renderScaleStepDownCount =
-            (adaptiveRaymarch.renderScaleStepDownCount ?? 0) + 1;
         }
         adaptiveRaymarch.stableWindowCount = 0;
       } else if (stableWindow && recoveryState.recoveryEligible) {
@@ -2098,14 +1903,7 @@ export function updateAdaptiveRaymarchStepBudget({
           adaptiveRaymarch.stableWindowCount >=
           ADAPTIVE_RAYMARCH_RECOVERY_WINDOWS
         ) {
-          if (
-            adaptiveRaymarch.currentRenderScaleRung <
-            renderScaleLadder.length - 1
-          ) {
-            adaptiveRaymarch.currentRenderScaleRung += 1;
-            adaptiveRaymarch.renderScaleStepUpCount =
-              (adaptiveRaymarch.renderScaleStepUpCount ?? 0) + 1;
-          } else if (adaptiveRaymarch.currentRung < ladder.length - 1) {
+          if (adaptiveRaymarch.currentRung < ladder.length - 1) {
             adaptiveRaymarch.currentRung += 1;
             adaptiveRaymarch.stepUpCount += 1;
           }
@@ -2122,44 +1920,17 @@ export function updateAdaptiveRaymarchStepBudget({
 
   const effectiveStepBudget = resolveAdaptiveStepBudgetAtRung({
     activeRaymarchFrame,
-    requestedStepBudget: governedStepBudget,
+    requestedStepBudget,
     ladder,
     rung: adaptiveRaymarch.currentRung,
   });
   adaptiveRaymarch.effectiveRaymarchSteps = effectiveStepBudget;
-  adaptiveRaymarch.effectiveRenderScale = resolveAdaptiveRenderScaleAtRung({
-    ladder: renderScaleLadder,
-    rung: adaptiveRaymarch.currentRenderScaleRung,
-  });
-  adaptiveRaymarch.complexityScore = performanceGovernor.complexityScore;
-  adaptiveRaymarch.uploadedModeCount = performanceGovernor.uploadedModeCount;
-  adaptiveRaymarch.originalModeCount = performanceGovernor.originalModeCount;
-  adaptiveRaymarch.proactiveStepBudget =
-    performanceGovernor.proactiveStepBudget;
-  adaptiveRaymarch.proactiveRenderScale =
-    performanceGovernor.proactiveRenderScale;
+  adaptiveRaymarch.complexityScore = raymarchFieldAnalysis.complexityScore;
+  adaptiveRaymarch.uploadedModeCount = raymarchFieldAnalysis.uploadedModeCount;
+  adaptiveRaymarch.originalModeCount = raymarchFieldAnalysis.originalModeCount;
   runtimeState.adaptiveRaymarchResumeRung = adaptiveRaymarch.currentRung;
-  runtimeState.performanceGovernor = {
-    ...runtimeState.performanceGovernor,
-    effectiveRenderScale: adaptiveRaymarch.effectiveRenderScale,
-    effectiveStepBudget,
-  };
   applyEffectiveRaymarchStepBudget(runtimeState, controls, effectiveStepBudget);
-  // The bloom guard reads the ladder's effective budget/scale. The visualizer
-  // tick builds the authoritative governor from the published budget; here we
-  // mirror the same decision into diagnostics via the shared helper.
-  publishRaymarchIntegratorBudget(runtimeState, {
-    effectiveRenderScale: adaptiveRaymarch.effectiveRenderScale,
-    bloomAdaptationActive: true,
-  });
-  adaptiveRaymarch.bloomAllowed =
-    raymarchPerformanceGovernor.deriveRaymarchBloomAllowed({
-      complexityScore: performanceGovernor.complexityScore,
-      bloomAdaptationActive: true,
-      effectiveStepBudget,
-      effectiveRenderScale: adaptiveRaymarch.effectiveRenderScale,
-    });
-  runtimeState.performanceGovernor.bloomAllowed = adaptiveRaymarch.bloomAllowed;
+  // Profile-owned adaptation stops at the step ladder.
   return effectiveStepBudget;
 }
 
@@ -2322,15 +2093,14 @@ export function resolveFeatureFrame(
         featureEngine?.reset?.("silent-frame");
         resetAnalysisSchedulerState(analysisSchedulerRef);
       } else {
-        const shouldComposeSourceCut =
-          shouldComposeSourceCutFeatureFrame({
-            status,
-            controls,
-            preparedInputs,
-          });
+        const shouldComposeSourceCutFrame = shouldComposeSourceCutFeatureFrame({
+          status,
+          controls,
+          preparedInputs,
+        });
         if (
           featureEngine?.enqueueTransportFrame &&
-          !shouldComposeSourceCut
+          !shouldComposeSourceCutFrame
         ) {
           const schedulerState =
             getAnalysisSchedulerState(analysisSchedulerRef);
@@ -2478,7 +2248,7 @@ export function resolveFeatureFrame(
 
             if (
               shouldRefreshProgramSnapshot ||
-              shouldComposeSourceCut ||
+              shouldComposeSourceCutFrame ||
               shouldSeedLiveWarmup ||
               shouldBootstrapActive ||
               shouldRefreshSpectralLight
@@ -2702,12 +2472,10 @@ export function applyReactiveBloomState({
   }
 
   const bt = runtimeState?.bloomTuning;
-  const performanceGovernor = runtimeState?.performanceGovernor;
   const strength = bt?.effectiveStrength ?? bloom.strength;
   const radius = bt?.effectiveRadius ?? bloom.radius;
   const threshold = bt?.effectiveThreshold ?? bloom.threshold;
-  const bloomAllowed =
-    (bt?.bloomAllowed ?? true) && (performanceGovernor?.bloomAllowed ?? true);
+  const bloomAllowed = bt?.bloomAllowed ?? true;
 
   const bloomActive = controls.bloomEnabled && bloomAllowed && strength > 1e-4;
   syncRenderOutputBloomPassUniforms(postNodesRef.current, {
@@ -2747,7 +2515,7 @@ function publishAuditSnapshot(
     runtimeState,
     status,
     featureState,
-    lowLoadActive,
+    lowLoadPlaybackDiagnosticsActive,
     runtimeDiagnostics,
   },
   {
@@ -2785,7 +2553,7 @@ function publishAuditSnapshot(
 
   const frame = featureState.audit?.frame ?? 0;
   const interval = Math.max(1, Math.floor(controls.logEveryFrames));
-  if (!lowLoadActive && frame % interval === 0) {
+  if (!lowLoadPlaybackDiagnosticsActive && frame % interval === 0) {
     logAudit("[Baryon audit]", payload);
   }
 }
@@ -2793,7 +2561,7 @@ function publishAuditSnapshot(
 function publishControlSnapshot(
   {
     runtime,
-    lowLoadActive,
+    lowLoadPlaybackDiagnosticsActive,
     shared,
     output,
     visualization,
@@ -2804,7 +2572,7 @@ function publishControlSnapshot(
   },
   { buildControlSnapshot },
 ) {
-  if (lowLoadActive) {
+  if (lowLoadPlaybackDiagnosticsActive) {
     return;
   }
 
@@ -2829,7 +2597,7 @@ export function publishDevtoolsSnapshots(
     runtimeState,
     status,
     featureState,
-    lowLoadActive,
+    lowLoadPlaybackDiagnosticsActive,
     runtimeDiagnostics,
     shared,
     output,
@@ -2858,12 +2626,12 @@ export function publishDevtoolsSnapshots(
       runtimeState,
       status,
       featureState,
-      lowLoadActive,
+      lowLoadPlaybackDiagnosticsActive,
       runtimeDiagnostics,
     },
     {
       snapshotDiagnostics,
-      logAudit,
+      logAudit: devtoolsEnabled ? logAudit : () => {},
       onAuditSnapshotChange,
       persistWindowSnapshot: devtoolsEnabled,
     },
@@ -2874,7 +2642,7 @@ export function publishDevtoolsSnapshots(
   publishControlSnapshot(
     {
       runtime,
-      lowLoadActive,
+      lowLoadPlaybackDiagnosticsActive,
       shared,
       output,
       visualization,

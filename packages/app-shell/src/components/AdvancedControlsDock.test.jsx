@@ -79,4 +79,19 @@ describe("AdvancedControlsDock", () => {
     ).not.toBeNull();
     expect(onOpenChange).toHaveBeenCalledWith(true);
   });
+
+  it("renders a closed-state accessory without a brand label", () => {
+    renderDock({
+      brandAccessory: (
+        <button data-testid="brand-accessory" type="button">
+          Version
+        </button>
+      ),
+    });
+
+    expect(container.textContent).not.toContain("Baryon");
+    expect(container.querySelector('[data-testid="brand-accessory"]')).not.toBe(
+      null,
+    );
+  });
 });

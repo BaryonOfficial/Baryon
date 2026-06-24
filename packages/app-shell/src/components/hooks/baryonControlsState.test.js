@@ -8,43 +8,91 @@ import {
 
 test("builds the advanced controls presentation layout", () => {
   const { folderGroups, presetsAreaControls } = getVisibleControlLayout({
+    controlsState: {
+      ...createControlState(),
+      colorMode: "spectral",
+      outputMode: "opaque",
+      renderQualityPreset: "custom",
+      rotationMode: "manual",
+    },
     devtoolsEnabled: true,
     method: "raymarch",
   });
   expect(folderGroups.map((group) => group.title)).toStrictEqual([
-    "Mode",
+    "Performance",
+    "Output",
     "Shape",
     "Color",
-    "Logo",
     "Motion",
-    "Display",
+    "Bloom",
+    "Logo",
     "Diagnostics",
   ]);
   const groupByTitle = new Map(
     folderGroups.map((group) => [group.title, group]),
   );
 
-  expect(presetsAreaControls.map((control) => control.key)).toStrictEqual([
-    "performanceHudEnabled",
-    "renderQualityPreset",
-    "customPerformanceTargetFps",
-  ]);
+  expect(presetsAreaControls.map((control) => control.key)).toStrictEqual([]);
 
-  const modeGroup = groupByTitle.get("Mode");
-  expect(modeGroup).toMatchObject({
-    title: "Mode",
+  const performanceGroup = groupByTitle.get("Performance");
+  expect(performanceGroup).toMatchObject({
+    title: "Performance",
     controls: expect.any(Array),
   });
-  expect(
-    modeGroup.controls.map((control) => control.key).slice(0, 3),
-  ).toStrictEqual(["boundaryMode", "colorMode", "rotationMode"]);
-  expect(
-    !modeGroup.controls.some((control) =>
-      ["renderQualityPreset", "customPerformanceTargetFps"].includes(
-        control.key,
-      ),
-    ),
-  ).toBe(true);
+  expect(performanceGroup.controls.map((control) => control.key)).toStrictEqual(
+    ["renderQualityPreset", "customTargetFps", "performanceHudEnabled"],
+  );
+
+  const outputGroup = groupByTitle.get("Output");
+  expect(outputGroup).toMatchObject({
+    title: "Output",
+    controls: expect.any(Array),
+  });
+  expect(outputGroup.controls.map((control) => control.key)).toStrictEqual([
+    "outputMode",
+    "outputBackgroundColor",
+  ]);
+
+  const shapeGroup = groupByTitle.get("Shape");
+  expect(shapeGroup).toMatchObject({
+    title: "Shape",
+    controls: expect.any(Array),
+  });
+  expect(shapeGroup.controls.map((control) => control.key)).toStrictEqual([
+    "boundaryMode",
+    "zeroPointPrecision",
+    "densityGain",
+    "absorption",
+    "opacityGain",
+    "raymarchSteps",
+  ]);
+
+  const colorGroup = groupByTitle.get("Color");
+  expect(colorGroup).toMatchObject({
+    title: "Color",
+    controls: expect.any(Array),
+  });
+  expect(colorGroup.controls.map((control) => control.key)).toStrictEqual([
+    "colorMode",
+    "volumeColor",
+    "surfaceColor",
+    "spectralMix",
+    "holographicIntensity",
+    "holographicShift",
+    "holographicFresnelPower",
+  ]);
+
+  const motionGroup = groupByTitle.get("Motion");
+  expect(motionGroup).toMatchObject({
+    title: "Motion",
+    controls: expect.any(Array),
+  });
+  expect(motionGroup.controls.map((control) => control.key)).toStrictEqual([
+    "rotationMode",
+    "rotationSpeed",
+    "motionAmount",
+    "reactivity",
+  ]);
 
   const diagnosticsGroup = groupByTitle.get("Diagnostics");
   expect(diagnosticsGroup).toMatchObject({
@@ -68,22 +116,56 @@ test("builds the advanced controls presentation layout", () => {
     ],
   );
 
-  const displayGroup = groupByTitle.get("Display");
-  expect(displayGroup).toMatchObject({
-    title: "Display",
+  const bloomGroup = groupByTitle.get("Bloom");
+  expect(bloomGroup).toMatchObject({
+    title: "Bloom",
     controls: expect.any(Array),
   });
-  expect(displayGroup.controls.map((control) => control.key)).toStrictEqual([
+  expect(bloomGroup.controls.map((control) => control.key)).toStrictEqual([
     "bloomEnabled",
     "bloomStrength",
     "bloomRadius",
     "bloomThreshold",
-    "backgroundColor",
-    "outputBackgroundColor",
     "bloomResponseBias",
     "rimBloomBias",
     "rimCompression",
   ]);
+});
+
+test("hides mode-dependent controls until their controlling value enables them", () => {
+  const defaultLayout = getVisibleControlLayout({
+    controlsState: createControlState(),
+    devtoolsEnabled: true,
+    method: "raymarch",
+  });
+  const defaultControls = defaultLayout.folderGroups.flatMap((group) =>
+    group.controls.map((control) => control.key),
+  );
+
+  expect(defaultControls).not.toContain("customTargetFps");
+  expect(defaultControls).not.toContain("outputBackgroundColor");
+  expect(defaultControls).not.toContain("rotationSpeed");
+  expect(defaultControls).not.toContain("spectralMix");
+
+  const expandedLayout = getVisibleControlLayout({
+    controlsState: {
+      ...createControlState(),
+      colorMode: "spectral",
+      outputMode: "opaque",
+      renderQualityPreset: "custom",
+      rotationMode: "manual",
+    },
+    devtoolsEnabled: true,
+    method: "raymarch",
+  });
+  const expandedControls = expandedLayout.folderGroups.flatMap((group) =>
+    group.controls.map((control) => control.key),
+  );
+
+  expect(expandedControls).toContain("customTargetFps");
+  expect(expandedControls).toContain("outputBackgroundColor");
+  expect(expandedControls).toContain("rotationSpeed");
+  expect(expandedControls).toContain("spectralMix");
 });
 
 test("operator control keys can surface Capture Debug Data without enabling all devtools controls", () => {

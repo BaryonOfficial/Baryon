@@ -28,23 +28,26 @@ const INFO_LINKS = [
 ];
 
 const COMPACT_SECTION_LABELS = {
-  mode: "Mode",
-  visuals: "Visuals",
+  performance: "Perf",
   output: "Output",
+  visuals: "Visuals",
   diagnostics: "Debug",
 };
 
+const PINNED_CONTROL_GROUP_TITLES = new Set(["Performance", "Output"]);
+
 function resolveCompactSectionId(groupTitle) {
   switch (groupTitle) {
-    case "Mode":
-      return "mode";
+    case "Performance":
+      return "performance";
+    case "Output":
+      return "output";
     case "Shape":
     case "Color":
     case "Logo":
     case "Motion":
+    case "Bloom":
       return "visuals";
-    case "Display":
-      return "output";
     case "Diagnostics":
       return "diagnostics";
     default:
@@ -60,8 +63,9 @@ function buildCompactSections(folderGroups, presetsAreaControls) {
         id,
         label,
         groups: [],
-        includePresets: id === "mode",
-        includePerformance: id === "output" && presetsAreaControls.length > 0,
+        includePresets: id === "output",
+        includePerformance:
+          id === "performance" && presetsAreaControls.length > 0,
       },
     ]),
   );
@@ -77,6 +81,10 @@ function buildCompactSections(folderGroups, presetsAreaControls) {
       section.includePresets ||
       section.includePerformance,
   );
+}
+
+function isPinnedControlGroup(group) {
+  return PINNED_CONTROL_GROUP_TITLES.has(group.title);
 }
 
 const CSS = `
@@ -297,6 +305,16 @@ const CSS = `
   gap: 0.3rem;
 }
 
+.baryon-controls-pinned-section {
+  padding: 0.38rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  border: none;
+  background: var(--nd-surface-raised);
+  border-radius: 0.8rem;
+}
+
 .baryon-controls-section-label {
   margin: 0;
   font-size: 0.54rem;
@@ -349,6 +367,51 @@ const CSS = `
 .baryon-controls-select option {
   background-color: var(--nd-surface-raised);
   color: var(--nd-text-primary);
+}
+
+.baryon-controls-segmented {
+  display: grid;
+  grid-template-columns: repeat(var(--segment-count), minmax(0, 1fr));
+  gap: 0.18rem;
+  padding: 0.18rem;
+  border-radius: 0.62rem;
+  background: var(--nd-surface);
+  border: 1px solid var(--nd-border-visible);
+}
+
+.baryon-controls-segmented-option {
+  min-width: 0;
+  min-height: 1.46rem;
+  padding: 0.24rem 0.32rem;
+  border: 0;
+  border-radius: 0.46rem;
+  background: transparent;
+  color: var(--nd-text-secondary);
+  font-family: var(--baryon-type-mono-family);
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: var(--baryon-type-label-letter-spacing);
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    color 140ms ease,
+    transform 140ms ease;
+}
+
+.baryon-controls-segmented-option:hover {
+  color: var(--nd-text-display);
+}
+
+.baryon-controls-segmented-option:active {
+  transform: translateY(1px);
+}
+
+.baryon-controls-segmented-option[data-selected="true"] {
+  background: var(--nd-surface-raised);
+  color: var(--nd-text-display);
 }
 
 .baryon-controls-text-input::placeholder {
@@ -742,6 +805,12 @@ const CSS = `
     font-size: 0.61rem;
   }
 
+  .baryon-controls-segmented-option {
+    min-height: 1.46rem;
+    padding: 0.22rem 0.28rem;
+    font-size: 0.54rem;
+  }
+
   .baryon-controls-pill-button,
   .baryon-controls-danger-button {
     min-height: 1.5rem;
@@ -871,6 +940,12 @@ const CSS = `
     padding: 0.24rem 0.44rem;
     border-radius: 0.5rem;
     font-size: 0.61rem;
+  }
+
+  .baryon-controls-segmented-option {
+    min-height: 1.46rem;
+    padding: 0.22rem 0.28rem;
+    font-size: 0.54rem;
   }
 
   .baryon-controls-pill-button,
@@ -1242,6 +1317,49 @@ function ControlField({
     );
   }
 
+  if (binding.options && binding.view === "segmented") {
+    const options = Object.entries(binding.options);
+    /** @type {import("react").CSSProperties & Record<"--segment-count", number>} */
+    const segmentedStyle = { "--segment-count": options.length };
+
+    return (
+      <div className="baryon-controls-card">
+        <div className="baryon-controls-card-title-row">
+          <span
+            className="baryon-controls-card-label"
+            id={`${controlId}-label`}
+          >
+            {definition.label}
+          </span>
+          {helpTrigger}
+        </div>
+        <div
+          className="baryon-controls-segmented"
+          role="radiogroup"
+          aria-labelledby={`${controlId}-label`}
+          style={segmentedStyle}
+        >
+          {options.map(([label, optionValue]) => {
+            const selected = String(value) === String(optionValue);
+            return (
+              <button
+                key={optionValue}
+                type="button"
+                className="baryon-controls-segmented-option"
+                role="radio"
+                aria-checked={selected}
+                data-selected={selected ? "true" : "false"}
+                onClick={() => onChange(optionValue)}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   if (binding.options) {
     return (
       <div className="baryon-controls-card">
@@ -1329,6 +1447,72 @@ function applyDefinitionChange(
   updateControl(definition.key, nextValue);
 }
 
+function ControlFieldsList({
+  controls,
+  controlsState,
+  onChange,
+  activeHelpKey,
+  registerHelpTrigger,
+  onHelpPointerEnter,
+  onHelpPointerLeave,
+  onHelpFocus,
+  onHelpBlur,
+  onHelpClick,
+}) {
+  const handleDefinitionChange = useCallback(
+    (definition, nextValue) =>
+      applyDefinitionChange(definition, nextValue, controlsState, onChange),
+    [controlsState, onChange],
+  );
+
+  return controls.map((definition) => (
+    <ControlField
+      key={definition.key}
+      definition={definition}
+      value={getDefinitionValue(definition, controlsState)}
+      onChange={(nextValue) => handleDefinitionChange(definition, nextValue)}
+      activeHelpKey={activeHelpKey}
+      registerHelpTrigger={registerHelpTrigger}
+      onHelpPointerEnter={onHelpPointerEnter}
+      onHelpPointerLeave={onHelpPointerLeave}
+      onHelpFocus={onHelpFocus}
+      onHelpBlur={onHelpBlur}
+      onHelpClick={onHelpClick}
+    />
+  ));
+}
+
+function PinnedControlSection({
+  group,
+  controlsState,
+  onChange,
+  activeHelpKey,
+  registerHelpTrigger,
+  onHelpPointerEnter,
+  onHelpPointerLeave,
+  onHelpFocus,
+  onHelpBlur,
+  onHelpClick,
+}) {
+  return (
+    <section className="baryon-controls-pinned-section">
+      <p className="baryon-controls-section-label">{group.title}</p>
+      <ControlFieldsList
+        controls={group.controls}
+        controlsState={controlsState}
+        onChange={onChange}
+        activeHelpKey={activeHelpKey}
+        registerHelpTrigger={registerHelpTrigger}
+        onHelpPointerEnter={onHelpPointerEnter}
+        onHelpPointerLeave={onHelpPointerLeave}
+        onHelpFocus={onHelpFocus}
+        onHelpBlur={onHelpBlur}
+        onHelpClick={onHelpClick}
+      />
+    </section>
+  );
+}
+
 function ControlGroup({
   group,
   controlsState,
@@ -1342,11 +1526,6 @@ function ControlGroup({
   onHelpClick,
 }) {
   const [isExpanded, setIsExpanded] = useState(group.expanded);
-  const handleDefinitionChange = useCallback(
-    (definition, nextValue) =>
-      applyDefinitionChange(definition, nextValue, controlsState, onChange),
-    [controlsState, onChange],
-  );
 
   return (
     <section className="baryon-controls-group">
@@ -1368,23 +1547,18 @@ function ControlGroup({
       </button>
       {isExpanded ? (
         <div className="baryon-controls-group-content">
-          {group.controls.map((definition) => (
-            <ControlField
-              key={definition.key}
-              definition={definition}
-              value={getDefinitionValue(definition, controlsState)}
-              onChange={(nextValue) =>
-                handleDefinitionChange(definition, nextValue)
-              }
-              activeHelpKey={activeHelpKey}
-              registerHelpTrigger={registerHelpTrigger}
-              onHelpPointerEnter={onHelpPointerEnter}
-              onHelpPointerLeave={onHelpPointerLeave}
-              onHelpFocus={onHelpFocus}
-              onHelpBlur={onHelpBlur}
-              onHelpClick={onHelpClick}
-            />
-          ))}
+          <ControlFieldsList
+            controls={group.controls}
+            controlsState={controlsState}
+            onChange={onChange}
+            activeHelpKey={activeHelpKey}
+            registerHelpTrigger={registerHelpTrigger}
+            onHelpPointerEnter={onHelpPointerEnter}
+            onHelpPointerLeave={onHelpPointerLeave}
+            onHelpFocus={onHelpFocus}
+            onHelpBlur={onHelpBlur}
+            onHelpClick={onHelpClick}
+          />
         </div>
       ) : null}
     </section>
@@ -1431,13 +1605,13 @@ export default function AdvancedControlsSidebar({
   );
   const [activeHelpKey, setActiveHelpKey] = useState("");
   const [activeHelpPosition, setActiveHelpPosition] = useState(null);
+  const isCompactInspector = viewportWidth <= 640;
   const compactSections = useMemo(
     () => buildCompactSections(folderGroups, presetsAreaControls),
     [folderGroups, presetsAreaControls],
   );
-  const isCompactInspector = viewportWidth <= 640;
   const [activeCompactSectionId, setActiveCompactSectionId] = useState(
-    () => compactSections[0]?.id ?? "mode",
+    () => compactSections[0]?.id ?? "performance",
   );
   const selectedPreset =
     presets.find((preset) => preset.name === selectedPresetName) ?? null;
@@ -1593,7 +1767,7 @@ export default function AdvancedControlsSidebar({
     if (
       !compactSections.some((section) => section.id === activeCompactSectionId)
     ) {
-      setActiveCompactSectionId(compactSections[0]?.id ?? "mode");
+      setActiveCompactSectionId(compactSections[0]?.id ?? "performance");
     }
   }, [activeCompactSectionId, compactSections]);
 
@@ -1750,6 +1924,13 @@ export default function AdvancedControlsSidebar({
     compactSections.find((section) => section.id === activeCompactSectionId) ??
     compactSections[0] ??
     null;
+  const visibleGroups = isCompactInspector
+    ? (activeCompactSection?.groups ?? [])
+    : folderGroups;
+  const pinnedGroups = visibleGroups.filter(isPinnedControlGroup);
+  const collapsibleGroups = visibleGroups.filter(
+    (group) => !isPinnedControlGroup(group),
+  );
 
   return (
     <>
@@ -1906,10 +2087,19 @@ export default function AdvancedControlsSidebar({
               </section>
             ) : null}
 
-            {(isCompactInspector
-              ? (activeCompactSection?.groups ?? [])
-              : folderGroups
-            ).map((group) => (
+            {pinnedGroups.map((group) => (
+              <PinnedControlSection
+                key={group.title}
+                group={group}
+                controlsState={controlsState}
+                onChange={updateControl}
+                activeHelpKey={activeHelpKey}
+                registerHelpTrigger={registerHelpTrigger}
+                {...helpEventHandlers}
+              />
+            ))}
+
+            {collapsibleGroups.map((group) => (
               <ControlGroup
                 key={group.title}
                 group={group}

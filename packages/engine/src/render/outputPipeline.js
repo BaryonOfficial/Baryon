@@ -23,6 +23,7 @@ import {
 import {
   OUTPUT_MODES,
   normalizeOutputMode,
+  normalizeResolvedRenderQualityProfile,
   resolveRenderQualityProfile,
 } from "./outputProfilePolicy.js";
 
@@ -117,6 +118,18 @@ export function getRenderOutputBloomPasses(postNodes) {
     return [...new Set(postNodes.bloomPasses.filter(Boolean))];
   }
   return postNodes?.bloomPass ? [postNodes.bloomPass] : [];
+}
+
+function resolvePipelineRenderProfile(renderProfile) {
+  if (
+    renderProfile &&
+    typeof renderProfile === "object" &&
+    Object.prototype.hasOwnProperty.call(renderProfile, "targetFps")
+  ) {
+    return normalizeResolvedRenderQualityProfile(renderProfile);
+  }
+
+  return resolveRenderQualityProfile(renderProfile ?? {});
 }
 
 export function syncRenderOutputBloomPassUniforms(
@@ -264,7 +277,7 @@ export function advanceRenderOutputTemporalHistoryBypass(postNodes) {
  * @typedef {import("./outputProfilePolicy.js").PerformanceProfile} PerformanceProfile
  * @typedef {import("./outputProfilePolicy.js").RenderContext} RenderContext
  * @typedef {import("./outputProfilePolicy.js").RenderQualityProfile} RenderQualityProfile
- * @typedef {import("./outputProfilePolicy.js").RenderQualityProfileOverrides} RenderQualityProfileOverrides
+ * @typedef {import("./outputProfilePolicy.js").RenderPostProcessOverrides} RenderPostProcessOverrides
  */
 
 export function composeRenderOutputNode({
@@ -295,9 +308,7 @@ export function composeRenderOutputNode({
   );
 
   if (normalizedMode === OUTPUT_MODES.opaque) {
-    const opaqueRgb = outputBackgroundNode
-      .mul(finalAlpha.oneMinus())
-      .add(finalRgb);
+    const opaqueRgb = outputBackgroundNode.add(finalRgb);
     return vec4(opaqueRgb, 1.0);
   }
 
@@ -314,9 +325,7 @@ export function createRenderOutputPipeline(
     return null;
   }
 
-  const resolvedRenderProfile = resolveRenderQualityProfile(
-    renderProfile ?? {},
-  );
+  const resolvedRenderProfile = resolvePipelineRenderProfile(renderProfile);
   const bloomUniforms = {
     strength: uniform(RENDER_DEFAULTS.bloomStrength),
     radius: uniform(RENDER_DEFAULTS.bloomRadius),

@@ -72,7 +72,6 @@ function createRuntimeDiagnostics(overrides = {}) {
       modalBasisCacheRebuildPending: false,
       modalBasisCachePhaseAuthority: 1,
       bloomEnabled: false,
-      renderScale: 1,
       ...overrides.render,
     },
   };
@@ -89,6 +88,28 @@ test("tail diagnostics recorder is inert until explicitly started", () => {
 
   expect(recorder.dump()).toMatchObject({
     active: false,
+    samples: [],
+  });
+});
+
+test("tail diagnostics recorder lifecycle methods own snapshots when detached", () => {
+  const recorder = createTailDiagnosticsRecorder();
+  const { start, stop, reset } = recorder;
+
+  expect(start({ nowMs: 100 })).toMatchObject({
+    active: true,
+    startedAtMs: 100,
+    stoppedAtMs: null,
+  });
+  expect(stop({ nowMs: 150 })).toMatchObject({
+    active: false,
+    startedAtMs: 100,
+    stoppedAtMs: 150,
+  });
+  expect(reset()).toMatchObject({
+    active: false,
+    startedAtMs: null,
+    stoppedAtMs: null,
     samples: [],
   });
 });

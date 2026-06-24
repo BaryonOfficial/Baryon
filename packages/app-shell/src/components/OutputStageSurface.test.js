@@ -5,8 +5,13 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
-const baryonSceneSpy = vi.fn(() => null);
-const canvasSpy = vi.fn();
+const { baryonSceneSpy, canvasSpy, createBaryonRendererSpy } = vi.hoisted(
+  () => ({
+    baryonSceneSpy: vi.fn(() => null),
+    canvasSpy: vi.fn(),
+    createBaryonRendererSpy: vi.fn(() => ({})),
+  }),
+);
 
 vi.mock("@react-three/fiber", () => ({
   Canvas: (props) => {
@@ -34,7 +39,7 @@ vi.mock("./BaryonScene.jsx", () => ({
 
 vi.mock("./rendererDiagnostics.js", () => ({
   WEBGPU_RENDERER_INIT_ERROR: "WebGPURendererInitError",
-  createBaryonRenderer: () => ({}),
+  createBaryonRenderer: createBaryonRendererSpy,
 }));
 
 import { DEFAULT_ACTIVE_CAMERA_POSE } from "./cameraPosePresets.js";
@@ -45,10 +50,14 @@ describe("OutputStageSurface", () => {
   let container = null;
   /** @type {import("react-dom/client").Root | null} */
   let root = null;
+  let originalActEnvironment;
 
   beforeEach(() => {
+    originalActEnvironment = globalThis.IS_REACT_ACT_ENVIRONMENT;
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
     baryonSceneSpy.mockClear();
     canvasSpy.mockClear();
+    createBaryonRendererSpy.mockClear();
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -63,6 +72,11 @@ describe("OutputStageSurface", () => {
     container?.remove();
     root = null;
     container = null;
+    if (originalActEnvironment === undefined) {
+      delete globalThis.IS_REACT_ACT_ENVIRONMENT;
+    } else {
+      globalThis.IS_REACT_ACT_ENVIRONMENT = originalActEnvironment;
+    }
   });
 
   it("disables global control event sync by default for external output", () => {
@@ -120,6 +134,134 @@ describe("OutputStageSurface", () => {
         DEFAULT_ACTIVE_CAMERA_POSE.up.z,
       ],
       fov: DEFAULT_ACTIVE_CAMERA_POSE.fov,
+    });
+  });
+
+  it("does not multiply external output resolution by display DPR", () => {
+    baryonSceneSpy.mockClear();
+    canvasSpy.mockClear();
+
+    renderToStaticMarkup(
+      React.createElement(OutputStageSurface, {
+        controlsRef: { current: { backgroundColor: "#000000" } },
+        visualizationMethod: "raymarch",
+      }),
+    );
+
+    expect(canvasSpy).toHaveBeenCalledTimes(1);
+    expect(canvasSpy.mock.calls[0][0].dpr).toBe(1);
+    expect(baryonSceneSpy.mock.calls[0][0].basePixelRatio).toBe(1);
+  });
+
+  it("can force the external output renderer onto the WebGL backend", () => {
+    const glDefaults = { canvas: document.createElement("canvas") };
+
+    renderToStaticMarkup(
+      React.createElement(OutputStageSurface, {
+        controlsRef: { current: { backgroundColor: "#000000" } },
+        visualizationMethod: "raymarch",
+        forceWebGLRenderer: true,
+      }),
+    );
+
+    canvasSpy.mock.calls[0][0].gl(glDefaults);
+
+    expect(createBaryonRendererSpy).toHaveBeenCalledWith(glDefaults, true, {
+      initialPixelRatio: 1,
+    });
+  });
+
+  it("keeps transparent output stage roots alpha-capable", async () => {
+    await act(async () => {
+      root.render(
+        React.createElement(OutputStageSurface, {
+          controlsRef: {
+            current: {
+              backgroundColor: "#0D0A07",
+              outputMode: "transparent",
+              outputBackgroundColor: "#123456",
+            },
+          },
+          visualizationMethod: "raymarch",
+        }),
+      );
+    });
+
+    const stageRoot = container.querySelector(
+      '[data-testid="output-stage-root"]',
+    );
+    expect(stageRoot?.dataset.outputMode).toBe("transparent");
+    expect(stageRoot?.style.backgroundColor).toBe("transparent");
+  });
+
+  it("fills output stage roots only for opaque output mode", async () => {
+    await act(async () => {
+      root.render(
+        React.createElement(OutputStageSurface, {
+          controlsRef: {
+            current: {
+              backgroundColor: "#0D0A07",
+              outputMode: "opaque",
+              outputBackgroundColor: "#123456",
+            },
+          },
+          visualizationMethod: "raymarch",
+        }),
+      );
+    });
+
+    const stageRoot = container.querySelector(
+      '[data-testid="output-stage-root"]',
+    );
+    expect(stageRoot?.dataset.outputMode).toBe("opaque");
+    expect(stageRoot?.style.backgroundColor).toBe("rgb(18, 52, 86)");
+  });
+
+  it("uses explicit output props before mutable control refs", async () => {
+    await act(async () => {
+      root.render(
+        React.createElement(OutputStageSurface, {
+          controlsRef: {
+            current: {
+              backgroundColor: "#0D0A07",
+              outputMode: "transparent",
+              outputBackgroundColor: "#654321",
+            },
+          },
+          visualizationMethod: "raymarch",
+          outputMode: "opaque",
+          outputBackgroundColor: "#123456",
+        }),
+      );
+    });
+
+    const stageRoot = container.querySelector(
+      '[data-testid="output-stage-root"]',
+    );
+    expect(stageRoot?.dataset.outputMode).toBe("opaque");
+    expect(stageRoot?.style.backgroundColor).toBe("rgb(18, 52, 86)");
+  });
+
+  it("passes the output control target FPS to the render scene", () => {
+    baryonSceneSpy.mockClear();
+
+    renderToStaticMarkup(
+      React.createElement(OutputStageSurface, {
+        controlsRef: {
+          current: {
+            backgroundColor: "#000000",
+            customTargetFps: 72,
+          },
+        },
+        visualizationMethod: "raymarch",
+        renderQualityPreset: "custom",
+      }),
+    );
+
+    expect(baryonSceneSpy.mock.calls[0][0]).toMatchObject({
+      performanceProfile: "custom",
+      customTargetFps: 72,
+      basePixelRatio: 1,
     });
   });
 

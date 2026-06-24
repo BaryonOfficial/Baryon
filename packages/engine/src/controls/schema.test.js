@@ -35,6 +35,7 @@ const EXPECTED_CONTROL_KEYS = [
   // Color
   "volumeColor",
   "surfaceColor",
+  "outputBackgroundColor",
   "colorMode",
   "spectralMix",
   "holographicIntensity",
@@ -48,16 +49,15 @@ const EXPECTED_CONTROL_KEYS = [
   "rotationSpeed",
   "reactivity",
   "motionAmount",
-  // Display
+  // Bloom / performance / output
   "bloomEnabled",
   "bloomStrength",
   "bloomRadius",
   "bloomThreshold",
   "backgroundColor",
   "renderQualityPreset",
-  "customPerformanceTargetFps",
+  "customTargetFps",
   "outputMode",
-  "outputBackgroundColor",
   // PresetsArea (rendered inline in Presets, but defined here in file order)
   "performanceHudEnabled",
   // Display (continued)
@@ -85,10 +85,23 @@ const CONTROLS_REFERENCE_URL = new URL(
   "../../../../docs/public/reference/controls.mdx",
   import.meta.url,
 );
-const CONTROLS_REFERENCE = readFileSync(CONTROLS_REFERENCE_URL, "utf8");
+const CONTROLS_REFERENCE = readFileSync(CONTROLS_REFERENCE_URL, "utf8").replace(
+  /\r\n/g,
+  "\n",
+);
 
 function getPublicControlsReferenceHeading(group) {
   return group === "PresetsArea" ? "Inline Stage Controls" : group;
+}
+
+function isPublicReferenceControl(definition) {
+  return definition.publicReferenceHidden !== true;
+}
+
+function sortControlsForReference(left, right) {
+  const leftOrder = left.controlOrder ?? Number.MAX_SAFE_INTEGER;
+  const rightOrder = right.controlOrder ?? Number.MAX_SAFE_INTEGER;
+  return leftOrder - rightOrder;
 }
 
 function readPublicControlsReferenceHeadings(controlsReference) {
@@ -119,7 +132,7 @@ function readPublicControlsReferenceSectionLabels(controlsReference, heading) {
 function getPublicControlsReferenceSchemaHeadings() {
   return Array.from(
     CONTROL_DEFINITIONS.reduce((groups, definition) => {
-      if (definition.group) {
+      if (definition.group && isPublicReferenceControl(definition)) {
         groups.set(definition.group, definition.groupOrder);
       }
       return groups;
@@ -147,8 +160,12 @@ describe("control schema", () => {
     )) {
       const heading = getPublicControlsReferenceHeading(group);
       const expectedLabels = CONTROL_DEFINITIONS.filter(
-        (definition) => definition.group === group,
-      ).map((definition) => definition.label);
+        (definition) =>
+          definition.group === group && isPublicReferenceControl(definition),
+      )
+        .slice()
+        .sort(sortControlsForReference)
+        .map((definition) => definition.label);
       const actualLabels = readPublicControlsReferenceSectionLabels(
         CONTROLS_REFERENCE,
         heading,
@@ -183,20 +200,18 @@ describe("control schema", () => {
     expect(state.absorption).toBe(RAYMARCH_DEFAULTS.absorption);
     expect(state.opacityGain).toBe(3);
     expect(state).not.toHaveProperty("contourSharpness");
-    expect(state.holographicIntensity).toBe(0.52);
+    expect(state.holographicIntensity).toBe(1);
     expect(state.holographicShift).toBe(0.42);
     expect(state.holographicFresnelPower).toBe(4.8);
-    expect(state.bloomStrength).toBe(0.8);
-    expect(state.bloomRadius).toBe(0);
-    expect(state.bloomThreshold).toBe(0.12);
+    expect(state.bloomStrength).toBe(1.02);
+    expect(state.bloomRadius).toBe(0.04);
+    expect(state.bloomThreshold).toBe(0.08);
     expect(state.smaaEnabled).toBe(RENDER_DEFAULTS.smaaEnabled);
     expect(state.performanceHudEnabled).toBe(
       RENDER_DEFAULTS.performanceHudEnabled,
     );
     expect(state.renderQualityPreset).toBe(RENDER_DEFAULTS.renderQualityPreset);
-    expect(state.customPerformanceTargetFps).toBe(
-      RENDER_DEFAULTS.customPerformanceTargetFps,
-    );
+    expect(state.customTargetFps).toBe(RENDER_DEFAULTS.customTargetFps);
     expect(state.traaEnabled).toBe(RENDER_DEFAULTS.traaEnabled);
     expect(state.bloomResponseBias).toBe(1);
     expect(state.rimBloomBias).toBe(1.2);
@@ -223,16 +238,19 @@ describe("control schema", () => {
     });
   });
 
-  it("treats background color as the presentation backdrop", () => {
+  it("keeps legacy background color as hidden compatibility state", () => {
     const backgroundControl = CONTROL_DEFINITIONS.find(
       (definition) => definition.key === "backgroundColor",
     );
 
-    expect(backgroundControl?.runtimePath).toBe("ui.backdropColor");
-    expect(backgroundControl?.title).toMatch(/backdrop/i);
+    expect(backgroundControl).toMatchObject({
+      runtimePath: "ui.backdropColor",
+      sidebarHidden: true,
+      publicReferenceHidden: true,
+    });
   });
 
-  it("labels the highest performance profile as Max Quality", () => {
+  it("uses a compact label for the highest performance profile", () => {
     const performanceProfileControl = CONTROL_DEFINITIONS.find(
       (definition) => definition.key === "renderQualityPreset",
     );
@@ -242,7 +260,7 @@ describe("control schema", () => {
       options: {
         Auto: "auto",
         Custom: "custom",
-        "Max Quality": "max-quality",
+        Max: "max-quality",
       },
     });
   });
@@ -351,35 +369,38 @@ describe("control schema", () => {
 
   it("orders pane folders by user-facing groups", () => {
     expect(getControlFolders(DEFAULT_VISUALIZATION_METHOD)).toEqual([
-      "Mode",
+      "Performance",
+      "Output",
       "Shape",
       "Color",
-      "Logo",
       "Motion",
-      "Display",
-      "PresetsArea",
+      "Bloom",
+      "Logo",
       "Diagnostics",
     ]);
   });
 
   it("assigns controls to the intended pane groups", () => {
     expect(
-      getControlsForFolder("Mode", DEFAULT_VISUALIZATION_METHOD).map(
+      getControlsForFolder("Performance", DEFAULT_VISUALIZATION_METHOD).map(
         (definition) => definition.key,
       ),
     ).toEqual([
-      "boundaryMode",
-      "colorMode",
-      "rotationMode",
       "renderQualityPreset",
-      "customPerformanceTargetFps",
-      "outputMode",
+      "customTargetFps",
+      "performanceHudEnabled",
     ]);
+    expect(
+      getControlsForFolder("Output", DEFAULT_VISUALIZATION_METHOD).map(
+        (definition) => definition.key,
+      ),
+    ).toEqual(["outputMode", "outputBackgroundColor"]);
     expect(
       getControlsForFolder("Shape", DEFAULT_VISUALIZATION_METHOD).map(
         (definition) => definition.key,
       ),
     ).toEqual([
+      "boundaryMode",
       "zeroPointPrecision",
       "densityGain",
       "absorption",
@@ -391,6 +412,7 @@ describe("control schema", () => {
         (definition) => definition.key,
       ),
     ).toEqual([
+      "colorMode",
       "volumeColor",
       "surfaceColor",
       "spectralMix",
@@ -399,12 +421,12 @@ describe("control schema", () => {
       "holographicFresnelPower",
     ]);
     expect(
-      getControlsForFolder("Logo", DEFAULT_VISUALIZATION_METHOD).map(
+      getControlsForFolder("Motion", DEFAULT_VISUALIZATION_METHOD).map(
         (definition) => definition.key,
       ),
-    ).toEqual(["idleLogoIntensity", "idleLogoSize"]);
+    ).toEqual(["rotationMode", "rotationSpeed", "motionAmount", "reactivity"]);
     expect(
-      getControlsForFolder("Display", DEFAULT_VISUALIZATION_METHOD).map(
+      getControlsForFolder("Bloom", DEFAULT_VISUALIZATION_METHOD).map(
         (definition) => definition.key,
       ),
     ).toEqual([
@@ -412,17 +434,15 @@ describe("control schema", () => {
       "bloomStrength",
       "bloomRadius",
       "bloomThreshold",
-      "backgroundColor",
-      "outputBackgroundColor",
       "bloomResponseBias",
       "rimBloomBias",
       "rimCompression",
     ]);
     expect(
-      getControlsForFolder("PresetsArea", DEFAULT_VISUALIZATION_METHOD).map(
+      getControlsForFolder("Logo", DEFAULT_VISUALIZATION_METHOD).map(
         (definition) => definition.key,
       ),
-    ).toEqual(["performanceHudEnabled"]);
+    ).toEqual(["idleLogoIntensity", "idleLogoSize"]);
     expect(
       getControlsForFolder("Diagnostics", DEFAULT_VISUALIZATION_METHOD).map(
         (definition) => definition.key,
@@ -441,11 +461,6 @@ describe("control schema", () => {
       "testToneAmplitude",
       "logEveryFrames",
     ]);
-    expect(
-      getControlsForFolder("Motion", DEFAULT_VISUALIZATION_METHOD).map(
-        (definition) => definition.key,
-      ),
-    ).toEqual(["rotationSpeed", "reactivity", "motionAmount"]);
   });
 
   it("maps every live control to runtime coverage", () => {
@@ -459,7 +474,7 @@ describe("control schema", () => {
     }
   });
 
-  it("keeps fine-grained glow controls live while preserving method scope", () => {
+  it("keeps fine-grained bloom controls live while preserving method scope", () => {
     const bloomResponseBias = CONTROL_DEFINITIONS.find(
       (definition) => definition.key === "bloomResponseBias",
     );
@@ -480,17 +495,17 @@ describe("control schema", () => {
     );
 
     expect(bloomResponseBias).toMatchObject({
-      group: "Display",
+      group: "Bloom",
       status: CONTROL_STATUSES.live,
       methods: [VISUALIZATION_METHODS.raymarch],
     });
     expect(rimBloomBias).toMatchObject({
-      group: "Display",
+      group: "Bloom",
       status: CONTROL_STATUSES.live,
       methods: [VISUALIZATION_METHODS.raymarch],
     });
     expect(rimCompression).toMatchObject({
-      group: "Display",
+      group: "Bloom",
       status: CONTROL_STATUSES.live,
       methods: [VISUALIZATION_METHODS.raymarch],
     });

@@ -93,4 +93,28 @@ describe("DiagnosticsHud", () => {
     expect(markup).toContain("SMAA");
     expect(markup).toContain("on");
   });
+
+  it("does not render non-finite diagnostics as numeric values", () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(DiagnosticsHud, {
+        enabledOverride: true,
+        snapshotOverride: createDiagnosticsSnapshot({
+          structureSignal: Number.POSITIVE_INFINITY,
+          changeSignal: Number.NaN,
+          raymarchDebug: {
+            fieldState: "active",
+            modeCoherence: Number.NEGATIVE_INFINITY,
+            stepBudget: 72,
+            volumeVisible: true,
+            modalDescriptorOverflow: false,
+          },
+        }),
+      }),
+    );
+
+    expect(markup).toContain("Structure");
+    expect(markup).toContain("n/a");
+    expect(markup).not.toContain("Infinity");
+    expect(markup).not.toContain("NaN");
+  });
 });

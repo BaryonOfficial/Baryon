@@ -1,6 +1,8 @@
 import {
+  applyRenderProfilePostProcessOverrides,
   normalizePerformanceProfile,
-  normalizeRenderQualityProfileOverrides,
+  normalizePerformanceTargetFps,
+  normalizeRenderPostProcessOverrides,
   normalizeResolvedRenderQualityProfile,
   RENDER_CONTEXTS,
   resolveRenderQualityProfile,
@@ -8,17 +10,17 @@ import {
 
 /**
  * @param {unknown} overrides
- * @returns {{ renderScale?: number, bloomAllowed?: boolean, traaEnabled?: boolean } | null}
+ * @returns {{ bloomAllowed?: boolean, traaEnabled?: boolean } | null}
  */
-export function sanitizeRenderProfileOverrides(overrides) {
-  return normalizeRenderQualityProfileOverrides(overrides);
+export function sanitizeLocalPostProcessOverrides(overrides) {
+  return normalizeRenderPostProcessOverrides(overrides);
 }
 
 /**
  * @param {unknown} renderContext
  * @returns {boolean}
  */
-export function shouldAllowLocalRenderProfileCommands(renderContext) {
+export function shouldAllowLocalPostProcessOverrides(renderContext) {
   return renderContext !== RENDER_CONTEXTS.externalOutput;
 }
 
@@ -26,35 +28,37 @@ export function shouldAllowLocalRenderProfileCommands(renderContext) {
  * @param {{
  *   performanceProfile: unknown,
  *   renderContext: unknown,
+ *   targetFps?: unknown,
  *   outputWidth?: number,
  *   outputHeight?: number,
  *   resolvedRenderProfile?: unknown,
- *   localRenderProfileOverrides?: unknown,
+ *   localPostProcessOverrides?: unknown,
  *   traaEnabled?: boolean,
  * }} options
  * @returns {import("@baryon/engine/render/outputPipeline").RenderQualityProfile}
  */
-export function resolveSceneRenderQualityProfile({
+export function resolveSceneRenderPerformanceProfile({
   performanceProfile,
   renderContext = RENDER_CONTEXTS.preview,
+  targetFps = null,
   outputWidth = 0,
   outputHeight = 0,
   resolvedRenderProfile = null,
-  localRenderProfileOverrides = null,
+  localPostProcessOverrides = null,
   traaEnabled = true,
 }) {
   const traaOverride = traaEnabled === false ? { traaEnabled: false } : null;
-  const sanitizedLocalOverrides = shouldAllowLocalRenderProfileCommands(
+  const sanitizedLocalOverrides = shouldAllowLocalPostProcessOverrides(
     renderContext,
   )
-    ? sanitizeRenderProfileOverrides(localRenderProfileOverrides)
+    ? sanitizeLocalPostProcessOverrides(localPostProcessOverrides)
     : null;
 
   if (renderContext === RENDER_CONTEXTS.externalOutput) {
     const normalizedResolvedRenderProfile =
       normalizeResolvedRenderQualityProfile(resolvedRenderProfile);
     if (normalizedResolvedRenderProfile) {
-      return applyRenderProfileDiagnosticsOverrides(
+      return applyRenderProfilePostProcessOverrides(
         normalizedResolvedRenderProfile,
         traaOverride,
       );
@@ -71,9 +75,10 @@ export function resolveSceneRenderQualityProfile({
 
   return resolveRenderQualityProfile({
     qualityPreset: normalizePerformanceProfile(performanceProfile),
+    targetFps: normalizePerformanceTargetFps(targetFps),
     outputWidth,
     outputHeight,
-    overrides:
+    postProcessOverrides:
       mergedOverrides && Object.keys(mergedOverrides).length > 0
         ? mergedOverrides
         : null,
@@ -82,14 +87,4 @@ export function resolveSceneRenderQualityProfile({
         ? RENDER_CONTEXTS.externalOutput
         : RENDER_CONTEXTS.preview,
   });
-}
-
-function applyRenderProfileDiagnosticsOverrides(profile, overrides) {
-  if (!overrides) {
-    return profile;
-  }
-  return {
-    ...profile,
-    ...overrides,
-  };
 }

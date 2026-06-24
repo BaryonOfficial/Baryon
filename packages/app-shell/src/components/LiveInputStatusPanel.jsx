@@ -155,6 +155,7 @@ export default function LiveInputStatusPanel({
     setSelectedSystemDevice,
     handleSourceChange,
     handleSystemToggle,
+    handleLiveInputAction,
     saveDeviceKindOverride,
     clearDeviceKindOverride,
     requestLiveInputPermission,
@@ -273,6 +274,10 @@ export default function LiveInputStatusPanel({
   const handleLiveAction = async () => {
     if (liveButtonDisabled) return;
     setHasInteractedWithLiveAction(true);
+    if (typeof handleLiveInputAction === "function") {
+      await handleLiveInputAction();
+      return;
+    }
     if (!isLiveInputActive && selectedSource !== "system") {
       await handleSourceChange("system");
     }

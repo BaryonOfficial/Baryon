@@ -204,7 +204,6 @@ export function buildRenderProbeSnapshot({
         debugSnapshot?.idleOverlayVisible ?? raymarchDebug.idleOverlayVisible,
       ),
       bloomEnabled: readBoolean(render.bloomEnabled),
-      renderScale: readFiniteNumber(render.renderScale, 1),
       screenshotMetricSource: null,
     },
   };

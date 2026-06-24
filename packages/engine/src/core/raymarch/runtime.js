@@ -61,11 +61,11 @@ import {
   RAYMARCH_RENDER_QUANTITY_LANES,
 } from "./quantityLedger.js";
 import {
-  buildRaymarchPerformanceGovernor,
+  buildRaymarchFieldAnalysis,
   copyModalField,
   deriveFieldExcitation,
   inferModalFieldCapacity,
-} from "./performanceGovernor.js";
+} from "./fieldAnalysis.js";
 import {
   RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES,
   setRaymarchModalBasisAtlasTexture,
@@ -657,9 +657,7 @@ function resetRenderAuthorityState(runtimeState) {
   clearBufferNode(runtimeState.modalFieldSpectralMetaBuffer);
   clearBufferNode(runtimeState.modalFieldPhaseBuffer);
   clearBufferNode(runtimeState.modalFieldCoefficientBuffer);
-  runtimeState.performanceGovernor = null;
-  runtimeState.effectiveRenderScale = 1;
-  runtimeState.raymarchBloomAdaptationActive = false;
+  runtimeState.raymarchFieldAnalysis = null;
   if (runtimeState.bloomTuning) {
     runtimeState.bloomTuning.bloomAllowed = false;
   }
@@ -976,9 +974,7 @@ function blockNonAuthoritativeModalDescriptor(
   clearBufferNode(runtimeState.modalFieldColorBuffer);
   clearBufferNode(runtimeState.modalFieldPhaseBuffer);
   clearBufferNode(runtimeState.modalFieldCoefficientBuffer);
-  runtimeState.performanceGovernor = null;
-  runtimeState.effectiveRenderScale = 1;
-  runtimeState.raymarchBloomAdaptationActive = false;
+  runtimeState.raymarchFieldAnalysis = null;
   if (runtimeState.bloomTuning) {
     runtimeState.bloomTuning.bloomAllowed = false;
   }
@@ -1105,7 +1101,7 @@ function buildRaymarchDebugSnapshot(
     activeModeCount,
   );
   const fieldExcitation = deriveFieldExcitation(featureFrame);
-  const performanceGovernor = runtimeState.performanceGovernor ?? null;
+  const raymarchFieldAnalysis = runtimeState.raymarchFieldAnalysis ?? null;
   const densityGain = runtimeState.uniforms.uDensityGain.value;
   const absorption = runtimeState.uniforms.uAbsorption.value;
   const opacityGain = runtimeState.uniforms.uOpacityGain?.value ?? 1;
@@ -1530,9 +1526,9 @@ function buildRaymarchDebugSnapshot(
     sourceBoundaryState,
     modeSlotCount: activeModeCount,
     originalModeSlotCount:
-      performanceGovernor?.originalModeCount ?? activeModeCount,
+      raymarchFieldAnalysis?.originalModeCount ?? activeModeCount,
     uploadedModeSlotCount:
-      performanceGovernor?.uploadedModeCount ?? activeModeCount,
+      raymarchFieldAnalysis?.uploadedModeCount ?? activeModeCount,
     modalFieldModeCount: activeModeCount,
     renderedModalFieldModeCount: renderedModalField.count,
     renderedModalFieldColorWeightMax: renderedModalField.colorWeightMax,
@@ -1587,16 +1583,11 @@ function buildRaymarchDebugSnapshot(
       featureFrame?.debug?.fundamentalFrequency ??
       0,
     fieldExcitation,
-    complexityScore: performanceGovernor?.complexityScore ?? 0,
-    complexityExcitation: performanceGovernor?.excitation ?? fieldExcitation,
+    complexityScore: raymarchFieldAnalysis?.complexityScore ?? 0,
+    complexityExcitation: raymarchFieldAnalysis?.excitation ?? fieldExcitation,
     complexityWeightedPermutationLoad:
-      performanceGovernor?.weightedPermutationLoad ?? 0,
-    complexityCountLoad: performanceGovernor?.countLoad ?? 0,
-    proactiveStepBudget: performanceGovernor?.proactiveStepBudget ?? stepBudget,
-    proactiveRenderScale: performanceGovernor?.proactiveRenderScale ?? 1,
-    bloomStrengthGuard: performanceGovernor?.bloomStrengthScale ?? 1,
-    bloomThresholdGuard: performanceGovernor?.bloomThresholdOffset ?? 0,
-    bloomGuardAllowed: performanceGovernor?.bloomAllowed ?? true,
+      raymarchFieldAnalysis?.weightedPermutationLoad ?? 0,
+    complexityCountLoad: raymarchFieldAnalysis?.countLoad ?? 0,
     peakModalFieldAmplitude,
     avgOpacity,
     avgDensity,
@@ -2033,14 +2024,9 @@ function updateLaserResponse(runtimeState, featureFrame) {
   );
   setIfChanged(uniforms.uContourSharpness, clamp(baseContourSharpness, 1, 8));
   const bt = runtimeState.bloomTuning;
-  const performanceGovernor = runtimeState.performanceGovernor ?? null;
-  const bloomStrengthScale = performanceGovernor?.bloomStrengthScale ?? 1;
-  const bloomThresholdOffset = performanceGovernor?.bloomThresholdOffset ?? 0;
-  const bloomAllowed = performanceGovernor?.bloomAllowed ?? true;
   bt.effectiveStrength =
     baseBloomStrength *
     (1 + bloomStrengthPulse * BLOOM_STRENGTH_RESPONSE_GAIN) *
-    bloomStrengthScale *
     bloomStrengthTransientGate *
     structuralBodyBloomControls.bloomStrengthScale;
   bt.effectiveRadius = Math.max(
@@ -2050,12 +2036,11 @@ function updateLaserResponse(runtimeState, featureFrame) {
   bt.effectiveThreshold = clamp(
     baseBloomThreshold +
       bloomThresholdPulse * BLOOM_THRESHOLD_RESPONSE_GAIN +
-      bloomThresholdOffset +
       structuralBodyBloomControls.bloomThresholdLift,
     0,
     1,
   );
-  bt.bloomAllowed = bloomAllowed;
+  bt.bloomAllowed = true;
   bt.modalStructuralDetailAuthority =
     structuralBodyBloomControls.modalStructuralDetailAuthority;
   bt.structuralBodyBloomSuppression =
@@ -2449,14 +2434,6 @@ function applyLayerCoefficientUpload({
     coefficientBufferNode.value.needsUpdate = activeCount > 0;
   }
   return activeCount;
-}
-
-function resolveRequestedRaymarchStepBudget(runtimeState, volumeMesh) {
-  return (
-    runtimeState.effectiveRaymarchSteps ??
-    runtimeState.requestedRaymarchSteps ??
-    volumeMesh.material.steps
-  );
 }
 
 function updateModalBasisCache(
@@ -3067,7 +3044,7 @@ function snapshotActiveModalRenderPacket(runtimeState, featureFrame) {
       runtimeState.uniforms?.uStructuralProjectionConcentration?.value ?? 0,
     modalResponseEnergy: readModalResponseEnergy(featureFrame),
     visibilityDrive: deriveObservationVisibilityDrive(featureFrame),
-    performanceGovernor: runtimeState.performanceGovernor ?? null,
+    raymarchFieldAnalysis: runtimeState.raymarchFieldAnalysis ?? null,
     spectralLightBuffersUploaded:
       runtimeState.spectralLightBuffersUploaded === true,
     auditDiagnostics: runtimeState.lastModalBasisAuditDiagnostics ?? null,
@@ -3109,7 +3086,7 @@ function restoreActiveModalRenderPacket(runtimeState, packet) {
     runtimeState.modalFieldCoefficientBuffer,
     packet.modalFieldCoefficientBuffer,
   );
-  runtimeState.performanceGovernor = packet.performanceGovernor ?? null;
+  runtimeState.raymarchFieldAnalysis = packet.raymarchFieldAnalysis ?? null;
   runtimeState.modalBasisPhaseAuthorityModeCount =
     packet.modalBasisPhaseAuthorityModeCount ?? 0;
   runtimeState.currentSpectralLightDescriptor =
@@ -3235,7 +3212,6 @@ function applyRaymarchRuntimeUploadAuthority({
   renderer,
   time,
   uniforms,
-  volumeMesh,
   modalDescriptor,
   modalFieldCapacity,
   modalFieldPhaseCapacity,
@@ -3250,37 +3226,23 @@ function applyRaymarchRuntimeUploadAuthority({
   effectiveCavityGeometry,
 }) {
   const descriptorSlots = modalDescriptor.slotViews;
-  const requestedStepBudget = resolveRequestedRaymarchStepBudget(
-    runtimeState,
-    volumeMesh,
-  );
-  const requestedRenderScale = 1;
   const productBasisAtlasPageCapacity =
     resolveProductBasisAtlasPageCapacity(runtimeState);
   const productUploadCapacity = Math.min(
     modalFieldCapacity,
     productBasisAtlasPageCapacity,
   );
-  // The render loop is the integrator: it owns step/scale and publishes its
-  // committed budget onto runtimeState. Build the governor inline from that
-  // budget — step/scale adaptation off (requestedStepBudget is already the
-  // effective budget, so re-reducing would double-dip) and the bloom guard fed
-  // the effective step/scale the loop committed. Defaults are safe for
-  // headless/OSR ticks that never ran the loop (bloom off, scale 1).
-  const performanceGovernor = buildRaymarchPerformanceGovernor({
+  // The render loop is the integrator: it owns step adaptation. The field
+  // analysis is diagnostic-only; profiles may only adjust the integrator's
+  // raymarch step budget, never bloom, render scale, or DPR.
+  const raymarchFieldAnalysis = buildRaymarchFieldAnalysis({
     modalFieldSlots: descriptorSlots.modalFieldSlots,
     modalFieldCapacity: productUploadCapacity,
     featureFrame,
     cavityGeometry: effectiveCavityGeometry,
-    requestedStepBudget,
-    requestedRenderScale,
-    stepScaleAdaptationEnabled: false,
-    bloomAdaptationEnabled: runtimeState.raymarchBloomAdaptationActive === true,
-    effectiveStepBudget: requestedStepBudget,
-    effectiveRenderScale: runtimeState.effectiveRenderScale ?? 1,
   });
-  const modalFieldLayer = performanceGovernor.modalField;
-  runtimeState.performanceGovernor = performanceGovernor;
+  const modalFieldLayer = raymarchFieldAnalysis.modalField;
+  runtimeState.raymarchFieldAnalysis = raymarchFieldAnalysis;
 
   const uploadState = getRaymarchUploadState(runtimeState);
   applyLayerUploadIfChanged({
@@ -3565,7 +3527,6 @@ export function tickRaymarchRuntime(
     renderer,
     time,
     uniforms,
-    volumeMesh,
     modalDescriptor,
     modalFieldCapacity,
     modalFieldPhaseCapacity,

@@ -85,6 +85,30 @@ describe("FloatingCameraControls camera lock", () => {
     expect(lockedButton.getAttribute("data-state")).toBe("active");
   });
 
+  it("activates camera actions on pointer down without double firing click", () => {
+    const onPresetSelect = vi.fn();
+    render({ onPresetSelect });
+
+    const topButton = container.querySelector(
+      '[data-testid="camera-top-view-button"]',
+    );
+    expect(topButton).not.toBeNull();
+
+    act(() => {
+      topButton.dispatchEvent(
+        new window.MouseEvent("pointerdown", { bubbles: true, button: 0 }),
+      );
+    });
+    expect(onPresetSelect).toHaveBeenCalledWith("top-down");
+
+    act(() => {
+      topButton.dispatchEvent(
+        new window.MouseEvent("click", { bubbles: true, button: 0 }),
+      );
+    });
+    expect(onPresetSelect).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the preset and reset buttons present while locked", () => {
     render({ cameraLocked: true, onToggleLock: vi.fn() });
 

@@ -11,6 +11,7 @@ const {
   controlsState,
   disposePipelineSpy,
   invalidateSpy,
+  orbitControlProps,
   postNodesRef,
   useBaryonPipelineSpy,
   useBaryonEngineSpy,
@@ -28,6 +29,7 @@ const {
   },
   disposePipelineSpy: vi.fn(),
   invalidateSpy: vi.fn(),
+  orbitControlProps: [],
   useBaryonPipelineSpy: vi.fn(),
   postNodesRef: {
     current: {
@@ -56,7 +58,8 @@ vi.mock("@react-three/fiber", () => ({
 }));
 
 vi.mock("@react-three/drei", () => ({
-  OrbitControls: React.forwardRef(function OrbitControls(_props, ref) {
+  OrbitControls: React.forwardRef(function OrbitControls(props, ref) {
+    orbitControlProps.push(props);
     React.useImperativeHandle(ref, () => ({
       target: { set: controlsState.targetSet },
       update: controlsState.update,
@@ -94,7 +97,7 @@ function createSceneProps(cameraPose, overrides = {}) {
     liveInputErrorCode: null,
     controlsRef: { current: {} },
     visualizationMethod: "raymarch",
-    renderQualityPreset: "auto",
+    performanceProfile: "auto",
     cameraPose,
     cameraControlMode: CAMERA_CONTROL_MODES.externalSynced,
     ...overrides,
@@ -150,6 +153,57 @@ test("external camera pose changes apply without resetting the postprocess pipel
   container.remove();
 });
 
+test("preview-local orbit changes invalidate demand frames before publishing pose", async () => {
+  const onCameraPoseChange = vi.fn();
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  await act(async () => {
+    root.render(
+      React.createElement(
+        BaryonScene,
+        createSceneProps(resolvePresetCameraPose("side"), {
+          cameraControlMode: CAMERA_CONTROL_MODES.previewLocal,
+          onCameraPoseChange,
+        }),
+      ),
+    );
+  });
+
+  invalidateSpy.mockClear();
+  onCameraPoseChange.mockClear();
+
+  await act(async () => {
+    orbitControlProps.at(-1)?.onChange?.();
+  });
+
+  expect(invalidateSpy).toHaveBeenCalledTimes(1);
+  expect(onCameraPoseChange).toHaveBeenCalledWith(
+    expect.objectContaining({
+      phase: "change",
+      cameraPose: expect.any(Object),
+    }),
+  );
+
+  await act(async () => {
+    orbitControlProps.at(-1)?.onEnd?.();
+  });
+
+  expect(invalidateSpy).toHaveBeenCalledTimes(2);
+  expect(onCameraPoseChange).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      phase: "end",
+      cameraPose: expect.any(Object),
+    }),
+  );
+
+  await act(async () => {
+    root.unmount();
+  });
+  container.remove();
+});
+
 test("TRAA is enabled for the rotatable 3D-volume raymarch method", async () => {
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -173,6 +227,72 @@ test("TRAA is enabled for the rotatable 3D-volume raymarch method", async () => 
   container.remove();
 });
 
+test("custom target FPS reaches the local render profile", async () => {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  await act(async () => {
+    root.render(
+      React.createElement(
+        BaryonScene,
+        createSceneProps(resolvePresetCameraPose("top-down"), {
+          performanceProfile: "custom",
+          customTargetFps: 72,
+        }),
+      ),
+    );
+  });
+
+  expect(lastResolvedRenderProfile()).toMatchObject({
+    qualityPreset: "custom",
+    targetFps: 72,
+  });
+  expect(lastResolvedRenderProfile()).not.toHaveProperty("renderScale");
+
+  await act(async () => {
+    root.unmount();
+  });
+  container.remove();
+});
+
+test("resolved external profiles remain the output-stage render-profile owner", async () => {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  await act(async () => {
+    root.render(
+      React.createElement(
+        BaryonScene,
+        createSceneProps(resolvePresetCameraPose("top-down"), {
+          performanceProfile: "custom",
+          customTargetFps: 72,
+          renderContext: "external-output",
+          resolvedRenderProfile: {
+            qualityPreset: "custom",
+            targetFps: 48,
+            traaEnabled: true,
+            bloomAllowed: true,
+            renderContext: "external-output",
+          },
+        }),
+      ),
+    );
+  });
+
+  expect(lastResolvedRenderProfile()).toMatchObject({
+    qualityPreset: "custom",
+    targetFps: 48,
+    renderContext: "external-output",
+  });
+
+  await act(async () => {
+    root.unmount();
+  });
+  container.remove();
+});
+
 afterEach(() => {
   useBaryonPipelineSpy.mockClear();
   cameraState.positionSet.mockClear();
@@ -185,6 +305,7 @@ afterEach(() => {
   disposePipelineSpy.mockClear();
   invalidateSpy.mockClear();
   useBaryonEngineSpy.mockClear();
+  orbitControlProps.splice(0);
   postNodesRef.current = {
     traaNode: {},
     temporalHistoryBlendUniform: { value: 1 },

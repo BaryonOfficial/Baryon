@@ -24,11 +24,13 @@ import {
 } from "@baryon/engine/render/outputPipeline";
 import { resolveTemporalReprojectionPolicy } from "@baryon/engine/render/temporalReprojectionPolicy";
 import {
-  resolveSceneRenderQualityProfile,
-  sanitizeRenderProfileOverrides,
-  shouldAllowLocalRenderProfileCommands,
+  resolveSceneRenderPerformanceProfile,
+  sanitizeLocalPostProcessOverrides,
+  shouldAllowLocalPostProcessOverrides,
 } from "./baryonSceneRenderProfile.js";
 
+// Devtools boundary: the event name is historical; payloads map to local
+// post-process overrides only.
 const RENDER_PROFILE_COMMAND_EVENT = "__baryon-render-profile-command";
 
 function createCameraRenderKey(cameraPose, cameraResetNonce) {
@@ -58,7 +60,8 @@ export function BaryonScene({
   liveInputErrorCode,
   controlsRef,
   visualizationMethod,
-  renderQualityPreset: performanceProfile,
+  performanceProfile,
+  customTargetFps = null,
   traaEnabled = true,
   resolvedRenderProfile = null,
   onPerformanceHudSnapshotChange,
@@ -66,6 +69,7 @@ export function BaryonScene({
   outputFrameConfig = null,
   onOutputFrame = null,
   onFrameState = null,
+  onCameraPoseChange = null,
   externalFrameRef = null,
   cameraPose = null,
   structuralControlVersion = 0,
@@ -87,26 +91,29 @@ export function BaryonScene({
   const { camera, gl, scene, size, invalidate } = useThree();
   const orbitControlsRef = useRef(null);
   const warnedMissingExternalCameraPoseRef = useRef(false);
-  const [renderProfileOverrides, setRenderProfileOverrides] = useState(null);
+  const [localPostProcessOverrides, setLocalPostProcessOverrides] =
+    useState(null);
   const temporalReprojectionPolicy = resolveTemporalReprojectionPolicy({
     visualizationMethod,
     traaRequested: traaEnabled,
   });
   const renderProfile = useMemo(
     () =>
-      resolveSceneRenderQualityProfile({
+      resolveSceneRenderPerformanceProfile({
         performanceProfile,
         renderContext,
+        targetFps: customTargetFps,
         outputWidth: size.width,
         outputHeight: size.height,
         resolvedRenderProfile,
-        localRenderProfileOverrides: renderProfileOverrides,
+        localPostProcessOverrides,
         traaEnabled: temporalReprojectionPolicy.traaEnabled,
       }),
     [
       performanceProfile,
+      customTargetFps,
+      localPostProcessOverrides,
       renderContext,
-      renderProfileOverrides,
       resolvedRenderProfile,
       size.height,
       size.width,
@@ -133,20 +140,20 @@ export function BaryonScene({
       return undefined;
     }
 
-    if (!shouldAllowLocalRenderProfileCommands(renderContext)) {
-      setRenderProfileOverrides(null);
+    if (!shouldAllowLocalPostProcessOverrides(renderContext)) {
+      setLocalPostProcessOverrides(null);
       return undefined;
     }
 
     const handleRenderProfileCommand = (event) => {
       const action = event?.detail?.action;
       if (action === "clear") {
-        setRenderProfileOverrides(null);
+        setLocalPostProcessOverrides(null);
         return;
       }
       if (action === "set") {
-        setRenderProfileOverrides(
-          sanitizeRenderProfileOverrides(event?.detail?.overrides),
+        setLocalPostProcessOverrides(
+          sanitizeLocalPostProcessOverrides(event?.detail?.overrides),
         );
       }
     };
@@ -179,6 +186,38 @@ export function BaryonScene({
     },
     [camera, cameraControlMode, onFrameState],
   );
+
+  const emitCameraPoseChange = useCallback(
+    (phase) => {
+      if (
+        typeof onCameraPoseChange !== "function" ||
+        cameraControlMode === CAMERA_CONTROL_MODES.externalSynced
+      ) {
+        return;
+      }
+
+      onCameraPoseChange({
+        phase,
+        cameraPose: augmentFrameStateWithCameraSync(
+          {},
+          {
+            orbitControls: orbitControlsRef.current,
+            camera,
+            cameraControlMode,
+          },
+        ).cameraPose,
+      });
+    },
+    [camera, cameraControlMode, onCameraPoseChange],
+  );
+  const handleOrbitControlsChange = useCallback(() => {
+    invalidate();
+    emitCameraPoseChange("change");
+  }, [emitCameraPoseChange, invalidate]);
+  const handleOrbitControlsEnd = useCallback(() => {
+    invalidate();
+    emitCameraPoseChange("end");
+  }, [emitCameraPoseChange, invalidate]);
 
   useLayoutEffect(() => {
     if (cameraControlMode === CAMERA_CONTROL_MODES.externalSynced) {
@@ -263,6 +302,8 @@ export function BaryonScene({
           ref={orbitControlsRef}
           enableDamping
           enabled={!cameraLocked}
+          onChange={handleOrbitControlsChange}
+          onEnd={handleOrbitControlsEnd}
         />
       ) : null}
       {/* eslint-disable-next-line react/no-unknown-property */}

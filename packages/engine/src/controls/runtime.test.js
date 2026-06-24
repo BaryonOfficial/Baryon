@@ -362,7 +362,7 @@ describe("control runtime sync", () => {
     expect(sharedSnapshot.renderQualityPreset).toBe(
       RENDER_DEFAULTS.renderQualityPreset,
     );
-    expect(sharedSnapshot.customPerformanceTargetFps).toBe(60);
+    expect(sharedSnapshot.customTargetFps).toBe(60);
     expect(sharedSnapshot.traaEnabled).toBe(true);
     expect(sharedSnapshot.visualizationMethod).toBe(
       DEFAULT_VISUALIZATION_METHOD,
@@ -372,6 +372,21 @@ describe("control runtime sync", () => {
       controls.zeroPointPrecision,
     );
     expect(raymarchSnapshot.uniforms.boundaryMode).toBe("dirichlet");
+  });
+
+  it("keeps the renderer clear transparent for opaque output mode", () => {
+    const controls = createControlState();
+    controls.outputMode = "opaque";
+    controls.outputBackgroundColor = "#123456";
+    const gl = {
+      setClearColor: vi.fn(),
+    };
+
+    const sharedSnapshot = applySharedControls(gl, controls);
+
+    expect(gl.setClearColor).toHaveBeenCalledWith(expect.any(THREE.Color), 0);
+    expect(gl.setClearColor.mock.calls[0][0].getHexString()).toBe("000000");
+    expect(sharedSnapshot.clearAlpha).toBe(0);
   });
 
   it("applies raymarch controls directly", () => {
@@ -851,17 +866,25 @@ describe("control runtime sync", () => {
       backgroundColor: { value: new THREE.Color("#000000") },
     };
     const composeOutputNode = vi.fn(() => "opaque-output");
+    const temporalHistoryBlendUniform = { value: 1 };
+    const postNodes = {
+      outputUniforms,
+      composeOutputNode,
+      traaNode: {},
+      temporalHistoryBlendUniform,
+      temporalHistoryCutFramesRemaining: 0,
+    };
     const snapshot = applyOutputControls(
       {
         ensurePipeline: () => pipeline,
-        postNodesRef: {
-          current: { outputUniforms, composeOutputNode },
-        },
+        postNodesRef: { current: postNodes },
       },
       controls,
     );
 
     expect(outputUniforms.backgroundColor.value.getHexString()).toBe("123456");
+    expect(temporalHistoryBlendUniform.value).toBe(0);
+    expect(postNodes.temporalHistoryCutFramesRemaining).toBeGreaterThan(0);
     // applyOutputControls no longer owns pipeline.outputNode or needsUpdate —
     // topology rebuilds are deferred to applyBloomControls to avoid rebuilding
     // the pipeline on every frame during continuous slider drag.
@@ -954,10 +977,24 @@ describe("control runtime sync", () => {
     runtimeState.points.rotation.y = 1;
     runtimeState.sceneMotion.yaw = 1;
 
-    const snapshot = applySceneControls(runtimeState, controls, 0.5);
-    expect(runtimeState.points.rotation.y).toBeCloseTo(0.5);
+    const snapshot = applySceneControls(runtimeState, controls, 1 / 60);
+    expect(runtimeState.points.rotation.y).toBeCloseTo(1 - 1 / 60);
     expect(snapshot.rotationMode).toBe("manual");
     expect(snapshot.rotationSpeed).toBe(2);
+  });
+
+  it("bounds manual rotation catch-up after long interaction frames", () => {
+    const controls = createControlState();
+    controls.rotationMode = "manual";
+    controls.rotationSpeed = 12;
+    const runtimeState = createRaymarchHarness();
+
+    applySceneControls(runtimeState, controls, 0.5);
+
+    expect(runtimeState.points.rotation.y).toBeCloseTo(-0.2);
+    expect(runtimeState.sceneMotion.angularVelocity).toBeCloseTo(-6);
+    expect(runtimeState.sceneMotion.targetAngularVelocity).toBeCloseTo(-6);
+    expect(runtimeState.sceneMotion.idleLogoYaw).toBeCloseTo(-0.2);
   });
 
   it("settles pitch and roll attitude while preserving manual yaw control", () => {
@@ -974,9 +1011,9 @@ describe("control runtime sync", () => {
     runtimeState.sceneMotion.pitchVelocity = 0.2;
     runtimeState.sceneMotion.rollVelocity = -0.15;
 
-    const snapshot = applySceneControls(runtimeState, controls, 0.25);
+    const snapshot = applySceneControls(runtimeState, controls, 1 / 60);
 
-    expect(runtimeState.points.rotation.y).toBeCloseTo(0.75);
+    expect(runtimeState.points.rotation.y).toBeCloseTo(1 - 1 / 60);
     expect(Math.abs(runtimeState.points.rotation.x)).toBeLessThan(0.05);
     expect(Math.abs(runtimeState.points.rotation.z)).toBeLessThan(0.04);
     expect(snapshot.rotationX).toBe(runtimeState.points.rotation.x);
@@ -1256,7 +1293,7 @@ describe("control runtime sync", () => {
     const snapshot = applySceneControls(
       runtimeState,
       controls,
-      0.5,
+      1 / 60,
       {
         fieldState: "idle",
         structureSignal: 0,
@@ -1272,8 +1309,8 @@ describe("control runtime sync", () => {
 
     expect(snapshot.rotationMode).toBe("audio");
     expect(runtimeState.points.rotation.y).toBe(0);
-    expect(runtimeState.sceneMotion.idleLogoYaw).toBeCloseTo(-0.5);
-    expect(runtimeState.idleOverlay.rotation.y).toBeCloseTo(-0.5);
+    expect(runtimeState.sceneMotion.idleLogoYaw).toBeCloseTo(-1 / 60);
+    expect(runtimeState.idleOverlay.rotation.y).toBeCloseTo(-1 / 60);
   });
 
   it("disables sustained and beat-driven audio rotation when motion amount is zero", () => {

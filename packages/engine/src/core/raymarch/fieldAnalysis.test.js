@@ -2,19 +2,19 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import {
   analyzeModalField,
-  buildRaymarchPerformanceGovernor,
+  buildRaymarchFieldAnalysis,
   copyModalField,
   deriveFieldExcitation,
-  deriveRaymarchComplexityGovernor,
-} from "./performanceGovernor.js";
+  deriveRaymarchFieldComplexity,
+} from "./fieldAnalysis.js";
 
-const PERFORMANCE_GOVERNOR_SOURCE_URL = new URL(
-  "./performanceGovernor.js",
+const RAYMARCH_FIELD_ANALYSIS_SOURCE_URL = new URL(
+  "./fieldAnalysis.js",
   import.meta.url,
 );
 
-function readPerformanceGovernorSource() {
-  return readFileSync(PERFORMANCE_GOVERNOR_SOURCE_URL, {
+function readRaymarchFieldAnalysisSource() {
+  return readFileSync(RAYMARCH_FIELD_ANALYSIS_SOURCE_URL, {
     encoding: "utf8",
   });
 }
@@ -23,7 +23,7 @@ function combineSlots(...slotArrays) {
   return new Float32Array(slotArrays.flatMap((slots) => Array.from(slots)));
 }
 
-describe("performanceGovernor", () => {
+describe("raymarchFieldAnalysis", () => {
   it("preserves every active descriptor mode without modal-retention selectors", () => {
     const structuralSlots = new Float32Array([
       1, 1, 1, 1.0, 1, 2, 3, 0.1, 2, 2, 3, 0.1, 4, 4, 4, 0.1, 5, 5, 6, 0.1, 6,
@@ -35,7 +35,7 @@ describe("performanceGovernor", () => {
     ]);
     const modalFieldSlots = combineSlots(structuralSlots, supportedDetailSlots);
 
-    const governor = buildRaymarchPerformanceGovernor({
+    const analysis = buildRaymarchFieldAnalysis({
       modalFieldSlots,
       modalFieldCapacity: 12,
       featureFrame: {
@@ -43,20 +43,18 @@ describe("performanceGovernor", () => {
         structureSignal: 0.64,
         modalVisibilityEnergy: 0.42,
       },
-      requestedStepBudget: 64,
-      requestedRenderScale: 1,
     });
 
-    expect(governor.originalModeCount).toBe(12);
-    expect(governor.uploadedModeCount).toBe(12);
-    expect(governor.modalField.originalActiveCount).toBe(12);
-    expect(governor.modalField.uploadedActiveCount).toBe(12);
-    expect(governor.modalField.selectedIndices).toBeUndefined();
-    expect(governor.modalField.retainedEnergyRatio).toBeUndefined();
+    expect(analysis.originalModeCount).toBe(12);
+    expect(analysis.uploadedModeCount).toBe(12);
+    expect(analysis.modalField.originalActiveCount).toBe(12);
+    expect(analysis.modalField.uploadedActiveCount).toBe(12);
+    expect(analysis.modalField.selectedIndices).toBeUndefined();
+    expect(analysis.modalField.retainedEnergyRatio).toBeUndefined();
   });
 
   it("keeps modal retention selector artifacts out of the product owner", () => {
-    const source = readPerformanceGovernorSource();
+    const source = readRaymarchFieldAnalysisSource();
 
     expect(source).not.toContain("selectedIndices");
     expect(source).not.toContain("retainedEnergyRatio");
@@ -163,7 +161,7 @@ describe("performanceGovernor", () => {
     expect(staticMode.totalAmplitude).toBe(baseline.totalAmplitude);
   });
 
-  it("does not mutate physical modal slots while deriving performance controls", () => {
+  it("does not mutate physical modal slots while deriving field analysis", () => {
     const structuralSlots = new Float32Array([
       1, 1, 1, 0.8, 2, 2, 2, 0.4, 3, 3, 3, 0.2,
     ]);
@@ -173,7 +171,7 @@ describe("performanceGovernor", () => {
     const modalFieldSlots = combineSlots(structuralSlots, supportedDetailSlots);
     const originalModalField = Array.from(modalFieldSlots);
 
-    const governor = buildRaymarchPerformanceGovernor({
+    const analysis = buildRaymarchFieldAnalysis({
       modalFieldSlots,
       modalFieldCapacity: 6,
       featureFrame: {
@@ -181,13 +179,11 @@ describe("performanceGovernor", () => {
         structureSignal: 0.6,
         modalVisibilityEnergy: 0.4,
       },
-      requestedStepBudget: 64,
-      requestedRenderScale: 1,
     });
 
     expect(Array.from(modalFieldSlots)).toEqual(originalModalField);
-    expect(governor.originalModeCount).toBe(6);
-    expect(governor.uploadedModeCount).toBe(6);
+    expect(analysis.originalModeCount).toBe(6);
+    expect(analysis.uploadedModeCount).toBe(6);
   });
 
   it("derives field excitation from modal signals", () => {
@@ -208,7 +204,7 @@ describe("performanceGovernor", () => {
   });
 
   it("raises complexity when mode load and excitation increase", () => {
-    const low = buildRaymarchPerformanceGovernor({
+    const low = buildRaymarchFieldAnalysis({
       modalFieldSlots: new Float32Array([
         1, 1, 1, 0.4, 2, 2, 2, 0.3, 1, 1, 2, 0.1,
       ]),
@@ -217,10 +213,8 @@ describe("performanceGovernor", () => {
         averageAmplitude: 20,
         structureSignal: 0.2,
       },
-      requestedStepBudget: 64,
-      requestedRenderScale: 1,
     });
-    const high = buildRaymarchPerformanceGovernor({
+    const high = buildRaymarchFieldAnalysis({
       modalFieldSlots: new Float32Array([
         1, 2, 3, 1.0, 1, 3, 4, 0.9, 2, 3, 4, 0.85, 2, 4, 5, 0.8, 3, 4, 5, 0.75,
         3, 5, 6, 0.7, 4, 5, 6, 0.65, 4, 6, 7, 0.6, 2, 2, 3, 0.7, 2, 3, 3, 0.65,
@@ -232,94 +226,44 @@ describe("performanceGovernor", () => {
         averageAmplitude: 160,
         structureSignal: 0.82,
       },
-      requestedStepBudget: 64,
-      requestedRenderScale: 1,
     });
 
     expect(high.complexityScore).toBeGreaterThan(low.complexityScore);
-    expect(high.proactiveStepBudget).toBeLessThanOrEqual(64);
-    expect(high.proactiveRenderScale).toBeLessThanOrEqual(1);
     expect(high.modalField.uploadedActiveCount).toBe(16);
+    expect(high).not.toHaveProperty("requestedStepBudget");
+    expect(high).not.toHaveProperty("requestedRenderScale");
   });
 
-  it("lets the ladder own step/scale while the bloom guard stays active", () => {
+  it("keeps performance adaptation fields out of the field analysis", () => {
     const modalFieldSlots = new Float32Array([
       1, 2, 3, 1.0, 1, 3, 4, 0.9, 2, 3, 4, 0.85, 2, 4, 5, 0.8, 3, 4, 5, 0.75, 3,
       5, 6, 0.7, 4, 5, 6, 0.65, 4, 6, 7, 0.6, 2, 2, 3, 0.7, 2, 3, 3, 0.65, 3, 3,
       4, 0.6, 3, 4, 4, 0.55, 4, 4, 5, 0.5, 4, 5, 5, 0.45, 5, 5, 6, 0.4, 5, 6, 6,
       0.35,
     ]);
-    const featureFrame = {
-      averageAmplitude: 255,
-      structureSignal: 1,
-      modalVisibilityEnergy: 1,
-    };
-
-    const adaptive = buildRaymarchPerformanceGovernor({
+    const analysis = buildRaymarchFieldAnalysis({
       modalFieldSlots,
       modalFieldCapacity: 16,
-      featureFrame,
-      requestedStepBudget: 80,
-      requestedRenderScale: 0.92,
-    });
-    const ladderOwned = buildRaymarchPerformanceGovernor({
-      modalFieldSlots,
-      modalFieldCapacity: 16,
-      featureFrame,
-      requestedStepBudget: 80,
-      requestedRenderScale: 0.92,
-      stepScaleAdaptationEnabled: false,
-      bloomAdaptationEnabled: true,
+      featureFrame: {
+        averageAmplitude: 255,
+        structureSignal: 1,
+        modalVisibilityEnergy: 1,
+      },
     });
 
-    expect(ladderOwned.complexityScore).toBeCloseTo(
-      adaptive.complexityScore,
-      5,
-    );
-    expect(adaptive.proactiveStepBudget).toBeLessThan(80);
-    expect(adaptive.proactiveRenderScale).toBeLessThan(0.92);
-    expect(ladderOwned.stepScaleAdaptationActive).toBe(false);
-    expect(ladderOwned.bloomAdaptationActive).toBe(true);
-    // Step/scale stay at the requested ceiling (the ladder owns them)...
-    expect(ladderOwned.proactiveStepBudget).toBe(80);
-    expect(ladderOwned.proactiveRenderScale).toBe(0.92);
-    // ...but the bloom guard still responds to high complexity.
-    expect(ladderOwned.bloomStrengthScale).toBeLessThan(1);
-    expect(ladderOwned.bloomThresholdOffset).toBeGreaterThan(0);
+    expect(analysis.complexityScore).toBeGreaterThan(0.8);
+    expect(analysis).not.toHaveProperty("requestedStepBudget");
+    expect(analysis).not.toHaveProperty("requestedRenderScale");
+    expect(analysis).not.toHaveProperty("proactiveStepBudget");
+    expect(analysis).not.toHaveProperty("proactiveRenderScale");
+    expect(analysis).not.toHaveProperty("stepScaleAdaptationActive");
+    expect(analysis).not.toHaveProperty("bloomAdaptationActive");
+    expect(analysis).not.toHaveProperty("bloomStrengthScale");
+    expect(analysis).not.toHaveProperty("bloomThresholdOffset");
+    expect(analysis).not.toHaveProperty("bloomAllowed");
   });
 
-  it("disables the bloom guard only when bloom adaptation is off", () => {
-    const modalFieldSlots = new Float32Array([
-      1, 2, 3, 1.0, 1, 3, 4, 0.9, 2, 3, 4, 0.85, 2, 4, 5, 0.8, 3, 4, 5, 0.75, 3,
-      5, 6, 0.7, 4, 5, 6, 0.65, 4, 6, 7, 0.6, 2, 2, 3, 0.7, 2, 3, 3, 0.65, 3, 3,
-      4, 0.6, 3, 4, 4, 0.55, 4, 4, 5, 0.5, 4, 5, 5, 0.45, 5, 5, 6, 0.4, 5, 6, 6,
-      0.35,
-    ]);
-    const featureFrame = {
-      averageAmplitude: 255,
-      structureSignal: 1,
-      modalVisibilityEnergy: 1,
-    };
-
-    const bloomOff = buildRaymarchPerformanceGovernor({
-      modalFieldSlots,
-      modalFieldCapacity: 16,
-      featureFrame,
-      requestedStepBudget: 80,
-      requestedRenderScale: 0.92,
-      stepScaleAdaptationEnabled: false,
-      bloomAdaptationEnabled: false,
-    });
-
-    expect(bloomOff.bloomAdaptationActive).toBe(false);
-    expect(bloomOff.bloomStrengthScale).toBe(1);
-    expect(bloomOff.bloomThresholdOffset).toBe(0);
-    expect(bloomOff.bloomAllowed).toBe(true);
-  });
-
-  it("guards bloom from the integrator's effective budget, not proactive step/scale", () => {
-    // Saturate every complexity term so complexityScore clamps to 1 (> 0.95),
-    // independent of geometry permutation internals.
+  it("derives complexity without effective-budget side channels", () => {
     const saturatedModalField = {
       capacity: 16,
       uploadedActiveCount: 16,
@@ -331,31 +275,16 @@ describe("performanceGovernor", () => {
       structureSignal: 1,
       modalVisibilityEnergy: 1,
     };
-    const governorInputs = {
+
+    const analysis = deriveRaymarchFieldComplexity({
       modalField: saturatedModalField,
       featureFrame,
-      requestedStepBudget: 128,
-      requestedRenderScale: 1,
-      stepScaleAdaptationEnabled: false,
-      bloomAdaptationEnabled: true,
-    };
-
-    // Step/scale adaptation is off, so proactive values stay at the high
-    // requested ceiling. Without the effective-budget feed the guard reads the
-    // (inert) proactive values and stays open...
-    const ladderUnfed = deriveRaymarchComplexityGovernor(governorInputs);
-    expect(ladderUnfed.complexityScore).toBeGreaterThan(0.95);
-    expect(ladderUnfed.proactiveStepBudget).toBe(128);
-    expect(ladderUnfed.bloomAllowed).toBe(true);
-
-    // ...but the ladder's low effective budget must close the guard.
-    const ladderFed = deriveRaymarchComplexityGovernor({
-      ...governorInputs,
-      effectiveStepBudget: 24,
-      effectiveRenderScale: 0.8,
     });
-    expect(ladderFed.complexityScore).toBeGreaterThan(0.95);
-    expect(ladderFed.proactiveStepBudget).toBe(128);
-    expect(ladderFed.bloomAllowed).toBe(false);
+
+    expect(analysis.complexityScore).toBeGreaterThan(0.95);
+    expect(analysis).not.toHaveProperty("requestedStepBudget");
+    expect(analysis).not.toHaveProperty("requestedRenderScale");
+    expect(analysis).not.toHaveProperty("effectiveStepBudget");
+    expect(analysis).not.toHaveProperty("effectiveRenderScale");
   });
 });

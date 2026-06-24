@@ -1,6 +1,9 @@
 import { CONTROL_STATUSES } from "./schema.js";
 import { normalizeLiveInputAcousticIntent } from "../core/audio/liveInputAnalysis.js";
-import { normalizePerformanceProfile } from "../render/outputProfilePolicy.js";
+import {
+  normalizePerformanceTargetFps,
+  normalizePersistedPerformanceProfile,
+} from "../render/outputProfilePolicy.js";
 import { normalizeVisualizationMethod } from "../visualization/types.js";
 import { clamp } from "../utils/math.js";
 
@@ -69,19 +72,36 @@ function normalizeLegacyLiveInputAnalysis(raw) {
   return next;
 }
 
-function normalizeLegacyPerformanceProfile(raw) {
+function normalizeLegacyPerformanceControls(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return raw;
   }
 
-  if (!Object.prototype.hasOwnProperty.call(raw, "renderQualityPreset")) {
-    return raw;
+  const next = { ...raw };
+  if (Object.prototype.hasOwnProperty.call(raw, "renderQualityPreset")) {
+    next.renderQualityPreset = normalizePersistedPerformanceProfile(
+      raw.renderQualityPreset,
+    );
   }
 
-  return {
-    ...raw,
-    renderQualityPreset: normalizePerformanceProfile(raw.renderQualityPreset),
-  };
+  if (
+    Object.prototype.hasOwnProperty.call(next, "customTargetFps") &&
+    typeof next.customTargetFps === "number"
+  ) {
+    next.customTargetFps = normalizePerformanceTargetFps(next.customTargetFps);
+  } else if (typeof raw.customFrameBudgetFps === "number") {
+    next.customTargetFps = normalizePerformanceTargetFps(
+      raw.customFrameBudgetFps,
+    );
+  } else if (typeof raw.customPerformanceTargetFps === "number") {
+    next.customTargetFps = normalizePerformanceTargetFps(
+      raw.customPerformanceTargetFps,
+    );
+  }
+
+  delete next.customFrameBudgetFps;
+  delete next.customPerformanceTargetFps;
+  return next;
 }
 
 function normalizeLegacySpectralLight(raw) {
@@ -180,7 +200,7 @@ export function serializeControls(controls, definitions) {
 
     serialized[definition.key] =
       definition.key === "renderQualityPreset"
-        ? normalizePerformanceProfile(controls[definition.key])
+        ? normalizePersistedPerformanceProfile(controls[definition.key])
         : controls[definition.key];
   }
 
@@ -206,7 +226,7 @@ export function deserializeControls(raw, definitions) {
     normalizeLegacySpectralLight(
       normalizeLegacyRaymarchPresentation(
         normalizeLegacyLiveInputAnalysis(
-          normalizeLegacyPerformanceProfile(normalizeLegacyReactivity(raw)),
+          normalizeLegacyPerformanceControls(normalizeLegacyReactivity(raw)),
         ),
       ),
     ),
