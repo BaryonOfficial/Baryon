@@ -13,7 +13,7 @@ export function isVisualizationMethod(method) {
 }
 
 /**
- * The raymarch volume pipeline (performance governor, adaptive steps, HUD
+ * The raymarch volume pipeline (field analysis, adaptive steps, HUD
  * diagnostics) backs the single visualization method.
  *
  * @param {unknown} method

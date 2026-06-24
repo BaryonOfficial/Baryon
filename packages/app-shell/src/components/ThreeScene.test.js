@@ -7,11 +7,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   baryonSceneSpy,
+  canvasSpy,
   dispatchCameraControlCommandSpy,
   audioSceneState,
   audioState,
 } = vi.hoisted(() => ({
   baryonSceneSpy: vi.fn(),
+  canvasSpy: vi.fn(),
   dispatchCameraControlCommandSpy: vi.fn(),
   audioSceneState: {
     liveInputUiState: "active",
@@ -22,7 +24,10 @@ const {
 }));
 
 vi.mock("@react-three/fiber", () => ({
-  Canvas: ({ children }) => React.createElement("div", null, children),
+  Canvas: (props) => {
+    canvasSpy(props);
+    return React.createElement("div", null, props.children);
+  },
 }));
 
 vi.mock("./BaryonScene", () => ({
@@ -146,6 +151,23 @@ describe("resolvePreviewOverlayState", () => {
     });
   });
 
+  it("uses intentional disabled copy when the native output preview mirror is off", () => {
+    expect(
+      resolvePreviewOverlayState({
+        requested: true,
+        rendering: false,
+        supported: false,
+        failureReason:
+          "Preview shared-texture transfer is disabled while native output is active.",
+      }),
+    ).toMatchObject({
+      state: "preview-mirror-disabled",
+      title: "In-app preview disabled",
+      message:
+        "Native output is publishing directly. The app mirror is disabled to keep the output path stable.",
+    });
+  });
+
   it("returns a startup-failed state when the authoritative stage misses startup watchdogs", () => {
     expect(
       resolvePreviewOverlayState({
@@ -259,6 +281,13 @@ describe("authoritative performance HUD composition", () => {
           outputFps: 47.5,
           outputPaintFps: 48.2,
           renderCompletedToPaintMs: 9.5,
+          outputPublishAttemptCount: 120,
+          outputDeferredPublishCount: 8,
+          outputCoalescedPublishCount: 3,
+          outputLastPublishDurationMs: 8,
+          outputAveragePublishDurationMs: 9.2,
+          outputSuccessfulPublishCount: 94,
+          outputDroppedPublishCount: 26,
         },
       ),
     ).toMatchObject({
@@ -269,11 +298,44 @@ describe("authoritative performance HUD composition", () => {
       outputFps: 47.5,
       outputPaintFps: 48.2,
       renderCompletedToPaintMs: 9.5,
+      outputPublishAttemptCount: 120,
+      outputDeferredPublishCount: 8,
+      outputCoalescedPublishCount: 3,
+      outputLastPublishDurationMs: 8,
+      outputAveragePublishDurationMs: 9.2,
+      outputSuccessfulPublishCount: 94,
+      outputDroppedPublishCount: 26,
     });
+  });
+
+  it("does not publish output metric fields without output metrics", () => {
+    expect(
+      composeAuthoritativePerformanceHudMetrics(
+        {
+          fps: 60,
+          smoothedFrameTimeMs: 16.67,
+          targetFps: 60,
+        },
+        null,
+      ),
+    ).toStrictEqual({
+      fps: 60,
+      smoothedFrameTimeMs: 16.67,
+      targetFps: 60,
+    });
+
+    expect(
+      composeAuthoritativePerformanceHudMetrics(null, {
+        outputTargetFps: null,
+        outputFps: null,
+        outputPaintFps: null,
+        renderCompletedToPaintMs: null,
+      }),
+    ).toBeNull();
   });
 });
 
-describe("camera reset control", () => {
+describe("ThreeScene render behavior", () => {
   /** @type {HTMLDivElement | null} */
   let container = null;
   /** @type {import('react-dom/client').Root | null} */
@@ -281,6 +343,7 @@ describe("camera reset control", () => {
 
   beforeEach(() => {
     baryonSceneSpy.mockClear();
+    canvasSpy.mockClear();
     dispatchCameraControlCommandSpy.mockClear();
     audioSceneState.liveInputUiState = "active";
     audioState.selectedSource = "file";
@@ -298,6 +361,125 @@ describe("camera reset control", () => {
     container?.remove();
     root = null;
     container = null;
+  });
+
+  it("passes the device DPR through without the default R3F two-x cap", async () => {
+    const originalDprDescriptor = Object.getOwnPropertyDescriptor(
+      window,
+      "devicePixelRatio",
+    );
+    Object.defineProperty(window, "devicePixelRatio", {
+      configurable: true,
+      value: 3,
+    });
+    try {
+      const controlsStore = createControlsStore();
+
+      await act(async () => {
+        root.render(
+          React.createElement(
+            ControlsProvider,
+            { store: controlsStore },
+            React.createElement(ThreeScene),
+          ),
+        );
+      });
+
+      expect(canvasSpy.mock.calls.at(-1)?.[0]?.dpr).toBe(3);
+    } finally {
+      if (originalDprDescriptor) {
+        Object.defineProperty(
+          window,
+          "devicePixelRatio",
+          originalDprDescriptor,
+        );
+      } else {
+        delete window.devicePixelRatio;
+      }
+    }
+  });
+
+  it("passes the custom target FPS to the render scene", async () => {
+    const controlsStore = createControlsStore();
+    controlsStore.updateControl("renderQualityPreset", "custom", {
+      persistMode: "none",
+    });
+    controlsStore.updateControl("customTargetFps", 72, {
+      persistMode: "none",
+    });
+
+    await act(async () => {
+      root.render(
+        React.createElement(
+          ControlsProvider,
+          { store: controlsStore },
+          React.createElement(ThreeScene),
+        ),
+      );
+    });
+
+    expect(baryonSceneSpy.mock.calls.at(-1)?.[0]).toMatchObject({
+      performanceProfile: "custom",
+      customTargetFps: 72,
+    });
+  });
+
+  it("uses the output color as the opaque preview backdrop", async () => {
+    const controlsStore = createControlsStore();
+    controlsStore.updateControl("backgroundColor", "#112233", {
+      persistMode: "none",
+    });
+    controlsStore.updateControl("outputMode", "opaque", {
+      persistMode: "none",
+    });
+    controlsStore.updateControl("outputBackgroundColor", "#445566", {
+      persistMode: "none",
+    });
+
+    await act(async () => {
+      root.render(
+        React.createElement(
+          ControlsProvider,
+          { store: controlsStore },
+          React.createElement(ThreeScene),
+        ),
+      );
+    });
+
+    const sceneRoot = container.querySelector(
+      '[data-testid="baryon-scene-root"]',
+    );
+
+    expect(sceneRoot?.style.background).toBe("rgb(68, 85, 102)");
+  });
+
+  it("keeps the transparent preview backdrop black", async () => {
+    const controlsStore = createControlsStore();
+    controlsStore.updateControl("backgroundColor", "#112233", {
+      persistMode: "none",
+    });
+    controlsStore.updateControl("outputMode", "transparent", {
+      persistMode: "none",
+    });
+    controlsStore.updateControl("outputBackgroundColor", "#445566", {
+      persistMode: "none",
+    });
+
+    await act(async () => {
+      root.render(
+        React.createElement(
+          ControlsProvider,
+          { store: controlsStore },
+          React.createElement(ThreeScene),
+        ),
+      );
+    });
+
+    const sceneRoot = container.querySelector(
+      '[data-testid="baryon-scene-root"]',
+    );
+
+    expect(sceneRoot?.style.background).toBe("rgb(0, 0, 0)");
   });
 
   it("resets an active preset back to the default camera view", async () => {

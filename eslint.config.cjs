@@ -22,6 +22,7 @@ module.exports = [
       "**/node_modules/**",
       "**/coverage/**",
       "**/.turbo/**",
+      "**/.vercel/**",
     ],
   },
   js.configs.recommended,

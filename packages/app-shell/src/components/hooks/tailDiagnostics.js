@@ -604,7 +604,6 @@ function buildTailDiagnosticSample({
       bloomEnabled: readBoolean(render.bloomEnabled),
       bloomResponseSignal: readFiniteNumber(modalFreshness.bloomResponseSignal),
       scaleSignal: readFiniteNumber(modalFreshness.scaleSignal),
-      renderScale: readFiniteNumber(render.renderScale, 1),
     },
   };
   const probe = buildRenderProbeSnapshot({
@@ -646,6 +645,19 @@ export function createTailDiagnosticsRecorder({
     samples: [],
   };
 
+  const dump = () => {
+    const samples = state.samples.map((sample) => ({ ...sample }));
+    return {
+      active: state.active,
+      startedAtMs: state.startedAtMs,
+      stoppedAtMs: state.stoppedAtMs,
+      sampleIntervalMs,
+      maxDurationMs,
+      windowSummary: summarizeTailDiagnosticWindow(samples),
+      samples,
+    };
+  };
+
   return {
     isActive() {
       return state.active;
@@ -656,12 +668,12 @@ export function createTailDiagnosticsRecorder({
       state.stoppedAtMs = null;
       state.lastSampleAtMs = Number.NEGATIVE_INFINITY;
       state.samples = [];
-      return this.dump();
+      return dump();
     },
     stop({ nowMs = 0 } = {}) {
       state.active = false;
       state.stoppedAtMs = nowMs;
-      return this.dump();
+      return dump();
     },
     reset() {
       state.active = false;
@@ -669,7 +681,7 @@ export function createTailDiagnosticsRecorder({
       state.stoppedAtMs = null;
       state.lastSampleAtMs = Number.NEGATIVE_INFINITY;
       state.samples = [];
-      return this.dump();
+      return dump();
     },
     record({ runtimeDiagnostics, featureFrame, runtimeState, nowMs = 0 } = {}) {
       if (!state.active) {
@@ -692,18 +704,7 @@ export function createTailDiagnosticsRecorder({
       state.lastSampleAtMs = nowMs;
       return sample;
     },
-    dump() {
-      const samples = state.samples.map((sample) => ({ ...sample }));
-      return {
-        active: state.active,
-        startedAtMs: state.startedAtMs,
-        stoppedAtMs: state.stoppedAtMs,
-        sampleIntervalMs,
-        maxDurationMs,
-        windowSummary: summarizeTailDiagnosticWindow(samples),
-        samples,
-      };
-    },
+    dump,
   };
 }
 

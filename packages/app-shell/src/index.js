@@ -15,6 +15,10 @@ export {
   LIVE_INPUT_SIGNAL_STATES,
 } from "./context/liveInputRuntimeStatus.js";
 export { default as SceneSurface } from "./components/ThreeScene.jsx";
+export {
+  BaryonScene,
+  CAMERA_CONTROL_MODES,
+} from "./components/BaryonScene.jsx";
 export { default as AdvancedControlsDock } from "./components/AdvancedControlsDock.jsx";
 export { OutputStageSurface } from "./components/OutputStageSurface.jsx";
 export { ListenerControls } from "./components/AudioControls.jsx";
@@ -25,6 +29,12 @@ export { resolvePreviewOverlayState } from "./components/threeSceneState.js";
 export { composeAuthoritativePerformanceHudMetrics } from "./components/threeSceneState.js";
 export { commitOrbitControlsCameraPose } from "./components/baryonSceneCameraSync.js";
 export {
+  createBaryonRenderer,
+  WEBGPU_RENDERER_INIT_ERROR,
+} from "./components/rendererDiagnostics.js";
+export { RendererErrorBoundary } from "./components/RendererErrorBoundary.jsx";
+export {
+  DEFAULT_ACTIVE_CAMERA_POSE,
   DEFAULT_IDLE_PERFORMER_CAMERA_POSE,
   DEFAULT_LIVE_PERFORMER_CAMERA_POSE,
   resolveCameraPresetFromPose,

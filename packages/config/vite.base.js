@@ -79,11 +79,8 @@ export function createBaryonWorkspaceAliases({ workspaceRoot }) {
       replacement: path.join(engineRoot, "core/raymarch/fieldCache.js"),
     },
     {
-      find: /^@baryon\/engine\/core\/raymarch\/performanceGovernor$/,
-      replacement: path.join(
-        engineRoot,
-        "core/raymarch/performanceGovernor.js",
-      ),
+      find: /^@baryon\/engine\/core\/raymarch\/fieldAnalysis$/,
+      replacement: path.join(engineRoot, "core/raymarch/fieldAnalysis.js"),
     },
     {
       find: /^@baryon\/engine\/defaults$/,

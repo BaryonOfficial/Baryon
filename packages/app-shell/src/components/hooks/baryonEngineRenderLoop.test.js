@@ -9,7 +9,7 @@ import {
   applyReactiveBloomState,
   buildPerformanceHudSnapshot,
   finalizeTerminalVisualIdleState,
-  getEffectiveRenderScale,
+  getRenderTargetPixelRatio,
   publishDevtoolsSnapshots,
   resolveFeatureFrame,
   shouldBypassTemporalHistoryForRaymarchFrame,
@@ -17,7 +17,7 @@ import {
   updateModalFreshnessDiagnostics,
   updateRendererDiagnostics,
   updateAdaptiveRaymarchStepBudget,
-  resolveRaymarchGovernorFrameInputs,
+  resolveRaymarchFieldAnalysisFrameInputs,
   syncRenderSurfacePixelRatio,
   syncUploadedRenderQuantities,
 } from "./baryonEngineRenderLoop.js";
@@ -85,7 +85,6 @@ function createAdaptiveRaymarchHarness({
   runtimeDiagnostics.smoothedFrameTimeMs = 14;
   runtimeDiagnostics.adaptiveRaymarch.adaptiveRaymarchActive = true;
   runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 64;
-  runtimeDiagnostics.adaptiveRaymarch.requestedRenderScale = 1;
   runtimeDiagnostics.adaptiveRaymarch.currentRung = 3;
 
   const runtimeState = {
@@ -116,7 +115,6 @@ function createAdaptiveRaymarchHarness({
       runtimeState,
       renderProfile: {
         qualityPreset: "auto",
-        renderScale: 1,
         ...renderProfile,
       },
       effectiveFrame: {
@@ -361,8 +359,7 @@ test("updateRendererDiagnostics resizes the renderer when canvas size changes wi
       },
     },
     {
-      getTargetDpr: () => 1,
-      renderScale: 1,
+      getRequestedPixelRatio: () => 1,
     },
   );
 
@@ -433,8 +430,7 @@ test("updateRendererDiagnostics records the backing-pixel cost for high-DPR canv
       },
     },
     {
-      getTargetDpr: () => 2,
-      renderScale: 1,
+      getRequestedPixelRatio: () => 2,
     },
   );
 
@@ -447,6 +443,86 @@ test("updateRendererDiagnostics records the backing-pixel cost for high-DPR canv
     backingMegapixels: 4.99328,
     pixelRatio: 2,
   });
+});
+
+test("updateRendererDiagnostics keeps low-load diagnostics from lowering DPR", () => {
+  const runtimeDiagnosticsRef = {
+    current: createRuntimeDiagnostics(),
+  };
+  const pixelRatioRef = { current: 1 };
+  const renderSurfaceSizeRef = { current: null };
+  const lastAudioIssueSignatureRef = { current: null };
+  const gl = {
+    backend: { isWebGLBackend: false },
+    setPixelRatioCalls: [],
+    setSizeCalls: [],
+    setPixelRatio(value) {
+      this.setPixelRatioCalls.push(value);
+    },
+    setSize(width, height, updateStyle) {
+      this.setSizeCalls.push({ width, height, updateStyle });
+    },
+  };
+
+  const result = updateRendererDiagnostics(
+    {
+      state: {
+        size: {
+          width: 1920,
+          height: 1080,
+        },
+      },
+      controls: {
+        lowLoadPlaybackDiagnostics: true,
+      },
+      status: {
+        isPlaying: true,
+      },
+      time: 0,
+      deltaTime: 1 / 60,
+      rfDelta: 1 / 60,
+      gl,
+      renderLoopRefs: {
+        runtimeDiagnosticsRef,
+        pixelRatioRef,
+        renderSurfaceSizeRef,
+        lastAudioIssueSignatureRef,
+      },
+    },
+    {
+      getRequestedPixelRatio: () => 2,
+    },
+  );
+
+  expect(result.lowLoadPlaybackDiagnosticsActive).toBe(true);
+  expect(gl.setPixelRatioCalls).toEqual([2]);
+  expect(pixelRatioRef.current).toBe(2);
+  expect(runtimeDiagnosticsRef.current.currentPixelRatio).toBe(2);
+  expect(runtimeDiagnosticsRef.current.renderSurface.pixelRatio).toBe(2);
+});
+
+test("render target DPR follows the selected output resolution", () => {
+  const originalDescriptor = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "window",
+  );
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      devicePixelRatio: 3,
+    },
+  });
+
+  try {
+    expect(getRenderTargetPixelRatio()).toBe(3);
+    expect(getRenderTargetPixelRatio(1)).toBe(1);
+  } finally {
+    if (originalDescriptor) {
+      Object.defineProperty(globalThis, "window", originalDescriptor);
+    } else {
+      delete globalThis.window;
+    }
+  }
 });
 
 // `true` means flush temporal history (show the crisp scene color); `false`
@@ -653,7 +729,7 @@ test("applyReactiveBloomState disables bloom compose after terminal visual idle"
         effectiveRadius: 0.2,
         effectiveThreshold: 0.1,
       },
-      performanceGovernor: null,
+      raymarchFieldAnalysis: null,
     },
     postNodesRef,
     bloom: {
@@ -1110,6 +1186,7 @@ test("publishes provider transition phases even before live audio becomes active
 
 test("publishes authoritative audit callbacks without devtools globals", () => {
   const auditStates = [];
+  const logAudit = vi.fn();
   const previousWindow = globalThis.window;
   globalThis.window = {};
 
@@ -1139,7 +1216,7 @@ test("publishes authoritative audit callbacks without devtools globals", () => {
             frame: 1,
           },
         },
-        lowLoadActive: false,
+        lowLoadPlaybackDiagnosticsActive: false,
         runtimeDiagnostics: createRuntimeDiagnostics(),
         shared: {},
         output: {},
@@ -1157,7 +1234,7 @@ test("publishes authoritative audit callbacks without devtools globals", () => {
         markRuntimeReady: () => {
           throw new Error("runtime ready should remain devtools-only");
         },
-        logAudit: () => {},
+        logAudit,
         onAuditSnapshotChange: (nextState) => {
           auditStates.push(nextState);
         },
@@ -1169,6 +1246,7 @@ test("publishes authoritative audit callbacks without devtools globals", () => {
       enabled: true,
     });
     expect(auditStates[0].snapshot).toEqual(expect.any(Object));
+    expect(logAudit).not.toHaveBeenCalled();
     expect(window.__baryonAuditSnapshot).toBeUndefined();
     expect(window.__baryonControlState).toBeUndefined();
   } finally {
@@ -1210,7 +1288,6 @@ test("auto raymarch preserves surface resolution before crossing the cymatic sam
     runtimeState,
     renderProfile: {
       qualityPreset: "auto",
-      renderScale: 1,
     },
     effectiveFrame: {
       activeModeCount: 16,
@@ -1229,8 +1306,9 @@ test("auto raymarch preserves surface resolution before crossing the cymatic sam
 
   expect(runtimeState.effectiveRaymarchSteps).toBeLessThan(64);
   expect(runtimeState.effectiveRaymarchSteps).toBeGreaterThanOrEqual(16);
-  expect(getEffectiveRenderScale(runtimeDiagnostics, 1)).toBe(1);
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(1);
+  expect(runtimeDiagnostics.adaptiveRaymarch).not.toHaveProperty(
+    "effectiveRenderScale",
+  );
 });
 
 test("max-quality keeps the requested raymarch budget under modal complexity", () => {
@@ -1238,7 +1316,6 @@ test("max-quality keeps the requested raymarch budget under modal complexity", (
     createAdaptiveRaymarchHarness({
       renderProfile: {
         qualityPreset: "max-quality",
-        renderScale: 1,
       },
       effectiveFrame: {
         activeModeCount: 16,
@@ -1258,48 +1335,47 @@ test("max-quality keeps the requested raymarch budget under modal complexity", (
     value: { array: new Float32Array(16 * 4) },
   };
   runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
-  runtimeDiagnostics.adaptiveRaymarch.requestedRenderScale = 0;
 
   updateAdaptiveRaymarchStepBudget(args);
 
   expect(runtimeDiagnostics.adaptiveRaymarch.adaptiveRaymarchActive).toBe(
     false,
   );
-  // max-quality holds the user step cap and profile render scale.
-  expect(runtimeState.performanceGovernor.stepScaleAdaptationActive).toBe(
-    false,
+  // max-quality holds the user step cap; output-surface scale stays separate.
+  expect(runtimeState.raymarchFieldAnalysis.complexityScore).toBeGreaterThan(
+    0.8,
   );
-  expect(runtimeState.performanceGovernor.complexityScore).toBeGreaterThan(0.8);
-  expect(runtimeState.performanceGovernor.proactiveStepBudget).toBe(64);
-  expect(runtimeState.performanceGovernor.proactiveRenderScale).toBe(1);
-  // ...but the bloom guard stays active while a raymarch frame plays.
-  expect(runtimeState.performanceGovernor.bloomAdaptationActive).toBe(true);
-  expect(runtimeState.performanceGovernor.bloomStrengthScale).toBeLessThan(1);
-  expect(runtimeState.performanceGovernor.bloomThresholdOffset).toBeGreaterThan(
-    0,
+  expect(runtimeState.raymarchFieldAnalysis).not.toHaveProperty(
+    "requestedStepBudget",
   );
-  // Step budget stays above the guard floor, so bloom is not fully cut.
-  expect(runtimeState.performanceGovernor.bloomAllowed).toBe(true);
+  expect(runtimeState.raymarchFieldAnalysis).not.toHaveProperty(
+    "requestedRenderScale",
+  );
+  expect(runtimeState.raymarchFieldAnalysis).not.toHaveProperty(
+    "proactiveStepBudget",
+  );
+  expect(runtimeState.raymarchFieldAnalysis).not.toHaveProperty(
+    "stepScaleAdaptationActive",
+  );
+  expect(runtimeState.raymarchFieldAnalysis).not.toHaveProperty(
+    "bloomAdaptationActive",
+  );
   expect(runtimeState.effectiveRaymarchSteps).toBe(64);
   expect(runtimeState.uniforms.uRaymarchSteps.value).toBe(64);
   expect(runtimeState.volumeMesh.material.steps).toBe(64);
-  // The integrator budget is published to runtimeState (no governor handoff).
-  expect(runtimeState.effectiveRenderScale).toBe(1);
-  expect(runtimeState.raymarchBloomAdaptationActive).toBe(true);
 });
 
-test("max-quality keeps user raymarch budget and render scale under frame pressure", () => {
+test("max-quality keeps user raymarch budget under frame pressure", () => {
   const { args, runtimeState, runtimeDiagnostics } =
     createAdaptiveRaymarchHarness({
       renderProfile: {
         qualityPreset: "max-quality",
-        renderScale: 1,
+        targetFps: 240,
       },
     });
   runtimeDiagnostics.lastFrameTimeMs = 120;
   runtimeDiagnostics.smoothedFrameTimeMs = 120;
   runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
-  runtimeDiagnostics.adaptiveRaymarch.requestedRenderScale = 0;
 
   for (let index = 0; index < 31; index += 1) {
     updateAdaptiveRaymarchStepBudget(args);
@@ -1308,18 +1384,19 @@ test("max-quality keeps user raymarch budget and render scale under frame pressu
   expect(runtimeDiagnostics.adaptiveRaymarch.adaptiveRaymarchActive).toBe(
     false,
   );
-  expect(runtimeState.performanceGovernor.stepScaleAdaptationActive).toBe(
-    false,
+  expect(runtimeDiagnostics.adaptiveRaymarch.targetFps).toBe(60);
+  expect(runtimeState.raymarchFieldAnalysis).not.toHaveProperty(
+    "stepScaleAdaptationActive",
   );
   expect(runtimeState.effectiveRaymarchSteps).toBe(64);
   expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(64);
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(1);
-  expect(getEffectiveRenderScale(runtimeDiagnostics, 1)).toBe(1);
+  expect(runtimeDiagnostics.adaptiveRaymarch).not.toHaveProperty(
+    "effectiveRenderScale",
+  );
 });
 
-test("auto raymarch lowers steps before touching render scale under frame pressure", () => {
-  const { args, runtimeState, runtimeDiagnostics } =
-    createAdaptiveRaymarchHarness();
+test("auto raymarch lowers steps without publishing adaptive render-scale state", () => {
+  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness();
   runtimeDiagnostics.lastFrameTimeMs = 120;
   runtimeDiagnostics.smoothedFrameTimeMs = 120;
   runtimeDiagnostics.adaptiveRaymarch.currentRung = 3;
@@ -1329,14 +1406,16 @@ test("auto raymarch lowers steps before touching render scale under frame pressu
   updateAdaptiveRaymarchStepBudget(args);
 
   expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBeLessThan(3);
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(1);
-  expect(runtimeDiagnostics.adaptiveRaymarch.renderScaleStepDownCount).toBe(0);
-  expect(runtimeState.effectiveRenderScale).toBe(1);
+  expect(runtimeDiagnostics.adaptiveRaymarch).not.toHaveProperty(
+    "effectiveRenderScale",
+  );
+  expect(
+    "renderScaleStepDownCount" in runtimeDiagnostics.adaptiveRaymarch,
+  ).toBe(false);
 });
 
-test("auto raymarch lowers render scale only after the step floor is reached", () => {
-  const { args, runtimeState, runtimeDiagnostics } =
-    createAdaptiveRaymarchHarness();
+test("auto raymarch holds the step floor without render-scale stepdown state", () => {
+  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness();
   runtimeDiagnostics.lastFrameTimeMs = 120;
   runtimeDiagnostics.smoothedFrameTimeMs = 120;
   runtimeDiagnostics.adaptiveRaymarch.currentRung = 0;
@@ -1347,13 +1426,15 @@ test("auto raymarch lowers render scale only after the step floor is reached", (
 
   expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(16);
   expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(0);
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.92);
-  expect(runtimeDiagnostics.adaptiveRaymarch.renderScaleStepDownCount).toBe(1);
-  expect(getEffectiveRenderScale(runtimeDiagnostics, 1)).toBe(0.92);
-  expect(runtimeState.effectiveRenderScale).toBe(0.92);
+  expect(runtimeDiagnostics.adaptiveRaymarch).not.toHaveProperty(
+    "effectiveRenderScale",
+  );
+  expect(
+    "renderScaleStepDownCount" in runtimeDiagnostics.adaptiveRaymarch,
+  ).toBe(false);
 });
 
-test("auto raymarch holds throttled quality across inactive raymarch frames", () => {
+test("auto raymarch holds throttled steps without scale ladder state across inactive frames", () => {
   const { args, runtimeState, runtimeDiagnostics } =
     createAdaptiveRaymarchHarness({
       controls: {
@@ -1363,8 +1444,6 @@ test("auto raymarch holds throttled quality across inactive raymarch frames", ()
   runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 72;
   runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps = 16;
   runtimeDiagnostics.adaptiveRaymarch.currentRung = 0;
-  runtimeDiagnostics.adaptiveRaymarch.currentRenderScaleRung = 2;
-  runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale = 0.67;
   runtimeState.effectiveRaymarchSteps = 16;
   runtimeState.uniforms.uRaymarchSteps.value = 16;
   runtimeState.volumeMesh.material.steps = 16;
@@ -1384,33 +1463,44 @@ test("auto raymarch holds throttled quality across inactive raymarch frames", ()
   expect(effectiveStepBudget).toBe(16);
   expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(0);
   expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(16);
-  expect(runtimeDiagnostics.adaptiveRaymarch.currentRenderScaleRung).toBe(2);
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.67);
+  expect("currentRenderScaleRung" in runtimeDiagnostics.adaptiveRaymarch).toBe(
+    false,
+  );
+  expect(runtimeDiagnostics.adaptiveRaymarch).not.toHaveProperty(
+    "effectiveRenderScale",
+  );
   expect(runtimeState.effectiveRaymarchSteps).toBe(16);
   expect(runtimeState.uniforms.uRaymarchSteps.value).toBe(16);
   expect(runtimeState.volumeMesh.material.steps).toBe(16);
-  expect(runtimeState.performanceGovernor.effectiveStepBudget).toBe(16);
-  expect(runtimeState.performanceGovernor.effectiveRenderScale).toBe(0.67);
-  expect(getEffectiveRenderScale(runtimeDiagnostics, 1)).toBe(0.67);
-  expect(runtimeState.effectiveRenderScale).toBe(0.67);
+  expect(runtimeState.raymarchFieldAnalysis).not.toHaveProperty(
+    "effectiveStepBudget",
+  );
+  expect(runtimeState.raymarchFieldAnalysis).not.toHaveProperty(
+    "effectiveRenderScale",
+  );
 });
 
-test("auto raymarch recovers render scale before increasing steps", () => {
+test("auto raymarch recovers steps without scale ladder state", () => {
   const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness();
   runtimeDiagnostics.lastFrameTimeMs = 10;
   runtimeDiagnostics.smoothedFrameTimeMs = 10;
   runtimeDiagnostics.adaptiveRaymarch.currentRung = 0;
-  runtimeDiagnostics.adaptiveRaymarch.currentRenderScaleRung = 4;
   runtimeDiagnostics.adaptiveRaymarch.decisionFrameCount = 29;
   runtimeDiagnostics.adaptiveRaymarch.stableWindowCount = 3;
 
   updateAdaptiveRaymarchStepBudget(args);
 
-  expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(0);
-  expect(runtimeDiagnostics.adaptiveRaymarch.stepUpCount).toBe(0);
-  expect(runtimeDiagnostics.adaptiveRaymarch.currentRenderScaleRung).toBe(5);
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.92);
-  expect(runtimeDiagnostics.adaptiveRaymarch.renderScaleStepUpCount).toBe(1);
+  expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(1);
+  expect(runtimeDiagnostics.adaptiveRaymarch.stepUpCount).toBe(1);
+  expect("currentRenderScaleRung" in runtimeDiagnostics.adaptiveRaymarch).toBe(
+    false,
+  );
+  expect(runtimeDiagnostics.adaptiveRaymarch).not.toHaveProperty(
+    "effectiveRenderScale",
+  );
+  expect("renderScaleStepUpCount" in runtimeDiagnostics.adaptiveRaymarch).toBe(
+    false,
+  );
 });
 
 test("auto raymarch ignores long frames caused by active UI interaction", () => {
@@ -1448,21 +1538,7 @@ test("auto raymarch does not publish a phase rebuild cadence under frame pressur
   expect(runtimeState).not.toHaveProperty(removedPhaseCadenceKey);
 });
 
-test("performance HUD scale uses committed adaptive scale when the frame gate is idle", () => {
-  const runtimeDiagnostics = createRuntimeDiagnostics();
-
-  expect(getEffectiveRenderScale(runtimeDiagnostics, 0.75)).toBe(0.75);
-
-  runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale = 0.67;
-
-  expect(getEffectiveRenderScale(runtimeDiagnostics, 0.75)).toBe(0.67);
-
-  runtimeDiagnostics.adaptiveRaymarch.adaptiveRaymarchActive = true;
-
-  expect(getEffectiveRenderScale(runtimeDiagnostics, 0.75)).toBe(0.67);
-});
-
-test("custom profile uses the selected target fps for adaptive tuning", () => {
+test("custom profile uses the selected target FPS for adaptive tuning", () => {
   const runtimeDiagnostics = createRuntimeDiagnostics();
   const runtimeState = {
     requestedRaymarchSteps: 64,
@@ -1484,7 +1560,7 @@ test("custom profile uses the selected target fps for adaptive tuning", () => {
     controls: {
       raymarchSteps: 64,
       injectTestTone: true,
-      customPerformanceTargetFps: 48,
+      customTargetFps: 48,
     },
     runtime: {
       method: "raymarch",
@@ -1492,7 +1568,6 @@ test("custom profile uses the selected target fps for adaptive tuning", () => {
     runtimeState,
     renderProfile: {
       qualityPreset: "custom",
-      renderScale: 1,
     },
     effectiveFrame: {
       activeModeCount: 12,
@@ -1508,7 +1583,46 @@ test("custom profile uses the selected target fps for adaptive tuning", () => {
   expect(runtimeDiagnostics.adaptiveRaymarch.targetFrameTimeMs).toBe(1000 / 48);
 });
 
-test("adaptive raymarch publishes the integrator budget for the runtime tick", () => {
+test("custom controls fallback owns adaptive tuning when profile target is absent", () => {
+  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness({
+    controls: {
+      customTargetFps: 48,
+    },
+    renderProfile: {
+      qualityPreset: "custom",
+      renderContext: RENDER_CONTEXTS.externalOutput,
+    },
+  });
+
+  runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
+
+  updateAdaptiveRaymarchStepBudget(args);
+
+  expect(runtimeDiagnostics.adaptiveRaymarch.targetFps).toBe(48);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(32);
+});
+
+test("custom render profile owns adaptive tuning before controls fallback", () => {
+  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness({
+    controls: {
+      customTargetFps: 48,
+    },
+    renderProfile: {
+      qualityPreset: "custom",
+      targetFps: 120,
+      renderContext: RENDER_CONTEXTS.externalOutput,
+    },
+  });
+
+  updateAdaptiveRaymarchStepBudget(args);
+
+  expect(runtimeDiagnostics.adaptiveRaymarch.targetFps).toBe(120);
+  expect(runtimeDiagnostics.adaptiveRaymarch.targetFrameTimeMs).toBe(
+    1000 / 120,
+  );
+});
+
+test("adaptive raymarch keeps committed step state outside field-analysis diagnostics", () => {
   const { args, runtimeState, runtimeDiagnostics } =
     createAdaptiveRaymarchHarness({
       effectiveFrame: {
@@ -1527,85 +1641,120 @@ test("adaptive raymarch publishes the integrator budget for the runtime tick", (
 
   updateAdaptiveRaymarchStepBudget(args);
 
-  // The integrator publishes its committed budget as plain scalars (no governor
-  // handoff); the engine tick rebuilds the governor from them.
-  expect(runtimeState.effectiveRenderScale).toBe(
-    runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale,
+  // The adaptive diagnostic owns only step-ladder state.
+  expect(runtimeDiagnostics.adaptiveRaymarch).not.toHaveProperty(
+    "effectiveRenderScale",
   );
-  expect(runtimeState.raymarchBloomAdaptationActive).toBe(true);
-  // In auto/custom the adaptive ladder owns steps and, after the step floor,
-  // render scale while bloom adaptation stays on.
-  expect(runtimeState.performanceGovernor).toMatchObject({
-    stepScaleAdaptationActive: false,
-    bloomAdaptationActive: true,
-  });
-  expect(runtimeState.performanceGovernor.modalField.uploadedActiveCount).toBe(
-    3,
+  // In auto/custom the adaptive ladder owns steps. Performance profiles do not
+  // govern bloom, render scale, or DPR.
+  expect(runtimeState.raymarchFieldAnalysis).not.toHaveProperty(
+    "stepScaleAdaptationActive",
   );
+  expect(runtimeState.raymarchFieldAnalysis).not.toHaveProperty(
+    "bloomAdaptationActive",
+  );
+  expect(
+    runtimeState.raymarchFieldAnalysis.modalField.uploadedActiveCount,
+  ).toBe(3);
 });
 
 test("external-output custom 120 starts from the user-tunable step minimum", () => {
   const { args, runtimeState, runtimeDiagnostics } =
     createAdaptiveRaymarchHarness({
       controls: {
-        customPerformanceTargetFps: 120,
+        customTargetFps: 120,
       },
       renderProfile: {
         qualityPreset: "custom",
         targetFps: 120,
-        renderScale: 0.67,
+        startupRaymarchSteps: 16,
         renderContext: RENDER_CONTEXTS.externalOutput,
       },
     });
 
   runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
-  runtimeDiagnostics.adaptiveRaymarch.requestedRenderScale = 0;
 
   updateAdaptiveRaymarchStepBudget(args);
 
   expect(runtimeState.effectiveRaymarchSteps).toBe(16);
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.67);
+  expect(runtimeDiagnostics.adaptiveRaymarch).not.toHaveProperty(
+    "effectiveRenderScale",
+  );
 });
 
-test("external-output auto starts from the balanced external baseline rung", () => {
+test("external-output auto starts from profile startup raymarch steps", () => {
   const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness({
     renderProfile: {
       qualityPreset: "auto",
       targetFps: 60,
-      renderScale: 0.75,
+      startupRaymarchSteps: 32,
       renderContext: RENDER_CONTEXTS.externalOutput,
     },
   });
 
   runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
-  runtimeDiagnostics.adaptiveRaymarch.requestedRenderScale = 0;
 
   updateAdaptiveRaymarchStepBudget(args);
 
   expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(32);
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.75);
+  expect(runtimeDiagnostics.adaptiveRaymarch).not.toHaveProperty(
+    "effectiveRenderScale",
+  );
 });
 
-test("preview custom 120 starts from the ultra target-fps baseline rung", () => {
+test("external-output auto uses the resolved profile target FPS for adaptive tuning", () => {
+  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness({
+    renderProfile: {
+      qualityPreset: "auto",
+      targetFps: 60,
+      renderContext: RENDER_CONTEXTS.externalOutput,
+    },
+  });
+
+  updateAdaptiveRaymarchStepBudget(args);
+
+  expect(runtimeDiagnostics.adaptiveRaymarch.targetFps).toBe(60);
+  expect(runtimeDiagnostics.adaptiveRaymarch.targetFrameTimeMs).toBe(1000 / 60);
+});
+
+test("external-output auto startup raymarch steps own the startup rung", () => {
+  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness({
+    renderProfile: {
+      qualityPreset: "auto",
+      targetFps: 60,
+      startupRaymarchSteps: 16,
+      renderContext: RENDER_CONTEXTS.externalOutput,
+    },
+  });
+
+  runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
+
+  updateAdaptiveRaymarchStepBudget(args);
+
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(16);
+});
+
+test("preview custom 120 starts from profile startup raymarch steps", () => {
   const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness({
     controls: {
-      customPerformanceTargetFps: 120,
+      customTargetFps: 120,
     },
     renderProfile: {
       qualityPreset: "custom",
       targetFps: 120,
-      renderScale: 0.84,
+      startupRaymarchSteps: 16,
       renderContext: RENDER_CONTEXTS.preview,
     },
   });
 
   runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
-  runtimeDiagnostics.adaptiveRaymarch.requestedRenderScale = 0;
 
   updateAdaptiveRaymarchStepBudget(args);
 
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(24);
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.84);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(16);
+  expect(runtimeDiagnostics.adaptiveRaymarch).not.toHaveProperty(
+    "effectiveRenderScale",
+  );
 });
 
 test("active playback bootstrap builds a fresh Spectral Light frame when the feature engine has no matching snapshot", () => {
@@ -2291,13 +2440,13 @@ test("resolveFeatureFrame ignores paused file holds for live input", () => {
   );
 });
 
-test("resolveFeatureFrame composes a source-cut frame during paused playback", () => {
+test("resolveFeatureFrame composes an inactive-source frame during paused playback", () => {
   const cachedActiveFrame = {
     fieldState: "active",
     renderAuthority: true,
     stale: true,
   };
-  const sourceCutFrame = {
+  const inactiveSourceFrame = {
     fieldState: "idle",
     renderAuthority: false,
     energyLedger: {
@@ -2321,7 +2470,7 @@ test("resolveFeatureFrame composes a source-cut frame during paused playback", (
   const prepareFeatureFrame = vi.fn(() => ({
     currentFrameAtMs: 1000,
     analysisSessionKey: "file:song-1",
-    analysisInputsSignature: '"paused-source-cut"',
+    analysisInputsSignature: '"paused-inactive-source"',
     snapshot: {
       fftMagnitudes: new Float32Array(4),
       timeData: new Float32Array(4),
@@ -2332,7 +2481,7 @@ test("resolveFeatureFrame composes a source-cut frame during paused playback", (
     fieldState: "idle",
     renderAuthority: false,
   }));
-  const composeFeatureFrame = vi.fn(() => sourceCutFrame);
+  const composeFeatureFrame = vi.fn(() => inactiveSourceFrame);
   const { args } = createResolveFeatureFrameHarness({
     featureEngine,
     status: {
@@ -2362,8 +2511,8 @@ test("resolveFeatureFrame composes a source-cut frame during paused playback", (
   expect(featureEngine.readLatestSnapshot).not.toHaveBeenCalled();
   expect(runHeavyFeatureAnalysis).toHaveBeenCalled();
   expect(composeFeatureFrame).toHaveBeenCalled();
-  expect(result.featureFrame).toBe(sourceCutFrame);
-  expect(result.effectiveFrame).toBe(sourceCutFrame);
+  expect(result.featureFrame).toBe(inactiveSourceFrame);
+  expect(result.effectiveFrame).toBe(inactiveSourceFrame);
   expect(result.effectiveFrame).toMatchObject({
     fieldState: "idle",
     renderAuthority: false,
@@ -2407,7 +2556,7 @@ test("resolveFeatureFrame does not reuse last-live cache after system source evi
       currentSourceEvidence: true,
     },
   };
-  const sourceCutFrame = {
+  const inactiveSourceFrame = {
     fieldState: "idle",
     renderAuthority: false,
     energyLedger: {
@@ -2431,7 +2580,7 @@ test("resolveFeatureFrame does not reuse last-live cache after system source evi
     currentFrameAtMs: 1000,
     inputMode: "system",
     analysisSessionKey: "system",
-    analysisInputsSignature: '"system-source-cut"',
+    analysisInputsSignature: '"system-inactive-source"',
     snapshot: {
       fftMagnitudes: new Float32Array(4),
       timeData: new Float32Array(4),
@@ -2448,7 +2597,7 @@ test("resolveFeatureFrame does not reuse last-live cache after system source evi
     fieldState: "idle",
     renderAuthority: false,
   }));
-  const composeFeatureFrame = vi.fn(() => sourceCutFrame);
+  const composeFeatureFrame = vi.fn(() => inactiveSourceFrame);
   const { args } = createResolveFeatureFrameHarness({
     featureEngine,
     status: {
@@ -2480,7 +2629,7 @@ test("resolveFeatureFrame does not reuse last-live cache after system source evi
   expect(featureEngine.readLatestSnapshot).not.toHaveBeenCalled();
   expect(runHeavyFeatureAnalysis).toHaveBeenCalled();
   expect(composeFeatureFrame).toHaveBeenCalled();
-  expect(result.effectiveFrame).toBe(sourceCutFrame);
+  expect(result.effectiveFrame).toBe(inactiveSourceFrame);
   expect(result.effectiveFrame).not.toBe(cachedActiveFrame);
   expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
     "local-heavy-analysis",
@@ -2491,7 +2640,7 @@ test("resolveFeatureFrame does not reuse last-live cache after system source evi
 });
 
 test("resolveFeatureFrame keeps closed live-source frames out of the worker queue", () => {
-  const sourceCutFrame = {
+  const inactiveSourceFrame = {
     fieldState: "idle",
     renderAuthority: false,
     sourceEvidence: {
@@ -2532,7 +2681,7 @@ test("resolveFeatureFrame keeps closed live-source frames out of the worker queu
     fieldState: "idle",
     renderAuthority: false,
   }));
-  const composeFeatureFrame = vi.fn(() => sourceCutFrame);
+  const composeFeatureFrame = vi.fn(() => inactiveSourceFrame);
   const { args } = createResolveFeatureFrameHarness({
     featureEngine,
     status: {
@@ -2558,7 +2707,7 @@ test("resolveFeatureFrame keeps closed live-source frames out of the worker queu
   expect(featureEngine.readLatestSnapshot).not.toHaveBeenCalled();
   expect(runHeavyFeatureAnalysis).toHaveBeenCalledTimes(1);
   expect(composeFeatureFrame).toHaveBeenCalledTimes(1);
-  expect(result.effectiveFrame).toBe(sourceCutFrame);
+  expect(result.effectiveFrame).toBe(inactiveSourceFrame);
   expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
     "local-heavy-analysis",
   );
@@ -2574,7 +2723,7 @@ test("resolveFeatureFrame keeps closed live-source frames out of the worker queu
   expect(featureEngine.readLatestSnapshot).not.toHaveBeenCalled();
   expect(runHeavyFeatureAnalysis).toHaveBeenCalledTimes(1);
   expect(composeFeatureFrame).toHaveBeenCalledTimes(2);
-  expect(secondResult.effectiveFrame).toBe(sourceCutFrame);
+  expect(secondResult.effectiveFrame).toBe(inactiveSourceFrame);
   expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
     "scheduled-reuse",
   );
@@ -2612,7 +2761,7 @@ test("resolveFeatureFrame does not fall back to cached active frames for inactiv
     prepareFeatureFrame: vi.fn(() => ({
       currentFrameAtMs: 1000,
       analysisSessionKey: "file:song-1",
-      analysisInputsSignature: '"paused-source-cut"',
+      analysisInputsSignature: '"paused-inactive-source"',
       silentFeatureFrame: null,
     })),
   });
@@ -2625,12 +2774,12 @@ test("clearing adaptive resume state forces the next authoritative session to re
   const { args, runtimeState, runtimeDiagnostics } =
     createAdaptiveRaymarchHarness({
       controls: {
-        customPerformanceTargetFps: 120,
+        customTargetFps: 120,
       },
       renderProfile: {
         qualityPreset: "custom",
         targetFps: 120,
-        renderScale: 0.67,
+        startupRaymarchSteps: 16,
         renderContext: RENDER_CONTEXTS.externalOutput,
       },
     });
@@ -2638,13 +2787,14 @@ test("clearing adaptive resume state forces the next authoritative session to re
   runtimeState.adaptiveRaymarchResumeRung = 6;
   clearAdaptiveRaymarchResumeState(runtimeState);
   runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
-  runtimeDiagnostics.adaptiveRaymarch.requestedRenderScale = 0;
 
   updateAdaptiveRaymarchStepBudget(args);
 
   expect(runtimeState.adaptiveRaymarchResumeRung).toBe(0);
   expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(16);
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.67);
+  expect(runtimeDiagnostics.adaptiveRaymarch).not.toHaveProperty(
+    "effectiveRenderScale",
+  );
 });
 
 test("auto raymarch ignores field-state labels when ledger authority is present", () => {
@@ -3439,7 +3589,7 @@ test("resolveFeatureFrame keeps weak active live input out of the interruption r
   expect(runtimeState.bloomResponseSignal).toBe(0.8);
 });
 
-test("resolveRaymarchGovernorFrameInputs prefers uploaded mode count over descriptor span", () => {
+test("resolveRaymarchFieldAnalysisFrameInputs prefers uploaded mode count over descriptor span", () => {
   const runtimeState = {
     modalFieldCapacity: 12,
     modalBasisCache: { basisCapacity: 12 },
@@ -3455,7 +3605,7 @@ test("resolveRaymarchGovernorFrameInputs prefers uploaded mode count over descri
   };
 
   expect(
-    resolveRaymarchGovernorFrameInputs(runtimeState, effectiveFrame),
+    resolveRaymarchFieldAnalysisFrameInputs(runtimeState, effectiveFrame),
   ).toEqual({
     modalFieldCapacity: 12,
     productUploadCapacity: 12,
@@ -3464,7 +3614,7 @@ test("resolveRaymarchGovernorFrameInputs prefers uploaded mode count over descri
   });
 });
 
-test("resolveRaymarchGovernorFrameInputs uses descriptor-owned mode count over raw active count", () => {
+test("resolveRaymarchFieldAnalysisFrameInputs uses descriptor-owned mode count over raw active count", () => {
   const runtimeState = {
     modalFieldCapacity: 16,
     modalBasisCache: { basisCapacity: 16 },
@@ -3484,7 +3634,7 @@ test("resolveRaymarchGovernorFrameInputs uses descriptor-owned mode count over r
   };
 
   expect(
-    resolveRaymarchGovernorFrameInputs(runtimeState, effectiveFrame),
+    resolveRaymarchFieldAnalysisFrameInputs(runtimeState, effectiveFrame),
   ).toEqual({
     modalFieldCapacity: 16,
     productUploadCapacity: 16,
@@ -3493,7 +3643,7 @@ test("resolveRaymarchGovernorFrameInputs uses descriptor-owned mode count over r
   });
 });
 
-test("resolveRaymarchGovernorFrameInputs suppresses fatal descriptor topology", () => {
+test("resolveRaymarchFieldAnalysisFrameInputs suppresses fatal descriptor topology", () => {
   const runtimeState = {
     modalFieldCapacity: 12,
     modalBasisCache: { basisCapacity: 12 },
@@ -3506,7 +3656,7 @@ test("resolveRaymarchGovernorFrameInputs suppresses fatal descriptor topology", 
 
   for (const fieldAuthority of ["bandwidth-limited", "blocked"]) {
     expect(
-      resolveRaymarchGovernorFrameInputs(runtimeState, {
+      resolveRaymarchFieldAnalysisFrameInputs(runtimeState, {
         activeModeCount: 48,
         activeModalFieldModeCount: 48,
         modalDescriptor: {
@@ -3523,10 +3673,12 @@ test("resolveRaymarchGovernorFrameInputs suppresses fatal descriptor topology", 
   }
 });
 
-test("syncRenderSurfacePixelRatio applies effective render scale to DPR", () => {
+test("syncRenderSurfacePixelRatio uses selected surface pixel ratio", () => {
   const runtimeDiagnostics = createRuntimeDiagnostics();
   runtimeDiagnostics.adaptiveRaymarch.adaptiveRaymarchActive = true;
-  runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale = 0.67;
+  expect(runtimeDiagnostics.adaptiveRaymarch).not.toHaveProperty(
+    "effectiveRenderScale",
+  );
   const gl = {
     setPixelRatioCalls: [],
     setPixelRatio(value) {
@@ -3539,16 +3691,12 @@ test("syncRenderSurfacePixelRatio applies effective render scale to DPR", () => 
     gl,
     renderLoopRefs: { pixelRatioRef },
     runtimeDiagnostics,
-    renderProfile: { qualityPreset: "auto" },
-    controls: {},
-    status: { isPlaying: true },
-    requestedRenderScale: 1,
     basePixelRatio: 2,
   });
 
-  expect(targetPixelRatio).toBeCloseTo(1.34);
-  expect(pixelRatioRef.current).toBeCloseTo(1.34);
-  expect(gl.setPixelRatioCalls).toEqual([1.34]);
+  expect(targetPixelRatio).toBe(2);
+  expect(pixelRatioRef.current).toBe(2);
+  expect(gl.setPixelRatioCalls).toEqual([2]);
 });
 
 test("syncUploadedRenderQuantities mirrors runtime uniforms into diagnostics", () => {

@@ -7,6 +7,10 @@ import {
   evaluateRaymarchSignedPotentialAtPoint as evaluateUnifiedRaymarchSignedPotentialAtPoint,
 } from "./fieldCache.js";
 
+function normalizeSource(value) {
+  return value.replace(/\r\n/g, "\n");
+}
+
 function copySlotPrefix(slots, count) {
   const slotCount = Math.max(0, Math.round(count || 0));
   return Array.from(slots ?? new Float32Array(0)).slice(0, slotCount * 4);
@@ -539,9 +543,8 @@ describe("spectral lane radiance accumulation", () => {
   });
 
   it("builds a GPU lane-radiance cache from modal basis pages and spectral lane buffers", () => {
-    const source = readFileSync(
-      new URL("./fieldCache.js", import.meta.url),
-      "utf8",
+    const source = normalizeSource(
+      readFileSync(new URL("./fieldCache.js", import.meta.url), "utf8"),
     );
     const computeStart = source.indexOf(
       "function createSpectralLaneCacheComputeKernel",
@@ -898,9 +901,8 @@ describe("fieldCache", () => {
   });
 
   it("builds modal-basis compute as a coefficient-invariant basis atlas", () => {
-    const source = readFileSync(
-      new URL("./fieldCache.js", import.meta.url),
-      "utf8",
+    const source = normalizeSource(
+      readFileSync(new URL("./fieldCache.js", import.meta.url), "utf8"),
     );
     const computeStart = source.indexOf(
       "function createModalBasisCacheComputeKernel",
@@ -929,9 +931,8 @@ describe("fieldCache", () => {
   });
 
   it("builds live field projection as a frame-current cache from cached basis pages", () => {
-    const source = readFileSync(
-      new URL("./fieldCache.js", import.meta.url),
-      "utf8",
+    const source = normalizeSource(
+      readFileSync(new URL("./fieldCache.js", import.meta.url), "utf8"),
     );
     const computeStart = source.indexOf(
       "function createLiveFieldProjectionComputeKernel",

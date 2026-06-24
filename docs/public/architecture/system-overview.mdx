@@ -97,11 +97,12 @@ compatibility; there is no user-facing visualizer selector.
 
 ### Performance profile
 
-Three values: `auto` (adaptive behavior on), `custom` (adapts toward an explicit target
-frame rate), and `max-quality` (full quality, adaptation off). `none` is a legacy alias
-for `max-quality`. The user-facing wording is "Performance Profile," but some compatibility
-fields still use `qualityPreset` or `renderQualityPreset` — treat those as naming
-vocabulary that still matters, not as free renames.
+Three values: `auto` (adaptive step-budget behavior on), `custom` (adapts toward an explicit
+frame budget), and `max-quality` (step-budget adaptation off). Persisted control/config
+ingress still migrates the legacy `none` alias to `max-quality`; live render profiles stay
+canonical. The user-facing wording is "Performance Profile," but some compatibility fields
+still use `qualityPreset` or `renderQualityPreset` — treat those as naming vocabulary that
+still matters, not as free renames.
 
 ### Input semantics
 

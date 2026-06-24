@@ -13,6 +13,7 @@ describe("PerformanceHud module boundaries", () => {
     });
     vi.doMock("@baryon/engine/render/outputProfilePolicy", () => ({
       formatPerformanceProfileLabel: () => "Auto",
+      isAdaptivePerformanceProfile: () => true,
     }));
 
     const module = await import("./PerformanceHud.jsx");

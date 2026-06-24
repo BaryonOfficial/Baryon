@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { PERFORMANCE_PROFILES } from "@baryon/engine/render/outputProfilePolicy";
 import AdvancedControlsSidebar from "./AdvancedControlsSidebar.jsx";
 
 describe("AdvancedControlsSidebar info links", () => {
@@ -151,6 +152,96 @@ describe("AdvancedControlsSidebar info links", () => {
     expect(Array.from(select.options).map((option) => option.value)).toEqual([
       "",
     ]);
+  });
+
+  it("pins performance and output controls outside collapsible groups", () => {
+    const updateControl = vi.fn();
+
+    renderSidebar({
+      folderGroups: [
+        {
+          title: "Performance",
+          expanded: true,
+          controls: [
+            {
+              key: "renderQualityPreset",
+              label: "Profile",
+              title: "Profile",
+              defaultValue: PERFORMANCE_PROFILES.auto,
+              binding: {
+                view: "segmented",
+                options: {
+                  Auto: PERFORMANCE_PROFILES.auto,
+                  Custom: PERFORMANCE_PROFILES.custom,
+                  Max: PERFORMANCE_PROFILES.maxQuality,
+                },
+              },
+            },
+          ],
+        },
+        {
+          title: "Output",
+          expanded: true,
+          controls: [
+            {
+              key: "outputMode",
+              label: "Mode",
+              title: "Mode",
+              defaultValue: "transparent",
+              binding: {
+                view: "segmented",
+                options: {
+                  Transparent: "transparent",
+                  Opaque: "opaque",
+                },
+              },
+            },
+          ],
+        },
+      ],
+      controlsState: {
+        renderQualityPreset: PERFORMANCE_PROFILES.auto,
+        outputMode: "transparent",
+      },
+      updateControl,
+    });
+
+    expect(container.querySelector('select[aria-label="Profile"]')).toBeNull();
+    expect(container.querySelector('select[aria-label="Mode"]')).toBeNull();
+
+    const groups = Array.from(
+      container.querySelectorAll(".baryon-controls-segmented"),
+    );
+    expect(groups).toHaveLength(2);
+    expect(
+      Array.from(container.querySelectorAll('[role="radio"]')).map(
+        (button) => button.textContent,
+      ),
+    ).toEqual(["Auto", "Custom", "Max", "Transparent", "Opaque"]);
+
+    expect(
+      Array.from(container.querySelectorAll(".baryon-controls-pinned-section"))
+        .map((section) =>
+          section
+            .querySelector(".baryon-controls-section-label")
+            ?.textContent?.trim(),
+        )
+        .filter(Boolean),
+    ).toEqual(["Performance", "Output"]);
+    expect(
+      Array.from(container.querySelectorAll(".baryon-controls-group-toggle"))
+        .map((button) => button.textContent)
+        .some(
+          (text) => text.includes("Performance") || text.includes("Output"),
+        ),
+    ).toBe(false);
+
+    const opaqueButton = Array.from(
+      container.querySelectorAll('[role="radio"]'),
+    ).find((button) => button.textContent === "Opaque");
+    opaqueButton?.click();
+
+    expect(updateControl).toHaveBeenCalledWith("outputMode", "opaque");
   });
 
   it("adds extra separation between preset name and load controls", () => {

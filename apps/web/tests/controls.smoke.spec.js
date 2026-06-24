@@ -417,7 +417,7 @@ async function readCanvasSample(page) {
 }
 
 test.describe("Baryon control smoke", () => {
-  test("keeps transparent canvas corners when the backdrop color changes", async ({
+  test("keeps transparent canvas corners over a black preview backdrop", async ({
     page,
     browserName,
   }) => {
@@ -439,7 +439,7 @@ test.describe("Baryon control smoke", () => {
             ).backgroundColor,
         ),
       )
-      .toBe("rgb(18, 52, 86)");
+      .toBe("rgb(0, 0, 0)");
 
     await expect
       .poll(() =>
@@ -465,6 +465,30 @@ test.describe("Baryon control smoke", () => {
       .toEqual({
         cornerAlpha: 0,
       });
+  });
+
+  test("renders the opaque output color behind the program canvas", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.goto("/");
+    await waitForControlSurface(page);
+
+    await setControl(page, "outputMode", "opaque");
+    await setControl(page, "outputBackgroundColor", "#123456");
+
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            getComputedStyle(
+              document.querySelector('[data-testid="baryon-scene-root"]'),
+            ).backgroundColor,
+        ),
+      )
+      .toBe("rgb(18, 52, 86)");
   });
 
   test("updates critical runtime values through the live control surface", async ({
@@ -1344,12 +1368,12 @@ test.describe("Baryon control smoke", () => {
       )
       .toBe("max-quality");
 
-    const glowThresholdInput = page.getByLabel("Glow Threshold value");
-    if (!(await glowThresholdInput.isVisible())) {
-      await page.getByRole("button", { name: /Display/ }).click();
+    const bloomThresholdInput = page.getByLabel("Bloom Threshold value");
+    if (!(await bloomThresholdInput.isVisible())) {
+      await page.getByRole("button", { name: /Bloom/ }).click();
     }
-    await glowThresholdInput.fill("0.41");
-    await glowThresholdInput.blur();
+    await bloomThresholdInput.fill("0.41");
+    await bloomThresholdInput.blur();
 
     await expect
       .poll(() =>

@@ -117,9 +117,7 @@ vi.mock("../../context/liveInputRuntimeStatus.js", () => ({
 }));
 
 vi.mock("@baryon/engine/render/outputPipeline", async () => {
-  const actual = await vi.importActual(
-    "@baryon/engine/render/outputPipeline",
-  );
+  const actual = await vi.importActual("@baryon/engine/render/outputPipeline");
   return {
     ...actual,
     createCaptureOutputSession: () => ({
@@ -132,8 +130,7 @@ vi.mock("./baryonEngineRenderLoop.js", () => ({
   applyCachedControlSnapshots: (...args) =>
     renderLoopSpies.applyCachedControlSnapshotsSpy(...args),
   applyReactiveBloomState: () => ({}),
-  getPlaybackDiagnosticDpr: () => 1,
-  getEffectiveRenderScale: () => 1,
+  getDevicePixelRatio: () => 1,
   publishPerformanceHudSnapshot: () => {},
   publishDevtoolsSnapshots: () => {},
   applyLiveInputRenderIntent: (frame) => frame,
@@ -152,7 +149,7 @@ vi.mock("./baryonEngineRenderLoop.js", () => ({
   syncUploadedRenderQuantities: () => {},
   syncRenderSurfacePixelRatio: () => 1,
   updateRendererDiagnostics: () => ({
-    lowLoadActive: false,
+    lowLoadPlaybackDiagnosticsActive: false,
     runtimeDiagnostics: {},
   }),
 }));
@@ -176,6 +173,7 @@ import { useBaryonEngine } from "./useBaryonEngine.js";
 
 function HookHarness({
   controlsRef = { current: {} },
+  liveControlSignalRef = null,
   renderProfile,
   ensurePipeline = () => null,
   postNodesRef = { current: null },
@@ -204,6 +202,7 @@ function HookHarness({
     ensurePipeline,
     postNodesRef,
     externalFrameRef,
+    liveControlSignalRef,
     renderProfile,
     cameraRenderKey,
     onPerformanceHudSnapshotChange,
@@ -311,7 +310,8 @@ describe("useBaryonEngine", () => {
         React.createElement(HookHarness, {
           renderProfile: {
             qualityPreset: "custom",
-            renderScale: 1,
+            targetFps: 48,
+            renderContext: "external-output",
             traaEnabled: true,
             bloomAllowed: true,
           },
@@ -327,7 +327,8 @@ describe("useBaryonEngine", () => {
         React.createElement(HookHarness, {
           renderProfile: {
             qualityPreset: "custom",
-            renderScale: 1,
+            targetFps: 48,
+            renderContext: "external-output",
             traaEnabled: true,
             bloomAllowed: true,
           },
@@ -342,8 +343,9 @@ describe("useBaryonEngine", () => {
       root.render(
         React.createElement(HookHarness, {
           renderProfile: {
-            qualityPreset: "max-quality",
-            renderScale: 1,
+            qualityPreset: "custom",
+            targetFps: 120,
+            renderContext: "external-output",
             traaEnabled: true,
             bloomAllowed: true,
           },
@@ -353,6 +355,23 @@ describe("useBaryonEngine", () => {
 
     expect(invalidateSpy).toHaveBeenCalledTimes(1);
     expect(clearAdaptiveRaymarchResumeStateSpy).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      root.render(
+        React.createElement(HookHarness, {
+          renderProfile: {
+            qualityPreset: "max-quality",
+            targetFps: 60,
+            renderContext: "external-output",
+            traaEnabled: true,
+            bloomAllowed: true,
+          },
+        }),
+      );
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledTimes(2);
+    expect(clearAdaptiveRaymarchResumeStateSpy).toHaveBeenCalledTimes(2);
   });
 
   it("applies control-change commands at the render frame boundary", async () => {
@@ -417,6 +436,128 @@ describe("useBaryonEngine", () => {
       visualizationLifecycleState.frameCacheRefs.pausedFileFrameRef.current,
     ).toBeNull();
     expect(runtimeStateSpies.clearFrameCacheSpy).not.toHaveBeenCalled();
+  });
+
+  it("refreshes active render controls when the output stage receives live controls", async () => {
+    const controlsRef = {
+      current: {
+        backgroundColor: "#000000",
+        colorMode: "spectral",
+        performanceHudEnabled: false,
+        spectralMix: 1,
+      },
+    };
+    const liveControlSignalRef = { current: { version: 0 } };
+
+    await act(async () => {
+      root.render(
+        React.createElement(HookHarness, {
+          controlsRef,
+          liveControlSignalRef,
+        }),
+      );
+    });
+
+    controlsRef.current.backgroundColor = "#334455";
+    controlsRef.current.auditEnabled = true;
+    liveControlSignalRef.current = { version: 1 };
+
+    const frameCallback = frameState.callbacks.at(-1);
+    expect(frameCallback).toBeTypeOf("function");
+
+    frameCallback(
+      {
+        clock: { getElapsedTime: () => 0 },
+        camera: {},
+        scene: {},
+      },
+      1 / 60,
+    );
+
+    expect(
+      visualizationLifecycleState.controlCacheRefs.cachedControlSnapshotsRef
+        .current.controlsSnapshot.backgroundColor,
+    ).toBe("#334455");
+    expect(
+      renderLoopSpies.applyCachedControlSnapshotsSpy.mock.calls.at(-1)[0]
+        .controls.backgroundColor,
+    ).toBe("#334455");
+    expect(
+      visualizationLifecycleState.runtimeStateRef.current.renderProbeEnabled,
+    ).toBe(true);
+  });
+
+  it("renders opaque output frames even when no audio feature frame is available", async () => {
+    const renderSpy = vi.fn();
+    const setRenderTargetSpy = vi.fn();
+    const setMRTSpy = vi.fn();
+    const postNodesRef = {
+      current: {
+        composeOutputNode: vi.fn(() => "opaque-output"),
+      },
+    };
+    const pipeline = {
+      outputNode: null,
+      needsUpdate: false,
+      render: renderSpy,
+    };
+    renderLoopSpies.applyCachedControlSnapshotsSpy.mockReturnValue({
+      output: {
+        bloomEnabled: true,
+        outputMode: "opaque",
+        outputBackgroundColor: "#123456",
+        smaaEnabled: true,
+      },
+      controlsChanged: true,
+    });
+    renderLoopSpies.shouldRenderExternalFrameSpy.mockReturnValue(true);
+    renderLoopSpies.resolveFeatureFrameSpy.mockReturnValue({
+      featureFrame: null,
+      effectiveFrame: null,
+    });
+
+    await act(async () => {
+      root.render(
+        React.createElement(HookHarness, {
+          controlsRef: {
+            current: {
+              outputMode: "opaque",
+              outputBackgroundColor: "#123456",
+            },
+          },
+          ensurePipeline: () => pipeline,
+          postNodesRef,
+          gl: {
+            setClearColor: () => {},
+            setPixelRatio: () => {},
+            setRenderTarget: setRenderTargetSpy,
+            setMRT: setMRTSpy,
+          },
+        }),
+      );
+    });
+
+    const frameCallback = frameState.callbacks.at(-1);
+    expect(frameCallback).toBeTypeOf("function");
+
+    frameCallback(
+      {
+        clock: { getElapsedTime: () => 0 },
+        camera: {},
+        scene: {},
+      },
+      1 / 60,
+    );
+
+    expect(postNodesRef.current.composeOutputNode).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outputMode: "opaque",
+        temporalHistoryEnabled: false,
+      }),
+    );
+    expect(setRenderTargetSpy).toHaveBeenCalledWith(null);
+    expect(setMRTSpy).toHaveBeenCalledWith(null);
+    expect(renderSpy).toHaveBeenCalledTimes(1);
   });
 
   it("advances output temporal camera cuts after rendering", async () => {

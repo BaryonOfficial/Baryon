@@ -1,33 +1,32 @@
 import { expect, test } from "vitest";
 import { RENDER_CONTEXTS } from "@baryon/engine/render/outputPipeline";
 import {
-  resolveSceneRenderQualityProfile,
-  sanitizeRenderProfileOverrides,
-  shouldAllowLocalRenderProfileCommands,
+  resolveSceneRenderPerformanceProfile,
+  sanitizeLocalPostProcessOverrides,
+  shouldAllowLocalPostProcessOverrides,
 } from "./baryonSceneRenderProfile.js";
 
-test("preview scenes keep the local render-profile command path", () => {
-  expect(shouldAllowLocalRenderProfileCommands(RENDER_CONTEXTS.preview)).toBe(
+test("preview scenes allow local post-process override commands", () => {
+  expect(shouldAllowLocalPostProcessOverrides(RENDER_CONTEXTS.preview)).toBe(
     true,
   );
 });
 
-test("render-profile overrides keep only supported fields", () => {
+test("local post-process overrides keep only supported fields", () => {
   expect(
-    sanitizeRenderProfileOverrides({
+    sanitizeLocalPostProcessOverrides({
       renderScale: 0.5,
       traaEnabled: false,
       bloomAllowed: false,
       unexpected: true,
     }),
   ).toEqual({
-    renderScale: 0.5,
     traaEnabled: false,
     bloomAllowed: false,
   });
 
   expect(
-    sanitizeRenderProfileOverrides({
+    sanitizeLocalPostProcessOverrides({
       renderScale: 0,
       traaEnabled: "nope",
       bloomAllowed: null,
@@ -36,18 +35,17 @@ test("render-profile overrides keep only supported fields", () => {
 });
 
 test("authoritative external-output uses the resolved profile with diagnostics TRAA override", () => {
-  const profile = resolveSceneRenderQualityProfile({
+  const profile = resolveSceneRenderPerformanceProfile({
     performanceProfile: "custom",
     renderContext: RENDER_CONTEXTS.externalOutput,
     resolvedRenderProfile: {
       qualityPreset: "custom",
       targetFps: 120,
-      renderScale: 0.67,
       traaEnabled: true,
       bloomAllowed: true,
       renderContext: RENDER_CONTEXTS.externalOutput,
     },
-    localRenderProfileOverrides: {
+    localPostProcessOverrides: {
       renderScale: 0.92,
     },
     traaEnabled: false,
@@ -56,20 +54,20 @@ test("authoritative external-output uses the resolved profile with diagnostics T
   expect(profile).toMatchObject({
     qualityPreset: "custom",
     targetFps: 120,
-    renderScale: 0.67,
     traaEnabled: false,
     bloomAllowed: true,
     renderContext: RENDER_CONTEXTS.externalOutput,
   });
+  expect(profile).not.toHaveProperty("renderScale");
 });
 
-test("preview scenes still honor local render-profile command overrides", () => {
-  const profile = resolveSceneRenderQualityProfile({
+test("preview scenes honor local diagnostics overrides without downscaling", () => {
+  const profile = resolveSceneRenderPerformanceProfile({
     performanceProfile: "auto",
     renderContext: RENDER_CONTEXTS.preview,
     outputWidth: 1920,
     outputHeight: 1080,
-    localRenderProfileOverrides: {
+    localPostProcessOverrides: {
       renderScale: 0.5,
     },
     traaEnabled: false,
@@ -77,8 +75,28 @@ test("preview scenes still honor local render-profile command overrides", () => 
 
   expect(profile).toMatchObject({
     qualityPreset: "auto",
-    renderScale: 0.5,
     traaEnabled: false,
     renderContext: RENDER_CONTEXTS.preview,
   });
+  expect(profile).not.toHaveProperty("renderScale");
+});
+
+test("preview custom profiles use the custom target FPS without downscaling", () => {
+  const profile = resolveSceneRenderPerformanceProfile({
+    performanceProfile: "custom",
+    targetFps: 72,
+    renderContext: RENDER_CONTEXTS.preview,
+    outputWidth: 1920,
+    outputHeight: 1080,
+    localPostProcessOverrides: {
+      renderScale: 0.5,
+    },
+  });
+
+  expect(profile).toMatchObject({
+    qualityPreset: "custom",
+    targetFps: 72,
+    renderContext: RENDER_CONTEXTS.preview,
+  });
+  expect(profile).not.toHaveProperty("renderScale");
 });

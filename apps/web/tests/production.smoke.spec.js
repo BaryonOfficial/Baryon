@@ -9,13 +9,13 @@ test.describe("Baryon production smoke", () => {
 
     await page.setViewportSize({ width: 740, height: 900 });
     await page.goto("/");
-    await expect(page.getByText("Baryon | Cymatics")).toBeVisible();
+    await expect(page.getByText("Baryon", { exact: true })).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "Toggle advanced controls" }),
     ).toBeVisible();
 
     await page.setViewportSize({ width: 640, height: 900 });
-    await expect(page.getByText("Baryon | Cymatics")).toHaveCount(0);
+    await expect(page.getByText("Baryon", { exact: true })).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "Toggle advanced controls" }),
     ).toBeVisible();

@@ -37,12 +37,16 @@ pnpm install
 
 `pnpm install` also runs the repo `prepare` script and installs the committed Husky hooks.
 
-To front-load the public and Vercel preflight checks before the normal
-`pnpm verify` push gate, temporarily opt into:
+Run `pnpm verify` before pushing. The pre-push hook is cache-only by default: it
+allows trees that already passed `pnpm verify` and fails fast otherwise. To
+front-load the public and Vercel preflight checks too, temporarily opt into:
 
 ```bash
 BARYON_PRE_PUSH_PREFLIGHT=1 git push
 ```
+
+To let the hook run `pnpm verify` inline anyway, use
+`BARYON_PRE_PUSH_RUN_VERIFY=1 git push`.
 
 `pnpm preflight:web:vercel` defaults to the fast local reproduction using
 `pnpm@9`. To run the slower local Vercel builder instead, use:
@@ -71,7 +75,7 @@ pnpm typecheck            # Workspace typecheck where configured
 pnpm test:engine          # Engine unit tests
 pnpm test:app-shell       # Shared app-shell unit tests
 pnpm acceptance:web       # Stable production browser acceptance
-pnpm verify               # Fast local pre-push gate
+pnpm verify               # Fast local gate recorded for the pre-push cache
 pnpm verify:acceptance    # Fast gate plus packaged desktop output contracts
 pnpm verify:full          # Acceptance verification plus all builds
 pnpm docs:check           # Validate doc links, doc invariants, and repo-map freshness

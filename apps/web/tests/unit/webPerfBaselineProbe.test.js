@@ -8,6 +8,10 @@ import {
   summarizeFrameIntervals,
 } from "../../scripts/webPerfBaselineProbe.mjs";
 
+function toRepoPath(value) {
+  return String(value).replaceAll("\\", "/");
+}
+
 test("resolvePerfProbeConfig defaults to fixed Max Quality baseline cases", () => {
   const config = resolvePerfProbeConfig({
     env: {},
@@ -38,7 +42,7 @@ test("resolvePerfProbeConfig defaults to fixed Max Quality baseline cases", () =
     testToneAmplitude: 0.5,
   });
   assert.match(
-    config.outputDir,
+    toRepoPath(config.outputDir),
     /test-results\/perf\/web-baseline\/2026-05-31t14-30-00-000z$/,
   );
 });

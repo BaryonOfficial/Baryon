@@ -9,6 +9,8 @@ import {
 } from "./rendererDiagnostics.js";
 import {
   DEFAULT_PERFORMANCE_PROFILE,
+  normalizeOutputMode,
+  OUTPUT_MODES,
   RENDER_CONTEXTS,
 } from "@baryon/engine/render/outputPipeline";
 
@@ -54,6 +56,16 @@ const defaultStageCameraConfig = (() => {
   });
 })();
 
+// The external output window is already sized to the selected framebuffer.
+// Keep the canvas pixel ratio fixed so display DPR cannot silently multiply it.
+const EXTERNAL_OUTPUT_FRAMEBUFFER_PIXEL_RATIO = 1;
+
+function resolveStageColor(value, fallback) {
+  return typeof value === "string" && value.trim().length > 0
+    ? value
+    : fallback;
+}
+
 /**
  * @param {{
  *   controlsRef: import("react").MutableRefObject<Record<string, unknown>>,
@@ -68,10 +80,13 @@ const defaultStageCameraConfig = (() => {
  *     fov?: number,
  *   } | null,
  *   backgroundColor?: string,
+ *   outputMode?: string,
+ *   outputBackgroundColor?: string,
  *   structuralControlVersion?: number,
  *   liveControlSignalRef?: import("react").MutableRefObject<{ version: number }> | null,
  *   enableControlEventSync?: boolean,
  *   adaptiveResetNonce?: number,
+ *   forceWebGLRenderer?: boolean,
  *   registerRenderRequester?: ((requester: (() => void) | null) => void) | null,
  *   onStageRender?: (payload: { frameSequence: number | null, qualityPreset: string | null }) => void,
  *   onFrameState?: ((state: Record<string, unknown>) => void) | null,
@@ -88,10 +103,13 @@ export function OutputStageSurface({
   externalFrameRef = null,
   cameraPose = null,
   backgroundColor: backgroundColorProp = null,
+  outputMode: outputModeProp = null,
+  outputBackgroundColor: outputBackgroundColorProp = null,
   structuralControlVersion = 0,
   liveControlSignalRef = null,
   enableControlEventSync = false,
   adaptiveResetNonce = 0,
+  forceWebGLRenderer = false,
   registerRenderRequester = null,
   onStageRender = null,
   onFrameState = null,
@@ -118,12 +136,24 @@ export function OutputStageSurface({
           fov: resolvedCameraPose.fov,
         }
   );
-  const resolvedBackgroundColor =
-    backgroundColorProp ??
-    (typeof controlsRef.current?.backgroundColor === "string"
-      ? controlsRef.current.backgroundColor
-      : "#0D0A07");
+  const controls = controlsRef.current ?? {};
+  const resolvedBackdropColor = resolveStageColor(
+    backgroundColorProp ?? controls.backgroundColor,
+    "#0D0A07",
+  );
+  const resolvedOutputMode = normalizeOutputMode(
+    outputModeProp ?? controls.outputMode,
+  );
+  const resolvedOutputBackgroundColor = resolveStageColor(
+    outputBackgroundColorProp ?? controls.outputBackgroundColor,
+    resolvedBackdropColor,
+  );
+  const resolvedStageBackground =
+    resolvedOutputMode === OUTPUT_MODES.opaque
+      ? resolvedOutputBackgroundColor
+      : "transparent";
   const traaEnabled = controlsRef.current?.traaEnabled !== false;
+  const customTargetFps = controlsRef.current?.customTargetFps ?? null;
 
   const handleCanvasError = (error) => {
     if (error?.name !== WEBGPU_RENDERER_INIT_ERROR) {
@@ -136,12 +166,13 @@ export function OutputStageSurface({
   return (
     <div
       data-testid="output-stage-root"
+      data-output-mode={resolvedOutputMode}
       style={{
         width: "100vw",
         height: "100vh",
         position: "fixed",
         inset: 0,
-        background: resolvedBackgroundColor,
+        backgroundColor: resolvedStageBackground,
       }}
     >
       {rendererError ? (
@@ -161,18 +192,18 @@ export function OutputStageSurface({
         </div>
       ) : (
         <RendererErrorBoundary
-          resetKey={`stage-${visualizationMethod}`}
+          resetKey={`stage-${forceWebGLRenderer ? "webgl" : "webgpu"}-${visualizationMethod}`}
           onError={handleCanvasError}
         >
           <Canvas
-            key={`stage-${visualizationMethod}`}
+            key={`stage-${forceWebGLRenderer ? "webgl" : "webgpu"}-${visualizationMethod}`}
             frameloop="demand"
             style={{
               position: "absolute",
               inset: 0,
               background: "transparent",
             }}
-            dpr={1}
+            dpr={EXTERNAL_OUTPUT_FRAMEBUFFER_PIXEL_RATIO}
             camera={{
               position: cameraConfig.position,
               up: cameraConfig.up,
@@ -182,8 +213,8 @@ export function OutputStageSurface({
             }}
             // @ts-ignore — WebGPURenderer is runtime-compatible; R3F types predate WebGPU
             gl={(glDefaults) =>
-              createBaryonRenderer(glDefaults, false, {
-                initialPixelRatio: 1,
+              createBaryonRenderer(glDefaults, forceWebGLRenderer, {
+                initialPixelRatio: EXTERNAL_OUTPUT_FRAMEBUFFER_PIXEL_RATIO,
               })
             }
           >
@@ -198,14 +229,15 @@ export function OutputStageSurface({
                 liveInputErrorCode="none"
                 controlsRef={controlsRef}
                 visualizationMethod={visualizationMethod}
-                renderQualityPreset={renderQualityPreset}
+                performanceProfile={renderQualityPreset}
+                customTargetFps={customTargetFps}
                 traaEnabled={traaEnabled}
                 resolvedRenderProfile={resolvedRenderProfile}
                 onPerformanceHudSnapshotChange={onPerformanceHudSnapshotChange}
                 onAuditSnapshotChange={onAuditSnapshotChange}
                 externalFrameRef={externalFrameRef}
                 cameraPose={resolvedCameraPose}
-                basePixelRatio={1}
+                basePixelRatio={EXTERNAL_OUTPUT_FRAMEBUFFER_PIXEL_RATIO}
                 onStageRender={onStageRender}
                 onFrameState={onFrameState}
                 cameraControlMode={CAMERA_CONTROL_MODES.externalSynced}

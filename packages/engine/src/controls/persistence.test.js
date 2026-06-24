@@ -9,6 +9,10 @@ import {
   deserializeControls,
   createPreset,
 } from "./persistence.js";
+import {
+  MAX_PERFORMANCE_TARGET_FPS,
+  MIN_PERFORMANCE_TARGET_FPS,
+} from "../render/outputProfilePolicy.js";
 
 const liveKeys = CONTROL_DEFINITIONS.filter(
   (d) => d.status === CONTROL_STATUSES.live,
@@ -145,6 +149,28 @@ describe("deserializeControls", () => {
     );
 
     expect(result.renderQualityPreset).toBe("max-quality");
+  });
+
+  it("migrates legacy custom performance targets to normalized target FPS controls", () => {
+    const result = deserializeControls(
+      { customPerformanceTargetFps: 500 },
+      CONTROL_DEFINITIONS,
+    );
+
+    expect(result.customTargetFps).toBe(MAX_PERFORMANCE_TARGET_FPS);
+    expect(result).not.toHaveProperty("customPerformanceTargetFps");
+  });
+
+  it("normalizes persisted custom target FPS controls at the storage boundary", () => {
+    expect(
+      deserializeControls({ customTargetFps: 5 }, CONTROL_DEFINITIONS)
+        .customTargetFps,
+    ).toBe(MIN_PERFORMANCE_TARGET_FPS);
+
+    expect(
+      deserializeControls({ customTargetFps: 72.4 }, CONTROL_DEFINITIONS)
+        .customTargetFps,
+    ).toBe(72);
   });
 
   it("collapses removed visualization methods onto raymarch", () => {

@@ -7,6 +7,8 @@ import {
   getRenderOutputSmaaGraphEnabled,
   getRenderOutputTemporalHistoryGraphEnabled,
   getRenderQualityProfileKey,
+  getRenderQualityProfileTargetFps,
+  isAdaptivePerformanceProfile,
   markRenderOutputContentChange,
   syncRenderOutputNodeTopology,
 } from "@baryon/engine/render/outputPipeline";
@@ -50,9 +52,8 @@ import { createCaptureOutputSession } from "@baryon/engine/render/outputPipeline
 import {
   applyCachedControlSnapshots,
   applyReactiveBloomState,
-  getPlaybackDiagnosticDpr,
+  getDevicePixelRatio,
   getRenderTargetPixelRatio,
-  getEffectiveRenderScale,
   publishPerformanceHudSnapshot,
   publishDevtoolsSnapshots,
   applyLiveInputRenderIntent,
@@ -64,7 +65,6 @@ import {
   updateModalFreshnessDiagnostics,
   updateAdaptiveRaymarchStepBudget,
   updateRendererDiagnostics,
-  syncRenderSurfacePixelRatio,
   syncUploadedRenderQuantities,
 } from "./baryonEngineRenderLoop.js";
 import { useVisualizationRuntimeLifecycle } from "./useVisualizationRuntimeLifecycle.js";
@@ -94,6 +94,15 @@ function recordMeasuredRuntimePerf(runtimeDiagnostics, key, startedAt) {
     runtimeDiagnostics,
     key,
     Math.max(0, getWallTimeMs() - startedAt),
+  );
+}
+
+function renderPipelineFrame(renderLoopContext, pipeline) {
+  renderLoopContext.gl.setRenderTarget?.(null);
+  renderLoopContext.gl.setMRT?.(null);
+  pipeline.render();
+  advanceRenderOutputTemporalHistoryBypass(
+    renderLoopContext.postNodesRef.current,
   );
 }
 
@@ -224,7 +233,7 @@ export function useBaryonEngine({
         snapshot: null,
       });
       setLiveInputRuntimeStatus?.(createLiveInputRuntimeStatus());
-      const defaultDpr = getPlaybackDiagnosticDpr();
+      const defaultDpr = getDevicePixelRatio();
       gl.setPixelRatio(defaultDpr);
       pixelRatioRef.current = defaultDpr;
       renderSurfaceSizeRef.current = null;
@@ -506,12 +515,7 @@ export function useBaryonEngine({
       return;
     }
 
-    const controls = renderLoopContext.controlsRef.current;
-    const tailDiagnosticsActive = isTailDiagnosticsRecorderActive(
-      tailDiagnosticsRef.current,
-    );
-    runtimeState.renderProbeEnabled =
-      controls.auditEnabled === true || tailDiagnosticsActive;
+    let controls = renderLoopContext.controlsRef.current;
     const nextLiveControlSignalVersion =
       liveControlSignalRef?.current?.version ?? 0;
     if (
@@ -521,8 +525,15 @@ export function useBaryonEngine({
     ) {
       lastObservedLiveControlSignalVersionRef.current =
         nextLiveControlSignalVersion;
+      controls = controlsRef?.current ? { ...controlsRef.current } : controls;
+      renderLoopContext.controlsRef.current = controls;
       applyControlInvalidation(controls);
     }
+    const tailDiagnosticsActive = isTailDiagnosticsRecorderActive(
+      tailDiagnosticsRef.current,
+    );
+    runtimeState.renderProbeEnabled =
+      controls.auditEnabled === true || tailDiagnosticsActive;
     const audio = renderLoopContext.audioRef.current;
     const externalFrameState = externalFrameRef?.current ?? null;
     const fallbackClockSnapshot = {
@@ -541,31 +552,23 @@ export function useBaryonEngine({
       lastAppliedFrameSequence: lastAppliedExternalFrameSequenceRef.current,
       fallbackClockSnapshot,
     });
-    const requestedRenderScale = renderProfileRef.current?.renderScale ?? 1;
-    const currentEffectiveRenderScale = getEffectiveRenderScale(
-      runtimeDiagnosticsRef.current,
-      requestedRenderScale,
-    );
-    const { lowLoadActive, runtimeDiagnostics } = updateRendererDiagnostics(
-      {
-        state,
-        controls,
-        status,
-        time,
-        deltaTime,
-        rfDelta,
-        gl: renderLoopContext.gl,
-        renderLoopRefs,
-      },
-      {
-        getTargetDpr: () =>
-          getRenderTargetPixelRatio(
-            renderProfileRef.current?.qualityPreset,
-            basePixelRatio,
-          ),
-        renderScale: currentEffectiveRenderScale,
-      },
-    );
+    const { lowLoadPlaybackDiagnosticsActive, runtimeDiagnostics } =
+      updateRendererDiagnostics(
+        {
+          state,
+          controls,
+          status,
+          time,
+          deltaTime,
+          rfDelta,
+          gl: renderLoopContext.gl,
+          renderLoopRefs,
+        },
+        {
+          getRequestedPixelRatio: () =>
+            getRenderTargetPixelRatio(basePixelRatio),
+        },
+      );
     const uiInteractionActive =
       uiInteractionUntilMsRef.current > getWallTimeMs();
     if (runtimeDiagnostics.uiInteraction) {
@@ -665,6 +668,30 @@ export function useBaryonEngine({
     );
 
     if (!featureFrame || !effectiveFrame) {
+      if (!suppressRender && pipeline && output?.outputMode === "opaque") {
+        const pipelineRenderStartedAt = getWallTimeMs();
+        syncRenderOutputNodeTopology(
+          pipeline,
+          renderLoopContext.postNodesRef.current,
+          {
+            bloomEnabled: output?.bloomEnabled === true,
+            outputMode: output.outputMode,
+            bloomActive: false,
+            temporalHistoryEnabled: false,
+            smaaEnabled: output?.smaaEnabled !== false,
+          },
+        );
+        renderPipelineFrame(renderLoopContext, pipeline);
+        recordMeasuredRuntimePerf(
+          runtimeDiagnostics,
+          "pipelineRenderMs",
+          pipelineRenderStartedAt,
+        );
+        onStageRender?.({
+          frameSequence: externalFrameSequence,
+          qualityPreset: renderProfileRef.current?.qualityPreset ?? null,
+        });
+      }
       return;
     }
 
@@ -679,39 +706,18 @@ export function useBaryonEngine({
       status,
       runtimeDiagnostics,
     });
-    syncRenderSurfacePixelRatio({
-      gl: renderLoopContext.gl,
-      renderLoopRefs,
-      runtimeDiagnostics,
-      renderProfile: renderProfileRef.current,
-      controls,
-      status,
-      requestedRenderScale,
-      basePixelRatio,
-    });
 
-    const bloomGovernorAllowed =
-      runtimeState?.performanceGovernor?.bloomAllowed ?? true;
     const effectiveBloomEnabled = Boolean(
-      controls.bloomEnabled &&
-      (renderProfileRef.current?.bloomAllowed ?? true) &&
-      bloomGovernorAllowed,
+      controls.bloomEnabled && (renderProfileRef.current?.bloomAllowed ?? true),
     );
     if (runtimeDiagnostics?.render) {
-      const effectiveRenderScale = getEffectiveRenderScale(
-        runtimeDiagnostics,
-        requestedRenderScale,
-      );
       runtimeDiagnostics.render.visualizationMethod = runtime.method ?? null;
       runtimeDiagnostics.render.qualityPreset =
         renderProfileRef.current?.qualityPreset ?? null;
-      runtimeDiagnostics.render.requestedRenderScale = requestedRenderScale;
-      runtimeDiagnostics.render.renderScale = effectiveRenderScale;
       runtimeDiagnostics.render.traaEnabled =
         renderProfileRef.current?.traaEnabled ?? false;
       runtimeDiagnostics.render.bloomAllowed =
-        (renderProfileRef.current?.bloomAllowed ?? false) &&
-        bloomGovernorAllowed;
+        renderProfileRef.current?.bloomAllowed ?? false;
       runtimeDiagnostics.render.bloomEnabled = effectiveBloomEnabled;
       runtimeDiagnostics.render.requestedRaymarchSteps =
         runtimeState?.requestedRaymarchSteps ??
@@ -730,29 +736,33 @@ export function useBaryonEngine({
         runtimeDiagnostics.adaptiveRaymarch?.stepDownCount ?? 0;
       runtimeDiagnostics.render.adaptiveStepUpCount =
         runtimeDiagnostics.adaptiveRaymarch?.stepUpCount ?? 0;
+      const renderProfileTargetFps = isAdaptivePerformanceProfile(
+        renderProfileRef.current?.qualityPreset,
+      )
+        ? getRenderQualityProfileTargetFps(renderProfileRef.current)
+        : null;
       runtimeDiagnostics.render.targetFps =
-        runtimeDiagnostics.adaptiveRaymarch?.targetFps ?? 60;
+        renderProfileTargetFps ??
+        runtimeDiagnostics.adaptiveRaymarch?.targetFps ??
+        60;
       runtimeDiagnostics.render.targetFrameTimeMs =
-        runtimeDiagnostics.adaptiveRaymarch?.targetFrameTimeMs ?? 1000 / 60;
+        runtimeDiagnostics.render.targetFps > 0
+          ? 1000 / runtimeDiagnostics.render.targetFps
+          : (runtimeDiagnostics.adaptiveRaymarch?.targetFrameTimeMs ??
+            1000 / 60);
       runtimeDiagnostics.render.activeModeCount =
         effectiveFrame?.activeModeCount ??
         effectiveFrame?.activeModalFieldModeCount ??
         effectiveFrame?.modalDescriptor?.counts?.modalFieldModeCount ??
         0;
       runtimeDiagnostics.render.complexityScore =
-        runtimeState?.performanceGovernor?.complexityScore ?? 0;
+        runtimeState?.raymarchFieldAnalysis?.complexityScore ?? 0;
       runtimeDiagnostics.render.uploadedModeCount =
-        runtimeState?.performanceGovernor?.uploadedModeCount ??
+        runtimeState?.raymarchFieldAnalysis?.uploadedModeCount ??
         runtimeDiagnostics.render.activeModeCount;
       runtimeDiagnostics.render.originalModeCount =
-        runtimeState?.performanceGovernor?.originalModeCount ??
+        runtimeState?.raymarchFieldAnalysis?.originalModeCount ??
         runtimeDiagnostics.render.activeModeCount;
-      runtimeDiagnostics.render.proactiveRenderScale =
-        runtimeState?.performanceGovernor?.proactiveRenderScale ??
-        requestedRenderScale;
-      runtimeDiagnostics.render.proactiveStepBudget =
-        runtimeState?.performanceGovernor?.proactiveStepBudget ??
-        runtimeDiagnostics.render.requestedRaymarchSteps;
     }
     if (runtimeDiagnostics?.postProcess) {
       runtimeDiagnostics.postProcess.traaNodeActive = Boolean(
@@ -861,7 +871,7 @@ export function useBaryonEngine({
         runtimeState,
         status,
         featureState,
-        lowLoadActive,
+        lowLoadPlaybackDiagnosticsActive,
         runtimeDiagnostics,
         shared,
         output,
@@ -930,12 +940,7 @@ export function useBaryonEngine({
         runtimeDiagnostics.postProcess.temporalHistoryGraphEnabled =
           getRenderOutputTemporalHistoryGraphEnabled(postNodes);
       }
-      renderLoopContext.gl.setRenderTarget?.(null);
-      renderLoopContext.gl.setMRT?.(null);
-      pipeline.render();
-      advanceRenderOutputTemporalHistoryBypass(
-        renderLoopContext.postNodesRef.current,
-      );
+      renderPipelineFrame(renderLoopContext, pipeline);
       recordMeasuredRuntimePerf(
         runtimeDiagnostics,
         "pipelineRenderMs",

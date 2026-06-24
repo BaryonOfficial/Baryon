@@ -271,6 +271,47 @@ describe("AudioProvider source transport gating", () => {
     );
   });
 
+  it("starts live input through the canonical Go Live action", async () => {
+    Object.defineProperty(window, "isSecureContext", {
+      configurable: true,
+      value: true,
+    });
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => ({
+          getTracks: () => [{ stop: vi.fn() }],
+        })),
+        enumerateDevices: vi.fn(async () => []),
+      },
+    });
+    refreshAudioInputsMock.mockResolvedValue([
+      {
+        kind: "audioinput",
+        deviceId: "main-window-device-9",
+        label: "BlackHole 2ch (Virtual)",
+      },
+    ]);
+    const onValue = vi.fn();
+    renderProvider(onValue, { platform: "web" });
+
+    let audio = onValue.mock.lastCall[0];
+    await act(async () => {
+      await audio.requestLiveInputPermission();
+    });
+
+    audio = onValue.mock.lastCall[0];
+    await act(async () => {
+      await audio.handleLiveInputAction();
+    });
+
+    expect(session.startLiveInputStream).toHaveBeenCalledWith(
+      "main-window-device-9",
+      "system",
+      "BlackHole 2ch (Virtual)",
+    );
+  });
+
   it("keeps a selected live endpoint by label when the browser device id changes", async () => {
     Object.defineProperty(window, "isSecureContext", {
       configurable: true,

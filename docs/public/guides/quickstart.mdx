@@ -39,17 +39,21 @@ framed the way you want, and saved as a preset you can reload any time.
 
     **Checkpoint:** within a second or two, the orb starts moving with the sound.
 
-    {/* TODO: swap the SVG placeholder for a real 4–6s muted, looping clip of
-        audio coming alive into a field. Easiest: overwrite
-        docs/images/quickstart/first-render.svg with a small looping GIF and
-        point src at it. For an MP4 instead, replace the <img> with:
-        <video autoPlay loop muted playsInline
-          src="/images/quickstart/first-render.mp4" /> */}
     <Frame caption="The moment it clicks: a sound becomes a field.">
-      <img
-        src="/images/quickstart/first-render.svg"
-        alt="Baryon rendering live audio as a volumetric cymatic field"
-      />
+      <video
+        autoPlay
+        loop
+        muted
+        playsInline
+        preload="metadata"
+        poster="https://baryon.live/site-v1/lineage/baryon-cymatics-poster.jpg"
+        aria-label="Baryon rendering live audio as a volumetric cymatic field"
+      >
+        <source
+          src="https://baryon.live/site-v1/lineage/baryon-cymatics.mp4"
+          type="video/mp4"
+        />
+      </video>
     </Frame>
   </Step>
 

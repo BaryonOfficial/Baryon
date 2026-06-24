@@ -15,7 +15,9 @@ overrides:
 
 allowBuilds:
   "@ast-grep/cli": true
+  "@sentry/cli": true
   electron: true
+  electron-winstaller: true
   esbuild: true
   fs-xattr: true
   macos-alias: true

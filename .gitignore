@@ -23,6 +23,11 @@ tmp/
 .project-workflow/
 Baryon Design System.zip
 
+# Desktop license issuance artifacts
+baryon-desktop-licenses/
+*.baryon-license
+**/issuance-manifest.csv
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

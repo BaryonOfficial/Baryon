@@ -671,13 +671,25 @@ function buildModeAtlas({
   return atlas;
 }
 
-function buildDriveBufferFromTimeData(timeData) {
+function resolveScratchFloat32(buffer, length) {
+  return buffer instanceof Float32Array && buffer.length === length
+    ? buffer
+    : new Float32Array(length);
+}
+
+function resolveScratchFloat64(buffer, length) {
+  return buffer instanceof Float64Array && buffer.length >= length
+    ? buffer
+    : new Float64Array(length);
+}
+
+function buildDriveBufferFromTimeData(timeData, scratchBuffer = null) {
   if (!(timeData instanceof Float32Array) || timeData.length === 0) {
     return null;
   }
 
   const length = Math.min(SYNTH_BUFFER_SIZE, timeData.length);
-  const buffer = new Float32Array(length);
+  const buffer = resolveScratchFloat32(scratchBuffer, length);
   let peak = 0;
   for (let index = 0; index < length; index += 1) {
     const sample = timeData[index] ?? 0;
@@ -693,9 +705,15 @@ function buildDriveBufferFromTimeData(timeData) {
   return { buffer, peak };
 }
 
-function buildDriveBufferFromSpectrum(fftMagnitudes, sampleRate) {
+function buildDriveBufferFromSpectrum(
+  fftMagnitudes,
+  sampleRate,
+  scratchBuffer = null,
+) {
   if (!(fftMagnitudes instanceof Float32Array) || fftMagnitudes.length === 0) {
-    return new Float32Array(SYNTH_BUFFER_SIZE);
+    const buffer = resolveScratchFloat32(scratchBuffer, SYNTH_BUFFER_SIZE);
+    buffer.fill(0);
+    return buffer;
   }
 
   const peaks = [];
@@ -713,7 +731,8 @@ function buildDriveBufferFromSpectrum(fftMagnitudes, sampleRate) {
   }
   peaks.sort((left, right) => right.amplitude - left.amplitude);
   const selected = peaks.slice(0, MAX_SYNTH_PARTIALS);
-  const buffer = new Float32Array(SYNTH_BUFFER_SIZE);
+  const buffer = resolveScratchFloat32(scratchBuffer, SYNTH_BUFFER_SIZE);
+  buffer.fill(0);
   const amplitudeNorm = selected[0]?.amplitude ?? 1;
 
   for (let index = 0; index < buffer.length; index += 1) {
@@ -733,11 +752,16 @@ function buildDriveBufferFromSpectrum(fftMagnitudes, sampleRate) {
   return buffer;
 }
 
-function computeDriveBuffer(preparedInputs, fastSignalState) {
+function computeDriveBuffer(preparedInputs, fastSignalState, state = null) {
+  const scratch = state?.scratch ?? null;
   const timeDomainResult = buildDriveBufferFromTimeData(
     preparedInputs.snapshot?.timeData,
+    scratch?.driveBuffer,
   );
   if (timeDomainResult) {
+    if (scratch && scratch.driveBuffer !== timeDomainResult.buffer) {
+      scratch.driveBuffer = timeDomainResult.buffer;
+    }
     return {
       buffer: timeDomainResult.buffer,
       peak: timeDomainResult.peak,
@@ -745,11 +769,16 @@ function computeDriveBuffer(preparedInputs, fastSignalState) {
     };
   }
 
+  const buffer = buildDriveBufferFromSpectrum(
+    fastSignalState.fftMagnitudes,
+    preparedInputs.sampleRate,
+    scratch?.driveBuffer,
+  );
+  if (scratch && scratch.driveBuffer !== buffer) {
+    scratch.driveBuffer = buffer;
+  }
   return {
-    buffer: buildDriveBufferFromSpectrum(
-      fastSignalState.fftMagnitudes,
-      preparedInputs.sampleRate,
-    ),
+    buffer,
     peak: 1,
     driveSource: "spectral-fallback",
   };
@@ -916,7 +945,7 @@ function computeResonantBandHarmonicSupport({
     : 0;
 }
 
-function computeDrivePeriodicity(buffer, sampleRate) {
+function computeDrivePeriodicity(buffer, sampleRate, scratch = null) {
   if (!(buffer instanceof Float32Array) || buffer.length < 32) {
     return 0;
   }
@@ -927,7 +956,14 @@ function computeDrivePeriodicity(buffer, sampleRate) {
     return 0;
   }
 
-  const prefixSumSq = new Float64Array(buffer.length + 1);
+  const prefixSumSq = resolveScratchFloat64(
+    scratch?.periodicityPrefixSumSq,
+    buffer.length + 1,
+  );
+  if (scratch && scratch.periodicityPrefixSumSq !== prefixSumSq) {
+    scratch.periodicityPrefixSumSq = prefixSumSq;
+  }
+  prefixSumSq[0] = 0;
   for (let index = 0; index < buffer.length; index += 1) {
     prefixSumSq[index + 1] = prefixSumSq[index] + buffer[index] * buffer[index];
   }
@@ -3439,11 +3475,12 @@ export function buildModalExcitationStructuralState({
     buffer: driveBuffer,
     peak: drivePeak,
     driveSource,
-  } = computeDriveBuffer(preparedInputs, fastSignalState);
+  } = computeDriveBuffer(preparedInputs, fastSignalState, state);
   const strictHardSilentFrame = isHardSilentFrame(preparedInputs);
   const periodicity = computeDrivePeriodicity(
     driveBuffer,
     preparedInputs.sampleRate,
+    state.scratch,
   );
   const flatness = computeSpectralFlatness(fastSignalState.fftMagnitudes);
   const tonalness = clamp01(1 - flatness * 1.1);
