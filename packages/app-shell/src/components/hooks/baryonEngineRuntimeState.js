@@ -18,7 +18,7 @@ const WORKER_PERF_COUNTER_BASES = Object.freeze([
   "Tempo",
 ]);
 const WORKER_PERF_COUNTER_SUFFIXES = Object.freeze(["Ms", "LastMs", "MaxMs"]);
-export const WORKER_PERF_COUNTER_KEYS = Object.freeze(
+const WORKER_PERF_COUNTER_KEYS = Object.freeze(
   WORKER_PERF_COUNTER_BASES.flatMap((base) =>
     WORKER_PERF_COUNTER_SUFFIXES.map((suffix) => `worker${base}${suffix}`),
   ),
@@ -78,14 +78,9 @@ function createAdaptiveRaymarchDiagnostics() {
     adaptiveRaymarchActive: false,
     requestedRaymarchSteps: 0,
     effectiveRaymarchSteps: 0,
-    requestedRenderScale: 1,
-    effectiveRenderScale: 1,
     currentRung: 0,
-    currentRenderScaleRung: null,
     stepDownCount: 0,
     stepUpCount: 0,
-    renderScaleStepDownCount: 0,
-    renderScaleStepUpCount: 0,
     targetFps: 60,
     targetFrameTimeMs: 1000 / 60,
     decisionFrameCount: 0,
@@ -485,8 +480,6 @@ export function createRuntimeDiagnostics() {
     render: {
       visualizationMethod: null,
       qualityPreset: null,
-      renderScale: 1,
-      requestedRenderScale: 1,
       traaEnabled: false,
       bloomAllowed: false,
       bloomEnabled: false,
@@ -1054,9 +1047,6 @@ function buildRuntimePerfSnapshot(runtimeDiagnostics) {
       visualizationMethod:
         runtimeDiagnostics?.render?.visualizationMethod ?? null,
       qualityPreset: runtimeDiagnostics?.render?.qualityPreset ?? null,
-      renderScale: runtimeDiagnostics?.render?.renderScale ?? 1,
-      requestedRenderScale:
-        runtimeDiagnostics?.render?.requestedRenderScale ?? 1,
       traaEnabled: runtimeDiagnostics?.render?.traaEnabled ?? false,
       bloomAllowed: runtimeDiagnostics?.render?.bloomAllowed ?? false,
       bloomEnabled: runtimeDiagnostics?.render?.bloomEnabled ?? false,

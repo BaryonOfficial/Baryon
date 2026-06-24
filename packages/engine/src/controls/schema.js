@@ -54,48 +54,59 @@ const CONTROL_GROUPS = Object.freeze({
     order: 10,
     expanded: false,
   }),
-  mode: Object.freeze({
-    title: "Mode",
+  performance: Object.freeze({
+    title: "Performance",
     order: 15,
+    expanded: false,
+  }),
+  output: Object.freeze({
+    title: "Output",
+    order: 20,
     expanded: false,
   }),
   shape: Object.freeze({
     title: "Shape",
-    order: 20,
+    order: 30,
     expanded: false,
   }),
   color: Object.freeze({
     title: "Color",
-    order: 30,
-    expanded: false,
-  }),
-  logo: Object.freeze({
-    title: "Logo",
-    order: 35,
+    order: 40,
     expanded: false,
   }),
   motion: Object.freeze({
     title: "Motion",
-    order: 40,
+    order: 50,
     expanded: false,
   }),
-  display: Object.freeze({
-    title: "Display",
-    order: 50,
+  bloom: Object.freeze({
+    title: "Bloom",
+    order: 60,
+    expanded: false,
+  }),
+  logo: Object.freeze({
+    title: "Logo",
+    order: 70,
     expanded: false,
   }),
   // Controls rendered inline under the Presets section, not as a collapsible folder
   presetsArea: Object.freeze({
     title: "PresetsArea",
-    order: 55,
+    order: 75,
     expanded: false,
   }),
   diagnostics: Object.freeze({
     title: "Diagnostics",
-    order: 60,
+    order: 80,
     expanded: false,
   }),
 });
+
+function sortControlsByPresentationOrder(left, right) {
+  const leftOrder = left.controlOrder ?? Number.MAX_SAFE_INTEGER;
+  const rightOrder = right.controlOrder ?? Number.MAX_SAFE_INTEGER;
+  return leftOrder - rightOrder;
+}
 
 function withControlGroup(definition, group) {
   return {
@@ -209,7 +220,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "zeroPointPrecision",
       label: "Node Threshold",
       title:
-        "How sharp the glowing ring structures appear — lower values create crisper, more defined rings; higher values soften them into blends",
+        "How sharp the bright ring structures appear — lower values create crisper, more defined rings; higher values soften them into blends",
       defaultValue: SIMULATION_DEFAULTS.zeroPointPrecision,
       methods: ALL_METHODS,
       binding: { min: 0.001, max: 0.3, step: 0.001 },
@@ -217,6 +228,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.uniforms.uThreshold.value",
       status: CONTROL_STATUSES.live,
+      controlOrder: 20,
     },
     CONTROL_GROUPS.shape,
   ),
@@ -238,15 +250,16 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.uniforms.uBoundaryMode.value",
       status: CONTROL_STATUSES.live,
+      controlOrder: 10,
     },
-    CONTROL_GROUPS.mode,
+    CONTROL_GROUPS.shape,
   ),
   withControlGroup(
     {
       key: "densityGain",
       label: "Density",
       title:
-        "How thick and bright the overall volume glow appears — raise for a bolder, denser orb",
+        "How thick and bright the overall volume body appears — raise for a bolder, denser orb",
       defaultValue: RAYMARCH_DEFAULTS.densityGain,
       methods: methodsFor("shared"),
       binding: { min: 0.1, max: 4, step: 0.01 },
@@ -254,6 +267,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.uniforms.uDensityGain.value",
       status: CONTROL_STATUSES.live,
+      controlOrder: 30,
     },
     CONTROL_GROUPS.shape,
   ),
@@ -270,6 +284,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.uniforms.uAbsorption.value",
       status: CONTROL_STATUSES.live,
+      controlOrder: 40,
     },
     CONTROL_GROUPS.shape,
   ),
@@ -286,6 +301,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.uniforms.uOpacityGain.value",
       status: CONTROL_STATUSES.live,
+      controlOrder: 50,
     },
     CONTROL_GROUPS.shape,
   ),
@@ -302,6 +318,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.volumeMesh.material.steps",
       status: CONTROL_STATUSES.live,
+      controlOrder: 60,
     },
     CONTROL_GROUPS.shape,
   ),
@@ -311,7 +328,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     {
       key: "volumeColor",
       label: "Volume",
-      title: "Main glow color of the orb interior",
+      title: "Main volume color of the orb interior",
       defaultValue: RENDER_DEFAULTS.volumeColor,
       methods: ALL_METHODS,
       binding: { view: "color" },
@@ -319,6 +336,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.uniforms.uColor.value",
       status: CONTROL_STATUSES.live,
+      controlOrder: 20,
     },
     CONTROL_GROUPS.color,
   ),
@@ -334,8 +352,26 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.uniforms.uSurfaceColor.value",
       status: CONTROL_STATUSES.live,
+      controlOrder: 30,
     },
     CONTROL_GROUPS.color,
+  ),
+  withControlGroup(
+    {
+      key: "outputBackgroundColor",
+      label: "Output Color",
+      title: "Background fill color used in Opaque output mode",
+      defaultValue: RENDER_DEFAULTS.outputBackgroundColor,
+      methods: ALL_METHODS,
+      binding: { view: "color" },
+      targetType: CONTROL_TARGET_TYPES.pipeline,
+      handler: CONTROL_HANDLERS.output,
+      runtimePath: "program.backgroundColor",
+      status: CONTROL_STATUSES.live,
+      visibleWhen: { key: "outputMode", value: "opaque" },
+      controlOrder: 20,
+    },
+    CONTROL_GROUPS.output,
   ),
   withControlGroup(
     {
@@ -355,8 +391,9 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.spectralLight.colorMode",
       status: CONTROL_STATUSES.live,
+      controlOrder: 10,
     },
-    CONTROL_GROUPS.mode,
+    CONTROL_GROUPS.color,
   ),
   withControlGroup(
     {
@@ -371,6 +408,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.uniforms.uSpectralMix.value",
       status: CONTROL_STATUSES.live,
+      visibleWhen: { key: "colorMode", value: "spectral" },
+      controlOrder: 40,
     },
     CONTROL_GROUPS.color,
   ),
@@ -386,6 +425,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.uniforms.uHolographicIntensity.value",
       status: CONTROL_STATUSES.live,
+      controlOrder: 50,
     },
     CONTROL_GROUPS.color,
   ),
@@ -401,6 +441,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.uniforms.uHolographicShift.value",
       status: CONTROL_STATUSES.live,
+      controlOrder: 60,
     },
     CONTROL_GROUPS.color,
   ),
@@ -417,6 +458,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.uniforms.uHolographicFresnelPower.value",
       status: CONTROL_STATUSES.live,
+      controlOrder: 70,
     },
     CONTROL_GROUPS.color,
   ),
@@ -432,6 +474,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.uniforms.uIdleLogoIntensity.value",
       status: CONTROL_STATUSES.live,
+      controlOrder: 10,
     },
     CONTROL_GROUPS.logo,
   ),
@@ -447,6 +490,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.idleOverlay.scale",
       status: CONTROL_STATUSES.live,
+      controlOrder: 20,
     },
     CONTROL_GROUPS.logo,
   ),
@@ -471,8 +515,9 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.scene,
       runtimePath: "runtime.sceneMotion.rotationMode",
       status: CONTROL_STATUSES.live,
+      controlOrder: 10,
     },
-    CONTROL_GROUPS.mode,
+    CONTROL_GROUPS.motion,
   ),
   withControlGroup(
     {
@@ -487,6 +532,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.scene,
       runtimePath: "object.rotation.y",
       status: CONTROL_STATUSES.live,
+      visibleWhen: { key: "rotationMode", value: "manual" },
+      controlOrder: 20,
     },
     CONTROL_GROUPS.motion,
   ),
@@ -503,6 +550,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.reactivityTuning.reactivity",
       status: CONTROL_STATUSES.live,
+      controlOrder: 40,
     },
     CONTROL_GROUPS.motion,
   ),
@@ -519,29 +567,31 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.scene,
       runtimePath: "runtime.reactivityTuning.motionAmount",
       status: CONTROL_STATUSES.live,
+      controlOrder: 30,
     },
     CONTROL_GROUPS.motion,
   ),
-  // ── Display ────────────────────────────────────────────────────────────────
+  // ── Bloom ──────────────────────────────────────────────────────────────────
   withControlGroup(
     {
       key: "bloomEnabled",
-      label: "Glow",
-      title: "Toggle the glow/halo effect around bright parts of the orb",
+      label: "Bloom",
+      title: "Toggle the bloom/halo effect around bright parts of the orb",
       defaultValue: RENDER_DEFAULTS.bloomEnabled,
       methods: ALL_METHODS,
       targetType: CONTROL_TARGET_TYPES.pipeline,
       handler: CONTROL_HANDLERS.bloom,
       runtimePath: "pipeline.outputNode",
       status: CONTROL_STATUSES.live,
+      controlOrder: 10,
     },
-    CONTROL_GROUPS.display,
+    CONTROL_GROUPS.bloom,
   ),
   withControlGroup(
     {
       key: "bloomStrength",
-      label: "Glow Strength",
-      title: "How bright the glow halo is",
+      label: "Bloom Strength",
+      title: "How bright the bloom halo is",
       defaultValue: RENDER_DEFAULTS.bloomStrength,
       methods: ALL_METHODS,
       binding: { min: 0, max: 3, step: 0.01 },
@@ -549,14 +599,15 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.bloom,
       runtimePath: "bloomPass.strength.value",
       status: CONTROL_STATUSES.live,
+      controlOrder: 20,
     },
-    CONTROL_GROUPS.display,
+    CONTROL_GROUPS.bloom,
   ),
   withControlGroup(
     {
       key: "bloomRadius",
-      label: "Glow Radius",
-      title: "How far the glow spreads from bright areas",
+      label: "Bloom Radius",
+      title: "How far the bloom spreads from bright areas",
       defaultValue: RENDER_DEFAULTS.bloomRadius,
       methods: ALL_METHODS,
       binding: { min: 0, max: 1, step: 0.01 },
@@ -564,15 +615,16 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.bloom,
       runtimePath: "bloomPass.radius.value",
       status: CONTROL_STATUSES.live,
+      controlOrder: 30,
     },
-    CONTROL_GROUPS.display,
+    CONTROL_GROUPS.bloom,
   ),
   withControlGroup(
     {
       key: "bloomThreshold",
-      label: "Glow Threshold",
+      label: "Bloom Threshold",
       title:
-        "Minimum brightness before a region contributes to the glow — raise to limit it to the brightest highlights",
+        "Minimum brightness before a region contributes to bloom — raise to limit it to the brightest highlights",
       defaultValue: RENDER_DEFAULTS.bloomThreshold,
       methods: methodsFor("shared"),
       binding: { min: 0, max: 1, step: 0.01 },
@@ -580,14 +632,15 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.bloom,
       runtimePath: "bloomPass.threshold.value",
       status: CONTROL_STATUSES.live,
+      controlOrder: 40,
     },
-    CONTROL_GROUPS.display,
+    CONTROL_GROUPS.bloom,
   ),
   withControlGroup(
     {
       key: "backgroundColor",
       label: "Background",
-      title: "Backdrop color shown behind the orb in transparent output mode",
+      title: "Legacy transparent-preview backdrop retained for saved presets",
       defaultValue: RENDER_DEFAULTS.backgroundColor,
       methods: ALL_METHODS,
       binding: { view: "color" },
@@ -595,38 +648,42 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.shared,
       runtimePath: "ui.backdropColor",
       status: CONTROL_STATUSES.live,
+      sidebarHidden: true,
+      publicReferenceHidden: true,
     },
-    CONTROL_GROUPS.display,
+    CONTROL_GROUPS.output,
   ),
   withControlGroup(
     {
       key: "renderQualityPreset",
-      label: "Performance Profile",
+      label: "Profile",
       title:
-        "Auto adapts toward the app-chosen FPS budget, Custom adapts toward your chosen FPS, and Max Quality keeps full quality at display-rate cadence.",
+        "Auto adapts raymarch steps toward 60 FPS, Custom uses your Target FPS, and Max Quality leaves raymarch steps ungoverned.",
       defaultValue: RENDER_DEFAULTS.renderQualityPreset,
       methods: ALL_METHODS,
       binding: {
+        view: "segmented",
         options: {
           Auto: PERFORMANCE_PROFILES.auto,
           Custom: PERFORMANCE_PROFILES.custom,
-          "Max Quality": PERFORMANCE_PROFILES.maxQuality,
+          Max: PERFORMANCE_PROFILES.maxQuality,
         },
       },
       targetType: CONTROL_TARGET_TYPES.object,
       handler: CONTROL_HANDLERS.shared,
       runtimePath: "ui.renderQualityPreset",
       status: CONTROL_STATUSES.live,
+      controlOrder: 10,
     },
-    CONTROL_GROUPS.mode,
+    CONTROL_GROUPS.performance,
   ),
   withControlGroup(
     {
-      key: "customPerformanceTargetFps",
-      label: "Custom Target FPS",
+      key: "customTargetFps",
+      label: "Target FPS",
       title:
-        "Used only when the Performance Profile is Custom to set the adaptive frame-rate target.",
-      defaultValue: RENDER_DEFAULTS.customPerformanceTargetFps,
+        "Used when Profile is Custom to set performer cadence and the adaptive raymarch target.",
+      defaultValue: RENDER_DEFAULTS.customTargetFps,
       methods: ALL_METHODS,
       binding: {
         min: MIN_PERFORMANCE_TARGET_FPS,
@@ -635,20 +692,26 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       },
       targetType: CONTROL_TARGET_TYPES.object,
       handler: CONTROL_HANDLERS.shared,
-      runtimePath: "ui.customPerformanceTargetFps",
+      runtimePath: "ui.customTargetFps",
       status: CONTROL_STATUSES.live,
+      visibleWhen: {
+        key: "renderQualityPreset",
+        value: PERFORMANCE_PROFILES.custom,
+      },
+      controlOrder: 20,
     },
-    CONTROL_GROUPS.mode,
+    CONTROL_GROUPS.performance,
   ),
   withControlGroup(
     {
       key: "outputMode",
-      label: "Output Mode",
+      label: "Mode",
       title:
         "Transparent composites over other content; Opaque renders its own solid background",
       defaultValue: RENDER_DEFAULTS.outputMode,
       methods: ALL_METHODS,
       binding: {
+        view: "segmented",
         options: {
           Transparent: "transparent",
           Opaque: "opaque",
@@ -658,28 +721,14 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.output,
       runtimePath: "program.outputMode",
       status: CONTROL_STATUSES.live,
+      controlOrder: 10,
     },
-    CONTROL_GROUPS.mode,
-  ),
-  withControlGroup(
-    {
-      key: "outputBackgroundColor",
-      label: "Output Color",
-      title: "Background fill color used in Opaque output mode",
-      defaultValue: RENDER_DEFAULTS.outputBackgroundColor,
-      methods: ALL_METHODS,
-      binding: { view: "color" },
-      targetType: CONTROL_TARGET_TYPES.pipeline,
-      handler: CONTROL_HANDLERS.output,
-      runtimePath: "program.backgroundColor",
-      status: CONTROL_STATUSES.live,
-    },
-    CONTROL_GROUPS.display,
+    CONTROL_GROUPS.output,
   ),
   withControlGroup(
     {
       key: "performanceHudEnabled",
-      label: "Performance HUD",
+      label: "HUD",
       title: "Shows FPS and render resolution on screen",
       defaultValue: RENDER_DEFAULTS.performanceHudEnabled,
       methods: ALL_METHODS,
@@ -687,8 +736,9 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.shared,
       runtimePath: "ui.performanceHudEnabled",
       status: CONTROL_STATUSES.live,
+      controlOrder: 30,
     },
-    CONTROL_GROUPS.presetsArea,
+    CONTROL_GROUPS.performance,
   ),
   withControlGroup(
     {
@@ -702,8 +752,9 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.shared,
       runtimePath: "runtime.method",
       status: CONTROL_STATUSES.live,
+      publicReferenceHidden: true,
     },
-    CONTROL_GROUPS.mode,
+    CONTROL_GROUPS.output,
   ),
   withControlGroup(
     {
@@ -717,17 +768,18 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.shared,
       runtimePath: "ui.cameraLocked",
       status: CONTROL_STATUSES.live,
+      publicReferenceHidden: true,
     },
-    CONTROL_GROUPS.mode,
+    CONTROL_GROUPS.motion,
   ),
 
-  // ── Fine-grained glow shaping ─────────────────────────────────────────────
+  // ── Fine-grained bloom shaping ─────────────────────────────────────────────
   withControlGroup(
     {
       key: "bloomResponseBias",
-      label: "Glow Response",
+      label: "Bloom Response",
       title:
-        "Makes the glow smaller and more stable by trimming how easily bloom reacts during crowded frames.",
+        "Makes the bloom smaller and more stable by trimming how easily bloom reacts during crowded frames.",
       defaultValue: RENDER_DEFAULTS.bloomResponseBias,
       methods: ALL_METHODS,
       binding: { min: 0, max: 1, step: 0.01 },
@@ -735,13 +787,14 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.bloom,
       runtimePath: "runtime.bloomTuning.bloomResponseBias",
       status: CONTROL_STATUSES.live,
+      controlOrder: 50,
     },
-    CONTROL_GROUPS.display,
+    CONTROL_GROUPS.bloom,
   ),
   withControlGroup(
     {
       key: "rimBloomBias",
-      label: "Rim Glow",
+      label: "Rim Bloom",
       title:
         "Pushes more brightness toward the outer rim before bloom is applied.",
       defaultValue: RAYMARCH_DEFAULTS.rimBloomBias,
@@ -751,8 +804,9 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.uniforms.uRimBloomBias.value",
       status: CONTROL_STATUSES.live,
+      controlOrder: 60,
     },
-    CONTROL_GROUPS.display,
+    CONTROL_GROUPS.bloom,
   ),
   withControlGroup(
     {
@@ -766,8 +820,9 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.uniforms.uRimCompression.value",
       status: CONTROL_STATUSES.live,
+      controlOrder: 70,
     },
-    CONTROL_GROUPS.display,
+    CONTROL_GROUPS.bloom,
   ),
 
   // ── Diagnostics (debug-only) ───────────────────────────────────────────────
@@ -1007,9 +1062,11 @@ export function getControlsForFolder(
   folder,
   method = VISUALIZATION_METHODS.raymarch,
 ) {
-  return getControlsForMethod(method).filter(
-    (definition) =>
-      definition.sidebarHidden !== true &&
-      (definition.group ?? definition.folder) === folder,
-  );
+  return getControlsForMethod(method)
+    .filter(
+      (definition) =>
+        definition.sidebarHidden !== true &&
+        (definition.group ?? definition.folder) === folder,
+    )
+    .sort(sortControlsByPresentationOrder);
 }

@@ -32,7 +32,7 @@ function syncInitialRendererSize(renderer, canvas, initialPixelRatio = null) {
     return;
   }
 
-  const dpr = initialPixelRatio ?? Math.min(window.devicePixelRatio || 1, 2);
+  const dpr = initialPixelRatio ?? Math.max(1, window.devicePixelRatio || 1);
   renderer.setPixelRatio(dpr);
   renderer.setSize(width, height, false);
 }

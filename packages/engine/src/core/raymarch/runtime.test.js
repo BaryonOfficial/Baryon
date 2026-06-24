@@ -711,7 +711,7 @@ describe("tickRaymarchRuntime", () => {
       },
     });
     expect(
-      runtimeState.performanceGovernor.modalField.selectedIndices,
+      runtimeState.raymarchFieldAnalysis.modalField.selectedIndices,
     ).toBeUndefined();
   });
 
@@ -2133,7 +2133,7 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.uniforms.uModalResponseEnergy.value).toBe(0);
     expect(runtimeState.backboneModeBuffer.value.needsUpdate).toBe(false);
     expect(runtimeState.detailModeBuffer.value.needsUpdate).toBe(false);
-    expect(runtimeState.performanceGovernor).toBeNull();
+    expect(runtimeState.raymarchFieldAnalysis).toBeNull();
     expect(runtimeState.debugSnapshot.raymarchDebug.fieldState).toBe("idle");
     expect(
       runtimeState.debugSnapshot.raymarchDebug.observationHardSilence,
@@ -3924,8 +3924,8 @@ describe("tickRaymarchRuntime", () => {
         staticRuntimeState.modalFieldModeBuffer.value.array.slice(0, 12),
       ),
     );
-    expect(spectralRuntimeState.performanceGovernor.uploadedModeCount).toBe(
-      staticRuntimeState.performanceGovernor.uploadedModeCount,
+    expect(spectralRuntimeState.raymarchFieldAnalysis.uploadedModeCount).toBe(
+      staticRuntimeState.raymarchFieldAnalysis.uploadedModeCount,
     );
     expect(spectralRuntimeState.modalFieldColorBuffer.value.needsUpdate).toBe(
       true,
@@ -4254,7 +4254,7 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.debugSnapshot.modalBasisCacheDrawable).toBe(false);
   });
 
-  it("builds the governor inline from the published integrator budget", () => {
+  it("builds field analysis inline without performance-profile side channels", () => {
     const runtimeState = createRuntimeState();
     const featureFrame = {
       fieldState: "active",
@@ -4273,20 +4273,25 @@ describe("tickRaymarchRuntime", () => {
       changeSignal: 0.2,
       pulseSignal: 0.1,
     };
-    // The render loop published a starved budget with the bloom guard armed.
-    runtimeState.effectiveRenderScale = 0.8;
-    runtimeState.raymarchBloomAdaptationActive = true;
 
     tickRaymarchRuntime(runtimeState, featureFrame, 1, 1 / 60);
 
-    // The integrator (render loop) owns step/scale, so the inline governor
-    // never re-adapts them; bloom adaptation tracks the published signal.
-    expect(runtimeState.performanceGovernor.stepScaleAdaptationActive).toBe(
-      false,
+    // The integrator (render loop) owns steps, so field analysis never
+    // re-adapts them. Performance profiles do not govern bloom either.
+    expect(runtimeState.raymarchFieldAnalysis).not.toHaveProperty(
+      "stepScaleAdaptationActive",
     );
-    expect(runtimeState.performanceGovernor.bloomAdaptationActive).toBe(true);
+    expect(runtimeState.raymarchFieldAnalysis).not.toHaveProperty(
+      "bloomAdaptationActive",
+    );
+    expect(runtimeState.raymarchFieldAnalysis).not.toHaveProperty(
+      "bloomStrengthScale",
+    );
+    expect(runtimeState.raymarchFieldAnalysis).not.toHaveProperty(
+      "bloomThresholdOffset",
+    );
     expect(
-      runtimeState.performanceGovernor.modalField.uploadedActiveCount,
+      runtimeState.raymarchFieldAnalysis.modalField.uploadedActiveCount,
     ).toBe(3);
     expect(
       Array.from(runtimeState.modalFieldModeBuffer.value.array.slice(0, 4)),
@@ -6920,7 +6925,7 @@ describe("resolveRaymarchTotalSlotAmplitude", () => {
       resolveRaymarchTotalSlotAmplitude(
         {
           modalFieldModeBuffer: { value: { array: buffer } },
-          performanceGovernor: { modalField: { uploadedAmplitude: 1.8 } },
+          raymarchFieldAnalysis: { modalField: { uploadedAmplitude: 1.8 } },
         },
         4,
       ),

@@ -82,6 +82,7 @@ import {
   OUTPUT_MODES,
   RENDER_CONTEXTS,
   advanceRenderOutputTemporalHistoryBypass,
+  composeRenderOutputNode,
   consumeRenderOutputVisualIdle,
   createCaptureOutputSession,
   createRenderOutputPipeline,
@@ -127,6 +128,37 @@ describe("outputPipeline compatibility surface", () => {
     expect(typeof createCaptureOutputSession).toBe("function");
   });
 
+  it("uses the output color as the opaque output base", () => {
+    const sceneRgb = { kind: "sceneRgb" };
+    const sceneAlpha = {
+      oneMinus: vi.fn(() => ({ kind: "unusedAlphaInverse" })),
+    };
+    const outputBackgroundNode = {
+      add: vi.fn(() => ({ kind: "opaqueOutputRgb" })),
+      mul: vi.fn(() => ({ kind: "alphaBlendedBackground" })),
+    };
+
+    const outputNode = composeRenderOutputNode({
+      sceneColor: { rgb: sceneRgb, a: sceneAlpha },
+      bloomPass: null,
+      bloomEnabled: false,
+      outputMode: "opaque",
+      outputBackgroundNode,
+    });
+
+    expect(outputBackgroundNode.mul).not.toHaveBeenCalled();
+    expect(sceneAlpha.oneMinus).not.toHaveBeenCalled();
+    expect(outputBackgroundNode.add).toHaveBeenCalledWith({
+      kind: "compressedRadiance",
+      node: sceneRgb,
+    });
+    expect(outputNode).toEqual({
+      kind: "vec4",
+      rgb: { kind: "opaqueOutputRgb" },
+      alpha: 1,
+    });
+  });
+
   it("builds the TRAA post-process node when TRAA is enabled", () => {
     const pipelineState = createRenderOutputPipeline(
       {},
@@ -135,7 +167,6 @@ describe("outputPipeline compatibility surface", () => {
       {
         renderProfile: {
           qualityPreset: "max-quality",
-          renderScale: 1,
           traaEnabled: true,
           bloomAllowed: false,
         },
@@ -154,6 +185,33 @@ describe("outputPipeline compatibility surface", () => {
     expect(renderPipelineInstances).toHaveLength(1);
   });
 
+  it("normalizes resolved render profiles at the pipeline boundary", () => {
+    const pipelineState = createRenderOutputPipeline(
+      {},
+      {},
+      {},
+      {
+        renderProfile: {
+          qualityPreset: "custom",
+          targetFps: 96,
+          renderScale: 0.5,
+          traaEnabled: true,
+          bloomAllowed: false,
+          renderContext: RENDER_CONTEXTS.externalOutput,
+        },
+      },
+    );
+
+    expect(pipelineState.postNodes.renderProfile).toEqual({
+      qualityPreset: "custom",
+      targetFps: 96,
+      startupRaymarchSteps: 32,
+      traaEnabled: true,
+      bloomAllowed: false,
+      renderContext: RENDER_CONTEXTS.externalOutput,
+    });
+  });
+
   it("wraps the final output node in SMAA by default", () => {
     const pipelineState = createRenderOutputPipeline(
       {},
@@ -162,7 +220,6 @@ describe("outputPipeline compatibility surface", () => {
       {
         renderProfile: {
           qualityPreset: "max-quality",
-          renderScale: 1,
           traaEnabled: false,
           bloomAllowed: false,
         },
@@ -187,7 +244,6 @@ describe("outputPipeline compatibility surface", () => {
       {
         renderProfile: {
           qualityPreset: "max-quality",
-          renderScale: 1,
           traaEnabled: false,
           bloomAllowed: false,
         },
@@ -256,7 +312,6 @@ describe("outputPipeline compatibility surface", () => {
       {
         renderProfile: {
           qualityPreset: "max-quality",
-          renderScale: 1,
           traaEnabled: false,
           bloomAllowed: false,
         },

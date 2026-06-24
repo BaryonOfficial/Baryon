@@ -101,16 +101,28 @@ function areLiveInputSettingsEqual(left, right) {
   );
 }
 
+function normalizeGetUserMediaDeviceId(deviceId) {
+  return typeof deviceId === "string" && deviceId !== "default"
+    ? deviceId
+    : null;
+}
+
+function isDefaultAudioInputDeviceId(deviceId) {
+  return deviceId == null || deviceId === "default";
+}
+
 function buildLiveConstraints(deviceId, liveInputSettings) {
+  const exactDeviceId = normalizeGetUserMediaDeviceId(deviceId);
   return {
-    ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+    ...(exactDeviceId ? { deviceId: { exact: exactDeviceId } } : {}),
     ...cloneLiveInputSettings(liveInputSettings),
   };
 }
 
 function buildSystemConstraints(deviceId) {
+  const exactDeviceId = normalizeGetUserMediaDeviceId(deviceId);
   return {
-    ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+    ...(exactDeviceId ? { deviceId: { exact: exactDeviceId } } : {}),
     echoCancellation: false,
     noiseSuppression: false,
     autoGainControl: false,
@@ -1633,7 +1645,10 @@ export function createAudioSession() {
     const resolvedLiveInputDeviceKind =
       normalizeLiveInputDeviceKind(liveInputKind);
     let resolvedDeviceId = deviceId ?? null;
-    if (typeof navigator.mediaDevices?.enumerateDevices === "function") {
+    if (
+      !isDefaultAudioInputDeviceId(resolvedDeviceId) &&
+      typeof navigator.mediaDevices?.enumerateDevices === "function"
+    ) {
       try {
         const availableAudioInputs = (
           await navigator.mediaDevices.enumerateDevices()

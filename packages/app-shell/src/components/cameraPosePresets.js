@@ -218,6 +218,4 @@ export const DEFAULT_IDLE_PERFORMER_CAMERA_POSE = Object.freeze(
   resolvePresetCameraPose(CAMERA_VIEW_PRESETS.side),
 );
 
-export const DEFAULT_LIVE_PERFORMER_CAMERA_POSE = Object.freeze(
-  resolvePresetCameraPose(CAMERA_VIEW_PRESETS.topDown),
-);
+export const DEFAULT_LIVE_PERFORMER_CAMERA_POSE = DEFAULT_ACTIVE_CAMERA_POSE;

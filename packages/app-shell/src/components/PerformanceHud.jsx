@@ -1,21 +1,34 @@
 import {
-  PERFORMANCE_PROFILES,
   formatPerformanceProfileLabel,
-  normalizePerformanceProfile,
+  isAdaptivePerformanceProfile,
 } from "@baryon/engine/render/outputProfilePolicy";
 import { usesRaymarchVolumePipeline } from "@baryon/engine/visualization/types";
 import { TOP_RIGHT_OVERLAY_PANEL_WIDTH } from "./topRightOverlayLayout.js";
 
-function formatNumber(value, digits = 1) {
+function formatFiniteNumber(value, digits = 1) {
   if (
     typeof value !== "number" ||
     Number.isNaN(value) ||
     !Number.isFinite(value)
   ) {
-    return "n/a";
+    return null;
   }
 
   return value.toFixed(digits);
+}
+
+function formatNumber(value, digits = 1) {
+  return formatFiniteNumber(value, digits) ?? "n/a";
+}
+
+function formatFps(value) {
+  const formatted = formatFiniteNumber(value, 1);
+  return formatted ? `${formatted} FPS` : null;
+}
+
+function formatMs(value) {
+  const formatted = formatFiniteNumber(value, 2);
+  return formatted ? `${formatted} ms` : null;
 }
 
 function formatRenderSurfaceLabel(renderSurface) {
@@ -56,6 +69,69 @@ function PerformanceHudDivider() {
   );
 }
 
+function hasHudMetricValue(value) {
+  return value != null;
+}
+
+function shouldShowNonZeroCount(value) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function buildOutputCadenceLabel(metrics) {
+  const publishFps = formatFps(metrics.outputFps);
+  const paintFps = formatFps(metrics.outputPaintFps);
+
+  if (publishFps) {
+    return publishFps;
+  }
+  if (paintFps) {
+    return `${paintFps} paint`;
+  }
+  return null;
+}
+
+function shouldShowPublishSummary(metrics) {
+  const attempts = metrics.outputPublishAttemptCount;
+  const successes = metrics.outputSuccessfulPublishCount;
+
+  return (
+    (attempts != null && successes != null && attempts !== successes) ||
+    shouldShowNonZeroCount(metrics.outputDroppedPublishCount) ||
+    shouldShowNonZeroCount(metrics.outputFailedPublishCount) ||
+    Boolean(metrics.outputLastPublishDropReason)
+  );
+}
+
+function buildOutputQueueLabel(metrics) {
+  const deferred = shouldShowNonZeroCount(metrics.outputDeferredPublishCount)
+    ? `${Math.round(metrics.outputDeferredPublishCount)} deferred`
+    : null;
+  const coalesced = shouldShowNonZeroCount(metrics.outputCoalescedPublishCount)
+    ? `${Math.round(metrics.outputCoalescedPublishCount)} coalesced`
+    : null;
+  const discarded =
+    shouldShowNonZeroCount(metrics.outputDiscardedPendingPublishCount) ||
+    shouldShowNonZeroCount(metrics.outputDiscardedPublishResultCount)
+      ? `${Math.round(metrics.outputDiscardedPendingPublishCount ?? 0)} / ${Math.round(metrics.outputDiscardedPublishResultCount ?? 0)} discarded`
+      : null;
+
+  return [deferred, coalesced, discarded].filter(Boolean).join(" · ") || null;
+}
+
+function PerformanceHudTextRow({ children }) {
+  return (
+    <div
+      style={{
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 export default function PerformanceHud({
   metrics,
   top = "1rem",
@@ -66,22 +142,36 @@ export default function PerformanceHud({
     return null;
   }
 
-  const splitAuthoritativeMetrics =
-    Object.prototype.hasOwnProperty.call(metrics, "outputTargetFps") ||
-    Object.prototype.hasOwnProperty.call(metrics, "outputFps") ||
-    Object.prototype.hasOwnProperty.call(metrics, "outputPaintFps") ||
-    Object.prototype.hasOwnProperty.call(metrics, "renderCompletedToPaintMs");
+  const splitAuthoritativeMetrics = [
+    metrics.outputTargetFps,
+    metrics.outputFps,
+    metrics.outputPaintFps,
+    metrics.renderCompletedToPaintMs,
+    metrics.lastInvalidateToPaintMs,
+    metrics.stageRenderLeadMs,
+    metrics.stageRenderCoalescedRequestCount,
+    metrics.outputPublishAttemptCount,
+    metrics.outputDeferredPublishCount,
+    metrics.outputCoalescedPublishCount,
+    metrics.outputDiscardedPendingPublishCount,
+    metrics.outputDiscardedPublishResultCount,
+    metrics.outputSuccessfulPublishCount,
+    metrics.outputDroppedPublishCount,
+    metrics.outputFailedPublishCount,
+    metrics.outputPaintWithoutPublishCount,
+    metrics.outputConsecutivePaintWithoutPublishCount,
+    metrics.outputLastPublishDropReason,
+    metrics.outputLastPublishDurationMs,
+    metrics.outputAveragePublishDurationMs,
+  ].some(hasHudMetricValue);
   const resolvedTargetFps = splitAuthoritativeMetrics
     ? (metrics.outputTargetFps ?? metrics.targetFps)
     : metrics.targetFps;
-  const normalizedQualityPreset = normalizePerformanceProfile(
-    metrics.qualityPreset,
-  );
-  const displayRateCadence =
-    normalizedQualityPreset === PERFORMANCE_PROFILES.maxQuality;
-  const targetFpsLabel = splitAuthoritativeMetrics
-    ? "Output Target FPS"
-    : "Frame Budget FPS";
+  const showTargetFps =
+    typeof resolvedTargetFps === "number" &&
+    isAdaptivePerformanceProfile(metrics.qualityPreset) &&
+    metrics.qualityPreset === "custom";
+  const targetFpsLabel = "Target";
 
   const showRaymarchSteps =
     usesRaymarchVolumePipeline(metrics.visualizationMethod) &&
@@ -89,14 +179,34 @@ export default function PerformanceHud({
   const raymarchStepsLabel = showRaymarchSteps
     ? `${Math.round(metrics.effectiveRaymarchSteps)} / ${Math.round(metrics.requestedRaymarchSteps)}`
     : null;
-  const renderScaleLabel =
-    typeof metrics.renderScale === "number"
-      ? formatNumber(metrics.renderScale, 3)
-      : null;
   const renderSurfaceLabel = formatRenderSurfaceLabel(metrics.renderSurface);
   const performanceProfileLabel = metrics.qualityPreset
     ? formatPerformanceProfileLabel(metrics.qualityPreset)
     : null;
+  const stageCadenceLabel = formatFps(metrics.fps) ?? "n/a";
+  const outputCadenceLabel = buildOutputCadenceLabel(metrics);
+  const renderToPaintLabel = formatMs(metrics.renderCompletedToPaintMs);
+  const outputQueueLabel = buildOutputQueueLabel(metrics);
+  const publishSummary =
+    metrics.outputPublishAttemptCount != null ||
+    metrics.outputSuccessfulPublishCount != null
+      ? `${Math.round(metrics.outputSuccessfulPublishCount ?? 0)} / ${Math.round(metrics.outputPublishAttemptCount ?? 0)}`
+      : null;
+  const paintWithoutPublishSummary =
+    metrics.outputPaintWithoutPublishCount != null ||
+    metrics.outputConsecutivePaintWithoutPublishCount != null
+      ? `${Math.round(metrics.outputPaintWithoutPublishCount ?? 0)} / ${Math.round(metrics.outputConsecutivePaintWithoutPublishCount ?? 0)}`
+      : null;
+  const hasPaintWithoutPublish = shouldShowNonZeroCount(
+    metrics.outputConsecutivePaintWithoutPublishCount,
+  );
+  const showPixelRatioLabel =
+    typeof metrics.currentPixelRatio === "number" &&
+    typeof metrics.basePixelRatio === "number" &&
+    Number.isFinite(metrics.currentPixelRatio) &&
+    Number.isFinite(metrics.basePixelRatio) &&
+    Math.abs(metrics.currentPixelRatio - metrics.basePixelRatio) > 0.001;
+  const showResolutionFields = showPixelRatioLabel || renderSurfaceLabel;
   return (
     <aside
       data-testid="performance-hud"
@@ -152,25 +262,34 @@ export default function PerformanceHud({
           </>
         ) : null}
       </div>
-      {displayRateCadence ? (
-        <div>Cadence: Display Rate</div>
-      ) : typeof resolvedTargetFps === "number" ? (
+      {showTargetFps ? (
         <div>
-          {targetFpsLabel}: {Math.round(resolvedTargetFps)}
+          {targetFpsLabel}: {Math.round(resolvedTargetFps)} FPS
         </div>
       ) : null}
       {splitAuthoritativeMetrics ? (
         <>
-          <div>Stage FPS: {formatNumber(metrics.fps, 1)}</div>
-          <div>
-            Stage Frame ms: {formatNumber(metrics.smoothedFrameTimeMs, 2)}
-          </div>
-          <div>Output FPS: {formatNumber(metrics.outputFps, 1)}</div>
-          <div>Output Paint FPS: {formatNumber(metrics.outputPaintFps, 1)}</div>
-          <div>
-            Render-&gt;Paint ms:{" "}
-            {formatNumber(metrics.renderCompletedToPaintMs, 2)}
-          </div>
+          <div>Stage: {stageCadenceLabel}</div>
+          {outputCadenceLabel ? <div>Output: {outputCadenceLabel}</div> : null}
+          {renderToPaintLabel ? <div>Latency: {renderToPaintLabel}</div> : null}
+          {publishSummary && shouldShowPublishSummary(metrics) ? (
+            <div>Publish: {publishSummary}</div>
+          ) : null}
+          {outputQueueLabel ? <div>Queue: {outputQueueLabel}</div> : null}
+          {shouldShowNonZeroCount(metrics.outputDroppedPublishCount) ? (
+            <div>Drops: {Math.round(metrics.outputDroppedPublishCount)}</div>
+          ) : null}
+          {shouldShowNonZeroCount(metrics.outputFailedPublishCount) ? (
+            <div>Failures: {Math.round(metrics.outputFailedPublishCount)}</div>
+          ) : null}
+          {paintWithoutPublishSummary && hasPaintWithoutPublish ? (
+            <div>Paint-only: {paintWithoutPublishSummary}</div>
+          ) : null}
+          {metrics.outputLastPublishDropReason ? (
+            <PerformanceHudTextRow>
+              Last Drop: {metrics.outputLastPublishDropReason}
+            </PerformanceHudTextRow>
+          ) : null}
         </>
       ) : (
         <>
@@ -179,15 +298,22 @@ export default function PerformanceHud({
         </>
       )}
       {raymarchStepsLabel ? <div>Steps: {raymarchStepsLabel}</div> : null}
-      <PerformanceHudDivider />
-      <div data-testid="performance-hud-resolution-fields">
-        <div>
-          DPR: {formatNumber(metrics.currentPixelRatio, 3)} /{" "}
-          {formatNumber(metrics.basePixelRatio, 3)}
-        </div>
-        {renderScaleLabel ? <div>Render Scale: {renderScaleLabel}</div> : null}
-        {renderSurfaceLabel ? <div>Canvas: {renderSurfaceLabel}</div> : null}
-      </div>
+      {showResolutionFields ? (
+        <>
+          <PerformanceHudDivider />
+          <div data-testid="performance-hud-resolution-fields">
+            {showPixelRatioLabel ? (
+              <div>
+                DPR: {formatNumber(metrics.currentPixelRatio, 3)} /{" "}
+                {formatNumber(metrics.basePixelRatio, 3)}
+              </div>
+            ) : null}
+            {renderSurfaceLabel ? (
+              <div>Canvas: {renderSurfaceLabel}</div>
+            ) : null}
+          </div>
+        </>
+      ) : null}
     </aside>
   );
 }

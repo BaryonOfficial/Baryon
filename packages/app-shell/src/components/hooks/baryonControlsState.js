@@ -15,11 +15,7 @@ export const SETTINGS_KEY = "baryon:settings";
 export const PRESETS_KEY = "baryon:presets";
 const CONTROLS_PERSIST_DELAY_MS = 500;
 const PRESETS_AREA_GROUP = "PresetsArea";
-const PRESETS_AREA_CONTROL_ORDER = Object.freeze([
-  "performanceHudEnabled",
-  "renderQualityPreset",
-  "customPerformanceTargetFps",
-]);
+const PRESETS_AREA_CONTROL_ORDER = Object.freeze([]);
 
 function createOperatorControlKeySet(operatorControlKeys = []) {
   return new Set(
@@ -29,19 +25,34 @@ function createOperatorControlKeySet(operatorControlKeys = []) {
   );
 }
 
+function controlMatchesVisibleWhen(definition, controlsState) {
+  const condition = definition.visibleWhen;
+  if (!condition) {
+    return true;
+  }
+
+  const expectedValues = Array.isArray(condition.value)
+    ? condition.value
+    : [condition.value];
+  return expectedValues.includes(controlsState?.[condition.key]);
+}
+
 function createVisibleFolderGroups({
+  controlsState,
   devtoolsEnabled,
   method = DEFAULT_VISUALIZATION_METHOD,
   operatorControlKeys = [],
 }) {
+  const resolvedControlsState = controlsState ?? createControlState();
   const operatorControlKeySet =
     createOperatorControlKeySet(operatorControlKeys);
   return getControlFolders(method).flatMap((title) => {
     const controls = getControlsForFolder(title, method).filter(
       (definition) =>
-        devtoolsEnabled ||
-        operatorControlKeySet.has(definition.key) ||
-        definition.status !== CONTROL_STATUSES.debugOnly,
+        controlMatchesVisibleWhen(definition, resolvedControlsState) &&
+        (devtoolsEnabled ||
+          operatorControlKeySet.has(definition.key) ||
+          definition.status !== CONTROL_STATUSES.debugOnly),
     );
 
     if (controls.length === 0) {
@@ -172,12 +183,18 @@ export function loadStoredPresets(storage) {
 }
 
 export function getVisibleControlLayout({
+  controlsState = null,
   devtoolsEnabled,
   method = DEFAULT_VISUALIZATION_METHOD,
   operatorControlKeys = [],
 }) {
   return splitPresentationGroups(
-    createVisibleFolderGroups({ devtoolsEnabled, method, operatorControlKeys }),
+    createVisibleFolderGroups({
+      controlsState,
+      devtoolsEnabled,
+      method,
+      operatorControlKeys,
+    }),
   );
 }
 

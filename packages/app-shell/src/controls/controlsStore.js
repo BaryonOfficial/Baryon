@@ -18,11 +18,30 @@ import {
 } from "../components/hooks/baryonControlsState.js";
 
 function getBrowserStorage() {
-  if (typeof window === "undefined") {
+  const browserWindow = globalThis.window;
+  const browserDocument = browserWindow?.document;
+  if (browserDocument == null) {
     return null;
   }
+  const storageWindow = browserDocument.defaultView ?? browserWindow;
+  if (
+    globalThis.process?.versions?.node != null &&
+    storageWindow === globalThis
+  ) {
+    const storageDescriptor = Object.getOwnPropertyDescriptor(
+      storageWindow,
+      "localStorage",
+    );
+    return storageDescriptor != null && "value" in storageDescriptor
+      ? (storageDescriptor.value ?? null)
+      : null;
+  }
 
-  return window.localStorage;
+  try {
+    return storageWindow.localStorage ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function createSnapshot({

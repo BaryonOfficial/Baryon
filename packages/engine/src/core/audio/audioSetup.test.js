@@ -513,6 +513,25 @@ describe("audio session", () => {
     });
   });
 
+  it("treats the browser default input id as an unconstrained device choice", async () => {
+    const session = createAttachedSession();
+    await session.startLiveInputStream("default");
+
+    expect(enumerateDevicesMock).not.toHaveBeenCalled();
+    expect(getUserMediaMock).toHaveBeenLastCalledWith({
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
+    });
+    expect(session.getStatus()).toMatchObject({
+      audioInputMode: "live",
+      isLiveInputActive: true,
+      selectedLiveInputDeviceId: "default",
+    });
+  });
+
   it("recovers live input when the media stream track ends unexpectedly", async () => {
     const session = createAttachedSession();
     await session.startLiveInputStream("device-1");

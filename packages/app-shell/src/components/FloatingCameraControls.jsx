@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CAMERA_VIEW_PRESETS } from "./cameraPosePresets.js";
 import { useDraggableFloatingUi } from "./hooks/useDraggableFloatingUi.js";
 
@@ -160,6 +160,7 @@ export default function FloatingCameraControls({
     typeof window === "undefined" ? 1440 : window.innerWidth,
   );
   const [expanded, setExpanded] = useState(false);
+  const suppressClickTargetRef = useRef(null);
   const {
     dragOffset,
     isDragging,
@@ -206,6 +207,27 @@ export default function FloatingCameraControls({
   );
   const viewPosition = resolveViewPosition(cameraPose);
 
+  const activateCameraButtonOnPointerDown = (event, action) => {
+    if (typeof action !== "function") {
+      return;
+    }
+    if (Number.isFinite(event.button) && event.button !== 0) {
+      return;
+    }
+
+    suppressClickTargetRef.current = event.currentTarget;
+    action();
+  };
+
+  const activateCameraButtonOnClick = (event, action) => {
+    if (suppressClickTargetRef.current === event.currentTarget) {
+      suppressClickTargetRef.current = null;
+      return;
+    }
+
+    action?.();
+  };
+
   const bareIconButtonStyle = (active) => ({
     minHeight: "1.7rem",
     minWidth: isPhoneViewport ? "1.75rem" : "2rem",
@@ -250,7 +272,7 @@ export default function FloatingCameraControls({
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
         onDoubleClick={handleDoubleClick}
-        title="Camera controls — hover to expand. Drag to move."
+        title="Camera controls: hover to expand. Drag to move."
         aria-label="Camera controls"
         style={{
           display: "inline-flex",
@@ -326,10 +348,19 @@ export default function FloatingCameraControls({
               data-state={cameraLocked ? "active" : "idle"}
               aria-pressed={cameraLocked}
               aria-label={cameraLocked ? "Unlock camera" : "Lock camera"}
-              onClick={() => onToggleLock?.(!cameraLocked)}
+              onPointerDown={(event) =>
+                activateCameraButtonOnPointerDown(event, () =>
+                  onToggleLock?.(!cameraLocked),
+                )
+              }
+              onClick={(event) =>
+                activateCameraButtonOnClick(event, () =>
+                  onToggleLock?.(!cameraLocked),
+                )
+              }
               title={
                 cameraLocked
-                  ? "Camera locked — orbit drag disabled. Click to unlock."
+                  ? "Camera locked: orbit drag disabled. Click to unlock."
                   : "Lock camera to prevent accidental orbit drag."
               }
               style={bareIconButtonStyle(cameraLocked)}
@@ -373,7 +404,16 @@ export default function FloatingCameraControls({
                     data-state={active ? "active" : "idle"}
                     aria-pressed={active}
                     aria-label={`${preset.label} view`}
-                    onClick={() => onPresetSelect?.(preset.key)}
+                    onPointerDown={(event) =>
+                      activateCameraButtonOnPointerDown(event, () =>
+                        onPresetSelect?.(preset.key),
+                      )
+                    }
+                    onClick={(event) =>
+                      activateCameraButtonOnClick(event, () =>
+                        onPresetSelect?.(preset.key),
+                      )
+                    }
                     title={`${preset.label} view`}
                     style={{
                       position: "relative",
@@ -403,7 +443,14 @@ export default function FloatingCameraControls({
               data-testid={resetButtonTestId}
               data-state="idle"
               aria-label="Reset camera"
-              onClick={() => onPresetReset?.()}
+              onPointerDown={(event) =>
+                activateCameraButtonOnPointerDown(event, () =>
+                  onPresetReset?.(),
+                )
+              }
+              onClick={(event) =>
+                activateCameraButtonOnClick(event, () => onPresetReset?.())
+              }
               title="Reset camera"
               style={bareIconButtonStyle(false)}
             >

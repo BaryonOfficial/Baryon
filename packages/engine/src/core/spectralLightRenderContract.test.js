@@ -9,6 +9,10 @@ const repoRoot = resolve(currentDir, "../../../..");
 const appShellSrc = resolve(repoRoot, "packages/app-shell/src");
 const legacyColorTerm = "chrom" + "esthesia";
 
+function toRepoPath(filePath) {
+  return filePath.replaceAll("\\", "/");
+}
+
 async function collectFiles(dir) {
   const entries = await readdir(dir, { withFileTypes: true });
   const files = [];
@@ -82,7 +86,7 @@ describe("Spectral Light render contract", () => {
       if (!source.includes(legacyColorTerm)) {
         continue;
       }
-      const relativePath = relative(repoRoot, file);
+      const relativePath = toRepoPath(relative(repoRoot, file));
       if (
         relativePath !== "packages/engine/src/controls/persistence.js" &&
         relativePath !== "packages/engine/src/controls/persistence.test.js"

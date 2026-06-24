@@ -16,6 +16,7 @@ import {
   normalizePerformanceProfile,
 } from "../render/outputProfilePolicy.js";
 import {
+  markRenderOutputContentChange,
   syncRenderOutputBloomPassUniforms,
   syncRenderOutputNodeTopology,
 } from "../render/outputPipeline.js";
@@ -102,7 +103,7 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "backgroundColor",
     "performanceHudEnabled",
     "renderQualityPreset",
-    "customPerformanceTargetFps",
+    "customTargetFps",
     "traaEnabled",
     "visualizationMethod",
     "cameraLocked",
@@ -190,18 +191,19 @@ export async function applyAudioControls(audioSession, controls) {
 }
 
 export function applySharedControls(gl, controls) {
-  gl.setClearColor(TRANSPARENT_CLEAR_COLOR, 0);
+  const clearAlpha = 0;
+
+  gl.setClearColor(TRANSPARENT_CLEAR_COLOR, clearAlpha);
   return {
     backgroundColor: controls.backgroundColor,
     performanceHudEnabled: Boolean(controls.performanceHudEnabled),
     renderQualityPreset: normalizePerformanceProfile(
       controls.renderQualityPreset,
     ),
-    customPerformanceTargetFps:
-      controls.customPerformanceTargetFps ??
-      RENDER_DEFAULTS.customPerformanceTargetFps,
+    customTargetFps:
+      controls.customTargetFps ?? RENDER_DEFAULTS.customTargetFps,
     traaEnabled: controls.traaEnabled !== false,
-    clearAlpha: 0,
+    clearAlpha,
     visualizationMethod: controls.visualizationMethod,
     cameraLocked: Boolean(controls.cameraLocked),
   };
@@ -227,6 +229,7 @@ export function applyOutputControls(pipelineState, controls) {
   }
 
   postNodes.outputUniforms?.backgroundColor?.value?.set(outputBackgroundColor);
+  markRenderOutputContentChange(postNodes);
   // Output node topology is managed by applyBloomControls (runs after this),
   // which owns pipeline.outputNode and pipeline.needsUpdate.
 
@@ -544,6 +547,17 @@ export function applyAuditControls(featureState, controls) {
   };
 }
 
+const SCENE_MOTION_MAX_DELTA_TIME = 1 / 30;
+
+function normalizeSceneMotionDeltaTime(deltaTime) {
+  const nextDeltaTime = Number(deltaTime);
+  if (!Number.isFinite(nextDeltaTime) || nextDeltaTime <= 0) {
+    return 0;
+  }
+
+  return Math.min(nextDeltaTime, SCENE_MOTION_MAX_DELTA_TIME);
+}
+
 export function applySceneControls(target, controls, deltaTime, featureFrame) {
   const runtimeState = target?.points ? target : null;
   const points = runtimeState?.points ?? target;
@@ -555,6 +569,7 @@ export function applySceneControls(target, controls, deltaTime, featureFrame) {
   const manualVelocity = getManualVelocity(controls);
   const userScale = getMotionAmount(controls, runtimeState);
   const audioMotionDriven = allowsAudioMotion(featureFrame);
+  const sceneDeltaTime = normalizeSceneMotionDeltaTime(deltaTime);
   const signals = deriveSceneSignals(
     featureFrame,
     runtimeState?.responseEnvelope ?? 0,
@@ -574,7 +589,7 @@ export function applySceneControls(target, controls, deltaTime, featureFrame) {
     const autoBase = deriveAutoMotionAmount(
       sceneMotion,
       signals.energySignal,
-      deltaTime,
+      sceneDeltaTime,
     );
     effectiveMotionAmount = userScale * autoBase;
   } else {
@@ -582,7 +597,7 @@ export function applySceneControls(target, controls, deltaTime, featureFrame) {
   }
 
   if (rotationMode === "manual") {
-    stepManualSceneMotion(sceneMotion, manualVelocity, deltaTime);
+    stepManualSceneMotion(sceneMotion, manualVelocity, sceneDeltaTime);
   } else if (rotationMode === "audio" && audioMotionDriven) {
     stepAudioSceneMotion(sceneMotion, {
       motionAmount: effectiveMotionAmount,
@@ -595,19 +610,24 @@ export function applySceneControls(target, controls, deltaTime, featureFrame) {
       beatStrength: clamp01(featureFrame?.beatStrength ?? 0),
       beatConfidence: clamp01(featureFrame?.beatConfidence ?? 0),
       beatDetected: featureFrame?.beatDetected,
-      deltaTime,
+      deltaTime: sceneDeltaTime,
     });
   } else if (rotationMode === "audio" && featureFrame && !audioMotionDriven) {
     stopAudioSceneMotion(sceneMotion);
   } else {
-    stepSettlingSceneMotion(sceneMotion, deltaTime);
+    stepSettlingSceneMotion(sceneMotion, sceneDeltaTime);
   }
   sceneMotion.lastMotionSignal = signals.motionSignal;
 
   points.rotation.x = sceneMotion.pitch;
   points.rotation.y = sceneMotion.yaw;
   points.rotation.z = sceneMotion.roll;
-  syncIdleOverlayRotation(runtimeState, sceneMotion, manualVelocity, deltaTime);
+  syncIdleOverlayRotation(
+    runtimeState,
+    sceneMotion,
+    manualVelocity,
+    sceneDeltaTime,
+  );
   if (runtimeState) {
     runtimeState.sceneMotion = sceneMotion;
   }

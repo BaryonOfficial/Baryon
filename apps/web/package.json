@@ -1,6 +1,6 @@
 {
   "name": "@baryon/web",
-  "version": "1.0.0",
+  "version": "1.0.0-beta.2",
   "private": true,
   "license": "LicenseRef-PolyForm-Strict-1.0",
   "packageManager": "pnpm@11.5.1",

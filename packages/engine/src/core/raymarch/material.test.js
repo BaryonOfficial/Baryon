@@ -44,11 +44,14 @@ function expectSourceBlock(source, startNeedle, endNeedle) {
   return source.slice(start, end);
 }
 
+function normalizeSource(value) {
+  return value.replace(/\r\n/g, "\n");
+}
+
 describe("raymarch volume material", () => {
   it("does not expose a product-controlled structure gradient window", () => {
-    const source = readFileSync(
-      new URL("./material.js", import.meta.url),
-      "utf8",
+    const source = normalizeSource(
+      readFileSync(new URL("./material.js", import.meta.url), "utf8"),
     );
     const forbiddenIdentifiers = [
       "uStructureMin",
@@ -71,9 +74,8 @@ describe("raymarch volume material", () => {
   });
 
   it("keeps modal evidence taxonomy out of shader transfer ownership", () => {
-    const source = readFileSync(
-      new URL("./material.js", import.meta.url),
-      "utf8",
+    const source = normalizeSource(
+      readFileSync(new URL("./material.js", import.meta.url), "utf8"),
     );
 
     expect(source).not.toMatch(
@@ -82,9 +84,8 @@ describe("raymarch volume material", () => {
   });
 
   it("uses observation transfer as the only shader density visibility lane", () => {
-    const source = readFileSync(
-      new URL("./material.js", import.meta.url),
-      "utf8",
+    const source = normalizeSource(
+      readFileSync(new URL("./material.js", import.meta.url), "utf8"),
     );
     const modalStructureAnchorStart = source.indexOf(
       "const modalStructureAnchor =",
@@ -145,9 +146,8 @@ describe("raymarch volume material", () => {
   });
 
   it("uses structural projection drive instead of raw amplitude sum for modal observation energy", () => {
-    const source = readFileSync(
-      new URL("./material.js", import.meta.url),
-      "utf8",
+    const source = normalizeSource(
+      readFileSync(new URL("./material.js", import.meta.url), "utf8"),
     );
     const coefficientStart = expectSourceIndex(
       source,
@@ -192,9 +192,8 @@ describe("raymarch volume material", () => {
   });
 
   it("uses structural and local field evidence to suppress diffuse white emission", () => {
-    const source = readFileSync(
-      new URL("./material.js", import.meta.url),
-      "utf8",
+    const source = normalizeSource(
+      readFileSync(new URL("./material.js", import.meta.url), "utf8"),
     );
     const structuralConcentrationStart = expectSourceIndex(
       source,
@@ -237,9 +236,8 @@ describe("raymarch volume material", () => {
   });
 
   it("mirrors quantity-ledger forbidden consumers in shader transfer lanes", () => {
-    const source = readFileSync(
-      new URL("./material.js", import.meta.url),
-      "utf8",
+    const source = normalizeSource(
+      readFileSync(new URL("./material.js", import.meta.url), "utf8"),
     );
     for (const surfaceName of [
       "materialObservationCore",
@@ -493,9 +491,8 @@ describe("raymarch volume material", () => {
   });
 
   it("uses live basis support evidence to gate empty-field transfer", () => {
-    const source = readFileSync(
-      new URL("./material.js", import.meta.url),
-      "utf8",
+    const source = normalizeSource(
+      readFileSync(new URL("./material.js", import.meta.url), "utf8"),
     );
     const supportSampleStart = expectSourceIndex(
       source,
@@ -833,9 +830,8 @@ describe("raymarch volume material", () => {
   });
 
   it("keeps support density from inheriting full caustic radiance", () => {
-    const source = readFileSync(
-      new URL("./material.js", import.meta.url),
-      "utf8",
+    const source = normalizeSource(
+      readFileSync(new URL("./material.js", import.meta.url), "utf8"),
     );
     const stabilizedDensityStart = expectSourceIndex(
       source,
@@ -905,9 +901,8 @@ describe("raymarch volume material", () => {
   });
 
   it("projects Spectral lane textures to display radiance inside the material", () => {
-    const source = readFileSync(
-      new URL("./material.js", import.meta.url),
-      "utf8",
+    const source = normalizeSource(
+      readFileSync(new URL("./material.js", import.meta.url), "utf8"),
     );
     const laneTransferBlock = expectSourceBlock(
       source,
