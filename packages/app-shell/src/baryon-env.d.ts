@@ -39,6 +39,13 @@ declare global {
       backend: string | null;
       isFallback: boolean;
       error: string | null;
+      gpuErrors?: Array<{
+        kind: "uncaptured-error" | "device-lost";
+        api: string | null;
+        type: string | null;
+        message: string;
+        reason: string | null;
+      }>;
     };
     __baryonSupportProbe?: {
       status: string;

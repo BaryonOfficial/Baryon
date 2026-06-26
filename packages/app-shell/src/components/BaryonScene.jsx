@@ -53,6 +53,15 @@ function createCameraRenderKey(cameraPose, cameraResetNonce) {
   ].join(":");
 }
 
+function createCameraPoseMirrorKey(cameraPose) {
+  return createCameraRenderKey(cameraPose, 0);
+}
+
+function bumpLocalCameraRenderSignal(signalRef, phase) {
+  signalRef.current.version += 1;
+  signalRef.current.phase = phase;
+}
+
 export function BaryonScene({
   setIsEngineReady,
   setLiveInputRuntimeStatus,
@@ -91,6 +100,9 @@ export function BaryonScene({
   const { camera, gl, scene, size, invalidate } = useThree();
   const orbitControlsRef = useRef(null);
   const warnedMissingExternalCameraPoseRef = useRef(false);
+  const lastPreviewLocalCameraPoseEventKeyRef = useRef(null);
+  const lastPreviewLocalAppliedResetNonceRef = useRef(null);
+  const localCameraRenderSignalRef = useRef({ version: 0, phase: null });
   const [localPostProcessOverrides, setLocalPostProcessOverrides] =
     useState(null);
   const temporalReprojectionPolicy = resolveTemporalReprojectionPolicy({
@@ -196,25 +208,31 @@ export function BaryonScene({
         return;
       }
 
+      const nextCameraPose = augmentFrameStateWithCameraSync(
+        {},
+        {
+          orbitControls: orbitControlsRef.current,
+          camera,
+          cameraControlMode,
+        },
+      ).cameraPose;
+      lastPreviewLocalCameraPoseEventKeyRef.current =
+        createCameraPoseMirrorKey(nextCameraPose);
+
       onCameraPoseChange({
         phase,
-        cameraPose: augmentFrameStateWithCameraSync(
-          {},
-          {
-            orbitControls: orbitControlsRef.current,
-            camera,
-            cameraControlMode,
-          },
-        ).cameraPose,
+        cameraPose: nextCameraPose,
       });
     },
     [camera, cameraControlMode, onCameraPoseChange],
   );
   const handleOrbitControlsChange = useCallback(() => {
+    bumpLocalCameraRenderSignal(localCameraRenderSignalRef, "change");
     invalidate();
     emitCameraPoseChange("change");
   }, [emitCameraPoseChange, invalidate]);
   const handleOrbitControlsEnd = useCallback(() => {
+    bumpLocalCameraRenderSignal(localCameraRenderSignalRef, "end");
     invalidate();
     emitCameraPoseChange("end");
   }, [emitCameraPoseChange, invalidate]);
@@ -227,7 +245,19 @@ export function BaryonScene({
       return;
     }
 
+    const nextCameraPoseKey = createCameraPoseMirrorKey(cameraPose);
+    const resetNonceChanged =
+      lastPreviewLocalAppliedResetNonceRef.current !== cameraResetNonce;
+    if (
+      !resetNonceChanged &&
+      lastPreviewLocalCameraPoseEventKeyRef.current === nextCameraPoseKey
+    ) {
+      return;
+    }
+
     if (applyExternalCameraPose(cameraPose, camera, orbitControlsRef.current)) {
+      lastPreviewLocalAppliedResetNonceRef.current = cameraResetNonce;
+      lastPreviewLocalCameraPoseEventKeyRef.current = null;
       markRenderOutputCameraCut(postNodesRef.current);
       invalidate();
     }
@@ -286,6 +316,7 @@ export function BaryonScene({
     externalFrameRef,
     structuralControlVersion,
     liveControlSignalRef,
+    localCameraRenderSignalRef,
     adaptiveResetNonce,
     renderProfile,
     cameraRenderKey,

@@ -112,6 +112,18 @@ describe("createControlsStore", () => {
     expect(snapshots[0].controlsState.backgroundColor).toBe("#334455");
   });
 
+  it("flushes pending remembered control changes when disposed", () => {
+    const store = createControlsStore();
+
+    store.updateControl("zeroPointPrecision", 0.106, {
+      persistMode: "debounced",
+    });
+    store.dispose();
+
+    const restoredStore = createControlsStore();
+    expect(restoredStore.controlsRef.current.zeroPointPrecision).toBe(0.106);
+  });
+
   it("seeds a positive Spectral Light mix when selecting Spectral mode", () => {
     const store = createControlsStore();
 

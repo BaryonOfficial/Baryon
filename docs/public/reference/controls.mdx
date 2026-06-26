@@ -5,7 +5,7 @@ description: "Reference for the Baryon GUI controls and diagnostic settings."
 
 The Baryon GUI (top-right corner) lets you shape the visualizer in real time. Hover over any control in the panel to see its tooltip. This document provides the full reference for every user-facing control, organized by folder.
 
-For a practical walkthrough, start with [First session guide](/public/guides/first-session). For the conceptual model behind these settings, see [Understanding the engine](/public/guides/understanding-the-engine).
+For a practical walkthrough, start with [First session guide](/public/guides/first-session). For the conceptual model behind these settings, see [Understanding the engine](/public/guides/understanding-the-engine). Desktop OSC, OSCQuery, and MIDI control-input setup lives in [Parameter Automation](/public/desktop/parameter-automation) under the Desktop track.
 
 ---
 
@@ -147,8 +147,6 @@ Idle-state overlay controls.
 | **Logo Intensity** | Brightness of the idle logo shown when no audio is playing.   |
 | **Logo Size**      | Size of the idle logo overlay shown when no audio is playing. |
 
----
-
 ## Diagnostics
 
 Diagnostic controls help isolate render, audio, and analysis behavior. Debug-only controls require devtools (`DEVTOOLS_ENABLED`).
@@ -156,7 +154,6 @@ Diagnostic controls help isolate render, audio, and analysis behavior. Debug-onl
 | Label                  | Description                                                                                                                          |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | **TRAA**               | Toggle temporal anti-aliasing for diagnostics when isolating render latency, shimmer, or post-process cost.                          |
-| **SMAA**               | Toggle final screen-space anti-aliasing on or off for visual A/B checks.                                                             |
 | **Capture Debug Data** | Record per-frame debug data for the active analysis and renderer.                                                                    |
 | **Freeze Pattern**     | Hold the current modal pattern in place instead of updating it from live audio.                                                      |
 | **Force WebGL2**       | Restart the renderer on the WebGL2 fallback path for compatibility testing. This remounts the canvas.                                |

@@ -416,6 +416,7 @@ export function buildSceneSnapshot({
   rotationX,
   rotationY,
   rotationZ,
+  idleOverlayRotationY,
 }) {
   return {
     rotationMode,
@@ -431,6 +432,9 @@ export function buildSceneSnapshot({
     targetAngularVelocity: sceneMotion.targetAngularVelocity,
     pitchVelocity: sceneMotion.pitchVelocity,
     rollVelocity: sceneMotion.rollVelocity,
+    idleLogoYaw: sceneMotion.idleLogoYaw,
+    idleOverlayRotationY:
+      idleOverlayRotationY ?? sceneMotion.idleLogoYaw - (rotationY ?? 0),
     rotationX: rotationX ?? sceneMotion.pitch ?? 0,
     rotationY,
     rotationZ: rotationZ ?? sceneMotion.roll ?? 0,

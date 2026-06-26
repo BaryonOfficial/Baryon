@@ -49,6 +49,50 @@ test("zeros duplicate external frame deltas while keeping the source clock", () 
   expect(clock.deltaTime).toBe(0);
 });
 
+test("uses frame creation time to dedupe external frames without a source sequence", () => {
+  const firstClock = getSourceAuthoritativeClock({
+    externalFrameState: {
+      status: { isPlaying: true },
+      clockMode: "external-preview",
+      time: 12,
+      deltaTime: 1 / 30,
+      frameCreatedAtMs: 1234,
+    },
+    lastAppliedFrameSequence: null,
+    fallbackClockSnapshot: {
+      status: { isPlaying: false },
+      clockMode: "paused-playback",
+      time: 0,
+      deltaTime: 0,
+    },
+  });
+  const duplicateClock = getSourceAuthoritativeClock({
+    externalFrameState: {
+      status: { isPlaying: true },
+      clockMode: "external-preview",
+      time: 12,
+      deltaTime: 1 / 30,
+      frameCreatedAtMs: 1234,
+    },
+    lastAppliedFrameSequence: firstClock.frameIdentity,
+    fallbackClockSnapshot: {
+      status: { isPlaying: false },
+      clockMode: "paused-playback",
+      time: 0,
+      deltaTime: 0,
+    },
+  });
+
+  expect(firstClock.shouldAdvance).toBe(true);
+  expect(firstClock.frameSequence).toBeNull();
+  expect(firstClock.frameIdentity).toBe("created:1234");
+  expect(firstClock.deltaTime).toBe(1 / 30);
+  expect(duplicateClock.shouldAdvance).toBe(false);
+  expect(duplicateClock.frameSequence).toBeNull();
+  expect(duplicateClock.frameIdentity).toBe("created:1234");
+  expect(duplicateClock.deltaTime).toBe(0);
+});
+
 test("falls back to local audio timing when no external frame is present", () => {
   const clock = getSourceAuthoritativeClock({
     externalFrameState: null,

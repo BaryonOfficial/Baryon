@@ -1311,6 +1311,8 @@ describe("control runtime sync", () => {
     expect(runtimeState.points.rotation.y).toBe(0);
     expect(runtimeState.sceneMotion.idleLogoYaw).toBeCloseTo(-1 / 60);
     expect(runtimeState.idleOverlay.rotation.y).toBeCloseTo(-1 / 60);
+    expect(snapshot.idleLogoYaw).toBeCloseTo(-1 / 60);
+    expect(snapshot.idleOverlayRotationY).toBeCloseTo(-1 / 60);
   });
 
   it("disables sustained and beat-driven audio rotation when motion amount is zero", () => {

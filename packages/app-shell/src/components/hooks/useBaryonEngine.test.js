@@ -174,6 +174,7 @@ import { useBaryonEngine } from "./useBaryonEngine.js";
 function HookHarness({
   controlsRef = { current: {} },
   liveControlSignalRef = null,
+  localCameraRenderSignalRef = null,
   renderProfile,
   ensurePipeline = () => null,
   postNodesRef = { current: null },
@@ -203,6 +204,7 @@ function HookHarness({
     postNodesRef,
     externalFrameRef,
     liveControlSignalRef,
+    localCameraRenderSignalRef,
     renderProfile,
     cameraRenderKey,
     onPerformanceHudSnapshotChange,
@@ -779,5 +781,126 @@ describe("useBaryonEngine", () => {
       renderLoopSpies.shouldRenderExternalFrameSpy,
     ).toHaveBeenLastCalledWith(expect.objectContaining({ forceRender: true }));
     expect(renderSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("coalesces external-frame preview renders during local orbit camera motion", async () => {
+    const renderSpy = vi.fn();
+    const externalFrameRef = { current: { featureFrame: {} } };
+    const localCameraRenderSignalRef = {
+      current: { version: 0, phase: null },
+    };
+    const nowSpy = vi.spyOn(globalThis.performance, "now");
+    renderLoopSpies.shouldRenderExternalFrameSpy.mockImplementation((options) =>
+      Boolean(options?.forceRender),
+    );
+    renderLoopSpies.resolveFeatureFrameSpy.mockReturnValue({
+      featureFrame: {},
+      effectiveFrame: {},
+    });
+
+    try {
+      nowSpy.mockReturnValue(0);
+      await act(async () => {
+        root.render(
+          React.createElement(HookHarness, {
+            ensurePipeline: () => ({ render: renderSpy }),
+            externalFrameRef,
+            localCameraRenderSignalRef,
+          }),
+        );
+      });
+
+      const initialFrameCallback = frameState.callbacks.at(-1);
+      initialFrameCallback(
+        {
+          clock: { getElapsedTime: () => 0 },
+          camera: {},
+          scene: {},
+        },
+        1 / 60,
+      );
+      renderSpy.mockClear();
+      renderLoopSpies.shouldRenderExternalFrameSpy.mockClear();
+
+      localCameraRenderSignalRef.current.version += 1;
+      localCameraRenderSignalRef.current.phase = "change";
+      const frameCallback = frameState.callbacks.at(-1);
+      frameCallback(
+        {
+          clock: { getElapsedTime: () => 0 },
+          camera: {},
+          scene: {},
+        },
+        1 / 60,
+      );
+
+      expect(
+        renderLoopSpies.shouldRenderExternalFrameSpy,
+      ).toHaveBeenLastCalledWith(
+        expect.objectContaining({ forceRender: true }),
+      );
+      expect(renderSpy).toHaveBeenCalledTimes(1);
+
+      renderSpy.mockClear();
+      renderLoopSpies.shouldRenderExternalFrameSpy.mockClear();
+      nowSpy.mockReturnValue(10);
+      localCameraRenderSignalRef.current.version += 1;
+      localCameraRenderSignalRef.current.phase = "change";
+      frameCallback(
+        {
+          clock: { getElapsedTime: () => 0 },
+          camera: {},
+          scene: {},
+        },
+        1 / 60,
+      );
+
+      expect(
+        renderLoopSpies.shouldRenderExternalFrameSpy,
+      ).toHaveBeenLastCalledWith(
+        expect.objectContaining({ forceRender: false }),
+      );
+      expect(renderSpy).not.toHaveBeenCalled();
+
+      nowSpy.mockReturnValue(40);
+      frameCallback(
+        {
+          clock: { getElapsedTime: () => 0 },
+          camera: {},
+          scene: {},
+        },
+        1 / 60,
+      );
+
+      expect(
+        renderLoopSpies.shouldRenderExternalFrameSpy,
+      ).toHaveBeenLastCalledWith(
+        expect.objectContaining({ forceRender: true }),
+      );
+      expect(renderSpy).toHaveBeenCalledTimes(1);
+
+      renderSpy.mockClear();
+      renderLoopSpies.shouldRenderExternalFrameSpy.mockClear();
+      nowSpy.mockReturnValue(41);
+      localCameraRenderSignalRef.current.version += 1;
+      localCameraRenderSignalRef.current.phase = "end";
+      frameCallback(
+        {
+          clock: { getElapsedTime: () => 0 },
+          camera: {},
+          scene: {},
+        },
+        1 / 60,
+      );
+
+      expect(
+        renderLoopSpies.shouldRenderExternalFrameSpy,
+      ).toHaveBeenLastCalledWith(
+        expect.objectContaining({ forceRender: true }),
+      );
+      expect(renderSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 });

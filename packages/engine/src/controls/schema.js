@@ -853,6 +853,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.output,
       runtimePath: "program.smaaEnabled",
       status: CONTROL_STATUSES.live,
+      publicReferenceHidden: true,
     },
     CONTROL_GROUPS.diagnostics,
   ),

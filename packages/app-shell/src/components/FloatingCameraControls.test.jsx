@@ -233,4 +233,53 @@ describe("FloatingCameraControls camera lock", () => {
     expect(panel.style.background).toBe("var(--nd-surface)");
     expect(panel.style.boxShadow).toBe("var(--nd-shell-shadow)");
   });
+
+  it("samples a live camera pose ref into the readout while the panel is expanded", () => {
+    const rafCallbacks = [];
+    const originalRaf = window.requestAnimationFrame;
+    const originalCaf = window.cancelAnimationFrame;
+    window.requestAnimationFrame = (callback) => {
+      rafCallbacks.push(callback);
+      return rafCallbacks.length;
+    };
+    window.cancelAnimationFrame = () => {};
+
+    try {
+      const cameraPoseRef = {
+        current: { position: { x: 1.234, y: -0, z: -8.765 } },
+      };
+      render({ cameraPoseRef });
+
+      // Collapsed panels never read the ref, so nothing samples yet.
+      expect(
+        container.querySelector('[data-testid="camera-view-readout"]'),
+      ).toBeNull();
+
+      // Expanding the panel (focus bubbles to onFocusCapture) starts sampling.
+      act(() => {
+        container
+          .querySelector('[data-testid="camera-reset-view-button"]')
+          ?.focus();
+      });
+
+      const readout = () =>
+        container.querySelector('[data-testid="camera-view-readout"]');
+      expect(readout()?.textContent).toContain("+1.23");
+      expect(readout()?.textContent).toContain("-8.77");
+
+      // A later orbit frame mutates the ref; the next sampled animation frame
+      // moves the readout without the camera owner re-rendering.
+      cameraPoseRef.current = { position: { x: 4.5, y: 0, z: 0 } };
+      act(() => {
+        const tick = rafCallbacks.at(-1);
+        rafCallbacks.length = 0;
+        tick?.(0);
+      });
+
+      expect(readout()?.textContent).toContain("+4.50");
+    } finally {
+      window.requestAnimationFrame = originalRaf;
+      window.cancelAnimationFrame = originalCaf;
+    }
+  });
 });

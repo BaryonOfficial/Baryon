@@ -66,6 +66,17 @@ export {
   getControlsForFolder,
   getControlsForMethod,
 } from "./controls/schema.js";
+export {
+  AUTOMATABLE_CONTROL_KEYS,
+  AUTOMATION_CONTROL_SCHEMA_VERSION,
+  createParameterAutomationOscQueryHostInfo,
+  createParameterAutomationOscQueryTree,
+  findParameterAutomationOscQueryNode,
+  getAutomatableControlDefinitions,
+  normalizeAutomationValue,
+  normalizeMidiAutomationCommand,
+  normalizeOscAutomationCommand,
+} from "./controls/automation.js";
 export { auditControlSchema } from "./controls/audit.js";
 export {
   serializeControls,

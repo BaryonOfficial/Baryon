@@ -1,13 +1,11 @@
 {
   "name": "@baryon/docs",
   "private": true,
-  "packageManager": "pnpm@11.5.1",
   "scripts": {
     "dev": "npx --yes mint@latest dev",
     "mintlify:check": "npx --yes mint@latest broken-links && npx --yes mint@latest validate"
   },
   "volta": {
-    "node": "24.14.1",
-    "pnpm": "11.5.1"
+    "node": "24.14.1"
   }
 }

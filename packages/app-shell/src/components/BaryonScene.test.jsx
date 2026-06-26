@@ -80,7 +80,7 @@ vi.mock("./hooks/useBaryonPipeline", () => ({
 }));
 
 vi.mock("./hooks/useBaryonEngine", () => ({
-  useBaryonEngine: (...args) => useBaryonEngineSpy(...args),
+  useBaryonEngine: (args) => useBaryonEngineSpy(args),
 }));
 
 vi.mock("./hooks/useDefaultBaryonGeometry", () => ({
@@ -98,6 +98,7 @@ function createSceneProps(cameraPose, overrides = {}) {
     controlsRef: { current: {} },
     visualizationMethod: "raymarch",
     performanceProfile: "auto",
+    onPerformanceHudSnapshotChange: null,
     cameraPose,
     cameraControlMode: CAMERA_CONTROL_MODES.externalSynced,
     ...overrides,
@@ -173,12 +174,18 @@ test("preview-local orbit changes invalidate demand frames before publishing pos
 
   invalidateSpy.mockClear();
   onCameraPoseChange.mockClear();
+  const localCameraRenderSignalRef =
+    useBaryonEngineSpy.mock.calls.at(-1)?.[0]?.localCameraRenderSignalRef;
+  expect(localCameraRenderSignalRef?.current?.version).toBe(0);
+  expect(localCameraRenderSignalRef?.current?.phase).toBeNull();
 
   await act(async () => {
     orbitControlProps.at(-1)?.onChange?.();
   });
 
   expect(invalidateSpy).toHaveBeenCalledTimes(1);
+  expect(localCameraRenderSignalRef?.current?.version).toBe(1);
+  expect(localCameraRenderSignalRef?.current?.phase).toBe("change");
   expect(onCameraPoseChange).toHaveBeenCalledWith(
     expect.objectContaining({
       phase: "change",
@@ -191,12 +198,90 @@ test("preview-local orbit changes invalidate demand frames before publishing pos
   });
 
   expect(invalidateSpy).toHaveBeenCalledTimes(2);
+  expect(localCameraRenderSignalRef?.current?.version).toBe(2);
+  expect(localCameraRenderSignalRef?.current?.phase).toBe("end");
   expect(onCameraPoseChange).toHaveBeenLastCalledWith(
     expect.objectContaining({
       phase: "end",
       cameraPose: expect.any(Object),
     }),
   );
+
+  await act(async () => {
+    root.unmount();
+  });
+  container.remove();
+});
+
+test("preview-local camera pose mirrors do not reapply as orbit commands", async () => {
+  const onCameraPoseChange = vi.fn();
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  await act(async () => {
+    root.render(
+      React.createElement(
+        BaryonScene,
+        createSceneProps(resolvePresetCameraPose("side"), {
+          cameraControlMode: CAMERA_CONTROL_MODES.previewLocal,
+          onCameraPoseChange,
+        }),
+      ),
+    );
+  });
+
+  await act(async () => {
+    orbitControlProps.at(-1)?.onChange?.();
+  });
+
+  const mirroredCameraPose =
+    onCameraPoseChange.mock.calls.at(-1)?.[0]?.cameraPose;
+  expect(mirroredCameraPose).toEqual(expect.any(Object));
+
+  cameraState.positionSet.mockClear();
+  cameraState.upSet.mockClear();
+  cameraState.updateProjectionMatrix.mockClear();
+  cameraState.updateMatrixWorld.mockClear();
+  controlsState.targetSet.mockClear();
+  controlsState.update.mockClear();
+  invalidateSpy.mockClear();
+
+  await act(async () => {
+    root.render(
+      React.createElement(
+        BaryonScene,
+        createSceneProps(mirroredCameraPose, {
+          cameraControlMode: CAMERA_CONTROL_MODES.previewLocal,
+          onCameraPoseChange,
+        }),
+      ),
+    );
+  });
+
+  expect(cameraState.positionSet).not.toHaveBeenCalled();
+  expect(cameraState.upSet).not.toHaveBeenCalled();
+  expect(cameraState.updateProjectionMatrix).not.toHaveBeenCalled();
+  expect(cameraState.updateMatrixWorld).not.toHaveBeenCalled();
+  expect(controlsState.targetSet).not.toHaveBeenCalled();
+  expect(controlsState.update).not.toHaveBeenCalled();
+  expect(invalidateSpy).not.toHaveBeenCalled();
+
+  await act(async () => {
+    root.render(
+      React.createElement(
+        BaryonScene,
+        createSceneProps(resolvePresetCameraPose("top-down"), {
+          cameraControlMode: CAMERA_CONTROL_MODES.previewLocal,
+          onCameraPoseChange,
+        }),
+      ),
+    );
+  });
+
+  expect(cameraState.positionSet).toHaveBeenLastCalledWith(0, 9, 0);
+  expect(controlsState.targetSet).toHaveBeenLastCalledWith(0, 0, 0);
+  expect(controlsState.update).toHaveBeenCalled();
 
   await act(async () => {
     root.unmount();

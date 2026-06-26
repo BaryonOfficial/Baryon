@@ -641,6 +641,7 @@ export function applySceneControls(target, controls, deltaTime, featureFrame) {
     rotationX: points.rotation.x,
     rotationY: points.rotation.y,
     rotationZ: points.rotation.z,
+    idleOverlayRotationY: runtimeState?.idleOverlay?.rotation?.y,
   });
 }
 

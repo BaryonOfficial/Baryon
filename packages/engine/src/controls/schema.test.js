@@ -290,6 +290,7 @@ describe("control schema", () => {
       handler: CONTROL_HANDLERS.output,
       runtimePath: "program.smaaEnabled",
       status: CONTROL_STATUSES.live,
+      publicReferenceHidden: true,
     });
   });
 
