@@ -297,6 +297,30 @@ if (scriptExists("scripts/sync-public.sh")) {
   }
 }
 
+const parameterAutomationPath = path.join(
+  rootDir,
+  "docs/public/desktop/parameter-automation.mdx",
+);
+if (fs.existsSync(parameterAutomationPath)) {
+  const parameterAutomation = fs.readFileSync(parameterAutomationPath, "utf8");
+  const touchDesignerArtifactPath =
+    "docs/public/downloads/touchdesigner/baryon_osc.tox";
+  if (!fs.existsSync(path.join(rootDir, touchDesignerArtifactPath))) {
+    errors.push(
+      `${touchDesignerArtifactPath}: missing TouchDesigner control surface artifact`,
+    );
+  }
+  if (
+    !parameterAutomation.includes(
+      "https://downloads.baryon.live/touchdesigner/baryon_osc.tox",
+    )
+  ) {
+    errors.push(
+      "docs/public/desktop/parameter-automation.mdx: TouchDesigner download must use downloads.baryon.live",
+    );
+  }
+}
+
 const polyformLicense = "LicenseRef-PolyForm-Strict-1.0";
 for (const relPath of findWorkspaceManifestPaths()) {
   const packageJson = JSON.parse(
