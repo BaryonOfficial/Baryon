@@ -89,6 +89,110 @@ function getWallTimeMs() {
     : 0;
 }
 
+const LOCAL_CAMERA_FORCE_RENDER_INTERVAL_MS = 1000 / 30;
+
+function shouldForceLocalCameraRender(cameraSignal, lastRenderedAtMs, nowMs) {
+  if (!cameraSignal) {
+    return false;
+  }
+  if (cameraSignal.phase === "end") {
+    return true;
+  }
+  return nowMs - lastRenderedAtMs >= LOCAL_CAMERA_FORCE_RENDER_INTERVAL_MS;
+}
+
+function readFiniteNumber(value) {
+  const nextValue = Number(value);
+  return Number.isFinite(nextValue) ? nextValue : null;
+}
+
+function assignFiniteNumber(target, key, value) {
+  const nextValue = readFiniteNumber(value);
+  if (nextValue === null) {
+    return null;
+  }
+
+  target[key] = nextValue;
+  return nextValue;
+}
+
+function applyExternalSceneSnapshot(runtimeState, sceneSnapshot) {
+  if (!runtimeState || !sceneSnapshot) {
+    return null;
+  }
+
+  const rotation = runtimeState.points?.rotation ?? null;
+  const sceneMotion = runtimeState.sceneMotion ?? {};
+  runtimeState.sceneMotion = sceneMotion;
+
+  const rotationX = readFiniteNumber(sceneSnapshot.rotationX);
+  const rotationY = readFiniteNumber(sceneSnapshot.rotationY);
+  const rotationZ = readFiniteNumber(sceneSnapshot.rotationZ);
+
+  if (rotation) {
+    if (rotationX !== null) {
+      rotation.x = rotationX;
+    }
+    if (rotationY !== null) {
+      rotation.y = rotationY;
+    }
+    if (rotationZ !== null) {
+      rotation.z = rotationZ;
+    }
+  }
+
+  if (rotationX !== null) {
+    sceneMotion.pitch = rotationX;
+  }
+  if (rotationY !== null) {
+    sceneMotion.yaw = rotationY;
+  }
+  if (rotationZ !== null) {
+    sceneMotion.roll = rotationZ;
+  }
+
+  assignFiniteNumber(
+    sceneMotion,
+    "angularVelocity",
+    sceneSnapshot.angularVelocity,
+  );
+  assignFiniteNumber(
+    sceneMotion,
+    "targetAngularVelocity",
+    sceneSnapshot.targetAngularVelocity,
+  );
+  assignFiniteNumber(
+    sceneMotion,
+    "pitchVelocity",
+    sceneSnapshot.pitchVelocity,
+  );
+  assignFiniteNumber(
+    sceneMotion,
+    "rollVelocity",
+    sceneSnapshot.rollVelocity,
+  );
+
+  const idleLogoYaw = assignFiniteNumber(
+    sceneMotion,
+    "idleLogoYaw",
+    sceneSnapshot.idleLogoYaw,
+  );
+  const idleOverlayRotationY = readFiniteNumber(
+    sceneSnapshot.idleOverlayRotationY,
+  );
+  if (runtimeState.idleOverlay?.rotation && idleOverlayRotationY !== null) {
+    runtimeState.idleOverlay.rotation.y = idleOverlayRotationY;
+  } else if (
+    runtimeState.idleOverlay?.rotation &&
+    idleLogoYaw !== null &&
+    rotationY !== null
+  ) {
+    runtimeState.idleOverlay.rotation.y = idleLogoYaw - rotationY;
+  }
+
+  return sceneSnapshot;
+}
+
 function recordMeasuredRuntimePerf(runtimeDiagnostics, key, startedAt) {
   recordRuntimePerfSample(
     runtimeDiagnostics,
@@ -127,6 +231,7 @@ export function useBaryonEngine({
   externalFrameRef = null,
   structuralControlVersion = 0,
   liveControlSignalRef = null,
+  localCameraRenderSignalRef = null,
   adaptiveResetNonce = 0,
   renderProfile = null,
   basePixelRatio = null,
@@ -145,6 +250,9 @@ export function useBaryonEngine({
   const outputCaptureInFlightRef = useRef(false);
   const tailDiagnosticsRef = useRef(createTailDiagnosticsRecorder());
   const lastAppliedExternalFrameSequenceRef = useRef(null);
+  const lastObservedLocalCameraRenderSignalVersionRef = useRef(0);
+  const pendingLocalCameraRenderSignalRef = useRef(null);
+  const lastLocalCameraRenderAtMsRef = useRef(Number.NEGATIVE_INFINITY);
   const performanceHudStateRef = useRef({
     lastPublishedAtMs: Number.NEGATIVE_INFINITY,
     wasPublishing: false,
@@ -529,6 +637,20 @@ export function useBaryonEngine({
       renderLoopContext.controlsRef.current = controls;
       applyControlInvalidation(controls);
     }
+    const nextLocalCameraRenderSignalVersion =
+      localCameraRenderSignalRef?.current?.version ?? 0;
+    if (
+      Number.isInteger(nextLocalCameraRenderSignalVersion) &&
+      nextLocalCameraRenderSignalVersion >
+        lastObservedLocalCameraRenderSignalVersionRef.current
+    ) {
+      lastObservedLocalCameraRenderSignalVersionRef.current =
+        nextLocalCameraRenderSignalVersion;
+      pendingLocalCameraRenderSignalRef.current = {
+        version: nextLocalCameraRenderSignalVersion,
+        phase: localCameraRenderSignalRef?.current?.phase ?? "change",
+      };
+    }
     const tailDiagnosticsActive = isTailDiagnosticsRecorderActive(
       tailDiagnosticsRef.current,
     );
@@ -546,6 +668,7 @@ export function useBaryonEngine({
       time,
       deltaTime,
       frameSequence: externalFrameSequence,
+      frameIdentity: externalFrameIdentity,
       shouldAdvance,
     } = getSourceAuthoritativeClock({
       externalFrameState,
@@ -622,15 +745,26 @@ export function useBaryonEngine({
       audit,
       controlsChanged = false,
     } = controlSnapshots;
+    const pendingLocalCameraSignal = pendingLocalCameraRenderSignalRef.current;
+    const localCameraForceRender = shouldForceLocalCameraRender(
+      pendingLocalCameraSignal,
+      lastLocalCameraRenderAtMsRef.current,
+      getWallTimeMs(),
+    );
     if (
       !shouldRenderExternalFrame({
         externalFrameState,
         shouldAdvance,
         controlsChanged,
-        forceRender: forcedExternalRenderPendingRef.current,
+        forceRender:
+          forcedExternalRenderPendingRef.current || localCameraForceRender,
       })
     ) {
       return;
+    }
+    if (pendingLocalCameraSignal) {
+      pendingLocalCameraRenderSignalRef.current = null;
+      lastLocalCameraRenderAtMsRef.current = getWallTimeMs();
     }
     const resolvedFrame = externalFrameState?.featureFrame
       ? {
@@ -785,7 +919,8 @@ export function useBaryonEngine({
     }
 
     if (externalFrameState?.featureFrame) {
-      lastAppliedExternalFrameSequenceRef.current = externalFrameSequence;
+      lastAppliedExternalFrameSequenceRef.current =
+        externalFrameIdentity ?? externalFrameSequence;
     }
     forcedExternalRenderPendingRef.current = false;
 
@@ -852,12 +987,11 @@ export function useBaryonEngine({
     );
 
     const applySceneControlsStartedAt = getWallTimeMs();
-    const sceneSnapshot = applySceneControls(
-      runtimeState,
-      controls,
-      deltaTime,
-      featureFrame,
-    );
+    const externalSceneSnapshot = externalFrameState?.sceneSnapshot ?? null;
+    const sceneSnapshot =
+      externalFrameState?.featureFrame && externalSceneSnapshot
+        ? applyExternalSceneSnapshot(runtimeState, externalSceneSnapshot)
+        : applySceneControls(runtimeState, controls, deltaTime, featureFrame);
     recordMeasuredRuntimePerf(
       runtimeDiagnostics,
       "applySceneControlsMs",
@@ -897,6 +1031,7 @@ export function useBaryonEngine({
       deltaTime,
       clockMode,
       featureFrame: effectiveFrame,
+      sceneSnapshot,
       backgroundColor: controls.backgroundColor,
     });
 

@@ -13,6 +13,8 @@ import {
   int,
   instancedArray,
   log,
+  NodeAccess,
+  storageTexture3D,
   textureStore,
   texture3D,
   uniform,
@@ -2515,6 +2517,9 @@ function createModalBasisCacheComputeKernel({
 }) {
   const { resolution } = modalBasisCache;
   const texture = targetTexture;
+  const writeTexture = storageTexture3D(texture).setAccess(
+    NodeAccess.WRITE_ONLY,
+  );
   const uRadius = uniforms.uRadius;
   const modalFieldActiveCount = int(uniforms.uModalFieldModeCount);
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
@@ -2593,12 +2598,12 @@ function createModalBasisCacheComputeKernel({
         basisGradZ.addAssign(family.gradZ);
 
         textureStore(
-          texture,
+          writeTexture,
           voxelCoord,
           vec4(basisField, basisGradX, basisGradY, basisGradZ),
         ).toWriteOnly();
       }).Else(() => {
-        textureStore(texture, voxelCoord, vec4(zero)).toWriteOnly();
+        textureStore(writeTexture, voxelCoord, vec4(zero)).toWriteOnly();
       });
     });
   })().compute(
@@ -2622,6 +2627,18 @@ function createLiveFieldProjectionComputeKernel({
     pressureRadiationTexture,
     phaseInterferenceTexture,
   } = liveFieldProjectionCache;
+  const writeFieldTexture = storageTexture3D(fieldTexture).setAccess(
+    NodeAccess.WRITE_ONLY,
+  );
+  const writeSupportTexture = storageTexture3D(supportTexture).setAccess(
+    NodeAccess.WRITE_ONLY,
+  );
+  const writePressureRadiationTexture = storageTexture3D(
+    pressureRadiationTexture,
+  ).setAccess(NodeAccess.WRITE_ONLY);
+  const writePhaseInterferenceTexture = storageTexture3D(
+    phaseInterferenceTexture,
+  ).setAccess(NodeAccess.WRITE_ONLY);
   const modalFieldActiveCount = int(uniforms.uModalFieldModeCount);
   const resolutionUint = uint(resolution);
   const resolutionFloat = float(resolution);
@@ -2811,7 +2828,7 @@ function createLiveFieldProjectionComputeKernel({
         one,
       );
       textureStore(
-        fieldTexture,
+        writeFieldTexture,
         voxelCoord,
         vec4(
           normalizedSignedField,
@@ -2821,12 +2838,12 @@ function createLiveFieldProjectionComputeKernel({
         ),
       ).toWriteOnly();
       textureStore(
-        supportTexture,
+        writeSupportTexture,
         voxelCoord,
         vec4(supportSum.div(amplitudeNorm), zero, zero, one),
       ).toWriteOnly();
       textureStore(
-        pressureRadiationTexture,
+        writePressureRadiationTexture,
         voxelCoord,
         vec4(
           normalizedPressure,
@@ -2836,7 +2853,7 @@ function createLiveFieldProjectionComputeKernel({
         ),
       ).toWriteOnly();
       textureStore(
-        phaseInterferenceTexture,
+        writePhaseInterferenceTexture,
         voxelCoord,
         vec4(
           phaseInterferenceContrast,
@@ -2868,6 +2885,15 @@ function createSpectralLaneCacheComputeKernel({
     spectralLaneTextureB,
     spectralLaneStatsTexture,
   } = spectralLaneCache;
+  const writeSpectralLaneTextureA = storageTexture3D(
+    spectralLaneTextureA,
+  ).setAccess(NodeAccess.WRITE_ONLY);
+  const writeSpectralLaneTextureB = storageTexture3D(
+    spectralLaneTextureB,
+  ).setAccess(NodeAccess.WRITE_ONLY);
+  const writeSpectralLaneStatsTexture = storageTexture3D(
+    spectralLaneStatsTexture,
+  ).setAccess(NodeAccess.WRITE_ONLY);
   const modalFieldActiveCount = int(uniforms.uModalFieldModeCount);
   const resolutionUint = uint(resolution);
   const resolutionFloat = float(resolution);
@@ -3015,17 +3041,17 @@ function createSpectralLaneCacheComputeKernel({
         .select(packetConfidenceSum.div(packetSupportSum), zero);
 
       textureStore(
-        spectralLaneTextureA,
+        writeSpectralLaneTextureA,
         voxelCoord,
         vec4(lane0, lane1, lane2, lane3),
       ).toWriteOnly();
       textureStore(
-        spectralLaneTextureB,
+        writeSpectralLaneTextureB,
         voxelCoord,
         vec4(lane4, lane5, lane6, lane7),
       ).toWriteOnly();
       textureStore(
-        spectralLaneStatsTexture,
+        writeSpectralLaneStatsTexture,
         voxelCoord,
         vec4(total, dominance, entropy, spectralConfidence),
       ).toWriteOnly();

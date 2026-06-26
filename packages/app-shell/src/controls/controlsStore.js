@@ -219,7 +219,7 @@ export function createControlsStore({ storage = getBrowserStorage() } = {}) {
       return emit();
     },
     dispose() {
-      persistScheduler.cancel();
+      persistScheduler.flushPending();
       listeners.clear();
     },
   };

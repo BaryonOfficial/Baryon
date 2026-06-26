@@ -105,7 +105,11 @@
         "groups": [
           {
             "group": "Baryon Desktop",
-            "pages": ["public/desktop/overview", "public/desktop/licensing"]
+            "pages": [
+              "public/desktop/overview",
+              "public/desktop/parameter-automation",
+              "public/desktop/licensing"
+            ]
           }
         ]
       },

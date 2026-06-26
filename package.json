@@ -1,7 +1,7 @@
 {
   "name": "baryon-monorepo",
   "private": true,
-  "version": "1.0.0-beta.2",
+  "version": "1.0.0-beta.3",
   "license": "LicenseRef-PolyForm-Strict-1.0",
   "repository": {
     "type": "git",
@@ -12,7 +12,7 @@
   },
   "scripts": {
     "dev": "turbo dev --filter=@baryon/web",
-    "dev:docs": "cd docs && volta run --node 24.14.1 --pnpm 11.5.1 pnpm dev",
+    "dev:docs": "cd docs && volta run --node 24.14.1 corepack pnpm dev",
     "build": "turbo build",
     "build:web": "turbo build --filter=@baryon/web",
     "preflight:public": "bash scripts/preflight-public.sh",
@@ -20,7 +20,7 @@
     "repo:map": "node scripts/generate-repo-map.mjs",
     "repo:map:check": "node scripts/generate-repo-map.mjs --check",
     "docs:check": "node scripts/check-docs.mjs",
-    "docs:mintlify:check": "cd docs && volta run --node 24.14.1 --pnpm 11.5.1 pnpm mintlify:check",
+    "docs:mintlify:check": "cd docs && volta run --node 24.14.1 corepack pnpm mintlify:check",
     "version:check": "node scripts/workspace-version.mjs --check",
     "version:set": "node scripts/workspace-version.mjs",
     "release:patch": "node scripts/release-bump.mjs patch",
@@ -94,7 +94,7 @@
     "turbo": "^2.9.3",
     "typescript": "^5.9.3"
   },
-  "packageManager": "pnpm@11.5.1",
+  "packageManager": "pnpm@11.9.0+sha256.2b567aa66026238078ac2e0a33bec3febd60e962987aac697456f3180819b287",
   "dependencies": {
     "libphonenumber-js": "^1.13.6"
   }

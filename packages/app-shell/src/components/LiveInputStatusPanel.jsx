@@ -140,8 +140,6 @@ export default function LiveInputStatusPanel({
   onMicControlChange = undefined,
 }) {
   const [micSettingsOpen, setMicSettingsOpen] = useState(false);
-  const [hasInteractedWithLiveAction, setHasInteractedWithLiveAction] =
-    useState(false);
   const {
     selectedSource,
     isLiveInputActive,
@@ -265,15 +263,8 @@ export default function LiveInputStatusPanel({
     : isLiveInputActive
       ? "live"
       : "idle";
-  const showLiveActionAttention =
-    showLiveAction &&
-    !hasInteractedWithLiveAction &&
-    !isLiveInputActive &&
-    !liveButtonDisabled;
-
   const handleLiveAction = async () => {
     if (liveButtonDisabled) return;
-    setHasInteractedWithLiveAction(true);
     if (typeof handleLiveInputAction === "function") {
       await handleLiveInputAction();
       return;
@@ -296,7 +287,7 @@ export default function LiveInputStatusPanel({
         position: stacked ? "relative" : "fixed",
         top: stacked ? "auto" : top,
         right: stacked ? "auto" : right,
-        zIndex: 9998,
+        zIndex: stacked ? "auto" : 9998,
         pointerEvents: "auto",
         width: TOP_RIGHT_OVERLAY_PANEL_WIDTH,
         padding: "0.62rem",
@@ -304,7 +295,7 @@ export default function LiveInputStatusPanel({
         border: "none",
         background: "var(--nd-surface)",
         color: "var(--nd-text-primary)",
-        boxShadow: "var(--nd-shell-shadow)",
+        boxShadow: stacked ? "none" : "var(--nd-shell-shadow)",
         fontFamily: "var(--baryon-type-interface-family)",
       }}
       aria-live="polite"
@@ -808,12 +799,12 @@ export default function LiveInputStatusPanel({
                 borderRadius: "0.66rem",
                 border: isLiveInputActive
                   ? "1px solid var(--nd-accent)"
-                  : "1px solid var(--nd-text-display)",
+                  : "1px solid var(--performer-control-cream, var(--nd-text-display))",
                 background: liveButtonDisabled
                   ? "color-mix(in srgb, var(--baryon-cream) 2%, transparent)"
                   : isLiveInputActive
                     ? "var(--baryon-amber-soft)"
-                    : "var(--nd-text-display)",
+                    : "var(--performer-control-cream, var(--nd-text-display))",
                 color: liveButtonDisabled
                   ? "var(--nd-text-disabled)"
                   : isLiveInputActive
@@ -827,8 +818,6 @@ export default function LiveInputStatusPanel({
                 cursor: liveButtonDisabled ? "not-allowed" : "pointer",
                 transition:
                   "background 140ms ease, border-color 140ms ease, color 140ms ease, opacity 140ms ease",
-                opacity:
-                  liveButtonDisabled || !showLiveActionAttention ? 1 : 0.92,
               }}
               aria-label={liveActionLabel}
               title={

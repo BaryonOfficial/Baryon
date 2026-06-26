@@ -23,6 +23,7 @@ export { default as AdvancedControlsDock } from "./components/AdvancedControlsDo
 export { OutputStageSurface } from "./components/OutputStageSurface.jsx";
 export { ListenerControls } from "./components/AudioControls.jsx";
 export { default as LiveInputStatusPanel } from "./components/LiveInputStatusPanel.jsx";
+export { TOP_RIGHT_OVERLAY_PANEL_WIDTH } from "./components/topRightOverlayLayout.js";
 export { default as FloatingCameraControls } from "./components/FloatingCameraControls.jsx";
 export { default as PerformanceHud } from "./components/PerformanceHud.jsx";
 export { resolvePreviewOverlayState } from "./components/threeSceneState.js";

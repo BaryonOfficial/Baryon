@@ -1,3 +1,15 @@
+function resolveExternalFrameIdentity(externalFrameState) {
+  const frameSequence = externalFrameState?.frameSequence ?? null;
+  if (frameSequence != null) {
+    return frameSequence;
+  }
+
+  const frameCreatedAtMs = Number(externalFrameState?.frameCreatedAtMs);
+  return Number.isFinite(frameCreatedAtMs)
+    ? `created:${frameCreatedAtMs}`
+    : null;
+}
+
 export function getSourceAuthoritativeClock({
   externalFrameState,
   lastAppliedFrameSequence,
@@ -12,8 +24,9 @@ export function getSourceAuthoritativeClock({
   }
 
   const frameSequence = externalFrameState.frameSequence ?? null;
+  const frameIdentity = resolveExternalFrameIdentity(externalFrameState);
   const shouldAdvance =
-    frameSequence === null || frameSequence !== lastAppliedFrameSequence;
+    frameIdentity === null || frameIdentity !== lastAppliedFrameSequence;
 
   return {
     status: externalFrameState.status,
@@ -21,6 +34,7 @@ export function getSourceAuthoritativeClock({
     time: externalFrameState.time,
     deltaTime: shouldAdvance ? externalFrameState.deltaTime : 0,
     frameSequence,
+    frameIdentity,
     shouldAdvance,
   };
 }
