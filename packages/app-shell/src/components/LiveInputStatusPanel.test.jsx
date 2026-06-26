@@ -111,6 +111,34 @@ describe("LiveInputStatusPanel", () => {
     expect(liveButton?.disabled).toBe(false);
   });
 
+  it("renders idle Go Live with the performer cream token at full opacity", () => {
+    renderPanel({}, { showLiveAction: true });
+
+    const liveButton = /** @type {HTMLButtonElement | null} */ (
+      container.querySelector('[data-testid="source-live-button"]')
+    );
+
+    expect(liveButton?.style.background).toBe(
+      "var(--performer-control-cream, var(--nd-text-display))",
+    );
+    expect(liveButton?.style.border).toBe(
+      "1px solid var(--performer-control-cream, var(--nd-text-display))",
+    );
+    expect(liveButton?.style.opacity).toBe("");
+  });
+
+  it("does not let stacked panel shadow bleed onto sibling controls", () => {
+    renderPanel({}, { stacked: true, showLiveAction: true });
+
+    const panel = /** @type {HTMLElement | null} */ (
+      container.querySelector('[data-testid="live-input-status-panel"]')
+    );
+
+    expect(panel?.style.position).toBe("relative");
+    expect(panel?.style.zIndex).toBe("auto");
+    expect(panel?.style.boxShadow).toBe("none");
+  });
+
   it("seeds the canonical context-selected device before Go Live when local selection is empty", async () => {
     const setSelectedSystemDevice = vi.fn();
     const handleSystemToggle = vi.fn();

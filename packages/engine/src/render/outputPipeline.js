@@ -527,8 +527,10 @@ function syncOutputCamera(outputCamera, sourceCamera, aspect) {
   outputCamera.quaternion.copy(sourceCamera.quaternion);
   outputCamera.scale.copy(sourceCamera.scale);
   outputCamera.up.copy(sourceCamera.up);
-  outputCamera.matrixAutoUpdate = sourceCamera.matrixAutoUpdate;
+  outputCamera.matrixAutoUpdate = true;
   outputCamera.updateProjectionMatrix();
+  outputCamera.updateMatrix();
+  outputCamera.matrixWorldNeedsUpdate = true;
   outputCamera.updateMatrixWorld(true);
 }
 

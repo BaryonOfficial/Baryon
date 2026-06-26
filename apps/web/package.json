@@ -1,9 +1,8 @@
 {
   "name": "@baryon/web",
-  "version": "1.0.0-beta.2",
+  "version": "1.0.0-beta.3",
   "private": true,
   "license": "LicenseRef-PolyForm-Strict-1.0",
-  "packageManager": "pnpm@11.5.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -25,7 +24,7 @@
     "@vercel/speed-insights": "^2.0.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "three": "^0.184.0",
+    "three": "^0.185.0",
     "zustand": "^5.0.12"
   },
   "devDependencies": {
@@ -35,7 +34,7 @@
     "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "@types/three": "^0.184.0",
+    "@types/three": "^0.185.0",
     "@vitejs/plugin-basic-ssl": "^2.3.0",
     "cross-env": "^10.1.0",
     "sharp": "^0.34.5",

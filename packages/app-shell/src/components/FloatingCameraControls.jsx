@@ -122,11 +122,24 @@ function resolveViewPosition(cameraPose) {
   };
 }
 
+function areViewPositionsEqual(first, second) {
+  if (first === second) {
+    return true;
+  }
+  if (!first || !second) {
+    return false;
+  }
+  return first.x === second.x && first.y === second.y && first.z === second.z;
+}
+
 /**
  * @param {{
  *   activePreset: "top-down" | "side" | null,
  *   cameraPose?: {
  *     position?: { x?: number, y?: number, z?: number } | null,
+ *   } | null,
+ *   cameraPoseRef?: {
+ *     current?: { position?: { x?: number, y?: number, z?: number } | null } | null,
  *   } | null,
  *   onPresetSelect?: ((preset: "top-down" | "side") => void) | null,
  *   onPresetReset?: (() => void) | null,
@@ -144,6 +157,7 @@ function resolveViewPosition(cameraPose) {
 export default function FloatingCameraControls({
   activePreset,
   cameraPose = null,
+  cameraPoseRef = null,
   onPresetSelect = null,
   onPresetReset = null,
   cameraLocked = false,
@@ -160,6 +174,7 @@ export default function FloatingCameraControls({
     typeof window === "undefined" ? 1440 : window.innerWidth,
   );
   const [expanded, setExpanded] = useState(false);
+  const [liveViewPosition, setLiveViewPosition] = useState(null);
   const suppressClickTargetRef = useRef(null);
   const {
     dragOffset,
@@ -184,6 +199,41 @@ export default function FloatingCameraControls({
     };
   }, []);
 
+  // When a live pose ref is supplied (desktop performer), poll it on an
+  // animation frame while the panel is open so the coordinate readout tracks the
+  // orbit without the camera owner having to re-render the tree on every frame.
+  // Collapsed panels read nothing — the readout is hidden — so this stays idle
+  // during the common performance case.
+  useEffect(() => {
+    if (!cameraPoseRef || !expanded) {
+      return undefined;
+    }
+
+    const sampleViewPosition = () => {
+      const nextViewPosition = resolveViewPosition(cameraPoseRef.current);
+      setLiveViewPosition((current) =>
+        areViewPositionsEqual(current, nextViewPosition)
+          ? current
+          : nextViewPosition,
+      );
+    };
+
+    sampleViewPosition();
+
+    const scheduler = typeof window === "undefined" ? null : window;
+    if (typeof scheduler?.requestAnimationFrame !== "function") {
+      return undefined;
+    }
+
+    let frameId = scheduler.requestAnimationFrame(function tick() {
+      sampleViewPosition();
+      frameId = scheduler.requestAnimationFrame(tick);
+    });
+    return () => {
+      scheduler.cancelAnimationFrame(frameId);
+    };
+  }, [cameraPoseRef, expanded]);
+
   const isPhoneViewport = viewportWidth <= 640;
   const topInset = isPhoneViewport ? "0.7rem" : "0.9rem";
   const resolvedPosition = isPhoneViewport ? "fixed" : position;
@@ -205,7 +255,9 @@ export default function FloatingCameraControls({
   const activeIndex = presets.findIndex(
     (preset) => preset.key === activePreset,
   );
-  const viewPosition = resolveViewPosition(cameraPose);
+  const viewPosition = cameraPoseRef
+    ? (liveViewPosition ?? resolveViewPosition(cameraPose))
+    : resolveViewPosition(cameraPose);
 
   const activateCameraButtonOnPointerDown = (event, action) => {
     if (typeof action !== "function") {

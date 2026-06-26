@@ -1,0 +1,143 @@
+---
+title: "Parameter Automation"
+description: "Control Baryon Desktop from OSC software, OSCQuery-aware tools, and MIDI control-change hardware."
+---
+
+Baryon Desktop can accept parameter automation from OSC software and MIDI
+control-change hardware. Open Performer Mode, open **Control Input**, enable
+control input, and enable the transports you want.
+
+OSC listens on `127.0.0.1:9001` by default. Send messages to
+`/baryon/control/<key>`, where `<key>` is one of the automatable control keys
+below. MIDI v1 maps one selected MIDI input at a time; use learn mode to bind a
+knob or fader CC message to the same key list.
+
+When OSC is enabled, Baryon also serves an OSCQuery discovery endpoint on the
+next local port: `http://127.0.0.1:9002` by default. If you change the OSC port,
+the OSCQuery port follows as `OSC port + 1`. Use **Copy Ref** in the control
+input panel to copy the current OSC/OSCQuery reference.
+
+OSCQuery is discovery only. It tells external tools what Baryon can control,
+what OSC host and port to use, and how each value should be shaped. Control
+values are still sent over OSC UDP.
+
+## MIDI Setup
+
+Baryon's MIDI input is for MIDI control-change messages. A MIDI keyboard can
+work if its knobs, faders, or pads send CC messages; piano notes, pitch bend,
+and aftertouch do not control Baryon in this first automation surface.
+
+Use a physical MIDI controller like this:
+
+1. Connect the MIDI controller to the computer running Baryon.
+2. In Baryon Desktop, enable **Control Input** and **MIDI**.
+3. If the app asks for MIDI access, allow it.
+4. Choose the controller under **Input**.
+5. Choose the Baryon parameter under **Target**.
+6. Press **Learn**, then move one knob, fader, or CC-capable pad on the
+   controller.
+7. Move that same control again. Baryon should update the mapped parameter and
+   the `ok` counter should increase.
+
+Use virtual MIDI on macOS like this:
+
+1. Open **Audio MIDI Setup**.
+2. Choose **Window > Show MIDI Studio**.
+3. Open **IAC Driver**, enable **Device is online**, and add or select a bus.
+4. In Baryon, enable **Control Input** and **MIDI**, then select the IAC bus
+   under **Input**.
+5. In a DAW, TouchDesigner, Max, or another MIDI source, send MIDI CC messages
+   to that same IAC bus.
+6. In Baryon, choose a **Target**, press **Learn**, and move or send the CC
+   control once to bind it.
+
+### Learn and Remove Mappings
+
+The **Learn** button binds one physical MIDI control to the selected Baryon
+target:
+
+1. Choose a Baryon parameter in **Target**.
+2. Press **Learn**. The button changes to **Learning**.
+3. Move one knob, fader, or CC-capable pad on the selected MIDI input.
+4. Baryon records that input, MIDI channel, CC controller number, and target.
+5. Move the same physical control again to drive the mapped Baryon parameter.
+
+Learning the same physical CC again moves that CC to the newly selected target;
+other mapped CCs remain until you remove them.
+
+The **X** button next to the shown mapping removes that mapping. Use it when you
+want the selected target to stop responding to the current MIDI control, or
+before teaching that target a different physical control.
+
+The **Control changes** menu controls whether incoming OSC/MIDI value changes
+are saved as visual settings. **Session only** applies external control without
+saving the changed Baryon values. **Remember** saves the changed values after
+Baryon's normal debounce. Learned MIDI mappings are saved with the control-input
+configuration either way.
+
+## TouchDesigner Control Surface
+
+Download the smart TouchDesigner component:
+[baryon_osc.tox](/public/downloads/touchdesigner/baryon_osc.tox)
+
+Use it like this:
+
+1. In Baryon Desktop, enable **Control Input** and **OSC**.
+2. For local TouchDesigner on the same machine, leave OSC at
+   `127.0.0.1:9001`. OSCQuery will be available at `127.0.0.1:9002`.
+3. Drag `baryon_osc.tox` into a TouchDesigner network.
+4. Select the parent `baryon_osc` component and pulse **Refresh Query**.
+5. Select `baryon_osc/controls` and tune the generated custom parameters.
+6. Use **Send All** on the parent component to push the current TouchDesigner
+   values to Baryon.
+
+The parent `baryon_osc` component owns OSC host/port, OSCQuery host/port,
+Bonjour discovery, refresh, active state, and Send All. The child
+`baryon_osc/controls` component is the control surface. It is regenerated from
+Baryon's OSCQuery metadata, so pages such as Shape, Motion, Bloom, Color,
+Output, Performance, and Logo track the Baryon build you are running.
+
+Before OSCQuery is reachable, the component starts with a small Shape, Motion,
+and Bloom fallback surface. After **Refresh Query** succeeds, the fallback is
+replaced by the discovered Baryon controls.
+
+For a second computer on the same network, turn on **LAN** in Baryon. LAN mode
+binds OSC/OSCQuery to the local network and advertises OSCQuery over Bonjour as
+`_oscjson._tcp` / `Baryon Parameter Automation`. In TouchDesigner, pulse
+**Discover** if Bonjour is available, or enter the Baryon machine's LAN address
+as **OSCQuery Host** and then pulse **Refresh Query**.
+
+## Manual OSC
+
+Query `/?HOST_INFO` for the OSC receiver details, `/baryon/control` for the
+writable control tree, or a specific address such as
+`/baryon/control/zeroPointPrecision` for type, range, description, tags, label,
+and default metadata.
+
+Example OSC messages:
+
+```text
+/baryon/control/zeroPointPrecision 0.12
+/baryon/control/bloomEnabled 1
+/baryon/control/colorMode spectral
+/baryon/control/volumeColor 0.36 0.89 0.96
+```
+
+OSC scalar controls take one numeric argument. Boolean controls take one integer
+argument, where `0` is off and any non-zero value is on. Enum controls take one
+string argument matching the control value. Color controls take three numeric RGB
+arguments from `0` to `1`. MIDI mappings scale CC values (`0..127`) into the
+target control range.
+
+| Area        | Automatable keys                                                                                                                                                                      |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Performance | `renderQualityPreset`, `customTargetFps`, `performanceHudEnabled`                                                                                                                     |
+| Output      | `outputMode`, `outputBackgroundColor`                                                                                                                                                 |
+| Shape       | `boundaryMode`, `zeroPointPrecision`, `densityGain`, `absorption`, `opacityGain`, `raymarchSteps`                                                                                     |
+| Color       | `colorMode`, `volumeColor`, `surfaceColor`, `spectralMix`, `holographicIntensity`, `holographicShift`, `holographicFresnelPower`                                                     |
+| Motion      | `rotationMode`, `rotationSpeed`, `motionAmount`, `reactivity`                                                                                                                         |
+| Bloom       | `bloomEnabled`, `bloomStrength`, `bloomRadius`, `bloomThreshold`, `bloomResponseBias`, `rimBloomBias`, `rimCompression`                                                               |
+| Logo        | `idleLogoIntensity`, `idleLogoSize`                                                                                                                                                   |
+
+Notes, pitch bend, aftertouch, feedback LEDs, multi-device profiles, and remote
+hardware profiles are outside the first automation surface.

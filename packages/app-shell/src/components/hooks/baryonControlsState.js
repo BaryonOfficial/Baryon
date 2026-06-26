@@ -234,6 +234,7 @@ export function createControlsPersistScheduler({
   clearTimeoutFn = globalThis.clearTimeout,
 }) {
   let timerId = null;
+  let pendingValue = null;
 
   function clearPendingTimer() {
     if (timerId !== null) {
@@ -245,17 +246,31 @@ export function createControlsPersistScheduler({
   return {
     schedule(value) {
       clearPendingTimer();
+      pendingValue = value;
       timerId = setTimeoutFn(() => {
         timerId = null;
-        persist(value);
+        const valueToPersist = pendingValue;
+        pendingValue = null;
+        persist(valueToPersist);
       }, delay);
     },
     flush(value) {
       clearPendingTimer();
+      pendingValue = null;
       persist(value);
+    },
+    flushPending() {
+      if (pendingValue == null) {
+        return;
+      }
+      const valueToPersist = pendingValue;
+      clearPendingTimer();
+      pendingValue = null;
+      persist(valueToPersist);
     },
     cancel() {
       clearPendingTimer();
+      pendingValue = null;
     },
   };
 }
