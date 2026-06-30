@@ -1,7 +1,7 @@
 {
   "name": "baryon-monorepo",
   "private": true,
-  "version": "1.0.0-beta.3",
+  "version": "1.0.0-beta.5",
   "license": "LicenseRef-PolyForm-Strict-1.0",
   "repository": {
     "type": "git",
@@ -34,6 +34,7 @@
     "dead-exports": "node scripts/dead-exports.mjs",
     "shape": "node scripts/shape-trace.mjs",
     "contract:desktop-bridge": "node scripts/contract-desktop-bridge.mjs",
+    "osc:structure:listen": "node scripts/osc/receive-structure-export.mjs",
     "contract:render-authority": "node scripts/check-render-authority-contract.mjs",
     "deps:versions": "syncpack lint --dependency-types prod,dev,peer",
     "deps:versions:fix": "syncpack fix --dependency-types prod,dev,peer",
@@ -77,7 +78,7 @@
     "@ast-grep/cli": "^0.42.0",
     "@edge-runtime/vm": "^5.0.0",
     "@eslint/js": "^9.39.4",
-    "convex": "^1.41.0",
+    "convex": "^1.42.0",
     "convex-test": "^0.0.53",
     "dependency-cruiser": "^17.3.10",
     "eslint": "^9.39.4",

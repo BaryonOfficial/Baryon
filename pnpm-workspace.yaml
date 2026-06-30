@@ -5,15 +5,17 @@ packages:
 nodeLinker: hoisted
 
 minimumReleaseAgeExclude:
-  - "astro@7.0.0-beta.3"
   - "@types/three@0.185.0"
-  - "electron@42.3.3"
   - "three@0.185.0"
 
 blockExoticSubdeps: false
 
 overrides:
   "extract-zip>yauzl": "3.3.1"
+  "tar": "7.5.16"
+  "tmp": "0.2.7"
+  "ws": "8.21.0"
+  "yaml": "2.9.0"
 
 allowBuilds:
   "@ast-grep/cli": true

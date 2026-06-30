@@ -4,8 +4,14 @@ description: "Control Baryon Desktop from OSC software, OSCQuery-aware tools, an
 ---
 
 Baryon Desktop can accept parameter automation from OSC software and MIDI
-control-change hardware. Open Performer Mode, open **Control Input**, enable
-control input, and enable the transports you want.
+control-change hardware. Open Performer Mode, open **Control I/O**, turn on the
+top **Enable** switch, and enable the transports you want.
+
+<Note>
+  This page is for inbound control: external tool -> Baryon. To send Baryon's
+  modal structure out to TouchDesigner or another receiver, use
+  [OSC Structure Export](/public/desktop/osc-structure-export).
+</Note>
 
 OSC listens on `127.0.0.1:9001` by default. Send messages to
 `/baryon/control/<key>`, where `<key>` is one of the automatable control keys
@@ -15,7 +21,7 @@ knob or fader CC message to the same key list.
 When OSC is enabled, Baryon also serves an OSCQuery discovery endpoint on the
 next local port: `http://127.0.0.1:9002` by default. If you change the OSC port,
 the OSCQuery port follows as `OSC port + 1`. Use **Copy Ref** in the control
-input panel to copy the current OSC/OSCQuery reference.
+I/O panel to copy the current OSC/OSCQuery reference.
 
 OSCQuery is discovery only. It tells external tools what Baryon can control,
 what OSC host and port to use, and how each value should be shaped. Control
@@ -30,7 +36,8 @@ and aftertouch do not control Baryon in this first automation surface.
 Use a physical MIDI controller like this:
 
 1. Connect the MIDI controller to the computer running Baryon.
-2. In Baryon Desktop, enable **Control Input** and **MIDI**.
+2. In Baryon Desktop, open **Control I/O**, turn on **Enable**, and enable
+   **MIDI**.
 3. If the app asks for MIDI access, allow it.
 4. Choose the controller under **Input**.
 5. Choose the Baryon parameter under **Target**.
@@ -44,8 +51,8 @@ Use virtual MIDI on macOS like this:
 1. Open **Audio MIDI Setup**.
 2. Choose **Window > Show MIDI Studio**.
 3. Open **IAC Driver**, enable **Device is online**, and add or select a bus.
-4. In Baryon, enable **Control Input** and **MIDI**, then select the IAC bus
-   under **Input**.
+4. In Baryon, open **Control I/O**, turn on **Enable**, enable **MIDI**, then
+   select the IAC bus under **Input**.
 5. In a DAW, TouchDesigner, Max, or another MIDI source, send MIDI CC messages
    to that same IAC bus.
 6. In Baryon, choose a **Target**, press **Learn**, and move or send the CC
@@ -82,7 +89,8 @@ Download the smart TouchDesigner component:
 
 Use it like this:
 
-1. In Baryon Desktop, enable **Control Input** and **OSC**.
+1. In Baryon Desktop, open **Control I/O**, turn on **Enable**, and enable
+   **OSC**.
 2. For local TouchDesigner on the same machine, leave OSC at
    `127.0.0.1:9001`. OSCQuery will be available at `127.0.0.1:9002`.
 3. Drag `baryon_osc.tox` into a TouchDesigner network.

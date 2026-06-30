@@ -1303,6 +1303,10 @@ export function buildCanonicalFullModalDescriptor({
         qualityFactor: entry.qualityFactor,
         dampingRatio: entry.dampingRatio,
         observedSupport: entry.observedSupport,
+        material: {
+          colorRgb: [entry.colorR, entry.colorG, entry.colorB],
+          colorWeight: entry.colorWeight,
+        },
       })),
     },
     counts: {

@@ -84,11 +84,14 @@ export function shouldUseAuthoritativePerformanceHud({
 } = {}) {
   const authoritativeOutputActive =
     previewState?.authorityMode === "output-stage-authoritative";
+  const visualOutputActive = previewState?.programOutputActive === true;
   const hasAuthoritativeHudData =
     authoritativeStageTelemetry?.performanceHudSnapshot != null ||
     authoritativeOutputHudMetrics != null;
 
-  return authoritativeOutputActive && hasAuthoritativeHudData;
+  return (
+    authoritativeOutputActive && visualOutputActive && hasAuthoritativeHudData
+  );
 }
 
 export function resolveCameraControlFieldState({

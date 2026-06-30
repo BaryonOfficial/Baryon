@@ -6,8 +6,17 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./AdvancedControlsSidebar.jsx", () => ({
-  default: ({ isOpen }) =>
-    isOpen ? <div data-testid="advanced-controls-sidebar">Sidebar</div> : null,
+  default: ({ isOpen, footerActions = [] }) =>
+    isOpen ? (
+      <div data-testid="advanced-controls-sidebar">
+        Sidebar
+        {footerActions.map((action) => (
+          <button key={action.label} type="button" onClick={action.onSelect}>
+            {action.label}
+          </button>
+        ))}
+      </div>
+    ) : null,
 }));
 
 import { ControlsProvider } from "../controls/ControlsProvider.jsx";
@@ -93,5 +102,32 @@ describe("AdvancedControlsDock", () => {
     expect(container.querySelector('[data-testid="brand-accessory"]')).not.toBe(
       null,
     );
+  });
+
+  it("forwards footer actions to the sidebar", () => {
+    const onSelectTerms = vi.fn();
+
+    renderDock({
+      footerActions: [{ label: "Terms", onSelect: onSelectTerms }],
+    });
+
+    const trigger = container.querySelector(
+      '[data-testid="advanced-controls-trigger"]',
+    );
+
+    act(() => {
+      trigger.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const termsButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Terms",
+    );
+    expect(termsButton).not.toBeNull();
+
+    act(() => {
+      termsButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(onSelectTerms).toHaveBeenCalledTimes(1);
   });
 });

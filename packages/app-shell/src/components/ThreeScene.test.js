@@ -6,15 +6,27 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
+  advancedControlsDockSpy,
   baryonSceneSpy,
   canvasSpy,
   dispatchCameraControlCommandSpy,
+  unsupportedWarningSpy,
+  browserSupportState,
   audioSceneState,
   audioState,
 } = vi.hoisted(() => ({
+  advancedControlsDockSpy: vi.fn(),
   baryonSceneSpy: vi.fn(),
   canvasSpy: vi.fn(),
   dispatchCameraControlCommandSpy: vi.fn(),
+  unsupportedWarningSpy: vi.fn(),
+  browserSupportState: {
+    supportProbe: null,
+    unsupportedReason: null,
+    isUnsupported: false,
+    isSupportReady: true,
+    markRendererInitUnsupported: vi.fn(),
+  },
   audioSceneState: {
     liveInputUiState: "active",
   },
@@ -58,7 +70,12 @@ vi.mock("./RendererErrorBoundary.jsx", () => ({
 }));
 
 vi.mock("./UnsupportedWarning.jsx", () => ({
-  default: () => null,
+  default: (props) => {
+    unsupportedWarningSpy(props);
+    return React.createElement("div", {
+      "data-testid": "unsupported-warning",
+    });
+  },
 }));
 
 vi.mock("./LiveInputStatusPanel.jsx", () => ({
@@ -78,17 +95,14 @@ vi.mock("./hooks/useFullScreenToggle.jsx", () => ({
 }));
 
 vi.mock("./AdvancedControlsDock.jsx", () => ({
-  default: () => null,
+  default: (props) => {
+    advancedControlsDockSpy(props);
+    return null;
+  },
 }));
 
 vi.mock("./hooks/useBrowserSupportState.js", () => ({
-  useBrowserSupportState: () => ({
-    supportProbe: null,
-    unsupportedReason: null,
-    isUnsupported: false,
-    isSupportReady: true,
-    markRendererInitUnsupported: () => {},
-  }),
+  useBrowserSupportState: () => browserSupportState,
 }));
 
 vi.mock("./hooks/useDraggableFloatingUi.js", () => ({
@@ -246,7 +260,7 @@ describe("preview camera control state", () => {
 });
 
 describe("authoritative performance HUD composition", () => {
-  it("stays on authoritative metrics when output-authoritative mode is active without the preview", () => {
+  it("uses authoritative metrics when visual output is active without the preview", () => {
     expect(
       shouldUseAuthoritativePerformanceHud({
         previewState: {
@@ -254,6 +268,7 @@ describe("authoritative performance HUD composition", () => {
           requested: false,
           rendering: false,
           omitLocalScene: false,
+          programOutputActive: true,
           authorityMode: "output-stage-authoritative",
         },
         authoritativeStageTelemetry: {
@@ -266,6 +281,29 @@ describe("authoritative performance HUD composition", () => {
         },
       }),
     ).toBe(true);
+  });
+
+  it("keeps authoritative HUD metrics hidden for data-only helper sessions", () => {
+    expect(
+      shouldUseAuthoritativePerformanceHud({
+        previewState: {
+          enabled: false,
+          requested: false,
+          rendering: false,
+          omitLocalScene: false,
+          programOutputActive: false,
+          authorityMode: "output-stage-authoritative",
+        },
+        authoritativeStageTelemetry: {
+          performanceHudSnapshot: {
+            fps: 58.6,
+          },
+        },
+        authoritativeOutputHudMetrics: {
+          outputFps: 57.9,
+        },
+      }),
+    ).toBe(false);
   });
 
   it("combines stage render metrics with output publish metrics", () => {
@@ -343,8 +381,17 @@ describe("ThreeScene render behavior", () => {
 
   beforeEach(() => {
     baryonSceneSpy.mockClear();
+    advancedControlsDockSpy.mockClear();
     canvasSpy.mockClear();
     dispatchCameraControlCommandSpy.mockClear();
+    unsupportedWarningSpy.mockClear();
+    Object.assign(browserSupportState, {
+      supportProbe: null,
+      unsupportedReason: null,
+      isUnsupported: false,
+      isSupportReady: true,
+    });
+    browserSupportState.markRendererInitUnsupported.mockClear();
     audioSceneState.liveInputUiState = "active";
     audioState.selectedSource = "file";
     container = document.createElement("div");
@@ -397,6 +444,120 @@ describe("ThreeScene render behavior", () => {
         delete window.devicePixelRatio;
       }
     }
+  });
+
+  it("forwards footer actions to the advanced controls dock", async () => {
+    const controlsStore = createControlsStore();
+    const footerActions = [{ label: "Terms", onSelect: vi.fn() }];
+
+    await act(async () => {
+      root.render(
+        React.createElement(
+          ControlsProvider,
+          { store: controlsStore },
+          React.createElement(ThreeScene, {
+            controlsFooterActions: footerActions,
+          }),
+        ),
+      );
+    });
+
+    expect(advancedControlsDockSpy.mock.calls.at(-1)?.[0]).toMatchObject({
+      footerActions,
+    });
+  });
+
+  it("keeps the blocking unsupported warning as the default unsupported fallback", async () => {
+    Object.assign(browserSupportState, {
+      supportProbe: { failureCode: "gpu-missing" },
+      unsupportedReason: "browser",
+      isUnsupported: true,
+      isSupportReady: false,
+    });
+    const controlsStore = createControlsStore();
+
+    await act(async () => {
+      root.render(
+        React.createElement(
+          ControlsProvider,
+          { store: controlsStore },
+          React.createElement(ThreeScene, {
+            controlsOverlay: React.createElement("div", {
+              "data-testid": "listener-controls-overlay",
+            }),
+          }),
+        ),
+      );
+    });
+
+    expect(canvasSpy).not.toHaveBeenCalled();
+    expect(baryonSceneSpy).not.toHaveBeenCalled();
+    expect(advancedControlsDockSpy).not.toHaveBeenCalled();
+    expect(
+      container.querySelector('[data-testid="listener-controls-overlay"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-testid="unsupported-warning"]'),
+    ).toBeInstanceOf(HTMLElement);
+    expect(unsupportedWarningSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: "browser",
+        probe: { failureCode: "gpu-missing" },
+      }),
+    );
+  });
+
+  it("keeps shell chrome mounted for desktop when renderer support is unavailable", async () => {
+    Object.assign(browserSupportState, {
+      supportProbe: { failureCode: "gpu-missing" },
+      unsupportedReason: "browser",
+      isUnsupported: true,
+      isSupportReady: false,
+    });
+    const controlsStore = createControlsStore();
+
+    await act(async () => {
+      root.render(
+        React.createElement(
+          ControlsProvider,
+          { store: controlsStore },
+          React.createElement(ThreeScene, {
+            allowUnsupportedShellUi: true,
+            controlsOverlay: React.createElement("div", {
+              "data-testid": "listener-controls-overlay",
+            }),
+            controlsBrandAccessory: React.createElement("div", {
+              "data-testid": "desktop-update-brand",
+            }),
+            topRightOverlay: React.createElement("button", {
+              "data-testid": "mode-toggle",
+              type: "button",
+            }),
+          }),
+        ),
+      );
+    });
+
+    expect(canvasSpy).not.toHaveBeenCalled();
+    expect(baryonSceneSpy).not.toHaveBeenCalled();
+    expect(advancedControlsDockSpy.mock.calls.at(-1)?.[0]).toMatchObject({
+      visible: true,
+    });
+    expect(
+      advancedControlsDockSpy.mock.calls.at(-1)?.[0]?.brandAccessory?.props,
+    ).toMatchObject({
+      "data-testid": "desktop-update-brand",
+    });
+    expect(
+      container.querySelector('[data-testid="listener-controls-overlay"]'),
+    ).toBeInstanceOf(HTMLElement);
+    expect(
+      container.querySelector('[data-testid="mode-toggle"]'),
+    ).toBeInstanceOf(HTMLButtonElement);
+    expect(
+      container.querySelector('[data-testid="unsupported-warning"]'),
+    ).toBeNull();
+    expect(unsupportedWarningSpy).not.toHaveBeenCalled();
   });
 
   it("passes the custom target FPS to the render scene", async () => {

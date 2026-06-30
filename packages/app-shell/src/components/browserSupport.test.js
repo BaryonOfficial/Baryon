@@ -46,6 +46,30 @@ test("detects Linux platform and Chromium browser family", () => {
   expect(detectBrowserFamily(navigatorObject)).toBe(BROWSER_FAMILY.chromium);
 });
 
+test("maps Chromium-token browsers to the chromium browser family", () => {
+  expect(
+    detectBrowserFamily({
+      userAgent:
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chromium/145.0.0.0 Safari/537.36",
+    }),
+  ).toBe(BROWSER_FAMILY.chromium);
+});
+
+test("uses Chromium Client Hints to identify Chromium-family browsers", () => {
+  expect(
+    detectBrowserFamily({
+      userAgent:
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Safari/537.36",
+      userAgentData: {
+        brands: [
+          { brand: "Not A(Brand", version: "99" },
+          { brand: "Chromium", version: "145" },
+        ],
+      },
+    }),
+  ).toBe(BROWSER_FAMILY.chromium);
+});
+
 test("maps Firefox user agents to the firefox browser family", () => {
   expect(
     detectBrowserFamily({

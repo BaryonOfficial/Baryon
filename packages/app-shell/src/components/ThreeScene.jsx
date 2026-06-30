@@ -1,7 +1,5 @@
 import {
   Suspense,
-  cloneElement,
-  isValidElement,
   useCallback,
   useEffect,
   useMemo,
@@ -116,6 +114,8 @@ function createCameraPoseDisplayKey(cameraPose) {
  * @param {{
  *   controlsOverlay?: import("react").ReactNode,
  *   controlsBrandAccessory?: import("react").ReactNode,
+ *   controlsFooterActions?: Array<{ label: string, onSelect: () => void }>,
+ *   allowUnsupportedShellUi?: boolean,
  *   topRightOverlay?: import("react").ReactNode,
  *   liveInputPanel?: {
  *     forceVisible?: boolean,
@@ -161,6 +161,8 @@ function createCameraPoseDisplayKey(cameraPose) {
 const ThreeScene = ({
   controlsOverlay = null,
   controlsBrandAccessory = null,
+  controlsFooterActions = [],
+  allowUnsupportedShellUi = false,
   topRightOverlay = null,
   liveInputPanel = null,
   diagnosticsHudExtraItems = null,
@@ -289,7 +291,11 @@ const ThreeScene = ({
   const resolvedLiveInputPanel = resolveLiveInputPanelConfig({
     liveInputPanel,
   });
-  const showOverlayUi = isSupportReady && !isFullscreen;
+  const showRendererOverlayUi = isSupportReady && !isFullscreen;
+  const showShellUi =
+    !isFullscreen &&
+    (isSupportReady || (allowUnsupportedShellUi && isUnsupported));
+  const showUnsupportedWarning = isUnsupported && !allowUnsupportedShellUi;
   const previewOverlayState = resolvePreviewOverlayState(previewState);
   const cameraControlsAvailable =
     liveInputUiState === "active" || resolvedFrameFieldState !== "idle";
@@ -319,21 +325,17 @@ const ThreeScene = ({
     ? (authoritativeStageTelemetry?.auditSnapshot ?? null)
     : undefined;
   const liveInputStatusPanelVisible =
-    showOverlayUi &&
+    showRendererOverlayUi &&
     (selectedSource === "system" || resolvedLiveInputPanel.forceVisible);
-  const showCameraControls = showOverlayUi && cameraControlState.visible;
+  const showCameraControls =
+    showRendererOverlayUi && cameraControlState.visible;
   const isPhoneViewport = viewportWidth <= 640;
   const isTabletPortraitViewport = viewportWidth > 640 && viewportWidth <= 820;
   const isTabletViewport = viewportWidth <= 1024;
   const isCompactViewport = isTabletViewport;
   const overlayTopInset = isPhoneViewport ? "0.7rem" : "0.9rem";
   const overlaySideInset = isPhoneViewport ? "0.6rem" : "0.9rem";
-  const stackedTopRightOverlay = isValidElement(topRightOverlay)
-    ? cloneElement(
-        /** @type {import("react").ReactElement<any>} */ (topRightOverlay),
-        { embedded: true },
-      )
-    : topRightOverlay;
+  const stackedTopRightOverlay = topRightOverlay;
   const shouldShowModeOverlay = Boolean(stackedTopRightOverlay);
   const shouldShowLiveStatusOverlay =
     liveInputStatusPanelVisible && (!isCompactViewport || !isControlsDockOpen);
@@ -580,17 +582,18 @@ const ThreeScene = ({
         />
       ) : null}
 
-      {showOverlayUi ? (
+      {showShellUi ? (
         <AdvancedControlsDock
-          visible={showOverlayUi}
+          visible={showShellUi}
           operatorControlKeys={operatorControlKeys}
           dockWidth={ADVANCED_CONTROLS_DOCK_WIDTH}
           brandAccessory={controlsBrandAccessory}
+          footerActions={controlsFooterActions}
           onOpenChange={setIsControlsDockOpen}
         />
       ) : null}
 
-      {showOverlayUi ? (
+      {showShellUi ? (
         <div
           style={{
             position: "fixed",
@@ -645,9 +648,9 @@ const ThreeScene = ({
           ) : null}
         </div>
       ) : null}
-      {showOverlayUi && controlsOverlay}
+      {showShellUi && controlsOverlay}
 
-      {isUnsupported && (
+      {showUnsupportedWarning && (
         <UnsupportedWarning reason={unsupportedReason} probe={supportProbe} />
       )}
     </div>

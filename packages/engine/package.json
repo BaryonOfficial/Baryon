@@ -1,6 +1,6 @@
 {
   "name": "@baryon/engine",
-  "version": "1.0.0-beta.3",
+  "version": "1.0.0-beta.5",
   "private": true,
   "license": "LicenseRef-PolyForm-Strict-1.0",
   "type": "module",
@@ -25,6 +25,7 @@
     "./core/raymarch/fieldAnalysis": "./src/core/raymarch/fieldAnalysis.js",
     "./core/raymarch/quantityLedger": "./src/core/raymarch/quantityLedger.js",
     "./defaults": "./src/defaults.js",
+    "./export/structureFrame": "./src/export/structureFrame.js",
     "./render/outputProfilePolicy": "./src/render/outputProfilePolicy.js",
     "./render/outputPipeline": "./src/render/outputPipeline.js",
     "./render/temporalReprojectionPolicy": "./src/render/temporalReprojectionPolicy.js",
@@ -40,6 +41,6 @@
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
-    "vitest": "^4.1.2"
+    "vitest": "^4.1.9"
   }
 }

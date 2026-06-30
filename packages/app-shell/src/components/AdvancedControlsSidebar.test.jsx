@@ -86,7 +86,7 @@ describe("AdvancedControlsSidebar info links", () => {
     expect(source).not.toContain('addEventListener("scroll"');
   });
 
-  it("renders source, license, and social profile links", () => {
+  it("renders docs, source, license, and social profile links", () => {
     renderSidebar();
 
     const links = Array.from(
@@ -94,6 +94,7 @@ describe("AdvancedControlsSidebar info links", () => {
     );
 
     expect(links.map((link) => [link.textContent, link.href])).toEqual([
+      ["Docs", "https://baryon.live/docs/"],
       ["Source", "https://github.com/BaryonOfficial/Baryon"],
       [
         "License",
@@ -108,9 +109,35 @@ describe("AdvancedControlsSidebar info links", () => {
       null,
       null,
       null,
+      null,
     ]);
 
     expect(container.querySelector(".baryon-controls-footer img")).toBeNull();
+  });
+
+  it("renders custom footer actions after the license link", () => {
+    const onSelectTerms = vi.fn();
+    renderSidebar({
+      footerActions: [{ label: "Terms", onSelect: onSelectTerms }],
+    });
+
+    const footerItems = Array.from(
+      container.querySelectorAll(
+        ".baryon-controls-footer-links a, .baryon-controls-footer-links button",
+      ),
+    );
+
+    expect(footerItems.map((item) => item.textContent)).toEqual([
+      "Docs",
+      "Source",
+      "License",
+      "Terms",
+      "X",
+      "Instagram",
+    ]);
+
+    footerItems[3].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(onSelectTerms).toHaveBeenCalledTimes(1);
   });
 
   it("gives the icon-only close button a specific accessible name", () => {
