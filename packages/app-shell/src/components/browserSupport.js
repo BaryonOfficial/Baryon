@@ -42,6 +42,20 @@ function getUserAgent(navigatorObject = globalThis.navigator) {
   return String(navigatorObject?.userAgent ?? "");
 }
 
+function getUserAgentBrands(navigatorObject = globalThis.navigator) {
+  const navigatorWithUserAgentData =
+    /** @type {{ userAgentData?: { brands?: Array<{ brand?: string }> } } | undefined} */ (
+      navigatorObject
+    );
+  const brands = navigatorWithUserAgentData?.userAgentData?.brands;
+
+  if (!Array.isArray(brands)) {
+    return [];
+  }
+
+  return brands.map((brand) => String(brand?.brand ?? "")).filter(Boolean);
+}
+
 export function isMobileDevice(navigatorObject = globalThis.navigator) {
   return /Android|iPhone|iPad|iPod|Mobile/i.test(getUserAgent(navigatorObject));
 }
@@ -74,12 +88,16 @@ export function detectPlatform(navigatorObject = globalThis.navigator) {
 
 export function detectBrowserFamily(navigatorObject = globalThis.navigator) {
   const userAgent = getUserAgent(navigatorObject);
+  const brands = getUserAgentBrands(navigatorObject);
 
   if (/Firefox\//i.test(userAgent)) {
     return BROWSER_FAMILY.firefox;
   }
 
-  if (/Edg\//i.test(userAgent) || /Chrome\//i.test(userAgent)) {
+  if (
+    brands.some((brand) => /^Chromium$/i.test(brand)) ||
+    /(?:Chrome|Chromium|Edg|OPR)\//i.test(userAgent)
+  ) {
     return BROWSER_FAMILY.chromium;
   }
 

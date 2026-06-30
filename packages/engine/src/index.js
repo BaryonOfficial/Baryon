@@ -77,6 +77,13 @@ export {
   normalizeMidiAutomationCommand,
   normalizeOscAutomationCommand,
 } from "./controls/automation.js";
+export {
+  DEFAULT_STRUCTURE_FRAME_MODE_CAP,
+  MAX_STRUCTURE_FRAME_MODE_CAP,
+  STRUCTURE_FRAME_SCHEMA_VERSION,
+  normalizeStructureFrameModeCap,
+  projectStructureFrame,
+} from "./export/structureFrame.js";
 export { auditControlSchema } from "./controls/audit.js";
 export {
   serializeControls,

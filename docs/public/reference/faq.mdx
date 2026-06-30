@@ -3,54 +3,34 @@ title: Baryon FAQ
 description: Common product, audio, capture, and licensing questions about Baryon.
 ---
 
-## Do I need to install anything to try it?
+## What is Baryon?
 
-No. The full engine runs in a WebGPU browser at app.baryon.live. Open the page and connect an audio source: an audio file, a microphone, or another app's output routed through a virtual audio cable — BlackHole on macOS, VB-CABLE on Windows, or PipeWire/PulseAudio on Linux. See [Routing system audio](/public/guides/routing-system-audio) for setup.
+Baryon is the cymatic render engine for live sound and spatial media. It turns any audio into an audioreactive 3D cymatic field.
 
-## Which browsers does it work in?
+## Is Baryon a 3D cymatic music visualizer?
 
-Use a Chromium-based browser with WebGPU enabled: Chrome, Edge, Brave, Arc, Opera, or Vivaldi. Safari and Firefox support is still uneven. Baryon Desktop ships with Electron/Chromium.
+Baryon visualizes cymatics in 3D using its render engine. If you came looking for a cymatic visualizer, Baryon is the live 3D version. Feed it any sound, and it turns that sound into cymatic shapes.
 
-## Is it really physics-based?
+## What is cymatics?
 
-Yes. Audio resolves into a modal cymatic field with openly stated assumptions. It is not a bar graph, a waveform, or a beat-reactive shader.
+Cymatics is the study of visible effects of sound and vibration. For example, sand on a Chladni plate, ripples in water from sound, or standing-wave shapes are forms of cymatics. Baryon takes that idea into software, using sound to shape a live 3D field.
 
-## What audio inputs work?
+## How does Baryon turn sound into visuals?
 
-Microphone, loopback, line input, or an audio file — with Voice and Ambient input profiles tuned for different material. To capture another app's output, route it through a virtual audio cable; see [Routing system audio](/public/guides/routing-system-audio).
+Baryon starts with the live signal and interprets it as resonant modes. It tracks each mode's frequency, damping, and phase, then renders their interference as one volumetric cymatic field.
 
-## How do I choose between the Voice and Ambient profiles?
+## How is Baryon different from a music visualizer?
 
-Use **Voice** when the source has one clear lead tone — a singer, a spoken voice, or a lead instrument. Use **Ambient** when many sounds play at once, such as music, a full mix, or a live room. See [Creative workflows](/public/guides/creative-workflows) for starting controls.
+Music visualizers and VJ tools are expressive performance instruments. Baryon is a cymatic source for that world: it generates visual form from the structure of the sound, then lets artists use it inside broader live-visual workflows.
 
-## How do I learn what the settings actually mean?
+## Can I use Baryon visuals with my music?
 
-Start with [Understanding the engine](/public/guides/understanding-the-engine), then use the [Control panel reference](/public/reference/controls) for exact control definitions. The short version: audio excites a continuous modal field; the controls shape analysis, field response, rendering, movement, and camera view.
+Yes. If you capture a still or video from Baryon with your own music, you can upload that finished work. Baryon does not claim your audio or your capture. Personal, non-commercial use is fine; paid shows, festivals, client work, embedding, or redistribution need licenses.
 
-## Can I set keyboard shortcuts for manual rotation?
+## Can Baryon be used for live shows or VJ workflows?
 
-Not currently. Manual cymatic rotation is controlled through **Rotation Mode** and **Manual Rotation** in the GUI. Camera movement uses the floating camera controls and orbit drag when the camera is unlocked.
+Yes. Use Baryon as a live visual source alongside the tools that handle stage output, mapping, switching, and compositing.
 
-## Is Baryon rendering a point cloud?
+## What is Baryon Desktop?
 
-No. Baryon renders a continuous volumetric modal field. The visible structure is sampled by the renderer; it is not stored as a point-cloud model.
-
-## Can I export coordinates, a mesh, or a 3D-printable model?
-
-Not from the current public app. Baryon does not currently export raw coordinates, point clouds, STL, OBJ, GLTF, or slicer-ready geometry. A future 3D export would need to freeze a moment in time, sample the field, extract a surface or volume, and convert it into watertight geometry. See [Creative workflows](/public/guides/creative-workflows).
-
-## Can I export still images or videos?
-
-There is no native still-image export button today. Use your browser or operating system capture tools after framing the scene. For cleaner captures, lock the camera and set **Rotation Mode** deliberately before recording or taking a screenshot.
-
-## What will the desktop app add, and when?
-
-The desktop app will be free to download, with a paid **Performer License** that unlocks live-performance use: Performer Mode, stage output into VJ and production tools (Syphon on macOS, Spout on Windows), saved performance presets, and commercial performance rights. It is launching soon, and the waitlist gets early access first. See [Baryon Desktop](/public/desktop/overview) for the full picture.
-
-## Can I use Baryon in a commercial show or product?
-
-Yes. The desktop app's **Performer License** covers using Baryon as your performance instrument in paid shows, festivals, and client gigs. A separate commercial license is only needed if you ship Baryon inside a product, redistribute it, embed it in another system, run it as a hosted service, or deploy it across an organization. See [Plans & licensing](/public/desktop/licensing).
-
-## Is the engine open?
-
-The source is public on GitHub under the PolyForm Strict License: read the physics, inspect the render path, and file issues. Personal and research use is free; shipping a product built on the engine needs a commercial license (see the question above).
+Baryon Desktop is the app version of Baryon available for macOS, Windows and Linux. Listener Mode works like the web app. Performer Mode is for VJing, with Syphon and Spout output plus OSC and MIDI controls. However, Performer Mode requires a Baryon Pro license to use and is not supported on Linux yet.

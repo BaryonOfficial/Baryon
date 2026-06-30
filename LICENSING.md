@@ -31,16 +31,23 @@ information.
 
 ## Desktop App — Free to Evaluate, Paid to Perform
 
-The Baryon desktop app is free to download and evaluate. A paid **Performer
-License** is required to unlock Performer Mode and professional live-use features
-— show-safe controls, external display output, saved performance presets, and
-commercial performance rights. The Performer License is purchased at
+The Baryon desktop app is free to download and evaluate. A paid **Baryon Pro
+license** is required to unlock Performer Mode and professional live-use features
+— show-safe controls, external display output, and commercial performance
+rights. The Baryon Pro license is purchased at
 [baryon.live](https://baryon.live), and its terms are presented at the time of
 purchase.
 
+Desktop end-user use is governed by the Baryon end-user license, with a short
+terms-at-a-glance summary provided separately. Both documents are bundled with
+the desktop app and available from the in-app Legal panel. Data handling and
+purchases are covered by the Privacy Policy at
+[baryon.live/privacy](https://baryon.live/privacy) and the Refund Policy at
+[baryon.live/refunds](https://baryon.live/refunds), which the EULA incorporates
+by reference.
+
 Embedding or redistributing Baryon in another product, installation, hardware, or
-service requires a separate Commercial License (see below), not the Performer
-License.
+service requires a separate Commercial License (see below), not Baryon Pro.
 
 ## Contributing
 

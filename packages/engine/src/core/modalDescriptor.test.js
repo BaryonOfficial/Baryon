@@ -658,6 +658,25 @@ describe("buildCanonicalFullModalDescriptor", () => {
     expect(colorSlots[3]).toBeCloseTo((0.5 * 0.4 + 1 * 0.3) / 0.7, 6);
   });
 
+  it("promotes resolved per-mode material color onto modal entries", () => {
+    const descriptor = buildCanonicalFullModalDescriptor({
+      maxTotalModes: 2,
+      modalFieldSlots: makeSlots([[2, 3, 5, 0.7]]),
+      modalFieldColorSlots: makeColorSlots([[0.25, 0.5, 0.75, 0.8]]),
+      activeModalFieldModeCount: 1,
+    });
+
+    expect(descriptor.modes.modalField[0].material).toEqual({
+      colorRgb: [
+        expect.closeTo(0.25, 6),
+        expect.closeTo(0.5, 6),
+        expect.closeTo(0.75, 6),
+      ],
+      colorWeight: expect.closeTo(0.8, 6),
+    });
+    expect(descriptor.slotViews.modalFieldColorSlots[0]).toBeCloseTo(0.25, 6);
+  });
+
   it("hashes Spectral lane identity and preserves lane slot views independent of RGB", () => {
     const base = buildCanonicalFullModalDescriptor({
       maxTotalModes: 2,

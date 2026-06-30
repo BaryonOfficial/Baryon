@@ -297,29 +297,40 @@ if (scriptExists("scripts/sync-public.sh")) {
   }
 }
 
-const parameterAutomationPath = path.join(
-  rootDir,
-  "docs/public/desktop/parameter-automation.mdx",
-);
-if (fs.existsSync(parameterAutomationPath)) {
-  const parameterAutomation = fs.readFileSync(parameterAutomationPath, "utf8");
-  const touchDesignerArtifactPath =
-    "docs/public/downloads/touchdesigner/baryon_osc.tox";
-  if (!fs.existsSync(path.join(rootDir, touchDesignerArtifactPath))) {
-    errors.push(
-      `${touchDesignerArtifactPath}: missing TouchDesigner control surface artifact`,
-    );
+function checkTouchDesignerDownload({
+  pagePath,
+  artifactPath,
+  publicUrl,
+  label,
+}) {
+  const absolutePagePath = path.join(rootDir, pagePath);
+  if (!fs.existsSync(absolutePagePath)) {
+    return;
   }
-  if (
-    !parameterAutomation.includes(
-      "https://downloads.baryon.live/touchdesigner/baryon_osc.tox",
-    )
-  ) {
-    errors.push(
-      "docs/public/desktop/parameter-automation.mdx: TouchDesigner download must use downloads.baryon.live",
-    );
+
+  const page = fs.readFileSync(absolutePagePath, "utf8");
+  if (!fs.existsSync(path.join(rootDir, artifactPath))) {
+    errors.push(`${artifactPath}: missing ${label}`);
+  }
+  if (!page.includes(publicUrl)) {
+    errors.push(`${pagePath}: ${label} must use downloads.baryon.live`);
   }
 }
+
+checkTouchDesignerDownload({
+  pagePath: "docs/public/desktop/parameter-automation.mdx",
+  artifactPath: "docs/public/downloads/touchdesigner/baryon_osc.tox",
+  publicUrl: "https://downloads.baryon.live/touchdesigner/baryon_osc.tox",
+  label: "TouchDesigner control surface artifact",
+});
+
+checkTouchDesignerDownload({
+  pagePath: "docs/public/desktop/osc-structure-export.mdx",
+  artifactPath: "docs/public/downloads/touchdesigner/baryon_osc_structure.tox",
+  publicUrl:
+    "https://downloads.baryon.live/touchdesigner/baryon_osc_structure.tox",
+  label: "TouchDesigner structure monitor artifact",
+});
 
 const polyformLicense = "LicenseRef-PolyForm-Strict-1.0";
 for (const relPath of findWorkspaceManifestPaths()) {

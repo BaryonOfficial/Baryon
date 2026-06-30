@@ -38,6 +38,7 @@ export default function AdvancedControlsDock({
   operatorControlKeys = [],
   dockWidth = DEFAULT_DOCK_WIDTH,
   brandAccessory = null,
+  footerActions = [],
   onOpenChange = null,
 }) {
   const controlsState = useControlsSnapshot(
@@ -212,6 +213,7 @@ export default function AdvancedControlsDock({
           }}
           dockWidth={dockWidth}
           triggerRef={triggerRef}
+          footerActions={footerActions}
         />
       ) : null}
     </>
