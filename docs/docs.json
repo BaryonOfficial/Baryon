@@ -108,6 +108,7 @@
             "pages": [
               "public/desktop/overview",
               "public/desktop/parameter-automation",
+              "public/desktop/osc-structure-export",
               "public/desktop/licensing"
             ]
           }

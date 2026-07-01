@@ -1,0 +1,181 @@
+---
+title: "OSC Structure Export"
+description: "Send Baryon's live modal structure from Baryon Desktop to TouchDesigner, Max, or another OSC receiver."
+---
+
+OSC Structure Export sends Baryon's live modal structure out of Baryon Desktop
+as OSC data. It is an outbound data stream: **Baryon -> external receiver**.
+
+Use it when you want TouchDesigner, Max, Resolume companion patches, or custom
+software to build its own geometry, particles, lights, shaders, or instancing
+from Baryon's audio-derived modal structure.
+
+<Note>
+  This is separate from [Parameter Automation](/public/desktop/parameter-automation).
+  Parameter automation is inbound control: external tool -> Baryon on
+  `/baryon/control/<key>`. Structure export is outbound structure data:
+  Baryon -> receiver.
+</Note>
+
+## Defaults
+
+| Setting  | Default     | Meaning                                                                  |
+| -------- | ----------- | ------------------------------------------------------------------------ |
+| Host     | `127.0.0.1` | The computer receiving OSC. Use this for a receiver on the same machine. |
+| Port     | `9000`      | The UDP port your receiver should listen on.                             |
+| Mode cap | `32`        | Maximum modal entries Baryon includes per frame.                         |
+
+Structure export does not use OSCQuery or Bonjour in v1. Those discovery tools
+belong to parameter automation. For structure export, set the receiver host and
+port manually.
+
+## Use OSC Data Out
+
+1. Open Baryon Desktop in Performer Mode.
+2. Open **Control I/O**.
+3. In **OSC Data Out**, leave **Host** as `127.0.0.1` for a receiver on the
+   same machine.
+4. Leave **Port** as `9000`, or choose the UDP port your receiver listens on.
+5. Turn on the **OSC Data Out** switch.
+6. Start live input in Baryon. The OSC Data Out counter should begin showing
+   sent frames.
+7. Adjust **Modes** only if your receiver needs fewer or more modal entries.
+
+Syphon and Spout remain the pixel-output path. OSC Data Out can run alongside
+them: use Syphon or Spout as the rendered image reference, and OSC Data Out as
+the receiver-side structure stream.
+
+## TouchDesigner Structure Monitor
+
+Download the TouchDesigner structure monitor:
+[baryon_osc_structure.tox](https://downloads.baryon.live/touchdesigner/baryon_osc_structure.tox)
+
+Use it like this:
+
+1. In Baryon, open **Control I/O**, enable **OSC Data Out**, and keep
+   `127.0.0.1:9000` for local TouchDesigner.
+2. Drag `baryon_osc_structure.tox` into a TouchDesigner network.
+3. Select the parent `baryon_osc_structure` component.
+4. Keep **OSC Data Port** at `9000` and **Active** on.
+5. Start live input in Baryon.
+6. Select `baryon_osc_structure` and press `i` to go inside the component, then
+   watch the `frame`, `global`, `coverage`, `material`, `modes`, `colors`, and
+   `raw` DATs update.
+
+To view a table, right-click one of those DAT nodes and choose **View**. Start
+with `global` for energy signals, `modes` for the modal entries, and `colors`
+for per-mode RGB values. `raw` is mostly a debug table; it shows the incoming
+OSC bundle as received, so it can look like a wall of numbers.
+
+The useful monitor tables are:
+
+| DAT        | What to look at                                                                           |
+| ---------- | ----------------------------------------------------------------------------------------- |
+| `frame`    | Sequence, source state, geometry, authority, and mode count.                              |
+| `global`   | RMS, dominant frequency, centroid, structure, energy, change, and pulse.                  |
+| `coverage` | Whether the frame is complete, bandwidth-limited, or missing exported modes.              |
+| `material` | Color mode plus global volume and surface color hints.                                    |
+| `modes`    | One row per exported mode: index, frequency, coefficient, phase, damping, support, color. |
+| `colors`   | Compact per-mode palette rows: index, key, frequency, energy, RGB, and color weight.      |
+| `raw`      | Low-level OSC receive log for debugging parser or network issues.                         |
+
+The `colors` DAT is a TouchDesigner-friendly view derived from exported modal
+material colors. Use it when Baryon is in spectral color mode and you want a
+compact per-mode palette table for instances, ramps, materials, or shaders.
+
+The monitor is a reader, not a controller. It helps you inspect the OSC Data
+Out stream before you wire the same data into instancing, geometry generation,
+materials, or shader uniforms. To control Baryon from TouchDesigner, use the
+[parameter automation control surface](/public/desktop/parameter-automation)
+instead.
+
+If you are working from a Baryon source checkout, you can rebuild the `.tox`
+from TouchDesigner Textport:
+
+```python
+exec(open('/path/to/baryon/scripts/touchdesigner/build_baryon_osc_structure_monitor.py').read())
+```
+
+The builder saves `baryon_osc_structure.tox` beside the script and under
+`docs/public/downloads/touchdesigner/`.
+
+For a manual TouchDesigner setup on the same Mac:
+
+1. In Baryon, enable **OSC Data Out** and keep `127.0.0.1:9000`.
+2. In TouchDesigner, create an **OSC In DAT**.
+3. Set the OSC In DAT network port to `9000`.
+4. Start audio or live input in Baryon.
+5. Watch incoming `/baryon/...` rows in the OSC In DAT.
+6. Use DAT-to-CHOP, callbacks, or your own Python logic to turn the rows into
+   geometry, instances, materials, or shader uniforms.
+
+For TouchDesigner on another computer:
+
+1. Find the TouchDesigner computer's LAN IP address.
+2. In Baryon, set **Host** to that TouchDesigner IP address.
+3. Keep **Port** aligned with the TouchDesigner OSC In DAT port, usually `9000`.
+4. Allow UDP traffic through the receiver machine's firewall.
+
+You do not need the parameter-automation LAN switch for outbound structure
+export. That switch advertises and receives inbound parameter-control OSC. For
+structure export, Baryon sends directly to the host and port you enter.
+
+## Terminal Smoke Test
+
+Before opening TouchDesigner, you can prove the stream with a terminal receiver:
+
+```bash
+pnpm osc:structure:listen
+```
+
+Then enable **OSC Data Out** in Baryon with Host `127.0.0.1` and Port `9000`.
+The receiver prints frame sequence, source state, authority, global energy
+signals, and the strongest modes. Use `-- --port <port>` if you changed the
+Baryon port:
+
+```bash
+pnpm osc:structure:listen -- --port 9100
+```
+
+## OSC Messages
+
+Baryon sends `/baryon/hello` when the UDP port is ready, then sends
+self-contained frame bundles while audio frames are available. Disable sends a
+best-effort clear message.
+
+Common addresses:
+
+| Address                        | Meaning                                                                                       |
+| ------------------------------ | --------------------------------------------------------------------------------------------- |
+| `/baryon/hello`                | App name, schema version, and transport kind.                                                 |
+| `/baryon/schema/version`       | Structure schema version.                                                                     |
+| `/baryon/frame/begin`          | Frame sequence, frame time, source state, and effective geometry.                             |
+| `/baryon/frame/modeCount`      | Number of modal entries included in this frame.                                               |
+| `/baryon/descriptor/authority` | Descriptor authority such as `complete` or `bandwidth-limited`.                               |
+| `/baryon/coverage/*`           | Bounded coverage diagnostics for receivers that need to distinguish idle from limited frames. |
+| `/baryon/global/*`             | RMS, dominant frequency, centroid, structure, energy, change, and pulse signals.              |
+| `/baryon/color/mode`           | Material color provenance: `static` or `spectral`.                                            |
+| `/baryon/global/material/*`    | Volume and surface RGB material hints.                                                        |
+| `/baryon/mode/{i}/*`           | Per-mode key, indices, coefficient, phase, frequency, damping, support, and material color.   |
+| `/baryon/frame/end`            | End marker for the same frame sequence.                                                       |
+| `/baryon/frame/clear`          | Receiver should clear retained generated structure.                                           |
+
+## Value Semantics
+
+Exported values are normalized modal/control signals, not calibrated acoustic
+measurements. For example, `coefficient` is a normalized modal amplitude,
+`coefficientEnergy` is that coefficient squared for visual weighting, and RGB
+values are material hints.
+
+`modeCount = 0` does not always mean silence. A frame can be active but
+`bandwidth-limited`, in which case the coverage and authority messages explain
+why no modes were exported.
+
+## Troubleshooting
+
+| Symptom                                   | Check                                                                                                    |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| No rows in TouchDesigner                  | Make sure Baryon's **OSC Data Out** is on, the receiver is listening on `9000`, and the host is correct. |
+| Local receiver works but LAN does not     | Use the receiver computer's LAN IP in Baryon and allow UDP through the receiver firewall.                |
+| Receiver keeps old geometry after disable | Listen for `/baryon/frame/clear` and clear retained state.                                               |
+| Messages arrive but no modes              | Check `/baryon/descriptor/authority`, `/baryon/coverage/*`, and `/baryon/frame/modeCount`.               |

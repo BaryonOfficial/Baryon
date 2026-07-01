@@ -8,22 +8,34 @@ import {
 const CLOSE_HELP_DELAY_MS = 110;
 const OPEN_HELP_DELAY_MS = 180;
 const SCROLL_INTERACTION_MARK_INTERVAL_MS = 140;
-const INFO_LINKS = [
+const RESOURCE_LINKS = [
+  {
+    href: "https://baryon.live/docs/",
+    label: "Docs",
+    icon: "docs",
+  },
   {
     href: "https://github.com/BaryonOfficial/Baryon",
     label: "Source",
+    icon: "source",
   },
   {
     href: "https://github.com/BaryonOfficial/Baryon/blob/main/LICENSING.md",
     label: "License",
+    icon: "license",
   },
+];
+
+const SOCIAL_LINKS = [
   {
     href: "https://x.com/kyledcollins",
     label: "X",
+    icon: "x",
   },
   {
     href: "https://www.instagram.com/baryon.eth/",
     label: "Instagram",
+    icon: "instagram",
   },
 ];
 
@@ -687,40 +699,152 @@ const CSS = `
 
 .baryon-controls-footer {
   display: grid;
-  gap: 0.3rem;
-  padding: 0.38rem;
+  gap: 0.34rem;
+  padding: 0.42rem;
   border: none;
   background: var(--nd-surface-raised);
   border-radius: 0.8rem;
 }
 
 .baryon-controls-footer-links {
-  display: grid;
-  gap: 0.28rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
 }
 
-.baryon-controls-footer-links a {
+.baryon-controls-footer-resources {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.3rem;
+}
+
+.baryon-controls-footer-resources > :last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+.baryon-controls-footer-link {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.45rem;
-  min-height: 1.52rem;
-  padding: 0.32rem 0.44rem;
-  border: 1px solid var(--nd-border-visible);
-  border-radius: 0.62rem;
-  background: rgba(255, 255, 255, 0.02);
+  gap: 0.42rem;
+  width: 100%;
+  min-height: 1.92rem;
+  padding: 0.34rem 0.5rem;
+  border: 1px solid var(--nd-border);
+  border-radius: 0.6rem;
+  background: var(--nd-surface);
+  box-shadow: inset 0 1px 0 rgba(232, 223, 208, 0.045);
   color: var(--nd-text-primary);
   font-family: var(--baryon-type-mono-family);
-  font-size: 0.54rem;
+  font-size: 0.56rem;
   font-weight: 700;
   letter-spacing: var(--baryon-type-label-letter-spacing);
   text-decoration: none;
   text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
 }
 
-.baryon-controls-footer-links a:hover {
-  border-color: var(--nd-text-display);
+.baryon-controls-footer-link:hover {
+  border-color: color-mix(in srgb, var(--nd-border) 35%, var(--nd-accent) 65%);
+  background: color-mix(in srgb, var(--nd-surface) 86%, var(--nd-accent) 14%);
   color: var(--nd-text-display);
+}
+
+.baryon-controls-footer-link-glyph {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--nd-text-secondary);
+  transition: color 160ms ease;
+}
+
+.baryon-controls-footer-link:hover .baryon-controls-footer-link-glyph {
+  color: var(--nd-accent);
+}
+
+.baryon-controls-footer-link-glyph svg {
+  width: 0.86rem;
+  height: 0.86rem;
+}
+
+.baryon-controls-footer-link-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.baryon-controls-footer-link-arrow {
+  display: inline-flex;
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--nd-text-disabled);
+  opacity: 0;
+  transform: translateX(-0.18rem);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease,
+    color 160ms ease;
+}
+
+.baryon-controls-footer-link:hover .baryon-controls-footer-link-arrow {
+  color: var(--nd-text-display);
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.baryon-controls-footer-link-arrow svg {
+  width: 0.6rem;
+  height: 0.6rem;
+}
+
+.baryon-controls-footer-social {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.baryon-controls-footer-social-link {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  min-height: 2rem;
+  border: 1px solid var(--nd-border);
+  border-radius: 0.6rem;
+  background: var(--nd-surface);
+  box-shadow: inset 0 1px 0 rgba(232, 223, 208, 0.045);
+  color: var(--nd-text-secondary);
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+.baryon-controls-footer-social-link:hover {
+  border-color: color-mix(in srgb, var(--nd-border) 35%, var(--nd-accent) 65%);
+  background: color-mix(in srgb, var(--nd-surface) 86%, var(--nd-accent) 14%);
+  color: var(--nd-text-display);
+}
+
+.baryon-controls-footer-social-link svg {
+  width: 0.96rem;
+  height: 0.96rem;
+}
+
+.baryon-controls-footer-social-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 @media (max-width: 640px) {
@@ -875,15 +999,6 @@ const CSS = `
     flex-wrap: wrap;
   }
 
-  .baryon-controls-footer-links {
-    grid-template-columns: 1fr;
-  }
-
-  .baryon-controls-footer-links a {
-    min-height: 1.52rem;
-    padding: 0.32rem 0.44rem;
-    font-size: 0.54rem;
-  }
 }
 
 @media (max-width: 1024px) and (min-width: 641px) {
@@ -1007,15 +1122,6 @@ const CSS = `
     font-size: 0.58rem;
   }
 
-  .baryon-controls-footer-links {
-    grid-template-columns: 1fr;
-  }
-
-  .baryon-controls-footer-links a {
-    min-height: 1.52rem;
-    padding: 0.32rem 0.44rem;
-    font-size: 0.54rem;
-  }
 }
 `;
 
@@ -1043,6 +1149,113 @@ function CloseIcon() {
         strokeWidth="2"
         strokeLinecap="round"
       />
+    </svg>
+  );
+}
+
+function ExternalLinkIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M7 17 17 7M9 7h8v8"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function ResourceIcon({ name }) {
+  if (name === "source") {
+    return (
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M12 1.6A10.4 10.4 0 0 0 8.7 21.9c.52.1.71-.22.71-.5l-.01-1.96c-2.9.63-3.5-1.23-3.5-1.23-.48-1.2-1.16-1.52-1.16-1.52-.95-.65.07-.64.07-.64 1.05.08 1.6 1.08 1.6 1.08.94 1.6 2.45 1.14 3.05.87.1-.68.37-1.14.66-1.4-2.32-.27-4.76-1.16-4.76-5.16 0-1.14.4-2.07 1.07-2.8-.11-.27-.46-1.33.1-2.78 0 0 .88-.28 2.88 1.07a9.9 9.9 0 0 1 5.24 0c2-1.35 2.87-1.07 2.87-1.07.57 1.45.21 2.51.1 2.78.67.73 1.07 1.66 1.07 2.8 0 4.01-2.45 4.89-4.78 5.15.38.33.71.97.71 1.96l-.01 2.9c0 .28.19.61.72.5A10.4 10.4 0 0 0 12 1.6Z" />
+      </svg>
+    );
+  }
+
+  if (name === "license") {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          d="M12 3 5 5.8v5.1c0 4 2.9 6.7 7 8.1 4.1-1.4 7-4.1 7-8.1V5.8L12 3Z"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinejoin="round"
+        />
+        <path
+          d="m9 11.6 2.1 2.1L15 9.8"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    );
+  }
+
+  if (name === "terms") {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          d="M14 3H7a1.8 1.8 0 0 0-1.8 1.8v14.4A1.8 1.8 0 0 0 7 21h10a1.8 1.8 0 0 0 1.8-1.8V7.8L14 3Z"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M13.6 3.2V8h4.8M8.6 13h6.8M8.6 16.4h4.6"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 6.6C10.4 5.3 8.3 5 6.4 5H3.2v12.2h3.2c1.9 0 4 .3 5.6 1.6 1.6-1.3 3.7-1.6 5.6-1.6h3.2V5h-3.2c-1.9 0-4 .3-5.6 1.6Z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M12 6.6v12.2"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function SocialIcon({ name }) {
+  if (name === "x") {
+    return (
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect
+        x="3"
+        y="3"
+        width="18"
+        height="18"
+        rx="5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="17.2" cy="6.8" r="1.1" fill="currentColor" />
     </svg>
   );
 }
@@ -1582,6 +1795,7 @@ export default function AdvancedControlsSidebar({
   onClose,
   dockWidth,
   triggerRef,
+  footerActions = [],
 }) {
   /** @type {import("react").CSSProperties & { "--baryon-controls-dock-width": string }} */
   const dockStyle = {
@@ -2114,16 +2328,58 @@ export default function AdvancedControlsSidebar({
             <section className="baryon-controls-footer">
               <p className="baryon-controls-section-label">Info</p>
               <div className="baryon-controls-footer-links">
-                {INFO_LINKS.map((link) => (
-                  <a
-                    key={link.href}
-                    href={link.href}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <span>{link.label}</span>
-                  </a>
-                ))}
+                <div className="baryon-controls-footer-resources">
+                  {RESOURCE_LINKS.map((link) => (
+                    <a
+                      key={link.href}
+                      className="baryon-controls-footer-link"
+                      href={link.href}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <span className="baryon-controls-footer-link-glyph">
+                        <ResourceIcon name={link.icon} />
+                      </span>
+                      <span className="baryon-controls-footer-link-label">
+                        {link.label}
+                      </span>
+                      <span className="baryon-controls-footer-link-arrow">
+                        <ExternalLinkIcon />
+                      </span>
+                    </a>
+                  ))}
+                  {footerActions.map((action) => (
+                    <button
+                      key={action.label}
+                      type="button"
+                      className="baryon-controls-footer-link"
+                      onClick={action.onSelect}
+                    >
+                      <span className="baryon-controls-footer-link-glyph">
+                        <ResourceIcon name="terms" />
+                      </span>
+                      <span className="baryon-controls-footer-link-label">
+                        {action.label}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <div className="baryon-controls-footer-social">
+                  {SOCIAL_LINKS.map((link) => (
+                    <a
+                      key={link.href}
+                      className="baryon-controls-footer-social-link"
+                      href={link.href}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <SocialIcon name={link.icon} />
+                      <span className="baryon-controls-footer-social-label">
+                        {link.label}
+                      </span>
+                    </a>
+                  ))}
+                </div>
               </div>
             </section>
           </div>
