@@ -175,6 +175,24 @@ function UploadIcon() {
   );
 }
 
+function DemoAudioIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 12h2l2-5 4 10 4-10 2 5h2" />
+      <circle cx="12" cy="12" r="9" />
+    </svg>
+  );
+}
+
 // ─── Scrolling filename ───────────────────────────────────────────────────────
 
 function ScrollingText({ text }) {
@@ -701,6 +719,19 @@ const CSS = `
 }
 .am-btn--stop:not(:disabled):active { opacity: 0.6; }
 
+.am-btn.am-btn--demo {
+  width: 30px;
+  height: 30px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--nd-text-secondary);
+}
+
+.am-btn.am-btn--demo:hover {
+  border-color: transparent;
+  color: var(--nd-text-display);
+}
+
 /* ── Mic ── */
 .am-live-input-wrap {
   position: relative;
@@ -947,6 +978,12 @@ const CSS = `
 .am-compact-header-button:hover {
   border-color: var(--nd-text-display);
   color: var(--nd-text-display);
+}
+
+.am-compact-header-button.am-compact-header-button--demo,
+.am-compact-header-button.am-compact-header-button--demo:hover {
+  border-color: transparent;
+  color: var(--nd-text-secondary);
 }
 
 .am-compact-utility--active {
@@ -1875,6 +1912,7 @@ export function ListenerControls({
     isEngineReady,
     handleFileChange,
     handleRecentUploadSelect,
+    loadDemoAudioFile,
     handlePlayPause,
     handleStop,
     handleVolumeChange,
@@ -2234,6 +2272,19 @@ export function ListenerControls({
                       >
                         <UploadIcon />
                       </button>
+                      <button
+                        className="am-btn am-compact-header-button am-compact-header-button--demo"
+                        onClick={() => {
+                          setShowRecentUploadsPanel(false);
+                          setShowDeviceMenu(false);
+                          setShowSoundCloudPanel(false);
+                          void loadDemoAudioFile?.();
+                        }}
+                        title="Play demo audio"
+                        aria-label="Play demo audio"
+                      >
+                        <DemoAudioIcon />
+                      </button>
                     </div>
 
                     <div className="am-compact-transport-right">
@@ -2389,49 +2440,58 @@ export function ListenerControls({
                     </span>
                   </button>
 
-                  {soundCloudEnabled || hasRecentUploads ? (
-                    <div className="am-source-tools">
-                      {hasRecentUploads ? (
-                        <button
-                          ref={recentUploadsButtonRef}
-                          className={`am-btn am-btn--recent${
-                            showRecentUploadsPanel
-                              ? " am-btn--recent-active"
-                              : ""
-                          }`}
-                          onClick={() => {
-                            setShowDeviceMenu(false);
-                            setShowSoundCloudPanel(false);
-                            setShowRecentUploadsPanel(!showRecentUploadsPanel);
-                          }}
-                          title="Recent uploads"
-                          aria-label="Recent uploads"
-                        >
-                          <HistoryIcon />
-                        </button>
-                      ) : null}
+                  <div className="am-source-tools">
+                    <button
+                      className="am-btn am-btn--demo"
+                      onClick={() => {
+                        setShowRecentUploadsPanel(false);
+                        setShowDeviceMenu(false);
+                        setShowSoundCloudPanel(false);
+                        void loadDemoAudioFile?.();
+                      }}
+                      title="Play demo audio"
+                      aria-label="Play demo audio"
+                    >
+                      <DemoAudioIcon />
+                    </button>
 
-                      {soundCloudEnabled ? (
-                        <button
-                          className={`am-btn am-btn--soundcloud${
-                            showSoundCloudPanel ||
-                            playbackSource === "soundcloud"
-                              ? " am-btn--soundcloud-active"
-                              : ""
-                          }`}
-                          onClick={() => {
-                            setShowRecentUploadsPanel(false);
-                            setShowDeviceMenu(false);
-                            setShowSoundCloudPanel(!showSoundCloudPanel);
-                          }}
-                          title="Load SoundCloud track or playlist"
-                          aria-label="SoundCloud"
-                        >
-                          <SoundCloudIcon />
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : null}
+                    {hasRecentUploads ? (
+                      <button
+                        ref={recentUploadsButtonRef}
+                        className={`am-btn am-btn--recent${
+                          showRecentUploadsPanel ? " am-btn--recent-active" : ""
+                        }`}
+                        onClick={() => {
+                          setShowDeviceMenu(false);
+                          setShowSoundCloudPanel(false);
+                          setShowRecentUploadsPanel(!showRecentUploadsPanel);
+                        }}
+                        title="Recent uploads"
+                        aria-label="Recent uploads"
+                      >
+                        <HistoryIcon />
+                      </button>
+                    ) : null}
+
+                    {soundCloudEnabled ? (
+                      <button
+                        className={`am-btn am-btn--soundcloud${
+                          showSoundCloudPanel || playbackSource === "soundcloud"
+                            ? " am-btn--soundcloud-active"
+                            : ""
+                        }`}
+                        onClick={() => {
+                          setShowRecentUploadsPanel(false);
+                          setShowDeviceMenu(false);
+                          setShowSoundCloudPanel(!showSoundCloudPanel);
+                        }}
+                        title="Load SoundCloud track or playlist"
+                        aria-label="SoundCloud"
+                      >
+                        <SoundCloudIcon />
+                      </button>
+                    ) : null}
+                  </div>
 
                   <div className="am-divider" aria-hidden="true" />
                 </div>

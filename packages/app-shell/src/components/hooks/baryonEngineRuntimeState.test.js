@@ -292,7 +292,7 @@ test("publishes modal basis cache diagnostics in render perf snapshots", () => {
         liveFieldProjectionPressureRadiationSemantic:
           "normalized-pressure-velocity-radiation-potential",
         radiationMaterialContrastSemantic:
-          "visualization-only-normalized-pressure-velocity-balance",
+          "gorkov-normalized-rigid-mineral-tracer-in-water",
         modalBasisCacheRebuildPending: false,
         modalBasisCacheBackend: "compute",
         modalBasisCacheResolution: 32,
@@ -352,7 +352,7 @@ test("publishes modal basis cache diagnostics in render perf snapshots", () => {
       "normalized-pressure-velocity-radiation-potential",
     );
     expect(snapshot.render.radiationMaterialContrastSemantic).toBe(
-      "visualization-only-normalized-pressure-velocity-balance",
+      "gorkov-normalized-rigid-mineral-tracer-in-water",
     );
     expect(snapshot.render.modalBasisCacheRebuildPending).toBe(false);
     expect(snapshot.render.modalBasisCacheBackend).toBe("compute");
@@ -475,7 +475,7 @@ test("publishes modal basis cache diagnostics from runtime state when audit is d
         pressureRadiationSemantic:
           "normalized-pressure-velocity-radiation-potential",
         radiationMaterialContrast: {
-          semantic: "visualization-only-normalized-pressure-velocity-balance",
+          semantic: "gorkov-normalized-rigid-mineral-tracer-in-water",
         },
       },
     });
@@ -505,7 +505,7 @@ test("publishes modal basis cache diagnostics from runtime state when audit is d
       "normalized-pressure-velocity-radiation-potential",
     );
     expect(snapshot.render.radiationMaterialContrastSemantic).toBe(
-      "visualization-only-normalized-pressure-velocity-balance",
+      "gorkov-normalized-rigid-mineral-tracer-in-water",
     );
     expect(snapshot.render.modalBasisCacheRebuildPending).toBe(false);
     expect(snapshot.render.modalBasisCacheBackend).toBe("compute");

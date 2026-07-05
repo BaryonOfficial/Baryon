@@ -88,6 +88,10 @@ export { auditControlSchema } from "./controls/audit.js";
 export {
   serializeControls,
   deserializeControls,
+  serializeControlSettings,
+  deserializeControlSettings,
+  normalizeControlSettingValue,
+  isDefaultControlSettingValue,
   createPreset,
 } from "./controls/persistence.js";
 export {

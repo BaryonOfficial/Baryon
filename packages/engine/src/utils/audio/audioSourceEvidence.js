@@ -141,6 +141,10 @@ export function collectAudioSourceEvidenceInputs({
       testToneActive,
     isPlaying: status?.isPlaying === true,
     isLiveInputActive: status?.isLiveInputActive === true,
+    playbackEndReason:
+      typeof status?.lastPlaybackEndReason === "string"
+        ? status.lastPlaybackEndReason
+        : null,
     isAcousticLiveInput: isAcousticLiveInput === true,
     isLineFeedLiveInput: isLineFeedLiveInput === true,
     injectTestTone: testToneActive,
@@ -254,6 +258,7 @@ export function buildAudioSourceEvidenceFrame({
   hasAnalysisSource = false,
   isPlaying = false,
   isLiveInputActive = false,
+  playbackEndReason = null,
   isAcousticLiveInput = false,
   isLineFeedLiveInput = false,
   injectTestTone = false,
@@ -312,6 +317,8 @@ export function buildAudioSourceEvidenceFrame({
     transport: {
       playing,
       liveInputActive,
+      playbackEndReason:
+        typeof playbackEndReason === "string" ? playbackEndReason : null,
       fileMuted: fileTransportMuted,
       lineFeedProgramActive: lineFeedProgramActive === true,
       micHardSilence,

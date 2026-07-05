@@ -18,6 +18,7 @@ const frameState = vi.hoisted(() => ({
 
 const renderLoopSpies = vi.hoisted(() => ({
   applyCachedControlSnapshotsSpy: vi.fn(() => ({})),
+  consumeRenderFramePacerSlotSpy: vi.fn(() => true),
   resolveFeatureFrameSpy: vi.fn(() => ({
     featureFrame: null,
     effectiveFrame: null,
@@ -130,6 +131,13 @@ vi.mock("./baryonEngineRenderLoop.js", () => ({
   applyCachedControlSnapshots: (...args) =>
     renderLoopSpies.applyCachedControlSnapshotsSpy(...args),
   applyReactiveBloomState: () => ({}),
+  consumeRenderFramePacerSlot: (...args) =>
+    renderLoopSpies.consumeRenderFramePacerSlotSpy(...args),
+  createAuditSnapshotNotifier: (onAuditSnapshotChange) =>
+    onAuditSnapshotChange ?? null,
+  createRenderFramePacerState: () => ({
+    nextRenderDueAtMs: Number.NEGATIVE_INFINITY,
+  }),
   getDevicePixelRatio: () => 1,
   publishPerformanceHudSnapshot: () => {},
   publishDevtoolsSnapshots: () => {},
@@ -180,6 +188,7 @@ function HookHarness({
   postNodesRef = { current: null },
   externalFrameRef = null,
   cameraRenderKey = null,
+  framePacingFps = null,
   onPerformanceHudSnapshotChange,
   gl = {
     setClearColor: () => {},
@@ -207,6 +216,7 @@ function HookHarness({
     localCameraRenderSignalRef,
     renderProfile,
     cameraRenderKey,
+    framePacingFps,
     onPerformanceHudSnapshotChange,
   });
   return null;
@@ -234,6 +244,8 @@ describe("useBaryonEngine", () => {
     );
     renderLoopSpies.shouldRenderExternalFrameSpy.mockReset();
     renderLoopSpies.shouldRenderExternalFrameSpy.mockReturnValue(false);
+    renderLoopSpies.consumeRenderFramePacerSlotSpy.mockReset();
+    renderLoopSpies.consumeRenderFramePacerSlotSpy.mockReturnValue(true);
     frameState.callbacks.length = 0;
     visualizationLifecycleState.controlCacheRefs.controlVersionRef.current = 0;
     visualizationLifecycleState.controlCacheRefs.appliedControlVersionRef.current = 0;
@@ -902,5 +914,160 @@ describe("useBaryonEngine", () => {
     } finally {
       nowSpy.mockRestore();
     }
+  });
+
+  it("skips paced local frames when the frame pacer declines the tick", async () => {
+    const renderSpy = vi.fn();
+    renderLoopSpies.shouldRenderExternalFrameSpy.mockReturnValue(true);
+    renderLoopSpies.resolveFeatureFrameSpy.mockReturnValue({
+      featureFrame: {},
+      effectiveFrame: {},
+    });
+
+    await act(async () => {
+      root.render(
+        React.createElement(HookHarness, {
+          ensurePipeline: () => ({ render: renderSpy }),
+          framePacingFps: 60,
+        }),
+      );
+    });
+
+    const frameCallback = frameState.callbacks.at(-1);
+    expect(frameCallback).toBeTypeOf("function");
+
+    renderLoopSpies.consumeRenderFramePacerSlotSpy.mockReturnValue(false);
+    frameCallback(
+      {
+        clock: { getElapsedTime: () => 0 },
+        camera: {},
+        scene: {},
+      },
+      1 / 120,
+    );
+
+    expect(renderLoopSpies.consumeRenderFramePacerSlotSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      60,
+      expect.any(Number),
+    );
+    expect(renderSpy).not.toHaveBeenCalled();
+
+    renderLoopSpies.consumeRenderFramePacerSlotSpy.mockReturnValue(true);
+    frameCallback(
+      {
+        clock: { getElapsedTime: () => 0 },
+        camera: {},
+        scene: {},
+      },
+      1 / 120,
+    );
+
+    expect(renderSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders immediately for control changes even when the frame pacer declines", async () => {
+    const renderSpy = vi.fn();
+    const controlsRef = {
+      current: {
+        backgroundColor: "#000000",
+        fieldExtent: "unbounded",
+        boundaryMode: "dirichlet",
+        zeroPointPrecision: 0.12,
+      },
+    };
+    renderLoopSpies.shouldRenderExternalFrameSpy.mockReturnValue(true);
+    renderLoopSpies.resolveFeatureFrameSpy.mockReturnValue({
+      featureFrame: {},
+      effectiveFrame: {},
+    });
+    renderLoopSpies.consumeRenderFramePacerSlotSpy.mockReturnValue(false);
+
+    await act(async () => {
+      root.render(
+        React.createElement(HookHarness, {
+          controlsRef,
+          ensurePipeline: () => ({ render: renderSpy }),
+          framePacingFps: 60,
+        }),
+      );
+    });
+
+    controlsRef.current.fieldExtent = "sphere";
+    controlsRef.current.boundaryMode = "neumann";
+    controlsRef.current.zeroPointPrecision = 0.072;
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent("__baryon-controls-change", {
+          detail: { ...controlsRef.current },
+        }),
+      );
+    });
+
+    const frameCallback = frameState.callbacks.at(-1);
+    expect(frameCallback).toBeTypeOf("function");
+
+    frameCallback(
+      {
+        clock: { getElapsedTime: () => 0 },
+        camera: {},
+        scene: {},
+      },
+      1 / 120,
+    );
+
+    expect(
+      renderLoopSpies.consumeRenderFramePacerSlotSpy,
+    ).not.toHaveBeenCalled();
+    expect(
+      renderLoopSpies.shouldRenderExternalFrameSpy,
+    ).toHaveBeenLastCalledWith(
+      expect.objectContaining({ controlsChanged: true }),
+    );
+    expect(renderSpy).toHaveBeenCalledTimes(1);
+    expect(
+      renderLoopSpies.applyCachedControlSnapshotsSpy.mock.calls.at(-1)[0]
+        .controls,
+    ).toMatchObject({
+      fieldExtent: "sphere",
+      boundaryMode: "neumann",
+      zeroPointPrecision: 0.072,
+    });
+  });
+
+  it("bypasses the frame pacer while external frames drive the cadence", async () => {
+    const renderSpy = vi.fn();
+    const externalFrameRef = { current: { featureFrame: {} } };
+    renderLoopSpies.shouldRenderExternalFrameSpy.mockReturnValue(true);
+    renderLoopSpies.resolveFeatureFrameSpy.mockReturnValue({
+      featureFrame: {},
+      effectiveFrame: {},
+    });
+    renderLoopSpies.consumeRenderFramePacerSlotSpy.mockReturnValue(false);
+
+    await act(async () => {
+      root.render(
+        React.createElement(HookHarness, {
+          ensurePipeline: () => ({ render: renderSpy }),
+          externalFrameRef,
+          framePacingFps: 60,
+        }),
+      );
+    });
+
+    const frameCallback = frameState.callbacks.at(-1);
+    frameCallback(
+      {
+        clock: { getElapsedTime: () => 0 },
+        camera: {},
+        scene: {},
+      },
+      1 / 120,
+    );
+
+    expect(
+      renderLoopSpies.consumeRenderFramePacerSlotSpy,
+    ).not.toHaveBeenCalled();
+    expect(renderSpy).toHaveBeenCalledTimes(1);
   });
 });

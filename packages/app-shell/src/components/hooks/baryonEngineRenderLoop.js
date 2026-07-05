@@ -221,20 +221,29 @@ function readFiniteNumber(value, fallback = 0) {
   return Number.isFinite(value) ? Number(value) : fallback;
 }
 
-function copyNumericSlots(values) {
+function isCopyableSlotArray(values) {
+  return values instanceof Float32Array || Array.isArray(values);
+}
+
+function copyNumericSlotsInto(values, reusableTarget) {
+  const target =
+    reusableTarget instanceof Float32Array &&
+    reusableTarget.length === values.length
+      ? reusableTarget
+      : new Float32Array(values.length);
   if (values instanceof Float32Array) {
-    return new Float32Array(values);
-  }
-  if (Array.isArray(values)) {
-    return Float32Array.from(values, (value) => readFiniteNumber(value));
+    target.set(values);
+    return target;
   }
 
-  return null;
+  for (let index = 0; index < values.length; index += 1) {
+    target[index] = readFiniteNumber(values[index]);
+  }
+  return target;
 }
 
 function measureSlotTurnover(previousSlots, nextSlots, epsilon = 1e-4) {
-  const nextCopy = copyNumericSlots(nextSlots);
-  if (!nextCopy) {
+  if (!isCopyableSlotArray(nextSlots)) {
     return {
       nextCopy: null,
       meanAbsDelta: 0,
@@ -243,18 +252,18 @@ function measureSlotTurnover(previousSlots, nextSlots, epsilon = 1e-4) {
   }
   if (!previousSlots) {
     return {
-      nextCopy,
+      nextCopy: copyNumericSlotsInto(nextSlots, null),
       meanAbsDelta: 0,
       changeCount: 0,
     };
   }
 
   const previousLength = previousSlots.length;
-  const nextLength = nextCopy.length;
+  const nextLength = nextSlots.length;
   const comparedLength = Math.max(previousLength, nextLength);
   if (comparedLength === 0) {
     return {
-      nextCopy,
+      nextCopy: copyNumericSlotsInto(nextSlots, previousSlots),
       meanAbsDelta: 0,
       changeCount: 0,
     };
@@ -265,8 +274,9 @@ function measureSlotTurnover(previousSlots, nextSlots, epsilon = 1e-4) {
   for (let index = 0; index < comparedLength; index += 1) {
     const previousValue =
       index < previousLength ? readFiniteNumber(previousSlots[index]) : 0;
+    // fround mirrors the Float32Array coercion the stored copy will apply.
     const nextValue =
-      index < nextLength ? readFiniteNumber(nextCopy[index]) : 0;
+      index < nextLength ? Math.fround(readFiniteNumber(nextSlots[index])) : 0;
     const delta = Math.abs(nextValue - previousValue);
     totalAbsDelta += delta;
     if (delta > epsilon) {
@@ -275,7 +285,7 @@ function measureSlotTurnover(previousSlots, nextSlots, epsilon = 1e-4) {
   }
 
   return {
-    nextCopy,
+    nextCopy: copyNumericSlotsInto(nextSlots, previousSlots),
     meanAbsDelta: totalAbsDelta / comparedLength,
     changeCount,
   };
@@ -301,7 +311,7 @@ export function updateModalFreshnessDiagnostics(
 ) {
   const modalFreshness = runtimeDiagnostics?.modalFreshness;
   if (!modalFreshness || !featureFrame) {
-    return null;
+    return;
   }
 
   const renderSubmittedAtMs = readFiniteNumber(getWallTimeMs());
@@ -435,8 +445,6 @@ export function updateModalFreshnessDiagnostics(
   modalFreshness.highQRingSupport = readFiniteNumber(
     featureFrame.debug?.highQRingSupport,
   );
-
-  return snapshotModalFreshnessDiagnostics(modalFreshness);
 }
 
 export function updateModalEnvelopeDiagnostics(
@@ -445,7 +453,7 @@ export function updateModalEnvelopeDiagnostics(
 ) {
   const modalFreshness = runtimeDiagnostics?.modalFreshness;
   if (!modalFreshness || !runtimeState) {
-    return null;
+    return;
   }
 
   modalFreshness.responseEnvelope = readFiniteNumber(
@@ -457,8 +465,6 @@ export function updateModalEnvelopeDiagnostics(
   modalFreshness.bloomResponseSignal = readFiniteNumber(
     runtimeState.bloomResponseSignal,
   );
-
-  return snapshotModalFreshnessDiagnostics(modalFreshness);
 }
 
 export function getDevicePixelRatio() {
@@ -483,6 +489,45 @@ function getRenderLoopWallTimeMs() {
   }
 
   return 0;
+}
+
+const RENDER_FRAME_PACER_TOLERANCE_MS = 0.5;
+
+export function createRenderFramePacerState() {
+  return { nextRenderDueAtMs: Number.NEGATIVE_INFINITY };
+}
+
+/**
+ * Gate a free-running render loop to an explicit frames-per-second budget.
+ *
+ * A `frameloop="always"` canvas ticks at the display refresh rate, so on
+ * high-refresh displays a 60fps render policy would otherwise render every
+ * tick. Returns true when the caller should render this tick and advances the
+ * pacer clock; returns false when the tick falls inside the current frame
+ * interval. Stays phase-locked while the loop keeps up and rebases after a
+ * stall so a long frame is not followed by a burst of catch-up frames.
+ *
+ * @param {{ nextRenderDueAtMs: number }} pacerState
+ * @param {number | null} targetFps
+ * @param {number} nowMs
+ * @returns {boolean}
+ */
+export function consumeRenderFramePacerSlot(pacerState, targetFps, nowMs) {
+  if (!Number.isFinite(targetFps) || targetFps <= 0) {
+    return true;
+  }
+
+  if (nowMs + RENDER_FRAME_PACER_TOLERANCE_MS < pacerState.nextRenderDueAtMs) {
+    return false;
+  }
+
+  const intervalMs = 1000 / targetFps;
+  const dueAtMs = pacerState.nextRenderDueAtMs;
+  pacerState.nextRenderDueAtMs =
+    Number.isFinite(dueAtMs) && nowMs - dueAtMs < intervalMs
+      ? dueAtMs + intervalMs
+      : nowMs + intervalMs;
+  return true;
 }
 
 function serializeReplayArray(values) {
@@ -2556,6 +2601,35 @@ function publishAuditSnapshot(
   if (!lowLoadPlaybackDiagnosticsActive && frame % interval === 0) {
     logAudit("[Baryon audit]", payload);
   }
+}
+
+/**
+ * Wrap an audit-snapshot listener so repeated "audit disabled" notifications
+ * collapse to the first one. `publishAuditSnapshot` runs every rendered frame
+ * and reports the disabled state each time; consumers such as the desktop
+ * output stage forward every notification over IPC, so without deduping this
+ * produces a per-frame cross-process telemetry stream while audit is off.
+ * Enabled-state notifications always pass through: each carries a fresh
+ * snapshot payload.
+ *
+ * @param {((state: { enabled: boolean, snapshot: Record<string, unknown> | null }) => void) | null | undefined} onAuditSnapshotChange
+ * @returns {((state: { enabled: boolean, snapshot: Record<string, unknown> | null }) => void) | null}
+ */
+export function createAuditSnapshotNotifier(onAuditSnapshotChange) {
+  if (!onAuditSnapshotChange) {
+    return null;
+  }
+
+  let lastNotifiedEnabled = null;
+  return (nextAuditState) => {
+    const enabled = nextAuditState?.enabled === true;
+    if (!enabled && lastNotifiedEnabled === false) {
+      return;
+    }
+
+    lastNotifiedEnabled = enabled;
+    onAuditSnapshotChange(nextAuditState);
+  };
 }
 
 function publishControlSnapshot(

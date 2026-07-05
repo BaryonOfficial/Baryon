@@ -6,7 +6,9 @@ import {
   getControlsForFolder,
 } from "@baryon/engine/controls/schema";
 import {
+  deserializeControlSettings,
   deserializeControls,
+  serializeControlSettings,
   serializeControls,
 } from "@baryon/engine/controls/persistence";
 import { DEFAULT_VISUALIZATION_METHOD } from "@baryon/engine/visualization/types";
@@ -123,19 +125,27 @@ export function writeStoredJson(storage, key, value) {
   }
 }
 
-export function createInitialControlState(storage) {
+export function createInitialControlsSettingsState(storage) {
   const controls = createControlState();
   const savedSettings = readStoredJson(storage, SETTINGS_KEY);
 
   if (!savedSettings) {
-    return controls;
+    return { controls, explicitKeys: new Set() };
   }
 
-  Object.assign(
-    controls,
-    deserializeControls(savedSettings, CONTROL_DEFINITIONS),
+  const savedControlSettings = deserializeControlSettings(
+    savedSettings,
+    CONTROL_DEFINITIONS,
   );
-  return controls;
+  Object.assign(controls, savedControlSettings.controls);
+  return {
+    controls,
+    explicitKeys: savedControlSettings.explicitKeys,
+  };
+}
+
+export function createInitialControlState(storage) {
+  return createInitialControlsSettingsState(storage).controls;
 }
 
 function sanitizeStoredPreset(preset) {
@@ -198,9 +208,13 @@ export function getVisibleControlLayout({
   );
 }
 
-export function persistControls(storage, controls) {
-  const serializedControls = serializeControls(controls, CONTROL_DEFINITIONS);
-  writeStoredJson(storage, SETTINGS_KEY, serializedControls);
+export function persistControls(storage, controls, explicitKeys = new Set()) {
+  const serializedSettings = serializeControlSettings(
+    controls,
+    CONTROL_DEFINITIONS,
+    { explicitKeys },
+  );
+  writeStoredJson(storage, SETTINGS_KEY, serializedSettings);
 }
 
 export function savePresetCollection(

@@ -7,6 +7,10 @@ import {
 import {
   serializeControls,
   deserializeControls,
+  serializeControlSettings,
+  deserializeControlSettings,
+  normalizeControlSettingValue,
+  isDefaultControlSettingValue,
   createPreset,
 } from "./persistence.js";
 import {
@@ -80,6 +84,160 @@ describe("serializeControls", () => {
     const serialized = serializeControls(state, CONTROL_DEFINITIONS);
 
     expect(serialized.renderQualityPreset).toBe("max-quality");
+  });
+});
+
+describe("serializeControlSettings", () => {
+  it("serializes empty explicit settings as an empty v2 envelope", () => {
+    expect(
+      serializeControlSettings(createControlState(), CONTROL_DEFINITIONS, {
+        explicitKeys: new Set(),
+      }),
+    ).toEqual({ version: 2, controls: {} });
+  });
+
+  it("serializes only explicit non-default settings", () => {
+    const state = createControlState();
+    state.bloomStrength = 1.8;
+    state.volumeColor = "#ff0000";
+
+    const serialized = serializeControlSettings(state, CONTROL_DEFINITIONS, {
+      explicitKeys: new Set(["bloomStrength"]),
+    });
+
+    expect(serialized).toEqual({
+      version: 2,
+      controls: { bloomStrength: 1.8 },
+    });
+  });
+
+  it("writes explicit default-equal settings", () => {
+    const state = createControlState();
+
+    const serialized = serializeControlSettings(state, CONTROL_DEFINITIONS, {
+      explicitKeys: new Set(["backgroundColor"]),
+    });
+
+    expect(serialized).toEqual({
+      version: 2,
+      controls: { backgroundColor: "#000000" },
+    });
+  });
+
+  it("filters debug-only and unknown explicit keys", () => {
+    const state = createControlState();
+    state.auditEnabled = true;
+
+    const serialized = serializeControlSettings(state, CONTROL_DEFINITIONS, {
+      explicitKeys: new Set(["auditEnabled", "missingControl"]),
+    });
+
+    expect(serialized).toEqual({ version: 2, controls: {} });
+  });
+});
+
+describe("deserializeControlSettings", () => {
+  it("treats malformed v2 envelopes as empty settings, not legacy snapshots", () => {
+    for (const raw of [
+      { version: 2 },
+      { version: 2, controls: null },
+      { version: 2, controls: [] },
+    ]) {
+      const result = deserializeControlSettings(raw, CONTROL_DEFINITIONS);
+
+      expect(result.controls).toEqual({});
+      expect(result.explicitKeys.size).toBe(0);
+      expect(result.migratedLegacy).toBe(false);
+    }
+  });
+
+  it("deserializes valid v2 settings through live schema filtering", () => {
+    const result = deserializeControlSettings(
+      {
+        version: 2,
+        controls: {
+          bloomStrength: 0.75,
+          backgroundColor: "#000000",
+          auditEnabled: true,
+          structureMin: 0.12,
+          customTargetFps: "fast",
+          unknownFutureProp: 42,
+        },
+      },
+      CONTROL_DEFINITIONS,
+    );
+
+    expect(result.controls).toEqual({
+      bloomStrength: 0.75,
+      backgroundColor: "#000000",
+    });
+    expect(Array.from(result.explicitKeys).sort()).toEqual([
+      "backgroundColor",
+      "bloomStrength",
+    ]);
+    expect(result.migratedLegacy).toBe(false);
+  });
+
+  it("normalizes renderQualityPreset values at the settings boundary", () => {
+    expect(
+      normalizeControlSettingValue(
+        "renderQualityPreset",
+        "none",
+        CONTROL_DEFINITIONS,
+      ),
+    ).toBe("max-quality");
+    expect(
+      isDefaultControlSettingValue(
+        "renderQualityPreset",
+        "auto",
+        CONTROL_DEFINITIONS,
+      ),
+    ).toBe(true);
+    expect(
+      isDefaultControlSettingValue(
+        "renderQualityPreset",
+        "none",
+        CONTROL_DEFINITIONS,
+      ),
+    ).toBe(false);
+  });
+
+  it("drops known old bloom defaults from legacy settings", () => {
+    const result = deserializeControlSettings(
+      {
+        bloomStrength: 1.02,
+        bloomRadius: 0.04,
+        bloomThreshold: 0.08,
+      },
+      CONTROL_DEFINITIONS,
+    );
+
+    expect(result.controls).toEqual({});
+    expect(result.explicitKeys.size).toBe(0);
+    expect(result.migratedLegacy).toBe(true);
+  });
+
+  it("preserves custom legacy bloom settings as explicit overrides", () => {
+    const result = deserializeControlSettings(
+      {
+        bloomStrength: 1.03,
+        bloomRadius: 0.05,
+        bloomThreshold: 0.09,
+      },
+      CONTROL_DEFINITIONS,
+    );
+
+    expect(result.controls).toEqual({
+      bloomStrength: 1.03,
+      bloomRadius: 0.05,
+      bloomThreshold: 0.09,
+    });
+    expect(Array.from(result.explicitKeys).sort()).toEqual([
+      "bloomRadius",
+      "bloomStrength",
+      "bloomThreshold",
+    ]);
+    expect(result.migratedLegacy).toBe(true);
   });
 });
 

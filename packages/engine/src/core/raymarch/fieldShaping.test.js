@@ -872,7 +872,7 @@ describe("field shaping", () => {
     });
 
     expect(photographicWash.blackfieldGate).toBeLessThan(0.2);
-    expect(photographicWash.photographicRadianceScale).toBeLessThan(0.5);
+    expect(photographicWash.photographicRadianceScale).toBeLessThan(0.6);
     expect(photographicWash.photographicLaserCausticRadiance).toBeLessThan(
       opticalWash.laserCausticRadiance * 0.62,
     );
@@ -1947,7 +1947,7 @@ describe("field shaping", () => {
       transientEnergy: 0.92,
     });
 
-    expect(STRUCTURE_AWARE_EMISSION_MIN_GAIN).toBeCloseTo(0.34);
+    expect(STRUCTURE_AWARE_EMISSION_MIN_GAIN).toBeCloseTo(0.42);
     expect(transient.emissionGain).toBeGreaterThan(sustained.emissionGain);
     expect(transient.emissionGain).toBeLessThan(0.8);
     expect(sustained.bodySuppression).toBeGreaterThan(0.75);
@@ -1987,7 +1987,10 @@ describe("field shaping", () => {
 
     expect(highlightedBodyFill.filamentEligibility).toBeLessThan(0.18);
     expect(highlightedBodyFill.emissionGain).toBeLessThan(0.78);
-    expect(denseHighlightedBodyFill.emissionGain).toBeLessThan(0.42);
+    expect(denseHighlightedBodyFill.emissionGain).toBeLessThan(0.5);
+    expect(denseHighlightedBodyFill.emissionGain).toBeGreaterThanOrEqual(
+      STRUCTURE_AWARE_EMISSION_MIN_GAIN,
+    );
   });
 
   it("keeps hot-core authority on beam density rather than crowding compression", () => {
@@ -2186,11 +2189,12 @@ describe("field shaping", () => {
     expect(supportOnly.finalRadiance[0]).toBeLessThan(0.3);
     expect(mixed.supportVisibleDensity).toBeCloseTo(0.3);
     expect(mixed.causticRadianceContribution[0]).toBeCloseTo(0.108);
+    // Support reveal carries the laser (volume) color, not the surface color.
     expect(mixed.supportRevealContribution[0]).toBeCloseTo(
-      1 * PHOTOGRAPHIC_DARK_BODY_RATIO * 0.3,
+      0.9 * PHOTOGRAPHIC_DARK_BODY_RATIO * 0.3,
     );
     expect(mixed.finalRadiance[0]).toBeCloseTo(
-      0.9 * 0.12 * 0.8 + 1 * PHOTOGRAPHIC_DARK_BODY_RATIO * 0.3,
+      0.9 * 0.12 * 0.8 + 0.9 * PHOTOGRAPHIC_DARK_BODY_RATIO * 0.3,
     );
   });
 
@@ -2237,7 +2241,7 @@ describe("field shaping", () => {
     );
     expect(focused.projectedCausticRadianceDensity).toBeGreaterThan(0.38);
     expect(focused.projectedCausticRadianceDensity).toBeLessThan(0.6);
-    expect(denseTail.projectedCausticRadianceDensity).toBeLessThan(0.38);
+    expect(denseTail.projectedCausticRadianceDensity).toBeLessThan(0.45);
     expect(focused.projectedCausticRadianceAuthority).toBeGreaterThan(0.5);
   });
 
@@ -2269,16 +2273,15 @@ describe("field shaping", () => {
     expect(dimmed.causticRadianceContribution).toEqual([0, 0, 0]);
     expect(dimmed.finalRadiance).toEqual(undimmed.finalRadiance);
     expect(caustic.finalRadiance[0]).toBeCloseTo(
-      1 * 0.16 * 0.5 + 0.8 * PHOTOGRAPHIC_DARK_BODY_RATIO * 0.2,
+      1 * 0.16 * 0.5 + 1 * PHOTOGRAPHIC_DARK_BODY_RATIO * 0.2,
     );
   });
 
-  it("caps support reveal color before overbright surface color can become bloom authority", () => {
+  it("caps support reveal color before overbright volume color can become bloom authority", () => {
     const support = deriveMaterialRadianceTransfer({
       stabilizedDensity: 0.8,
       causticVisibleDensity: 0,
-      volumeColor: [1, 1, 1],
-      surfaceColor: [3.5, 2.4, 1.6],
+      volumeColor: [3.5, 2.4, 1.6],
       structureAwareEmissionGain: 1,
     });
 

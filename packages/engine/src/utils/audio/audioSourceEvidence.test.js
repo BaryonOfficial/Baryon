@@ -483,4 +483,34 @@ describe("audio source evidence", () => {
       currentSourceEvidence: true,
     });
   });
+
+  it("carries explicit playback stop through transport evidence", () => {
+    const collected = collectAudioSourceEvidenceInputs({
+      inputMode: "stopped",
+      status: {
+        hasAnalysisSource: false,
+        isPlaying: false,
+        isLiveInputActive: false,
+        lastPlaybackEndReason: "stopped",
+      },
+    });
+
+    expect(collected).toMatchObject({
+      inputMode: "stopped",
+      hasAnalysisSource: false,
+      isPlaying: false,
+      isLiveInputActive: false,
+      playbackEndReason: "stopped",
+    });
+    expect(buildAudioSourceEvidenceFrame(collected)).toMatchObject({
+      sourceKind: "none",
+      sourceBoundaryState: "absent",
+      currentSourceEvidence: false,
+      transport: {
+        playing: false,
+        liveInputActive: false,
+        playbackEndReason: "stopped",
+      },
+    });
+  });
 });

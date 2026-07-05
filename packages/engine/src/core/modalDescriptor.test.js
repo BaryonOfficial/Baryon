@@ -186,6 +186,8 @@ describe("buildCanonicalFullModalDescriptor", () => {
       descriptor.slotViews.modalFieldSlots.some((value) => value !== 0),
     ).toBe(false);
     expect(descriptor.diagnostics.overBandwidthDominant).toBe(true);
+    expect(descriptor.diagnostics.overBandwidthProjectionRetained).toBe(false);
+    expect(descriptor.diagnostics.overBandwidthFieldBlocked).toBe(true);
     expect(
       descriptor.diagnostics.overBandwidthRejectedRepresentedEnergyRatio,
     ).toBeGreaterThan(1);
@@ -196,6 +198,35 @@ describe("buildCanonicalFullModalDescriptor", () => {
     expect(
       descriptor.diagnostics.modalVarietyAudit.representedModalEnergy,
     ).toBeGreaterThan(0);
+  });
+
+  it("retains a stable represented projection when over-bandwidth detail dominates", () => {
+    const descriptor = buildCanonicalFullModalDescriptor({
+      maxTotalModes: 4,
+      basisAtlasPageCapacity: 4,
+      modalFieldSlots: makeSlots([
+        [2, 3, 5, 0.2],
+        [3, 4, 6, 0.1],
+      ]),
+      activeModalFieldModeCount: 2,
+      overBandwidthRejectedModeCount: 3,
+      overBandwidthRejectedModalEnergy: 0.4,
+      overBandwidthMaxRequestedModeIndex: 184,
+      overBandwidthMaxRequestedMode: [56, 64, 184],
+      previousFieldAuthority: "complete",
+      allowOverBandwidthProjectionRetention: true,
+    });
+
+    expect(descriptor.fieldAuthority).toBe("complete");
+    expect(descriptor.counts.validModeCount).toBe(2);
+    expect(descriptor.counts.modalFieldModeCount).toBe(2);
+    expect(descriptor.modes.modalField).toHaveLength(2);
+    expect(descriptor.diagnostics.overBandwidthDominant).toBe(true);
+    expect(descriptor.diagnostics.overBandwidthProjectionRetained).toBe(true);
+    expect(descriptor.diagnostics.overBandwidthFieldBlocked).toBe(false);
+    expect(
+      descriptor.diagnostics.overBandwidthRejectedRepresentedEnergyRatio,
+    ).toBeGreaterThan(1);
   });
 
   it("keeps represented topology when rejected energy does not dominate semantic total", () => {

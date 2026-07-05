@@ -1,15 +1,17 @@
 import {
   deserializeControls,
+  isDefaultControlSettingValue,
   normalizeSpectralLightActivationControls,
 } from "@baryon/engine/controls/persistence";
 import {
   CONTROL_DEFINITIONS,
+  CONTROL_STATUSES,
   createControlState,
 } from "@baryon/engine/controls/schema";
 import {
   PRESETS_KEY,
   createControlsPersistScheduler,
-  createInitialControlState,
+  createInitialControlsSettingsState,
   deletePresetFromCollection,
   loadStoredPresets,
   persistControls,
@@ -81,10 +83,18 @@ function applyControlUpdate(controls, key, value) {
   return changed;
 }
 
+const LIVE_CONTROL_SETTING_KEYS = new Set(
+  CONTROL_DEFINITIONS.filter(
+    (definition) => definition.status === CONTROL_STATUSES.live,
+  ).map((definition) => definition.key),
+);
+
 export function createControlsStore({ storage = getBrowserStorage() } = {}) {
+  const initialSettingsState = createInitialControlsSettingsState(storage);
   const controlsRef = {
-    current: createInitialControlState(storage),
+    current: initialSettingsState.controls,
   };
+  let explicitSettingsKeys = new Set(initialSettingsState.explicitKeys);
   const listeners = new Set();
   const state = {
     presets: loadStoredPresets(storage),
@@ -99,10 +109,35 @@ export function createControlsStore({ storage = getBrowserStorage() } = {}) {
   });
 
   const persistScheduler = createControlsPersistScheduler({
-    persist(nextControls) {
-      persistControls(storage, nextControls);
+    persist(nextSettings) {
+      persistControls(
+        storage,
+        nextSettings.controls,
+        nextSettings.explicitKeys,
+      );
     },
   });
+
+  function createSettingsPersistSnapshot() {
+    return {
+      controls: { ...controlsRef.current },
+      explicitKeys: new Set(explicitSettingsKeys),
+    };
+  }
+
+  function updateExplicitSettingsOwnership(key, value) {
+    if (!LIVE_CONTROL_SETTING_KEYS.has(key)) {
+      return false;
+    }
+
+    const hadExplicitOwnership = explicitSettingsKeys.has(key);
+    if (isDefaultControlSettingValue(key, value, CONTROL_DEFINITIONS)) {
+      explicitSettingsKeys.delete(key);
+    } else {
+      explicitSettingsKeys.add(key);
+    }
+    return hadExplicitOwnership !== explicitSettingsKeys.has(key);
+  }
 
   function emit() {
     snapshot = createSnapshot({
@@ -117,20 +152,21 @@ export function createControlsStore({ storage = getBrowserStorage() } = {}) {
     return snapshot;
   }
 
-  function syncControls(
-    nextControls,
-    { persistMode = "debounced", clearPresetSelection = true } = {},
-  ) {
+  function syncControls({
+    persistMode = "debounced",
+    clearPresetSelection = true,
+  } = {}) {
     if (clearPresetSelection) {
       state.selectedPresetName = "";
     }
     if (persistMode === "none") {
       return emit();
     }
+    const settingsPersistSnapshot = createSettingsPersistSnapshot();
     if (persistMode === "immediate") {
-      persistScheduler.flush(nextControls);
+      persistScheduler.flush(settingsPersistSnapshot);
     } else {
-      persistScheduler.schedule(nextControls);
+      persistScheduler.schedule(settingsPersistSnapshot);
     }
     return emit();
   }
@@ -154,15 +190,27 @@ export function createControlsStore({ storage = getBrowserStorage() } = {}) {
         throw new Error(`[Baryon controls] Unknown control key: ${key}`);
       }
 
-      if (!applyControlUpdate(controlsRef.current, key, value)) {
+      const persistMode = options?.persistMode ?? "debounced";
+      const ownershipChanged =
+        persistMode === "none"
+          ? false
+          : updateExplicitSettingsOwnership(key, value);
+      const activeControlsChanged = applyControlUpdate(
+        controlsRef.current,
+        key,
+        value,
+      );
+
+      if (!activeControlsChanged && !ownershipChanged) {
         return snapshot;
       }
-      return syncControls(controlsRef.current, options);
+      return syncControls(options);
     },
     resetControls() {
       const defaults = createControlState();
       Object.assign(controlsRef.current, defaults);
-      return syncControls(controlsRef.current, { persistMode: "immediate" });
+      explicitSettingsKeys = new Set();
+      return syncControls({ persistMode: "immediate" });
     },
     setPresetName(name) {
       const nextPresetName = typeof name === "string" ? name : "";
@@ -199,8 +247,9 @@ export function createControlsStore({ storage = getBrowserStorage() } = {}) {
         controlsRef.current,
         deserializeControls(preset.controls, CONTROL_DEFINITIONS),
       );
+      explicitSettingsKeys = new Set(LIVE_CONTROL_SETTING_KEYS);
       state.selectedPresetName = name;
-      return syncControls(controlsRef.current, {
+      return syncControls({
         persistMode: "immediate",
         clearPresetSelection: false,
       });

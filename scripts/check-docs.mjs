@@ -300,6 +300,7 @@ if (scriptExists("scripts/sync-public.sh")) {
 function checkTouchDesignerDownload({
   pagePath,
   artifactPath,
+  sourceArtifactPath = null,
   publicUrl,
   label,
 }) {
@@ -315,11 +316,26 @@ function checkTouchDesignerDownload({
   if (!page.includes(publicUrl)) {
     errors.push(`${pagePath}: ${label} must use downloads.baryon.live`);
   }
+
+  if (!sourceArtifactPath) {
+    return;
+  }
+
+  const sourcePath = path.join(rootDir, sourceArtifactPath);
+  const docsPath = path.join(rootDir, artifactPath);
+  if (!fs.existsSync(sourcePath) || !fs.existsSync(docsPath)) {
+    return;
+  }
+
+  if (!fs.readFileSync(sourcePath).equals(fs.readFileSync(docsPath))) {
+    errors.push(`${artifactPath}: must match ${sourceArtifactPath}`);
+  }
 }
 
 checkTouchDesignerDownload({
   pagePath: "docs/public/desktop/parameter-automation.mdx",
   artifactPath: "docs/public/downloads/touchdesigner/baryon_osc.tox",
+  sourceArtifactPath: "scripts/touchdesigner/baryon_osc.tox",
   publicUrl: "https://downloads.baryon.live/touchdesigner/baryon_osc.tox",
   label: "TouchDesigner control surface artifact",
 });
@@ -327,6 +343,7 @@ checkTouchDesignerDownload({
 checkTouchDesignerDownload({
   pagePath: "docs/public/desktop/osc-structure-export.mdx",
   artifactPath: "docs/public/downloads/touchdesigner/baryon_osc_structure.tox",
+  sourceArtifactPath: "scripts/touchdesigner/baryon_osc_structure.tox",
   publicUrl:
     "https://downloads.baryon.live/touchdesigner/baryon_osc_structure.tox",
   label: "TouchDesigner structure monitor artifact",

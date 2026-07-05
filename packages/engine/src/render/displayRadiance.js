@@ -7,9 +7,8 @@ const DISPLAY_RADIANCE_DEFAULTS = Object.freeze({
   displayShoulderSoftness: 0.28,
   displayEpsilon: 1e-5,
   displayChannelCeiling: 0.985,
-  preShoulderMaxLuminance: 0.92,
   preShoulderMaxChannel: 0.98,
-  maxBloomSceneRatio: 0.55,
+  maxBloomSceneRatio: 0.85,
   bloomSceneFloor: 0.08,
 });
 
@@ -112,8 +111,19 @@ export function deriveBloomRadianceScale(sceneRgb, bloomRgb, options = {}) {
     };
   }
 
+  // Budgets are measured against the display-compressed scene: the compositor
+  // compresses scene + bloom afterwards, so HDR caustic cores must not zero
+  // the halation the way raw scene luminance would.
+  const compressedSceneLuminance = compressDisplayLuminance(
+    sceneLuminance,
+    resolvedOptions,
+  );
+  const compressedSceneScale =
+    compressedSceneLuminance /
+    Math.max(sceneLuminance, resolvedOptions.displayEpsilon);
+  const compressedSceneMaxChannel = Math.max(...scene) * compressedSceneScale;
   const headroom = clamp01(
-    (resolvedOptions.preShoulderMaxLuminance - sceneLuminance) /
+    (resolvedOptions.displayCeiling - compressedSceneLuminance) /
       Math.max(bloomLuminance, resolvedOptions.displayEpsilon),
   );
   const veil = clamp01(
@@ -122,7 +132,7 @@ export function deriveBloomRadianceScale(sceneRgb, bloomRgb, options = {}) {
       Math.max(bloomLuminance, resolvedOptions.displayEpsilon),
   );
   const channel = clamp01(
-    (resolvedOptions.preShoulderMaxChannel - Math.max(...scene)) /
+    (resolvedOptions.displayChannelCeiling - compressedSceneMaxChannel) /
       Math.max(bloomMaxChannel, resolvedOptions.displayEpsilon),
   );
 
@@ -164,16 +174,23 @@ export function deriveBloomRadianceScaleNode(sceneRgb, bloomRgb) {
   const bloomLuminance = computeLinearLuminanceNode(bloomRgb);
   const sceneMaxChannel = max(max(sceneRgb.r, sceneRgb.g), sceneRgb.b);
   const bloomMaxChannel = max(max(bloomRgb.r, bloomRgb.g), bloomRgb.b);
-  const headroom = float(DISPLAY_RADIANCE_DEFAULTS.preShoulderMaxLuminance)
-    .sub(sceneLuminance)
+  // Mirror of deriveBloomRadianceScale: budgets against the display-compressed
+  // scene so HDR caustic cores keep their halation.
+  const compressedSceneLuminance = compressDisplayLuminanceNode(sceneLuminance);
+  const compressedSceneScale = compressedSceneLuminance.div(
+    max(sceneLuminance, epsilon),
+  );
+  const compressedSceneMaxChannel = sceneMaxChannel.mul(compressedSceneScale);
+  const headroom = float(DISPLAY_RADIANCE_DEFAULTS.displayCeiling)
+    .sub(compressedSceneLuminance)
     .div(max(bloomLuminance, epsilon))
     .clamp();
   const veil = float(DISPLAY_RADIANCE_DEFAULTS.maxBloomSceneRatio)
     .mul(max(sceneLuminance, float(DISPLAY_RADIANCE_DEFAULTS.bloomSceneFloor)))
     .div(max(bloomLuminance, epsilon))
     .clamp();
-  const channel = float(DISPLAY_RADIANCE_DEFAULTS.preShoulderMaxChannel)
-    .sub(sceneMaxChannel)
+  const channel = float(DISPLAY_RADIANCE_DEFAULTS.displayChannelCeiling)
+    .sub(compressedSceneMaxChannel)
     .div(max(bloomMaxChannel, epsilon))
     .clamp();
 

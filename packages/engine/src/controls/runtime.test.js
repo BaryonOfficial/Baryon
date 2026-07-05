@@ -64,8 +64,10 @@ function createRaymarchHarness(method = DEFAULT_VISUALIZATION_METHOD) {
       uIdleLogoIntensity: { value: 0 },
       uIdleLogoAlpha: { value: 0 },
       uIdleLogoSize: { value: 0 },
+      uIdleLogoColor: { value: { set: vi.fn() } },
       uDensityGain: { value: 0 },
       uAbsorption: { value: 0 },
+      uLaserDeflectionGain: { value: 0 },
       uOpacityGain: { value: 0 },
       uContourSharpness: { value: 0 },
       uRimBloomBias: { value: 0 },
@@ -181,6 +183,7 @@ describe("control runtime sync", () => {
     controls.idleLogoIntensity = 0.42;
     controls.zeroPointPrecision = 0.033;
     controls.idleLogoSize = 1.4;
+    controls.idleLogoColor = "#eef7ff";
     controls.boundaryMode = "dirichlet";
     controls.densityGain = 1.75;
     controls.absorption = 1.35;
@@ -209,6 +212,9 @@ describe("control runtime sync", () => {
     expect(runtimeState.uniforms.uIdleLogoIntensity.value).toBe(0.42);
     expect(runtimeState.uniforms.uIdleLogoAlpha.value).toBe(0.84);
     expect(runtimeState.uniforms.uIdleLogoSize.value).toBe(1.4);
+    expect(runtimeState.uniforms.uIdleLogoColor.value.set).toHaveBeenCalledWith(
+      "#eef7ff",
+    );
     expect(runtimeState.uniforms).not.toHaveProperty("uStructureMin");
     expect(runtimeState.uniforms).not.toHaveProperty("uStructureMax");
     expect(runtimeState.uniforms.uBoundaryMode.value).toBe(0);
@@ -267,6 +273,8 @@ describe("control runtime sync", () => {
     expect(runtimeState.idleOverlay.material.opacity).toBe(0.84);
     expect(snapshot.uniforms.idleLogoIntensity).toBe(0.42);
     expect(snapshot.uniforms.idleLogoAlpha).toBe(0.84);
+    expect(snapshot.uniforms.idleLogoSize).toBe(1.4);
+    expect(snapshot.uniforms.idleLogoColor).toBe("#eef7ff");
     expect(snapshot.uniforms).not.toHaveProperty("structureMin");
     expect(snapshot.uniforms).not.toHaveProperty("structureMax");
     expect(snapshot.uniforms.densityGain).toBe(1.75);
@@ -393,6 +401,7 @@ describe("control runtime sync", () => {
     const controls = createControlState();
     controls.volumeColor = "#224466";
     controls.surfaceColor = "#88ccff";
+    controls.idleLogoColor = "#ffeedd";
     controls.raymarchSteps = 72;
     controls.densityGain = 2.1;
     controls.absorption = 1.6;
@@ -439,9 +448,10 @@ describe("control runtime sync", () => {
     expect(runtimeState.bloomTuning.lowStepBloomGuard).toBe(0);
     expect(runtimeState.uniforms.uSpectralMix.value).toBe(0);
     expect(runtimeState.idleOverlay.material.color.set).toHaveBeenCalledWith(
-      "#88ccff",
+      "#ffeedd",
     );
     expect(snapshot.uniforms.surfaceColor).toBe("#88ccff");
+    expect(snapshot.uniforms.idleLogoColor).toBe("#ffeedd");
     expect(snapshot.uniforms.colorMode).toBe("static");
     expect(snapshot.uniforms.spectralMix).toBe(0);
     expect(snapshot.uniforms.boundaryMode).toBe("neumann");

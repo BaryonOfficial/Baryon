@@ -19,6 +19,8 @@ const OVER_BANDWIDTH_DOMINANCE_EPSILON = 1e-9;
 const OVER_BANDWIDTH_SEMANTIC_DOMINANCE_RATIO = 0.85;
 const OVER_BANDWIDTH_AUTHORITY_ENTER_RATIO = 1.05;
 const OVER_BANDWIDTH_AUTHORITY_EXIT_RATIO = 0.9;
+const OVER_BANDWIDTH_RETAINED_PROJECTION_MIN_ENERGY = 0.01;
+const OVER_BANDWIDTH_RETAINED_PROJECTION_MIN_IDENTITY = 0.72;
 
 function hashUint32(value, hash) {
   return Math.imul(hash ^ (value >>> 0), FNV_PRIME) >>> 0;
@@ -200,6 +202,33 @@ function resolveOverBandwidthAuthorityDominant({
       ? OVER_BANDWIDTH_AUTHORITY_EXIT_RATIO
       : OVER_BANDWIDTH_AUTHORITY_ENTER_RATIO;
   return representedEnergyRatio >= threshold;
+}
+
+function shouldRetainOverBandwidthProjection({
+  allowOverBandwidthProjectionRetention,
+  overBandwidthDominant,
+  modalVarietyAudit,
+  previousFieldAuthority,
+}) {
+  if (!allowOverBandwidthProjectionRetention || !overBandwidthDominant) {
+    return false;
+  }
+
+  const previousAuthority = normalizeFieldAuthority(previousFieldAuthority);
+  if (
+    previousAuthority !== "complete" &&
+    previousAuthority !== "capacity-limited"
+  ) {
+    return false;
+  }
+
+  return (
+    (modalVarietyAudit?.representedBasisPageModeCount ?? 0) > 0 &&
+    (modalVarietyAudit?.representedModalEnergy ?? 0) >=
+      OVER_BANDWIDTH_RETAINED_PROJECTION_MIN_ENERGY &&
+    (modalVarietyAudit?.modeIdentityRetentionRatio ?? 0) >=
+      OVER_BANDWIDTH_RETAINED_PROJECTION_MIN_IDENTITY
+  );
 }
 
 function coverageRatio(numerator, denominator, fallback = 0) {
@@ -1084,6 +1113,7 @@ function buildSpectralLaneDescriptorHash(slotAssignments) {
  *   overBandwidthMaxRequestedModeIndex?: number,
  *   overBandwidthMaxRequestedMode?: [number, number, number],
  *   previousFieldAuthority?: string | null,
+ *   allowOverBandwidthProjectionRetention?: boolean,
  *   basisAtlasPageCapacity?: number,
  *   basisCacheResolution?: number,
  *   cavityGeometry?: import("./cavityGeometry.js").CavityGeometry,
@@ -1125,6 +1155,7 @@ export function buildCanonicalFullModalDescriptor({
   overBandwidthMaxRequestedModeIndex,
   overBandwidthMaxRequestedMode,
   previousFieldAuthority,
+  allowOverBandwidthProjectionRetention = false,
   basisAtlasPageCapacity = MODAL_BASIS_ATLAS_PAGE_CAPACITY,
   basisCacheResolution = MODAL_BASIS_CACHE_RESOLUTION,
   cavityGeometry = DEFAULT_EFFECTIVE_CAVITY_GEOMETRY,
@@ -1265,7 +1296,15 @@ export function buildCanonicalFullModalDescriptor({
   });
   const overBandwidthDominant =
     modalVarietyAudit.overBandwidthDominant === true;
-  const fieldAuthority = overBandwidthDominant
+  const overBandwidthProjectionRetained = shouldRetainOverBandwidthProjection({
+    allowOverBandwidthProjectionRetention,
+    overBandwidthDominant,
+    modalVarietyAudit,
+    previousFieldAuthority,
+  });
+  const overBandwidthFieldBlocked =
+    overBandwidthDominant && !overBandwidthProjectionRetained;
+  const fieldAuthority = overBandwidthFieldBlocked
     ? "bandwidth-limited"
     : descriptorOverflow
       ? "capacity-limited"
@@ -1346,6 +1385,12 @@ export function buildCanonicalFullModalDescriptor({
       overBandwidthRejectedRepresentedEnergyRatio:
         modalVarietyAudit.overBandwidthRejectedRepresentedEnergyRatio,
       overBandwidthDominant,
+      overBandwidthProjectionRetained,
+      overBandwidthFieldBlocked,
+      overBandwidthProjectionRetentionMinEnergy:
+        OVER_BANDWIDTH_RETAINED_PROJECTION_MIN_ENERGY,
+      overBandwidthProjectionRetentionMinIdentity:
+        OVER_BANDWIDTH_RETAINED_PROJECTION_MIN_IDENTITY,
       basisAtlasCapacityRejectedCount:
         structuralAdmission.basisAtlasCapacityRejectedCount,
       spatialBandwidthRejectedCount:

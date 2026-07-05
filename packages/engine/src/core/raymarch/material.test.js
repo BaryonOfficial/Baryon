@@ -9,9 +9,15 @@ import {
   getRaymarchMaterialCache,
   setRaymarchBoundaryMode,
   setRaymarchCavityGeometry,
+  setRaymarchFieldExtent,
   setRaymarchModalBasisAtlasTexture,
   setRaymarchSpectralLightEvaluationMode,
 } from "./material.js";
+import {
+  FIELD_EXTENTS,
+  UNBOUNDED_DOMAIN_SCALE,
+  UNBOUNDED_STEP_SCALE,
+} from "../fieldExtent.js";
 import { createVisualizationUniforms } from "../visualizationUniforms.js";
 import { raymarchOpacityNode } from "./SafeVolumetricLightingModel.js";
 import {
@@ -270,7 +276,7 @@ describe("raymarch volume material", () => {
     );
     const returnStart = expectSourceIndex(
       source,
-      "return causticRadianceContribution",
+      "return vec4(\n        applyExtentEnergyProfile(\n          causticRadianceContribution",
     );
     const highlightBlock = source.slice(highlightStart, stabilizedDensityStart);
     const hotCoreBlock = source.slice(hotCoreStart, hotCoreMixStart);
@@ -747,7 +753,7 @@ describe("raymarch volume material", () => {
     );
     const finalRadianceStart = expectSourceIndex(
       source,
-      "return causticRadianceContribution",
+      "return vec4(\n        applyExtentEnergyProfile(\n          causticRadianceContribution",
     );
     const finalRadianceBlock = source.slice(
       stabilizedDensityStart,
@@ -851,7 +857,7 @@ describe("raymarch volume material", () => {
     );
     const finalRadianceStart = expectSourceIndex(
       source,
-      "return causticRadianceContribution",
+      "return vec4(\n        applyExtentEnergyProfile(\n          causticRadianceContribution",
     );
     const finalRadianceBlock = source.slice(
       supportDensityStart,
@@ -896,7 +902,7 @@ describe("raymarch volume material", () => {
     expect(source).not.toContain("spectralLightWeight");
     expect(source).not.toContain("spectralCacheAccent");
     expect(source).toContain(
-      "const supportRevealDensity = supportVisibleDensity;",
+      "const supportRevealDensity = supportVisibleDensity.mul(",
     );
   });
 
@@ -1165,7 +1171,7 @@ describe("raymarch volume material", () => {
     expect(carrierBlock).toContain("float(-1.0)");
     expect(carrierUseBlock).toContain("contrast: float(0.0)");
     expect(carrierUseBlock).toContain("authority: float(0.0)");
-    expect(carrierUseBlock).toContain("const phaseInterferenceAuthority =");
+    expect(carrierUseBlock).toContain("let phaseInterferenceAuthority =");
     expect(carrierUseBlock).toContain("uLiveFieldCacheActive");
     expect(carrierUseBlock).toContain(
       ".mul(phaseInterferenceCarrier.authority)",
@@ -1409,7 +1415,7 @@ describe("raymarch volume material", () => {
     );
     const opticalGateStart = expectSourceIndex(
       source,
-      "const shouldMeasureOpticalConvergence =",
+      "let shouldMeasureOpticalConvergence =",
     );
     const opticalMeasurementStart = expectSourceIndex(
       source,
@@ -1761,6 +1767,8 @@ describe("raymarch volume material", () => {
     });
 
     expect(mesh.material.steps).toBe(RAYMARCH_DEFAULTS.raymarchSteps);
+    // The flagship sphere keeps the old direct radius path; unbounded gets a
+    // separate material variant so the default shader stays cheap.
     expect(mesh.material.radiusNode).toBe(uniforms.uRadius);
     expect(mesh.material.opacityGainNode).toBe(uniforms.uOpacityGain);
     expect(uniforms.uObservationDensityFadeStart.value).toBeCloseTo(0.22);
@@ -1979,6 +1987,27 @@ describe("raymarch volume material", () => {
     expect(mesh.userData.raymarchBoundaryMode).toBe("dirichlet");
   });
 
+  it("repairs a stale boundary material cache entry", () => {
+    const mesh = createRaymarchVolumeMesh({
+      radius: 3,
+      uniforms: makeMeshUniforms(),
+    });
+    const materialCache = getRaymarchMaterialCache(mesh);
+
+    setRaymarchBoundaryMode(mesh, "dirichlet");
+    const dirichletMaterial = mesh.material;
+    expect(dirichletMaterial.raymarchBoundaryMode).toBe("dirichlet");
+
+    materialCache.neumann.off = dirichletMaterial;
+    mesh.userData.raymarchBoundaryMode = "neumann";
+
+    setRaymarchBoundaryMode(mesh, "neumann");
+
+    expect(mesh.userData.raymarchBoundaryMode).toBe("neumann");
+    expect(mesh.material).not.toBe(dirichletMaterial);
+    expect(mesh.material.raymarchBoundaryMode).toBe("neumann");
+  });
+
   it("keeps cavity geometry as cache descriptor state, not a material variant", () => {
     const modalBasisCache = createRaymarchModalBasisCache({
       resolution: 8,
@@ -2047,6 +2076,288 @@ describe("raymarch volume material", () => {
     expect(mesh.material.modalBasisAtlasTexture).toBe(modalBasisCache.texture);
     expect(mesh.material.spectralLightEvaluationMode).toBe(
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
+    );
+  });
+
+  it("radiates the modal pattern outward as traveling wavefronts", () => {
+    const source = normalizeSource(
+      readFileSync(new URL("./material.js", import.meta.url), "utf8"),
+    );
+    const scatteringBlock = expectSourceBlock(
+      source,
+      "function createScatteringNode",
+      "function deriveObservationTransferNode",
+    );
+
+    expect(scatteringBlock).toContain(
+      "const isUnboundedFieldExtent =\n    normalizedFieldExtent === FIELD_EXTENTS.unbounded;",
+    );
+
+    // The far field is D(θ,φ)·cos(k·r − ω·t)·decay(r) — the modal pattern's
+    // angular directivity carried outward by traveling waves. The sample
+    // position morphs to the mid-cavity directivity point across a wide
+    // band; a mirror tiling of the cavity (discrete bounded copies) and the
+    // old narrow-band probe smear are both banned.
+    expect(scatteringBlock).toContain("const radiatingSamplePosition = mix(");
+    expect(scatteringBlock).toContain("UNBOUNDED_DIRECTIVITY_RADIUS");
+    expect(scatteringBlock).toContain("UNBOUNDED_TRAVEL_BLEND_START");
+    expect(scatteringBlock).toContain("UNBOUNDED_TRAVEL_BLEND_END");
+    expect(scatteringBlock).not.toContain("foldPhase");
+    expect(scatteringBlock).not.toContain("foldSign");
+    expect(scatteringBlock).not.toContain("openProbeRadius");
+    expect(scatteringBlock).not.toContain("openProbePosition");
+    expect(scatteringBlock).not.toContain("fieldSamplePosition");
+    expect(scatteringBlock).not.toContain("unboundedDomainDistance");
+    expect(scatteringBlock).not.toContain("domainDistance");
+    expect(scatteringBlock).not.toContain(
+      "localPosition.div(max(radialDistance, float(1.0)))",
+    );
+    expect(scatteringBlock).not.toContain("float(1.08)");
+
+    // The traveling factor is signed: its moving zero-crossings are the
+    // wavefronts, advancing one wavelength per beat and drifting between
+    // beats, with the radial gradient term lighting the caustic lanes on
+    // the moving shells.
+    expect(scatteringBlock).toContain("const radialWavePhase = radialDistance");
+    expect(scatteringBlock).toContain("UNBOUNDED_RADIAL_PHASE_GAIN");
+    expect(scatteringBlock).toContain("UNBOUNDED_WAVE_DRIFT");
+    expect(scatteringBlock).toContain("cos(radialWavePhase)");
+    expect(scatteringBlock).toContain("field.mulAssign(signedTravel);");
+    expect(scatteringBlock).toContain("sin(radialWavePhase).negate()");
+    expect(scatteringBlock).not.toContain("wavefrontCrest");
+    expect(scatteringBlock).not.toContain("UNBOUNDED_WAVEFRONT");
+    expect(scatteringBlock).not.toContain("radialAmplitude");
+
+    // Every cavity-solved carrier (laser, phase interference, pressure/
+    // radiation) has planar structure that the inward-pulled directivity
+    // sampling would re-project through the origin into radial streak
+    // artifacts. The laser is skipped outright; the other carriers fade out
+    // with the travel blend.
+    expect(scatteringBlock).toContain(
+      "laserIrradianceTexture && !isUnboundedFieldExtent",
+    );
+    expect(scatteringBlock).toContain(
+      "const cavityCarrierAuthority = unboundedTravelMix",
+    );
+    expect(scatteringBlock).toContain(
+      "phaseInterferenceAuthority = phaseInterferenceAuthority.mul(",
+    );
+    expect(scatteringBlock).toContain(
+      "radiationTransferAuthority = radiationTransferAuthority.mul(",
+    );
+
+    // The optical-convergence probe (per-sample mode loop, two atlas
+    // fetches per mode) stays cavity-only: the undecayed radiating field
+    // has ridge authority everywhere, and measuring canvas-wide melts the
+    // frame budget.
+    expect(scatteringBlock).toContain(
+      "radialDistance.lessThan(float(UNBOUNDED_TRAVEL_BLEND_START))",
+    );
+
+    // No observation exposure lift: the fog it produced is gone, and the
+    // envelope alone owns far-field visibility.
+    expect(scatteringBlock).not.toContain("unboundedObservationGain");
+    expect(scatteringBlock).not.toContain("UNBOUNDED_OBSERVATION");
+    expect(scatteringBlock).not.toContain("uUnboundedMix");
+    expect(scatteringBlock).not.toContain("unboundedMix");
+    expect(scatteringBlock).not.toContain(
+      "mix(boundedEdgeFade, unboundedEdgeFade",
+    );
+
+    // Local support extends the attenuation reach, so excited lobes shape
+    // the silhouette while nodal directions collapse to black. Presence is
+    // calibrated through a smoothstep window because normalized support is
+    // small in absolute terms.
+    expect(scatteringBlock).toContain("const supportPresence = smoothstep(");
+    expect(scatteringBlock).toContain("UNBOUNDED_SUPPORT_PRESENCE_START");
+    expect(scatteringBlock).toContain("UNBOUNDED_REACH_EXTENSION");
+
+    // Structure/energy split: the folded pattern is never amplitude-decayed
+    // — classification stays sharp to the far edge — and the radial energy
+    // profile is applied exactly once, at the sample output, to emitted
+    // radiance and extinction together. Decaying the sampled field would
+    // dim every authority product quadratically (the "too dim" regression).
+    expect(scatteringBlock).not.toContain("radiationEnvelope");
+    expect(scatteringBlock).not.toContain(
+      "effectiveUnsignedSupport.mulAssign(",
+    );
+    expect(scatteringBlock).toContain("unboundedEnergyProfile = exp(");
+    expect(scatteringBlock).toContain(
+      "const applyExtentEnergyProfile = (node) =>",
+    );
+    expect(scatteringBlock).toContain(
+      "applyExtentEnergyProfile(dot(baseRadiance, luminanceWeights))",
+    );
+  });
+
+  it("dissolves the container masks in the unbounded field extent", () => {
+    const source = normalizeSource(
+      readFileSync(new URL("./material.js", import.meta.url), "utf8"),
+    );
+    const scatteringBlock = expectSourceBlock(
+      source,
+      "function createScatteringNode",
+      "function deriveObservationTransferNode",
+    );
+
+    const boundaryMaskBlock = expectSourceBlock(
+      scatteringBlock,
+      "const boundaryMask = isUnboundedFieldExtent",
+      "const bodyDensity",
+    );
+    expect(boundaryMaskBlock).toContain("? float(0.0)");
+
+    const edgeFadeBlock = expectSourceBlock(
+      scatteringBlock,
+      "const boundedEdgeFade",
+      "const field = float(0.0).toVar()",
+    );
+    expect(edgeFadeBlock).toContain("const edgeFade = isUnboundedFieldExtent");
+    // The fail-safe fade rides the camera-scaled march bound, not a fixed
+    // multiple of the old sphere and not a cube distance.
+    expect(edgeFadeBlock).toContain("unboundedOuterFadeStart");
+    expect(edgeFadeBlock).toContain("unboundedOuterFadeEnd");
+
+    const densityBlock = expectSourceBlock(
+      scatteringBlock,
+      "const physicalCausticDensity = clamp(",
+      "const modalStructureAnchor",
+    );
+    // Density lanes carry no extent-specific exposure lift — the radiation
+    // envelope alone decides what the far field shows.
+    expect(densityBlock).toContain(
+      "photographicLaserCausticRadiance\n          .mul(edgeFade)",
+    );
+    expect(densityBlock).not.toContain("unboundedObservationGain");
+
+    const photographicShellBlock = expectSourceBlock(
+      scatteringBlock,
+      "const photographicShellAuthorityBase",
+      "const photographicFocusAuthority",
+    );
+    expect(photographicShellBlock).toContain(
+      "const photographicShellAuthority = isUnboundedFieldExtent",
+    );
+    // The unbounded variant swaps the radial shell stack for a radially
+    // uniform focus presence — flagship-level blackfield exposure with no
+    // container geometry implied. Zeroing it halves the whole scene.
+    expect(photographicShellBlock).toContain("UNBOUNDED_FOCUS_PRESENCE");
+    expect(photographicShellBlock).not.toContain("? float(0.0)");
+  });
+
+  it("uses an extent-specific material and observation hull when the field extent changes", () => {
+    const uniforms = makeMeshUniforms();
+    const mesh = createRaymarchVolumeMesh({
+      radius: 3,
+      uniforms,
+    });
+    const materialCache = getRaymarchMaterialCache(mesh);
+
+    expect(mesh.userData.raymarchFieldExtent).toBe(FIELD_EXTENTS.sphere);
+    expect(mesh.userData.raymarchBaseRadius).toBe(3);
+    const sphereGeometry = mesh.geometry;
+    const sphereMaterial = mesh.material;
+    expect(sphereGeometry.parameters.radius).toBeCloseTo(3 * 1.01);
+    expect(sphereMaterial.raymarchFieldExtent).toBe(FIELD_EXTENTS.sphere);
+    expect(sphereMaterial.radiusNode).toBe(uniforms.uRadius);
+    // The flagship sphere never opts into radial-adaptive stepping.
+    expect(sphereMaterial.coreStepRadiusNode).toBeUndefined();
+    expect(sphereMaterial.outerStepStretch).toBeUndefined();
+
+    setRaymarchFieldExtent(mesh, FIELD_EXTENTS.sphere);
+    expect(mesh.geometry).toBe(sphereGeometry);
+    expect(mesh.material).toBe(sphereMaterial);
+
+    setRaymarchFieldExtent(mesh, FIELD_EXTENTS.unbounded);
+    expect(mesh.userData.raymarchFieldExtent).toBe(FIELD_EXTENTS.unbounded);
+    expect(mesh.geometry).not.toBe(sphereGeometry);
+    // The hull covers the fixed free-field reach; there is no box hull and
+    // no per-material domain-shape switch.
+    expect(mesh.geometry).toBeInstanceOf(THREE.SphereGeometry);
+    expect(mesh.geometry.parameters.radius).toBeCloseTo(
+      3 * UNBOUNDED_DOMAIN_SCALE * 1.01,
+    );
+    expect(mesh.material).toBe(materialCache.neumann["off:unbounded"]);
+    expect(mesh.material.raymarchFieldExtent).toBe(FIELD_EXTENTS.unbounded);
+    expect(mesh.material.radiusNode).not.toBe(uniforms.uRadius);
+    expect(mesh.material.domainShape).toBeUndefined();
+    expect(mesh.material.domainHalfExtentsNode).toBeUndefined();
+    // The large open domain marches with radial-adaptive steps: flagship
+    // density inside the core radius, stretched steps in the radiating zone.
+    expect(mesh.material.coreStepRadiusNode).toBeDefined();
+    expect(mesh.material.outerStepStretch).toBeGreaterThan(1);
+    expect(mesh.material.steps).toBe(
+      Math.round(RAYMARCH_DEFAULTS.raymarchSteps * UNBOUNDED_STEP_SCALE),
+    );
+
+    const unboundedGeometry = mesh.geometry;
+    setRaymarchFieldExtent(mesh, "not-a-real-extent");
+    expect(mesh.userData.raymarchFieldExtent).toBe(FIELD_EXTENTS.sphere);
+    expect(mesh.geometry).not.toBe(unboundedGeometry);
+    expect(mesh.geometry).toBeInstanceOf(THREE.SphereGeometry);
+    expect(mesh.geometry.parameters.radius).toBeCloseTo(3 * 1.01);
+    expect(mesh.material).toBe(sphereMaterial);
+    expect(mesh.material.steps).toBe(RAYMARCH_DEFAULTS.raymarchSteps);
+  });
+
+  it("repairs stale extent material and hull state", () => {
+    const uniforms = makeMeshUniforms();
+    const mesh = createRaymarchVolumeMesh({
+      radius: 3,
+      uniforms,
+    });
+    const materialCache = getRaymarchMaterialCache(mesh);
+
+    setRaymarchFieldExtent(mesh, FIELD_EXTENTS.unbounded);
+    const unboundedGeometry = mesh.geometry;
+    const unboundedMaterial = mesh.material;
+    expect(unboundedMaterial.raymarchFieldExtent).toBe(FIELD_EXTENTS.unbounded);
+
+    materialCache.neumann.off = unboundedMaterial;
+    mesh.userData.raymarchFieldExtent = FIELD_EXTENTS.sphere;
+
+    setRaymarchFieldExtent(mesh, FIELD_EXTENTS.sphere);
+
+    expect(mesh.userData.raymarchFieldExtent).toBe(FIELD_EXTENTS.sphere);
+    expect(mesh.geometry).not.toBe(unboundedGeometry);
+    expect(mesh.geometry.parameters.radius).toBeCloseTo(3 * 1.01);
+    expect(mesh.material).not.toBe(unboundedMaterial);
+    expect(mesh.material.raymarchFieldExtent).toBe(FIELD_EXTENTS.sphere);
+  });
+
+  it("keeps the unbounded march bound at the fixed free-field reach", () => {
+    const source = normalizeSource(
+      readFileSync(new URL("./material.js", import.meta.url), "utf8"),
+    );
+
+    // Fixed generous reach: the field ends by absorption inside a bound
+    // that covers the canvas at flagship framing. No camera-coupled
+    // analytic domain, no box, no cube distance.
+    const radiusSelectorBlock = expectSourceBlock(
+      source,
+      "function createVolumeDomainRadiusNode",
+      "function resolveMaterialStepBudget",
+    );
+    expect(radiusSelectorBlock).toContain(
+      "uniforms.uRadius.mul(float(UNBOUNDED_DOMAIN_SCALE))",
+    );
+    expect(radiusSelectorBlock).toContain(": uniforms.uRadius;");
+    expect(source).not.toContain("cameraProjectionMatrix");
+    expect(source).not.toContain("createUnboundedDomainRadiusNode");
+    expect(source).not.toContain("BoxGeometry");
+
+    // The fail-safe fade sits at fractions of that same fixed reach; the
+    // radiation envelope reaches ~black first, so it never reads as a wall.
+    const scatteringBlock = expectSourceBlock(
+      source,
+      "function createScatteringNode",
+      "function deriveObservationTransferNode",
+    );
+    expect(scatteringBlock).toContain(
+      "UNBOUNDED_DOMAIN_SCALE * UNBOUNDED_OUTER_FADE_START",
+    );
+    expect(scatteringBlock).toContain(
+      "UNBOUNDED_DOMAIN_SCALE * UNBOUNDED_OUTER_FADE_END",
     );
   });
 });

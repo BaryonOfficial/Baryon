@@ -161,7 +161,7 @@ const DEFAULT_WARNING_COPY = {
   eyebrow: "Compatibility",
   title: "Open Baryon on desktop",
   message:
-    "This device or browser does not provide the graphics support the visualizer needs.",
+    "This device or browser does not provide the graphics support the render needs.",
   recommendation: DESKTOP_BROWSER_RECOMMENDATION,
 };
 

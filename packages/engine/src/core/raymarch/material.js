@@ -6,6 +6,7 @@ import {
   Loop,
   abs,
   clamp,
+  cos,
   cross,
   dot,
   exp,
@@ -16,6 +17,7 @@ import {
   mix,
   modelWorldMatrixInverse,
   screenCoordinate,
+  sin,
   smoothstep,
   sqrt,
   int,
@@ -29,6 +31,27 @@ import SafeVolumetricLightingModel, {
   raymarchOpacityNode,
 } from "./SafeVolumetricLightingModel.js";
 import { normalizeCavityGeometry } from "../cavityGeometry.js";
+import {
+  FIELD_EXTENTS,
+  normalizeFieldExtent,
+  UNBOUNDED_CORE_STEP_RADIUS_SCALE,
+  UNBOUNDED_DIRECTIVITY_RADIUS,
+  UNBOUNDED_DOMAIN_SCALE,
+  UNBOUNDED_FIELD_FALLOFF,
+  UNBOUNDED_FOCUS_PRESENCE,
+  UNBOUNDED_OUTER_FADE_END,
+  UNBOUNDED_OUTER_FADE_START,
+  UNBOUNDED_OUTER_STEP_STRETCH,
+  UNBOUNDED_RADIAL_PHASE_GAIN,
+  UNBOUNDED_REACH_EXTENSION,
+  UNBOUNDED_SHELL_RAMP,
+  UNBOUNDED_STEP_SCALE,
+  UNBOUNDED_SUPPORT_PRESENCE_END,
+  UNBOUNDED_SUPPORT_PRESENCE_START,
+  UNBOUNDED_TRAVEL_BLEND_END,
+  UNBOUNDED_TRAVEL_BLEND_START,
+  UNBOUNDED_WAVE_DRIFT,
+} from "../fieldExtent.js";
 import { BOUNDARY_MODES, normalizeBoundaryMode } from "../modeFamily.js";
 import {
   RAYMARCH_BOUNDARY_END,
@@ -46,6 +69,8 @@ import {
   BROAD_BAND_SCALE,
   CAUSTIC_BODY_MIX_MAX,
   CAUSTIC_DENSITY_GAIN,
+  CAUSTIC_FOCAL_CONVERGENCE,
+  CAUSTIC_FOCAL_FLOOR,
   CAUSTIC_FOCUS_POWER,
   COLOR_BIAS_SCALE,
   COLOR_BLEND_END,
@@ -97,6 +122,8 @@ import {
   OPTICAL_SLOPE_POWER,
   OPTICAL_SPACE_GATE_END,
   OPTICAL_SPACE_GATE_START,
+  PHASE_INTERFERENCE_FRINGE_MAX,
+  PHASE_INTERFERENCE_FRINGE_MIN,
   PHOTOGRAPHIC_APERTURE_FADE_END,
   PHOTOGRAPHIC_APERTURE_FADE_START,
   PHOTOGRAPHIC_BLACKFIELD_GATE_END,
@@ -151,6 +178,11 @@ import {
   RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
 } from "./fieldCache.js";
 
+/** @typedef {"sphere" | "unbounded"} FieldExtent */
+/** @typedef {"dirichlet" | "neumann"} BoundaryMode */
+
+const DEFAULT_FIELD_EXTENT = /** @type {FieldExtent} */ (FIELD_EXTENTS.sphere);
+
 // Excitation gate: smoothstep range for modal/field transfer descriptors.
 // Below LOW the field is under-excited; gating reduces body fill and hot-core.
 // Above HIGH the gate is fully open.
@@ -159,6 +191,11 @@ const EXCITATION_GATE_HIGH = 0.35;
 const STATIC_SURFACE_TINT_SCALE = 0.18;
 const STATIC_HIGHLIGHT_SURFACE_PULL_SCALE = 0.2;
 const OPTICAL_CONVERGENCE_MEASUREMENT_EPSILON = 1e-4;
+// Refracted-laser irradiance clamps: acoustic shadows may dim the medium to
+// this floor (never to black), and support-reveal shading caps below the
+// caustic focal ceiling so body fill cannot bloom like a caustic.
+const LASER_SHADOW_FLOOR = 0.18;
+const LASER_SUPPORT_IRRADIANCE_MAX = 2.0;
 
 export const RAYMARCH_BOUNDARY_TUNING = Object.freeze({
   dirichletBeamDensity: 0.64,
@@ -207,6 +244,10 @@ function normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) {
  *   spectralLaneTextureA?: any,
  *   spectralLaneTextureB?: any,
  *   spectralLaneStatsTexture?: any,
+ *   raymarchBoundaryMode?: BoundaryMode,
+ *   raymarchFieldExtent?: FieldExtent,
+ *   coreStepRadiusNode?: any,
+ *   outerStepStretch?: number,
  *   modalFieldModeBuffer?: any,
  *   modalFieldCoefficientBuffer?: any,
  *   modalFieldCapacity?: number,
@@ -532,6 +573,7 @@ function computeLiveModalCoefficientNodes(modeSlot, coefficientSlot = null) {
 function synthesizeLiveModalFieldNode({
   localPosition,
   uRadius,
+  basisUv = null,
   uModalFieldModeCount,
   amplitudeNorm,
   modalBasisAtlasTexture,
@@ -549,10 +591,12 @@ function synthesizeLiveModalFieldNode({
   const invLiveSynthesisModeCount = 1 / normalizedLiveSynthesisModeCount;
 
   if (modalBasisAtlasTexture && modalFieldModeBuffer) {
-    const basisUv = getBasisLocalUvNode({
-      localPosition,
-      uRadius,
-    });
+    const resolvedBasisUv =
+      basisUv ??
+      getBasisLocalUvNode({
+        localPosition,
+        uRadius,
+      });
     const activeModeCount = int(uModalFieldModeCount);
 
     Loop(
@@ -572,7 +616,7 @@ function synthesizeLiveModalFieldNode({
             coefficientSlot,
           );
           const basisSample = sampleBasisAtlasPageNode({
-            basisUv,
+            basisUv: resolvedBasisUv,
             basisSlot: i,
             invLiveSynthesisModeCount,
             modalBasisAtlasTexture,
@@ -749,6 +793,26 @@ function deriveOpticalConvergenceAuthorityNode({
   );
 }
 
+/**
+ * @param {{
+ *   uniforms: any,
+ *   boundaryMode?: BoundaryMode,
+ *   modalBasisAtlasTexture?: any,
+ *   modalLiveFieldTexture?: any,
+ *   modalLiveSupportTexture?: any,
+ *   modalPressureRadiationTexture?: any,
+ *   modalPhaseInterferenceTexture?: any,
+ *   laserIrradianceTexture?: any,
+ *   spectralLaneTextureA?: any,
+ *   spectralLaneTextureB?: any,
+ *   spectralLaneStatsTexture?: any,
+ *   spectralLightEvaluationMode?: string,
+ *   fieldExtent?: FieldExtent,
+ *   modalFieldModeBuffer?: any,
+ *   modalFieldCoefficientBuffer?: any,
+ *   liveSynthesisModeCount?: number,
+ * }} options
+ */
 function createScatteringNode({
   uniforms,
   boundaryMode = BOUNDARY_MODES.neumann,
@@ -757,15 +821,21 @@ function createScatteringNode({
   modalLiveSupportTexture = null,
   modalPressureRadiationTexture = null,
   modalPhaseInterferenceTexture = null,
+  laserIrradianceTexture = null,
   spectralLaneTextureA = null,
   spectralLaneTextureB = null,
   spectralLaneStatsTexture = null,
   spectralLightEvaluationMode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
+  fieldExtent = DEFAULT_FIELD_EXTENT,
   modalFieldModeBuffer = null,
   modalFieldCoefficientBuffer = null,
   liveSynthesisModeCount = RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
 }) {
+  const normalizedFieldExtent = normalizeFieldExtent(fieldExtent);
+  const isUnboundedFieldExtent =
+    normalizedFieldExtent === FIELD_EXTENTS.unbounded;
   const {
+    uTime,
     uRadius,
     uThreshold,
     uRaymarchSteps,
@@ -802,6 +872,7 @@ function createScatteringNode({
     uPhaseProjectionMix,
     uPhaseProjectionStrength,
     uLiveFieldCacheActive,
+    uLaserCausticActive,
     uObservationDensityFadeStart,
     uObservationDensityFadeEnd,
     uObservationTransferGain,
@@ -812,6 +883,15 @@ function createScatteringNode({
   // at the TSL graph level and do not re-evaluate every raymarch step.
   const dynamicEdgeFadeStart = float(EDGE_FADE_START).sub(
     uEnergySignal.mul(0.06),
+  );
+  // Fail-safe fade at the fixed free-field reach. Absorption drives the
+  // field to ~black well before these radii, so this never reads as a
+  // container — it only guarantees exact zero at the march bound.
+  const unboundedOuterFadeStart = float(
+    UNBOUNDED_DOMAIN_SCALE * UNBOUNDED_OUTER_FADE_START,
+  );
+  const unboundedOuterFadeEnd = float(
+    UNBOUNDED_DOMAIN_SCALE * UNBOUNDED_OUTER_FADE_END,
   );
   const dynamicInteriorMaskStart = float(INTERIOR_MASK_START).add(
     uStructureSignal.mul(0.1),
@@ -969,10 +1049,63 @@ function createScatteringNode({
         modelWorldMatrixInverse.mul(vec4(positionRay, 1.0)).xyz;
       const normalizedPosition = localPosition.div(uRadius);
       const radialDistance = length(normalizedPosition);
+      // Radiating continuation — how sound actually propagates from a
+      // compact source: the far field is D(θ,φ)·cos(k·r − ω·t)·decay(r).
+      // The angular directivity D is the live modal field sampled mid-cavity
+      // along this ray's direction (constant along the ray, so it can never
+      // imprint a radial shell); the traveling factor is applied after
+      // sampling. The sample position morphs from the cavity point to the
+      // directivity point across a half-radius band, so the standing core
+      // dissolves into traveling waves with no seam — never a mirror tiling
+      // of the cavity, which reads as discrete bounded copies. The sphere
+      // variant keeps the old clamped sample path with no extra graph work.
+      let basisUv;
+      let unboundedTravelMix = null;
+      let unboundedRadialDirection = null;
+      let unboundedEnergyProfile = null;
+      if (isUnboundedFieldExtent) {
+        unboundedTravelMix = smoothstep(
+          float(UNBOUNDED_TRAVEL_BLEND_START),
+          float(UNBOUNDED_TRAVEL_BLEND_END),
+          radialDistance,
+        );
+        unboundedRadialDirection = normalizedPosition.div(
+          max(radialDistance, float(1e-4)),
+        );
+        const directivitySamplePosition = unboundedRadialDirection
+          .mul(uRadius)
+          .mul(float(UNBOUNDED_DIRECTIVITY_RADIUS));
+        const radiatingSamplePosition = mix(
+          localPosition,
+          directivitySamplePosition,
+          unboundedTravelMix,
+        );
+        basisUv = getBasisLocalUvNode({
+          localPosition: radiatingSamplePosition,
+          uRadius,
+        });
+      } else {
+        basisUv = getBasisLocalUvNode({
+          localPosition,
+          uRadius,
+        });
+      }
       // High energy = tighter boundary (more solid); low energy = diffuse, ghostly
-      const edgeFade = float(1.0).sub(
+      const boundedEdgeFade = float(1.0).sub(
         smoothstep(dynamicEdgeFadeStart, float(EDGE_FADE_END), radialDistance),
       );
+      // Unbounded: the only cutoff is a fail-safe fade against the
+      // camera-scaled march bound, far beyond where absorption has already
+      // dissolved the field — attenuation owns the visible falloff.
+      const edgeFade = isUnboundedFieldExtent
+        ? float(1.0).sub(
+            smoothstep(
+              unboundedOuterFadeStart,
+              unboundedOuterFadeEnd,
+              radialDistance,
+            ),
+          )
+        : boundedEdgeFade;
       const field = float(0.0).toVar();
       const gradX = float(0.0).toVar();
       const gradY = float(0.0).toVar();
@@ -982,10 +1115,15 @@ function createScatteringNode({
       const normalizedVelocityProxy = float(0.0).toVar();
       const normalizedRadiationPotential = float(0.0).toVar();
       const radiationPotentialReady = float(0.0).toVar();
-      const basisUv = getBasisLocalUvNode({
-        localPosition,
-        uRadius,
-      });
+      // Cavity-carrier authority: the phase-interference, pressure-radiation,
+      // and laser textures are all cavity solves. Under the radiating zone's
+      // inward-pulled directivity sampling their planar structures re-project
+      // through the origin as straight radial streaks, so every cavity
+      // carrier fades out with the travel blend and only the pattern field
+      // itself continues outward.
+      const cavityCarrierAuthority = unboundedTravelMix
+        ? float(1.0).sub(unboundedTravelMix)
+        : null;
       const phaseInterferenceCarrier = modalPhaseInterferenceTexture
         ? samplePhaseInterferenceCarrierNode({
             basisUv,
@@ -995,14 +1133,48 @@ function createScatteringNode({
             contrast: float(0.0),
             authority: float(0.0),
           };
-      const phaseInterferenceAuthority = smoothstep(
+      let phaseInterferenceAuthority = smoothstep(
         float(0.5),
         float(1.0),
         uLiveFieldCacheActive,
       ).mul(phaseInterferenceCarrier.authority);
+      if (cavityCarrierAuthority) {
+        phaseInterferenceAuthority = phaseInterferenceAuthority.mul(
+          cavityCarrierAuthority,
+        );
+      }
       const phaseInterferenceContrast = phaseInterferenceCarrier.contrast.mul(
         phaseInterferenceAuthority,
       );
+      // Refracted laser transport: relative ray density from tracing the
+      // collimated beam through the acoustically modulated refractive index.
+      // Unfocused flood ≈ 1, convergence (caustics) above 1, acoustic
+      // shadows below 1. Fails closed via the runtime uniform and the
+      // resolve pass's readiness channel. The transport is a cavity solve
+      // for the flagship orb: a collimated beam whose aperture and shadow
+      // edges are straight planes, and the unbounded variant's inward-pulled
+      // directivity sampling re-projects those edges through the origin into
+      // radial streak artifacts — so the unbounded variant skips the
+      // transport entirely and renders from the heuristic focal law (the
+      // well-tested no-texture fallback path).
+      const laserSample =
+        laserIrradianceTexture && !isUnboundedFieldExtent
+          ? texture3D(laserIrradianceTexture).sample(basisUv)
+          : null;
+      const laserIrradiance = laserSample
+        ? max(laserSample.x, float(0.0))
+        : float(0.0);
+      // Readiness alone is not proof of transported light: a silently
+      // failed dispatch leaves zeros behind a live readiness flag. Gate the
+      // substitution on measured light being present so the pass degrades
+      // to the heuristic focal law instead of flattening the image. (Deep
+      // full-shadow voxels also revert to the heuristic — accepted trade
+      // for fail-safe behavior.)
+      const laserCausticReady = laserSample
+        ? smoothstep(float(0.5), float(1.0), uLaserCausticActive)
+            .mul(clamp(laserSample.w, float(0.0), float(1.0)))
+            .mul(smoothstep(float(0.0), float(0.05), laserIrradiance))
+        : float(0.0);
       const assignLiveFieldSample = (liveFieldSample) => {
         field.assign(liveFieldSample.field);
         gradX.assign(liveFieldSample.gradient.x);
@@ -1026,6 +1198,7 @@ function createScatteringNode({
         assignLiveFieldSample(
           synthesizeLiveModalFieldNode({
             localPosition,
+            basisUv,
             uRadius,
             uModalFieldModeCount,
             amplitudeNorm,
@@ -1057,6 +1230,58 @@ function createScatteringNode({
         });
       } else if (canSynthesizeLiveField) {
         assignSynthesizedLiveField();
+      }
+
+      if (isUnboundedFieldExtent) {
+        const travelMix = unboundedTravelMix ?? float(0.0);
+        const radialDirection = unboundedRadialDirection ?? vec3(0.0);
+        // Traveling spherical wavefronts: the sampled directivity pattern is
+        // carried outward by a signed cos(k·r − ω·t) factor. Its moving
+        // zero-crossings ARE the wavefronts — the nodal-band renderer draws
+        // them as expanding shells cut by the pattern's angular nodal cones,
+        // advancing one wavelength per beat (the 2π beat-phase term wraps
+        // seamlessly) and drifting continuously between beats. Inside the
+        // core travelMix is zero and the standing cavity field is untouched.
+        const radialWavePhase = radialDistance
+          .mul(float(UNBOUNDED_RADIAL_PHASE_GAIN))
+          .sub(uBeatPhase.mul(float(Math.PI * 2)))
+          .sub(uTime.mul(float(UNBOUNDED_WAVE_DRIFT)))
+          .add(uModeCoherence.mul(float(1.2)));
+        const signedTravel = mix(float(1.0), cos(radialWavePhase), travelMix);
+        // Radial term of ∇(D·cos(k·r − ω·t)): strong gradient evidence on
+        // the moving shells, so the caustic lanes light the wavefronts.
+        // Must read `field` before the traveling factor lands on it.
+        const wavefrontGradient = radialDirection
+          .mul(field)
+          .mul(sin(radialWavePhase).negate())
+          .mul(float(UNBOUNDED_RADIAL_PHASE_GAIN))
+          .mul(travelMix);
+        gradX.assign(gradX.mul(signedTravel).add(wavefrontGradient.x));
+        gradY.assign(gradY.mul(signedTravel).add(wavefrontGradient.y));
+        gradZ.assign(gradZ.mul(signedTravel).add(wavefrontGradient.z));
+        field.mulAssign(signedTravel);
+        // Structure and energy stay separated: classification sees the
+        // full-strength radiating field, and the radial energy profile below
+        // is applied exactly once, to the emitted radiance and extinction of
+        // the final sample — linear fade in luminance, never squared decay
+        // through the authority products. Support presence runs through a
+        // calibration window because normalized support is small in
+        // absolute terms; it slows the falloff so excited directivity lobes
+        // reach farther than nodal directions and the field's own amplitude
+        // defines the silhouette. GPU mirror of deriveUnboundedFieldEnvelope.
+        const supportPresence = smoothstep(
+          float(UNBOUNDED_SUPPORT_PRESENCE_START),
+          float(UNBOUNDED_SUPPORT_PRESENCE_END),
+          effectiveUnsignedSupport,
+        );
+        const effectiveFalloff = float(UNBOUNDED_FIELD_FALLOFF).mul(
+          float(1.0).sub(supportPresence.mul(float(UNBOUNDED_REACH_EXTENSION))),
+        );
+        unboundedEnergyProfile = exp(
+          max(radialDistance.sub(float(1.0)), float(0.0)).mul(
+            effectiveFalloff.negate(),
+          ),
+        ).toVar();
       }
 
       const liveField = field;
@@ -1123,14 +1348,19 @@ function createScatteringNode({
       const bassShellBoost = uBassSalience
         .mul(0.2)
         .mul(float(1.0).sub(outerShellAccent));
+      // Rim-weighted shell emphasis implies a container wall; the unbounded
+      // field flattens the ramp so no spherical rim is carved out.
+      const shellRamp = isUnboundedFieldExtent
+        ? float(UNBOUNDED_SHELL_RAMP)
+        : smoothstep(
+            float(SHELL_WEIGHT_START),
+            float(SHELL_WEIGHT_END),
+            radialDistance,
+          );
       const shellWeight = mix(
         float(SHELL_WEIGHT_MIN),
         float(SHELL_WEIGHT_MAX),
-        smoothstep(
-          float(SHELL_WEIGHT_START),
-          float(SHELL_WEIGHT_END),
-          radialDistance,
-        ),
+        shellRamp,
       )
         .mul(shellBandMod)
         .mul(float(1.0).add(bassShellBoost));
@@ -1152,28 +1382,42 @@ function createScatteringNode({
         float(0.0),
         float(1.0),
       );
-      const radiationTransferAuthority = radiationPotentialReady.mul(
+      // The pressure/radiation carrier is a cavity solve too — its transfer
+      // authority fades with the travel blend for the same radial-streak
+      // reason as the other cavity carriers.
+      let radiationTransferAuthority = radiationPotentialReady.mul(
         localFieldSupportAuthority,
       );
+      if (cavityCarrierAuthority) {
+        radiationTransferAuthority = radiationTransferAuthority.mul(
+          cavityCarrierAuthority,
+        );
+      }
       const radiationPotentialMagnitude = abs(normalizedRadiationPotential).mul(
         radiationTransferAuthority,
       );
       const velocityProxyAuthority = normalizedVelocityProxy.mul(
         radiationTransferAuthority,
       );
-      const boundaryMask = smoothstep(
-        float(RAYMARCH_BOUNDARY_START),
-        float(RAYMARCH_BOUNDARY_END),
-        radialDistance,
-      );
+      // No container wall in the unbounded field: rim compression, boundary
+      // accents, and the interior cutoff all belong to the sphere.
+      const boundaryMask = isUnboundedFieldExtent
+        ? float(0.0)
+        : smoothstep(
+            float(RAYMARCH_BOUNDARY_START),
+            float(RAYMARCH_BOUNDARY_END),
+            radialDistance,
+          );
       // Strong local field evidence opens up the interior — more inner detail visible
-      const interiorMask = float(1.0).sub(
-        smoothstep(
-          dynamicInteriorMaskStart,
-          float(INTERIOR_MASK_END),
-          radialDistance,
-        ),
-      );
+      const interiorMask = isUnboundedFieldExtent
+        ? float(1.0)
+        : float(1.0).sub(
+            smoothstep(
+              dynamicInteriorMaskStart,
+              float(INTERIOR_MASK_END),
+              radialDistance,
+            ),
+          );
       const bodyDensity = broadBand
         .mul(edgeFade)
         .mul(activeMask)
@@ -1308,7 +1552,7 @@ function createScatteringNode({
         float(1.0),
       );
       const opticalConvergenceAuthority = float(0.0).toVar();
-      const shouldMeasureOpticalConvergence = causticRidgeAuthority
+      let shouldMeasureOpticalConvergence = causticRidgeAuthority
         .greaterThan(float(OPTICAL_CONVERGENCE_MEASUREMENT_EPSILON))
         .and(
           localGradientEvidence.greaterThan(
@@ -1320,6 +1564,16 @@ function createScatteringNode({
             float(OPTICAL_CONVERGENCE_MEASUREMENT_EPSILON),
           ),
         );
+      if (isUnboundedFieldExtent) {
+        // The convergence probe loops the live modes with two atlas fetches
+        // each. In the flagship it fires only on sparse caustic ridges, but
+        // the undecayed radiating field has ridge authority across the whole
+        // canvas — measuring out there melts the frame budget for detail the
+        // analytic wavefront gradient already provides. Cavity only.
+        shouldMeasureOpticalConvergence = shouldMeasureOpticalConvergence.and(
+          radialDistance.lessThan(float(UNBOUNDED_TRAVEL_BLEND_START)),
+        );
+      }
       If(shouldMeasureOpticalConvergence, () => {
         const viewDirection = viewDirLocal.toVar();
         const tangentSeed = vec3(0.0, 1.0, 0.0).toVar();
@@ -1367,14 +1621,16 @@ function createScatteringNode({
         float(0.0),
         float(1.0),
       );
+      // Standing-wave fringe modulation: wide enough to read as interference
+      // rings near ridges, still bounded so it never inverts the field.
       const phaseInterferenceTransfer = clamp(
         float(1.0).add(
           clamp(uPhaseProjectionMix, float(0.0), float(1.0))
-            .mul(clamp(uPhaseProjectionStrength, float(0.0), float(0.25)))
+            .mul(clamp(uPhaseProjectionStrength, float(0.0), float(0.5)))
             .mul(phaseInterferenceContrast),
         ),
-        float(0.875),
-        float(1.125),
+        float(PHASE_INTERFERENCE_FRINGE_MIN),
+        float(PHASE_INTERFERENCE_FRINGE_MAX),
       );
       const opticalFocus = /** @type {any} */ (opticalFocusAuthority)
         .pow(float(OPTICAL_FOCUS_POWER))
@@ -1446,7 +1702,7 @@ function createScatteringNode({
         float(PHOTOGRAPHIC_SHELL_SUPPRESSION_END),
         radialDistance,
       );
-      const photographicShellAuthority = clamp(
+      const photographicShellAuthorityBase = clamp(
         innerLensAuthority
           .mul(float(0.46))
           .add(rimShellAuthority.mul(float(0.36)))
@@ -1457,6 +1713,14 @@ function createScatteringNode({
         .mul(float(1.0).sub(shellSuppression))
         .mul(edgeFade)
         .mul(activeMask);
+      // The photographic inner-lens/rim/aperture stack reads as a glass
+      // sphere — it has no place in the unbounded field. But the blackfield
+      // gate needs its focus lift to leave the dark regime, so the unbounded
+      // variant substitutes a radially uniform presence: flagship-level
+      // exposure with no container geometry implied.
+      const photographicShellAuthority = isUnboundedFieldExtent
+        ? float(UNBOUNDED_FOCUS_PRESENCE).mul(edgeFade).mul(activeMask)
+        : photographicShellAuthorityBase;
       const photographicFocusAuthority = clamp(
         opticalFocusAuthority.mul(
           float(1.0).add(
@@ -1847,8 +2111,10 @@ function createScatteringNode({
         staticHolographicLaserColor,
         activeMask,
       );
+      // Dim support medium carries the laser (volume) color — a white-tinted
+      // veil reads as gray fog instead of laser scatter in the fluid.
       const supportRevealColor = clamp(
-        uSurfaceColor.mul(float(PHOTOGRAPHIC_DARK_BODY_RATIO)),
+        uColor.mul(float(PHOTOGRAPHIC_DARK_BODY_RATIO)),
         vec3(0.0),
         vec3(PHOTOGRAPHIC_DARK_BODY_RATIO),
       );
@@ -1857,7 +2123,51 @@ function createScatteringNode({
         stabilizedDensity.sub(causticVisibleDensity),
         float(0.0),
       );
-      const supportRevealDensity = supportVisibleDensity;
+      // The dim support medium scatters the laser light actually present at
+      // the sample: measured irradiance shades it with light shafts and
+      // acoustic shadows once the transport pass is live.
+      const supportRevealDensity = supportVisibleDensity.mul(
+        mix(
+          float(1.0),
+          clamp(
+            laserIrradiance,
+            float(LASER_SHADOW_FLOOR),
+            float(LASER_SUPPORT_IRRADIANCE_MAX),
+          ),
+          laserCausticReady,
+        ),
+      );
+      // Fold-caustic focal law: irradiance diverges as 1 / (1 − κ·d) at the
+      // fold. Applied to source radiance only — extinction keeps the
+      // unboosted density, since focused light does not occlude.
+      const heuristicCausticFocalBoost = float(1.0).div(
+        max(
+          float(1.0).sub(
+            photographicFocus
+              .mul(causticRidgeAuthority)
+              .mul(float(CAUSTIC_FOCAL_CONVERGENCE)),
+          ),
+          float(CAUSTIC_FOCAL_FLOOR),
+        ),
+      );
+      // When the refracted laser transport is live, measured ray density
+      // replaces the heuristic focal law: caustics brighten where traced
+      // light actually converges, clamped to the same display ceiling.
+      const causticFocalBoost = mix(
+        heuristicCausticFocalBoost,
+        clamp(
+          laserIrradiance,
+          float(LASER_SHADOW_FLOOR),
+          float(1 / CAUSTIC_FOCAL_FLOOR),
+        ),
+        laserCausticReady,
+      );
+      const luminanceWeights = vec3(0.2126, 0.7152, 0.0722);
+      // The unbounded energy profile scales emitted radiance and extinction
+      // together, exactly once, at the sample output. The sphere variant
+      // adds no node here.
+      const applyExtentEnergyProfile = (node) =>
+        unboundedEnergyProfile ? node.mul(unboundedEnergyProfile) : node;
       if (spectralLaneTransferEnabled) {
         const spectralLaneTransfer = sampleSpectralLaneCacheNode({
           basisUv,
@@ -1870,19 +2180,37 @@ function createScatteringNode({
         const spectralSupportRevealContribution = spectralLaneTransfer.rgb
           .mul(float(PHOTOGRAPHIC_DARK_BODY_RATIO))
           .mul(supportRevealDensity);
-
-        return spectralCausticRadianceContribution
+        const spectralBaseRadiance = spectralCausticRadianceContribution
           .mul(structureAwareEmissionGain)
           .add(spectralSupportRevealContribution);
+
+        return vec4(
+          applyExtentEnergyProfile(
+            spectralCausticRadianceContribution
+              .mul(structureAwareEmissionGain)
+              .mul(causticFocalBoost)
+              .add(spectralSupportRevealContribution),
+          ),
+          applyExtentEnergyProfile(dot(spectralBaseRadiance, luminanceWeights)),
+        );
       }
       const causticRadianceContribution = volumeColor.mul(
         projectedCausticRadianceDensity,
       );
       const supportRevealContribution =
         supportRevealColor.mul(supportRevealDensity);
-      return causticRadianceContribution
+      const baseRadiance = causticRadianceContribution
         .mul(structureAwareEmissionGain)
         .add(supportRevealContribution);
+      return vec4(
+        applyExtentEnergyProfile(
+          causticRadianceContribution
+            .mul(structureAwareEmissionGain)
+            .mul(causticFocalBoost)
+            .add(supportRevealContribution),
+        ),
+        applyExtentEnergyProfile(dot(baseRadiance, luminanceWeights)),
+      );
     },
   );
 }
@@ -1971,6 +2299,80 @@ function createRaymarchOffsetNode() {
   };
 }
 
+const RAYMARCH_DOMAIN_GEOMETRY_MARGIN = 1.01;
+const UNBOUNDED_MIN_RAYMARCH_STEPS = 16;
+
+function resolveVolumeDomainGeometryRadius(radius, fieldExtent) {
+  const hullScale =
+    normalizeFieldExtent(fieldExtent) === FIELD_EXTENTS.unbounded
+      ? UNBOUNDED_DOMAIN_SCALE
+      : 1;
+  return radius * hullScale * RAYMARCH_DOMAIN_GEOMETRY_MARGIN;
+}
+
+function createVolumeDomainGeometry(radius, fieldExtent) {
+  // The hull is only the rasterized trigger for the march. The unbounded
+  // hull covers the fixed free-field reach: absorption drives the field to
+  // ~black before this radius, so the bound is a compute budget, never a
+  // visible edge — and the camera stays outside the medium at flagship
+  // framing, keeping the march off most background pixels.
+  // SphereGeometry: TRAA vertex velocities match the sphere surface during rotation.
+  const geometry = new THREE.SphereGeometry(
+    resolveVolumeDomainGeometryRadius(radius, fieldExtent),
+    32,
+    32,
+  );
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function isVolumeDomainGeometryForExtent(geometry, radius, fieldExtent) {
+  if (!Number.isFinite(radius) || radius <= 0) {
+    return true;
+  }
+
+  const actualRadius = geometry?.parameters?.radius;
+  if (!Number.isFinite(actualRadius)) {
+    return false;
+  }
+
+  const expectedRadius = resolveVolumeDomainGeometryRadius(radius, fieldExtent);
+  const tolerance = Math.max(1e-6, Math.abs(expectedRadius) * 1e-6);
+  return Math.abs(actualRadius - expectedRadius) <= tolerance;
+}
+
+function createVolumeDomainRadiusNode(uniforms, fieldExtent) {
+  return normalizeFieldExtent(fieldExtent) === FIELD_EXTENTS.unbounded
+    ? uniforms.uRadius.mul(float(UNBOUNDED_DOMAIN_SCALE))
+    : uniforms.uRadius;
+}
+
+function resolveMaterialStepBudget(steps, fieldExtent) {
+  const requestedSteps = Math.max(
+    1,
+    Math.round(Number.isFinite(steps) ? steps : 1),
+  );
+  if (normalizeFieldExtent(fieldExtent) !== FIELD_EXTENTS.unbounded) {
+    return requestedSteps;
+  }
+  return Math.max(
+    UNBOUNDED_MIN_RAYMARCH_STEPS,
+    Math.round(requestedSteps * UNBOUNDED_STEP_SCALE),
+  );
+}
+
+function getRaymarchMaterialVariantKey(
+  spectralLightEvaluationMode,
+  fieldExtent,
+) {
+  const normalizedSpectralLightEvaluationMode =
+    normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode);
+  const normalizedFieldExtent = normalizeFieldExtent(fieldExtent);
+  return normalizedFieldExtent === FIELD_EXTENTS.sphere
+    ? normalizedSpectralLightEvaluationMode
+    : `${normalizedSpectralLightEvaluationMode}:${normalizedFieldExtent}`;
+}
+
 export function createRaymarchVolumeMesh({
   radius,
   modalBasisAtlasTexture = null,
@@ -1978,6 +2380,7 @@ export function createRaymarchVolumeMesh({
   modalLiveSupportTexture = null,
   modalPressureRadiationTexture = null,
   modalPhaseInterferenceTexture = null,
+  laserIrradianceTexture = null,
   spectralLaneTextureA = null,
   spectralLaneTextureB = null,
   spectralLaneStatsTexture = null,
@@ -1988,8 +2391,7 @@ export function createRaymarchVolumeMesh({
   cavityGeometry = "rectangular",
   spectralLightEvaluationMode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
 }) {
-  // SphereGeometry: TRAA vertex velocities match the sphere surface during rotation.
-  const geometry = new THREE.SphereGeometry(radius * 1.01, 32, 32);
+  const geometry = createVolumeDomainGeometry(radius, FIELD_EXTENTS.sphere);
   const sharedOffsetNode = createRaymarchOffsetNode();
   const modalBasisAtlasTextureNode = getTexture3DNode(modalBasisAtlasTexture);
   const modalResourceBindings = {
@@ -1999,6 +2401,7 @@ export function createRaymarchVolumeMesh({
     modalLiveSupportTexture,
     modalPressureRadiationTexture,
     modalPhaseInterferenceTexture,
+    laserIrradianceTexture,
     spectralLaneTextureA,
     spectralLaneTextureB,
     spectralLaneStatsTexture,
@@ -2009,20 +2412,40 @@ export function createRaymarchVolumeMesh({
   const createMaterialForBoundaryMode = (
     boundaryMode,
     spectralLightEvaluationMode,
+    fieldExtent = DEFAULT_FIELD_EXTENT,
   ) => {
+    const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
+    const normalizedSpectralLightEvaluationMode =
+      normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode);
+    const normalizedFieldExtent = normalizeFieldExtent(fieldExtent);
     const material = /** @type {BaryonVolumeMaterial} */ (
       new BaryonVolumeNodeMaterial()
     );
     material.transparent = true;
     material.blending = THREE.NormalBlending;
     material.outputNode = vec4(raymarchLightNode, raymarchOpacityNode);
-    material.steps = Math.round(uniforms.uRaymarchSteps.value);
-    material.radiusNode = uniforms.uRadius;
+    material.steps = resolveMaterialStepBudget(
+      uniforms.uRaymarchSteps.value,
+      normalizedFieldExtent,
+    );
+    material.radiusNode = createVolumeDomainRadiusNode(
+      uniforms,
+      normalizedFieldExtent,
+    );
+    if (normalizedFieldExtent === FIELD_EXTENTS.unbounded) {
+      // Radial-adaptive march: flagship sample density through the cavity
+      // and the travel blend, stretched steps across the smooth radiating
+      // zone — the large open domain costs little beyond the core march.
+      material.coreStepRadiusNode = uniforms.uRadius.mul(
+        float(UNBOUNDED_CORE_STEP_RADIUS_SCALE),
+      );
+      material.outerStepStretch = UNBOUNDED_OUTER_STEP_STRETCH;
+    }
     material.opacityGainNode = uniforms.uOpacityGain;
     material.offsetNode = sharedOffsetNode;
     material.scatteringNode = createScatteringNode({
       uniforms,
-      boundaryMode,
+      boundaryMode: normalizedBoundaryMode,
       modalBasisAtlasTexture: modalResourceBindings.modalBasisAtlasTextureNode,
       modalLiveFieldTexture: modalResourceBindings.modalLiveFieldTexture,
       modalLiveSupportTexture: modalResourceBindings.modalLiveSupportTexture,
@@ -2030,16 +2453,21 @@ export function createRaymarchVolumeMesh({
         modalResourceBindings.modalPressureRadiationTexture,
       modalPhaseInterferenceTexture:
         modalResourceBindings.modalPhaseInterferenceTexture,
+      laserIrradianceTexture: modalResourceBindings.laserIrradianceTexture,
       spectralLaneTextureA: modalResourceBindings.spectralLaneTextureA,
       spectralLaneTextureB: modalResourceBindings.spectralLaneTextureB,
       spectralLaneStatsTexture: modalResourceBindings.spectralLaneStatsTexture,
-      spectralLightEvaluationMode,
+      spectralLightEvaluationMode: normalizedSpectralLightEvaluationMode,
+      fieldExtent: normalizedFieldExtent,
       modalFieldModeBuffer: modalResourceBindings.modalFieldModeBuffer,
       modalFieldCoefficientBuffer:
         modalResourceBindings.modalFieldCoefficientBuffer,
       liveSynthesisModeCount: modalResourceBindings.modalFieldCapacity,
     });
-    material.spectralLightEvaluationMode = spectralLightEvaluationMode;
+    material.spectralLightEvaluationMode =
+      normalizedSpectralLightEvaluationMode;
+    material.raymarchBoundaryMode = normalizedBoundaryMode;
+    material.raymarchFieldExtent = normalizedFieldExtent;
     material.modalBasisAtlasTexture =
       modalResourceBindings.modalBasisAtlasTexture;
     material.modalLiveFieldTexture =
@@ -2102,6 +2530,11 @@ export function createRaymarchVolumeMesh({
   mesh.userData.raymarchModalFieldCapacity = modalFieldCapacity;
   mesh.userData.raymarchModalResourceBindings = modalResourceBindings;
   mesh.userData.raymarchCavityGeometry = normalizedCavityGeometry;
+  mesh.userData.raymarchBaseRadius = radius;
+  mesh.userData.raymarchFieldExtent = FIELD_EXTENTS.sphere;
+  mesh.userData.raymarchRequestedSteps = Math.round(
+    uniforms.uRaymarchSteps.value,
+  );
   mesh.frustumCulled = false;
 
   return mesh;
@@ -2145,25 +2578,61 @@ export function setRaymarchModalBasisAtlasTexture(mesh, texture) {
   });
 }
 
+function raymarchMaterialMatchesVariant(
+  material,
+  boundaryMode,
+  spectralLightEvaluationMode,
+  fieldExtent,
+) {
+  if (!material) {
+    return false;
+  }
+
+  return (
+    normalizeBoundaryMode(material.raymarchBoundaryMode) ===
+      normalizeBoundaryMode(boundaryMode) &&
+    normalizeSpectralLightEvaluationMode(
+      material.spectralLightEvaluationMode,
+    ) === normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) &&
+    normalizeFieldExtent(material.raymarchFieldExtent) ===
+      normalizeFieldExtent(fieldExtent)
+  );
+}
+
 function getOrCreateRaymarchMaterial(
   mesh,
   boundaryMode,
   spectralLightEvaluationMode,
+  fieldExtent = DEFAULT_FIELD_EXTENT,
 ) {
   const materialCache = getRaymarchMaterialCache(mesh);
   if (!materialCache) {
     return null;
   }
 
-  const boundaryMaterials = materialCache[boundaryMode];
+  const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
+  const boundaryMaterials = materialCache[normalizedBoundaryMode];
   if (!boundaryMaterials) {
     return null;
   }
 
   const normalizedSpectralLightEvaluationMode =
     normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode);
-  if (boundaryMaterials[normalizedSpectralLightEvaluationMode]) {
-    return boundaryMaterials[normalizedSpectralLightEvaluationMode];
+  const normalizedFieldExtent = normalizeFieldExtent(fieldExtent);
+  const materialKey = getRaymarchMaterialVariantKey(
+    normalizedSpectralLightEvaluationMode,
+    normalizedFieldExtent,
+  );
+  const cachedMaterial = boundaryMaterials[materialKey];
+  if (
+    raymarchMaterialMatchesVariant(
+      cachedMaterial,
+      normalizedBoundaryMode,
+      normalizedSpectralLightEvaluationMode,
+      normalizedFieldExtent,
+    )
+  ) {
+    return cachedMaterial;
   }
 
   const createMaterialVariant = mesh?.userData?.raymarchCreateMaterialVariant;
@@ -2172,10 +2641,11 @@ function getOrCreateRaymarchMaterial(
   }
 
   const material = createMaterialVariant(
-    boundaryMode,
+    normalizedBoundaryMode,
     normalizedSpectralLightEvaluationMode,
+    normalizedFieldExtent,
   );
-  boundaryMaterials[normalizedSpectralLightEvaluationMode] = material;
+  boundaryMaterials[materialKey] = material;
   return material;
 }
 
@@ -2189,18 +2659,22 @@ export function setRaymarchBoundaryMode(mesh, boundaryMode) {
   const spectralLightEvaluationMode = normalizeSpectralLightEvaluationMode(
     mesh?.userData?.raymarchSpectralLightEvaluationMode,
   );
+  const fieldExtent = normalizeFieldExtent(mesh?.userData?.raymarchFieldExtent);
   const nextMaterial = getOrCreateRaymarchMaterial(
     mesh,
     normalizedBoundaryMode,
     spectralLightEvaluationMode,
+    fieldExtent,
   );
   if (!nextMaterial || mesh.material === nextMaterial) {
     mesh.userData.raymarchBoundaryMode = normalizedBoundaryMode;
     return;
   }
 
-  const currentMaterial = mesh.material;
-  nextMaterial.steps = currentMaterial?.steps ?? nextMaterial.steps;
+  nextMaterial.steps = resolveMaterialStepBudget(
+    mesh.userData.raymarchRequestedSteps ?? mesh.material?.steps,
+    fieldExtent,
+  );
   mesh.material = nextMaterial;
   mesh.userData.raymarchBoundaryMode = normalizedBoundaryMode;
 }
@@ -2219,10 +2693,12 @@ export function setRaymarchSpectralLightEvaluationMode(
   const normalizedBoundaryMode = normalizeBoundaryMode(
     mesh?.userData?.raymarchBoundaryMode,
   );
+  const fieldExtent = normalizeFieldExtent(mesh?.userData?.raymarchFieldExtent);
   const nextMaterial = getOrCreateRaymarchMaterial(
     mesh,
     normalizedBoundaryMode,
     normalizedSpectralLightEvaluationMode,
+    fieldExtent,
   );
   if (!nextMaterial || mesh.material === nextMaterial) {
     mesh.userData.raymarchSpectralLightEvaluationMode =
@@ -2230,8 +2706,10 @@ export function setRaymarchSpectralLightEvaluationMode(
     return;
   }
 
-  const currentMaterial = mesh.material;
-  nextMaterial.steps = currentMaterial?.steps ?? nextMaterial.steps;
+  nextMaterial.steps = resolveMaterialStepBudget(
+    mesh.userData.raymarchRequestedSteps ?? mesh.material?.steps,
+    fieldExtent,
+  );
   mesh.material = nextMaterial;
   mesh.userData.raymarchSpectralLightEvaluationMode =
     normalizedSpectralLightEvaluationMode;
@@ -2244,11 +2722,85 @@ export function setRaymarchCavityGeometry(mesh, cavityGeometry) {
   }
 }
 
+export function setRaymarchFieldExtent(mesh, fieldExtent) {
+  if (!mesh?.userData) {
+    return;
+  }
+
+  const normalizedFieldExtent = normalizeFieldExtent(fieldExtent);
+  const previousFieldExtent = normalizeFieldExtent(
+    mesh.userData.raymarchFieldExtent,
+  );
+  const baseRadius = mesh.userData.raymarchBaseRadius;
+  const activeMaterialExtent = normalizeFieldExtent(
+    mesh.material?.raymarchFieldExtent,
+  );
+  const activeExtentMatches =
+    previousFieldExtent === normalizedFieldExtent &&
+    activeMaterialExtent === normalizedFieldExtent &&
+    isVolumeDomainGeometryForExtent(
+      mesh.geometry,
+      baseRadius,
+      normalizedFieldExtent,
+    );
+  if (activeExtentMatches) {
+    return;
+  }
+
+  mesh.userData.raymarchFieldExtent = normalizedFieldExtent;
+  const normalizedBoundaryMode = normalizeBoundaryMode(
+    mesh.userData.raymarchBoundaryMode,
+  );
+  const spectralLightEvaluationMode = normalizeSpectralLightEvaluationMode(
+    mesh.userData.raymarchSpectralLightEvaluationMode,
+  );
+  const nextMaterial = getOrCreateRaymarchMaterial(
+    mesh,
+    normalizedBoundaryMode,
+    spectralLightEvaluationMode,
+    normalizedFieldExtent,
+  );
+  if (nextMaterial) {
+    nextMaterial.steps = resolveMaterialStepBudget(
+      mesh.userData.raymarchRequestedSteps ?? mesh.material?.steps,
+      normalizedFieldExtent,
+    );
+    mesh.material = nextMaterial;
+  }
+
+  if (!Number.isFinite(baseRadius) || baseRadius <= 0) {
+    return;
+  }
+  if (
+    previousFieldExtent === normalizedFieldExtent &&
+    isVolumeDomainGeometryForExtent(
+      mesh.geometry,
+      baseRadius,
+      normalizedFieldExtent,
+    )
+  ) {
+    return;
+  }
+
+  // The mesh is only the rasterized hull that triggers the march — swapping
+  // geometry per extent keeps the flagship sphere free of the overdraw a
+  // permanently enlarged hull would cost.
+  const previousGeometry = mesh.geometry;
+  mesh.geometry = createVolumeDomainGeometry(baseRadius, normalizedFieldExtent);
+  previousGeometry?.dispose?.();
+}
+
 export function syncRaymarchMaterialSteps(mesh, steps) {
+  if (mesh?.userData) {
+    mesh.userData.raymarchRequestedSteps = Math.round(steps);
+  }
   const materialCache = getRaymarchMaterialCache(mesh);
   if (!materialCache) {
     if (mesh?.material) {
-      mesh.material.steps = steps;
+      mesh.material.steps = resolveMaterialStepBudget(
+        steps,
+        mesh?.userData?.raymarchFieldExtent,
+      );
     }
     return;
   }
@@ -2256,7 +2808,10 @@ export function syncRaymarchMaterialSteps(mesh, steps) {
   Object.values(materialCache).forEach((boundaryMaterials) => {
     Object.values(boundaryMaterials).forEach((material) => {
       if (material) {
-        material.steps = steps;
+        material.steps = resolveMaterialStepBudget(
+          steps,
+          material.raymarchFieldExtent,
+        );
       }
     });
   });
@@ -2267,7 +2822,7 @@ export function createIdleOverlay({ baryonGeometry, uniforms }) {
   const overlay = new THREE.LineSegments(
     geometry,
     new THREE.LineBasicMaterial({
-      color: uniforms.uSurfaceColor.value.clone(),
+      color: uniforms.uIdleLogoColor.value.clone(),
       transparent: true,
       opacity: uniforms.uIdleLogoAlpha.value,
     }),

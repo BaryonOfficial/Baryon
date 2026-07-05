@@ -1,4 +1,5 @@
 import { DEFAULT_REQUESTED_CAVITY_GEOMETRY } from "./core/cavityGeometry.js";
+import { FIELD_EXTENTS } from "./core/fieldExtent.js";
 import { DEFAULT_PERFORMANCE_PROFILE } from "./render/outputProfilePolicy.js";
 
 const DEFAULT_MODAL_FIELD_CAPACITY = 160;
@@ -32,9 +33,10 @@ export const CAVITY_ACOUSTIC_DEFAULTS = Object.freeze({
 export const SIMULATION_DEFAULTS = Object.freeze({
   radius: 3.0,
   cavityAcousticScale: CAVITY_ACOUSTIC_DEFAULTS,
-  zeroPointPrecision: 0.064,
+  zeroPointPrecision: 0.072,
   boundaryMode: "neumann",
   cavityGeometry: DEFAULT_REQUESTED_CAVITY_GEOMETRY,
+  fieldExtent: FIELD_EXTENTS.sphere,
 });
 
 export const RENDER_DEFAULTS = Object.freeze({
@@ -43,19 +45,20 @@ export const RENDER_DEFAULTS = Object.freeze({
   idleLogoIntensity: 0.04,
   idleLogoAlpha: 0.08,
   idleLogoSize: 1.0,
+  idleLogoColor: "#f7fdff",
   backgroundColor: "#000000",
   renderQualityPreset: DEFAULT_PERFORMANCE_PROFILE,
   customTargetFps: 60,
   volumeColor: "#5be3f4",
-  surfaceColor: "#f7fdff",
+  surfaceColor: "#5be3f4",
   colorMode: /** @type {"static" | "spectral"} */ ("static"),
   spectralMix: 0.96,
   outputMode: "transparent",
   outputBackgroundColor: "#000000",
   bloomEnabled: true,
-  bloomStrength: 1.02,
-  bloomRadius: 0.04,
-  bloomThreshold: 0.08,
+  bloomStrength: 1.05,
+  bloomRadius: 0.18,
+  bloomThreshold: 0.25,
   bloomResponseBias: 1,
   smaaEnabled: true,
   performanceHudEnabled: false,
@@ -86,6 +89,7 @@ export const RAYMARCH_DEFAULTS = Object.freeze({
   densityGain: 4,
   absorption: 4,
   opacityGain: 3,
+  laserDeflectionGain: 0.9,
   contourSharpness: 8,
   rimBloomBias: 1.2,
   rimCompression: 1.2,

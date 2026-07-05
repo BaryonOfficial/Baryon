@@ -55,13 +55,13 @@ export const STRUCTURE_AWARE_EMISSION_RIDGE_LOCK_END = 0.94;
 export const STRUCTURE_AWARE_EMISSION_RIDGE_LOCK_WEIGHT = 0.18;
 export const STRUCTURE_AWARE_EMISSION_BODY_SUPPRESSION = 0.72;
 export const STRUCTURE_AWARE_EMISSION_TRANSIENT_RELIEF = 0.08;
-export const STRUCTURE_AWARE_EMISSION_MIN_GAIN = 0.34;
+export const STRUCTURE_AWARE_EMISSION_MIN_GAIN = 0.42;
 export const HIGHLIGHT_MASK_START = 0.38;
 export const HIGHLIGHT_MASK_END = 0.96;
 export const BOUNDARY_CONTOUR_ACCENT_WEIGHT = 0.08;
 export const HIGHLIGHT_CONTOUR_ACCENT_WEIGHT = 0.04;
 export const PROJECTED_CAUSTIC_RADIANCE_COMPRESSION = 0.6;
-export const PROJECTED_CAUSTIC_RADIANCE_MIN_SCALE = 0.34;
+export const PROJECTED_CAUSTIC_RADIANCE_MIN_SCALE = 0.48;
 export const PROJECTED_CAUSTIC_RADIANCE_RIDGE_AUTHORITY_FLOOR = 0.35;
 export const HOLOGRAPHIC_TINT_RED = 0.62;
 export const HOLOGRAPHIC_TINT_GREEN = 0.94;
@@ -98,7 +98,7 @@ export const OPTICAL_FOCUS_POWER = 1.55;
 export const OPTICAL_SPACE_GATE_START = 0.035;
 export const OPTICAL_SPACE_GATE_END = 0.18;
 export const OPTICAL_BODY_SUPPRESSION_MAX = 0.48;
-export const OPTICAL_LASER_GAIN = 1.15;
+export const OPTICAL_LASER_GAIN = 1.55;
 export const OPTICAL_FRINGE_MIX_MAX = 0.18;
 export const OPTICAL_COLOR_DENSITY_DELTA_MAX = 1e-6;
 export const OPTICAL_RECTANGULAR_STARTUP_IMPORT_DELTA_MAX = 0;
@@ -119,8 +119,14 @@ export const PHOTOGRAPHIC_FOCUS_POWER = 1.35;
 export const PHOTOGRAPHIC_BLACKFIELD_GATE_START = 0.02;
 export const PHOTOGRAPHIC_BLACKFIELD_GATE_END = 0.16;
 export const PHOTOGRAPHIC_DARK_BODY_RATIO = 0.18;
-export const PHOTOGRAPHIC_DARK_CAUSTIC_RATIO = 0.42;
-export const PHOTOGRAPHIC_LASER_GAIN = 0.42;
+export const PHOTOGRAPHIC_DARK_CAUSTIC_RATIO = 0.52;
+export const PHOTOGRAPHIC_LASER_GAIN = 0.75;
+// Caustic focal law: irradiance at a fold caustic diverges as 1 / (1 − κ·d).
+// The boost applies to source radiance only — never to extinction density.
+export const CAUSTIC_FOCAL_CONVERGENCE = 0.8;
+export const CAUSTIC_FOCAL_FLOOR = 0.15;
+export const PHASE_INTERFERENCE_FRINGE_MIN = 0.72;
+export const PHASE_INTERFERENCE_FRINGE_MAX = 1.28;
 export const PHOTOGRAPHIC_PEAK_WHITE_START = 0.28;
 export const PHOTOGRAPHIC_PEAK_WHITE_END = 0.72;
 export const PHOTOGRAPHIC_BLACKFIELD_BODY_REDUCTION_MIN = 0.6;
@@ -1320,13 +1326,32 @@ export function deriveProjectedCausticRadianceDensity({
   };
 }
 
+/**
+ * Fold-caustic focal amplification: 1 / max(1 − c·focus·ridgeAuthority, floor).
+ * Ridge authority gates the singularity so diffuse body fill never boosts.
+ */
+export function deriveCausticFocalBoost({
+  photographicFocus = 0,
+  causticRidgeAuthority = 0,
+} = {}) {
+  const focusEvidence =
+    clamp01(photographicFocus) * clamp01(causticRidgeAuthority);
+  return (
+    1 /
+    Math.max(
+      1 - CAUSTIC_FOCAL_CONVERGENCE * focusEvidence,
+      CAUSTIC_FOCAL_FLOOR,
+    )
+  );
+}
+
 export function deriveMaterialRadianceTransfer({
   stabilizedDensity = 0,
   causticVisibleDensity = 0,
   projectedCausticRadianceDensity = 0,
   volumeColor = [1, 1, 1],
-  surfaceColor = [1, 1, 1],
   structureAwareEmissionGain = 1,
+  causticFocalBoost = 1,
 } = {}) {
   const safeStabilizedDensity = Math.max(0, safeFinite(stabilizedDensity, 0));
   const safeCausticVisibleDensity = Math.max(
@@ -1339,13 +1364,13 @@ export function deriveMaterialRadianceTransfer({
   );
   const safeGain = Math.max(0, safeFinite(structureAwareEmissionGain, 1));
   const resolvedVolumeColor = readVector3(volumeColor, [1, 1, 1]);
-  const resolvedSurfaceColor = readVector3(surfaceColor, [1, 1, 1]);
   const supportVisibleDensity = Math.max(
     safeStabilizedDensity - safeCausticVisibleDensity,
     0,
   );
+  // Mirrors the GPU node: support reveal carries the laser (volume) color.
   const supportRevealColor = clampColor(
-    multiplyColor(resolvedSurfaceColor, PHOTOGRAPHIC_DARK_BODY_RATIO),
+    multiplyColor(resolvedVolumeColor, PHOTOGRAPHIC_DARK_BODY_RATIO),
     0,
     PHOTOGRAPHIC_DARK_BODY_RATIO,
   );
@@ -1357,16 +1382,30 @@ export function deriveMaterialRadianceTransfer({
     supportRevealColor,
     supportVisibleDensity,
   );
-  const finalRadiance = addColor(
+  const safeCausticFocalBoost = Math.max(
+    1,
+    safeFinite(causticFocalBoost, 1),
+  );
+  const baseRadiance = addColor(
     multiplyColor(causticRadianceContribution, safeGain),
     supportRevealContribution,
   );
+  const finalRadiance = addColor(
+    multiplyColor(causticRadianceContribution, safeGain * safeCausticFocalBoost),
+    supportRevealContribution,
+  );
+  // Extinction stays on the unboosted radiance: focal light concentration
+  // brightens the medium without making it more opaque.
+  const extinctionDensity =
+    baseRadiance[0] * 0.2126 + baseRadiance[1] * 0.7152 + baseRadiance[2] * 0.0722;
 
   return {
     supportVisibleDensity,
     supportRevealColor,
     causticRadianceContribution,
     supportRevealContribution,
+    baseRadiance,
+    extinctionDensity,
     finalRadiance,
   };
 }

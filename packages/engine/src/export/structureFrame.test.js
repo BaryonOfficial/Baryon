@@ -3,6 +3,7 @@ import { buildCanonicalFullModalDescriptor } from "../core/modalDescriptor.js";
 import {
   DEFAULT_STRUCTURE_FRAME_MODE_CAP,
   MAX_STRUCTURE_FRAME_MODE_CAP,
+  STRUCTURE_FRAME_OSC_SCHEMA,
   STRUCTURE_FRAME_SCHEMA_VERSION,
   normalizeStructureFrameModeCap,
   projectStructureFrame,
@@ -84,6 +85,37 @@ function createFeatureFrame({
 }
 
 describe("projectStructureFrame", () => {
+  it("publishes a single OSC schema for encoder and TouchDesigner consumers", () => {
+    const modeColumns = [
+      "index",
+      ...STRUCTURE_FRAME_OSC_SCHEMA.packets.modes.flatMap((packet) =>
+        packet.args.map((arg) => arg.column),
+      ),
+    ];
+    const frameValueCount = STRUCTURE_FRAME_OSC_SCHEMA.packets.frame.reduce(
+      (count, packet) => count + packet.args.length,
+      0,
+    );
+    const modeValueCount = STRUCTURE_FRAME_OSC_SCHEMA.packets.modes.reduce(
+      (count, packet) => count + packet.args.length,
+      0,
+    );
+
+    expect(STRUCTURE_FRAME_OSC_SCHEMA.schemaVersion).toBe(
+      STRUCTURE_FRAME_SCHEMA_VERSION,
+    );
+    expect(STRUCTURE_FRAME_OSC_SCHEMA.tables.modes.columns).toEqual(
+      modeColumns,
+    );
+    expect(
+      STRUCTURE_FRAME_OSC_SCHEMA.tables.colors.columns.every((column) =>
+        STRUCTURE_FRAME_OSC_SCHEMA.tables.modes.columns.includes(column),
+      ),
+    ).toBe(true);
+    expect(frameValueCount).toBe(30);
+    expect(modeValueCount).toBe(18);
+  });
+
   it("projects descriptor modes into a bounded v1 public frame", () => {
     const descriptor = buildCanonicalFullModalDescriptor({
       maxTotalModes: 4,

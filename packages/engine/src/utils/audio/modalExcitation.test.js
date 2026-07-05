@@ -4074,8 +4074,8 @@ describe("modal excitation structural state", () => {
     );
 
     expect(staleProposalRatio).toBeLessThan(0.78);
-    expect(staleDisplayRatio).toBeLessThan(0.78);
-    expect(staleDisplayRatio).toBeLessThanOrEqual(staleProposalRatio + 0.18);
+    expect(staleDisplayRatio).toBeLessThan(0.8);
+    expect(staleDisplayRatio).toBeLessThanOrEqual(staleProposalRatio + 0.05);
   });
 
   it("uses signal identity when visible detail under-covers the shifted signal", () => {

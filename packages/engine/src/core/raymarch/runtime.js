@@ -37,6 +37,11 @@ import {
   RAYMARCH_PRESSURE_RADIATION_SEMANTIC,
 } from "./fieldCache.js";
 import {
+  computeRaymarchLaserTransportCache,
+  deactivateRaymarchLaserTransportCache,
+  disposeRaymarchLaserTransportCache,
+} from "./laserTransport.js";
+import {
   buildRaymarchPhaseSlotSignature,
   copyCanonicalRaymarchStructuralCoefficients,
   copyCanonicalRaymarchPhaseSlots,
@@ -96,8 +101,10 @@ const STRUCTURAL_BODY_BLOOM_THRESHOLD_LIFT_MAX = 0.08;
 // transfer's exposure compensation. Slow enough that the gate does not pump on
 // beats, fast enough to follow quiet/loud passages.
 const VISIBILITY_DRIVE_DAMP_LAMBDA = 3;
+const BEAT_PHASE_CORRECTION_RATE_CYCLES_PER_SEC = 2.4;
 const EARLY_EXIT_TRANSMITTANCE_EPSILON = 5e-3;
 const MATERIAL_OUTPUT_VISIBLE_EPSILON = 1e-5;
+const RENDER_AUTHORITY_DISPLAY_HOLD_SEC = 0.12;
 const PHASE_EVALUATION_CLOCK_REBASE_INTERVAL_SEC = 30;
 const FNV_OFFSET_BASIS = 2166136261;
 const FNV_PRIME = 16777619;
@@ -107,6 +114,71 @@ const HASH_UINT_VIEW = new Uint32Array(HASH_FLOAT_VIEW.buffer);
 function damp(current, target, smoothing, deltaTime) {
   const factor = 1 - Math.exp(-Math.max(0, smoothing) * Math.max(0, deltaTime));
   return current + (target - current) * factor;
+}
+
+function wrapUnitPhase(value) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  const wrapped = value % 1;
+  return wrapped < 0 ? wrapped + 1 : wrapped;
+}
+
+function signedUnitPhaseDelta(from, to) {
+  const delta = wrapUnitPhase(to) - wrapUnitPhase(from);
+  if (delta > 0.5) {
+    return delta - 1;
+  }
+  if (delta < -0.5) {
+    return delta + 1;
+  }
+  return delta;
+}
+
+function deriveBeatPhaseAuthority(featureFrame) {
+  const tempoAuthority = clamp01(featureFrame?.tempoConfidence ?? 0);
+  const beatAuthority =
+    featureFrame?.beatDetected === true
+      ? clamp01(
+          (featureFrame?.beatStrength ?? 0) * 0.7 +
+            (featureFrame?.beatConfidence ?? 0) * 0.3,
+        )
+      : 0;
+
+  return Math.max(tempoAuthority, beatAuthority);
+}
+
+function resolveShaderBeatPhase(runtimeState, featureFrame, deltaTime) {
+  const rawPhase = clamp01(readFiniteNumber(featureFrame?.beatPhase, 0));
+  const previousPhase = runtimeState.shaderBeatPhase;
+
+  if (!Number.isFinite(previousPhase)) {
+    runtimeState.shaderBeatPhase = rawPhase;
+    return rawPhase;
+  }
+
+  const safeDeltaTime = Math.max(0, readFiniteNumber(deltaTime, 0));
+  const estimatedTempo = Math.max(
+    0,
+    readFiniteNumber(featureFrame?.estimatedTempo, 0),
+  );
+  const predictedPhase = wrapUnitPhase(
+    previousPhase + (estimatedTempo / 60) * safeDeltaTime,
+  );
+  const correctionAuthority = deriveBeatPhaseAuthority(featureFrame);
+  const maxCorrection =
+    BEAT_PHASE_CORRECTION_RATE_CYCLES_PER_SEC *
+    correctionAuthority *
+    safeDeltaTime;
+  const phaseCorrection = clamp(
+    signedUnitPhaseDelta(predictedPhase, rawPhase),
+    -maxCorrection,
+    maxCorrection,
+  );
+  const shaderBeatPhase = wrapUnitPhase(predictedPhase + phaseCorrection);
+
+  runtimeState.shaderBeatPhase = shaderBeatPhase;
+  return shaderBeatPhase;
 }
 
 function deriveDecayReleaseMask({
@@ -193,8 +265,48 @@ function readFirstString(...values) {
   return null;
 }
 
+function readRuntimeTimeSec(time) {
+  return Number.isFinite(time) ? Math.max(0, time) : 0;
+}
+
+function isExplicitStoppedTransport(featureFrame) {
+  return (
+    featureFrame?.sourceEvidence?.transport?.playbackEndReason === "stopped"
+  );
+}
+
+function resolveRenderAuthorityDisplayHold(runtimeState, featureFrame, time) {
+  if (isExplicitStoppedTransport(featureFrame)) {
+    runtimeState.renderAuthorityLastVisibleAtSec = null;
+    clearRenderAuthorityDisplayHold(runtimeState);
+    return false;
+  }
+
+  const lastVisibleAtSec = runtimeState.renderAuthorityLastVisibleAtSec;
+  if (
+    runtimeState.volumeMesh?.visible !== true ||
+    !Number.isFinite(lastVisibleAtSec)
+  ) {
+    runtimeState.renderAuthorityDisplayHoldActive = false;
+    runtimeState.renderAuthorityDisplayHoldAgeSec = null;
+    return false;
+  }
+
+  const holdAgeSec = Math.max(0, readRuntimeTimeSec(time) - lastVisibleAtSec);
+  const displayHoldActive = holdAgeSec <= RENDER_AUTHORITY_DISPLAY_HOLD_SEC;
+  runtimeState.renderAuthorityDisplayHoldActive = displayHoldActive;
+  runtimeState.renderAuthorityDisplayHoldAgeSec = holdAgeSec;
+  return displayHoldActive;
+}
+
+function clearRenderAuthorityDisplayHold(runtimeState) {
+  runtimeState.renderAuthorityDisplayHoldActive = false;
+  runtimeState.renderAuthorityDisplayHoldAgeSec = null;
+}
+
 function deriveRaymarchVisibilityGate({
   renderAuthority,
+  renderAuthorityDisplayHold,
   sourceBoundaryState,
   modalBasisCacheDrawableAuthority,
   modalBasisDisplayAuthority,
@@ -215,6 +327,16 @@ function deriveRaymarchVisibilityGate({
     ) > MATERIAL_OUTPUT_VISIBLE_EPSILON;
 
   if (!renderAuthority) {
+    if (renderAuthorityDisplayHold) {
+      return {
+        state: "render-authority-display-hold",
+        blockedReason: readFirstString(
+          sourceBoundaryState,
+          "render-authority-display-continuity",
+        ),
+        materialOutputVisible,
+      };
+    }
     return {
       state: "render-authority-off",
       blockedReason: readFirstString(sourceBoundaryState, "render-authority"),
@@ -564,6 +686,13 @@ function deactivateLiveFieldProjectionCache(runtimeState, reason = "inactive") {
     liveFieldProjectionCache.lastComputeReason = reason;
   }
   setIfChanged(runtimeState?.uniforms?.uLiveFieldCacheActive, 0);
+  // The laser transport refracts through this frame's pressure field; it
+  // fails closed with the projection cache that provides it.
+  deactivateRaymarchLaserTransportCache(
+    runtimeState?.laserTransportCache,
+    reason,
+  );
+  setIfChanged(runtimeState?.uniforms?.uLaserCausticActive, 0);
 }
 
 const LIVE_FIELD_PROJECTION_STALE_RETAINED_REASON =
@@ -662,6 +791,9 @@ function resetRenderAuthorityState(runtimeState) {
     runtimeState.bloomTuning.bloomAllowed = false;
   }
   runtimeState.visibilityDriveEnvelope = 0;
+  runtimeState.shaderBeatPhase = null;
+  runtimeState.renderAuthorityLastVisibleAtSec = null;
+  clearRenderAuthorityDisplayHold(runtimeState);
   runtimeState.spectralLightBuffersUploaded = false;
   runtimeState.modalBasisPhaseAuthorityModeCount = 0;
   runtimeState.modalPhaseEvaluationEpochSec = null;
@@ -979,6 +1111,8 @@ function blockNonAuthoritativeModalDescriptor(
     runtimeState.bloomTuning.bloomAllowed = false;
   }
   runtimeState.visibilityDriveEnvelope = 0;
+  runtimeState.renderAuthorityLastVisibleAtSec = null;
+  clearRenderAuthorityDisplayHold(runtimeState);
   runtimeState.spectralLightBuffersUploaded = false;
   runtimeState.modalBasisPhaseAuthorityModeCount = 0;
   runtimeState.modalPhaseEvaluationEpochSec = null;
@@ -1459,10 +1593,6 @@ function buildRaymarchDebugSnapshot(
       runtimeState.uniforms.uColor,
       [0.34, 0.62, 0.9],
     ),
-    surfaceColor: readUniformColorRgb(
-      runtimeState.uniforms.uSurfaceColor,
-      [0.66, 0.86, 1.0],
-    ),
     structureAwareEmissionGain: 1,
   });
   const materialProbeSupportVisibleDensity = clamp01(
@@ -1505,6 +1635,8 @@ function buildRaymarchDebugSnapshot(
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.laneCache;
   const visibilityGate = deriveRaymarchVisibilityGate({
     renderAuthority,
+    renderAuthorityDisplayHold:
+      runtimeState.renderAuthorityDisplayHoldActive === true,
     sourceBoundaryState,
     modalBasisCacheDrawableAuthority,
     modalBasisDisplayAuthority,
@@ -1521,6 +1653,11 @@ function buildRaymarchDebugSnapshot(
   return {
     fieldState,
     renderAuthority,
+    renderAuthorityDisplayHold:
+      runtimeState.renderAuthorityDisplayHoldActive === true,
+    renderAuthorityDisplayHoldAgeSec:
+      runtimeState.renderAuthorityDisplayHoldAgeSec ?? null,
+    renderAuthorityDisplayHoldMaxSec: RENDER_AUTHORITY_DISPLAY_HOLD_SEC,
     projectedRenderEnergy,
     renderEnergyEpsilon,
     sourceBoundaryState,
@@ -1845,6 +1982,8 @@ function buildRaymarchDebugSnapshot(
     volumeVisible: runtimeState.volumeMesh.visible,
     idleOverlayVisible: runtimeState.idleOverlay.visible,
     idleLogoSuppressedForLive: runtimeState.idleLogoSuppressedForLive === true,
+    idleLogoSuppressedForActiveTransport:
+      runtimeState.idleLogoSuppressedForActiveTransport === true,
   };
 }
 
@@ -2925,6 +3064,7 @@ function updateLiveFieldProjectionCache(
     !modalBasisCacheDrawable ||
     modalBasisCache?.ready !== true ||
     !runtimeState.volumeMesh?.userData?.raymarchModalBasisAtlasTexture ||
+    !runtimeState.modalFieldModeBuffer ||
     !runtimeState.modalFieldCoefficientBuffer
   ) {
     deactivateLiveFieldProjectionCache(
@@ -2940,6 +3080,7 @@ function updateLiveFieldProjectionCache(
     {
       modalBasisAtlasTexture:
         runtimeState.volumeMesh.userData.raymarchModalBasisAtlasTexture,
+      modalFieldModeBuffer: runtimeState.modalFieldModeBuffer,
       modalFieldCoefficientBuffer: runtimeState.modalFieldCoefficientBuffer,
       modalFieldPhaseBuffer: runtimeState.modalFieldPhaseBuffer,
       modalFieldCapacity,
@@ -2951,6 +3092,30 @@ function updateLiveFieldProjectionCache(
     runtimeState.uniforms.uLiveFieldCacheActive,
     result.computed ? 1 : 0,
   );
+  if (result.computed) {
+    // Refract the collimated laser through this frame's pressure field. The
+    // irradiance volume is what the material substitutes for the heuristic
+    // fold-caustic focal law.
+    const laserResult = computeRaymarchLaserTransportCache(
+      runtimeState.laserTransportCache,
+      renderer,
+      {
+        fieldTexture: liveFieldProjectionCache.fieldTexture,
+        supportTexture: liveFieldProjectionCache.supportTexture,
+        uniforms: runtimeState.uniforms,
+      },
+    );
+    setIfChanged(
+      runtimeState.uniforms.uLaserCausticActive,
+      laserResult.computed ? 1 : 0,
+    );
+  } else if (result.retained !== true) {
+    deactivateRaymarchLaserTransportCache(
+      runtimeState.laserTransportCache,
+      result.reason,
+    );
+    setIfChanged(runtimeState.uniforms.uLaserCausticActive, 0);
+  }
   return result;
 }
 
@@ -3405,7 +3570,15 @@ export function tickRaymarchRuntime(
   uniforms.uTime.value = time;
   const fieldState = featureFrame?.fieldState ?? "idle";
   const renderAuthority = hasRenderAuthority(featureFrame);
-  if (!renderAuthority) {
+  const fatalModalDescriptorBlockReason =
+    resolveFatalModalDescriptorBlockReason(
+      featureFrame?.modalDescriptor?.fieldAuthority,
+    );
+  const renderAuthorityDisplayHold =
+    !renderAuthority &&
+    !fatalModalDescriptorBlockReason &&
+    resolveRenderAuthorityDisplayHold(runtimeState, featureFrame, time);
+  if (!renderAuthority && !renderAuthorityDisplayHold) {
     updateReactiveResponse(
       runtimeState,
       featureFrame,
@@ -3420,10 +3593,6 @@ export function tickRaymarchRuntime(
       runtimeState.fieldStateValues.idle,
   );
 
-  const fatalModalDescriptorBlockReason =
-    resolveFatalModalDescriptorBlockReason(
-      featureFrame?.modalDescriptor?.fieldAuthority,
-    );
   if (!renderAuthority && fatalModalDescriptorBlockReason) {
     runtimeState.currentModalDescriptor = featureFrame.modalDescriptor;
     blockNonAuthoritativeModalDescriptor(
@@ -3437,6 +3606,16 @@ export function tickRaymarchRuntime(
   }
 
   if (!renderAuthority) {
+    if (renderAuthorityDisplayHold) {
+      idleOverlay.visible = false;
+      publishRaymarchRuntimeAuditSnapshot(
+        runtimeState,
+        featureFrame,
+        fieldState,
+        renderAuthority,
+      );
+      return;
+    }
     if (runtimeState.renderAuthorityResetApplied !== true) {
       resetRenderAuthorityState(runtimeState);
     }
@@ -3496,6 +3675,7 @@ export function tickRaymarchRuntime(
     );
     return;
   }
+  clearRenderAuthorityDisplayHold(runtimeState);
   runtimeState.renderAuthorityResetApplied = false;
 
   const spectralLightEnabled = (uniforms.uSpectralMix?.value ?? 0) > 0;
@@ -3571,7 +3751,10 @@ export function tickRaymarchRuntime(
     deltaTime,
   );
   setIfChanged(uniforms.uBeatPulse, runtimeState.beatPulseEnvelope);
-  setIfChanged(uniforms.uBeatPhase, featureFrame?.beatPhase ?? 0);
+  setIfChanged(
+    uniforms.uBeatPhase,
+    resolveShaderBeatPhase(runtimeState, featureFrame, deltaTime),
+  );
   setIfChanged(
     uniforms.uTempoNorm,
     clamp01(((featureFrame?.estimatedTempo ?? 0) - 40) / 200),
@@ -3663,6 +3846,9 @@ export function tickRaymarchRuntime(
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.laneCache;
   volumeMesh.visible =
     renderAuthority && modalBasisDisplayCoherent && spectralLightLaneDrawable;
+  if (volumeMesh.visible) {
+    runtimeState.renderAuthorityLastVisibleAtSec = readRuntimeTimeSec(time);
+  }
   idleOverlay.visible = resolveIdleOverlayVisible(
     runtimeState,
     featureFrame,
@@ -3682,6 +3868,7 @@ export function disposeRaymarchRuntime(runtimeState) {
     runtimeState?.liveFieldProjectionCache,
   );
   disposeRaymarchSpectralLaneCache(runtimeState?.spectralLaneCache);
+  disposeRaymarchLaserTransportCache(runtimeState?.laserTransportCache);
   runtimeState?.points?.traverse?.((child) => {
     child.geometry?.dispose?.();
     const materialCache = child.userData?.raymarchMaterialCache;

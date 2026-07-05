@@ -22,33 +22,49 @@ vi.mock("@baryon/engine/audio", () => ({
 }));
 
 vi.mock("../components/hooks/useAudioLogic", () => ({
-  useAudioLogic: vi.fn((options = {}) => ({
-    handleFileChange: () => {},
-    handleRecentFileSelect: () => {},
-    handlePlayPause: handleLocalPlayPauseMock,
-    handleStop: handleLocalStopMock,
-    handleVolumeChange: () => {},
-    handleMuteToggle: () => {},
-    refreshAudioInputs: async () => {
-      const audioInputs = await refreshAudioInputsMock();
-      options.setAudioDevices?.(audioInputs);
-      if (
-        audioInputs.length > 0 &&
-        !audioInputs.some(
-          (device) => device.deviceId === options.selectedDevice,
-        )
-      ) {
-        options.setSelectedDevice?.(audioInputs[0].deviceId);
-      }
-      return audioInputs;
-    },
-  })),
+  useAudioLogic: vi.fn((options = {}) => {
+    const loadRecentFile = async (file) => {
+      if (!file) return false;
+      options.setFileName?.(file.name);
+      const fileUrl = URL.createObjectURL(file);
+      await getDefaultAudioSessionMock().loadAudio(fileUrl);
+      options.registerRecentFile?.(file);
+      const status = getDefaultAudioSessionMock().getStatus();
+      options.setIsAudioLoaded?.(status.isAudioLoaded);
+      options.setIsPlaying?.(status.isPlaying);
+      return true;
+    };
+
+    return {
+      handleFileChange: (event) =>
+        loadRecentFile(event?.target?.files?.[0] ?? null),
+      handleRecentFileSelect: loadRecentFile,
+      handlePlayPause: handleLocalPlayPauseMock,
+      handleStop: handleLocalStopMock,
+      handleVolumeChange: () => {},
+      handleMuteToggle: () => {},
+      refreshAudioInputs: async () => {
+        const audioInputs = await refreshAudioInputsMock();
+        options.setAudioDevices?.(audioInputs);
+        if (
+          audioInputs.length > 0 &&
+          !audioInputs.some(
+            (device) => device.deviceId === options.selectedDevice,
+          )
+        ) {
+          options.setSelectedDevice?.(audioInputs[0].deviceId);
+        }
+        return audioInputs;
+      },
+    };
+  }),
 }));
 
 import { AudioProvider } from "./AudioProvider.jsx";
 import { useAudio } from "./AudioContext.jsx";
 import { useAudioTransportClock } from "./audioTransportClock.js";
 import * as audioTransportClockModule from "./audioTransportClock.js";
+import { SETTINGS_KEY } from "../components/hooks/baryonControlsState.js";
 import { installLocalStorageMock } from "../test/installLocalStorageMock.js";
 
 function AudioHarness({ onValue }) {
@@ -159,7 +175,10 @@ describe("AudioProvider source transport gating", () => {
     }
   });
 
-  function renderProvider(onValue, { platform = "desktop" } = {}) {
+  function renderProvider(
+    onValue,
+    { platform = "desktop", demoAudioFileLoader = null } = {},
+  ) {
     let sessionAcousticIntent = "ambient";
     session = {
       getStatus: () => ({
@@ -187,7 +206,8 @@ describe("AudioProvider source transport gating", () => {
       setAudioEndedCallback: () => {},
       stopAudio: () => {},
       stopLiveInputStream: vi.fn(),
-      playPauseAudio: async () => {},
+      loadAudio: vi.fn(async () => {}),
+      playPauseAudio: vi.fn(async () => {}),
       startLiveInputStream: vi.fn(async () => {}),
       dispose: () => Promise.resolve(),
     };
@@ -199,7 +219,10 @@ describe("AudioProvider source transport gating", () => {
 
     act(() => {
       root.render(
-        <AudioProvider platform={platform}>
+        <AudioProvider
+          platform={platform}
+          demoAudioFileLoader={demoAudioFileLoader}
+        >
           <AudioHarness onValue={onValue} />
         </AudioProvider>,
       );
@@ -224,6 +247,115 @@ describe("AudioProvider source transport gating", () => {
     });
     expect(session.stopLiveInputStream).not.toHaveBeenCalled();
     expect(session.startLiveInputStream).not.toHaveBeenCalled();
+  });
+
+  it("hydrates acoustic intent from v2 control settings", async () => {
+    window.localStorage.setItem(
+      SETTINGS_KEY,
+      JSON.stringify({
+        version: 2,
+        controls: {
+          liveInputAcousticIntent: "vocal",
+        },
+      }),
+    );
+    const onValue = vi.fn();
+    renderProvider(onValue);
+
+    expect(onValue.mock.lastCall[0].liveInputAcousticIntent).toBe("vocal");
+  });
+
+  it("persists acoustic intent inside v2 control settings", async () => {
+    window.localStorage.setItem(
+      SETTINGS_KEY,
+      JSON.stringify({
+        version: 2,
+        bloomStrength: 2.1,
+        liveInputAcousticIntent: "ambient",
+        liveInputAnalysisOverrides: {
+          "device-1": "line-feed",
+        },
+        controls: {
+          backgroundColor: "#112233",
+        },
+      }),
+    );
+    const onValue = vi.fn();
+    renderProvider(onValue);
+
+    await act(async () => {
+      onValue.mock.lastCall[0].setLiveInputAcousticIntent("vocal");
+    });
+
+    const settings = JSON.parse(window.localStorage.getItem(SETTINGS_KEY));
+    expect(settings).toEqual({
+      version: 2,
+      liveInputAnalysisOverrides: {
+        "device-1": "line-feed",
+      },
+      controls: {
+        backgroundColor: "#112233",
+        liveInputAcousticIntent: "vocal",
+      },
+    });
+    expect(settings).not.toHaveProperty("liveInputAcousticIntent");
+    expect(settings).not.toHaveProperty("bloomStrength");
+  });
+
+  it("persists analysis overrides without retaining stale top-level controls", async () => {
+    Object.defineProperty(window, "isSecureContext", {
+      configurable: true,
+      value: true,
+    });
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => ({
+          getTracks: () => [{ stop: vi.fn() }],
+        })),
+        enumerateDevices: vi.fn(async () => []),
+      },
+    });
+    refreshAudioInputsMock.mockResolvedValue([
+      {
+        kind: "audioinput",
+        deviceId: "device-1",
+        label: "BlackHole 2ch (Virtual)",
+      },
+    ]);
+    window.localStorage.setItem(
+      SETTINGS_KEY,
+      JSON.stringify({
+        version: 2,
+        bloomStrength: 2.1,
+        liveInputAcousticIntent: "ambient",
+        controls: {
+          backgroundColor: "#112233",
+        },
+      }),
+    );
+    const onValue = vi.fn();
+    renderProvider(onValue, { platform: "web" });
+
+    await act(async () => {
+      await onValue.mock.lastCall[0].requestLiveInputPermission();
+    });
+    await act(async () => {
+      onValue.mock.lastCall[0].setSelectedLiveInputAnalysisClass("line-feed");
+    });
+
+    const settings = JSON.parse(window.localStorage.getItem(SETTINGS_KEY));
+    expect(settings).toEqual({
+      version: 2,
+      liveInputAnalysisOverrides: {
+        "device-1": "line-feed",
+      },
+      controls: {
+        backgroundColor: "#112233",
+      },
+    });
+    expect(settings).not.toHaveProperty("liveInputAcousticIntent");
+    expect(settings).not.toHaveProperty("bloomStrength");
   });
 
   it("passes the selected live input label to the audio runtime", async () => {
@@ -419,6 +551,67 @@ describe("AudioProvider source transport gating", () => {
     );
   });
 
+  it("keeps frame-owned line-feed status across control refreshes", async () => {
+    const onValue = vi.fn();
+    renderProvider(onValue);
+
+    session.getStatus = () => ({
+      isAudioLoaded: true,
+      isPlaying: false,
+      isLiveInputActive: true,
+      volume: 1,
+      muted: false,
+      liveInputDeviceKind: "system",
+      liveInputKind: "system",
+      liveInputAnalysisClass: "auto",
+      resolvedLiveInputAnalysisClass: "line-feed",
+      liveInputAcousticIntent: "ambient",
+      selectedLiveInputDeviceId: "runtime-blackhole-id",
+      selectedLiveInputDeviceLabel: "BlackHole 2ch (Virtual)",
+    });
+
+    let audio = onValue.mock.lastCall[0];
+    await act(async () => {
+      audio.setLiveInputRuntimeStatus({
+        active: true,
+        phase: "listening",
+        liveInputDeviceKind: "system",
+        liveInputKind: "system",
+        selectedDeviceId: "runtime-blackhole-id",
+        selectedDeviceLabel: "BlackHole 2ch (Virtual)",
+        requestedAnalysisClass: "auto",
+        acousticIntent: "ambient",
+        resolvedAnalysisClass: "line-feed",
+        calibrationActive: false,
+        gateOpen: true,
+        hardSilence: false,
+        calibrationInvalid: false,
+        calibrationInvalidReason: "none",
+        sourceBoundaryState: "live",
+        signalState: "ok",
+        errorCode: "none",
+      });
+    });
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent("__baryon-controls-change", {
+          detail: { fieldExtent: "unbounded" },
+        }),
+      );
+    });
+
+    audio = onValue.mock.lastCall[0];
+    expect(audio.liveInputRuntimeStatus).toMatchObject({
+      active: true,
+      phase: "listening",
+      gateOpen: true,
+      sourceBoundaryState: "live",
+      signalState: "ok",
+      resolvedAnalysisClass: "line-feed",
+    });
+  });
+
   it("owns selected device-kind override in the audio context", async () => {
     Object.defineProperty(window, "isSecureContext", {
       configurable: true,
@@ -487,6 +680,13 @@ describe("AudioProvider source transport gating", () => {
     });
   }
 
+  async function flushAsyncWork() {
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  }
+
   it("stops local transport and blocks play while system is selected", async () => {
     const onValue = vi.fn();
     renderProvider(onValue);
@@ -526,6 +726,142 @@ describe("AudioProvider source transport gating", () => {
     });
 
     expect(onValue.mock.lastCall[0].transportState).toBeUndefined();
+  });
+
+  it("loads the desktop preloaded demo audio from the bundled renderer asset", async () => {
+    const base = document.createElement("base");
+    base.href =
+      "file:///Applications/Baryon.app/Contents/Resources/app/.vite/renderer/main_window/index.html";
+    document.head.appendChild(base);
+    const onValue = vi.fn();
+    try {
+      renderProvider(onValue, { platform: "desktop" });
+
+      let audio = onValue.mock.lastCall[0];
+      await act(async () => {
+        await audio.loadDemoAudioFile();
+      });
+
+      audio = onValue.mock.lastCall[0];
+      expect(session.loadAudio).toHaveBeenCalledWith(
+        "file:///Applications/Baryon.app/Contents/Resources/app/.vite/renderer/main_window/audio/baryon-demo.mp3",
+      );
+      expect(audio.displayName).toBe("baryon-demo.mp3");
+      expect(audio.playbackSource).toBe("local-file");
+      expect(audio.selectedSource).toBe("file");
+      expect(session.playPauseAudio).toHaveBeenCalledTimes(1);
+    } finally {
+      base.remove();
+    }
+  });
+
+  it("loads a desktop bridge demo audio file through the local file pipeline", async () => {
+    const hadCreateObjectUrl = "createObjectURL" in globalThis.URL;
+    const hadRevokeObjectUrl = "revokeObjectURL" in globalThis.URL;
+    const hadWindowCreateObjectUrl = "createObjectURL" in window.URL;
+    const hadWindowRevokeObjectUrl = "revokeObjectURL" in window.URL;
+    const originalCreateObjectUrl = globalThis.URL.createObjectURL;
+    const originalRevokeObjectUrl = globalThis.URL.revokeObjectURL;
+    const originalWindowCreateObjectUrl = window.URL.createObjectURL;
+    const originalWindowRevokeObjectUrl = window.URL.revokeObjectURL;
+    const createObjectUrl = vi.fn(() => "blob:desktop-demo-audio");
+    const revokeObjectUrl = vi.fn();
+    Object.defineProperty(globalThis.URL, "createObjectURL", {
+      configurable: true,
+      writable: true,
+      value: createObjectUrl,
+    });
+    Object.defineProperty(globalThis.URL, "revokeObjectURL", {
+      configurable: true,
+      writable: true,
+      value: revokeObjectUrl,
+    });
+    Object.defineProperty(window.URL, "createObjectURL", {
+      configurable: true,
+      writable: true,
+      value: createObjectUrl,
+    });
+    Object.defineProperty(window.URL, "revokeObjectURL", {
+      configurable: true,
+      writable: true,
+      value: revokeObjectUrl,
+    });
+
+    const demoAudioFileLoader = vi.fn(
+      async () =>
+        new window.File(["audio"], "baryon-demo.mp3", {
+          type: "audio/mpeg",
+          lastModified: 0,
+        }),
+    );
+    const onValue = vi.fn();
+    try {
+      renderProvider(onValue, { platform: "desktop", demoAudioFileLoader });
+
+      let audio = onValue.mock.lastCall[0];
+      await act(async () => {
+        await audio.loadDemoAudioFile();
+      });
+
+      audio = onValue.mock.lastCall[0];
+      expect(demoAudioFileLoader).toHaveBeenCalledTimes(1);
+      expect(session.loadAudio).toHaveBeenCalledWith("blob:desktop-demo-audio");
+      expect(audio.displayName).toBe("baryon-demo.mp3");
+      expect(audio.playbackSource).toBe("local-file");
+      expect(audio.selectedSource).toBe("file");
+      expect(session.playPauseAudio).toHaveBeenCalledTimes(1);
+    } finally {
+      if (hadCreateObjectUrl) {
+        Object.defineProperty(globalThis.URL, "createObjectURL", {
+          configurable: true,
+          writable: true,
+          value: originalCreateObjectUrl,
+        });
+      } else {
+        delete globalThis.URL.createObjectURL;
+      }
+      if (hadWindowCreateObjectUrl) {
+        Object.defineProperty(window.URL, "createObjectURL", {
+          configurable: true,
+          writable: true,
+          value: originalWindowCreateObjectUrl,
+        });
+      } else {
+        delete window.URL.createObjectURL;
+      }
+      if (hadRevokeObjectUrl) {
+        Object.defineProperty(globalThis.URL, "revokeObjectURL", {
+          configurable: true,
+          writable: true,
+          value: originalRevokeObjectUrl,
+        });
+      } else {
+        delete globalThis.URL.revokeObjectURL;
+      }
+      if (hadWindowRevokeObjectUrl) {
+        Object.defineProperty(window.URL, "revokeObjectURL", {
+          configurable: true,
+          writable: true,
+          value: originalWindowRevokeObjectUrl,
+        });
+      } else {
+        delete window.URL.revokeObjectURL;
+      }
+    }
+  });
+
+  it("preloads the demo audio on web startup without autoplaying it", async () => {
+    const onValue = vi.fn();
+    renderProvider(onValue, { platform: "web" });
+
+    await flushAsyncWork();
+
+    const audio = onValue.mock.lastCall[0];
+    expect(session.loadAudio).toHaveBeenCalledWith("/audio/baryon-demo.mp3");
+    expect(session.playPauseAudio).not.toHaveBeenCalled();
+    expect(audio.displayName).toBe("baryon-demo.mp3");
+    expect(audio.playbackSource).toBe("local-file");
+    expect(audio.selectedSource).toBe("file");
   });
 
   it("keeps non-timeline audio consumers stable while the transport clock ticks", async () => {
