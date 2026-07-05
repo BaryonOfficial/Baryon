@@ -12,6 +12,16 @@ export const TOPOLOGY_PROMOTE_SECONDS = 0.05;
 export const TOPOLOGY_RELEASE_EVIDENCE = 0.025;
 export const TOPOLOGY_BOOTSTRAP_EVIDENCE = 0;
 export const TOPOLOGY_RELEASE_SECONDS = 0.13;
+// Crossfade windows for admission/eviction transitions. When a mode carries
+// damping metadata the window derives from its own amplitude time constant
+// (tau = 1 / (2 * pi * f * zeta), equivalently Q / (pi * f)). These
+// constants are the fallback window and settle factor; the min/max clamps are
+// bookkeeping bounds (frame quantization and visible-slot budget), not physics.
+export const TOPOLOGY_ADMISSION_FADE_SECONDS = 0.08;
+export const TOPOLOGY_EVICTION_FADE_SECONDS = 0.08;
+export const TOPOLOGY_FADE_SETTLE_FACTOR = 3;
+export const TOPOLOGY_FADE_MIN_SECONDS = 1 / 30;
+export const TOPOLOGY_FADE_MAX_SECONDS = 0.25;
 export const BASIS_REASSIGN_MIN_SECONDS = 0.067;
 export const IDENTITY_RETENTION_MIN = 0.72;
 export const STRUCTURAL_ADMISSION_REFERENCE_MODE_ORDER_FRACTION = 0.25;
@@ -31,6 +41,13 @@ function normalizeDeltaTimeSec(deltaTimeSec) {
     return 0;
   }
   return deltaTimeSec;
+}
+
+function normalizeReleaseSeconds(releaseSeconds) {
+  if (!Number.isFinite(releaseSeconds) || releaseSeconds <= 0) {
+    return TOPOLOGY_RELEASE_SECONDS;
+  }
+  return releaseSeconds;
 }
 
 function normalizeModeCoordinate(value) {
@@ -237,6 +254,10 @@ function createRecord(entry, nowSec) {
     activeSinceSec: null,
     basisEligibleSinceSec: null,
     releaseStartedAtSec: null,
+    fadeInStartedAtSec: null,
+    fadeInWindowSec: null,
+    evictionStartedAtSec: null,
+    evictionWindowSec: null,
     lastCoefficientSnapshot: entry.payload.slot[3] ?? 0,
     lastStoredEnergySnapshot: entry.storedEnergySnapshot,
     structuralAdmissionScore: entry.structuralAdmissionScore,
@@ -300,7 +321,45 @@ function markBasisChanged(state, nowSec) {
   state.eligibilityEpoch += 1;
 }
 
-function activateRecord(record, state, nowSec) {
+/**
+ * Fade window for a mode's admission/eviction envelope, derived from its own
+ * damped-oscillator amplitude time constant when the descriptor carries
+ * damping metadata: tau = 1 / (2 * pi * f * zeta), equivalently
+ * Q / (pi * f) with zeta = 1 / (2 * Q). The window is
+ * TOPOLOGY_FADE_SETTLE_FACTOR * tau, so e^(-t * settle / window) matches the
+ * physical ring-down e^(-t / tau) whenever the clamp does not engage. The
+ * clamp and fallback are bookkeeping (frame quantization and visible-slot
+ * budget), not physics.
+ *
+ * @param {ArrayLike<number>|undefined} metadata
+ *   [naturalFrequencyHz, qualityFactor, dampingRatio, observedSupport]
+ * @param {number} fallbackSeconds Window when no usable damping metadata.
+ */
+export function deriveModalFadeWindowSeconds(metadata, fallbackSeconds) {
+  const naturalFrequencyHz = metadata?.[0] ?? 0;
+  const qualityFactor = metadata?.[1] ?? 0;
+  const dampingRatio = metadata?.[2] ?? 0;
+  let amplitudeTimeConstantSec = null;
+  if (naturalFrequencyHz > 0 && dampingRatio > 0) {
+    amplitudeTimeConstantSec =
+      1 / (2 * Math.PI * naturalFrequencyHz * dampingRatio);
+  } else if (naturalFrequencyHz > 0 && qualityFactor > 0) {
+    amplitudeTimeConstantSec = qualityFactor / (Math.PI * naturalFrequencyHz);
+  }
+  if (!Number.isFinite(amplitudeTimeConstantSec)) {
+    return fallbackSeconds;
+  }
+
+  return Math.min(
+    TOPOLOGY_FADE_MAX_SECONDS,
+    Math.max(
+      TOPOLOGY_FADE_MIN_SECONDS,
+      TOPOLOGY_FADE_SETTLE_FACTOR * amplitudeTimeConstantSec,
+    ),
+  );
+}
+
+function activateRecord(record, state, nowSec, { fadeIn = false } = {}) {
   record.state = "active";
   record.activeSinceSec = record.activeSinceSec ?? nowSec;
   record.basisEligibleSinceSec = record.basisEligibleSinceSec ?? nowSec;
@@ -308,9 +367,79 @@ function activateRecord(record, state, nowSec) {
   record.lowEvidenceSec = 0;
   record.basisEligible = true;
   record.eligibilityEpoch = state.eligibilityEpoch + 1;
+  record.fadeInStartedAtSec = fadeIn ? nowSec : null;
+  record.fadeInWindowSec = fadeIn
+    ? deriveModalFadeWindowSeconds(
+        record.payload?.metadata,
+        TOPOLOGY_ADMISSION_FADE_SECONDS,
+      )
+    : null;
+  record.evictionStartedAtSec = null;
+  record.evictionWindowSec = null;
   if (!state.visibleModeKeys.includes(record.modeKey)) {
     state.visibleModeKeys.push(record.modeKey);
   }
+}
+
+function beginRecordEviction(record, nowSec) {
+  if (record.evictionStartedAtSec == null) {
+    record.evictionStartedAtSec = nowSec;
+    record.evictionWindowSec = deriveModalFadeWindowSeconds(
+      record.payload?.metadata,
+      TOPOLOGY_EVICTION_FADE_SECONDS,
+    );
+  }
+}
+
+const FADE_WINDOW_EPSILON_SEC = 1e-6;
+
+function isRecordEvictionComplete(record, nowSec) {
+  return (
+    record.evictionStartedAtSec != null &&
+    nowSec - record.evictionStartedAtSec >=
+      (record.evictionWindowSec ?? TOPOLOGY_EVICTION_FADE_SECONDS) -
+        FADE_WINDOW_EPSILON_SEC
+  );
+}
+
+function countEvictingRecords(state) {
+  let count = 0;
+  for (const record of state.recordsByModeKey.values()) {
+    if (record.basisEligible && record.evictionStartedAtSec != null) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+// Bookkeeping floor, not physics: keeps a fully faded evicting mode barely
+// nonzero so its atlas page still counts as contributing until the reassign
+// window allows the removal.
+const EVICTION_OUTPUT_SCALE_FLOOR = 1e-4;
+
+function getRecordOutputEnvelopeScale(record, nowSec, deltaTimeSec) {
+  let scale = 1;
+  if (record.fadeInStartedAtSec != null) {
+    // Driven-resonator rise toward steady state. The added
+    // deltaTimeSec spans the current frame so the admission tick is nonzero.
+    const windowSec = record.fadeInWindowSec ?? TOPOLOGY_ADMISSION_FADE_SECONDS;
+    const elapsedSec = nowSec - record.fadeInStartedAtSec + deltaTimeSec;
+    scale *=
+      elapsedSec >= windowSec - FADE_WINDOW_EPSILON_SEC
+        ? 1
+        : 1 - Math.exp((-TOPOLOGY_FADE_SETTLE_FACTOR * elapsedSec) / windowSec);
+  }
+  if (record.evictionStartedAtSec != null) {
+    // Ring-down truncated at the settle window.
+    const windowSec =
+      record.evictionWindowSec ?? TOPOLOGY_EVICTION_FADE_SECONDS;
+    const elapsedSec = nowSec - record.evictionStartedAtSec;
+    scale *= Math.max(
+      EVICTION_OUTPUT_SCALE_FLOOR,
+      Math.exp((-TOPOLOGY_FADE_SETTLE_FACTOR * elapsedSec) / windowSec),
+    );
+  }
+  return scale;
 }
 
 function updateRecordSnapshot(record, entry, nowSec) {
@@ -369,11 +498,14 @@ function shouldRetainRenderablePayloadForRelease(record, entry) {
   );
 }
 
-function decayRecordLivePayload(record) {
+function decayRecordLivePayload(
+  record,
+  releaseSeconds = TOPOLOGY_RELEASE_SECONDS,
+) {
+  const resolvedReleaseSeconds = normalizeReleaseSeconds(releaseSeconds);
   const releaseScale = clamp01(
     1 -
-      record.lowEvidenceSec /
-        Math.max(TOPOLOGY_RELEASE_SECONDS, Number.EPSILON),
+      record.lowEvidenceSec / Math.max(resolvedReleaseSeconds, Number.EPSILON),
   );
   const sourcePayload = record.lastRenderablePayload ??
     record.payload ?? {
@@ -714,14 +846,15 @@ function selectReplacementPairs({
   const replacementBudget = Math.max(
     0,
     Math.ceil(maxVisibleModeCount * TOPOLOGY_REPLACE_MAX_FRACTION) -
-      alreadyAdmittedCount,
+      alreadyAdmittedCount -
+      countEvictingRecords(state),
   );
   if (replacementBudget <= 0) {
     return [];
   }
-  const targets = getBasisEligibleRecords(state).sort(
-    compareReplacementTargets,
-  );
+  const targets = getBasisEligibleRecords(state)
+    .filter((record) => record.evictionStartedAtSec == null)
+    .sort(compareReplacementTargets);
   const candidates = [...candidateRecords].sort(compareAdmissionRecords);
   const pairs = [];
   const usedTargetKeys = new Set();
@@ -813,7 +946,7 @@ function selectReplacementPairs({
   return pairs;
 }
 
-function writeDescriptorSource(records) {
+function writeDescriptorSource(records, { nowSec = 0, deltaTimeSec = 0 } = {}) {
   const modalFieldSlots = new Float32Array(records.length * 4);
   const modalFieldPhaseSlots = new Float32Array(records.length * 4);
   const modalFieldColorSlots = new Float32Array(records.length * 4);
@@ -840,6 +973,22 @@ function writeDescriptorSource(records) {
       offset,
     );
     modalFieldMetadataSlots.set(record.payload.metadata, offset);
+
+    // Crossfade envelope: same components the release path decays.
+    const envelopeScale = getRecordOutputEnvelopeScale(
+      record,
+      nowSec,
+      deltaTimeSec,
+    );
+    if (envelopeScale !== 1) {
+      modalFieldSlots[offset + 3] *= envelopeScale;
+      modalFieldPhaseSlots[offset + 2] *= envelopeScale;
+      modalFieldPhaseSlots[offset + 3] *= envelopeScale;
+      modalFieldColorSlots[offset + 3] *= envelopeScale;
+      modalFieldSpectralMeta[offset + 2] *= envelopeScale;
+      modalFieldSpectralMeta[offset + 3] *= envelopeScale;
+      modalFieldMetadataSlots[offset + 3] *= envelopeScale;
+    }
   });
 
   return {
@@ -941,6 +1090,9 @@ function buildDiagnostics({
   const releasingModeKeys = outputRecords
     .filter((record) => record.state === "releasing")
     .map((record) => record.modeKey);
+  const evictingModeKeys = outputRecords
+    .filter((record) => record.evictionStartedAtSec != null)
+    .map((record) => record.modeKey);
   const tailEntries = candidateEntries.filter(
     (entry) => !outputModeKeySet.has(entry.modeKey),
   );
@@ -984,6 +1136,7 @@ function buildDiagnostics({
     admittedModeKeys,
     retainedModeKeys,
     releasingModeKeys,
+    evictingModeKeys,
     removedModeKeys,
     tailModeKeys,
     tailShellCount: tailTopology.shellCount,
@@ -1033,6 +1186,7 @@ function buildDormantResult({
       state.recordsByModeKey.has(modeKey),
     ),
     releasingModeKeys: [],
+    evictingModeKeys: [],
     removedModeKeys: [],
     tailModeKeys: candidateEntries.map((entry) => entry.modeKey),
     tailShellCount: candidateTopology.shellCount,
@@ -1066,6 +1220,7 @@ function buildDormantResult({
  *   renderAuthority?: boolean,
  *   maxVisibleModeCount?: number,
  *   maxBasisModeOrder?: number,
+ *   releaseSeconds?: number,
  *   allowImmediateBootstrap?: boolean,
  *   normalizeCandidateEvidence?: boolean,
  *   cavityGeometry?: import("./cavityGeometry.js").CavityGeometry,
@@ -1080,6 +1235,7 @@ export function updateModalFieldContinuity(
     renderAuthority = true,
     maxVisibleModeCount = Infinity,
     maxBasisModeOrder = Infinity,
+    releaseSeconds = TOPOLOGY_RELEASE_SECONDS,
     allowImmediateBootstrap = false,
     normalizeCandidateEvidence = false,
     cavityGeometry = DEFAULT_EFFECTIVE_CAVITY_GEOMETRY,
@@ -1090,6 +1246,7 @@ export function updateModalFieldContinuity(
   const normalizedMaxVisibleModeCount = Number.isFinite(maxVisibleModeCount)
     ? Math.max(0, Math.floor(maxVisibleModeCount))
     : Infinity;
+  const resolvedReleaseSeconds = normalizeReleaseSeconds(releaseSeconds);
   const hadResetToken = state.lastResetToken !== undefined;
   const reset = hadResetToken && state.lastResetToken !== resetToken;
   if (reset) {
@@ -1142,7 +1299,7 @@ export function updateModalFieldContinuity(
     } else {
       updateLowEvidenceRecord(record, resolvedDeltaTimeSec, nowSec);
       if (retainRenderablePayloadForRelease) {
-        decayRecordLivePayload(record);
+        decayRecordLivePayload(record, resolvedReleaseSeconds);
       }
     }
 
@@ -1160,6 +1317,19 @@ export function updateModalFieldContinuity(
   const allowBootstrapAdmission =
     allowImmediateBootstrap && previousVisibleKeys.length === 0;
   if (canReassignBasis(state, nowSec)) {
+    let basisChanged = false;
+    // Complete evictions whose fade has elapsed before selecting admissions,
+    // so the freed slots are available to this same reassign event.
+    for (const [modeKey, record] of Array.from(
+      state.recordsByModeKey.entries(),
+    )) {
+      if (record.basisEligible && isRecordEvictionComplete(record, nowSec)) {
+        removeRecord(state, modeKey);
+        removedModeKeys.push(modeKey);
+        basisChanged = true;
+      }
+    }
+
     const eligibleRecords = [];
     for (const record of state.recordsByModeKey.values()) {
       if (
@@ -1204,16 +1374,23 @@ export function updateModalFieldContinuity(
       modalGeometryBackend,
     });
     if (selectedRecords.length > 0 || replacementPairs.length > 0) {
+      // Fade admissions in unless the field was empty: modes appearing out of
+      // silence pop in at full strength by design.
+      const fadeIn = previousVisibleKeys.length > 0;
       for (const record of selectedRecords) {
-        activateRecord(record, state, nowSec);
+        activateRecord(record, state, nowSec, { fadeIn });
         admittedModeKeys.push(record.modeKey);
       }
-      for (const { candidate, target } of replacementPairs) {
-        removeRecord(state, target.modeKey);
-        removedModeKeys.push(target.modeKey);
-        activateRecord(candidate, state, nowSec);
-        admittedModeKeys.push(candidate.modeKey);
+      // Replacements crossfade instead of swapping in place: the target fades
+      // out where it stands and is removed by a later reassign event's sweep
+      // above, which frees its slot for the successor to be admitted (and
+      // faded in) through the normal admission path.
+      for (const pair of replacementPairs) {
+        beginRecordEviction(pair.target, nowSec);
       }
+      basisChanged = true;
+    }
+    if (basisChanged) {
       markBasisChanged(state, nowSec);
     }
   }
@@ -1224,7 +1401,7 @@ export function updateModalFieldContinuity(
     if (currentEntryByModeKey.has(modeKey)) {
       if (
         record.basisEligible &&
-        record.lowEvidenceSec >= TOPOLOGY_RELEASE_SECONDS &&
+        record.lowEvidenceSec >= resolvedReleaseSeconds &&
         canReassignBasis(state, nowSec)
       ) {
         removeRecord(state, modeKey);
@@ -1240,9 +1417,9 @@ export function updateModalFieldContinuity(
     }
 
     updateLowEvidenceRecord(record, resolvedDeltaTimeSec, nowSec);
-    decayRecordLivePayload(record);
+    decayRecordLivePayload(record, resolvedReleaseSeconds);
     if (
-      record.lowEvidenceSec >= TOPOLOGY_RELEASE_SECONDS &&
+      record.lowEvidenceSec >= resolvedReleaseSeconds &&
       canReassignBasis(state, nowSec)
     ) {
       removeRecord(state, modeKey);
@@ -1255,7 +1432,10 @@ export function updateModalFieldContinuity(
     .map((modeKey) => state.recordsByModeKey.get(modeKey))
     .filter((record) => record?.basisEligible)
     .slice(0, normalizedMaxVisibleModeCount);
-  const descriptorSourceOutput = writeDescriptorSource(outputRecords);
+  const descriptorSourceOutput = writeDescriptorSource(outputRecords, {
+    nowSec,
+    deltaTimeSec: resolvedDeltaTimeSec,
+  });
   const diagnostics = buildDiagnostics({
     state,
     candidateEntries,

@@ -8,6 +8,9 @@ import {
   applyLiveInputRenderIntent,
   applyReactiveBloomState,
   buildPerformanceHudSnapshot,
+  consumeRenderFramePacerSlot,
+  createAuditSnapshotNotifier,
+  createRenderFramePacerState,
   finalizeTerminalVisualIdleState,
   getRenderTargetPixelRatio,
   publishDevtoolsSnapshots,
@@ -1154,6 +1157,140 @@ test("updateModalFreshnessDiagnostics uses render-authoritative descriptor count
 
   expect(runtimeDiagnostics.modalFreshness.activeModeCount).toBe(12);
   expect(runtimeDiagnostics.modalFreshness.activeModalFieldModeCount).toBe(12);
+});
+
+test("updateModalFreshnessDiagnostics reuses the slot turnover buffer across same-capacity frames", () => {
+  const runtimeDiagnostics = createRuntimeDiagnostics();
+
+  updateModalFreshnessDiagnostics(
+    runtimeDiagnostics,
+    {
+      frameTimeMs: 1000,
+      sourceMode: "live",
+      modalFieldSlots: new Float32Array([0.2, 0.3, 0.4, 0.5]),
+    },
+    { getWallTimeMs: () => 1100 },
+  );
+  const firstCopy = runtimeDiagnostics.modalFreshness._previousModalFieldSlots;
+  expect(firstCopy).toBeInstanceOf(Float32Array);
+
+  updateModalFreshnessDiagnostics(
+    runtimeDiagnostics,
+    {
+      frameTimeMs: 1016,
+      sourceMode: "live",
+      modalFieldSlots: new Float32Array([0.2, 0.45, 0.4, 0.5]),
+    },
+    { getWallTimeMs: () => 1116 },
+  );
+
+  expect(runtimeDiagnostics.modalFreshness._previousModalFieldSlots).toBe(
+    firstCopy,
+  );
+  expect(Array.from(firstCopy)).toEqual([
+    Math.fround(0.2),
+    Math.fround(0.45),
+    Math.fround(0.4),
+    Math.fround(0.5),
+  ]);
+  expect(
+    runtimeDiagnostics.modalFreshness.modalFieldSlotMeanAbsDelta,
+  ).toBeCloseTo(0.0375);
+  expect(runtimeDiagnostics.modalFreshness.modalFieldSlotChangeCount).toBe(1);
+
+  updateModalFreshnessDiagnostics(
+    runtimeDiagnostics,
+    {
+      frameTimeMs: 1032,
+      sourceMode: "live",
+      modalFieldSlots: new Float32Array([0.2, 0.45, 0.4, 0.5, 0.6, 0, 0, 0]),
+    },
+    { getWallTimeMs: () => 1132 },
+  );
+
+  expect(runtimeDiagnostics.modalFreshness._previousModalFieldSlots).not.toBe(
+    firstCopy,
+  );
+  expect(
+    runtimeDiagnostics.modalFreshness._previousModalFieldSlots,
+  ).toHaveLength(8);
+  expect(runtimeDiagnostics.modalFreshness.modalFieldSlotChangeCount).toBe(1);
+});
+
+test("createAuditSnapshotNotifier collapses repeated disabled notifications", () => {
+  const received = [];
+  const notify = createAuditSnapshotNotifier((nextState) => {
+    received.push(nextState);
+  });
+
+  notify({ enabled: false, snapshot: null });
+  notify({ enabled: false, snapshot: null });
+  notify({ enabled: false, snapshot: null });
+
+  expect(received).toHaveLength(1);
+  expect(received[0]).toStrictEqual({ enabled: false, snapshot: null });
+
+  const firstEnabledSnapshot = { enabled: true, snapshot: { frame: 1 } };
+  const secondEnabledSnapshot = { enabled: true, snapshot: { frame: 2 } };
+  notify(firstEnabledSnapshot);
+  notify(secondEnabledSnapshot);
+
+  expect(received).toHaveLength(3);
+  expect(received[1]).toBe(firstEnabledSnapshot);
+  expect(received[2]).toBe(secondEnabledSnapshot);
+
+  notify({ enabled: false, snapshot: null });
+  notify({ enabled: false, snapshot: null });
+
+  expect(received).toHaveLength(4);
+  expect(received[3]).toStrictEqual({ enabled: false, snapshot: null });
+});
+
+test("consumeRenderFramePacerSlot renders every other tick at double the target rate", () => {
+  const pacerState = createRenderFramePacerState();
+  const rendered = [];
+  // 120Hz ticks against a 60fps budget.
+  for (let tick = 0; tick < 8; tick += 1) {
+    const nowMs = tick * (1000 / 120);
+    if (consumeRenderFramePacerSlot(pacerState, 60, nowMs)) {
+      rendered.push(tick);
+    }
+  }
+
+  expect(rendered).toEqual([0, 2, 4, 6]);
+});
+
+test("consumeRenderFramePacerSlot renders every tick at the target rate", () => {
+  const pacerState = createRenderFramePacerState();
+  // 60Hz ticks with realistic jitter against a 60fps budget.
+  const tickTimesMs = [0, 16.6, 33.4, 50.0, 66.7];
+  const decisions = tickTimesMs.map((nowMs) =>
+    consumeRenderFramePacerSlot(pacerState, 60, nowMs),
+  );
+
+  expect(decisions).toEqual([true, true, true, true, true]);
+});
+
+test("consumeRenderFramePacerSlot rebases after a stall instead of bursting", () => {
+  const pacerState = createRenderFramePacerState();
+  expect(consumeRenderFramePacerSlot(pacerState, 60, 0)).toBe(true);
+  // A 100ms stall: the next tick renders once, then pacing resumes from now.
+  expect(consumeRenderFramePacerSlot(pacerState, 60, 100)).toBe(true);
+  expect(consumeRenderFramePacerSlot(pacerState, 60, 108.3)).toBe(false);
+  expect(consumeRenderFramePacerSlot(pacerState, 60, 116.7)).toBe(true);
+});
+
+test("consumeRenderFramePacerSlot passes through without a finite fps budget", () => {
+  const pacerState = createRenderFramePacerState();
+  expect(consumeRenderFramePacerSlot(pacerState, null, 0)).toBe(true);
+  expect(consumeRenderFramePacerSlot(pacerState, null, 1)).toBe(true);
+  expect(consumeRenderFramePacerSlot(pacerState, 0, 2)).toBe(true);
+  expect(consumeRenderFramePacerSlot(pacerState, Number.NaN, 3)).toBe(true);
+});
+
+test("createAuditSnapshotNotifier returns null without a listener", () => {
+  expect(createAuditSnapshotNotifier(null)).toBeNull();
+  expect(createAuditSnapshotNotifier(undefined)).toBeNull();
 });
 
 test("publishes provider transition phases even before live audio becomes active", () => {

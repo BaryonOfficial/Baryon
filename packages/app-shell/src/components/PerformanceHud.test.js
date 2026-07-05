@@ -181,7 +181,7 @@ describe("PerformanceHud", () => {
     );
     expect(markup).toContain("Drops: 26");
     expect(markup).toContain("Failures: 2");
-    expect(markup).toContain("Paint-only: 31 / 4");
+    expect(markup).not.toContain("Paint-only:");
     expect(markup).toContain("Last Drop: publish-target-changed");
     expect(markup).not.toContain("Publish ms:");
     expect(markup).not.toContain("82.1 FPS paint");
@@ -189,6 +189,22 @@ describe("PerformanceHud", () => {
     expect(markup).not.toContain("Invalidate-&gt;Paint ms:");
     expect(markup).not.toContain("Stage Lead ms:");
     expect(markup).not.toContain("Stage Coalesced:");
+  });
+
+  it("keeps paint-only counters out of the visible HUD layout", () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(PerformanceHud, {
+        metrics: createMetrics({
+          outputPaintWithoutPublishCount: 31,
+          outputConsecutivePaintWithoutPublishCount: 4,
+        }),
+      }),
+    );
+
+    expect(markup).toContain("FPS: 60.0");
+    expect(markup).toContain("Frame ms: 16.67");
+    expect(markup).not.toContain("Paint-only:");
+    expect(markup).not.toContain("Stage:");
   });
 
   it("does not enter split-output mode for null output metric fields", () => {

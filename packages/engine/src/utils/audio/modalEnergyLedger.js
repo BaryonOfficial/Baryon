@@ -82,7 +82,19 @@ export function buildModalEnergyLedger({
   const rawProjectedRenderEnergy = clamp01(rawProjectedLayerEnergyTotal);
   const normalizedSourceEnergy = clamp01(sourceEnergy);
   const resolvedRenderBoundaryState = renderBoundaryState ?? "live";
-  const storedModalEnergy = clamp01(modalResponse?.modalResponseEnergy ?? 0);
+  const rawStoredModalEnergy = clamp01(modalResponse?.modalResponseEnergy ?? 0);
+  const storedModalEnergy = Number.isFinite(
+    modalResponse?.modalResponseRenderCapEnergy,
+  )
+    ? Math.min(
+        rawStoredModalEnergy,
+        clamp01(modalResponse.modalResponseRenderCapEnergy),
+      )
+    : rawStoredModalEnergy;
+  const storedModalLayerScale =
+    rawStoredModalEnergy > 0 && storedModalEnergy < rawStoredModalEnergy
+      ? storedModalEnergy / rawStoredModalEnergy
+      : 1;
   const normalizedCurrentSignalEnergy = Number.isFinite(currentSignalEnergy)
     ? clamp01(currentSignalEnergy)
     : rawProjectedRenderEnergy;
@@ -117,10 +129,12 @@ export function buildModalEnergyLedger({
     sourceEnergy: normalizedSourceEnergy,
     storedModalEnergy,
     storedModalSourceCoupledEnergy: clamp01(
-      modalResponse?.modalResponseSourceCoupledEnergy ?? 0,
+      (modalResponse?.modalResponseSourceCoupledEnergy ?? 0) *
+        storedModalLayerScale,
     ),
     storedModalResonantEnergy: clamp01(
-      modalResponse?.modalResponseResonantEnergy ?? 0,
+      (modalResponse?.modalResponseResonantEnergy ?? 0) *
+        storedModalLayerScale,
     ),
     projectedRenderEnergy,
     rawProjectedRenderEnergy,

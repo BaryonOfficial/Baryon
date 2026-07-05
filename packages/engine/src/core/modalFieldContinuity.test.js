@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   BASIS_REASSIGN_MIN_SECONDS,
+  TOPOLOGY_ADMISSION_FADE_SECONDS,
+  TOPOLOGY_EVICTION_FADE_SECONDS,
   TOPOLOGY_PROMOTE_SECONDS,
   TOPOLOGY_RELEASE_SECONDS,
   createModalFieldContinuityState,
@@ -80,6 +82,19 @@ function readModeKeys(source) {
     );
   }
   return keys;
+}
+
+function readCoefficient(source, modeKey) {
+  for (let index = 0; index < source.activeModalFieldModeCount; index += 1) {
+    const offset = index * 4;
+    const key = `${source.modalFieldSlots[offset]}:${
+      source.modalFieldSlots[offset + 1]
+    }:${source.modalFieldSlots[offset + 2]}`;
+    if (key === modeKey) {
+      return source.modalFieldSlots[offset + 3];
+    }
+  }
+  return null;
 }
 
 describe("modal field continuity", () => {
@@ -366,18 +381,26 @@ describe("modal field continuity", () => {
       },
     );
 
-    const replaced = update(
-      state,
-      [
-        { mode: [0, 0, 3], coefficient: 0.9, observedSupport: 1 },
-        { mode: [1, 2, 2], coefficient: 0.82, observedSupport: 1 },
-        { mode: [1, 1, 1], coefficient: 0.35, observedSupport: 1 },
-      ],
-      {
-        deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS + BASIS_REASSIGN_MIN_SECONDS,
-        maxVisibleModeCount: 2,
-      },
-    );
+    const entries = [
+      { mode: [0, 0, 3], coefficient: 0.9, observedSupport: 1 },
+      { mode: [1, 2, 2], coefficient: 0.82, observedSupport: 1 },
+      { mode: [1, 1, 1], coefficient: 0.35, observedSupport: 1 },
+    ];
+    const evicting = update(state, entries, {
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS + BASIS_REASSIGN_MIN_SECONDS,
+      maxVisibleModeCount: 2,
+    });
+
+    // The replaced page crossfades out in place instead of swapping instantly.
+    expect(readModeKeys(evicting.descriptorSource)).toEqual(["0:0:3", "1:2:2"]);
+    expect(evicting.diagnostics.evictingModeKeys).toEqual(["1:2:2"]);
+    expect(evicting.diagnostics.removedModeKeys).toEqual([]);
+    expect(evicting.diagnostics.admittedModeKeys).toEqual([]);
+
+    const replaced = update(state, entries, {
+      deltaTimeSec: TOPOLOGY_EVICTION_FADE_SECONDS,
+      maxVisibleModeCount: 2,
+    });
 
     expect(readModeKeys(replaced.descriptorSource)).toEqual(["0:0:3", "1:1:1"]);
     expect(replaced.diagnostics.removedModeKeys).toEqual(["1:2:2"]);
@@ -458,8 +481,16 @@ describe("modal field continuity", () => {
     });
     expect(readModeKeys(initial.descriptorSource)).toEqual(["8:8:8"]);
 
-    const replaced = update(state, [detail, structural], {
+    const evicting = update(state, [detail, structural], {
       deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS + BASIS_REASSIGN_MIN_SECONDS,
+      maxVisibleModeCount: 1,
+    });
+
+    expect(readModeKeys(evicting.descriptorSource)).toEqual(["8:8:8"]);
+    expect(evicting.diagnostics.evictingModeKeys).toEqual(["8:8:8"]);
+
+    const replaced = update(state, [detail, structural], {
+      deltaTimeSec: TOPOLOGY_EVICTION_FADE_SECONDS,
       maxVisibleModeCount: 1,
     });
 
@@ -634,19 +665,24 @@ describe("modal field continuity", () => {
       },
     );
 
-    const replacement = update(
-      state,
-      [
-        { mode: [1, 1, 1], coefficient: 0.12 },
-        { mode: [2, 1, 1], coefficient: 0.11 },
-        { mode: [3, 1, 1], coefficient: 0.8 },
-        { mode: [4, 1, 1], coefficient: 0.7 },
-      ],
-      {
-        deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS + BASIS_REASSIGN_MIN_SECONDS,
-        maxVisibleModeCount: 2,
-      },
-    );
+    const entries = [
+      { mode: [1, 1, 1], coefficient: 0.12 },
+      { mode: [2, 1, 1], coefficient: 0.11 },
+      { mode: [3, 1, 1], coefficient: 0.8 },
+      { mode: [4, 1, 1], coefficient: 0.7 },
+    ];
+    const evicting = update(state, entries, {
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS + BASIS_REASSIGN_MIN_SECONDS,
+      maxVisibleModeCount: 2,
+    });
+
+    expect(readModeKeys(evicting.descriptorSource)).toEqual(["1:1:1", "2:1:1"]);
+    expect(evicting.diagnostics.evictingModeKeys).toEqual(["2:1:1"]);
+
+    const replacement = update(state, entries, {
+      deltaTimeSec: TOPOLOGY_EVICTION_FADE_SECONDS,
+      maxVisibleModeCount: 2,
+    });
 
     expect(readModeKeys(replacement.descriptorSource)).toEqual([
       "1:1:1",
@@ -654,6 +690,159 @@ describe("modal field continuity", () => {
     ]);
     expect(replacement.diagnostics.removedModeKeys).toEqual(["2:1:1"]);
     expect(replacement.diagnostics.admittedModeKeys).toEqual(["3:1:1"]);
+  });
+
+  it("skips the admission fade when the field starts from silence", () => {
+    const state = createModalFieldContinuityState();
+    const candidate = { mode: [1, 1, 1], coefficient: 0.4 };
+
+    const promoted = update(state, [candidate], {
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
+    });
+
+    expect(readModeKeys(promoted.descriptorSource)).toEqual(["1:1:1"]);
+    expect(readCoefficient(promoted.descriptorSource, "1:1:1")).toBeCloseTo(
+      0.4,
+      6,
+    );
+  });
+
+  it("fades steady-state admissions in over the admission fade window", () => {
+    const state = createModalFieldContinuityState();
+    const resident = { mode: [1, 1, 1], coefficient: 0.4 };
+    const newcomer = { mode: [2, 1, 1], coefficient: 0.5 };
+
+    update(state, [resident], { deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS });
+
+    // Qualify the newcomer, then let the reassign window open.
+    update(state, [resident, newcomer], {
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
+    });
+    const admitted = update(state, [resident, newcomer], {
+      deltaTimeSec: BASIS_REASSIGN_MIN_SECONDS,
+    });
+
+    // Wait — the newcomer may have been admitted on the qualifying update if
+    // the window was already open; find the first output that includes it.
+    const source = readModeKeys(admitted.descriptorSource).includes("2:1:1")
+      ? admitted.descriptorSource
+      : update(state, [resident, newcomer], { deltaTimeSec: DT })
+          .descriptorSource;
+    const partial = readCoefficient(source, "2:1:1");
+    expect(partial).not.toBeNull();
+    expect(partial).toBeLessThan(0.5);
+    expect(readCoefficient(source, "1:1:1")).toBeCloseTo(0.4, 6);
+
+    const settled = update(state, [resident, newcomer], {
+      deltaTimeSec: TOPOLOGY_ADMISSION_FADE_SECONDS,
+    });
+    expect(readCoefficient(settled.descriptorSource, "2:1:1")).toBeCloseTo(
+      0.5,
+      6,
+    );
+  });
+
+  it("fades evicted pages out and never exceeds the visible budget mid-swap", () => {
+    const state = createModalFieldContinuityState();
+    const weak = { mode: [1, 1, 1], coefficient: 0.15, observedSupport: 1 };
+    const strong = { mode: [2, 1, 1], coefficient: 0.9, observedSupport: 1 };
+
+    update(state, [weak], {
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
+      maxVisibleModeCount: 1,
+    });
+    const evicting = update(state, [weak, strong], {
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS + BASIS_REASSIGN_MIN_SECONDS,
+      maxVisibleModeCount: 1,
+    });
+    expect(readModeKeys(evicting.descriptorSource)).toEqual(["1:1:1"]);
+    expect(evicting.diagnostics.evictingModeKeys).toEqual(["1:1:1"]);
+
+    // Mid-fade the evicted page keeps its identity but decays in amplitude,
+    // and the visible count never exceeds the budget.
+    const midFade = update(state, [weak, strong], {
+      deltaTimeSec: TOPOLOGY_EVICTION_FADE_SECONDS / 2,
+      maxVisibleModeCount: 1,
+    });
+    expect(readModeKeys(midFade.descriptorSource)).toEqual(["1:1:1"]);
+    expect(midFade.descriptorSource.activeModalFieldModeCount).toBe(1);
+    const fading = readCoefficient(midFade.descriptorSource, "1:1:1");
+    expect(fading).toBeGreaterThan(0);
+    expect(fading).toBeLessThan(0.15);
+
+    const swapped = update(state, [weak, strong], {
+      deltaTimeSec: TOPOLOGY_EVICTION_FADE_SECONDS,
+      maxVisibleModeCount: 1,
+    });
+    expect(readModeKeys(swapped.descriptorSource)).toEqual(["2:1:1"]);
+    expect(swapped.diagnostics.removedModeKeys).toEqual(["1:1:1"]);
+    expect(swapped.diagnostics.admittedModeKeys).toEqual(["2:1:1"]);
+    expect(swapped.descriptorSource.activeModalFieldModeCount).toBe(1);
+  });
+
+  it("derives eviction windows from damping metadata and admits a successor when capacity frees", () => {
+    const state = createModalFieldContinuityState();
+    // Low-frequency high-Q metadata gives tau = Q / (pi * f), which clamps to
+    // the bookkeeping max (0.25s), longer than the metadata-free fallback.
+    const ringing = {
+      mode: [1, 1, 1],
+      coefficient: 0.3,
+      observedSupport: 1,
+      naturalFrequencyHz: 40,
+      qualityFactor: 100,
+    };
+    const resident = { mode: [2, 1, 1], coefficient: 0.8, observedSupport: 1 };
+    const residentQuiet = {
+      ...resident,
+      coefficient: 0.005,
+      observedSupport: 0.01,
+    };
+    const strong = { mode: [3, 1, 1], coefficient: 0.9, observedSupport: 1 };
+
+    update(state, [ringing, resident], {
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
+      maxVisibleModeCount: 2,
+    });
+
+    // Full budget: the strong candidate evicts the weakest page, which fades
+    // on its own (clamped) ring-down window instead of the default one.
+    const evicting = update(state, [ringing, resident, strong], {
+      deltaTimeSec: BASIS_REASSIGN_MIN_SECONDS,
+      maxVisibleModeCount: 2,
+    });
+    expect(evicting.diagnostics.evictingModeKeys).toEqual(["1:1:1"]);
+
+    // After the metadata-free fallback window, the ringing page must still be
+    // fading.
+    const pastFallback = update(state, [ringing, residentQuiet, strong], {
+      deltaTimeSec: TOPOLOGY_EVICTION_FADE_SECONDS,
+      maxVisibleModeCount: 2,
+    });
+    expect(readModeKeys(pastFallback.descriptorSource)).toContain("1:1:1");
+
+    // The resident releases through low evidence, freeing a slot; the
+    // successor is admitted while the evicted page is still ringing down.
+    const releasing = update(state, [ringing, residentQuiet, strong], {
+      deltaTimeSec: TOPOLOGY_RELEASE_SECONDS - TOPOLOGY_EVICTION_FADE_SECONDS,
+      maxVisibleModeCount: 2,
+    });
+    const overlap = releasing.diagnostics.admittedModeKeys.includes("3:1:1")
+      ? releasing
+      : update(state, [ringing, residentQuiet, strong], {
+          deltaTimeSec: BASIS_REASSIGN_MIN_SECONDS,
+          maxVisibleModeCount: 2,
+        });
+
+    const overlapKeys = readModeKeys(overlap.descriptorSource);
+    expect(overlapKeys).toContain("1:1:1");
+    expect(overlapKeys).toContain("3:1:1");
+    expect(overlap.diagnostics.evictingModeKeys).toEqual(["1:1:1"]);
+    const fadingOut = readCoefficient(overlap.descriptorSource, "1:1:1");
+    expect(fadingOut).toBeGreaterThan(0);
+    expect(fadingOut).toBeLessThan(0.3);
+    expect(
+      overlap.descriptorSource.activeModalFieldModeCount,
+    ).toBeLessThanOrEqual(2);
   });
 
   it("preserves stable identity order through coefficient rank jitter", () => {

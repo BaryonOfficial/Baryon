@@ -129,6 +129,28 @@ describe("modal energy ledger", () => {
     expect(ledger.renderAuthority).toBe(true);
   });
 
+  it("uses an explicit modal response render cap for weak residual projection", () => {
+    const ledger = buildModalEnergyLedger({
+      sourceEnergy: 0.35,
+      sourceBoundaryState: "live",
+      currentSignalAmplitude: 0,
+      modalResponse: {
+        modalResponseEnergy: 1,
+        modalResponseSourceCoupledEnergy: 0.8,
+        modalResponseResonantEnergy: 0.2,
+        modalResponseRenderCapEnergy: 0.01,
+      },
+      candidateForcingSlots: makeSlots([[1, 1, 1, 0.8]]),
+      candidateResponseSlots: makeSlots([[3, 3, 3, 0.5]]),
+    });
+
+    expect(ledger.storedModalEnergy).toBeCloseTo(0.01, 6);
+    expect(ledger.storedModalSourceCoupledEnergy).toBeCloseTo(0.008, 6);
+    expect(ledger.storedModalResonantEnergy).toBeCloseTo(0.002, 6);
+    expect(ledger.projectedRenderEnergy).toBeCloseTo(0.01, 6);
+    expect(ledger.projectedEnergyScale).toBeLessThan(1);
+  });
+
   it("does not cap live projection when current signal authority is present", () => {
     const ledger = buildModalEnergyLedger({
       sourceEnergy: 0.35,

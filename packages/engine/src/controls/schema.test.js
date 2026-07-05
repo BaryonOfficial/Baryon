@@ -26,10 +26,12 @@ const EXPECTED_CONTROL_KEYS = [
   "noiseSuppression",
   "autoGainControl",
   // Shape
+  "fieldExtent",
   "zeroPointPrecision",
   "boundaryMode",
   "densityGain",
   "absorption",
+  "laserDeflectionGain",
   "opacityGain",
   "raymarchSteps",
   // Color
@@ -44,6 +46,7 @@ const EXPECTED_CONTROL_KEYS = [
   // Logo
   "idleLogoIntensity",
   "idleLogoSize",
+  "idleLogoColor",
   // Motion
   "rotationMode",
   "rotationSpeed",
@@ -189,23 +192,27 @@ describe("control schema", () => {
 
     expect(state.colorMode).toBe("static");
     expect(state.spectralMix).toBe(0.96);
+    expect(state.rotationMode).toBe("off");
     expect(state.volumeColor).toBe("#5be3f4");
-    expect(state.surfaceColor).toBe("#f7fdff");
-    expect(state.zeroPointPrecision).toBe(0.064);
+    expect(state.surfaceColor).toBe("#5be3f4");
+    expect(state.idleLogoColor).toBe("#f7fdff");
+    expect(state.zeroPointPrecision).toBe(0.072);
     expect(state).not.toHaveProperty("structureMin");
     expect(state).not.toHaveProperty("structureMax");
     expect(state.boundaryMode).toBe("neumann");
+    expect(state.fieldExtent).toBe("sphere");
     expect(state.raymarchSteps).toBe(RAYMARCH_DEFAULTS.raymarchSteps);
     expect(state.densityGain).toBe(4);
+    expect(state.laserDeflectionGain).toBe(0.9);
     expect(state.absorption).toBe(RAYMARCH_DEFAULTS.absorption);
     expect(state.opacityGain).toBe(3);
     expect(state).not.toHaveProperty("contourSharpness");
     expect(state.holographicIntensity).toBe(1);
     expect(state.holographicShift).toBe(0.42);
     expect(state.holographicFresnelPower).toBe(4.8);
-    expect(state.bloomStrength).toBe(1.02);
-    expect(state.bloomRadius).toBe(0.04);
-    expect(state.bloomThreshold).toBe(0.08);
+    expect(state.bloomStrength).toBe(1.05);
+    expect(state.bloomRadius).toBe(0.18);
+    expect(state.bloomThreshold).toBe(0.25);
     expect(state.smaaEnabled).toBe(RENDER_DEFAULTS.smaaEnabled);
     expect(state.performanceHudEnabled).toBe(
       RENDER_DEFAULTS.performanceHudEnabled,
@@ -401,10 +408,12 @@ describe("control schema", () => {
         (definition) => definition.key,
       ),
     ).toEqual([
+      "fieldExtent",
       "boundaryMode",
       "zeroPointPrecision",
       "densityGain",
       "absorption",
+      "laserDeflectionGain",
       "opacityGain",
       "raymarchSteps",
     ]);
@@ -443,7 +452,7 @@ describe("control schema", () => {
       getControlsForFolder("Logo", DEFAULT_VISUALIZATION_METHOD).map(
         (definition) => definition.key,
       ),
-    ).toEqual(["idleLogoIntensity", "idleLogoSize"]);
+    ).toEqual(["idleLogoIntensity", "idleLogoSize", "idleLogoColor"]);
     expect(
       getControlsForFolder("Diagnostics", DEFAULT_VISUALIZATION_METHOD).map(
         (definition) => definition.key,

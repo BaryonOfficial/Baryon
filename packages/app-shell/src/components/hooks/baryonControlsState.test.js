@@ -59,10 +59,12 @@ test("builds the advanced controls presentation layout", () => {
     controls: expect.any(Array),
   });
   expect(shapeGroup.controls.map((control) => control.key)).toStrictEqual([
+    "fieldExtent",
     "boundaryMode",
     "zeroPointPrecision",
     "densityGain",
     "absorption",
+    "laserDeflectionGain",
     "opacityGain",
     "raymarchSteps",
   ]);
@@ -130,6 +132,17 @@ test("builds the advanced controls presentation layout", () => {
     "rimBloomBias",
     "rimCompression",
   ]);
+
+  const logoGroup = groupByTitle.get("Logo");
+  expect(logoGroup).toMatchObject({
+    title: "Logo",
+    controls: expect.any(Array),
+  });
+  expect(logoGroup.controls.map((control) => control.key)).toStrictEqual([
+    "idleLogoIntensity",
+    "idleLogoSize",
+    "idleLogoColor",
+  ]);
 });
 
 test("hides mode-dependent controls until their controlling value enables them", () => {
@@ -142,10 +155,26 @@ test("hides mode-dependent controls until their controlling value enables them",
     group.controls.map((control) => control.key),
   );
 
+  // Static color and disabled rotation are the baseline defaults, so every
+  // mode-dependent control starts hidden.
   expect(defaultControls).not.toContain("customTargetFps");
   expect(defaultControls).not.toContain("outputBackgroundColor");
   expect(defaultControls).not.toContain("rotationSpeed");
   expect(defaultControls).not.toContain("spectralMix");
+
+  const staticColorLayout = getVisibleControlLayout({
+    controlsState: {
+      ...createControlState(),
+      colorMode: "static",
+    },
+    devtoolsEnabled: true,
+    method: "raymarch",
+  });
+  const staticColorControls = staticColorLayout.folderGroups.flatMap((group) =>
+    group.controls.map((control) => control.key),
+  );
+
+  expect(staticColorControls).not.toContain("spectralMix");
 
   const expandedLayout = getVisibleControlLayout({
     controlsState: {
@@ -210,18 +239,22 @@ test("persistControls rewrites settings to the current schema and drops removed 
       },
     },
     controls,
+    new Set(["backgroundColor"]),
   );
 
-  expect(JSON.parse(storage.get(SETTINGS_KEY))).toMatchObject({
-    backgroundColor: "#102030",
+  expect(JSON.parse(storage.get(SETTINGS_KEY))).toEqual({
+    version: 2,
+    controls: {
+      backgroundColor: "#102030",
+    },
   });
-  expect(JSON.parse(storage.get(SETTINGS_KEY))).not.toHaveProperty(
+  expect(JSON.parse(storage.get(SETTINGS_KEY)).controls).not.toHaveProperty(
     "structuralImplementation",
   );
-  expect(JSON.parse(storage.get(SETTINGS_KEY))).not.toHaveProperty(
+  expect(JSON.parse(storage.get(SETTINGS_KEY)).controls).not.toHaveProperty(
     "structureMin",
   );
-  expect(JSON.parse(storage.get(SETTINGS_KEY))).not.toHaveProperty(
+  expect(JSON.parse(storage.get(SETTINGS_KEY)).controls).not.toHaveProperty(
     "structureMax",
   );
 });

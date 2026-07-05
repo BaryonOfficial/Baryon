@@ -93,11 +93,19 @@ If you are working from a Baryon source checkout, you can rebuild the `.tox`
 from TouchDesigner Textport:
 
 ```python
-exec(open('/path/to/baryon/scripts/touchdesigner/build_baryon_osc_structure_monitor.py').read())
+script = '/path/to/baryon/scripts/touchdesigner/build_baryon_osc_structure_monitor.py'
+globals()['__file__'] = script
+exec(compile(open(script).read(), script, 'exec'), globals())
 ```
 
 The builder saves `baryon_osc_structure.tox` beside the script and under
-`docs/public/downloads/touchdesigner/`.
+`docs/public/downloads/touchdesigner/`. The monitor layout is generated from
+Baryon's canonical OSC Data Out structure schema at build time; it is not a
+runtime schema-discovery protocol. Before publishing an updated `.tox`, run:
+
+```bash
+pnpm osc:structure:schema:check
+```
 
 For a manual TouchDesigner setup on the same Mac:
 

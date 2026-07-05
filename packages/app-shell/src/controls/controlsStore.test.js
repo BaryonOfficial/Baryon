@@ -2,6 +2,11 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  CONTROL_DEFINITIONS,
+  CONTROL_STATUSES,
+  createControlState,
+} from "@baryon/engine/controls/schema";
+import {
   PRESETS_KEY,
   SETTINGS_KEY,
 } from "../components/hooks/baryonControlsState.js";
@@ -18,6 +23,18 @@ function seedStorage({ controls = null, presets = null } = {}) {
     window.localStorage.setItem(PRESETS_KEY, JSON.stringify(presets));
   }
 }
+
+function readStoredSettings() {
+  return JSON.parse(window.localStorage.getItem(SETTINGS_KEY));
+}
+
+const liveControlKeys = CONTROL_DEFINITIONS.filter(
+  (definition) => definition.status === CONTROL_STATUSES.live,
+).map((definition) => definition.key);
+
+const debugOnlyControlKeys = CONTROL_DEFINITIONS.filter(
+  (definition) => definition.status === CONTROL_STATUSES.debugOnly,
+).map((definition) => definition.key);
 
 describe("createControlsStore", () => {
   beforeEach(() => {
@@ -76,6 +93,61 @@ describe("createControlsStore", () => {
     expect(userPreset?.controls).not.toHaveProperty("structureMax");
   });
 
+  it("hydrates sparse v2 settings over current defaults", () => {
+    seedStorage({
+      controls: {
+        version: 2,
+        controls: {
+          backgroundColor: "#102030",
+        },
+      },
+    });
+
+    const store = createControlsStore();
+
+    expect(store.controlsRef.current.backgroundColor).toBe("#102030");
+    expect(store.controlsRef.current.bloomStrength).toBe(
+      createControlState().bloomStrength,
+    );
+  });
+
+  it("does not rewrite legacy raw settings until the next allowed persist", () => {
+    const legacySettings = {
+      bloomStrength: 1.02,
+      bloomRadius: 0.04,
+      bloomThreshold: 0.08,
+      backgroundColor: "#102030",
+    };
+    seedStorage({ controls: legacySettings });
+    const storedBeforeCreate = window.localStorage.getItem(SETTINGS_KEY);
+
+    const store = createControlsStore();
+
+    expect(store.controlsRef.current.bloomStrength).toBe(
+      createControlState().bloomStrength,
+    );
+    expect(store.controlsRef.current.bloomRadius).toBe(
+      createControlState().bloomRadius,
+    );
+    expect(store.controlsRef.current.bloomThreshold).toBe(
+      createControlState().bloomThreshold,
+    );
+    expect(store.controlsRef.current.backgroundColor).toBe("#102030");
+    expect(window.localStorage.getItem(SETTINGS_KEY)).toBe(storedBeforeCreate);
+
+    store.updateControl("zeroPointPrecision", 0.106, {
+      persistMode: "immediate",
+    });
+
+    expect(readStoredSettings()).toEqual({
+      version: 2,
+      controls: {
+        backgroundColor: "#102030",
+        zeroPointPrecision: 0.106,
+      },
+    });
+  });
+
   it("starts without selectable presets when storage is empty", () => {
     const store = createControlsStore();
 
@@ -124,9 +196,108 @@ describe("createControlsStore", () => {
     expect(restoredStore.controlsRef.current.zeroPointPrecision).toBe(0.106);
   });
 
+  it("persists unchanged non-default updates by adding explicit ownership", () => {
+    const store = createControlsStore();
+
+    store.updateControl("backgroundColor", "#223344", {
+      persistMode: "none",
+    });
+    expect(window.localStorage.getItem(SETTINGS_KEY)).toBeNull();
+
+    store.updateControl("backgroundColor", "#223344", {
+      persistMode: "immediate",
+    });
+
+    expect(readStoredSettings()).toEqual({
+      version: 2,
+      controls: {
+        backgroundColor: "#223344",
+      },
+    });
+  });
+
+  it("clears explicit ownership when directly updated to the default", () => {
+    seedStorage({
+      controls: {
+        version: 2,
+        controls: {
+          backgroundColor: "#000000",
+        },
+      },
+    });
+    const store = createControlsStore();
+
+    store.updateControl("backgroundColor", "#000000", {
+      persistMode: "immediate",
+    });
+
+    expect(readStoredSettings()).toEqual({ version: 2, controls: {} });
+  });
+
+  it("does not make derived Spectral Light mix explicit", () => {
+    const store = createControlsStore();
+
+    store.updateControl("colorMode", "static", {
+      persistMode: "none",
+    });
+    store.updateControl("spectralMix", 0, {
+      persistMode: "none",
+    });
+    store.updateControl("colorMode", "spectral", {
+      persistMode: "immediate",
+    });
+
+    expect(store.controlsRef.current.spectralMix).toBe(0.96);
+    // "spectral" is an explicit non-default choice under the static baseline;
+    // the derived spectralMix repair must still stay out of storage.
+    expect(readStoredSettings()).toEqual({
+      version: 2,
+      controls: { colorMode: "spectral" },
+    });
+  });
+
+  it("keeps non-persistent updates out of storage and explicit ownership", () => {
+    const store = createControlsStore();
+
+    store.updateControl("backgroundColor", "#445566", {
+      persistMode: "none",
+    });
+    store.updateControl("zeroPointPrecision", 0.106, {
+      persistMode: "immediate",
+    });
+
+    expect(readStoredSettings()).toEqual({
+      version: 2,
+      controls: {
+        zeroPointPrecision: 0.106,
+      },
+    });
+  });
+
+  it("debounced persistence snapshots do not observe later non-persistent mutations", () => {
+    const store = createControlsStore();
+
+    store.updateControl("backgroundColor", "#111111", {
+      persistMode: "debounced",
+    });
+    store.updateControl("backgroundColor", "#222222", {
+      persistMode: "none",
+    });
+    store.dispose();
+
+    expect(store.controlsRef.current.backgroundColor).toBe("#222222");
+    expect(readStoredSettings()).toEqual({
+      version: 2,
+      controls: {
+        backgroundColor: "#111111",
+      },
+    });
+  });
+
   it("seeds a positive Spectral Light mix when selecting Spectral mode", () => {
     const store = createControlsStore();
 
+    store.updateControl("colorMode", "static");
     store.updateControl("spectralMix", 0);
     expect(store.controlsRef.current.colorMode).toBe("static");
     expect(store.controlsRef.current.spectralMix).toBe(0);
@@ -139,6 +310,20 @@ describe("createControlsStore", () => {
       colorMode: "spectral",
       spectralMix: 0.96,
     });
+  });
+
+  it("resetControls writes empty v2 settings", () => {
+    const store = createControlsStore();
+
+    store.updateControl("backgroundColor", "#223344", {
+      persistMode: "immediate",
+    });
+    store.resetControls();
+
+    expect(readStoredSettings()).toEqual({ version: 2, controls: {} });
+    expect(store.controlsRef.current.backgroundColor).toBe(
+      createControlState().backgroundColor,
+    );
   });
 
   it("deletes the selected preset when deletePreset is called without a name", () => {
@@ -195,6 +380,35 @@ describe("createControlsStore", () => {
     expect(store.getSnapshot().selectedPresetName).toBe("Saved Stage");
     expect(store.controlsRef.current.backgroundColor).toBe("#445566");
     expect(store.controlsRef.current.renderQualityPreset).toBe("max-quality");
+  });
+
+  it("loads presets as full explicit v2 settings", () => {
+    seedStorage({
+      presets: [
+        {
+          name: "Full Stage",
+          controls: {
+            backgroundColor: "#010203",
+            structureMin: 0.12,
+          },
+        },
+      ],
+    });
+    const store = createControlsStore();
+
+    store.loadPreset("Full Stage");
+
+    const settings = readStoredSettings();
+    expect(settings.version).toBe(2);
+    expect(Object.keys(settings.controls).sort()).toEqual(
+      liveControlKeys.slice().sort(),
+    );
+    expect(settings.controls.backgroundColor).toBe("#010203");
+    expect(settings.controls.liveInputAcousticIntent).toBe("ambient");
+    for (const key of debugOnlyControlKeys) {
+      expect(settings.controls).not.toHaveProperty(key);
+    }
+    expect(settings.controls).not.toHaveProperty("structureMin");
   });
 
   it("drops legacy structure-window fields from user presets and saved presets", () => {

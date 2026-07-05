@@ -19,6 +19,7 @@ import {
   createRaymarchModalBasisCache,
   createRaymarchSpectralLaneCache,
 } from "./raymarch/fieldCache.js";
+import { createRaymarchLaserTransportCache } from "./raymarch/laserTransport.js";
 import { estimateProjectedSphereStats } from "./raymarch/intersection.js";
 import { RAYMARCH_DEFAULTS } from "../defaults.js";
 import {
@@ -94,6 +95,9 @@ export function setupRaymarch(
   const spectralLaneCache = createRaymarchSpectralLaneCache({
     resolution: modalBasisCache.resolution,
   });
+  const laserTransportCache = createRaymarchLaserTransportCache({
+    resolution: modalBasisCache.resolution,
+  });
   const volumeMesh = createRaymarchVolumeMesh({
     radius: parameters.radius,
     modalBasisAtlasTexture: modalBasisCache.texture,
@@ -103,6 +107,7 @@ export function setupRaymarch(
       liveFieldProjectionCache.pressureRadiationTexture,
     modalPhaseInterferenceTexture:
       liveFieldProjectionCache.phaseInterferenceTexture,
+    laserIrradianceTexture: laserTransportCache.irradianceTexture,
     spectralLaneTextureA: spectralLaneCache.spectralLaneTextureA,
     spectralLaneTextureB: spectralLaneCache.spectralLaneTextureB,
     spectralLaneStatsTexture: spectralLaneCache.spectralLaneStatsTexture,
@@ -145,6 +150,7 @@ export function setupRaymarch(
     modalBasisCache,
     liveFieldProjectionCache,
     spectralLaneCache,
+    laserTransportCache,
     modalFieldCapacity,
     requestedCavityGeometry,
     effectiveCavityGeometry,
@@ -192,6 +198,7 @@ export function setupRaymarch(
     responseEnvelope: 0,
     accentEnvelope: 0,
     beatPulseEnvelope: 0,
+    shaderBeatPhase: null,
     visibilityDriveEnvelope: 0,
     keyHue: 0,
     keyModeSmooth: 0,

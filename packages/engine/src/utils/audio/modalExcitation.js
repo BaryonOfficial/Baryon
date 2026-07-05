@@ -27,6 +27,7 @@ import {
 import {
   getPhaseAttack,
   getPhaseRelease,
+  computePhaseAnchorAngularVelocityRadPerSec,
   getPhaseVelocityLimit,
   normalizePhaseRad,
   PHASE_AUTHORITY_MIN,
@@ -97,7 +98,7 @@ const EXCITATION_SOURCE_COUPLED_OBSERVED_CONTINUITY_RELEASE = 0.94;
 const EXCITATION_SOURCE_COUPLED_OBSERVED_CONTINUITY_EMPTY_RELEASE = 0.9;
 const EXCITATION_SOURCE_COUPLED_OBSERVED_CONTINUITY_LOW_SIGNAL_RELEASE = 0.82;
 const EXCITATION_SOURCE_COUPLED_SWITCH_PROJECTION_FRAMES = 7;
-const EXCITATION_RESONANT_BLEND_ATTACK = 0.45;
+const EXCITATION_RESONANT_BLEND_ATTACK = 0.52;
 const EXCITATION_RESONANT_SHIFT_BLEND_ATTACK = 0.85;
 const EXCITATION_RESONANT_BLEND_TRACKING = 0.5;
 const EXCITATION_RESONANT_RESPONSE_ENVELOPE_TRACKING = 0.78;
@@ -528,20 +529,15 @@ function getModeRenderLayer(entry) {
   return entry?.renderLayer ?? entry?.layer ?? "resonant";
 }
 
-function buildPreviousModalResponseEnergies(
-  state,
-  { resetSourceCoupled = false, resetResonant = false } = {},
-) {
+// Coupling-frequency switches must not wipe this state: stored modal energy
+// is physical oscillator state, and modes that lose drive after a switch
+// forget through their own Q/ω decay. (The switch flags still drive
+// continuity, retention, and projection logic downstream.) Wiping it blanked
+// the response for the ring-up frames after every dominant-bin jump.
+function buildPreviousModalResponseEnergies(state) {
   const energies = new Map();
 
   const mergeEntry = (entry) => {
-    const layer = entry?.layer ?? getModeRenderLayer(entry);
-    if (
-      (layer === "source-coupled" && resetSourceCoupled) ||
-      (layer === "resonant" && resetResonant)
-    ) {
-      return;
-    }
     const modeKey =
       entry?.modeKey ?? buildModeKey(entry?.u, entry?.v, entry?.w);
     if (!modeKey) {
@@ -570,6 +566,11 @@ function buildPreviousModalResponseEnergies(
         entry?.modalOscillatorPhaseRad ??
         entry?.oscillatorPhaseRad ??
         entry?.phase,
+      modalOscillatorRotationRad: entry?.modalOscillatorRotationRad,
+      modalOscillatorEnvelopeRe: entry?.modalOscillatorEnvelopeRe,
+      modalOscillatorEnvelopeIm: entry?.modalOscillatorEnvelopeIm,
+      modalOscillatorDriveLockRe: entry?.modalOscillatorDriveLockRe,
+      modalOscillatorDriveLockIm: entry?.modalOscillatorDriveLockIm,
       amplitude: previousModalResponseEnergy,
     });
   };
@@ -3163,7 +3164,10 @@ function buildModalProjection({
       EXCITATION_RESONANT_FAST_SHIFT_MIN_VISIBLE_AMPLITUDE;
   const highQResonantSignalAuthoritative = false;
   const modalResponseResonantSignalAuthoritative =
-    (modalResponseMetrics?.modalResponseResonantEnergy ?? 0) > 0.08 &&
+    // Drive-explained energy only: a ringing resonant tail (E ≫ D) is
+    // stored/decay energy and must not make the current signal authoritative.
+    (modalResponseMetrics?.modalResponseResonantCurrentSignalEnergy ?? 0) >
+      0.08 &&
     rawDisplayResonantEntries.length > 0 &&
     (resonantStalePressure > 0 ||
       resonantVisibleAmplitude <
@@ -3617,16 +3621,17 @@ export function buildModalExcitationStructuralState({
       previousResonantCouplingFrequencyHz,
       dominantDriveFrequencyHz,
     ) > 0.08;
-  const previousModalResponseEnergies = buildPreviousModalResponseEnergies(
-    state,
-    {
-      resetSourceCoupled: sourceCoupledCouplingFrequencySwitch,
-      resetResonant: resonantCouplingFrequencySwitch,
-    },
-  );
+  const previousModalResponseEnergies =
+    buildPreviousModalResponseEnergies(state);
   const modalResponse = updateModalResponseFrame({
     modes: atlas,
     fftMagnitudes: fastSignalState.fftMagnitudes,
+    timeDomainData:
+      preparedInputs?.snapshot?.timeData instanceof Float32Array
+        ? preparedInputs.snapshot.timeData
+        : preparedInputs?.timeData instanceof Float32Array
+          ? preparedInputs.timeData
+          : null,
     sampleRate: preparedInputs.sampleRate,
     previousEnergies: previousModalResponseEnergies,
     deltaMs,
@@ -4010,6 +4015,20 @@ export function buildModalExcitationStructuralState({
       oscillatorAngularVelocityRadPerSec:
         modalResponseEntry?.oscillatorAngularVelocityRadPerSec,
       signedModalCoefficient: modalResponseEntry?.signedModalCoefficient,
+      modalOscillatorRotationRad:
+        modalResponseEntry?.modalOscillatorRotationRad,
+      modalOscillatorEnvelopeRe: modalResponseEntry?.modalOscillatorEnvelopeRe,
+      modalOscillatorEnvelopeIm: modalResponseEntry?.modalOscillatorEnvelopeIm,
+      modalOscillatorDriveLockRe:
+        modalResponseEntry?.modalOscillatorDriveLockRe,
+      modalOscillatorDriveLockIm:
+        modalResponseEntry?.modalOscillatorDriveLockIm,
+      modalOscillatorDriveLockPlv:
+        modalResponseEntry?.modalOscillatorDriveLockPlv,
+      modalOscillatorDrivePhaseLocked:
+        modalResponseEntry?.modalOscillatorDrivePhaseLocked,
+      modalOscillatorHarmonicOrder:
+        modalResponseEntry?.modalOscillatorHarmonicOrder,
       modalOscillatorPhaseRad,
       modalOscillatorPhaseOffsetRad,
       modalOscillatorAngularVelocityRadPerSec,
@@ -4048,13 +4067,12 @@ export function buildModalExcitationStructuralState({
     }
     excitedEntries.push(entry);
     if (currentSignalAuthority) {
-      const authorityAmplitude = Math.max(
-        entry.currentDriveEnergy ?? 0,
-        entry.modalResponseDisplayAmplitude ?? 0,
-      );
-      currentSignalAuthorityAmplitudeTotal += authorityAmplitude;
-      currentSignalAuthorityEnergyTotal +=
-        authorityAmplitude * authorityAmplitude;
+      const authorityAmplitude = clamp01(entry.currentDriveEnergy ?? 0);
+      if (authorityAmplitude > 0) {
+        currentSignalAuthorityAmplitudeTotal += authorityAmplitude;
+        currentSignalAuthorityEnergyTotal +=
+          authorityAmplitude * authorityAmplitude;
+      }
     }
     driveEnergyTotal += entry.driveEnergy;
     driveEnergySampleCount += 1;
@@ -4320,12 +4338,31 @@ export function buildModalExcitationStructuralState({
     resonantCapacity,
     state.remappedSignalResonantRef,
   );
+  // One rotating-frame anchor across every render-facing slot set: the field
+  // is one physical medium, so relative phase rates (beats) must be computed
+  // against a single frame, not per layer.
+  const phaseAnchorAngularVelocityRadPerSec =
+    computePhaseAnchorAngularVelocityRadPerSec({
+      slotSets: [
+        {
+          visibleSlots: state.blendSourceCoupled.slots,
+          capacity: renderSourceCoupledCapacity,
+        },
+        {
+          visibleSlots: state.blendResonant.slots,
+          capacity: renderResonantCapacity,
+        },
+      ],
+      activeModes: state.activeModes,
+      observedModes: state.observedModes,
+    });
   writePhaseSlotsForVisibleModes({
     target: state.sourceCoupledProposal.phaseSlots,
     visibleSlots: state.sourceCoupledProposal.slots,
     capacity: sourceCoupledCapacity,
     activeModes: state.activeModes,
     observedModes: state.observedModes,
+    anchorAngularVelocityRadPerSec: phaseAnchorAngularVelocityRadPerSec,
   });
   writePhaseSlotsForVisibleModes({
     target: state.resonantProposal.phaseSlots,
@@ -4333,6 +4370,7 @@ export function buildModalExcitationStructuralState({
     capacity: resonantCapacity,
     activeModes: state.activeModes,
     observedModes: state.observedModes,
+    anchorAngularVelocityRadPerSec: phaseAnchorAngularVelocityRadPerSec,
   });
   const sourceCoupledPhaseModeCount = writePhaseSlotsForVisibleModes({
     target: state.blendSourceCoupled.phaseSlots,
@@ -4340,6 +4378,7 @@ export function buildModalExcitationStructuralState({
     capacity: renderSourceCoupledCapacity,
     activeModes: state.activeModes,
     observedModes: state.observedModes,
+    anchorAngularVelocityRadPerSec: phaseAnchorAngularVelocityRadPerSec,
   });
   const resonantPhaseModeCount = writePhaseSlotsForVisibleModes({
     target: state.blendResonant.phaseSlots,
@@ -4347,6 +4386,7 @@ export function buildModalExcitationStructuralState({
     capacity: renderResonantCapacity,
     activeModes: state.activeModes,
     observedModes: state.observedModes,
+    anchorAngularVelocityRadPerSec: phaseAnchorAngularVelocityRadPerSec,
   });
 
   let blendedSourceCoupledCount = countActiveSlots(
@@ -4374,27 +4414,51 @@ export function buildModalExcitationStructuralState({
   const signalSlotAmplitudeTotal =
     sumSlotAmplitudes(state.sourceCoupledProposal.slots) +
     sumSlotAmplitudes(state.resonantProposal.slots);
+  const weakResidualSignal = isWeakResidualDisplayTail({
+    modalDriveEnergy,
+    signalSlotAmplitudeTotal,
+    displayAmplitudeTotal,
+  });
   const currentSignalAmplitude = clamp01(
-    Math.max(
-      currentSignalAuthorityAmplitudeTotal,
-      freshCouplingEvidence && resonantSignalAuthoritative
-        ? signalSlotAmplitudeTotal
-        : 0,
-    ),
+    weakResidualSignal
+      ? 0
+      : Math.max(
+          currentSignalAuthorityAmplitudeTotal,
+          freshCouplingEvidence && resonantSignalAuthoritative
+            ? signalSlotAmplitudeTotal
+            : 0,
+        ),
   );
   const currentSignalEnergy = clamp01(
-    Math.max(
-      currentSignalAuthorityEnergyTotal,
-      freshCouplingEvidence && resonantSignalAuthoritative
-        ? currentSignalAmplitude * currentSignalAmplitude
-        : 0,
-    ),
+    weakResidualSignal
+      ? 0
+      : Math.max(
+          currentSignalAuthorityEnergyTotal,
+          freshCouplingEvidence && resonantSignalAuthoritative
+            ? currentSignalAmplitude * currentSignalAmplitude
+            : 0,
+        ),
   );
+  const modalResponseCurrentSignalEnergy = clamp01(
+    (modalResponse.modalResponseSourceCoupledCurrentSignalEnergy ?? 0) +
+      (modalResponse.modalResponseResonantCurrentSignalEnergy ?? 0),
+  );
+  const modalResponseRenderCapEnergy = weakResidualSignal
+    ? Math.min(modalResponseCurrentSignalEnergy, modalDriveEnergy)
+    : undefined;
+  const modalResponseLedgerMetrics = Number.isFinite(
+    modalResponseRenderCapEnergy,
+  )
+    ? {
+        ...modalResponse,
+        modalResponseRenderCapEnergy,
+      }
+    : modalResponse;
   const renderBoundaryState =
     resolvedSourceEvidence.renderBoundaryState ??
     resolvedSourceEvidence.sourceBoundaryState;
   const modalResponseRenderPreview = deriveModalResponseRenderPreview({
-    modalResponse,
+    modalResponse: modalResponseLedgerMetrics,
     candidateForcingSlots: state.blendSourceCoupled.slots,
     candidateResponseSlots: state.blendResonant.slots,
     capacity: renderSourceCoupledCapacity + renderResonantCapacity,
@@ -4421,11 +4485,6 @@ export function buildModalExcitationStructuralState({
       renderResonantCapacity,
     );
   }
-  const weakResidualSignal = isWeakResidualDisplayTail({
-    modalDriveEnergy,
-    signalSlotAmplitudeTotal,
-    displayAmplitudeTotal,
-  });
   const decayedDisplayDominatesSignal =
     displayAmplitudeTotal > 0 &&
     displayAmplitudeTotal >= signalSlotAmplitudeTotal * 1.18;
@@ -4540,6 +4599,12 @@ export function buildModalExcitationStructuralState({
     resonantShiftTrackingOverrideCount:
       resonantShiftTrackingOverrides?.size ?? 0,
     modalResponseEnergy: modalResponse.modalResponseEnergy,
+    modalResponseCurrentSignalEnergy,
+    modalResponseRenderCapEnergy,
+    modalResponseSourceCoupledCurrentSignalEnergy:
+      modalResponse.modalResponseSourceCoupledCurrentSignalEnergy ?? 0,
+    modalResponseResonantCurrentSignalEnergy:
+      modalResponse.modalResponseResonantCurrentSignalEnergy ?? 0,
     modalResponseInputEnergy: modalResponse.modalResponseInputEnergy,
     lineFeedProgramActive,
     lineFeedProgramExcitation: preparedInputs?.lineFeedProgramExcitation ?? 0,

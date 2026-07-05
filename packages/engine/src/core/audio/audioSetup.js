@@ -178,7 +178,9 @@ function createAnalysisTap(audioCtx, sourceNode, fftSize) {
 }
 
 function getAnalysisSource(status) {
-  if (status.isPlaying && status.sourceKind !== "live") return "file";
+  if (status.hasPlaybackAnalysisSource && status.sourceKind !== "live") {
+    return "file";
+  }
   if (status.isLiveInputActive) {
     return isLoopbackLiveInputDeviceKind(
       status.liveInputDeviceKind ?? status.liveInputKind,
@@ -1077,10 +1079,13 @@ export function createAudioSession() {
   }
 
   function getStatus() {
-    const isPlaying = Boolean(
-      (state.activeBufferSource && state.audioCtx?.state === "running") ||
-      isStreamSourcePlaying(),
+    const hasActivePlaybackSource = Boolean(
+      state.activeBufferSource || isStreamSourcePlaying(),
     );
+    const hasPlaybackAnalysisSource = Boolean(
+      state.playbackAnalyser && hasActivePlaybackSource,
+    );
+    const isPlaying = hasActivePlaybackSource;
     const isLiveInputActive = Boolean(
       state.gumStream?.active && state.liveInputAnalyser,
     );
@@ -1098,7 +1103,7 @@ export function createAudioSession() {
           ? "file"
           : "idle";
     const analysisSource = getAnalysisSource({
-      isPlaying,
+      hasPlaybackAnalysisSource,
       isLiveInputActive,
       liveInputKind: liveInputDeviceKind,
       liveInputDeviceKind,
@@ -1115,6 +1120,7 @@ export function createAudioSession() {
       isAudioLoaded,
       isPlaying,
       isLiveInputActive,
+      hasPlaybackAnalysisSource,
       hasAnalysisSource: analysisSource !== "idle",
       workerStatus: null,
       volume: state.volume,
@@ -1392,6 +1398,60 @@ export function createAudioSession() {
     return true;
   }
 
+  async function startStreamPlayback(element) {
+    if (!element) {
+      return false;
+    }
+
+    const streamAudioCtx = ensureAudioContext();
+    ensurePlaybackAudioGraph();
+
+    if (streamAudioCtx.state !== "running") {
+      await maybeResumeAudioContext("stream-playback");
+    }
+
+    if (
+      state.playbackDurationSeconds > 0 &&
+      getMediaElementPlaybackTime(element) >= state.playbackDurationSeconds
+    ) {
+      setMediaElementTime(element, 0);
+    }
+
+    await element.play();
+
+    const offsetSeconds = clampPlaybackTime(
+      getMediaElementPlaybackTime(element),
+    );
+    state.playbackStartedAtSeconds = streamAudioCtx.currentTime;
+    state.playbackSessionId = ++nextPlaybackSessionId;
+    state.lastPlaybackEndReason = null;
+    state.activePlaybackDiagnostics = {
+      playbackSessionId: state.playbackSessionId,
+      sourceKind: state.sourceMetadata.sourceKind || "stream",
+      startedAtContextTimeSeconds: streamAudioCtx.currentTime,
+      startedAtWallTimeMs: getTimingNowMs(),
+      offsetSeconds,
+      durationSeconds: normalizeDurationSeconds(state.playbackDurationSeconds),
+      expectedRemainingDurationSeconds: Math.max(
+        0,
+        state.playbackDurationSeconds - offsetSeconds,
+      ),
+      expectedEndTimeSeconds:
+        streamAudioCtx.currentTime +
+        Math.max(0, state.playbackDurationSeconds - offsetSeconds),
+      audioContextStateAtStart: streamAudioCtx.state,
+      latestAudioContextState: streamAudioCtx.state,
+      contextStateTransitions: [],
+      lastContextStateChange: null,
+      lastResumeAttempt: null,
+    };
+    state.lastPlaybackDiagnostics = clonePlaybackDiagnostics(
+      state.activePlaybackDiagnostics,
+    );
+    setAudioInputMode("file");
+    return true;
+  }
+
   async function playPauseAudio() {
     const audioCtx = state.audioCtx;
     if (state.activeBufferSource && audioCtx && audioCtx.state !== "running") {
@@ -1409,24 +1469,7 @@ export function createAudioSession() {
     }
 
     if (state.loadedPlaybackSourceKind === "stream" && state.mediaElement) {
-      const streamAudioCtx = ensureAudioContext();
-      ensurePlaybackAudioGraph();
-
-      if (streamAudioCtx.state !== "running") {
-        await maybeResumeAudioContext("stream-playback");
-      }
-
-      if (
-        state.playbackDurationSeconds > 0 &&
-        getMediaElementPlaybackTime(state.mediaElement) >=
-          state.playbackDurationSeconds
-      ) {
-        setMediaElementTime(state.mediaElement, 0);
-      }
-
-      await state.mediaElement.play();
-      setAudioInputMode("file");
-      return true;
+      return startStreamPlayback(state.mediaElement);
     }
 
     if (!isAudioLoaded || !state.decodedBuffer) {

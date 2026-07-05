@@ -53,11 +53,45 @@ const RAYMARCH_UNAVAILABLE_RADIATION_MATERIAL_CONTRAST = Object.freeze({
   semantic: "unavailable-no-material-contrast",
   ready: false,
 });
+// Default radiation tracer: a rigid mineral (quartz-like) particle suspended
+// in water — the canonical "particles collect at pressure nodes" cymatic
+// configuration. The Gor'kov monopole contrast f1 = 1 − κ_p/κ_0 and dipole
+// contrast f2 = 2(ρ̃ − 1)/(2ρ̃ + 1) weight the normalized pressure and
+// velocity energies as U ∝ (f1/3)⟨p̃²⟩ − (f2/2)⟨ṽ²⟩. Particle radius only
+// scales the physical prefactor, not this normalized shape, so the carrier
+// remains a normalized potential rather than calibrated newtons.
+export const RAYMARCH_RADIATION_TRACER_PROPERTIES = Object.freeze({
+  mediumDensityKgPerM3: 998,
+  mediumSoundSpeedMetersPerSecond: 1481,
+  particleDensityKgPerM3: 2650,
+  particleSoundSpeedMetersPerSecond: 5700,
+});
+
+export function computeGorkovContrastFactors({
+  mediumDensityKgPerM3,
+  mediumSoundSpeedMetersPerSecond,
+  particleDensityKgPerM3,
+  particleSoundSpeedMetersPerSecond,
+} = RAYMARCH_RADIATION_TRACER_PROPERTIES) {
+  const mediumStiffness =
+    mediumDensityKgPerM3 * mediumSoundSpeedMetersPerSecond ** 2;
+  const particleStiffness =
+    particleDensityKgPerM3 * particleSoundSpeedMetersPerSecond ** 2;
+  const compressibilityRatio = mediumStiffness / particleStiffness;
+  const densityRatio = particleDensityKgPerM3 / mediumDensityKgPerM3;
+  return {
+    monopole: 1 - compressibilityRatio,
+    dipole: (2 * (densityRatio - 1)) / (2 * densityRatio + 1),
+  };
+}
+
+const GORKOV_TRACER_CONTRAST = computeGorkovContrastFactors();
+
 export const RAYMARCH_VISUALIZATION_RADIATION_MATERIAL_CONTRAST = Object.freeze(
   {
-    pressureEnergyWeight: 1,
-    velocityEnergyWeight: 1,
-    semantic: "visualization-only-normalized-pressure-velocity-balance",
+    pressureEnergyWeight: GORKOV_TRACER_CONTRAST.monopole / 3,
+    velocityEnergyWeight: GORKOV_TRACER_CONTRAST.dipole / 2,
+    semantic: "gorkov-normalized-rigid-mineral-tracer-in-water",
     ready: true,
   },
 );
@@ -110,19 +144,26 @@ function normalizeRadiationMaterialContrast(radiationMaterialContrast) {
   };
 }
 
+/**
+ * The velocity inputs must be the acoustic-velocity-weighted modal gradient
+ * sum `Σ c_m ∇Ψ_m / k_m`, not the raw field gradient: linearized Euler gives
+ * `v = ∇p / (ρω)` and the cavity dispersion `ω_m = c·k_m`, so each mode's
+ * gradient contributes with weight `1/k_m`. The raw gradient over-weights a
+ * high-order mode's velocity energy by `k²` and skews the Gor'kov balance.
+ */
 export function deriveNormalizedPressureRadiationFields({
   normalizedPressure,
-  gradX,
-  gradY,
-  gradZ,
+  velocityX,
+  velocityY,
+  velocityZ,
   radiationMaterialContrast = null,
 }) {
   const pressure = clampSignedUnit(normalizedPressure);
   const normalizedVelocityProxy = clamp01(
     Math.hypot(
-      readFiniteNumber(gradX, 0),
-      readFiniteNumber(gradY, 0),
-      readFiniteNumber(gradZ, 0),
+      readFiniteNumber(velocityX, 0),
+      readFiniteNumber(velocityY, 0),
+      readFiniteNumber(velocityZ, 0),
     ),
   );
   const normalizedPressureEnergy = clamp01(pressure * pressure);
@@ -1269,12 +1310,12 @@ export function createRaymarchModalBasisCache({
     normalizedResolution,
     normalizedBasisCapacity,
   );
-  const texture = createCacheTexture(
+  const texture = createRaymarchCacheTexture(
     normalizedResolution,
     normalizedResolution,
     basisAtlasDepth,
   );
-  const pendingTexture = createCacheTexture(
+  const pendingTexture = createRaymarchCacheTexture(
     normalizedResolution,
     normalizedResolution,
     basisAtlasDepth,
@@ -1327,10 +1368,12 @@ export function createRaymarchLiveFieldProjectionCache({
   resolution = RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
 } = {}) {
   const normalizedResolution = normalizeModalBasisCacheResolution(resolution);
-  const fieldTexture = createCacheTexture(normalizedResolution);
-  const supportTexture = createCacheTexture(normalizedResolution);
-  const pressureRadiationTexture = createCacheTexture(normalizedResolution);
-  const phaseInterferenceTexture = createCacheTexture(normalizedResolution);
+  const fieldTexture = createRaymarchCacheTexture(normalizedResolution);
+  const supportTexture = createRaymarchCacheTexture(normalizedResolution);
+  const pressureRadiationTexture =
+    createRaymarchCacheTexture(normalizedResolution);
+  const phaseInterferenceTexture =
+    createRaymarchCacheTexture(normalizedResolution);
 
   return {
     ...createCacheState({
@@ -1355,9 +1398,10 @@ export function createRaymarchSpectralLaneCache({
   resolution = RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
 } = {}) {
   const normalizedResolution = normalizeModalBasisCacheResolution(resolution);
-  const spectralLaneTextureA = createCacheTexture(normalizedResolution);
-  const spectralLaneTextureB = createCacheTexture(normalizedResolution);
-  const spectralLaneStatsTexture = createCacheTexture(normalizedResolution);
+  const spectralLaneTextureA = createRaymarchCacheTexture(normalizedResolution);
+  const spectralLaneTextureB = createRaymarchCacheTexture(normalizedResolution);
+  const spectralLaneStatsTexture =
+    createRaymarchCacheTexture(normalizedResolution);
 
   return {
     ...createCacheState({
@@ -1424,7 +1468,11 @@ export function disposeRaymarchSpectralLaneCache(spectralLaneCache) {
   spectralLaneCache?.spectralLaneStatsTexture?.dispose?.();
 }
 
-function createCacheTexture(width, height = width, depth = width) {
+export function createRaymarchCacheTexture(
+  width,
+  height = width,
+  depth = width,
+) {
   const texture = new Storage3DTexture(width, height, depth);
   texture.format = THREE.RGBAFormat;
   texture.type = THREE.HalfFloatType;
@@ -2024,6 +2072,9 @@ function accumulateLiveSynthesisFieldAtPoint({
   let gradX = 0;
   let gradY = 0;
   let gradZ = 0;
+  let velocityX = 0;
+  let velocityY = 0;
+  let velocityZ = 0;
   let unsignedSupport = 0;
   let phaseAuthorityWeightedAmplitudeSum = 0;
   let totalWeight = 0;
@@ -2049,10 +2100,13 @@ function accumulateLiveSynthesisFieldAtPoint({
     );
     phaseAuthorityWeightedAmplitudeSum += amplitude * beta;
     const coefficient = amplitude;
+    const u = slots[offset] ?? 0;
+    const v = slots[offset + 1] ?? 0;
+    const w = slots[offset + 2] ?? 0;
     const family = geometryBackend.evaluateMode({
-      u: slots[offset] ?? 0,
-      v: slots[offset + 1] ?? 0,
-      w: slots[offset + 2] ?? 0,
+      u,
+      v,
+      w,
       x,
       y,
       z,
@@ -2064,6 +2118,12 @@ function accumulateLiveSynthesisFieldAtPoint({
     gradX += coefficient * family.gradX;
     gradY += coefficient * family.gradY;
     gradZ += coefficient * family.gradZ;
+    // Acoustic velocity per linearized Euler: v = ∇p/(ρω) with ω = c·k, so
+    // each mode's gradient carries a 1/k_m weight (k_m = scale·|(u,v,w)|).
+    const inverseWaveNumber = 1 / Math.max(scale * Math.hypot(u, v, w), 1e-9);
+    velocityX += coefficient * family.gradX * inverseWaveNumber;
+    velocityY += coefficient * family.gradY * inverseWaveNumber;
+    velocityZ += coefficient * family.gradZ * inverseWaveNumber;
     unsignedSupport += Math.abs(structuralContribution);
   }
 
@@ -2072,6 +2132,9 @@ function accumulateLiveSynthesisFieldAtPoint({
     gradX,
     gradY,
     gradZ,
+    velocityX,
+    velocityY,
+    velocityZ,
     unsignedSupport,
     phaseAuthorityWeightedAmplitudeSum,
     totalWeight,
@@ -2382,9 +2445,9 @@ export function evaluateRaymarchLiveSynthesisFieldPoint({
   );
   const pressureRadiationFields = deriveNormalizedPressureRadiationFields({
     normalizedPressure: field,
-    gradX,
-    gradY,
-    gradZ,
+    velocityX: modalField.velocityX / amplitudeNorm,
+    velocityY: modalField.velocityY / amplitudeNorm,
+    velocityZ: modalField.velocityZ / amplitudeNorm,
     radiationMaterialContrast,
   });
 
@@ -2615,6 +2678,7 @@ function createModalBasisCacheComputeKernel({
 function createLiveFieldProjectionComputeKernel({
   liveFieldProjectionCache,
   modalBasisAtlasTexture,
+  modalFieldModeBuffer,
   modalFieldCoefficientBuffer,
   modalFieldPhaseBuffer,
   modalFieldCapacity,
@@ -2668,12 +2732,16 @@ function createLiveFieldProjectionComputeKernel({
       const gradXSum = zero.toVar();
       const gradYSum = zero.toVar();
       const gradZSum = zero.toVar();
+      const velocitySum = vec3(0.0).toVar();
       const supportSum = zero.toVar();
       const phaseInterferenceSumReal = zero.toVar();
       const phaseInterferenceSumImag = zero.toVar();
       const independentPhaseEnergySum = zero.toVar();
       const maxConstructivePhaseMagnitudeSum = zero.toVar();
       const phaseInterferenceAuthoritySum = zero.toVar();
+      const waveNumberScale = float(Math.PI).div(
+        uniforms.uRadius.max(float(1e-4)),
+      );
 
       Loop(
         {
@@ -2698,6 +2766,24 @@ function createLiveFieldProjectionComputeKernel({
             gradXSum.addAssign(coefficient.mul(basisSample.y));
             gradYSum.addAssign(coefficient.mul(basisSample.z));
             gradZSum.addAssign(coefficient.mul(basisSample.w));
+            // Acoustic velocity per linearized Euler: v = ∇p/(ρω), ω = c·k,
+            // so each mode's gradient carries a 1/k_m weight. Mirrors the
+            // CPU path in accumulateLiveSynthesisFieldAtPoint.
+            const modeSlot = modalFieldModeBuffer.element(i);
+            const tupleMagnitude = sqrt(
+              modeSlot.x
+                .mul(modeSlot.x)
+                .add(modeSlot.y.mul(modeSlot.y))
+                .add(modeSlot.z.mul(modeSlot.z)),
+            );
+            const inverseWaveNumber = one.div(
+              max(waveNumberScale.mul(tupleMagnitude), float(1e-9)),
+            );
+            velocitySum.addAssign(
+              vec3(basisSample.y, basisSample.z, basisSample.w)
+                .mul(coefficient)
+                .mul(inverseWaveNumber),
+            );
             supportSum.addAssign(abs(coefficient).mul(abs(basisSample.x)));
             const phaseSlot = modalFieldPhaseBuffer.element(i);
             const phaseWeight = clamp(phaseSlot.z.mul(phaseSlot.w), zero, one);
@@ -2738,12 +2824,13 @@ function createLiveFieldProjectionComputeKernel({
       const normalizedGradX = gradXSum.div(amplitudeNorm).toVar();
       const normalizedGradY = gradYSum.div(amplitudeNorm).toVar();
       const normalizedGradZ = gradZSum.div(amplitudeNorm).toVar();
+      const normalizedVelocity = velocitySum.div(amplitudeNorm);
       const normalizedVelocityProxy = clamp(
         sqrt(
-          normalizedGradX
-            .mul(normalizedGradX)
-            .add(normalizedGradY.mul(normalizedGradY))
-            .add(normalizedGradZ.mul(normalizedGradZ)),
+          normalizedVelocity.x
+            .mul(normalizedVelocity.x)
+            .add(normalizedVelocity.y.mul(normalizedVelocity.y))
+            .add(normalizedVelocity.z.mul(normalizedVelocity.z)),
         ),
         zero,
         one,
@@ -3129,6 +3216,7 @@ function getOrCreateRaymarchLiveFieldProjectionCacheComputeNode(
   liveFieldProjectionCache,
   {
     modalBasisAtlasTexture,
+    modalFieldModeBuffer,
     modalFieldCoefficientBuffer,
     modalFieldPhaseBuffer,
     modalFieldCapacity,
@@ -3138,6 +3226,7 @@ function getOrCreateRaymarchLiveFieldProjectionCacheComputeNode(
   if (
     !liveFieldProjectionCache ||
     !modalBasisAtlasTexture ||
+    !modalFieldModeBuffer ||
     !modalFieldCoefficientBuffer ||
     !modalFieldPhaseBuffer
   ) {
@@ -3163,6 +3252,7 @@ function getOrCreateRaymarchLiveFieldProjectionCacheComputeNode(
   const computeNode = createLiveFieldProjectionComputeKernel({
     liveFieldProjectionCache,
     modalBasisAtlasTexture,
+    modalFieldModeBuffer,
     modalFieldCoefficientBuffer,
     modalFieldPhaseBuffer,
     modalFieldCapacity: normalizedModalFieldCapacity,
@@ -3295,6 +3385,7 @@ export function computeRaymarchLiveFieldProjectionCache(
   renderer,
   {
     modalBasisAtlasTexture,
+    modalFieldModeBuffer,
     modalFieldCoefficientBuffer,
     modalFieldPhaseBuffer,
     modalFieldCapacity,
@@ -3323,6 +3414,7 @@ export function computeRaymarchLiveFieldProjectionCache(
     liveFieldProjectionCache,
     {
       modalBasisAtlasTexture,
+      modalFieldModeBuffer,
       modalFieldCoefficientBuffer,
       modalFieldPhaseBuffer,
       modalFieldCapacity,
@@ -3656,23 +3748,7 @@ export function enqueueRaymarchModalBasisCacheRebuild(
     phaseSampleTimeSec,
   );
   modalBasisCache.pendingPhaseSampleTimeSec = phaseSampleTimeSec;
-  const submission = submitRaymarchCacheCompute(renderer, computeNode).then(
-    () => {
-      if (
-        !isCurrentRaymarchCacheGeneration(modalBasisCache, rebuildGeneration)
-      ) {
-        return;
-      }
-      modalBasisCache.ready = Boolean(modalBasisCache.activeDescriptor);
-      modalBasisCache.rebuildPending = false;
-      modalBasisCache.pendingReady = true;
-      modalBasisCache.pendingCacheBuiltAtSec =
-        modalBasisCache.pendingPhaseSampleTimeSec;
-      modalBasisCache.pendingRebuildReason = rebuildReason;
-      modalBasisCache.lastError = null;
-      modalBasisCache.backend = "compute";
-      modalBasisCache.lastRebuildReason = "pending-ready";
-    },
+  const submission = submitRaymarchCacheCompute(renderer, computeNode).catch(
     (error) => {
       if (
         !isCurrentRaymarchCacheGeneration(modalBasisCache, rebuildGeneration)
@@ -3687,6 +3763,20 @@ export function enqueueRaymarchModalBasisCacheRebuild(
   );
 
   void submission;
+
+  // The compute dispatch is queue-ordered ahead of everything this frame
+  // renders, so the pending atlas is safe to commit within the same runtime
+  // tick. Waiting a frame here is what froze the render packet once per
+  // basis reassign (~13x/s with dense music) and read as flicker.
+  modalBasisCache.ready = Boolean(modalBasisCache.activeDescriptor);
+  modalBasisCache.rebuildPending = false;
+  modalBasisCache.pendingReady = true;
+  modalBasisCache.pendingCacheBuiltAtSec =
+    modalBasisCache.pendingPhaseSampleTimeSec;
+  modalBasisCache.pendingRebuildReason = rebuildReason;
+  modalBasisCache.lastError = null;
+  modalBasisCache.backend = "compute";
+  modalBasisCache.lastRebuildReason = "pending-ready";
 
   return {
     enqueued: true,

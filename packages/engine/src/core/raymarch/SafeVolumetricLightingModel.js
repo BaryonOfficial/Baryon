@@ -9,6 +9,7 @@ import {
   cameraViewMatrix,
   dot,
   float,
+  length,
   linearDepth,
   modelRadius,
   modelWorldMatrix,
@@ -44,6 +45,16 @@ const REFERENCE_STEPS = STEP_REFERENCE;
 const EARLY_EXIT_TRANSMITTANCE_EPSILON = 5e-3;
 export const EMISSION_SAMPLE_GAIN = 1.6;
 export const DIRECT_LIGHT_RESPONSE_GAIN = 0.14;
+// Emission–absorption transfer: radiance accumulates as
+// L += T · (1 − e^(−σΔt)) · albedo · gain, with extinction σ from physical
+// density and a colored source. Caustic focal spikes brighten L without
+// telescoping back into the bounded 1 − T silhouette the old model produced.
+export const SOURCE_ALBEDO_GAIN = 1.12;
+// Chromatic Beer–Lambert: channels the medium scatters weakly are absorbed
+// faster, so radiance grades from white-hot cores into saturated medium color
+// with optical depth instead of graying out.
+export const MEDIUM_CHROMATIC_ABSORPTION = 0.45;
+const SOURCE_DENSITY_EPSILON = 1e-4;
 const extinctionScaleNode = float(EXTINCTION_SCALE);
 const emissionSampleGainNode = float(EMISSION_SAMPLE_GAIN);
 const directLightResponseGainNode = float(DIRECT_LIGHT_RESPONSE_GAIN);
@@ -51,6 +62,9 @@ const earlyExitTransmittanceEpsilonNode = float(
   EARLY_EXIT_TRANSMITTANCE_EPSILON,
 );
 const outputGainNode = float(OUTPUT_GAIN);
+const sourceAlbedoGainNode = float(SOURCE_ALBEDO_GAIN);
+const mediumChromaticAbsorptionNode = float(MEDIUM_CHROMATIC_ABSORPTION);
+const sourceDensityEpsilonNode = float(SOURCE_DENSITY_EPSILON);
 const referenceStepsNode = float(REFERENCE_STEPS);
 
 export function applySoftKneeCompression(
@@ -76,6 +90,54 @@ export function composeEmissionContribution(
   );
 }
 
+/**
+ * CPU mirror of the per-step emission–absorption integration in the march
+ * loop. Extinction density is physical (no radiance gains) with a chromatic
+ * Beer–Lambert weighting against the medium's weak channels; the exact step
+ * solution per channel is L += T · (1 − e^(−σΔt)) · (J / D) · gain.
+ */
+export function integrateEmissionAbsorptionStep({
+  transmittance = [1, 1, 1],
+  sourceRadiance = [0, 0, 0],
+  sourceDensity = 0,
+  stepSize = 1,
+  extinctionScale = EXTINCTION_SCALE,
+  emissionSampleGain = EMISSION_SAMPLE_GAIN,
+  albedoGain = SOURCE_ALBEDO_GAIN,
+  chromaticAbsorption = MEDIUM_CHROMATIC_ABSORPTION,
+} = {}) {
+  const previousTransmittance = Array.isArray(transmittance)
+    ? transmittance
+    : [transmittance, transmittance, transmittance];
+  const density = Math.max(0, sourceDensity);
+  const albedoDenominator = Math.max(density, SOURCE_DENSITY_EPSILON);
+  const sourceAlbedo = sourceRadiance.map(
+    (channel) => Math.max(0, channel) / albedoDenominator,
+  );
+  const albedoPeak = Math.max(...sourceAlbedo, SOURCE_DENSITY_EPSILON);
+  const grayExtinction = density * emissionSampleGain * extinctionScale;
+  const falloff = sourceAlbedo.map((channel) => {
+    const chromaticWeight =
+      1 + chromaticAbsorption * (1 - channel / albedoPeak);
+    return Math.exp(-grayExtinction * chromaticWeight * stepSize);
+  });
+  const segmentRadiance = sourceAlbedo.map(
+    (channel, index) =>
+      channel *
+      previousTransmittance[index] *
+      (1 - falloff[index]) *
+      albedoGain,
+  );
+
+  return {
+    falloff,
+    segmentRadiance,
+    nextTransmittance: previousTransmittance.map(
+      (channel, index) => channel * falloff[index],
+    ),
+  };
+}
+
 function applySoftKneeCompressionNode(value) {
   const kneeStart = float(SOFT_KNEE_START);
   const aboveKnee = max(value.sub(kneeStart), 0.0);
@@ -88,6 +150,8 @@ function applySoftKneeCompressionNode(value) {
  * @typedef {import("three").Material & {
  *   steps?: number,
  *   radiusNode?: any,
+ *   coreStepRadiusNode?: any,
+ *   outerStepStretch?: number,
  *   opacityGainNode?: any,
  *   offsetNode?: any | ((args: {
  *     startPosLocal: any,
@@ -112,6 +176,8 @@ export default class SafeVolumetricLightingModel extends LightingModel {
     const startPos = property("vec3");
     const endPos = property("vec3");
     const radiusNode = material.radiusNode ?? modelRadius;
+    const coreStepRadiusNode = material.coreStepRadiusNode ?? null;
+    const outerStepStretch = Math.max(1, material.outerStepStretch ?? 1);
     const cameraDistanceThreshold = modelRadius.mul(2);
 
     If(
@@ -155,6 +221,7 @@ export default class SafeVolumetricLightingModel extends LightingModel {
     const stepCompensation = float(1.0).toVar();
     const distTravelled = float(0.0).toVar();
     const transmittance = vec3(1).toVar();
+    const accumulatedRadiance = vec3(0).toVar();
     raymarchLightNode.assign(vec3(0));
     raymarchOpacityNode.assign(0.0);
 
@@ -178,6 +245,27 @@ export default class SafeVolumetricLightingModel extends LightingModel {
             ),
           );
         });
+        // Radial-adaptive stepping (opt-in via material.coreStepRadiusNode):
+        // flagship sample density inside the core radius, stretched steps in
+        // the smooth radiating zone. The fine step is budgeted so the worst
+        // chord — the core diameter at fine density plus the remaining
+        // domain at stretched density — fits the step count, so a large
+        // open domain costs little beyond the core march. The per-slab
+        // exponential integration below is exact for any step size, so no
+        // extra brightness compensation is needed.
+        let adaptiveFineStep = null;
+        let adaptiveCoarseStep = null;
+        if (coreStepRadiusNode) {
+          const coreDiameter = coreStepRadiusNode.mul(2.0);
+          adaptiveFineStep = coreDiameter
+            .add(diameter.sub(coreDiameter).div(float(outerStepStretch)))
+            .div(max(stepCount, float(1.0)))
+            .toVar();
+          adaptiveCoarseStep = adaptiveFineStep
+            .mul(float(outerStepStretch))
+            .toVar();
+          stepSize.assign(adaptiveFineStep);
+        }
         distTravelled.assign(entryDistance);
 
         if (material.offsetNode) {
@@ -199,6 +287,13 @@ export default class SafeVolumetricLightingModel extends LightingModel {
           const positionRayLocal = startPosLocal
             .add(rayDirLocal.mul(sampleDistance))
             .toVar();
+          if (coreStepRadiusNode) {
+            stepSize.assign(
+              length(positionRayLocal)
+                .lessThan(coreStepRadiusNode)
+                .select(adaptiveFineStep, adaptiveCoarseStep),
+            );
+          }
           const positionRay = modelWorldMatrix
             .mul(vec4(positionRayLocal, 1))
             .xyz.toVar();
@@ -226,13 +321,16 @@ export default class SafeVolumetricLightingModel extends LightingModel {
 
           scatteringDensity.assign(0);
 
-          let scatteringNode;
+          // Scattering contract: rgb = colored source radiance J (caustic
+          // focal spikes included), a = physical extinction density (no
+          // radiance gains — concentrated light does not occlude).
+          let scatterSample;
           if (material.scatteringNode) {
             const viewDirLocal = cameraPositionLocal
               .sub(positionRayLocal)
               .normalize()
               .toVar();
-            scatteringNode = material.scatteringNode({
+            scatterSample = material.scatteringNode({
               positionRay,
               positionRayLocal,
               viewDirLocal,
@@ -241,22 +339,55 @@ export default class SafeVolumetricLightingModel extends LightingModel {
 
           super.start(builder);
 
-          if (scatteringNode) {
+          const sourceRadiance = vec3(0).toVar();
+          const sourceDensity = float(0.0).toVar();
+          if (scatterSample) {
+            const sample = vec4(scatterSample).toVar();
             const directLightContribution = scatteringDensity.toVar();
-            scatteringDensity.assign(
-              scatteringNode
-                .mul(emissionSampleGainNode)
-                .add(
-                  directLightContribution
-                    .mul(scatteringNode)
-                    .mul(directLightResponseGainNode),
-                ),
+            sourceRadiance.assign(
+              sample.rgb.add(
+                directLightContribution
+                  .mul(sample.rgb)
+                  .mul(directLightResponseGainNode),
+              ),
+            );
+            sourceDensity.assign(max(sample.a, 0.0));
+          } else {
+            sourceRadiance.assign(scatteringDensity);
+            sourceDensity.assign(
+              max(
+                max(scatteringDensity.x, scatteringDensity.y),
+                scatteringDensity.z,
+              ),
             );
           }
 
+          // Exact emission–absorption step: physical extinction density,
+          // colored source, chromatic Beer–Lambert against weak channels.
+          const sourceAlbedo = sourceRadiance.div(
+            max(sourceDensity, sourceDensityEpsilonNode),
+          );
+          const albedoPeak = max(
+            max(sourceAlbedo.x, sourceAlbedo.y),
+            max(sourceAlbedo.z, sourceDensityEpsilonNode),
+          );
+          const chromaticWeight = vec3(1).add(
+            mediumChromaticAbsorptionNode.mul(
+              vec3(1).sub(sourceAlbedo.div(albedoPeak)),
+            ),
+          );
+          const sigma = sourceDensity
+            .mul(emissionSampleGainNode)
+            .mul(extinctionScaleNode)
+            .mul(chromaticWeight);
           const falloff = /** @type {any} */ (
-            scatteringDensity.mul(extinctionScaleNode).negate().mul(stepSize)
+            sigma.negate().mul(stepSize)
           ).exp();
+          accumulatedRadiance.addAssign(
+            sourceAlbedo
+              .mul(transmittance.mul(vec3(1).sub(falloff)))
+              .mul(sourceAlbedoGainNode),
+          );
           transmittance.mulAssign(falloff);
           const remainingTransmittance = max(
             max(transmittance.x, transmittance.y),
@@ -274,52 +405,56 @@ export default class SafeVolumetricLightingModel extends LightingModel {
           });
         });
 
-        const visibility = transmittance.saturate().oneMinus().toVar();
-        const compensatedVisibility = visibility
+        // Radiance stays uncompressed here — the display shoulder and bloom
+        // own highlight handling. The soft knee only shapes coverage (alpha).
+        raymarchLightNode.addAssign(
+          accumulatedRadiance.mul(outputGainNode).mul(stepCompensation),
+        );
+        const visibilityPeak = float(1.0)
+          .sub(min(min(transmittance.x, transmittance.y), transmittance.z))
+          .saturate()
           .mul(outputGainNode)
           .mul(stepCompensation)
           .toVar();
-        const visibilityPeak = max(
-          max(compensatedVisibility.x, compensatedVisibility.y),
-          compensatedVisibility.z,
-        ).toVar();
-        const compressedVisibilityPeak =
+        const compressedVisibility =
           applySoftKneeCompressionNode(visibilityPeak).toVar();
-        const visibilityCompressionRatio = compressedVisibilityPeak
-          .div(max(visibilityPeak, float(1e-4)))
-          .toVar();
-        raymarchLightNode.addAssign(
-          compensatedVisibility.mul(visibilityCompressionRatio),
-        );
         raymarchOpacityNode.assign(
-          clamp(compressedVisibilityPeak.mul(opacityGainNode), 0.0, 1.0),
+          clamp(compressedVisibility.mul(opacityGainNode), 0.0, 1.0),
         );
       });
     };
 
-    const rayOriginProjection = dot(startPosLocal, rayDirLocal).toVar();
-    const originDistanceSquared = dot(startPosLocal, startPosLocal).toVar();
-    const radiusSquared = radiusNode.mul(radiusNode).toVar();
-    const discriminant = rayOriginProjection
-      .mul(rayOriginProjection)
-      .sub(originDistanceSquared.sub(radiusSquared))
-      .toVar();
-
-    If(discriminant.greaterThan(0.0), () => {
-      const intersectionRoot = sqrt(discriminant).toVar();
-      const unclampedEntry = rayOriginProjection
-        .negate()
-        .sub(intersectionRoot)
-        .toVar();
-      const unclampedExit = rayOriginProjection
-        .negate()
-        .add(intersectionRoot)
+    // The march domain is always a single analytic sphere bound. The
+    // unbounded field extent widens this radius to the free-field reach
+    // (see createVolumeDomainRadiusNode) — it never swaps in a box or any
+    // other hard-edged domain shape.
+    const intersectSphereDomain = () => {
+      const rayOriginProjection = dot(startPosLocal, rayDirLocal).toVar();
+      const originDistanceSquared = dot(startPosLocal, startPosLocal).toVar();
+      const radiusSquared = radiusNode.mul(radiusNode).toVar();
+      const discriminant = rayOriginProjection
+        .mul(rayOriginProjection)
+        .sub(originDistanceSquared.sub(radiusSquared))
         .toVar();
 
-      entryDistance.assign(max(unclampedEntry, 0.0));
-      exitDistance.assign(min(unclampedExit, maxDistance));
-      marchVolumeSegment();
-    });
+      If(discriminant.greaterThan(0.0), () => {
+        const intersectionRoot = sqrt(discriminant).toVar();
+        const unclampedEntry = rayOriginProjection
+          .negate()
+          .sub(intersectionRoot)
+          .toVar();
+        const unclampedExit = rayOriginProjection
+          .negate()
+          .add(intersectionRoot)
+          .toVar();
+
+        entryDistance.assign(max(unclampedEntry, 0.0));
+        exitDistance.assign(min(unclampedExit, maxDistance));
+        marchVolumeSegment();
+      });
+    };
+
+    intersectSphereDomain();
   }
 
   scatteringLight(lightColor, builder) {

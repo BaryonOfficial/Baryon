@@ -93,6 +93,7 @@ import { clamp, clamp01, smoothstep } from "../math.js";
 
 const MODAL_FIELD_CONTINUITY_MAX_BASIS_MODE_ORDER =
   getModalBasisCacheMaxRepresentableModeIndex(MODAL_BASIS_CACHE_RESOLUTION);
+const LIVE_SOURCE_MODAL_CONTINUITY_RELEASE_SECONDS = 0.75;
 
 /** @typedef {import("../../core/cavityGeometry.js").CavityGeometry} CavityGeometry */
 
@@ -6918,7 +6919,7 @@ export function composeAudioFeatureFrame({
     !sourceBoundaryModalForcingAbsent &&
     (preparedInputs.inputMode === "live" ||
       projectedModalRenderEnergy > 0.02 ||
-      modalVisibilityEnergy > 0.005 ||
+      (!analysisResult.usedDecay && modalVisibilityEnergy > 0.005) ||
       lineFeedLowQFieldVisibilityAllowed);
   const fieldStateUsesDecay =
     projectedRenderAuthority &&
@@ -7174,6 +7175,9 @@ export function composeAudioFeatureFrame({
         MODAL_BASIS_ATLAS_PAGE_CAPACITY,
       ),
       maxBasisModeOrder: MODAL_FIELD_CONTINUITY_MAX_BASIS_MODE_ORDER,
+      releaseSeconds: modalProjectionContinuityHold
+        ? LIVE_SOURCE_MODAL_CONTINUITY_RELEASE_SECONDS
+        : undefined,
       allowImmediateBootstrap: allowImmediateModalFieldBootstrap,
       normalizeCandidateEvidence: true,
       cavityGeometry: preparedInputs.effectiveCavityGeometry,
@@ -7308,6 +7312,10 @@ export function composeAudioFeatureFrame({
       modalFieldContinuityDiagnostics.modeIdentityRetentionRatio,
     previousFieldAuthority:
       preparedInputs.modalDescriptorAuthorityState?.previousFieldAuthority,
+    allowOverBandwidthProjectionRetention:
+      !preparedInputs.resolvedAuditSettings.injectTestTone &&
+      resolvedSourceEvidence.currentSourceEvidence === true &&
+      energyLedger.renderBoundaryState === "live",
   });
   if (preparedInputs.modalDescriptorAuthorityState) {
     preparedInputs.modalDescriptorAuthorityState.previousFieldAuthority =

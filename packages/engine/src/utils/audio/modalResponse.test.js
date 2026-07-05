@@ -640,6 +640,191 @@ describe("modal response model", () => {
     expect(response.entries[0]?.displayAmplitude).toBeGreaterThan(0.5);
   });
 
+  it("rings up from rest with the physical amplitude time constant 2Q/ω", async () => {
+    const { updateModalResponseFrame } = await loadModalResponseModule();
+    const qualityFactor = 4;
+    const naturalFrequencyHz = 110;
+    const amplitudeTauMs =
+      ((2 * qualityFactor) / (2 * Math.PI * naturalFrequencyHz)) * 1000;
+    const energyAfter = (deltaMs) =>
+      updateModalResponseFrame({
+        modes: [
+          {
+            modeKey: "ring-up",
+            u: 1,
+            v: 1,
+            w: 1,
+            naturalFrequencyHz,
+            layer: "source-coupled",
+            qualityFactor,
+          },
+        ],
+        fftMagnitudes: makeFft([[naturalFrequencyHz, 0.9]]),
+        sampleRate: SAMPLE_RATE,
+        deltaMs,
+        inputRms: 0.12,
+        previousEnergies: new Map(),
+        minimumEnergy: 0,
+      }).entries[0]?.modalResponseEnergy ?? 0;
+
+    // Energy ratio between one-τ_a ring-up and saturation eliminates the
+    // drive-dependent steady-state level: (1 − e^{−1})² ≈ 0.3996.
+    const ratio = energyAfter(amplitudeTauMs) / energyAfter(100 * amplitudeTauMs);
+    expect(ratio).toBeCloseTo((1 - Math.exp(-1)) ** 2, 3);
+  });
+
+  it("locks harmonic partials to the drive waveform's relative phases", async () => {
+    const { updateModalResponseFrame } = await loadModalResponseModule();
+    const window = 2048;
+    const f1 = (SAMPLE_RATE * 20) / window; // integer cycles per window
+    const f2 = 2 * f1;
+    const runWithHarmonicPhase = (phase2) => {
+      const timeDomainData = new Float32Array(window);
+      for (let index = 0; index < window; index += 1) {
+        const t = index / SAMPLE_RATE;
+        timeDomainData[index] =
+          0.6 * Math.cos(2 * Math.PI * f1 * t) +
+          0.3 * Math.cos(2 * Math.PI * f2 * t + phase2);
+      }
+      return updateModalResponseFrame({
+        modes: [
+          {
+            modeKey: "fundamental",
+            u: 1,
+            v: 1,
+            w: 1,
+            naturalFrequencyHz: f1,
+            layer: "source-coupled",
+            qualityFactor: 8,
+          },
+          {
+            modeKey: "harmonic",
+            u: 2,
+            v: 2,
+            w: 2,
+            naturalFrequencyHz: f2,
+            layer: "source-coupled",
+            qualityFactor: 8,
+          },
+        ],
+        fftMagnitudes: makeFft([
+          [f1, 0.8],
+          [f2, 0.4],
+        ]),
+        timeDomainData,
+        sampleRate: SAMPLE_RATE,
+        deltaMs: 500,
+        inputRms: 0.2,
+        previousEnergies: new Map(),
+      });
+    };
+
+    const response = runWithHarmonicPhase(-0.9);
+    const fundamental = response.entries.find(
+      (entry) => entry.modeKey === "fundamental",
+    );
+    const harmonic = response.entries.find(
+      (entry) => entry.modeKey === "harmonic",
+    );
+
+    expect(fundamental?.modalOscillatorDrivePhaseLocked).toBe(true);
+    expect(harmonic?.modalOscillatorDrivePhaseLocked).toBe(true);
+    expect(harmonic?.modalOscillatorHarmonicOrder).toBe(2);
+    // A locked harmonic oscillates at the drive frequency n·f_ref.
+    expect(harmonic?.oscillatorAngularVelocityRadPerSec).toBeCloseTo(
+      2 * Math.PI * f2,
+      6,
+    );
+
+    // After a long frame the envelope phase settles at the drive-locked
+    // target ε − π/2, so the waveform's harmonic phase reaches the field.
+    const envelopePhase = Math.atan2(
+      harmonic?.modalOscillatorEnvelopeIm ?? 0,
+      harmonic?.modalOscillatorEnvelopeRe ?? 0,
+    );
+    const expectedPhase = -0.9 - Math.PI / 2;
+    expect(
+      Math.abs(
+        Math.atan2(
+          Math.sin(envelopePhase - expectedPhase),
+          Math.cos(envelopePhase - expectedPhase),
+        ),
+      ),
+    ).toBeLessThan(0.05);
+
+    // A different harmonic phase in the source waveform lands a different
+    // envelope phase: waveform shape, not just spectrum, shapes the field.
+    const reshaped = runWithHarmonicPhase(1.3);
+    const reshapedHarmonic = reshaped.entries.find(
+      (entry) => entry.modeKey === "harmonic",
+    );
+    const reshapedPhase = Math.atan2(
+      reshapedHarmonic?.modalOscillatorEnvelopeIm ?? 0,
+      reshapedHarmonic?.modalOscillatorEnvelopeRe ?? 0,
+    );
+    expect(
+      Math.abs(
+        Math.atan2(
+          Math.sin(reshapedPhase - envelopePhase),
+          Math.cos(reshapedPhase - envelopePhase),
+        ),
+      ),
+    ).toBeGreaterThan(1);
+  });
+
+  it("keeps inharmonic modes free-running without drive-phase authority", async () => {
+    const { updateModalResponseFrame } = await loadModalResponseModule();
+    const f1 = 440;
+    const f2 = 653; // no near-integer ratio to 440
+    const window = 2048;
+    const timeDomainData = new Float32Array(window);
+    for (let index = 0; index < window; index += 1) {
+      const t = index / SAMPLE_RATE;
+      timeDomainData[index] =
+        0.6 * Math.cos(2 * Math.PI * f1 * t) +
+        0.4 * Math.cos(2 * Math.PI * f2 * t);
+    }
+
+    const response = updateModalResponseFrame({
+      modes: [
+        {
+          modeKey: "reference",
+          u: 1,
+          v: 1,
+          w: 1,
+          naturalFrequencyHz: f1,
+          qualityFactor: 8,
+        },
+        {
+          modeKey: "inharmonic",
+          u: 2,
+          v: 3,
+          w: 4,
+          naturalFrequencyHz: f2,
+          qualityFactor: 8,
+        },
+      ],
+      fftMagnitudes: makeFft([
+        [f1, 0.8],
+        [f2, 0.5],
+      ]),
+      timeDomainData,
+      sampleRate: SAMPLE_RATE,
+      deltaMs: 33,
+      inputRms: 0.2,
+      previousEnergies: new Map(),
+    });
+    const inharmonic = response.entries.find(
+      (entry) => entry.modeKey === "inharmonic",
+    );
+
+    expect(inharmonic?.modalOscillatorDrivePhaseLocked).toBe(false);
+    expect(inharmonic?.oscillatorAngularVelocityRadPerSec).toBeCloseTo(
+      2 * Math.PI * f2,
+      6,
+    );
+  });
+
   it("advances oscillator phase independently from display smoothing", async () => {
     const { updateModalResponseFrame } = await loadModalResponseModule();
     const mode = {

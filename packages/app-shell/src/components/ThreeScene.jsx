@@ -50,6 +50,7 @@ import {
   resolvePreviewOverlayState,
   shouldUseAuthoritativePerformanceHud,
 } from "./threeSceneState.js";
+import { TOP_RIGHT_OVERLAY_DESKTOP_STACK_GAP } from "./topRightOverlayLayout.js";
 
 const ADVANCED_CONTROLS_DOCK_WIDTH = "min(17.5rem, calc(100vw - 2.4rem))";
 const TRANSPARENT_PREVIEW_BACKDROP_COLOR = "#000000";
@@ -335,6 +336,9 @@ const ThreeScene = ({
   const isCompactViewport = isTabletViewport;
   const overlayTopInset = isPhoneViewport ? "0.7rem" : "0.9rem";
   const overlaySideInset = isPhoneViewport ? "0.6rem" : "0.9rem";
+  const overlayStackGap = isPhoneViewport
+    ? "0.85rem"
+    : TOP_RIGHT_OVERLAY_DESKTOP_STACK_GAP;
   const stackedTopRightOverlay = topRightOverlay;
   const shouldShowModeOverlay = Boolean(stackedTopRightOverlay);
   const shouldShowLiveStatusOverlay =
@@ -603,7 +607,7 @@ const ThreeScene = ({
             display: "flex",
             flexDirection: "column",
             alignItems: "flex-end",
-            gap: isPhoneViewport ? "0.85rem" : "0.9rem",
+            gap: overlayStackGap,
             maxWidth: isPhoneViewport
               ? "min(11.5rem, calc(100vw - 1rem))"
               : isTabletPortraitViewport

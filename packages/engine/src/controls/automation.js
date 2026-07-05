@@ -37,6 +37,7 @@ export const AUTOMATABLE_CONTROL_KEYS = Object.freeze([
   "rimCompression",
   "idleLogoIntensity",
   "idleLogoSize",
+  "idleLogoColor",
 ]);
 
 const AUTOMATABLE_CONTROL_KEY_SET = new Set(AUTOMATABLE_CONTROL_KEYS);

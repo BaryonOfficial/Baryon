@@ -1461,6 +1461,49 @@ describe("buildAudioFeatureFrame modal contract", () => {
     );
   });
 
+  it("keeps live-source modal continuity through a brief empty projection window", () => {
+    const featureState = createAudioFeatureState();
+    const bootstrapped = buildManualModalContinuityFrame({
+      featureState,
+      frameTimeMs: 0,
+      candidateForcingSlots: makeModeSlots([[9, 3, 1, 0.9]]),
+      sourceCoupledPhaseSlots: makePhaseSlots([[0.1, 0.2, 0.8, 0.9]]),
+    });
+    let held = bootstrapped;
+
+    for (let frameIndex = 1; frameIndex <= 16; frameIndex += 1) {
+      held = buildManualModalContinuityFrame({
+        featureState,
+        frameTimeMs: frameIndex * 33,
+        candidateForcingSlots: makeModeSlots([]),
+        structuralMetrics: makeModalFieldContinuityStructuralMetrics({
+          modalResponseEnergy: 1,
+          modalResponseSourceCoupledEnergy: 0.8,
+          modalResponseResonantEnergy: 0.2,
+          modalResponseRenderEnergy: 0,
+          modalResponseRenderSourceCoupledEnergy: 0,
+          modalResponseRenderResonantEnergy: 0,
+          currentSignalEnergy: 0.5,
+          currentSignalAmplitude: 0.4,
+          excitedModeCount: 0,
+          observedModalModeCount: 0,
+        }),
+      });
+    }
+
+    expect(bootstrapped.renderAuthority).toBe(true);
+    expect(held.sourceEvidence.currentSourceEvidence).toBe(true);
+    expect(held.energyLedger.sourceBoundaryState).toBe("live");
+    expect(held.energyLedger.projectedRenderEnergy).toBeGreaterThan(
+      DEFAULT_RENDER_ENERGY_EPSILON,
+    );
+    expect(held.renderAuthority).toBe(true);
+    expect(held.fieldState).toBe("decay");
+    expect(readModeKeys(held.modalFieldSlots)).toEqual(["9:3:1"]);
+    expect(held.modalFieldContinuity.releasingModeKeys).toEqual(["9:3:1"]);
+    expect(sumSlotAmplitudes(held.modalFieldSlots)).toBeGreaterThan(0.01);
+  });
+
   it("does not keep low-Q background bass active from observer authority alone", () => {
     const originalSourceCoupledSlots = makeModeSlots([
       [1, 1, 1, 0.0006],
@@ -4111,6 +4154,60 @@ describe("live input noise gate", () => {
     );
     expect(mid.structureSignal).toBeGreaterThan(0);
     expect(late.structureSignal).toBeGreaterThan(0);
+  });
+
+  it("keeps live line-feed modal continuity through a meter-loud broadband dropout", () => {
+    const featureState = createAudioFeatureState();
+    const status = makeSystemStatus();
+    let frame = null;
+
+    for (let frameIndex = 0; frameIndex < 12; frameIndex += 1) {
+      frame = buildLiveInputNoiseGateFrame({
+        analysisSnapshot: createSnapshot({
+          sourceMode: "system",
+          avgAmplitude: 84,
+          fftMagnitudes: makeFft(INHARMONIC_BOWL_STRIKE_PARTIALS),
+          timeData: makeMixedTimeData({
+            partials: INHARMONIC_BOWL_STRIKE_PARTIALS,
+            amplitudeScale: 0.8,
+          }),
+          rms: 0.24,
+        }),
+        featureState,
+        radius: 3,
+        status,
+        frameTimeMs: frameIndex * 33,
+        liveInputAnalysisSettings: { acousticIntent: "ambient" },
+      });
+    }
+
+    expect(frame.renderAuthority).toBe(true);
+    expect(frame.activeModalFieldModeCount).toBeGreaterThan(0);
+
+    for (let frameIndex = 12; frameIndex < 28; frameIndex += 1) {
+      frame = buildLiveInputNoiseGateFrame({
+        analysisSnapshot: createSnapshot({
+          sourceMode: "system",
+          avgAmplitude: 84,
+          fftMagnitudes: new Float32Array(BIN_COUNT),
+          timeData: new Float32Array(FFT_SIZE),
+          rms: 0.108,
+        }),
+        featureState,
+        radius: 3,
+        status,
+        frameTimeMs: frameIndex * 33,
+        liveInputAnalysisSettings: { acousticIntent: "ambient" },
+      });
+    }
+
+    expect(frame.sourceEvidence.currentSourceEvidence).toBe(true);
+    expect(frame.energyLedger.sourceBoundaryState).toBe("live");
+    expect(frame.energyLedger.projectedRenderEnergy).toBeGreaterThan(0.01);
+    expect(frame.modalResponseEnergy).toBeGreaterThan(0.9);
+    expect(frame.renderAuthority).toBe(true);
+    expect(frame.activeModalFieldModeCount).toBeGreaterThan(0);
+    expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBeGreaterThan(0.01);
   });
 
   it("keeps lower-level periodic bowl ring visible after the opening sustain", () => {
@@ -7587,6 +7684,74 @@ describe("modal excitation integration", () => {
       overBandwidthDominant.modalDescriptor.diagnostics.overBandwidthDominant,
     ).toBe(true);
     expect(overBandwidthDominant.activeModalFieldModeCount).toBe(0);
+  });
+
+  it("retains represented topology through over-bandwidth build-up detail", () => {
+    const featureState = createAudioFeatureState();
+    const lowBodyPartials = [
+      [110, 0.9],
+      [220, 0.55],
+      [440, 0.35],
+      [880, 0.22],
+    ];
+    const buildUpPartials = [
+      [110, 0.25],
+      [220, 0.16],
+      [440, 0.1],
+      [6200, 1.2],
+      [7600, 1.0],
+      [9100, 0.9],
+      [10800, 0.8],
+      [12000, 0.7],
+      [14000, 0.6],
+      [16000, 0.5],
+    ];
+    let frame = null;
+
+    for (let frameIndex = 0; frameIndex < 12; frameIndex += 1) {
+      frame = buildAudioFeatureFrame({
+        analysisSnapshot: createSnapshot({
+          avgAmplitude: 100,
+          fftMagnitudes: makeFft(lowBodyPartials),
+          timeData: makeMixedTimeData({ partials: lowBodyPartials }),
+          rms: 0.45,
+        }),
+        featureState,
+        radius: 3,
+        status: makeActiveStatus(),
+        frameTimeMs: frameIndex * 33,
+      });
+    }
+
+    expect(frame.modalDescriptor.fieldAuthority).toBe("complete");
+
+    for (let frameIndex = 12; frameIndex < 18; frameIndex += 1) {
+      frame = buildAudioFeatureFrame({
+        analysisSnapshot: createSnapshot({
+          avgAmplitude: 120,
+          fftMagnitudes: makeFft(buildUpPartials),
+          timeData: makeMixedTimeData({ partials: buildUpPartials }),
+          rms: 0.5,
+        }),
+        featureState,
+        radius: 3,
+        status: makeActiveStatus(),
+        frameTimeMs: frameIndex * 33,
+      });
+    }
+
+    const diagnostics = frame.modalDescriptor.diagnostics;
+
+    expect(diagnostics.overBandwidthDominant).toBe(true);
+    expect(diagnostics.overBandwidthProjectionRetained).toBe(true);
+    expect(diagnostics.overBandwidthFieldBlocked).toBe(false);
+    expect(frame.modalDescriptor.fieldAuthority).toBe("complete");
+    expect(frame.renderAuthority).toBe(true);
+    expect(frame.energyLedger.sourceBoundaryState).toBe("live");
+    expect(frame.energyLedger.projectedRenderEnergy).toBeGreaterThan(0.01);
+    expect(frame.activeModalFieldModeCount).toBeGreaterThan(0);
+    expect(frame.modalDescriptor.counts.modalFieldModeCount).toBeGreaterThan(0);
+    expect(frame.modalFieldSlots.some((value) => value !== 0)).toBe(true);
   });
 
   it("modal path still collapses structure through fade-out after shared persistence gating", () => {
