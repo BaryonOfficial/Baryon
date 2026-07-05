@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import {
@@ -52,6 +52,9 @@ import { createCaptureOutputSession } from "@baryon/engine/render/outputPipeline
 import {
   applyCachedControlSnapshots,
   applyReactiveBloomState,
+  consumeRenderFramePacerSlot,
+  createAuditSnapshotNotifier,
+  createRenderFramePacerState,
   getDevicePixelRatio,
   getRenderTargetPixelRatio,
   publishPerformanceHudSnapshot,
@@ -161,16 +164,8 @@ function applyExternalSceneSnapshot(runtimeState, sceneSnapshot) {
     "targetAngularVelocity",
     sceneSnapshot.targetAngularVelocity,
   );
-  assignFiniteNumber(
-    sceneMotion,
-    "pitchVelocity",
-    sceneSnapshot.pitchVelocity,
-  );
-  assignFiniteNumber(
-    sceneMotion,
-    "rollVelocity",
-    sceneSnapshot.rollVelocity,
-  );
+  assignFiniteNumber(sceneMotion, "pitchVelocity", sceneSnapshot.pitchVelocity);
+  assignFiniteNumber(sceneMotion, "rollVelocity", sceneSnapshot.rollVelocity);
 
   const idleLogoYaw = assignFiniteNumber(
     sceneMotion,
@@ -233,6 +228,7 @@ export function useBaryonEngine({
   liveControlSignalRef = null,
   localCameraRenderSignalRef = null,
   adaptiveResetNonce = 0,
+  framePacingFps = null,
   renderProfile = null,
   basePixelRatio = null,
   onStageRender = null,
@@ -257,6 +253,10 @@ export function useBaryonEngine({
     lastPublishedAtMs: Number.NEGATIVE_INFINITY,
     wasPublishing: false,
   });
+  const notifyAuditSnapshotChange = useMemo(
+    () => createAuditSnapshotNotifier(onAuditSnapshotChange),
+    [onAuditSnapshotChange],
+  );
   const {
     points,
     runtimeRef,
@@ -312,6 +312,9 @@ export function useBaryonEngine({
     liveControlSignalRef?.current?.version ?? 0,
   );
   const forcedExternalRenderPendingRef = useRef(false);
+  const framePacerStateRef = useRef(createRenderFramePacerState());
+  const framePacingFpsRef = useRef(framePacingFps);
+  framePacingFpsRef.current = framePacingFps;
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -336,7 +339,7 @@ export function useBaryonEngine({
       clearCachedControlsSnapshot(cachedControlSnapshotsRef);
       renderCommandQueue.clear();
       onPerformanceHudSnapshotChange?.(null);
-      onAuditSnapshotChange?.({
+      notifyAuditSnapshotChange?.({
         enabled: false,
         snapshot: null,
       });
@@ -363,7 +366,7 @@ export function useBaryonEngine({
     cachedControlSnapshotsRef,
     scene,
     onPerformanceHudSnapshotChange,
-    onAuditSnapshotChange,
+    notifyAuditSnapshotChange,
     setLiveInputRuntimeStatus,
   ]);
 
@@ -607,6 +610,7 @@ export function useBaryonEngine({
   useFrame((state, rfDelta) => {
     const pendingControlsCommand =
       renderCommandQueueRef.current.drainControlsChanged();
+    const controlCommandChanged = Boolean(pendingControlsCommand);
     if (pendingControlsCommand) {
       renderControlsRef.current = pendingControlsCommand.controls;
       applyControlInvalidation(renderControlsRef.current, {
@@ -745,19 +749,36 @@ export function useBaryonEngine({
       audit,
       controlsChanged = false,
     } = controlSnapshots;
+    const immediateControlRenderDue = controlCommandChanged;
     const pendingLocalCameraSignal = pendingLocalCameraRenderSignalRef.current;
     const localCameraForceRender = shouldForceLocalCameraRender(
       pendingLocalCameraSignal,
       lastLocalCameraRenderAtMsRef.current,
       getWallTimeMs(),
     );
+    // External frames own the render cadence; the pacer only gates the
+    // free-running local path so a 60fps policy does not render every tick on
+    // high-refresh displays. Camera force renders bypass it: they are already
+    // throttled and guarantee the end-of-drag pose is presented.
+    const framePacedRenderDue =
+      Boolean(externalFrameState) ||
+      localCameraForceRender ||
+      immediateControlRenderDue ||
+      consumeRenderFramePacerSlot(
+        framePacerStateRef.current,
+        framePacingFpsRef.current,
+        getWallTimeMs(),
+      );
     if (
+      !framePacedRenderDue ||
       !shouldRenderExternalFrame({
         externalFrameState,
         shouldAdvance,
         controlsChanged,
         forceRender:
-          forcedExternalRenderPendingRef.current || localCameraForceRender,
+          forcedExternalRenderPendingRef.current ||
+          localCameraForceRender ||
+          immediateControlRenderDue,
       })
     ) {
       return;
@@ -1017,7 +1038,7 @@ export function useBaryonEngine({
       },
       {
         markRuntimeReady: markBaryonTestRuntimeReady,
-        onAuditSnapshotChange,
+        onAuditSnapshotChange: notifyAuditSnapshotChange,
       },
     );
     onFrameState?.({

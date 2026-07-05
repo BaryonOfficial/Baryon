@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { buildCanonicalFullModalDescriptor } from "../modalDescriptor.js";
+import { getModalGeometryBackend } from "../modalGeometryBackend.js";
 import * as raymarchFieldCache from "./fieldCache.js";
 import {
   buildRaymarchFieldCacheDescriptor as buildUnifiedRaymarchFieldCacheDescriptor,
@@ -139,9 +140,41 @@ describe("normalized pressure and radiation potential", () => {
       resolution: 16,
     };
     const pressureOnly = evaluateRaymarchLiveSynthesisFieldPoint(commonOptions);
+    // Acoustic velocity per linearized Euler: each mode's gradient carries a
+    // 1/k_m weight (k_m = scale·|(u,v,w)|), recomputed independently here.
+    const waveNumberScale = Math.PI / commonOptions.radius;
+    const rectangularBackend = getModalGeometryBackend("rectangular");
+    const modeEntries = [
+      { u: 1, v: 2, w: 3, amplitude: 0.8 },
+      { u: 2, v: 1, w: 1, amplitude: 0.4 },
+    ];
+    let expectedVelocityX = 0;
+    let expectedVelocityY = 0;
+    let expectedVelocityZ = 0;
+    for (const { u, v, w, amplitude } of modeEntries) {
+      const family = rectangularBackend.evaluateMode({
+        u,
+        v,
+        w,
+        x: commonOptions.x,
+        y: commonOptions.y,
+        z: commonOptions.z,
+        scale: waveNumberScale,
+        boundaryMode: commonOptions.boundaryMode,
+      });
+      const inverseWaveNumber = 1 / (waveNumberScale * Math.hypot(u, v, w));
+      expectedVelocityX += amplitude * family.gradX * inverseWaveNumber;
+      expectedVelocityY += amplitude * family.gradY * inverseWaveNumber;
+      expectedVelocityZ += amplitude * family.gradZ * inverseWaveNumber;
+    }
+    const amplitudeNorm = Math.max(
+      modeEntries.reduce((total, mode) => total + mode.amplitude, 0),
+      raymarchFieldCache.MODAL_BASIS_CACHE_ENERGY_EPSILON,
+    );
     const expectedVelocityProxy = Math.min(
       1,
-      Math.hypot(pressureOnly.gradX, pressureOnly.gradY, pressureOnly.gradZ),
+      Math.hypot(expectedVelocityX, expectedVelocityY, expectedVelocityZ) /
+        amplitudeNorm,
     );
 
     expect(pressureOnly.normalizedPressure).toBeCloseTo(pressureOnly.field, 6);
@@ -187,12 +220,31 @@ describe("normalized pressure and radiation potential", () => {
 
     expect(withContrast.radiationPotentialReady).toBe(true);
     expect(withContrast.radiationMaterialContrastSemantic).toBe(
-      "visualization-only-normalized-pressure-velocity-balance",
+      "gorkov-normalized-rigid-mineral-tracer-in-water",
     );
     expect(withContrast.normalizedRadiationPotential).toBeCloseTo(
       expectedRadiationPotential,
       6,
     );
+  });
+
+  it("derives Gor'kov contrast weights from the named tracer material properties", () => {
+    const contrast = raymarchFieldCache.computeGorkovContrastFactors();
+    // Rigid mineral tracer in water: monopole f1 = 1 − κ_p/κ_0 ≈ 0.975,
+    // dipole f2 = 2(ρ̃ − 1)/(2ρ̃ + 1) ≈ 0.525. Both positive: the tracer
+    // collects at pressure nodes, the classic cymatic configuration.
+    expect(contrast.monopole).toBeGreaterThan(0.9);
+    expect(contrast.monopole).toBeLessThan(1);
+    expect(contrast.dipole).toBeGreaterThan(0.4);
+    expect(contrast.dipole).toBeLessThan(0.6);
+    expect(
+      raymarchFieldCache.RAYMARCH_VISUALIZATION_RADIATION_MATERIAL_CONTRAST
+        .pressureEnergyWeight,
+    ).toBeCloseTo(contrast.monopole / 3, 12);
+    expect(
+      raymarchFieldCache.RAYMARCH_VISUALIZATION_RADIATION_MATERIAL_CONTRAST
+        .velocityEnergyWeight,
+    ).toBeCloseTo(contrast.dipole / 2, 12);
   });
 });
 
@@ -1023,6 +1075,9 @@ describe("fieldCache", () => {
       uPhaseEvaluationTime: { value: 0 },
       uTime: { value: 1 },
     };
+    const modalFieldModeBuffer = {
+      value: { array: new Float32Array([1, 2, 3, 0.5]) },
+    };
     const modalFieldCoefficientBuffer = {
       value: { array: new Float32Array([1, 0, 0, 0]) },
     };
@@ -1057,6 +1112,7 @@ describe("fieldCache", () => {
         liveRenderer,
         {
           modalBasisAtlasTexture: activeTexture,
+          modalFieldModeBuffer,
           modalFieldCoefficientBuffer,
           modalFieldPhaseBuffer,
           modalFieldCapacity: 1,
@@ -1106,6 +1162,7 @@ describe("fieldCache", () => {
         liveRenderer,
         {
           modalBasisAtlasTexture: modalBasisCache.texture,
+          modalFieldModeBuffer,
           modalFieldCoefficientBuffer,
           modalFieldPhaseBuffer,
           modalFieldCapacity: 1,
@@ -1171,6 +1228,7 @@ describe("fieldCache", () => {
         liveRenderer,
         {
           modalBasisAtlasTexture: modalBasisCache.texture,
+          modalFieldModeBuffer,
           modalFieldCoefficientBuffer,
           modalFieldPhaseBuffer,
           modalFieldCapacity: 1,
@@ -2985,7 +3043,8 @@ describe("fieldCache", () => {
       descriptor: changedDescriptor,
     });
     expect(computeCalls).toBe(2);
-    expect(modalBasisCache.rebuildPending).toBe(true);
+    expect(modalBasisCache.rebuildPending).toBe(false);
+    expect(modalBasisCache.pendingReady).toBe(true);
     expect(modalBasisCache.pendingDescriptor).toEqual(newestDescriptor);
     expect(modalBasisCache.queuedDescriptor).toBeNull();
 
@@ -3003,7 +3062,7 @@ describe("fieldCache", () => {
     expect(submitted.enqueued).toBe(false);
     expect(submitted.reason).toBe("pending");
     expect(modalBasisCache.queuedDescriptor).toBeNull();
-    expect(modalBasisCache.rebuildPending).toBe(true);
+    expect(modalBasisCache.pendingReady).toBe(true);
     expect(computeCalls).toBe(2);
   });
 

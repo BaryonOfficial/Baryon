@@ -2,6 +2,8 @@ export const STRUCTURE_FRAME_SCHEMA_VERSION = 1;
 export const DEFAULT_STRUCTURE_FRAME_MODE_CAP = 32;
 export const MAX_STRUCTURE_FRAME_MODE_CAP = 64;
 
+const OSC_STRUCTURE_APP_NAME = "Baryon";
+const OSC_STRUCTURE_TRANSPORT_KIND = "osc-structure";
 const DEFAULT_EFFECTIVE_CAVITY_GEOMETRY = "rectangular";
 const DEFAULT_MATERIAL_COLOR_RGB = Object.freeze([0, 0, 0]);
 const VALID_FIELD_AUTHORITIES = new Set([
@@ -13,6 +15,379 @@ const VALID_FIELD_AUTHORITIES = new Set([
 const VALID_SOURCE_STATES = new Set(["active", "idle", "unauthoritative"]);
 const VALID_COLOR_MODES = new Set(["static", "spectral"]);
 const MAX_PUBLIC_STRING_LENGTH = 96;
+
+function deepFreezeContract(value) {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) {
+    return value;
+  }
+
+  Object.freeze(value);
+  for (const child of Object.values(value)) {
+    deepFreezeContract(child);
+  }
+  return value;
+}
+
+export const STRUCTURE_FRAME_OSC_SCHEMA = deepFreezeContract({
+  schemaVersion: STRUCTURE_FRAME_SCHEMA_VERSION,
+  appName: OSC_STRUCTURE_APP_NAME,
+  transport: OSC_STRUCTURE_TRANSPORT_KIND,
+  tables: {
+    keyValueColumns: ["key", "value"],
+    rawColumns: ["address", "args"],
+    modes: {
+      columns: [
+        "index",
+        "key",
+        "u",
+        "v",
+        "w",
+        "coefficient",
+        "energy",
+        "phaseOffsetRad",
+        "phaseVelocityRadPerSec",
+        "phaseCoherence",
+        "phaseAuthority",
+        "frequencyHz",
+        "q",
+        "damping",
+        "support",
+        "r",
+        "g",
+        "b",
+        "colorWeight",
+      ],
+    },
+    colors: {
+      columns: [
+        "index",
+        "key",
+        "frequencyHz",
+        "energy",
+        "r",
+        "g",
+        "b",
+        "colorWeight",
+      ],
+    },
+  },
+  packets: {
+    hello: {
+      address: "/baryon/hello",
+      args: [
+        { name: "appName", type: "s", value: OSC_STRUCTURE_APP_NAME },
+        {
+          name: "schemaVersion",
+          type: "i",
+          value: STRUCTURE_FRAME_SCHEMA_VERSION,
+        },
+        { name: "transport", type: "s", value: OSC_STRUCTURE_TRANSPORT_KIND },
+      ],
+    },
+    clear: {
+      address: "/baryon/frame/clear",
+      args: [{ name: "sequence", type: "i" }],
+    },
+    frame: [
+      {
+        address: "/baryon/schema/version",
+        target: "frame",
+        storeKey: "schemaVersion",
+        args: [{ name: "schemaVersion", type: "i", path: ["schemaVersion"] }],
+      },
+      {
+        address: "/baryon/frame/begin",
+        target: "frame",
+        resetModes: true,
+        resetRaw: true,
+        args: [
+          {
+            name: "sequence",
+            type: "i",
+            path: ["frameSequence"],
+            parameter: "Frame",
+          },
+          { name: "frameTimeMs", type: "f", path: ["frameTimeMs"] },
+          { name: "sourceState", type: "s", path: ["sourceState"] },
+          {
+            name: "geometry",
+            type: "s",
+            path: ["effectiveCavityGeometry"],
+          },
+        ],
+      },
+      {
+        address: "/baryon/frame/modeCount",
+        target: "frame",
+        storeKey: "modeCount",
+        parameter: "Modecount",
+        args: [{ name: "modeCount", type: "i", path: ["modeCount"] }],
+      },
+      {
+        address: "/baryon/descriptor/authority",
+        target: "frame",
+        storeKey: "authority",
+        args: [{ name: "authority", type: "s", path: ["fieldAuthority"] }],
+      },
+      {
+        address: "/baryon/coverage/satisfied",
+        target: "coverage",
+        storeKey: "satisfied",
+        args: [
+          {
+            name: "structuralCoverageSatisfied",
+            type: "i",
+            path: ["coverage", "structuralCoverageSatisfied"],
+          },
+        ],
+      },
+      {
+        address: "/baryon/coverage/modeCounts",
+        target: "coverage",
+        storeKey: "modeCounts",
+        args: [
+          {
+            name: "semanticModeCount",
+            type: "i",
+            path: ["coverage", "semanticModeCount"],
+          },
+          {
+            name: "representedBasisPageModeCount",
+            type: "i",
+            path: ["coverage", "representedBasisPageModeCount"],
+          },
+        ],
+      },
+      {
+        address: "/baryon/coverage/energyRatio",
+        target: "coverage",
+        storeKey: "energyRatio",
+        args: [
+          {
+            name: "renderRepresentedEnergyRatio",
+            type: "f",
+            path: ["coverage", "renderRepresentedEnergyRatio"],
+          },
+        ],
+      },
+      {
+        address: "/baryon/coverage/rejectedEnergy",
+        target: "coverage",
+        storeKey: "rejectedEnergy",
+        args: [
+          {
+            name: "rejectedModalEnergy",
+            type: "f",
+            path: ["coverage", "rejectedModalEnergy"],
+          },
+        ],
+      },
+      {
+        address: "/baryon/coverage/rejectedCounts",
+        target: "coverage",
+        storeKey: "rejectedCounts",
+        args: [
+          {
+            name: "basisAtlasCapacityRejectedCount",
+            type: "i",
+            path: ["coverage", "basisAtlasCapacityRejectedCount"],
+          },
+          {
+            name: "spatialBandwidthRejectedCount",
+            type: "i",
+            path: ["coverage", "spatialBandwidthRejectedCount"],
+          },
+          {
+            name: "overBandwidthRejectedModeCount",
+            type: "i",
+            path: ["coverage", "overBandwidthRejectedModeCount"],
+          },
+        ],
+      },
+      {
+        address: "/baryon/coverage/overBandwidth",
+        target: "coverage",
+        storeKey: "overBandwidth",
+        args: [
+          {
+            name: "overBandwidthDominant",
+            type: "i",
+            path: ["coverage", "overBandwidthDominant"],
+          },
+        ],
+      },
+      {
+        address: "/baryon/global/rms",
+        target: "global",
+        storeKey: "rms",
+        parameter: "Rms",
+        args: [{ name: "rms", type: "f", path: ["global", "rms"] }],
+      },
+      {
+        address: "/baryon/global/dominantHz",
+        target: "global",
+        storeKey: "dominantHz",
+        args: [
+          {
+            name: "dominantFrequencyHz",
+            type: "f",
+            path: ["global", "dominantFrequencyHz"],
+          },
+        ],
+      },
+      {
+        address: "/baryon/global/centroidHz",
+        target: "global",
+        storeKey: "centroidHz",
+        args: [
+          {
+            name: "spectralCentroidHz",
+            type: "f",
+            path: ["global", "spectralCentroidHz"],
+          },
+        ],
+      },
+      {
+        address: "/baryon/global/structure",
+        target: "global",
+        storeKey: "structure",
+        args: [
+          {
+            name: "structureSignal",
+            type: "f",
+            path: ["global", "structureSignal"],
+          },
+        ],
+      },
+      {
+        address: "/baryon/global/energy",
+        target: "global",
+        storeKey: "energy",
+        args: [
+          { name: "energySignal", type: "f", path: ["global", "energySignal"] },
+        ],
+      },
+      {
+        address: "/baryon/global/change",
+        target: "global",
+        storeKey: "change",
+        args: [
+          { name: "changeSignal", type: "f", path: ["global", "changeSignal"] },
+        ],
+      },
+      {
+        address: "/baryon/global/pulse",
+        target: "global",
+        storeKey: "pulse",
+        args: [
+          { name: "pulseSignal", type: "f", path: ["global", "pulseSignal"] },
+        ],
+      },
+      {
+        address: "/baryon/color/mode",
+        target: "material",
+        storeKey: "colorMode",
+        args: [
+          { name: "colorMode", type: "s", path: ["material", "colorMode"] },
+        ],
+      },
+      {
+        address: "/baryon/global/material/volumeColor",
+        target: "material",
+        storeKey: "volumeColor",
+        args: [
+          { name: "r", type: "f", path: ["material", "volumeColorRgb", 0] },
+          { name: "g", type: "f", path: ["material", "volumeColorRgb", 1] },
+          { name: "b", type: "f", path: ["material", "volumeColorRgb", 2] },
+        ],
+      },
+      {
+        address: "/baryon/global/material/surfaceColor",
+        target: "material",
+        storeKey: "surfaceColor",
+        args: [
+          { name: "r", type: "f", path: ["material", "surfaceColorRgb", 0] },
+          { name: "g", type: "f", path: ["material", "surfaceColorRgb", 1] },
+          { name: "b", type: "f", path: ["material", "surfaceColorRgb", 2] },
+        ],
+      },
+    ],
+    modes: [
+      {
+        suffix: "key",
+        args: [{ column: "key", type: "s", path: ["modeKey"] }],
+      },
+      {
+        suffix: "uvw",
+        args: [
+          { column: "u", type: "i", path: ["u"] },
+          { column: "v", type: "i", path: ["v"] },
+          { column: "w", type: "i", path: ["w"] },
+        ],
+      },
+      {
+        suffix: "coefficient",
+        args: [{ column: "coefficient", type: "f", path: ["coefficient"] }],
+      },
+      {
+        suffix: "energy",
+        args: [{ column: "energy", type: "f", path: ["coefficientEnergy"] }],
+      },
+      {
+        suffix: "phase",
+        args: [
+          { column: "phaseOffsetRad", type: "f", path: ["phaseOffsetRad"] },
+          {
+            column: "phaseVelocityRadPerSec",
+            type: "f",
+            path: ["phaseVelocityRadPerSec"],
+          },
+          { column: "phaseCoherence", type: "f", path: ["phaseCoherence"] },
+          { column: "phaseAuthority", type: "f", path: ["phaseAuthority"] },
+        ],
+      },
+      {
+        suffix: "frequencyHz",
+        args: [
+          {
+            column: "frequencyHz",
+            type: "f",
+            path: ["naturalFrequencyHz"],
+          },
+        ],
+      },
+      {
+        suffix: "q",
+        args: [{ column: "q", type: "f", path: ["qualityFactor"] }],
+      },
+      {
+        suffix: "damping",
+        args: [{ column: "damping", type: "f", path: ["dampingRatio"] }],
+      },
+      {
+        suffix: "support",
+        args: [{ column: "support", type: "f", path: ["observedSupport"] }],
+      },
+      {
+        suffix: "material/color",
+        args: [
+          { column: "r", type: "f", path: ["material", "colorRgb", 0] },
+          { column: "g", type: "f", path: ["material", "colorRgb", 1] },
+          { column: "b", type: "f", path: ["material", "colorRgb", 2] },
+          {
+            column: "colorWeight",
+            type: "f",
+            path: ["material", "colorWeight"],
+          },
+        ],
+      },
+    ],
+    end: {
+      address: "/baryon/frame/end",
+      args: [{ name: "sequence", type: "i", path: ["frameSequence"] }],
+    },
+  },
+});
 
 function finiteNumber(value, fallback = 0) {
   const nextValue = Number(value);

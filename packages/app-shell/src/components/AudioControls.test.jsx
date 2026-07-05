@@ -91,6 +91,7 @@ describe("ListenerControls compact dock layout", () => {
       isEngineReady: true,
       handleFileChange: () => {},
       handleRecentUploadSelect: () => {},
+      loadDemoAudioFile: () => {},
       handlePlayPause: () => {},
       handleStop: () => {},
       handleVolumeChange: () => {},
@@ -213,6 +214,55 @@ describe("ListenerControls compact dock layout", () => {
 
     expect(trackTrigger?.tagName).toBe("BUTTON");
     expect(trackTrigger?.getAttribute("type")).toBe("button");
+  });
+
+  it("starts the preloaded demo audio from the compact file dock", () => {
+    const loadDemoAudioFile = vi.fn();
+    renderControls({
+      selectedSource: "file",
+      loadDemoAudioFile,
+    });
+
+    const demoButton = container.querySelector(
+      '[aria-label="Play demo audio"]',
+    );
+
+    expect(demoButton).not.toBeNull();
+    expect(
+      demoButton?.classList.contains("am-compact-header-button--demo"),
+    ).toBe(true);
+    expect(window.getComputedStyle(demoButton).borderColor).toBe(
+      "rgba(0, 0, 0, 0)",
+    );
+    act(() => {
+      demoButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(loadDemoAudioFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the preloaded demo audio available in the full file dock", () => {
+    const loadDemoAudioFile = vi.fn();
+    renderControls(
+      {
+        selectedSource: "file",
+        loadDemoAudioFile,
+      },
+      { viewportWidth: 1200 },
+    );
+
+    const demoButton = container.querySelector(
+      '.am-source-tools [aria-label="Play demo audio"]',
+    );
+
+    expect(demoButton).not.toBeNull();
+    expect(demoButton?.classList.contains("am-btn--demo")).toBe(true);
+    expect(window.getComputedStyle(demoButton).borderColor).toBe(
+      "rgba(0, 0, 0, 0)",
+    );
+    act(() => {
+      demoButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(loadDemoAudioFile).toHaveBeenCalledTimes(1);
   });
 
   it("removes the full file dock when system is selected", () => {
@@ -405,9 +455,7 @@ describe("ListenerControls compact dock layout", () => {
       sourceControl?.querySelector(".am-status-dot")
     );
 
-    expect(statusLight?.getAttribute("aria-label")).toBe(
-      "Line feed listening",
-    );
+    expect(statusLight?.getAttribute("aria-label")).toBe("Line feed listening");
     expect(statusDot?.style.background).toBe("rgb(74, 158, 92)");
   });
 

@@ -67,7 +67,7 @@ Current performance work is intentionally split into two phases so Baryon can st
 
 ### P2
 
-- Linux AppImage distribution
+- Linux Debian package distribution
 - Linux visualization-only support without Syphon/Spout parity
 
 ## Platform Priorities

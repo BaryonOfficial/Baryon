@@ -217,6 +217,28 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   // ── Shape ──────────────────────────────────────────────────────────────────
   withControlGroup(
     {
+      key: "fieldExtent",
+      label: "Extent",
+      title:
+        "Keep the cymatic field contained inside the flagship sphere, or let the waves radiate past it and fade naturally into open space",
+      defaultValue: SIMULATION_DEFAULTS.fieldExtent,
+      methods: methodsFor("shared"),
+      binding: {
+        options: {
+          Sphere: "sphere",
+          Unbounded: "unbounded",
+        },
+      },
+      targetType: CONTROL_TARGET_TYPES.uniform,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.uniforms.uUnboundedMix.value",
+      status: CONTROL_STATUSES.live,
+      controlOrder: 5,
+    },
+    CONTROL_GROUPS.shape,
+  ),
+  withControlGroup(
+    {
       key: "zeroPointPrecision",
       label: "Node Threshold",
       title:
@@ -285,6 +307,23 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       runtimePath: "runtime.uniforms.uAbsorption.value",
       status: CONTROL_STATUSES.live,
       controlOrder: 40,
+    },
+    CONTROL_GROUPS.shape,
+  ),
+  withControlGroup(
+    {
+      key: "laserDeflectionGain",
+      label: "Refraction",
+      title:
+        "How strongly the laser bends through the acoustic pressure field — higher values focus tighter, brighter caustic webs",
+      defaultValue: RAYMARCH_DEFAULTS.laserDeflectionGain,
+      methods: methodsFor("raymarchOnly"),
+      binding: { min: 0, max: 1.2, step: 0.01 },
+      targetType: CONTROL_TARGET_TYPES.uniform,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.uniforms.uLaserDeflectionGain.value",
+      status: CONTROL_STATUSES.live,
+      controlOrder: 45,
     },
     CONTROL_GROUPS.shape,
   ),
@@ -491,6 +530,22 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       runtimePath: "runtime.idleOverlay.scale",
       status: CONTROL_STATUSES.live,
       controlOrder: 20,
+    },
+    CONTROL_GROUPS.logo,
+  ),
+  withControlGroup(
+    {
+      key: "idleLogoColor",
+      label: "Logo Color",
+      title: "Color of the idle logo overlay shown when no audio is playing",
+      defaultValue: RENDER_DEFAULTS.idleLogoColor,
+      methods: ALL_METHODS,
+      binding: { view: "color" },
+      targetType: CONTROL_TARGET_TYPES.uniform,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.uniforms.uIdleLogoColor.value",
+      status: CONTROL_STATUSES.live,
+      controlOrder: 30,
     },
     CONTROL_GROUPS.logo,
   ),

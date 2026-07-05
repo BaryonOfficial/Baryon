@@ -1,4 +1,9 @@
 import { binIndexToFrequencyHz } from "./binFrequency.js";
+import {
+  buildModalDrivePhaseContext,
+  measureModalComplexDrive,
+  resolveHarmonicDrivePhaseLocks,
+} from "./modalDrivePhase.js";
 import { normalizePhaseRad } from "./modalPhaseSlots.js";
 import { clamp01, smoothstep } from "../math.js";
 
@@ -12,7 +17,6 @@ export const DEFAULT_MODAL_RESPONSE_REFERENCE = Object.freeze({
 const DEFAULT_MODAL_RESPONSE_BUDGET = 1;
 const SOURCE_COUPLED_RESPONSE_BUDGET_SHARE = 0.82;
 const MIN_RELATIVE_PHYSICAL_MODAL_ENERGY = 0.035;
-const FRESH_RESPONSE_SEED_THRESHOLD = 0.02;
 const FREQUENCY_DAMPING_REFERENCE_HZ = 4800;
 const ORDER_DAMPING_REFERENCE = 42;
 const MIN_MODAL_QUALITY_FACTOR = 0.5;
@@ -20,34 +24,76 @@ const MAX_MODAL_QUALITY_FACTOR = 50000;
 const DEFAULT_STORED_ENERGY_TAU_MS = 320;
 const MODAL_SPECTRAL_RESPONSE_CACHE = new Map();
 const MODAL_SPECTRAL_RESPONSE_CACHE_MAX_SIZE = 512;
+const DRIVE_PHASE_MEASUREMENT_GATE = 0.003;
+const DRIVE_PHASE_MEASUREMENT_MODE_LIMIT = 48;
+const DRIVE_LOCK_PLV_ATTACK = 0.2;
+const DRIVE_LOCK_PLV_RELEASE = 0.85;
+const ENVELOPE_MAGNITUDE_EPSILON = 1e-6;
 
 function readPreviousModalResponseState(previous) {
   if (typeof previous === "number") {
+    const energy = clamp01(previous);
     return {
-      energy: clamp01(previous),
-      phaseRad: 0,
+      energy,
+      rotationRad: 0,
+      envelopeRe: Math.sqrt(energy),
+      envelopeIm: 0,
+      driveLockRe: 0,
+      driveLockIm: 0,
     };
   }
   if (!previous || typeof previous !== "object") {
     return {
       energy: 0,
-      phaseRad: 0,
+      rotationRad: 0,
+      envelopeRe: 0,
+      envelopeIm: 0,
+      driveLockRe: 0,
+      driveLockIm: 0,
     };
   }
+
+  const energy = clamp01(
+    previous.modalResponseEnergy ??
+      previous.retainedEnergy ??
+      previous.energy ??
+      previous.amplitude ??
+      0,
+  );
+  const hasEnvelopeState =
+    Number.isFinite(previous.modalOscillatorEnvelopeRe) &&
+    Number.isFinite(previous.modalOscillatorEnvelopeIm) &&
+    Number.isFinite(previous.modalOscillatorRotationRad);
+  if (hasEnvelopeState) {
+    return {
+      energy,
+      rotationRad: normalizePhaseRad(previous.modalOscillatorRotationRad),
+      envelopeRe: previous.modalOscillatorEnvelopeRe,
+      envelopeIm: previous.modalOscillatorEnvelopeIm,
+      driveLockRe: Number.isFinite(previous.modalOscillatorDriveLockRe)
+        ? previous.modalOscillatorDriveLockRe
+        : 0,
+      driveLockIm: Number.isFinite(previous.modalOscillatorDriveLockIm)
+        ? previous.modalOscillatorDriveLockIm
+        : 0,
+    };
+  }
+
+  // Legacy state carries only a lab-frame phase: fold it into the rotation
+  // accumulator so the published phase stays continuous, with the envelope
+  // along the real axis.
   return {
-    energy: clamp01(
-      previous.modalResponseEnergy ??
-        previous.retainedEnergy ??
-        previous.energy ??
-        previous.amplitude ??
-        0,
-    ),
-    phaseRad: normalizePhaseRad(
+    energy,
+    rotationRad: normalizePhaseRad(
       previous.oscillatorPhaseRad ??
         previous.modalOscillatorPhaseRad ??
         previous.phase ??
         0,
     ),
+    envelopeRe: Math.sqrt(energy),
+    envelopeIm: 0,
+    driveLockRe: 0,
+    driveLockIm: 0,
   };
 }
 
@@ -90,36 +136,123 @@ function resolveDiagnosticLayer(mode, qualityFactor) {
   return mode?.layer ?? (qualityFactor >= 18 ? "resonant" : "source-coupled");
 }
 
-function updateModalOscillatorState({
+function updateDriveLockCoherenceVector({ previousState, driveLock }) {
+  if (!driveLock) {
+    return {
+      driveLockRe: previousState.driveLockRe * DRIVE_LOCK_PLV_RELEASE,
+      driveLockIm: previousState.driveLockIm * DRIVE_LOCK_PLV_RELEASE,
+    };
+  }
+  const blend = DRIVE_LOCK_PLV_ATTACK;
+  return {
+    driveLockRe:
+      previousState.driveLockRe * (1 - blend) +
+      Math.cos(driveLock.lockedPhaseRad) * blend,
+    driveLockIm:
+      previousState.driveLockIm * (1 - blend) +
+      Math.sin(driveLock.lockedPhaseRad) * blend,
+  };
+}
+
+/**
+ * Exact one-frame update of the per-mode driven-oscillator envelope.
+ *
+ * For the underdamped mode q̈ + 2ζωq̇ + ω²q = F(t), writing q = Re[Z·e^{iθ}]
+ * with slowly varying complex envelope Z gives ż = −ζωZ + F̃/(2iω), whose
+ * exact solution over a frame with constant drive is
+ * Z' = Z_ss + (Z − Z_ss)·e^{−ζωΔt}. The amplitude time constant is
+ * 1/(ζω) = 2Q/ω, so stored energy keeps the physical Q/ω constant on both
+ * attack and release — ring-up is no longer a shortened product envelope.
+ * |Z_ss| = √targetEnergy preserves the calibrated steady-state levels; its
+ * phase is drive-locked (−π/2 behind resonant drive) when a harmonic lock is
+ * available, else the envelope keeps its current direction.
+ */
+function updateDrivenOscillatorState({
   modeFrequencyHz,
-  retainedEnergy,
+  targetEnergy,
   spectralDrive,
   previousState,
+  storedEnergyTauMs,
   deltaMs,
+  driveLock = null,
 }) {
   const frequencyHz = Number.isFinite(modeFrequencyHz)
     ? Math.max(0, modeFrequencyHz)
     : 0;
-  const angularVelocityRadPerSec = TWO_PI * frequencyHz;
+  const naturalAngularVelocityRadPerSec = TWO_PI * frequencyHz;
+  // A locked mode oscillates at the drive frequency (n × the reference
+  // fundamental), not its detuned natural frequency.
+  const angularVelocityRadPerSec =
+    driveLock &&
+    Number.isFinite(driveLock.drivenAngularVelocityRadPerSec) &&
+    driveLock.drivenAngularVelocityRadPerSec > 0
+      ? driveLock.drivenAngularVelocityRadPerSec
+      : naturalAngularVelocityRadPerSec;
   const deltaSeconds = Math.max(0, deltaMs) / 1000;
-  const phaseRad = normalizePhaseRad(
-    (previousState?.phaseRad ?? 0) + angularVelocityRadPerSec * deltaSeconds,
+  const rotationRad = normalizePhaseRad(
+    previousState.rotationRad + angularVelocityRadPerSec * deltaSeconds,
   );
-  const amplitude = Math.sqrt(clamp01(retainedEnergy));
+
+  const amplitudeDecay = Math.exp(
+    -Math.max(0, deltaMs) / (2 * Math.max(1, storedEnergyTauMs)),
+  );
+  const targetAmplitude = Math.sqrt(clamp01(targetEnergy));
+  const previousMagnitude = Math.hypot(
+    previousState.envelopeRe,
+    previousState.envelopeIm,
+  );
+  const steadyPhaseRad = driveLock
+    ? normalizePhaseRad(driveLock.lockedPhaseRad - Math.PI / 2)
+    : previousMagnitude > ENVELOPE_MAGNITUDE_EPSILON
+      ? Math.atan2(previousState.envelopeIm, previousState.envelopeRe)
+      : 0;
+  const steadyRe = targetAmplitude * Math.cos(steadyPhaseRad);
+  const steadyIm = targetAmplitude * Math.sin(steadyPhaseRad);
+  const envelopeRe =
+    steadyRe + (previousState.envelopeRe - steadyRe) * amplitudeDecay;
+  const envelopeIm =
+    steadyIm + (previousState.envelopeIm - steadyIm) * amplitudeDecay;
+  const retainedEnergy = clamp01(
+    envelopeRe * envelopeRe + envelopeIm * envelopeIm,
+  );
+  const envelopePhaseRad =
+    retainedEnergy > 0 ? Math.atan2(envelopeIm, envelopeRe) : 0;
+  const phaseRad = normalizePhaseRad(rotationRad + envelopePhaseRad);
+
+  const lockVector = updateDriveLockCoherenceVector({
+    previousState,
+    driveLock,
+  });
+  const driveLockPlv = clamp01(
+    Math.hypot(lockVector.driveLockRe, lockVector.driveLockIm),
+  );
   const phaseAuthority = clamp01(
     Math.max(spectralDrive, retainedEnergy) * (frequencyHz > 0 ? 1 : 0),
   );
-  const phaseCoherence = clamp01(
+  const baseCoherence = clamp01(
     smoothstep(0.0005, 0.04, retainedEnergy) *
       smoothstep(0.0005, 0.08, Math.max(spectralDrive, retainedEnergy)),
   );
 
   return {
+    retainedEnergy,
     oscillatorPhaseRad: phaseRad,
     oscillatorAngularVelocityRadPerSec: angularVelocityRadPerSec,
     oscillatorPhaseAuthority: phaseAuthority,
-    oscillatorPhaseCoherence: phaseCoherence,
-    signedModalCoefficient: amplitude * Math.cos(phaseRad),
+    // A harmonic lock's phase-locking value scales coherence: an unstable
+    // lock must not authorize confident signed cancellation.
+    oscillatorPhaseCoherence: driveLock
+      ? clamp01(baseCoherence * driveLockPlv)
+      : baseCoherence,
+    signedModalCoefficient: Math.sqrt(retainedEnergy) * Math.cos(phaseRad),
+    modalOscillatorRotationRad: rotationRad,
+    modalOscillatorEnvelopeRe: envelopeRe,
+    modalOscillatorEnvelopeIm: envelopeIm,
+    modalOscillatorDriveLockRe: lockVector.driveLockRe,
+    modalOscillatorDriveLockIm: lockVector.driveLockIm,
+    modalOscillatorDriveLockPlv: driveLockPlv,
+    modalOscillatorDrivePhaseLocked: Boolean(driveLock),
+    modalOscillatorHarmonicOrder: driveLock?.harmonicOrder ?? 0,
   };
 }
 
@@ -136,10 +269,6 @@ function getModeProfile(mode) {
     qualityFactor,
     dampingRatio: 1 / (2 * qualityFactor),
     storedEnergyTauMs,
-    attackTauMs: computeEnergyAttackTimeConstantMs({
-      qualityFactor,
-      storedEnergyTauMs,
-    }),
   };
 }
 
@@ -368,38 +497,6 @@ function computeStoredEnergyTimeConstantMs({ modeFrequencyHz, qualityFactor }) {
   return Math.max(1, (q / (TWO_PI * frequencyHz)) * 1000);
 }
 
-function computeEnergyAttackTimeConstantMs({
-  qualityFactor,
-  storedEnergyTauMs,
-}) {
-  const q = Number.isFinite(qualityFactor)
-    ? Math.max(MIN_MODAL_QUALITY_FACTOR, qualityFactor)
-    : DEFAULT_MODAL_RESPONSE_REFERENCE.qualityFactor;
-  const qNormalized = clamp01((q - MIN_MODAL_QUALITY_FACTOR) / 32);
-  return Math.max(1, storedEnergyTauMs * (0.28 + qNormalized * 0.24));
-}
-
-function updateRetainedEnergy({
-  targetEnergy,
-  previousEnergy,
-  attackTauMs,
-  storedEnergyTauMs,
-  deltaMs,
-}) {
-  const target = clamp01(targetEnergy);
-  const previous = clamp01(previousEnergy);
-  if (previous <= 0 && target >= FRESH_RESPONSE_SEED_THRESHOLD) {
-    return target;
-  }
-
-  const timeConstantMs =
-    target >= previous
-      ? Math.max(1, attackTauMs)
-      : Math.max(1, storedEnergyTauMs);
-  const alpha = 1 - Math.exp(-Math.max(0, deltaMs) / timeConstantMs);
-  return clamp01(previous + (target - previous) * alpha);
-}
-
 function normalizeModalResponseBudget(entries, budget) {
   const rawEnergy = entries.reduce(
     (total, entry) => total + entry.modalResponseEnergy,
@@ -414,12 +511,17 @@ function normalizeModalResponseBudget(entries, budget) {
   }
 
   const scale = rawEnergy > budget ? budget / Math.max(EPSILON, rawEnergy) : 1;
+  const amplitudeScale = Math.sqrt(scale);
   for (const entry of entries) {
     entry.modalResponseRawEnergy = entry.modalResponseEnergy;
     entry.modalResponseBudgetScale = scale;
     entry.modalResponseEnergy = clamp01(entry.modalResponseEnergy * scale);
     entry.displayAmplitude = Math.sqrt(entry.modalResponseEnergy);
-    entry.signedModalCoefficient *= Math.sqrt(scale);
+    entry.signedModalCoefficient *= amplitudeScale;
+    // Keep the oscillator envelope consistent with the scaled energy so the
+    // state that round-trips into the next frame is |Z|² = modalResponseEnergy.
+    entry.modalOscillatorEnvelopeRe *= amplitudeScale;
+    entry.modalOscillatorEnvelopeIm *= amplitudeScale;
   }
   return {
     energy: entries.reduce(
@@ -435,6 +537,21 @@ function sumModalEnergyByLayer(entries, layer) {
   return entries.reduce(
     (total, entry) =>
       entry.layer === layer ? total + (entry.modalResponseEnergy ?? 0) : total,
+    0,
+  );
+}
+
+// Energy explained by the present drive. A driven oscillator at or below
+// steady state has E = D·exposure·transfer ≤ D, so min(E, D) ≈ E; a ringing
+// tail has D ≈ 0, so its stored energy contributes nothing. Consumers use
+// this to separate current-signal authority from stored/decay energy.
+function sumModalCurrentSignalEnergyByLayer(entries, layer) {
+  return entries.reduce(
+    (total, entry) =>
+      entry.layer === layer
+        ? total +
+          Math.min(entry.modalResponseEnergy ?? 0, entry.modalResponseDrive ?? 0)
+        : total,
     0,
   );
 }
@@ -536,10 +653,103 @@ function averageEntryMetric(entries, key) {
   );
 }
 
+function buildModalResponseCandidates({
+  modes,
+  fftMagnitudes,
+  sampleRate,
+  previousEnergies,
+  hasInput,
+  inputEnergy,
+  inputExposure,
+  spectralDriveContext,
+  coherence,
+}) {
+  const candidates = [];
+  for (const mode of modes ?? []) {
+    const modeKey =
+      mode?.modeKey ?? `${mode?.u ?? 0}:${mode?.v ?? 0}:${mode?.w ?? 0}`;
+    const profile = getModeProfile(mode);
+    const modeFrequencyHz = mode?.naturalFrequencyHz ?? mode?.frequencyHz ?? 0;
+    const previousState = readPreviousModalResponseState(
+      previousEnergies?.get?.(modeKey) ?? mode,
+    );
+    const spectralDrive = hasInput
+      ? computeModalSpectralDrive({
+          fftMagnitudes,
+          sampleRate,
+          modeFrequencyHz,
+          qualityFactor: profile.qualityFactor,
+          inputEnergy,
+          spectralDriveContext,
+        })
+      : 0;
+    const physicalTransfer = computePhysicalModalTransfer({
+      mode,
+      modeFrequencyHz,
+      coherence,
+      previousEnergy: previousState.energy,
+    });
+    candidates.push({
+      mode,
+      modeKey,
+      profile,
+      modeFrequencyHz,
+      previousState,
+      spectralDrive,
+      physicalTransfer,
+      targetEnergy:
+        spectralDrive * inputExposure * physicalTransfer.physicalTransfer,
+    });
+  }
+  return candidates;
+}
+
+function resolveModalDrivePhaseLocks({
+  candidates,
+  timeDomainData,
+  sampleRate,
+  hasInput,
+}) {
+  if (!hasInput) {
+    return new Map();
+  }
+  const drivePhaseContext = buildModalDrivePhaseContext({
+    timeDomainData,
+    sampleRate,
+  });
+  if (!drivePhaseContext) {
+    return new Map();
+  }
+
+  const drivenCandidates = candidates
+    .filter((candidate) => candidate.spectralDrive > DRIVE_PHASE_MEASUREMENT_GATE)
+    .sort((left, right) => right.spectralDrive - left.spectralDrive)
+    .slice(0, DRIVE_PHASE_MEASUREMENT_MODE_LIMIT);
+  const measurements = [];
+  for (const candidate of drivenCandidates) {
+    const measurement = measureModalComplexDrive(
+      drivePhaseContext,
+      candidate.modeFrequencyHz,
+    );
+    if (!measurement) {
+      continue;
+    }
+    measurements.push({
+      modeKey: candidate.modeKey,
+      frequencyHz: candidate.modeFrequencyHz,
+      driveWeight: candidate.spectralDrive,
+      magnitude: measurement.magnitude,
+      phaseRad: measurement.phaseRad,
+    });
+  }
+  return resolveHarmonicDrivePhaseLocks(measurements);
+}
+
 /**
  * @param {{
  *   modes?: Array<any>,
  *   fftMagnitudes?: Float32Array,
+ *   timeDomainData?: Float32Array | null,
  *   sampleRate?: number,
  *   previousEnergies?: Map<string, number>,
  *   deltaMs?: number,
@@ -553,6 +763,7 @@ function averageEntryMetric(entries, key) {
 export function updateModalResponseFrame({
   modes,
   fftMagnitudes,
+  timeDomainData = null,
   sampleRate,
   previousEnergies = new Map(),
   deltaMs = 16,
@@ -573,66 +784,54 @@ export function updateModalResponseFrame({
   const inputExposure = hasInput
     ? computeInputExposure({ inputEnergy, inputRms: effectiveInputRms })
     : 0;
+  const candidates = buildModalResponseCandidates({
+    modes,
+    fftMagnitudes,
+    sampleRate,
+    previousEnergies,
+    hasInput,
+    inputEnergy,
+    inputExposure,
+    spectralDriveContext,
+    coherence,
+  });
+  const drivePhaseLocks = resolveModalDrivePhaseLocks({
+    candidates,
+    timeDomainData,
+    sampleRate,
+    hasInput,
+  });
   const entries = [];
 
-  for (const mode of modes ?? []) {
-    const modeKey =
-      mode?.modeKey ?? `${mode?.u ?? 0}:${mode?.v ?? 0}:${mode?.w ?? 0}`;
-    const profile = getModeProfile(mode);
-    const modeFrequencyHz = mode?.naturalFrequencyHz ?? mode?.frequencyHz ?? 0;
-    const previousState = readPreviousModalResponseState(
-      previousEnergies?.get?.(modeKey) ?? mode,
-    );
-    const previousEnergy = previousState.energy;
-    const spectralDrive = hasInput
-      ? computeModalSpectralDrive({
-          fftMagnitudes,
-          sampleRate,
-          modeFrequencyHz,
-          qualityFactor: profile.qualityFactor,
-          inputEnergy,
-          spectralDriveContext,
-        })
-      : 0;
-    const physicalTransfer = computePhysicalModalTransfer({
-      mode,
-      modeFrequencyHz,
-      coherence,
-      previousEnergy,
-    });
-    const targetEnergy =
-      spectralDrive * inputExposure * physicalTransfer.physicalTransfer;
-    const retainedEnergy = updateRetainedEnergy({
-      targetEnergy,
-      previousEnergy,
-      attackTauMs: profile.attackTauMs,
-      storedEnergyTauMs: profile.storedEnergyTauMs,
+  for (const candidate of candidates) {
+    const { retainedEnergy, ...oscillator } = updateDrivenOscillatorState({
+      modeFrequencyHz: candidate.modeFrequencyHz,
+      targetEnergy: candidate.targetEnergy,
+      spectralDrive: candidate.spectralDrive,
+      previousState: candidate.previousState,
+      storedEnergyTauMs: candidate.profile.storedEnergyTauMs,
       deltaMs,
-    });
-    const oscillator = updateModalOscillatorState({
-      modeFrequencyHz,
-      retainedEnergy,
-      spectralDrive,
-      previousState,
-      deltaMs,
+      driveLock: drivePhaseLocks.get(candidate.modeKey) ?? null,
     });
 
     if (retainedEnergy < minimumEnergy) {
       continue;
     }
 
-    const layer = resolveDiagnosticLayer(mode, profile.qualityFactor);
+    const layer = resolveDiagnosticLayer(
+      candidate.mode,
+      candidate.profile.qualityFactor,
+    );
     entries.push({
-      ...mode,
-      modeKey,
+      ...candidate.mode,
+      modeKey: candidate.modeKey,
       layer,
-      qualityFactor: profile.qualityFactor,
-      dampingRatio: profile.dampingRatio,
-      modalResponseStoredEnergyTauMs: profile.storedEnergyTauMs,
-      modalResponseAttackTauMs: profile.attackTauMs,
-      modalResponseDrive: spectralDrive,
+      qualityFactor: candidate.profile.qualityFactor,
+      dampingRatio: candidate.profile.dampingRatio,
+      modalResponseStoredEnergyTauMs: candidate.profile.storedEnergyTauMs,
+      modalResponseDrive: candidate.spectralDrive,
       modalResponseEnergy: retainedEnergy,
-      ...physicalTransfer,
+      ...candidate.physicalTransfer,
       ...oscillator,
       displayAmplitude: Math.sqrt(retainedEnergy),
     });
@@ -681,6 +880,10 @@ export function updateModalResponseFrame({
     significantEntries,
     "resonant",
   );
+  const modalResponseSourceCoupledCurrentSignalEnergy =
+    sumModalCurrentSignalEnergyByLayer(significantEntries, "source-coupled");
+  const modalResponseResonantCurrentSignalEnergy =
+    sumModalCurrentSignalEnergyByLayer(significantEntries, "resonant");
   const modalResponseBudgetScale = Math.min(
     sourceCoupledBudgetResult.scale,
     resonantBudgetResult.scale,
@@ -694,6 +897,8 @@ export function updateModalResponseFrame({
     modalResponseEnergy,
     modalResponseSourceCoupledEnergy,
     modalResponseResonantEnergy,
+    modalResponseSourceCoupledCurrentSignalEnergy,
+    modalResponseResonantCurrentSignalEnergy,
     modalResponseModeCount: significantEntries.length,
     modalResponseBudgetScale,
     modalResponseBudgetScaleSourceCoupled: sourceCoupledBudgetResult.scale,

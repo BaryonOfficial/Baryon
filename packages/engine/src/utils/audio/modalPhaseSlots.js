@@ -77,14 +77,73 @@ function findModalPhaseEntryForSlot(slots, offset, activeModes, observedModes) {
   return observedModes?.get?.(modeKey) ?? activeModes?.get?.(modeKey) ?? null;
 }
 
-function resolvePhaseUpload(entry) {
+/**
+ * Amplitude-and-authority-weighted mean modal angular velocity across the
+ * given render slot sets.
+ *
+ * Render phase evolves in a rotating frame anchored at this mean: uploading
+ * `ω_m − ω̄` instead of `ω_m` keeps every slot inside the alias-free render
+ * band while preserving the physical relative rates that govern visible
+ * interference dynamics. Near-degenerate modes beat at their exact acoustic
+ * difference frequencies, and a single pure tone renders as a true standing
+ * pattern (`ν = 0`) instead of pulsing at the clamp rate.
+ */
+export function computePhaseAnchorAngularVelocityRadPerSec({
+  slotSets,
+  activeModes,
+  observedModes,
+}) {
+  let weightedAngularVelocitySum = 0;
+  let weightSum = 0;
+
+  for (const slotSet of slotSets ?? []) {
+    const visibleSlots = slotSet?.visibleSlots;
+    if (!visibleSlots?.length) {
+      continue;
+    }
+    const slotLimit = Math.min(
+      Math.max(0, Math.floor(slotSet?.capacity ?? 0)),
+      Math.floor(visibleSlots.length / 4),
+    );
+    for (let index = 0; index < slotLimit; index += 1) {
+      const offset = index * 4;
+      const amplitude = visibleSlots[offset + 3] ?? 0;
+      if (!(amplitude > 0)) {
+        continue;
+      }
+      const entry = findModalPhaseEntryForSlot(
+        visibleSlots,
+        offset,
+        activeModes,
+        observedModes,
+      );
+      const angularVelocityRadPerSec =
+        entry?.modalOscillatorAngularVelocityRadPerSec;
+      if (!Number.isFinite(angularVelocityRadPerSec)) {
+        continue;
+      }
+      const authority = clamp01(entry?.modalOscillatorPhaseAuthority ?? 0);
+      if (!(authority > 0)) {
+        continue;
+      }
+      const weight = amplitude * authority;
+      weightedAngularVelocitySum += weight * angularVelocityRadPerSec;
+      weightSum += weight;
+    }
+  }
+
+  return weightSum > 0 ? weightedAngularVelocitySum / weightSum : 0;
+}
+
+function resolvePhaseUpload(entry, anchorAngularVelocityRadPerSec) {
   const hasOscillatorPhase =
     Number.isFinite(entry?.modalOscillatorPhaseRad) &&
     Number.isFinite(entry?.modalOscillatorPhaseOffsetRad) &&
     Number.isFinite(entry?.modalOscillatorAngularVelocityRadPerSec);
   if (hasOscillatorPhase) {
     const phaseVelocityRadPerSec = clampPhaseVelocity(
-      entry.modalOscillatorAngularVelocityRadPerSec,
+      entry.modalOscillatorAngularVelocityRadPerSec -
+        anchorAngularVelocityRadPerSec,
       entry,
     );
     const phaseOffsetRad = Number.isFinite(
@@ -128,12 +187,22 @@ export function writePhaseSlotsForVisibleModes({
   capacity,
   activeModes,
   observedModes,
+  anchorAngularVelocityRadPerSec = null,
 }) {
   target?.fill?.(0);
   if (!target?.length || !visibleSlots?.length) {
     return 0;
   }
 
+  const phaseAnchorAngularVelocityRadPerSec = Number.isFinite(
+    anchorAngularVelocityRadPerSec,
+  )
+    ? anchorAngularVelocityRadPerSec
+    : computePhaseAnchorAngularVelocityRadPerSec({
+        slotSets: [{ visibleSlots, capacity }],
+        activeModes,
+        observedModes,
+      });
   const slotLimit = Math.min(
     capacity,
     Math.floor(visibleSlots.length / 4),
@@ -151,7 +220,10 @@ export function writePhaseSlotsForVisibleModes({
       activeModes,
       observedModes,
     );
-    const phaseUpload = resolvePhaseUpload(phaseEntry);
+    const phaseUpload = resolvePhaseUpload(
+      phaseEntry,
+      phaseAnchorAngularVelocityRadPerSec,
+    );
     const authority = clamp01(phaseUpload.phaseAuthority ?? 0);
     if (authority <= 0) {
       continue;

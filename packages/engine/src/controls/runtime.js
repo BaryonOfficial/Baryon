@@ -12,6 +12,10 @@ import {
   resolveEffectiveCavityGeometry,
 } from "../core/cavityGeometry.js";
 import {
+  getFieldExtentValue,
+  normalizeFieldExtent,
+} from "../core/fieldExtent.js";
+import {
   normalizeOutputMode,
   normalizePerformanceProfile,
 } from "../render/outputProfilePolicy.js";
@@ -34,6 +38,7 @@ import { allowsAudioMotion } from "../core/renderAuthorityContract.js";
 import {
   setRaymarchCavityGeometry,
   setRaymarchBoundaryMode,
+  setRaymarchFieldExtent,
   syncRaymarchMaterialSteps,
 } from "../core/raymarch/material.js";
 import {
@@ -119,11 +124,13 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "colorMode",
     "spectralMix",
     "zeroPointPrecision",
+    "fieldExtent",
     "boundaryMode",
     "cavityGeometry",
     "raymarchSteps",
     "densityGain",
     "absorption",
+    "laserDeflectionGain",
     "opacityGain",
     "reactivity",
     "rimBloomBias",
@@ -133,6 +140,7 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "holographicFresnelPower",
     "idleLogoIntensity",
     "idleLogoSize",
+    "idleLogoColor",
   ]),
   [CONTROL_HANDLERS.bloom]: Object.freeze([
     "bloomEnabled",
@@ -255,6 +263,7 @@ function applyCommonVisualizationControls(runtimeState, controls) {
         )
       : 0;
   const boundaryMode = normalizeBoundaryMode(controls.boundaryMode);
+  const fieldExtent = normalizeFieldExtent(controls.fieldExtent);
   const requestedCavityGeometry = normalizeCavityGeometry(
     controls.cavityGeometry,
   );
@@ -271,9 +280,14 @@ function applyCommonVisualizationControls(runtimeState, controls) {
   }
   setRaymarchBoundaryMode(runtimeState?.volumeMesh, boundaryMode);
   setRaymarchCavityGeometry(runtimeState?.volumeMesh, effectiveCavityGeometry);
+  if (uniforms.uUnboundedMix) {
+    uniforms.uUnboundedMix.value = getFieldExtentValue(fieldExtent);
+  }
+  setRaymarchFieldExtent(runtimeState?.volumeMesh, fieldExtent);
   uniforms.uIdleLogoIntensity.value = controls.idleLogoIntensity;
   uniforms.uIdleLogoAlpha.value = idleLogoAlpha;
   uniforms.uIdleLogoSize.value = controls.idleLogoSize;
+  uniforms.uIdleLogoColor.value.set(controls.idleLogoColor);
   uniforms.uDensityGain.value = controls.densityGain;
   uniforms.uOpacityGain.value = controls.opacityGain;
   uniforms.uContourSharpness.value = RAYMARCH_DEFAULTS.contourSharpness;
@@ -303,7 +317,7 @@ function applyCommonVisualizationControls(runtimeState, controls) {
   if (runtimeState.idleOverlay) {
     runtimeState.idleOverlay.scale.setScalar(controls.idleLogoSize);
     if (runtimeState.idleOverlay.material?.color) {
-      runtimeState.idleOverlay.material.color.set(controls.surfaceColor);
+      runtimeState.idleOverlay.material.color.set(controls.idleLogoColor);
     }
     if ("opacity" in (runtimeState.idleOverlay.material ?? {})) {
       runtimeState.idleOverlay.material.opacity = idleLogoAlpha;
@@ -317,6 +331,7 @@ function applyCommonVisualizationControls(runtimeState, controls) {
     colorMode,
     spectralMix,
     boundaryMode,
+    fieldExtent,
     requestedCavityGeometry,
     effectiveCavityGeometry,
   };
@@ -368,6 +383,7 @@ function buildVisualizationControlSnapshot({
   colorMode,
   spectralMix,
   boundaryMode,
+  fieldExtent,
   requestedCavityGeometry,
   effectiveCavityGeometry,
   extraUniforms = {},
@@ -379,12 +395,14 @@ function buildVisualizationControlSnapshot({
       colorMode,
       spectralMix,
       boundaryMode,
+      fieldExtent,
       requestedCavityGeometry,
       effectiveCavityGeometry,
       threshold: uniforms.uThreshold.value,
       idleLogoIntensity: uniforms.uIdleLogoIntensity.value,
       idleLogoAlpha,
       idleLogoSize: uniforms.uIdleLogoSize.value,
+      idleLogoColor: controls.idleLogoColor,
       densityGain: uniforms.uDensityGain.value,
       opacityGain: uniforms.uOpacityGain.value,
       contourSharpness: uniforms.uContourSharpness.value,
@@ -406,11 +424,13 @@ export function applyRaymarchControls(runtimeState, controls) {
     colorMode,
     spectralMix,
     boundaryMode,
+    fieldExtent,
     requestedCavityGeometry,
     effectiveCavityGeometry,
   } = applyCommonVisualizationControls(runtimeState, controls);
 
   uniforms.uAbsorption.value = controls.absorption;
+  uniforms.uLaserDeflectionGain.value = controls.laserDeflectionGain;
   uniforms.uRimBloomBias.value = controls.rimBloomBias;
   uniforms.uRimCompression.value = controls.rimCompression;
   uniforms.uHolographicIntensity.value = controls.holographicIntensity;
@@ -425,10 +445,12 @@ export function applyRaymarchControls(runtimeState, controls) {
     colorMode,
     spectralMix,
     boundaryMode,
+    fieldExtent,
     requestedCavityGeometry,
     effectiveCavityGeometry,
     extraUniforms: {
       absorption: uniforms.uAbsorption.value,
+      laserDeflectionGain: uniforms.uLaserDeflectionGain.value,
       rimBloomBias: uniforms.uRimBloomBias.value,
       rimCompression: uniforms.uRimCompression.value,
       holographicIntensity: uniforms.uHolographicIntensity.value,

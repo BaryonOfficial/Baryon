@@ -852,6 +852,40 @@ describe("audio session", () => {
     });
   });
 
+  it("clears explicit stop diagnostics when native stream playback resumes", async () => {
+    const session = createAttachedSession();
+    const mediaElement = new MockMediaElement({
+      duration: 7,
+      currentTime: 1.75,
+      paused: false,
+    });
+
+    await session.loadStream({
+      element: mediaElement,
+      label: "Playlist Track",
+      duration: 7,
+      sourceKind: "soundcloud",
+    });
+
+    session.stopAudio();
+    expect(session.getStatus()).toMatchObject({
+      audioInputMode: "stopped",
+      isPlaying: false,
+      lastPlaybackEndReason: "stopped",
+    });
+
+    await session.playPauseAudio();
+
+    expect(mediaElement.play).toHaveBeenCalledTimes(1);
+    expect(session.getStatus()).toMatchObject({
+      audioInputMode: "file",
+      isPlaying: true,
+      sourceKind: "soundcloud",
+      lastPlaybackEndReason: null,
+    });
+    expect(session.getStatus().playbackSessionId).not.toBeNull();
+  });
+
   it("keeps analysis snapshots active at zero volume and while muted", async () => {
     const session = createAttachedSession();
     await session.loadAudio("good");
@@ -1108,7 +1142,7 @@ describe("audio session", () => {
     ).toBeCloseTo(1.2, 5);
   });
 
-  it("records audio context state changes and resumes interrupted playback on interaction", async () => {
+  it("keeps file analysis active across audio context interruptions", async () => {
     const session = createAttachedSession();
     await session.loadAudio("good");
     await session.playPauseAudio();
@@ -1116,8 +1150,15 @@ describe("audio session", () => {
     lastAudioContext.dispatchStateChange("suspended");
 
     expect(session.getStatus()).toMatchObject({
-      isPlaying: false,
+      isPlaying: true,
+      analysisSource: "file",
+      hasAnalysisSource: true,
+      hasPlaybackAnalysisSource: true,
       lastPlaybackEndReason: null,
+    });
+    expect(session.readAnalysisSnapshot()).toMatchObject({
+      sourceMode: "file",
+      rms: 0.25,
     });
     expect(session.getStatus().lastPlaybackDiagnostics).toMatchObject({
       latestAudioContextState: "suspended",

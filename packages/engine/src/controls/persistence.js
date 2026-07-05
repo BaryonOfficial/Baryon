@@ -1,5 +1,8 @@
 import { CONTROL_STATUSES } from "./schema.js";
-import { normalizeLiveInputAcousticIntent } from "../core/audio/liveInputAnalysis.js";
+import {
+  normalizeLiveInputAcousticIntent,
+  normalizeLiveInputAnalysisClass,
+} from "../core/audio/liveInputAnalysis.js";
 import {
   normalizePerformanceTargetFps,
   normalizePersistedPerformanceProfile,
@@ -7,8 +10,53 @@ import {
 import { normalizeVisualizationMethod } from "../visualization/types.js";
 import { clamp } from "../utils/math.js";
 
+const CONTROL_SETTINGS_VERSION = 2;
+const LEGACY_OLD_DEFAULT_CONTROL_SETTING_VALUES = Object.freeze({
+  bloomStrength: 1.02,
+  bloomRadius: 0.04,
+  bloomThreshold: 0.08,
+});
+
+function hasOwn(record, key) {
+  return Object.prototype.hasOwnProperty.call(record, key);
+}
+
+/**
+ * @param {unknown} value
+ * @returns {value is Record<string, unknown>}
+ */
+function isPlainRecord(value) {
+  return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
+function findLiveControlDefinition(definitions, key) {
+  return (
+    definitions.find(
+      (definition) =>
+        definition.key === key && definition.status === CONTROL_STATUSES.live,
+    ) ?? null
+  );
+}
+
+function isControlSettingValueTypeValid(definition, value) {
+  if (typeof value !== typeof definition.defaultValue) {
+    return false;
+  }
+  if (typeof definition.defaultValue === "number") {
+    return Number.isFinite(value);
+  }
+  return true;
+}
+
+function isLegacyOldDefaultControlSettingValue(key, value) {
+  if (!hasOwn(LEGACY_OLD_DEFAULT_CONTROL_SETTING_VALUES, key)) {
+    return false;
+  }
+  return Object.is(LEGACY_OLD_DEFAULT_CONTROL_SETTING_VALUES[key], value);
+}
+
 function normalizeLegacyReactivity(raw) {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+  if (!isPlainRecord(raw)) {
     return raw;
   }
 
@@ -55,7 +103,7 @@ function normalizeLegacyReactivity(raw) {
 }
 
 function normalizeLegacyLiveInputAnalysis(raw) {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+  if (!isPlainRecord(raw)) {
     return raw;
   }
 
@@ -73,7 +121,7 @@ function normalizeLegacyLiveInputAnalysis(raw) {
 }
 
 function normalizeLegacyPerformanceControls(raw) {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+  if (!isPlainRecord(raw)) {
     return raw;
   }
 
@@ -105,7 +153,7 @@ function normalizeLegacyPerformanceControls(raw) {
 }
 
 function normalizeLegacySpectralLight(raw) {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+  if (!isPlainRecord(raw)) {
     return raw;
   }
 
@@ -125,7 +173,7 @@ function normalizeLegacySpectralLight(raw) {
 }
 
 function normalizeLegacyRaymarchPresentation(raw) {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+  if (!isPlainRecord(raw)) {
     return raw;
   }
 
@@ -135,7 +183,7 @@ function normalizeLegacyRaymarchPresentation(raw) {
 }
 
 function normalizeLegacyVisualizationMethod(raw) {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+  if (!isPlainRecord(raw)) {
     return raw;
   }
 
@@ -147,6 +195,36 @@ function normalizeLegacyVisualizationMethod(raw) {
     ...raw,
     visualizationMethod: normalizeVisualizationMethod(raw.visualizationMethod),
   };
+}
+
+function normalizeLegacyControls(raw) {
+  return normalizeLegacyVisualizationMethod(
+    normalizeLegacySpectralLight(
+      normalizeLegacyRaymarchPresentation(
+        normalizeLegacyLiveInputAnalysis(
+          normalizeLegacyPerformanceControls(normalizeLegacyReactivity(raw)),
+        ),
+      ),
+    ),
+  );
+}
+
+function readNormalizedControlSettingValue(rawControls, definition, definitions) {
+  const value = rawControls[definition.key];
+  if (!isControlSettingValueTypeValid(definition, value)) {
+    return { ok: false, value: undefined };
+  }
+
+  const normalizedValue = normalizeControlSettingValue(
+    definition.key,
+    value,
+    definitions,
+  );
+  if (!isControlSettingValueTypeValid(definition, normalizedValue)) {
+    return { ok: false, value: undefined };
+  }
+
+  return { ok: true, value: normalizedValue };
 }
 
 function resolveDefaultControlValue(definitions, key, fallback) {
@@ -162,7 +240,7 @@ export function normalizeSpectralLightActivationControls(
   controls,
   definitions,
 ) {
-  if (!controls || typeof controls !== "object" || Array.isArray(controls)) {
+  if (!isPlainRecord(controls)) {
     return controls;
   }
 
@@ -178,6 +256,188 @@ export function normalizeSpectralLightActivationControls(
     ...controls,
     spectralMix: resolveDefaultControlValue(definitions, "spectralMix", 1),
   };
+}
+
+/**
+ * Normalize a single persisted settings value using the control's storage rules.
+ *
+ * @param {string} key
+ * @param {unknown} value
+ * @param {ReadonlyArray<{ key: string, defaultValue: unknown, status: string }>} definitions
+ * @returns {unknown}
+ */
+export function normalizeControlSettingValue(key, value, definitions) {
+  const definition = findLiveControlDefinition(definitions, key);
+  if (!definition) {
+    return undefined;
+  }
+
+  if (key === "liveInputAnalysisClass") {
+    return normalizeLiveInputAnalysisClass(value);
+  }
+  if (key === "liveInputAcousticIntent") {
+    return normalizeLiveInputAcousticIntent(value);
+  }
+  if (key === "renderQualityPreset") {
+    return normalizePersistedPerformanceProfile(value);
+  }
+  if (key === "customTargetFps") {
+    return normalizePerformanceTargetFps(value);
+  }
+  if (key === "visualizationMethod") {
+    return normalizeVisualizationMethod(value);
+  }
+
+  return value;
+}
+
+/**
+ * Check whether a value equals the shipped default after storage normalization.
+ *
+ * @param {string} key
+ * @param {unknown} value
+ * @param {ReadonlyArray<{ key: string, defaultValue: unknown, status: string }>} definitions
+ * @returns {boolean}
+ */
+export function isDefaultControlSettingValue(key, value, definitions) {
+  const definition = findLiveControlDefinition(definitions, key);
+  if (!definition || !isControlSettingValueTypeValid(definition, value)) {
+    return false;
+  }
+
+  const normalizedValue = normalizeControlSettingValue(key, value, definitions);
+  const normalizedDefault = normalizeControlSettingValue(
+    key,
+    definition.defaultValue,
+    definitions,
+  );
+  return (
+    isControlSettingValueTypeValid(definition, normalizedValue) &&
+    Object.is(normalizedValue, normalizedDefault)
+  );
+}
+
+/**
+ * Serialize explicit settings into the v2 sparse settings envelope.
+ *
+ * @param {Record<string, unknown>} controls
+ * @param {ReadonlyArray<{ key: string, defaultValue: unknown, status: string }>} definitions
+ * @param {{ explicitKeys: ReadonlySet<string> }} options
+ * @returns {{ version: 2, controls: Record<string, unknown> }}
+ */
+export function serializeControlSettings(
+  controls,
+  definitions,
+  { explicitKeys } = { explicitKeys: new Set() },
+) {
+  /** @type {Record<string, unknown>} */
+  const serializedControls = {};
+
+  for (const definition of definitions) {
+    if (
+      definition.status !== CONTROL_STATUSES.live ||
+      !explicitKeys?.has?.(definition.key)
+    ) {
+      continue;
+    }
+
+    const normalizedValue = normalizeControlSettingValue(
+      definition.key,
+      controls[definition.key],
+      definitions,
+    );
+    if (!isControlSettingValueTypeValid(definition, normalizedValue)) {
+      continue;
+    }
+    serializedControls[definition.key] = normalizedValue;
+  }
+
+  return {
+    version: CONTROL_SETTINGS_VERSION,
+    controls: serializedControls,
+  };
+}
+
+/**
+ * Deserialize persisted settings into sparse normalized overrides plus the
+ * explicit-key ownership set that made those overrides sticky.
+ *
+ * @param {unknown} raw
+ * @param {ReadonlyArray<{ key: string, defaultValue: unknown, status: string }>} definitions
+ * @returns {{ controls: Record<string, unknown>, explicitKeys: Set<string>, migratedLegacy: boolean }}
+ */
+export function deserializeControlSettings(raw, definitions) {
+  /** @type {Record<string, unknown>} */
+  const controls = {};
+  const explicitKeys = new Set();
+
+  if (!isPlainRecord(raw)) {
+    return { controls, explicitKeys, migratedLegacy: false };
+  }
+
+  if (raw.version === CONTROL_SETTINGS_VERSION) {
+    if (!isPlainRecord(raw.controls)) {
+      return { controls, explicitKeys, migratedLegacy: false };
+    }
+
+    for (const definition of definitions) {
+      if (
+        definition.status !== CONTROL_STATUSES.live ||
+        !hasOwn(raw.controls, definition.key)
+      ) {
+        continue;
+      }
+
+      const normalized = readNormalizedControlSettingValue(
+        raw.controls,
+        definition,
+        definitions,
+      );
+      if (!normalized.ok) {
+        continue;
+      }
+
+      controls[definition.key] = normalized.value;
+      explicitKeys.add(definition.key);
+    }
+
+    return { controls, explicitKeys, migratedLegacy: false };
+  }
+
+  const normalizedLegacyControls = normalizeSpectralLightActivationControls(
+    normalizeLegacyControls(raw),
+    definitions,
+  );
+  if (!isPlainRecord(normalizedLegacyControls)) {
+    return { controls, explicitKeys, migratedLegacy: true };
+  }
+
+  for (const definition of definitions) {
+    if (
+      definition.status !== CONTROL_STATUSES.live ||
+      !hasOwn(normalizedLegacyControls, definition.key)
+    ) {
+      continue;
+    }
+
+    const normalized = readNormalizedControlSettingValue(
+      normalizedLegacyControls,
+      definition,
+      definitions,
+    );
+    if (
+      !normalized.ok ||
+      isDefaultControlSettingValue(definition.key, normalized.value, definitions) ||
+      isLegacyOldDefaultControlSettingValue(definition.key, normalized.value)
+    ) {
+      continue;
+    }
+
+    controls[definition.key] = normalized.value;
+    explicitKeys.add(definition.key);
+  }
+
+  return { controls, explicitKeys, migratedLegacy: true };
 }
 
 /**
@@ -222,20 +482,8 @@ export function deserializeControls(raw, definitions) {
   const result = Object.fromEntries(
     definitions.map((d) => [d.key, d.defaultValue]),
   );
-  const normalizedRaw = normalizeLegacyVisualizationMethod(
-    normalizeLegacySpectralLight(
-      normalizeLegacyRaymarchPresentation(
-        normalizeLegacyLiveInputAnalysis(
-          normalizeLegacyPerformanceControls(normalizeLegacyReactivity(raw)),
-        ),
-      ),
-    ),
-  );
-  if (
-    !normalizedRaw ||
-    typeof normalizedRaw !== "object" ||
-    Array.isArray(normalizedRaw)
-  ) {
+  const normalizedRaw = normalizeLegacyControls(raw);
+  if (!isPlainRecord(normalizedRaw)) {
     return result;
   }
   for (const def of definitions) {

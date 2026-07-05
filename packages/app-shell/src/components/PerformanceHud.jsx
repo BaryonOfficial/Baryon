@@ -158,8 +158,6 @@ export default function PerformanceHud({
     metrics.outputSuccessfulPublishCount,
     metrics.outputDroppedPublishCount,
     metrics.outputFailedPublishCount,
-    metrics.outputPaintWithoutPublishCount,
-    metrics.outputConsecutivePaintWithoutPublishCount,
     metrics.outputLastPublishDropReason,
     metrics.outputLastPublishDurationMs,
     metrics.outputAveragePublishDurationMs,
@@ -192,14 +190,6 @@ export default function PerformanceHud({
     metrics.outputSuccessfulPublishCount != null
       ? `${Math.round(metrics.outputSuccessfulPublishCount ?? 0)} / ${Math.round(metrics.outputPublishAttemptCount ?? 0)}`
       : null;
-  const paintWithoutPublishSummary =
-    metrics.outputPaintWithoutPublishCount != null ||
-    metrics.outputConsecutivePaintWithoutPublishCount != null
-      ? `${Math.round(metrics.outputPaintWithoutPublishCount ?? 0)} / ${Math.round(metrics.outputConsecutivePaintWithoutPublishCount ?? 0)}`
-      : null;
-  const hasPaintWithoutPublish = shouldShowNonZeroCount(
-    metrics.outputConsecutivePaintWithoutPublishCount,
-  );
   const showPixelRatioLabel =
     typeof metrics.currentPixelRatio === "number" &&
     typeof metrics.basePixelRatio === "number" &&
@@ -281,9 +271,6 @@ export default function PerformanceHud({
           ) : null}
           {shouldShowNonZeroCount(metrics.outputFailedPublishCount) ? (
             <div>Failures: {Math.round(metrics.outputFailedPublishCount)}</div>
-          ) : null}
-          {paintWithoutPublishSummary && hasPaintWithoutPublish ? (
-            <div>Paint-only: {paintWithoutPublishSummary}</div>
           ) : null}
           {metrics.outputLastPublishDropReason ? (
             <PerformanceHudTextRow>

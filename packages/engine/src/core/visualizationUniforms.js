@@ -6,6 +6,7 @@ import {
   SIMULATION_DEFAULTS,
 } from "../defaults.js";
 import { FIELD_STATE_VALUES } from "./fieldState.js";
+import { getFieldExtentValue } from "./fieldExtent.js";
 import { getBoundaryModeValue } from "./modeFamily.js";
 import { deriveObservationTransferParameters } from "./raymarch/observationTransfer.js";
 
@@ -21,10 +22,14 @@ export function createVisualizationUniforms(parameters) {
     uBoundaryMode: uniform(
       getBoundaryModeValue(SIMULATION_DEFAULTS.boundaryMode),
     ),
+    uUnboundedMix: uniform(
+      getFieldExtentValue(SIMULATION_DEFAULTS.fieldExtent),
+    ),
     uModalFieldModeCount: uniform(0),
     uIdleLogoIntensity: uniform(RENDER_DEFAULTS.idleLogoIntensity),
     uIdleLogoAlpha: uniform(RENDER_DEFAULTS.idleLogoAlpha),
     uIdleLogoSize: uniform(RENDER_DEFAULTS.idleLogoSize),
+    uIdleLogoColor: uniform(new THREE.Color(RENDER_DEFAULTS.idleLogoColor)),
     uColor: uniform(new THREE.Color(RENDER_DEFAULTS.volumeColor)),
     uSurfaceColor: uniform(new THREE.Color(RENDER_DEFAULTS.surfaceColor)),
     uSpectralMix: uniform(
@@ -34,6 +39,7 @@ export function createVisualizationUniforms(parameters) {
     ),
     uDensityGain: uniform(RAYMARCH_DEFAULTS.densityGain),
     uAbsorption: uniform(RAYMARCH_DEFAULTS.absorption),
+    uLaserDeflectionGain: uniform(RAYMARCH_DEFAULTS.laserDeflectionGain),
     uDensityAbsorption: uniform(
       RAYMARCH_DEFAULTS.densityGain * RAYMARCH_DEFAULTS.absorption,
     ),
@@ -75,6 +81,7 @@ export function createVisualizationUniforms(parameters) {
     uPhaseProjectionMix: uniform(0.0),
     uPhaseProjectionStrength: uniform(0.0),
     uLiveFieldCacheActive: uniform(0.0),
+    uLaserCausticActive: uniform(0.0),
     uObservationDensityFadeStart: uniform(
       observationParameters.densityFadeStart,
     ),
