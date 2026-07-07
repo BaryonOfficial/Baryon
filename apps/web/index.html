@@ -35,7 +35,21 @@
       rel="icon"
       type="image/svg+xml"
       href="/assets/BaryonLogoWhiteCircle.svg"
+      id="app-favicon"
     />
+    <script>
+      // The AR Lab (/ar-lab) matches the marketing site's plain white Baryon
+      // mark. Set it during head parse — before the browser paints the tab — so
+      // refreshing the lab never flashes the default app badge first.
+      (function () {
+        var path = window.location.pathname.replace(/\/+$/, "") || "/";
+        if (path === "/ar-lab") {
+          document
+            .getElementById("app-favicon")
+            .setAttribute("href", "/assets/BaryonLogoWhite.svg");
+        }
+      })();
+    </script>
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0"

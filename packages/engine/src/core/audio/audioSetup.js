@@ -595,6 +595,39 @@ export function createAudioSession() {
     state.playbackOutputGain.gain.value = getEffectiveVolume();
   }
 
+  /**
+   * Route the audible playback graph into a MediaStream for recording.
+   * The tap sits on `playbackOutputGain`, so captured audio matches what the
+   * listener hears (volume and mute included). Live-input audio is analysis
+   * only and never app-audible, so it is intentionally not routed here.
+   *
+   * @returns {{ stream: MediaStream, stop: () => void } | null}
+   */
+  function createCaptureStream() {
+    if (!getAudioContextCtor()) {
+      return null;
+    }
+
+    ensurePlaybackAudioGraph();
+    const audioCtx = state.audioCtx;
+    if (typeof audioCtx?.createMediaStreamDestination !== "function") {
+      return null;
+    }
+
+    const captureDestination = audioCtx.createMediaStreamDestination();
+    const capturedOutputGain = state.playbackOutputGain;
+    capturedOutputGain.connect(captureDestination);
+    return {
+      stream: captureDestination.stream,
+      stop() {
+        disconnectAudioNode(capturedOutputGain, captureDestination);
+        for (const track of captureDestination.stream?.getTracks?.() ?? []) {
+          track.stop?.();
+        }
+      },
+    };
+  }
+
   function clearActiveAnalysisTap() {
     disconnectAudioNode(state.activeAnalysisTap?.analyserNode);
     state.activeAnalysisTap = null;
@@ -1865,6 +1898,7 @@ export function createAudioSession() {
     loadStream,
     playPauseAudio,
     stopAudio,
+    createCaptureStream,
     setVolume,
     setMuted,
     setLiveInputSettings,
