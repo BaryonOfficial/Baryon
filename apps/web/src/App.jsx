@@ -7,6 +7,7 @@ import {
   SceneSurface,
   createControlsStore,
 } from "@baryon/app-shell";
+import ArLabLaunchButton from "./ar-lab/ArLabLaunchButton.jsx";
 
 export default function App() {
   const controlsStoreRef = useRef(null);
@@ -29,6 +30,7 @@ export default function App() {
           <SceneSurface
             controlsOverlay={<ListenerControls showSourceLiveButton={false} />}
             liveInputPanel={{ showAction: true }}
+            controlsBrandAccessory={<ArLabLaunchButton />}
           />
         </AppFrame>
       </ControlsProvider>

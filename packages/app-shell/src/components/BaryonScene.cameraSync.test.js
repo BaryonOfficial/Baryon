@@ -5,6 +5,7 @@ import {
   augmentFrameStateWithCameraSync,
   applyExternalCameraPose,
   CAMERA_CONTROL_MODES,
+  shouldMirrorCameraPose,
   shouldMountOrbitControls,
 } from "./baryonSceneCameraSync.js";
 import { resolvePresetCameraPose } from "./cameraPosePresets.js";
@@ -66,6 +67,35 @@ test("orbit controls only mount for preview-local camera control", () => {
   expect(shouldMountOrbitControls(CAMERA_CONTROL_MODES.externalSynced)).toBe(
     false,
   );
+  expect(shouldMountOrbitControls(CAMERA_CONTROL_MODES.spatialSession)).toBe(
+    false,
+  );
+});
+
+test("camera pose mirroring stays exclusive to preview-local control", () => {
+  expect(shouldMirrorCameraPose(CAMERA_CONTROL_MODES.previewLocal)).toBe(true);
+  expect(shouldMirrorCameraPose(CAMERA_CONTROL_MODES.externalSynced)).toBe(
+    false,
+  );
+  expect(shouldMirrorCameraPose(CAMERA_CONTROL_MODES.spatialSession)).toBe(
+    false,
+  );
+});
+
+test("spatial-session frame state augmentation preserves the original frame state", () => {
+  const frameState = { controlsVersion: 3, status: { isPlaying: false } };
+  const augmented = augmentFrameStateWithCameraSync(frameState, {
+    orbitControls: null,
+    camera: {
+      position: { x: 0.2, y: 1.4, z: -0.5 },
+      up: { x: 0, y: 1, z: 0 },
+      fov: 70,
+    },
+    cameraControlMode: CAMERA_CONTROL_MODES.spatialSession,
+  });
+
+  expect(augmented).toBe(frameState);
+  expect(augmented.cameraPose).toBeUndefined();
 });
 
 test("external camera pose application updates projection and world matrices", () => {

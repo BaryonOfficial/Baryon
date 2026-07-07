@@ -15,6 +15,7 @@ import {
   augmentFrameStateWithCameraSync,
   applyExternalCameraPose,
   CAMERA_CONTROL_MODES,
+  shouldMirrorCameraPose,
   shouldMountOrbitControls,
 } from "./baryonSceneCameraSync.js";
 export { CAMERA_CONTROL_MODES } from "./baryonSceneCameraSync.js";
@@ -91,7 +92,7 @@ export function BaryonScene({
   enableControlEventSync = true,
   cameraResetNonce = 0,
   cameraLocked = false,
-  cameraControlMode = /** @type {"preview-local" | "external-synced"} */ (
+  cameraControlMode = /** @type {import("./baryonSceneCameraSync.js").CameraControlMode} */ (
     CAMERA_CONTROL_MODES.previewLocal
   ),
   renderContext = /** @type {"preview" | "external-output"} */ (
@@ -204,7 +205,7 @@ export function BaryonScene({
     (phase) => {
       if (
         typeof onCameraPoseChange !== "function" ||
-        cameraControlMode === CAMERA_CONTROL_MODES.externalSynced
+        !shouldMirrorCameraPose(cameraControlMode)
       ) {
         return;
       }
@@ -239,7 +240,7 @@ export function BaryonScene({
   }, [emitCameraPoseChange, invalidate]);
 
   useLayoutEffect(() => {
-    if (cameraControlMode === CAMERA_CONTROL_MODES.externalSynced) {
+    if (cameraControlMode !== CAMERA_CONTROL_MODES.previewLocal) {
       return;
     }
     if (!cameraPose) {

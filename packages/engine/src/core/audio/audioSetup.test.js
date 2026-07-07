@@ -37,11 +37,22 @@ class MockGainNode {
       setValueAtTime: vi.fn(),
       linearRampToValueAtTime: vi.fn(),
     };
+    this.connectedTargets = [];
   }
 
-  connect() {}
+  connect(target) {
+    this.connectedTargets.push(target);
+  }
 
-  disconnect() {}
+  disconnect(target) {
+    if (target === undefined) {
+      this.connectedTargets = [];
+      return;
+    }
+    this.connectedTargets = this.connectedTargets.filter(
+      (connected) => connected !== target,
+    );
+  }
 }
 
 class MockMediaStreamSourceNode {
@@ -91,7 +102,9 @@ class MockAudioContext {
     this.destination = {};
     this.createdBufferSources = [];
     this.createdAnalysers = [];
+    this.createdGains = [];
     this.createdMediaElementSources = [];
+    this.createdMediaStreamDestinations = [];
     this.onstatechange = null;
   }
 
@@ -104,7 +117,9 @@ class MockAudioContext {
   });
 
   createGain() {
-    return new MockGainNode();
+    const gain = new MockGainNode();
+    this.createdGains.push(gain);
+    return gain;
   }
 
   createAnalyser() {
@@ -127,6 +142,24 @@ class MockAudioContext {
     const source = new MockBufferSourceNode(this);
     this.createdBufferSources.push(source);
     return source;
+  }
+
+  createMediaStreamDestination() {
+    const track = {
+      stopped: 0,
+      stop() {
+        this.stopped += 1;
+      },
+    };
+    const destination = {
+      stream: {
+        id: `capture-stream-${this.createdMediaStreamDestinations.length}`,
+        getTracks: () => [track],
+      },
+      track,
+    };
+    this.createdMediaStreamDestinations.push(destination);
+    return destination;
   }
 
   decodeAudioData = vi.fn(async () => ({
@@ -338,6 +371,57 @@ describe("audio session", () => {
       isPlaying: false,
       analysisSource: "idle",
     });
+  });
+
+  it("captures playback audio through a disconnectable media-stream tap", async () => {
+    const session = createAttachedSession();
+    await session.loadAudio("good");
+
+    const capture = session.createCaptureStream();
+    expect(capture).not.toBeNull();
+
+    const captureDestination =
+      lastAudioContext.createdMediaStreamDestinations[0];
+    expect(capture.stream).toBe(captureDestination.stream);
+
+    const playbackOutputGain = lastAudioContext.createdGains.find((gain) =>
+      gain.connectedTargets.includes(lastAudioContext.destination),
+    );
+    expect(playbackOutputGain).toBeDefined();
+    expect(playbackOutputGain.connectedTargets).toContain(captureDestination);
+
+    capture.stop();
+    expect(playbackOutputGain.connectedTargets).not.toContain(
+      captureDestination,
+    );
+    expect(captureDestination.track.stopped).toBe(1);
+    expect(playbackOutputGain.connectedTargets).toContain(
+      lastAudioContext.destination,
+    );
+
+    // A second capture after stop creates a fresh destination tap.
+    const secondCapture = session.createCaptureStream();
+    expect(secondCapture.stream).toBe(
+      lastAudioContext.createdMediaStreamDestinations[1].stream,
+    );
+  });
+
+  it("returns null from createCaptureStream when media-stream capture is unavailable", async () => {
+    lastAudioContext = null;
+    Object.defineProperty(globalThis, "AudioContext", {
+      configurable: true,
+      value: class extends MockAudioContext {
+        constructor() {
+          super();
+          this.createMediaStreamDestination = undefined;
+          lastAudioContext = this;
+        }
+      },
+    });
+
+    const session = createAttachedSession();
+    await session.loadAudio("good");
+    expect(session.createCaptureStream()).toBeNull();
   });
 
   it("tracks native stream lifecycle through the shared playback graph", async () => {

@@ -1,6 +1,6 @@
 {
   "name": "@baryon/app-shell",
-  "version": "1.0.0-beta.8",
+  "version": "1.0.0-beta.9",
   "private": true,
   "license": "LicenseRef-PolyForm-Strict-1.0",
   "type": "module",
@@ -12,6 +12,7 @@
     ".": "./src/index.js",
     "./camera-control-model": "./src/components/cameraControlModel.js",
     "./camera-pose-presets": "./src/components/cameraPosePresets.js",
+    "./controls-store": "./src/controls/controlsStore.js",
     "./index.css": "./src/index.css",
     "./live-input-runtime-status": "./src/context/liveInputRuntimeStatus.js",
     "./baryon-env": "./src/baryon-env.d.ts"

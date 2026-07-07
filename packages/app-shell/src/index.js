@@ -1,6 +1,10 @@
 export { AppFrame } from "./App.jsx";
 export { AudioProvider } from "./context/AudioProvider.jsx";
 export {
+  createPlaybackAudioCaptureStream,
+  readPlaybackAudioCaptureStatus,
+} from "./context/audioCapture.js";
+export {
   AudioContext,
   AudioSceneContext,
   useAudio,

@@ -180,7 +180,7 @@ function installRendererRuntimeDiagnostics(renderer, forceWebGLFallbackTest) {
 export async function createBaryonRenderer(
   glDefaults,
   forceWebGLFallbackTest,
-  { initialPixelRatio = null } = {},
+  { initialPixelRatio = null, xrMode = false } = {},
 ) {
   const canvas = /** @type {HTMLCanvasElement} */ (glDefaults.canvas);
   const context = forceWebGLFallbackTest
@@ -211,6 +211,23 @@ export async function createBaryonRenderer(
     const rendererInitError = new Error(
       "WebGPU renderer initialization failed",
       { cause: error },
+    );
+    rendererInitError.name = WEBGPU_RENDERER_INIT_ERROR;
+    throw rendererInitError;
+  }
+
+  const backend = /** @type {any} */ (renderer.backend);
+  if (xrMode && backend?.isWebGLBackend === true) {
+    // XR mode is a WebGPU proof surface; a silent WebGL fallback would
+    // invalidate the proof, so reject it instead of rendering through it.
+    const backendError = new Error(
+      "WebGPU renderer initialized with a WebGL backend; XR mode requires a WebGPU backend",
+    );
+    setRendererInfo(null, forceWebGLFallbackTest, backendError);
+
+    const rendererInitError = new Error(
+      "WebGPU renderer initialization failed",
+      { cause: backendError },
     );
     rendererInitError.name = WEBGPU_RENDERER_INIT_ERROR;
     throw rendererInitError;
