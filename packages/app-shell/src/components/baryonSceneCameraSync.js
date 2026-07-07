@@ -1,8 +1,11 @@
-/** @typedef {"preview-local" | "external-synced"} CameraControlMode */
+/** @typedef {"preview-local" | "external-synced" | "spatial-session"} CameraControlMode */
 
 export const CAMERA_CONTROL_MODES = Object.freeze({
   previewLocal: "preview-local",
   externalSynced: "external-synced",
+  // XR runtime owns the camera pose; the scene must neither mount orbit
+  // controls nor mirror camera poses back into app state.
+  spatialSession: "spatial-session",
 });
 
 function resolveFiniteNumber(value, fallback) {
@@ -66,7 +69,7 @@ export function augmentFrameStateWithCameraSync(
     cameraControlMode = CAMERA_CONTROL_MODES.previewLocal,
   },
 ) {
-  if (cameraControlMode === CAMERA_CONTROL_MODES.externalSynced) {
+  if (!shouldMirrorCameraPose(cameraControlMode)) {
     return frameState;
   }
 
@@ -80,7 +83,11 @@ export function augmentFrameStateWithCameraSync(
 }
 
 export function shouldMountOrbitControls(cameraControlMode) {
-  return cameraControlMode !== CAMERA_CONTROL_MODES.externalSynced;
+  return cameraControlMode === CAMERA_CONTROL_MODES.previewLocal;
+}
+
+export function shouldMirrorCameraPose(cameraControlMode) {
+  return cameraControlMode === CAMERA_CONTROL_MODES.previewLocal;
 }
 
 export function commitOrbitControlsCameraPose(controls, applyPose) {

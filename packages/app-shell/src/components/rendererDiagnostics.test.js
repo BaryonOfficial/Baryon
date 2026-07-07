@@ -18,7 +18,9 @@ vi.mock("three/webgpu", () => {
     constructor(parameters) {
       this.parameters = parameters;
       this.backend =
-        parameters.forceWebGL === true ? new WebGLBackend() : new WebGPUBackend();
+        parameters.forceWebGL === true
+          ? new WebGLBackend()
+          : new WebGPUBackend();
       this.init = vi.fn(async () => this);
       this.onDeviceLost = (info) => rendererMocks.defaultOnDeviceLost(info);
       this.onError = (info) => rendererMocks.defaultOnError(info);
@@ -165,6 +167,52 @@ describe("renderer diagnostics", () => {
     expect(window.__baryonRendererInfo.gpuErrors[0]).not.toHaveProperty(
       "originalEvent",
     );
+  });
+
+  it("keeps existing callers working without xrMode and preserves WebGPU backends with it", async () => {
+    const defaultRenderer = await createBaryonRenderer(
+      { canvas: createCanvas() },
+      false,
+    );
+    expect(defaultRenderer.backend.isWebGLBackend).toBe(false);
+
+    const xrRenderer = await createBaryonRenderer(
+      { canvas: createCanvas() },
+      false,
+      { xrMode: true },
+    );
+    expect(xrRenderer.backend.isWebGLBackend).toBe(false);
+    expect(window.__baryonRendererInfo).toMatchObject({
+      backendType: "webgpu",
+      error: null,
+      isFallback: false,
+    });
+  });
+
+  it("rejects WebGL backends in xrMode with the renderer init error name", async () => {
+    await expect(
+      createBaryonRenderer({ canvas: createCanvas() }, true, { xrMode: true }),
+    ).rejects.toMatchObject({
+      name: "WebGPURendererInitError",
+    });
+    expect(window.__baryonRendererInfo).toMatchObject({
+      backendType: null,
+      isFallback: true,
+    });
+    expect(window.__baryonRendererInfo.error).toMatch(/WebGL backend/);
+  });
+
+  it("keeps allowing WebGL fallback outside xrMode", async () => {
+    const renderer = await createBaryonRenderer(
+      { canvas: createCanvas() },
+      true,
+    );
+    expect(renderer.backend.isWebGLBackend).toBe(true);
+    expect(window.__baryonRendererInfo).toMatchObject({
+      backendType: "webgl",
+      error: null,
+      isFallback: true,
+    });
   });
 
   it("keeps runtime GPU error history bounded", async () => {

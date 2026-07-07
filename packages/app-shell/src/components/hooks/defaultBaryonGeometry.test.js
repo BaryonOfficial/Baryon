@@ -1,6 +1,11 @@
 import { expect, test } from "vitest";
 import * as THREE from "three";
 import { prepareBaryonGeometryFromScene } from "./defaultBaryonGeometry.js";
+import { DEFAULT_BARYON_GEOMETRY_URL } from "./useDefaultBaryonGeometry.js";
+
+test("default Baryon geometry loads from the app root", () => {
+  expect(DEFAULT_BARYON_GEOMETRY_URL).toBe("/glb/Baryon_v2.glb");
+});
 
 test("prepareBaryonGeometryFromScene clones mesh geometry and bakes scale", () => {
   const geometry = new THREE.BufferGeometry();
