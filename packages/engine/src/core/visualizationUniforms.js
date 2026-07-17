@@ -6,9 +6,12 @@ import {
   SIMULATION_DEFAULTS,
 } from "../defaults.js";
 import { FIELD_STATE_VALUES } from "./fieldState.js";
-import { getFieldExtentValue } from "./fieldExtent.js";
 import { getBoundaryModeValue } from "./modeFamily.js";
-import { deriveObservationTransferParameters } from "./raymarch/observationTransfer.js";
+import {
+  deriveObservationTransferParameters,
+  HOLOGRAPHIC_BASE_RADIANCE_LIVE_PREVIEW_GAIN,
+  REFERENCE_ABSORPTION_COEFFICIENT,
+} from "./raymarch/observationTransfer.js";
 
 export function createVisualizationUniforms(parameters) {
   const observationParameters = deriveObservationTransferParameters();
@@ -18,12 +21,12 @@ export function createVisualizationUniforms(parameters) {
     uAverageAmplitude: uniform(0.0),
     uFieldState: uniform(FIELD_STATE_VALUES.idle),
     uRadius: uniform(parameters.radius),
-    uThreshold: uniform(parameters.threshold),
+    uCarrierCoreFwhmWorld: uniform(
+      parameters.carrierCoreFwhmWorld ??
+        SIMULATION_DEFAULTS.carrierCoreFwhmWorld,
+    ),
     uBoundaryMode: uniform(
       getBoundaryModeValue(SIMULATION_DEFAULTS.boundaryMode),
-    ),
-    uUnboundedMix: uniform(
-      getFieldExtentValue(SIMULATION_DEFAULTS.fieldExtent),
     ),
     uModalFieldModeCount: uniform(0),
     uIdleLogoIntensity: uniform(RENDER_DEFAULTS.idleLogoIntensity),
@@ -38,17 +41,18 @@ export function createVisualizationUniforms(parameters) {
         : 0,
     ),
     uDensityGain: uniform(RAYMARCH_DEFAULTS.densityGain),
-    uAbsorption: uniform(RAYMARCH_DEFAULTS.absorption),
-    uLaserDeflectionGain: uniform(RAYMARCH_DEFAULTS.laserDeflectionGain),
-    uDensityAbsorption: uniform(
-      RAYMARCH_DEFAULTS.densityGain * RAYMARCH_DEFAULTS.absorption,
+    // Fixed production coefficient. The DEV-only frozen-fixture adapter may
+    // override it to replay historical v1 evidence; no public control owns it.
+    uMaterialAbsorptionCoefficient: uniform(REFERENCE_ABSORPTION_COEFFICIENT),
+    // Checkpoint B starts on an explicit half-stop sweep candidate so the live
+    // canvas can be judged. This is not a ceiling or a signed selection; the
+    // fixture still owns the zero canary and complete logarithmic sweep.
+    uHolographicBaseRadianceGain: uniform(
+      HOLOGRAPHIC_BASE_RADIANCE_LIVE_PREVIEW_GAIN,
     ),
-    uOpacityGain: uniform(RAYMARCH_DEFAULTS.opacityGain),
+    uLaserDeflectionGain: uniform(RAYMARCH_DEFAULTS.laserDeflectionGain),
     uContourSharpness: uniform(RAYMARCH_DEFAULTS.contourSharpness),
-    uRimBloomBias: uniform(RAYMARCH_DEFAULTS.rimBloomBias),
-    uRimCompression: uniform(RAYMARCH_DEFAULTS.rimCompression),
     uHolographicIntensity: uniform(RAYMARCH_DEFAULTS.holographicIntensity),
-    uHolographicShift: uniform(RAYMARCH_DEFAULTS.holographicShift),
     uHolographicFresnelPower: uniform(
       RAYMARCH_DEFAULTS.holographicFresnelPower,
     ),
@@ -74,8 +78,14 @@ export function createVisualizationUniforms(parameters) {
     uTrebleBroadbandEnergy: uniform(0.0),
     uModeCoherence: uniform(0.0),
     uTotalSlotAmplitude: uniform(0.0),
+    // RMS pressure amplitude of the represented modal superposition:
+    // sqrt(sum(a_m^2)) for unit-mean-square basis functions.
+    uModalEnergyAmplitude: uniform(0.0),
     uStructuralProjectionDrive: uniform(0.0),
     uStructuralProjectionConcentration: uniform(0.0),
+    // Bounded [0, 1] column-density normalization derived per descriptor
+    // commit from the admitted modes' energy-weighted RMS spatial wavenumber.
+    uCarrierColumnDensityScale: uniform(1.0),
     uModalResponseEnergy: uniform(0.0),
     uPhaseEvaluationTime: uniform(0.0),
     uPhaseProjectionMix: uniform(0.0),

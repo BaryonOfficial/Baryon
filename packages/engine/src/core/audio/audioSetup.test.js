@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AUDIO_SLOT_CAPACITY } from "../../defaults.js";
+import { AUDIO_SLOT_CAPACITY, DEFAULT_FFT_SIZE } from "../../defaults.js";
+
+const FAST_FEATURE_FFT_SIZE = 2048;
 
 class MockAnalyserNode {
   constructor() {
@@ -178,7 +180,7 @@ class MockMediaElement {
     duration = 5,
     paused = true,
     ended = false,
-    src = "https://streams.soundcloud.com/track.m3u8",
+    src = "https://streams.example.test/track.m3u8",
   } = {}) {
     this.currentTime = currentTime;
     this.duration = duration;
@@ -224,6 +226,16 @@ let lastAudioContext = null;
 let getUserMediaMock;
 let getAudioTracksMock;
 let enumerateDevicesMock;
+
+function createDeferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
 
 describe("audio session", () => {
   let createAudioSession;
@@ -336,6 +348,7 @@ describe("audio session", () => {
       audioInputMode: "file",
       isAudioLoaded: true,
       isPlaying: false,
+      isPlaybackPaused: false,
       analysisSource: "idle",
       capacity: AUDIO_SLOT_CAPACITY,
     });
@@ -348,14 +361,36 @@ describe("audio session", () => {
       playbackSessionId: 1,
       lastPlaybackEndReason: null,
     });
-    const fileSnapshot = session.readAnalysisSnapshot();
-    expect(fileSnapshot).toMatchObject({
-      sourceMode: "file",
-      rms: 0.25,
+    const fileCapture = session.readFeatureAnalysisCapture({
+      includeStructural: true,
     });
-    expect(fileSnapshot?.avgAmplitude).toBeGreaterThan(0);
-    expect(fileSnapshot?.fftMagnitudes).toBeInstanceOf(Float32Array);
-    expect(fileSnapshot?.timeData).toBeInstanceOf(Float32Array);
+    expect(fileCapture).toMatchObject({
+      captureTimestampMs: expect.any(Number),
+      fast: {
+        sourceMode: "file",
+        rms: 0.25,
+      },
+      structural: {
+        sourceMode: "file",
+        rms: 0.25,
+      },
+    });
+    expect(fileCapture?.fast.avgAmplitude).toBeGreaterThan(0);
+    expect(fileCapture?.fast.fftLinearAmplitudes).toBeInstanceOf(Float32Array);
+    expect(fileCapture?.fast.timeData).toBeInstanceOf(Float32Array);
+    expect(fileCapture?.fast.timeData).toHaveLength(FAST_FEATURE_FFT_SIZE);
+    expect(fileCapture?.fast.fftLinearAmplitudes).toHaveLength(
+      FAST_FEATURE_FFT_SIZE / 2,
+    );
+    expect(fileCapture?.structural?.timeData).toHaveLength(DEFAULT_FFT_SIZE);
+    expect(fileCapture?.structural?.fftLinearAmplitudes).toHaveLength(
+      DEFAULT_FFT_SIZE / 2,
+    );
+    expect(session.readFeatureAnalysisCapture()).toMatchObject({
+      captureTimestampMs: expect.any(Number),
+      fast: { sourceMode: "file" },
+      structural: null,
+    });
     expect(session.getStatus().lastPlaybackDiagnostics).toMatchObject({
       playbackSessionId: 1,
       sourceKind: "file",
@@ -369,8 +404,56 @@ describe("audio session", () => {
     expect(session.getStatus()).toMatchObject({
       audioInputMode: "idle",
       isPlaying: false,
+      isPlaybackPaused: false,
       analysisSource: "idle",
     });
+  });
+
+  it("discards an older file load that finishes after a newer load", async () => {
+    const session = createAttachedSession();
+    const firstResponse = createDeferred();
+    const secondResponse = createDeferred();
+    fetchMock.mockImplementation((url) =>
+      url === "first" ? firstResponse.promise : secondResponse.promise,
+    );
+
+    const firstLoad = session.loadAudio("first");
+    const secondLoad = session.loadAudio("second");
+
+    secondResponse.resolve({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => new ArrayBuffer(64),
+    });
+    await expect(secondLoad).resolves.toBe(true);
+
+    firstResponse.resolve({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => new ArrayBuffer(32),
+    });
+    await expect(firstLoad).resolves.toBe(false);
+
+    expect(session.getStatus().playbackSourceSessionId).toBe(1);
+  });
+
+  it("rejects and closes a live stream that resolves after stop", async () => {
+    const session = createAttachedSession();
+    const deferredStream = createDeferred();
+    navigator.mediaDevices.enumerateDevices = undefined;
+    getUserMediaMock.mockReturnValue(deferredStream.promise);
+
+    const startRequest = session.startLiveInputStream("device-1");
+    session.stopLiveInputStream();
+    deferredStream.resolve({
+      active: true,
+      getTracks: () => [mockTrack],
+      getAudioTracks: getAudioTracksMock,
+    });
+
+    await expect(startRequest).resolves.toBe(false);
+    expect(mockTrackStop).toHaveBeenCalledTimes(1);
+    expect(session.getStatus().isLiveInputActive).toBe(false);
   });
 
   it("captures playback audio through a disconnectable media-stream tap", async () => {
@@ -433,15 +516,15 @@ describe("audio session", () => {
 
     await session.loadStream({
       element: mediaElement,
-      label: "SoundCloud Track",
+      label: "Remote Stream",
       duration: 9,
-      sourceKind: "soundcloud",
+      sourceKind: "stream",
     });
 
     expect(session.getStatus()).toMatchObject({
       audioInputMode: "file",
-      sourceKind: "soundcloud",
-      sourceLabel: "SoundCloud Track",
+      sourceKind: "stream",
+      sourceLabel: "Remote Stream",
       isAudioLoaded: true,
       isPlaying: false,
       analysisSource: "idle",
@@ -453,12 +536,15 @@ describe("audio session", () => {
     expect(session.getStatus()).toMatchObject({
       audioInputMode: "file",
       isPlaying: true,
-      sourceKind: "soundcloud",
+      sourceKind: "stream",
       analysisSource: "file",
     });
-    expect(session.readAnalysisSnapshot()).toMatchObject({
-      sourceMode: "stream",
-      rms: 0.25,
+    expect(session.readFeatureAnalysisCapture()).toMatchObject({
+      fast: {
+        sourceMode: "stream",
+        rms: 0.25,
+      },
+      structural: null,
     });
 
     mediaElement.currentTime = 2.25;
@@ -473,7 +559,7 @@ describe("audio session", () => {
     expect(session.getStatus()).toMatchObject({
       audioInputMode: "idle",
       isPlaying: false,
-      sourceKind: "soundcloud",
+      sourceKind: "stream",
     });
     expect(session.readClockSnapshot(3)).toMatchObject({
       clockMode: "paused-playback",
@@ -517,7 +603,7 @@ describe("audio session", () => {
       element: mediaElement,
       label: "Seekable Stream",
       duration: 9,
-      sourceKind: "soundcloud",
+      sourceKind: "stream",
     });
 
     expect(session.getTransportState()).toEqual({
@@ -552,6 +638,7 @@ describe("audio session", () => {
     expect(session.getStatus()).toMatchObject({
       audioInputMode: "live",
       isLiveInputActive: true,
+      liveInputSessionId: 1,
       analysisSource: "live",
       liveInputTrack: {
         present: true,
@@ -580,21 +667,37 @@ describe("audio session", () => {
         autoGainControl: false,
       },
     });
-    const liveInputSnapshot = session.readAnalysisSnapshot();
-    expect(liveInputSnapshot).toMatchObject({
-      sourceMode: "live",
-      rms: 0.25,
+    const liveInputCapture = session.readFeatureAnalysisCapture();
+    expect(liveInputCapture).toMatchObject({
+      fast: {
+        sourceMode: "live",
+        rms: 0.25,
+      },
+      structural: null,
     });
-    expect(liveInputSnapshot?.avgAmplitude).toBeGreaterThan(0);
+    expect(liveInputCapture?.fast.avgAmplitude).toBeGreaterThan(0);
 
     session.stopLiveInputStream();
     expect(mockTrackStop).toHaveBeenCalledTimes(1);
     expect(session.getStatus()).toMatchObject({
       audioInputMode: "idle",
       isLiveInputActive: false,
+      liveInputSessionId: null,
       analysisSource: "idle",
       lastLiveInputInterruption: null,
     });
+  });
+
+  it("assigns a new owner session id after a live-input reconnect", async () => {
+    const session = createAttachedSession();
+    await session.startLiveInputStream("device-1");
+    const firstSessionId = session.getStatus().liveInputSessionId;
+
+    session.stopLiveInputStream();
+    await session.startLiveInputStream("device-1");
+
+    expect(firstSessionId).toBe(1);
+    expect(session.getStatus().liveInputSessionId).toBe(2);
   });
 
   it("treats the browser default input id as an unconstrained device choice", async () => {
@@ -634,7 +737,7 @@ describe("audio session", () => {
         deviceId: "device-1",
       },
     });
-    expect(session.readAnalysisSnapshot()).toBeNull();
+    expect(session.readFeatureAnalysisCapture()).toBeNull();
   });
 
   it("recovers live input after a sustained track mute but ignores a transient mute", async () => {
@@ -703,14 +806,20 @@ describe("audio session", () => {
     await session.loadAudio("good");
     await session.playPauseAudio();
 
-    const playbackAnalyser = lastAudioContext.createdAnalysers.at(-1);
+    const playbackAnalysers = lastAudioContext.createdAnalysers.slice(-2);
 
     await session.startLiveInputStream("device-1");
 
-    expect(playbackAnalyser.disconnect).toHaveBeenCalledTimes(1);
-    expect(session.readAnalysisSnapshot()).toMatchObject({
-      sourceMode: "live",
-      rms: 0.25,
+    expect(playbackAnalysers).toHaveLength(2);
+    for (const analyser of playbackAnalysers) {
+      expect(analyser.disconnect).toHaveBeenCalledTimes(1);
+    }
+    expect(session.readFeatureAnalysisCapture()).toMatchObject({
+      fast: {
+        sourceMode: "live",
+        rms: 0.25,
+      },
+      structural: null,
     });
   });
 
@@ -741,9 +850,12 @@ describe("audio session", () => {
       sourceKind: "system",
       analysisSource: "file",
     });
-    expect(session.readAnalysisSnapshot()).toMatchObject({
-      sourceMode: "system",
-      rms: 0.25,
+    expect(session.readFeatureAnalysisCapture()).toMatchObject({
+      fast: {
+        sourceMode: "system",
+        rms: 0.25,
+      },
+      structural: null,
     });
 
     await session.setLiveInputSettings({
@@ -840,7 +952,7 @@ describe("audio session", () => {
       isPlaying: false,
       analysisSource: "idle",
     });
-    expect(session.readAnalysisSnapshot()).toBeNull();
+    expect(session.readFeatureAnalysisCapture()).toBeNull();
     expect(lastAudioContext.close).toHaveBeenCalledTimes(1);
   });
 
@@ -921,7 +1033,7 @@ describe("audio session", () => {
       element: mediaElement,
       label: "Playlist Track",
       duration: 7,
-      sourceKind: "soundcloud",
+      sourceKind: "stream",
     });
 
     session.stopAudio();
@@ -931,7 +1043,7 @@ describe("audio session", () => {
     expect(session.getStatus()).toMatchObject({
       audioInputMode: "stopped",
       isPlaying: false,
-      sourceKind: "soundcloud",
+      sourceKind: "stream",
       analysisSource: "idle",
     });
   });
@@ -948,7 +1060,7 @@ describe("audio session", () => {
       element: mediaElement,
       label: "Playlist Track",
       duration: 7,
-      sourceKind: "soundcloud",
+      sourceKind: "stream",
     });
 
     session.stopAudio();
@@ -964,25 +1076,27 @@ describe("audio session", () => {
     expect(session.getStatus()).toMatchObject({
       audioInputMode: "file",
       isPlaying: true,
-      sourceKind: "soundcloud",
+      sourceKind: "stream",
       lastPlaybackEndReason: null,
     });
     expect(session.getStatus().playbackSessionId).not.toBeNull();
   });
 
-  it("keeps analysis snapshots active at zero volume and while muted", async () => {
+  it("keeps analysis captures active at zero volume and while muted", async () => {
     const session = createAttachedSession();
     await session.loadAudio("good");
     await session.playPauseAudio();
 
-    const baseline = session.readAnalysisSnapshot();
+    const baseline = session.readFeatureAnalysisCapture().fast;
     session.setVolume(0);
-    const mutedByVolume = session.readAnalysisSnapshot();
+    const mutedByVolume = session.readFeatureAnalysisCapture().fast;
     session.setMuted(true);
-    const muted = session.readAnalysisSnapshot();
+    const muted = session.readFeatureAnalysisCapture().fast;
 
-    expect(baseline.fftMagnitudes).toEqual(mutedByVolume.fftMagnitudes);
-    expect(baseline.fftMagnitudes).toEqual(muted.fftMagnitudes);
+    expect(baseline.fftLinearAmplitudes).toEqual(
+      mutedByVolume.fftLinearAmplitudes,
+    );
+    expect(baseline.fftLinearAmplitudes).toEqual(muted.fftLinearAmplitudes);
     expect(baseline.avgAmplitude).toBe(mutedByVolume.avgAmplitude);
     expect(baseline.avgAmplitude).toBe(muted.avgAmplitude);
   });
@@ -994,6 +1108,7 @@ describe("audio session", () => {
 
     lastAudioContext.currentTime = 13.5;
     await session.playPauseAudio();
+    expect(session.getStatus().isPlaybackPaused).toBe(true);
     expect(session.readClockSnapshot(2)).toMatchObject({
       clockMode: "paused-playback",
       time: 1.5,
@@ -1013,13 +1128,17 @@ describe("audio session", () => {
     const session = createAttachedSession();
     await session.loadAudio("good");
     await session.playPauseAudio();
+    const sourceSessionId = session.getStatus().playbackSourceSessionId;
+    const playbackSessionId = session.getStatus().playbackSessionId;
 
     await session.seekTo(3.25);
 
     expect(session.getStatus()).toMatchObject({
       isPlaying: true,
       audioInputMode: "file",
+      playbackSourceSessionId: sourceSessionId,
     });
+    expect(session.getStatus().playbackSessionId).not.toBe(playbackSessionId);
     expect(lastAudioContext.createdBufferSources).toHaveLength(2);
     expect(
       lastAudioContext.createdBufferSources.at(-1)?.startArgs,
@@ -1046,7 +1165,7 @@ describe("audio session", () => {
       element: mediaElement,
       label: "Playing Stream",
       duration: 8,
-      sourceKind: "soundcloud",
+      sourceKind: "stream",
     });
     await session.playPauseAudio();
 
@@ -1055,7 +1174,7 @@ describe("audio session", () => {
     expect(mediaElement.currentTime).toBe(5.5);
     expect(session.getStatus()).toMatchObject({
       isPlaying: true,
-      sourceKind: "soundcloud",
+      sourceKind: "stream",
     });
     expect(session.getTransportState()).toMatchObject({
       currentTimeSeconds: 5.5,
@@ -1119,9 +1238,12 @@ describe("audio session", () => {
       time: 3,
       deltaTime: 0,
     });
-    expect(session.readAnalysisSnapshot()).toMatchObject({
-      sourceMode: "live",
-      rms: 0.25,
+    expect(session.readFeatureAnalysisCapture()).toMatchObject({
+      fast: {
+        sourceMode: "live",
+        rms: 0.25,
+      },
+      structural: null,
     });
   });
 
@@ -1136,7 +1258,7 @@ describe("audio session", () => {
       element: mediaElement,
       label: "Stream Track",
       duration: 8,
-      sourceKind: "soundcloud",
+      sourceKind: "stream",
     });
 
     await session.startLiveInputStream("device-1");
@@ -1210,6 +1332,7 @@ describe("audio session", () => {
     expect(session.getStatus()).toMatchObject({
       audioInputMode: "idle",
       isPlaying: false,
+      isPlaybackPaused: false,
       lastPlaybackEndReason: "premature",
     });
     expect(session.getTransportState()).toMatchObject({
@@ -1240,9 +1363,12 @@ describe("audio session", () => {
       hasPlaybackAnalysisSource: true,
       lastPlaybackEndReason: null,
     });
-    expect(session.readAnalysisSnapshot()).toMatchObject({
-      sourceMode: "file",
-      rms: 0.25,
+    expect(session.readFeatureAnalysisCapture()).toMatchObject({
+      fast: {
+        sourceMode: "file",
+        rms: 0.25,
+      },
+      structural: null,
     });
     expect(session.getStatus().lastPlaybackDiagnostics).toMatchObject({
       latestAudioContextState: "suspended",
@@ -1299,7 +1425,7 @@ describe("audio session", () => {
       element: mediaElement,
       label: "Ended Stream",
       duration: 6,
-      sourceKind: "soundcloud",
+      sourceKind: "stream",
     });
     await session.playPauseAudio();
 
@@ -1312,7 +1438,7 @@ describe("audio session", () => {
     expect(session.getStatus()).toMatchObject({
       audioInputMode: "stopped",
       isPlaying: false,
-      sourceKind: "soundcloud",
+      sourceKind: "stream",
       lastPlaybackEndReason: "natural",
     });
   });

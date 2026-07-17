@@ -6,10 +6,24 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./AdvancedControlsSidebar.jsx", () => ({
-  default: ({ isOpen, footerActions = [] }) =>
+  default: ({
+    isOpen,
+    footerActions = [],
+    showUiInFullscreen = false,
+    onShowUiInFullscreenChange = null,
+  }) =>
     isOpen ? (
       <div data-testid="advanced-controls-sidebar">
         Sidebar
+        {onShowUiInFullscreenChange ? (
+          <button
+            data-testid="show-ui-in-fullscreen-toggle"
+            type="button"
+            onClick={() => onShowUiInFullscreenChange(!showUiInFullscreen)}
+          >
+            Show UI in fullscreen
+          </button>
+        ) : null}
         {footerActions.map((action) => (
           <button key={action.label} type="button" onClick={action.onSelect}>
             {action.label}
@@ -129,5 +143,28 @@ describe("AdvancedControlsDock", () => {
     });
 
     expect(onSelectTerms).toHaveBeenCalledTimes(1);
+  });
+
+  it("forwards the fullscreen UI preference to the sidebar", () => {
+    const onChange = vi.fn();
+
+    renderDock({
+      showUiInFullscreen: false,
+      onShowUiInFullscreenChange: onChange,
+    });
+
+    act(() => {
+      container
+        .querySelector('[data-testid="advanced-controls-trigger"]')
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    act(() => {
+      container
+        .querySelector('[data-testid="show-ui-in-fullscreen-toggle"]')
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(onChange).toHaveBeenCalledWith(true);
   });
 });

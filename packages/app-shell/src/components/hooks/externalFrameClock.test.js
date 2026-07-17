@@ -1,8 +1,11 @@
 import { expect, test } from "vitest";
+import { AUDIO_FEATURE_AUTHORITY_ROLES } from "@baryon/engine/audio-features";
 import { getSourceAuthoritativeClock } from "./externalFrameClock.js";
 
 test("passes through source timing for a new external frame sequence", () => {
   const clock = getSourceAuthoritativeClock({
+    audioFeatureAuthorityRole:
+      AUDIO_FEATURE_AUTHORITY_ROLES.externalConsumer,
     externalFrameState: {
       status: { isPlaying: true },
       clockMode: "realtime",
@@ -27,6 +30,8 @@ test("passes through source timing for a new external frame sequence", () => {
 
 test("zeros duplicate external frame deltas while keeping the source clock", () => {
   const clock = getSourceAuthoritativeClock({
+    audioFeatureAuthorityRole:
+      AUDIO_FEATURE_AUTHORITY_ROLES.externalConsumer,
     externalFrameState: {
       status: { isPlaying: true },
       clockMode: "realtime",
@@ -51,6 +56,8 @@ test("zeros duplicate external frame deltas while keeping the source clock", () 
 
 test("uses frame creation time to dedupe external frames without a source sequence", () => {
   const firstClock = getSourceAuthoritativeClock({
+    audioFeatureAuthorityRole:
+      AUDIO_FEATURE_AUTHORITY_ROLES.externalConsumer,
     externalFrameState: {
       status: { isPlaying: true },
       clockMode: "external-preview",
@@ -67,6 +74,8 @@ test("uses frame creation time to dedupe external frames without a source sequen
     },
   });
   const duplicateClock = getSourceAuthoritativeClock({
+    audioFeatureAuthorityRole:
+      AUDIO_FEATURE_AUTHORITY_ROLES.externalConsumer,
     externalFrameState: {
       status: { isPlaying: true },
       clockMode: "external-preview",
@@ -95,6 +104,7 @@ test("uses frame creation time to dedupe external frames without a source sequen
 
 test("falls back to local audio timing when no external frame is present", () => {
   const clock = getSourceAuthoritativeClock({
+    audioFeatureAuthorityRole: AUDIO_FEATURE_AUTHORITY_ROLES.localProducer,
     externalFrameState: null,
     lastAppliedFrameSequence: 42,
     fallbackClockSnapshot: {
@@ -110,4 +120,57 @@ test("falls back to local audio timing when no external frame is present", () =>
   expect(clock.time).toBe(3);
   expect(clock.deltaTime).toBe(0.5);
   expect(clock.status).toStrictEqual({ isPlaying: false });
+});
+
+test("holds external authority without falling back when a frame is absent", () => {
+  const clock = getSourceAuthoritativeClock({
+    audioFeatureAuthorityRole:
+      AUDIO_FEATURE_AUTHORITY_ROLES.externalConsumer,
+    externalFrameState: null,
+    lastAppliedFrameSequence: 42,
+    fallbackClockSnapshot: {
+      status: { isPlaying: true },
+      clockMode: "realtime",
+      time: 3,
+      deltaTime: 0.5,
+    },
+  });
+
+  expect(clock).toStrictEqual({
+    status: null,
+    clockMode: "external-hold",
+    time: 0,
+    deltaTime: 0,
+    frameSequence: null,
+    frameIdentity: null,
+    shouldAdvance: false,
+  });
+});
+
+test("local authority ignores stray external frame content", () => {
+  const fallbackClockSnapshot = {
+    status: { isPlaying: true },
+    clockMode: "realtime",
+    time: 7,
+    deltaTime: 1 / 60,
+  };
+  const clock = getSourceAuthoritativeClock({
+    audioFeatureAuthorityRole: AUDIO_FEATURE_AUTHORITY_ROLES.localProducer,
+    externalFrameState: {
+      status: { isPlaying: false },
+      clockMode: "external-preview",
+      time: 12,
+      deltaTime: 1 / 30,
+      frameSequence: 42,
+    },
+    lastAppliedFrameSequence: 41,
+    fallbackClockSnapshot,
+  });
+
+  expect(clock).toStrictEqual({
+    ...fallbackClockSnapshot,
+    frameSequence: null,
+    frameIdentity: null,
+    shouldAdvance: true,
+  });
 });

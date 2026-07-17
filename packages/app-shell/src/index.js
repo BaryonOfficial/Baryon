@@ -23,7 +23,10 @@ export {
   BaryonScene,
   CAMERA_CONTROL_MODES,
 } from "./components/BaryonScene.jsx";
+export { AUDIO_FEATURE_AUTHORITY_ROLES } from "@baryon/engine/audio-features";
 export { default as AdvancedControlsDock } from "./components/AdvancedControlsDock.jsx";
+export { useFullscreenUiPreference } from "./components/hooks/useFullscreenUiPreference.js";
+export { useFullscreen } from "./components/hooks/useFullScreenToggle.jsx";
 export { OutputStageSurface } from "./components/OutputStageSurface.jsx";
 export { ListenerControls } from "./components/AudioControls.jsx";
 export { default as LiveInputStatusPanel } from "./components/LiveInputStatusPanel.jsx";
@@ -41,6 +44,7 @@ export {
   WEBGPU_RENDERER_INIT_ERROR,
 } from "./components/rendererDiagnostics.js";
 export { RendererErrorBoundary } from "./components/RendererErrorBoundary.jsx";
+export { AppErrorBoundary } from "./components/AppErrorBoundary.jsx";
 export {
   DEFAULT_ACTIVE_CAMERA_POSE,
   DEFAULT_IDLE_PERFORMER_CAMERA_POSE,
@@ -56,6 +60,12 @@ export {
 } from "./components/cameraControlModel.js";
 export { createControlsStore } from "./controls/controlsStore.js";
 export { ControlsProvider } from "./controls/ControlsProvider.jsx";
+export {
+  dispatchControlsChanged,
+  dispatchControlsCommand,
+  subscribeControlsChanged,
+  subscribeControlsCommand,
+} from "./controls/controlsEvents.js";
 export {
   useControlsActions,
   useControlsSnapshot,

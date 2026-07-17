@@ -9,13 +9,10 @@ import {
 } from "./renderProbeSnapshot.js";
 
 const WORKER_PERF_COUNTER_BASES = Object.freeze([
-  "FastSignal",
-  "Structural",
-  "PeakScan",
-  "ModalResolve",
-  "Projection",
-  "Chroma",
-  "Tempo",
+  "FastLane",
+  "StructuralLane",
+  "Goertzel",
+  "Composition",
 ]);
 const WORKER_PERF_COUNTER_SUFFIXES = Object.freeze(["Ms", "LastMs", "MaxMs"]);
 const WORKER_PERF_COUNTER_KEYS = Object.freeze(
@@ -222,10 +219,12 @@ export function snapshotSourceEvidenceDiagnostics(sourceEvidence) {
     metrics: {
       avgAmplitude: readFiniteDiagnosticNumber(metrics.avgAmplitude),
       analyserRms: readFiniteDiagnosticNumber(metrics.analyserRms),
-      preModalFftPeak: readFiniteDiagnosticNumber(metrics.preModalFftPeak),
-      nonZeroFftBinCount: Math.max(
+      fftPeakAmplitude: readFiniteDiagnosticNumber(metrics.fftPeakAmplitude),
+      spectralEffectiveBinCount: Math.max(
         0,
-        Math.floor(readFiniteDiagnosticNumber(metrics.nonZeroFftBinCount)),
+        Math.floor(
+          readFiniteDiagnosticNumber(metrics.spectralEffectiveBinCount),
+        ),
       ),
     },
     transport: {
@@ -330,43 +329,24 @@ export function snapshotModalFreshnessDiagnostics(modalFreshness) {
   };
 }
 
-export function createEmptyAnalysisSchedulerState() {
-  return {
-    lastHeavyAnalysisAtMs: Number.NEGATIVE_INFINITY,
-    lastHeavyAnalysisResult: null,
-    lastComposedFeatureFrame: null,
-    lastAnalysisSessionKey: null,
-    lastAnalysisInputsSignature: null,
-  };
-}
-
 function createRuntimePerfBreakdown() {
   return {
-    readAnalysisSnapshotMs: createRuntimePerfEntry(),
-    engineEnqueueMs: createRuntimePerfEntry(),
-    readEngineSnapshotMs: createRuntimePerfEntry(),
-    buildFeatureFrameMs: createRuntimePerfEntry(),
-    heavyAnalysisMs: createRuntimePerfEntry(),
-    fastComposeMs: createRuntimePerfEntry(),
+    readFeatureModelMs: createRuntimePerfEntry(),
+    createRendererFeatureViewMs: createRuntimePerfEntry(),
     applyCachedControlSnapshotsMs: createRuntimePerfEntry(),
     syncLiveInputRuntimeStatusMs: createRuntimePerfEntry(),
     runtimeTickMs: createRuntimePerfEntry(),
-    applyReactiveBloomMs: createRuntimePerfEntry(),
     applySceneControlsMs: createRuntimePerfEntry(),
     pipelineRenderMs: createRuntimePerfEntry(),
   };
 }
 
 export function clearFrameCache(frameCacheRefs) {
-  frameCacheRefs.lastLiveFrameRef.current = null;
-  frameCacheRefs.lastActiveFrameRef.current = null;
-  frameCacheRefs.lastIdleFrameRef.current = null;
+  if (frameCacheRefs.lastIdleFrameRef) {
+    frameCacheRefs.lastIdleFrameRef.current = null;
+  }
   if (frameCacheRefs.pausedFileFrameRef) {
     frameCacheRefs.pausedFileFrameRef.current = null;
-  }
-  if (frameCacheRefs.analysisSchedulerRef) {
-    frameCacheRefs.analysisSchedulerRef.current =
-      createEmptyAnalysisSchedulerState();
   }
 }
 
@@ -421,6 +401,7 @@ const MODAL_BASIS_CACHE_RENDER_DIAGNOSTIC_DEFAULTS = Object.freeze({
   modalBasisCacheModeCount: 0,
   modalBasisCachePhaseAuthority: 0,
   modalBasisCacheModeIdentityRetentionRatio: 1,
+  modalBasisCacheMinSamplesPerCycle: 0,
   modalBasisCacheMaxRepresentableModeIndex: 0,
   modalBasisCacheContributingModeCount: 0,
   modalBasisCacheZeroAmplitudeSkippedModeCount: 0,
@@ -453,25 +434,19 @@ export function createRuntimeDiagnostics() {
     lastPlaybackIssue: null,
     frameDrops: createFrameDropCounters(),
     perfBreakdown: createRuntimePerfBreakdown(),
-    analysisScheduler: {
-      analysisReuseCount: 0,
-      analysisAgeMs: 0,
-      forcedAnalysisCount: 0,
-      skippedAnalysisCount: 0,
-    },
     engine: {
-      snapshotAgeMs: 0,
-      publishCount: 0,
-      droppedFrameCount: 0,
-      transportDropCount: 0,
-      publishSkipCount: 0,
-      fastSignalPatchCount: 0,
-      fastSignalUpdateCount: 0,
-      structuralUpdateCount: 0,
-      chromaUpdateCount: 0,
-      tempoUpdateCount: 0,
-      latestProcessedFrameId: 0,
-      latestPublishedFrameId: 0,
+      latestDriveAgeMs: null,
+      latestAcceptedFrameId: 0,
+      sourceGeneration: 0,
+      workerGeneration: 0,
+      topologyRevision: 0,
+      processedFrameCount: 0,
+      topologyPublishCount: 0,
+      drivePublishCount: 0,
+      inputReplacementCount: 0,
+      rejectedPacketCount: 0,
+      staleAcknowledgementCount: 0,
+      renderAuthorityRevoked: false,
       ...snapshotWorkerPerfCounters(null),
       queueDepth: 0,
       state: "none",
@@ -860,6 +835,11 @@ export function updateObservationTransferRenderDiagnostics(
         modalBasisCacheDescriptor?.modeIdentityRetentionRatio,
       MODAL_BASIS_CACHE_RENDER_DIAGNOSTIC_DEFAULTS.modalBasisCacheModeIdentityRetentionRatio,
     );
+  renderDiagnostics.modalBasisCacheMinSamplesPerCycle = readFiniteNumber(
+    raymarchDebug.modalBasisCacheMinSamplesPerCycle ??
+      modalBasisCache?.modalBasisCacheMinSamplesPerCycle ??
+      modalBasisCacheDescriptor?.modalBasisCacheMinSamplesPerCycle,
+  );
   renderDiagnostics.modalBasisCacheMaxRepresentableModeIndex = readFiniteNumber(
     raymarchDebug.modalBasisCacheMaxRepresentableModeIndex ??
       modalBasisCache?.modalBasisCacheMaxRepresentableModeIndex ??
@@ -1011,33 +991,24 @@ function buildRuntimePerfSnapshot(runtimeDiagnostics) {
         runtimeDiagnostics?.frameDrops?.recentLongFramesMs,
       ),
     },
-    analysisScheduler: {
-      analysisReuseCount:
-        runtimeDiagnostics?.analysisScheduler?.analysisReuseCount ?? 0,
-      analysisAgeMs: runtimeDiagnostics?.analysisScheduler?.analysisAgeMs ?? 0,
-      forcedAnalysisCount:
-        runtimeDiagnostics?.analysisScheduler?.forcedAnalysisCount ?? 0,
-      skippedAnalysisCount:
-        runtimeDiagnostics?.analysisScheduler?.skippedAnalysisCount ?? 0,
-    },
     engine: {
-      snapshotAgeMs: runtimeDiagnostics?.engine?.snapshotAgeMs ?? 0,
-      publishCount: runtimeDiagnostics?.engine?.publishCount ?? 0,
-      droppedFrameCount: runtimeDiagnostics?.engine?.droppedFrameCount ?? 0,
-      transportDropCount: runtimeDiagnostics?.engine?.transportDropCount ?? 0,
-      publishSkipCount: runtimeDiagnostics?.engine?.publishSkipCount ?? 0,
-      fastSignalPatchCount:
-        runtimeDiagnostics?.engine?.fastSignalPatchCount ?? 0,
-      fastSignalUpdateCount:
-        runtimeDiagnostics?.engine?.fastSignalUpdateCount ?? 0,
-      structuralUpdateCount:
-        runtimeDiagnostics?.engine?.structuralUpdateCount ?? 0,
-      chromaUpdateCount: runtimeDiagnostics?.engine?.chromaUpdateCount ?? 0,
-      tempoUpdateCount: runtimeDiagnostics?.engine?.tempoUpdateCount ?? 0,
-      latestProcessedFrameId:
-        runtimeDiagnostics?.engine?.latestProcessedFrameId ?? 0,
-      latestPublishedFrameId:
-        runtimeDiagnostics?.engine?.latestPublishedFrameId ?? 0,
+      latestDriveAgeMs: runtimeDiagnostics?.engine?.latestDriveAgeMs ?? null,
+      latestAcceptedFrameId:
+        runtimeDiagnostics?.engine?.latestAcceptedFrameId ?? 0,
+      sourceGeneration: runtimeDiagnostics?.engine?.sourceGeneration ?? 0,
+      workerGeneration: runtimeDiagnostics?.engine?.workerGeneration ?? 0,
+      topologyRevision: runtimeDiagnostics?.engine?.topologyRevision ?? 0,
+      processedFrameCount: runtimeDiagnostics?.engine?.processedFrameCount ?? 0,
+      topologyPublishCount:
+        runtimeDiagnostics?.engine?.topologyPublishCount ?? 0,
+      drivePublishCount: runtimeDiagnostics?.engine?.drivePublishCount ?? 0,
+      inputReplacementCount:
+        runtimeDiagnostics?.engine?.inputReplacementCount ?? 0,
+      rejectedPacketCount: runtimeDiagnostics?.engine?.rejectedPacketCount ?? 0,
+      staleAcknowledgementCount:
+        runtimeDiagnostics?.engine?.staleAcknowledgementCount ?? 0,
+      renderAuthorityRevoked:
+        runtimeDiagnostics?.engine?.renderAuthorityRevoked ?? false,
       ...snapshotWorkerPerfCounters(runtimeDiagnostics?.engine),
       queueDepth: runtimeDiagnostics?.engine?.queueDepth ?? 0,
       state: runtimeDiagnostics?.engine?.state ?? "none",
@@ -1189,11 +1160,16 @@ export function maybePublishRuntimePerfSnapshot(
 }
 
 export function shouldRenderExternalFrame({
+  externalFeatureAuthorityActive = false,
   externalFrameState,
   shouldAdvance,
   controlsChanged,
   forceRender = false,
 }) {
+  if (externalFeatureAuthorityActive && !externalFrameState) {
+    return controlsChanged || forceRender;
+  }
+
   return !externalFrameState || shouldAdvance || controlsChanged || forceRender;
 }
 
@@ -1219,9 +1195,6 @@ export function snapshotRuntimeDiagnostics(runtimeDiagnostics) {
             runtimeDiagnostics.frameDrops.recentLongFramesMs,
           ),
         }
-      : null,
-    analysisScheduler: runtimeDiagnostics.analysisScheduler
-      ? { ...runtimeDiagnostics.analysisScheduler }
       : null,
     engine: runtimeDiagnostics.engine ? { ...runtimeDiagnostics.engine } : null,
     render: runtimeDiagnostics.render ? { ...runtimeDiagnostics.render } : null,

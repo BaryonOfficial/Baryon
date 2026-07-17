@@ -67,6 +67,7 @@ function update(state, entries, options = {}) {
     resetToken: options.resetToken ?? "session",
     renderAuthority: options.renderAuthority ?? true,
     maxVisibleModeCount: options.maxVisibleModeCount ?? 8,
+    maxHandoffModeCount: options.maxHandoffModeCount ?? 1,
     maxBasisModeOrder: options.maxBasisModeOrder ?? Infinity,
   });
 }
@@ -391,11 +392,16 @@ describe("modal field continuity", () => {
       maxVisibleModeCount: 2,
     });
 
-    // The replaced page crossfades out in place instead of swapping instantly.
-    expect(readModeKeys(evicting.descriptorSource)).toEqual(["0:0:3", "1:2:2"]);
+    // Both signed modes remain in the carrier during the damping-derived
+    // handoff, before any magnitude or radiance transform.
+    expect(readModeKeys(evicting.descriptorSource)).toEqual([
+      "0:0:3",
+      "1:2:2",
+      "1:1:1",
+    ]);
     expect(evicting.diagnostics.evictingModeKeys).toEqual(["1:2:2"]);
     expect(evicting.diagnostics.removedModeKeys).toEqual([]);
-    expect(evicting.diagnostics.admittedModeKeys).toEqual([]);
+    expect(evicting.diagnostics.admittedModeKeys).toEqual(["1:1:1"]);
 
     const replaced = update(state, entries, {
       deltaTimeSec: TOPOLOGY_EVICTION_FADE_SECONDS,
@@ -404,7 +410,7 @@ describe("modal field continuity", () => {
 
     expect(readModeKeys(replaced.descriptorSource)).toEqual(["0:0:3", "1:1:1"]);
     expect(replaced.diagnostics.removedModeKeys).toEqual(["1:2:2"]);
-    expect(replaced.diagnostics.admittedModeKeys).toEqual(["1:1:1"]);
+    expect(replaced.diagnostics.admittedModeKeys).toEqual([]);
     expect(replaced.diagnostics.visibleShellCount).toBe(2);
   });
 
@@ -465,7 +471,7 @@ describe("modal field continuity", () => {
   it("lets sustained structural candidates replace active upper-band detail", () => {
     const state = createModalFieldContinuityState();
     const detail = {
-      mode: [8, 8, 8],
+      mode: [4, 4, 4],
       coefficient: 0.38,
       observedSupport: 1,
     };
@@ -479,15 +485,15 @@ describe("modal field continuity", () => {
       deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
       maxVisibleModeCount: 1,
     });
-    expect(readModeKeys(initial.descriptorSource)).toEqual(["8:8:8"]);
+    expect(readModeKeys(initial.descriptorSource)).toEqual(["4:4:4"]);
 
     const evicting = update(state, [detail, structural], {
       deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS + BASIS_REASSIGN_MIN_SECONDS,
       maxVisibleModeCount: 1,
     });
 
-    expect(readModeKeys(evicting.descriptorSource)).toEqual(["8:8:8"]);
-    expect(evicting.diagnostics.evictingModeKeys).toEqual(["8:8:8"]);
+    expect(readModeKeys(evicting.descriptorSource)).toEqual(["4:4:4", "2:1:1"]);
+    expect(evicting.diagnostics.evictingModeKeys).toEqual(["4:4:4"]);
 
     const replaced = update(state, [detail, structural], {
       deltaTimeSec: TOPOLOGY_EVICTION_FADE_SECONDS,
@@ -495,8 +501,8 @@ describe("modal field continuity", () => {
     });
 
     expect(readModeKeys(replaced.descriptorSource)).toEqual(["2:1:1"]);
-    expect(replaced.diagnostics.removedModeKeys).toEqual(["8:8:8"]);
-    expect(replaced.diagnostics.admittedModeKeys).toEqual(["2:1:1"]);
+    expect(replaced.diagnostics.removedModeKeys).toEqual(["4:4:4"]);
+    expect(replaced.diagnostics.admittedModeKeys).toEqual([]);
   });
 
   it("does not let loud high-order detail evict structural topology", () => {
@@ -676,7 +682,11 @@ describe("modal field continuity", () => {
       maxVisibleModeCount: 2,
     });
 
-    expect(readModeKeys(evicting.descriptorSource)).toEqual(["1:1:1", "2:1:1"]);
+    expect(readModeKeys(evicting.descriptorSource)).toEqual([
+      "1:1:1",
+      "2:1:1",
+      "3:1:1",
+    ]);
     expect(evicting.diagnostics.evictingModeKeys).toEqual(["2:1:1"]);
 
     const replacement = update(state, entries, {
@@ -689,7 +699,7 @@ describe("modal field continuity", () => {
       "3:1:1",
     ]);
     expect(replacement.diagnostics.removedModeKeys).toEqual(["2:1:1"]);
-    expect(replacement.diagnostics.admittedModeKeys).toEqual(["3:1:1"]);
+    expect(replacement.diagnostics.admittedModeKeys).toEqual([]);
   });
 
   it("skips the admission fade when the field starts from silence", () => {
@@ -742,7 +752,7 @@ describe("modal field continuity", () => {
     );
   });
 
-  it("fades evicted pages out and never exceeds the visible budget mid-swap", () => {
+  it("fades evicted pages out within the steady plus handoff budget", () => {
     const state = createModalFieldContinuityState();
     const weak = { mode: [1, 1, 1], coefficient: 0.15, observedSupport: 1 };
     const strong = { mode: [2, 1, 1], coefficient: 0.9, observedSupport: 1 };
@@ -755,17 +765,17 @@ describe("modal field continuity", () => {
       deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS + BASIS_REASSIGN_MIN_SECONDS,
       maxVisibleModeCount: 1,
     });
-    expect(readModeKeys(evicting.descriptorSource)).toEqual(["1:1:1"]);
+    expect(readModeKeys(evicting.descriptorSource)).toEqual(["1:1:1", "2:1:1"]);
     expect(evicting.diagnostics.evictingModeKeys).toEqual(["1:1:1"]);
 
     // Mid-fade the evicted page keeps its identity but decays in amplitude,
-    // and the visible count never exceeds the budget.
+    // while the entering page rises in the one reserved handoff slot.
     const midFade = update(state, [weak, strong], {
       deltaTimeSec: TOPOLOGY_EVICTION_FADE_SECONDS / 2,
       maxVisibleModeCount: 1,
     });
-    expect(readModeKeys(midFade.descriptorSource)).toEqual(["1:1:1"]);
-    expect(midFade.descriptorSource.activeModalFieldModeCount).toBe(1);
+    expect(readModeKeys(midFade.descriptorSource)).toEqual(["1:1:1", "2:1:1"]);
+    expect(midFade.descriptorSource.activeModalFieldModeCount).toBe(2);
     const fading = readCoefficient(midFade.descriptorSource, "1:1:1");
     expect(fading).toBeGreaterThan(0);
     expect(fading).toBeLessThan(0.15);
@@ -776,8 +786,68 @@ describe("modal field continuity", () => {
     });
     expect(readModeKeys(swapped.descriptorSource)).toEqual(["2:1:1"]);
     expect(swapped.diagnostics.removedModeKeys).toEqual(["1:1:1"]);
-    expect(swapped.diagnostics.admittedModeKeys).toEqual(["2:1:1"]);
+    expect(swapped.diagnostics.admittedModeKeys).toEqual([]);
     expect(swapped.descriptorSource.activeModalFieldModeCount).toBe(1);
+  });
+
+  it("overlaps retiring and entering signed modes in one reserved handoff page", () => {
+    const state = createModalFieldContinuityState();
+    const weak = {
+      mode: [1, 1, 1],
+      coefficient: 0.15,
+      observedSupport: 1,
+      naturalFrequencyHz: 220,
+      qualityFactor: 12,
+    };
+    const strong = {
+      mode: [2, 1, 1],
+      coefficient: 0.9,
+      observedSupport: 1,
+      naturalFrequencyHz: 330,
+      qualityFactor: 10,
+    };
+    const queued = {
+      mode: [3, 1, 1],
+      coefficient: 0.8,
+      observedSupport: 1,
+      naturalFrequencyHz: 440,
+      qualityFactor: 8,
+    };
+
+    update(state, [weak], {
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS,
+      maxVisibleModeCount: 1,
+      maxHandoffModeCount: 1,
+    });
+    const handoff = update(state, [weak, strong, queued], {
+      deltaTimeSec: TOPOLOGY_PROMOTE_SECONDS + BASIS_REASSIGN_MIN_SECONDS,
+      maxVisibleModeCount: 1,
+      maxHandoffModeCount: 1,
+    });
+
+    expect(readModeKeys(handoff.descriptorSource)).toEqual([
+      "1:1:1",
+      "2:1:1",
+    ]);
+    expect(handoff.diagnostics.evictingModeKeys).toEqual(["1:1:1"]);
+    expect(handoff.diagnostics.admittedModeKeys).toEqual(["2:1:1"]);
+    expect(readCoefficient(handoff.descriptorSource, "1:1:1")).toBeGreaterThan(
+      0,
+    );
+    expect(readCoefficient(handoff.descriptorSource, "2:1:1")).toBeGreaterThan(
+      0,
+    );
+    expect(handoff.descriptorSource.activeModalFieldModeCount).toBe(2);
+
+    const bounded = update(state, [weak, strong, queued], {
+      deltaTimeSec: DT,
+      maxVisibleModeCount: 1,
+      maxHandoffModeCount: 1,
+    });
+    expect(bounded.descriptorSource.activeModalFieldModeCount).toBeLessThanOrEqual(
+      2,
+    );
+    expect(readModeKeys(bounded.descriptorSource)).not.toContain("3:1:1");
   });
 
   it("derives eviction windows from damping metadata and admits a successor when capacity frees", () => {

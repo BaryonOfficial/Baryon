@@ -119,13 +119,13 @@ as **OSCQuery Host** and then pulse **Refresh Query**.
 
 Query `/?HOST_INFO` for the OSC receiver details, `/baryon/control` for the
 writable control tree, or a specific address such as
-`/baryon/control/zeroPointPrecision` for type, range, description, tags, label,
+`/baryon/control/densityGain` for type, range, description, tags, label,
 and default metadata.
 
 Example OSC messages:
 
 ```text
-/baryon/control/zeroPointPrecision 0.12
+/baryon/control/densityGain 2.5
 /baryon/control/bloomEnabled 1
 /baryon/control/colorMode spectral
 /baryon/control/volumeColor 0.36 0.89 0.96
@@ -137,15 +137,15 @@ string argument matching the control value. Color controls take three numeric RG
 arguments from `0` to `1`. MIDI mappings scale CC values (`0..127`) into the
 target control range.
 
-| Area        | Automatable keys                                                                                                                                                                      |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Performance | `renderQualityPreset`, `customTargetFps`, `performanceHudEnabled`                                                                                                                     |
-| Output      | `outputMode`, `outputBackgroundColor`                                                                                                                                                 |
-| Shape       | `boundaryMode`, `zeroPointPrecision`, `densityGain`, `absorption`, `opacityGain`, `raymarchSteps`                                                                                     |
-| Color       | `colorMode`, `volumeColor`, `surfaceColor`, `spectralMix`, `holographicIntensity`, `holographicShift`, `holographicFresnelPower`                                                     |
-| Motion      | `rotationMode`, `rotationSpeed`, `motionAmount`, `reactivity`                                                                                                                         |
-| Bloom       | `bloomEnabled`, `bloomStrength`, `bloomRadius`, `bloomThreshold`, `bloomResponseBias`, `rimBloomBias`, `rimCompression`                                                               |
-| Logo        | `idleLogoIntensity`, `idleLogoSize`                                                                                                                                                   |
+| Area        | Automatable keys                                                                                                  |
+| ----------- | ----------------------------------------------------------------------------------------------------------------- |
+| Performance | `renderQualityPreset`, `customTargetFps`, `performanceHudEnabled`                                                 |
+| Output      | `outputMode`, `outputBackgroundColor`                                                                             |
+| Shape       | `boundaryMode`, `densityGain`, `laserDeflectionGain`, `raymarchSteps`                                            |
+| Color       | `colorMode`, `volumeColor`, `surfaceColor`, `spectralMix`, `holographicIntensity`, `holographicFresnelPower`     |
+| Motion      | `rotationMode`, `rotationSpeed`, `motionAmount`                                                                   |
+| Bloom       | `bloomEnabled`, `bloomStrength`, `bloomRadius`, `bloomThreshold`                                                  |
+| Logo        | `idleLogoIntensity`, `idleLogoSize`, `idleLogoColor`                                                            |
 
 Notes, pitch bend, aftertouch, feedback LEDs, multi-device profiles, and remote
 hardware profiles are outside the first automation surface.

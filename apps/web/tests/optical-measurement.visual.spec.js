@@ -3,26 +3,20 @@ import { readFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import sharp from "sharp";
+import { evaluateStraightSceneLinearHeadroom } from "../../../packages/engine/src/render/displayRadiance.js";
 
 const ACTIVE_LUMINANCE_THRESHOLD = 0.004;
 const ACTIVE_GRADIENT_HOTSPOT_THRESHOLD = 0.12;
 const HUE_FAMILY_COUNT = 8;
 const OPTICAL_MEASUREMENT_CONTROLS = Object.freeze({
   raymarchSteps: 104,
-  zeroPointPrecision: 0.018,
   densityGain: 3.08,
-  absorption: 3.62,
-  opacityGain: 2.7,
-  rimBloomBias: 0.26,
-  rimCompression: 1.02,
   holographicIntensity: 0.52,
-  holographicShift: 0.42,
   holographicFresnelPower: 4.8,
-  bloomEnabled: true,
-  bloomStrength: 0.76,
+  bloomEnabled: false,
+  bloomStrength: 0.63536,
   bloomRadius: 0,
-  bloomThreshold: 0.46,
-  bloomResponseBias: 0.82,
+  bloomThreshold: 0.542,
   colorMode: "spectral",
   spectralMix: 0.92,
 });
@@ -132,14 +126,12 @@ async function applyOpticalMeasurementControls(page) {
         return {
           colorMode: controls.colorMode ?? null,
           raymarchSteps: controls.raymarchSteps ?? null,
-          zeroPointPrecision: controls.zeroPointPrecision ?? null,
         };
       }),
     )
     .toEqual({
       colorMode: OPTICAL_MEASUREMENT_CONTROLS.colorMode,
       raymarchSteps: OPTICAL_MEASUREMENT_CONTROLS.raymarchSteps,
-      zeroPointPrecision: OPTICAL_MEASUREMENT_CONTROLS.zeroPointPrecision,
     });
 }
 
@@ -147,10 +139,24 @@ async function readCanvasLuminanceMetrics(page, artifactPath = null) {
   const canvas = page.locator("#root > div canvas").first();
   await expect(canvas).toBeVisible();
   const screenshotPng = await canvas.screenshot();
+  // Mask DOM UI composited over the canvas region; otherwise chrome pixels
+  // dominate the luminance percentiles and an empty field can pass (or a
+  // silent field can fail) purely on interface brightness. The UI-only pass
+  // hides the canvas and captures the same clipped region.
+  const canvasBox = await canvas.boundingBox();
+  const uiOnlyPng = await page.screenshot({
+    clip: canvasBox,
+    style: "#root canvas { visibility: hidden !important; }",
+  });
   const {
     data,
     info: { width, height },
   } = await sharp(screenshotPng)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const { data: uiData } = await sharp(uiOnlyPng)
+    .resize(width, height, { fit: "fill", kernel: "nearest" })
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
@@ -164,6 +170,8 @@ async function readCanvasLuminanceMetrics(page, artifactPath = null) {
   let brightLowSaturationCount = 0;
   let centralSampleCount = 0;
   let chromaticPixelCount = 0;
+  let activeSaturationTotal = 0;
+  let activeChromaTotal = 0;
   const hueFamilyCounts = new Array(HUE_FAMILY_COUNT).fill(0);
   const gridValues = [];
   const centralNonblack = [];
@@ -174,7 +182,15 @@ async function readCanvasLuminanceMetrics(page, artifactPath = null) {
     let rowWidth = 0;
     for (let x = 0; x < width; x += sampleStride) {
       const index = (y * width + x) * 4;
-      const alpha = data[index + 3] / 255;
+      // Interface pixels are masked to darkness so only canvas content can
+      // satisfy (or fail) the luminance gates.
+      const uiMasked =
+        (0.2126 * uiData[index] +
+          0.7152 * uiData[index + 1] +
+          0.0722 * uiData[index + 2]) /
+          255 >
+        0.002;
+      const alpha = uiMasked ? 0 : data[index + 3] / 255;
       const value =
         ((0.2126 * data[index] +
           0.7152 * data[index + 1] +
@@ -235,6 +251,8 @@ async function readCanvasLuminanceMetrics(page, artifactPath = null) {
       }
       if (isNonblack) {
         nonblackCount += 1;
+        activeSaturationTotal += saturation;
+        activeChromaTotal += ((maxChannel - minChannel) / 255) * alpha;
       }
       if (value < 0.035) {
         negativeSpaceCount += 1;
@@ -377,6 +395,10 @@ async function readCanvasLuminanceMetrics(page, artifactPath = null) {
     fineLatticePressure,
     contrastRatio: p98 / Math.max(p50, 1e-4),
     chromaticPixelRatio: chromaticPixelCount / luminance.length,
+    activeMeanSaturation:
+      nonblackCount === 0 ? 0 : activeSaturationTotal / nonblackCount,
+    activeMeanChroma:
+      nonblackCount === 0 ? 0 : activeChromaTotal / nonblackCount,
     visibleHueFamilyCount,
     dominantHueFamilyRatio,
   };
@@ -418,6 +440,17 @@ async function seekPlaybackTimeline(page, ratio) {
   await page.mouse.click(box.x + box.width * ratio, box.y + box.height / 2);
 }
 
+async function awaitCanvasPresentation(page) {
+  // Headless WebGPU presentation can drop out for a whole page load under
+  // sequential GPU pressure; measuring a non-presenting canvas would judge
+  // the harness, not the render. Field-active states must show pixels.
+  await expect
+    .poll(async () => (await readCanvasLuminanceMetrics(page)).nonblankRatio, {
+      timeout: 20_000,
+    })
+    .toBeGreaterThan(0.01);
+}
+
 async function captureCanvasMetricArtifact(page, testInfo, name) {
   const artifactPath = testInfo.outputPath(`${name}.png`);
   const metrics = await readCanvasLuminanceMetrics(page, artifactPath);
@@ -426,6 +459,71 @@ async function captureCanvasMetricArtifact(page, testInfo, name) {
     contentType: "image/png",
   });
   return metrics;
+}
+
+async function installFrozen528Fixture(page, descriptorId) {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.goto("/");
+  await waitForControlSurface(page);
+  await applyOpticalMeasurementControls(page);
+  await setControl(page, "auditEnabled", true);
+  await setControl(page, "injectTestTone", true);
+  await setControl(page, "testToneHz", 528);
+  await setControl(page, "testToneAmplitude", 0.5);
+
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => ({
+          backend: window.__baryonRendererInfo?.backend ?? null,
+          fieldState:
+            window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
+          volumeVisible:
+            window.__baryonAuditSnapshot?.raymarchDebug?.volumeVisible ?? false,
+          spectralLaneCacheReady:
+            window.__baryonAuditSnapshot?.raymarchDebug
+              ?.spectralLaneCacheReady ?? false,
+          fixtureBridge: typeof window.__baryonAuditFixture,
+        })),
+      { timeout: 20_000 },
+    )
+    .toEqual({
+      backend: "WebGPUBackend",
+      fieldState: "test",
+      volumeVisible: true,
+      spectralLaneCacheReady: true,
+      fixtureBridge: "object",
+    });
+
+  const installed = await page.evaluate(async (fixtureDescriptorId) => {
+    const snapshot = await window.__baryonAuditFixture.snapshotDescriptor({
+      descriptorId: fixtureDescriptorId,
+      viewPreset: "front",
+      output: { width: 512, height: 384 },
+    });
+    const status = await window.__baryonAuditFixture.install(
+      snapshot.descriptor,
+    );
+    return { descriptorHash: snapshot.descriptorHash, status };
+  }, descriptorId);
+  expect(installed.status.phase).toBe("installed");
+  expect(installed.status.captureAllowed).toBe(true);
+  expect(installed.status.descriptorHash).toBe(installed.descriptorHash);
+  return installed;
+}
+
+async function teardownFixtureAndAwaitLiveField(page) {
+  const status = await page.evaluate(() =>
+    window.__baryonAuditFixture.teardown(),
+  );
+  expect(status.phase).toBe("idle");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
+      ),
+    )
+    .toBe("test");
 }
 
 async function setCameraPreset(page, preset) {
@@ -490,6 +588,7 @@ test.describe("laser cymatic optical measurement visual audit", () => {
         fieldState: "test",
         volumeVisible: true,
       });
+    await awaitCanvasPresentation(page);
 
     await expect
       .poll(readCanvasLuminanceMetrics.bind(null, page), { timeout: 10_000 })
@@ -507,17 +606,226 @@ test.describe("laser cymatic optical measurement visual audit", () => {
       page,
       testInfo.outputPath("photographic-top-down-528.png"),
     );
+    console.log(
+      "raymarch-528-diagnostic",
+      await page.evaluate(() => {
+        const debug = window.__baryonAuditSnapshot?.raymarchDebug ?? {};
+        return {
+          materialOutputVisible: debug.materialOutputVisible,
+          observationEnergy: debug.observationEnergy,
+          avgOpacity: debug.avgOpacity,
+          avgDensity: debug.avgDensity,
+          materialProbePreBloomRadiance: debug.materialProbePreBloomRadiance,
+          materialProbeBaseRadiance: debug.materialProbeBaseRadiance,
+          gain: debug.materialProbeHolographicBaseRadianceGain,
+        };
+      }),
+      metrics,
+    );
     await testInfo.attach("photographic-top-down-528", {
       path: testInfo.outputPath("photographic-top-down-528.png"),
       contentType: "image/png",
     });
-    expect(metrics.nonblankRatio).toBeGreaterThan(0.01);
+    // Promoted Checkpoint B base-only legibility gates. The prior one-percent
+    // floors could pass a technically nonblack but unreadable carrier.
+    expect(metrics.p98).toBeGreaterThanOrEqual(0.12);
+    expect(metrics.nonblankRatio).toBeGreaterThanOrEqual(0.05);
     expect(metrics.negativeSpaceRatio).toBeGreaterThanOrEqual(0.55);
     expect(metrics.brightLaneRatio).toBeGreaterThanOrEqual(0.015);
     expect(metrics.brightLaneRatio).toBeLessThanOrEqual(0.14);
     expect(metrics.contrastRatio).toBeGreaterThanOrEqual(5.0);
     expect(metrics.broadWashRatio).toBeLessThan(0.24);
-    expect(metrics.centralConnectedNonblackRatio).toBeGreaterThan(0.01);
+    expect(metrics.centralConnectedNonblackRatio).toBeGreaterThanOrEqual(0.02);
+    expect(metrics.nearWhitePixelRatio).toBeLessThan(
+      0.08 * Math.max(metrics.nonblankRatio, 1e-6),
+    );
+  });
+
+  test("black-field canary fails every base legibility gate on silence", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await page.goto("/");
+    await waitForControlSurface(page);
+    await applyOpticalMeasurementControls(page);
+    await setControl(page, "auditEnabled", true);
+    // The idle logo is a deliberate product feature, not carrier support;
+    // the canary witnesses the acoustic carrier clearing on silence.
+    await setControl(page, "idleLogoIntensity", 0);
+
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          backend: window.__baryonRendererInfo?.backend ?? null,
+          fieldState:
+            window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
+        })),
+      )
+      .toEqual({
+        backend: "WebGPUBackend",
+        fieldState: "idle",
+      });
+    await page.waitForTimeout(600);
+
+    const metrics = await readCanvasLuminanceMetrics(page);
+    // Silence keeps the carrier fully cleared; the same numbers prove the
+    // harness cannot pass an empty field through the promoted base gates.
+    expect(metrics.nonblankRatio).toBeLessThanOrEqual(0.001);
+    expect(metrics.p98).toBeLessThanOrEqual(0.01);
+    expect(metrics.nonblankRatio).toBeLessThan(0.05);
+    expect(metrics.p98).toBeLessThan(0.12);
+    expect(metrics.centralConnectedNonblackRatio).toBeLessThan(0.02);
+    expect(metrics.contrastRatio).toBeLessThan(5.0);
+  });
+
+  test("holographic Fresnel control materially reshapes the production carrier", async ({
+    page,
+    browserName,
+  }, testInfo) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await page.goto("/");
+    await waitForControlSurface(page);
+    await setControl(page, "raymarchSteps", 72);
+    await setControl(page, "densityGain", 4);
+    await setControl(page, "laserDeflectionGain", 1.2);
+    await setControl(page, "holographicIntensity", 1);
+    await setControl(page, "holographicFresnelPower", 2.4);
+    await setControl(page, "bloomEnabled", true);
+    await setControl(page, "bloomStrength", 1.18);
+    await setControl(page, "bloomRadius", 0);
+    await setControl(page, "bloomThreshold", 0.5);
+    await setControl(page, "rotationMode", "off");
+    await setControl(page, "motionAmount", 0);
+    await setControl(page, "colorMode", "static");
+    await setControl(page, "volumeColor", "#079bb0");
+    await setControl(page, "surfaceColor", "#73efff");
+    await setControl(page, "auditEnabled", true);
+    await setControl(page, "injectTestTone", true);
+    await setControl(page, "testToneHz", 528);
+    await setControl(page, "testToneAmplitude", 0.5);
+    await setControl(page, "freezeModeSlots", true);
+    await setControl(page, "idleLogoIntensity", 0);
+
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          fieldState:
+            window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
+          volumeVisible:
+            window.__baryonAuditSnapshot?.raymarchDebug?.volumeVisible ?? false,
+        })),
+      )
+      .toEqual({ fieldState: "test", volumeVisible: true });
+
+    await setControl(page, "holographicIntensity", 0);
+    await awaitCanvasPresentation(page);
+    const fresnelOff = await captureCanvasMetricArtifact(
+      page,
+      testInfo,
+      "fresnel-off-static-528",
+    );
+
+    await setControl(page, "holographicIntensity", 1);
+    await setControl(page, "holographicFresnelPower", 4.8);
+    await awaitCanvasPresentation(page);
+    const fresnelOn = await captureCanvasMetricArtifact(
+      page,
+      testInfo,
+      "fresnel-on-static-528",
+    );
+
+    console.log("fresnel-production-delta", { fresnelOff, fresnelOn });
+    expect(fresnelOn.p98).toBeGreaterThan(fresnelOff.p98 * 1.15);
+    expect(fresnelOn.activeGradientP95).toBeGreaterThan(
+      fresnelOff.activeGradientP95 * 1.15,
+    );
+    expect(fresnelOn.brightLaneRatio).toBeGreaterThanOrEqual(0.015);
+    expect(fresnelOn.broadWashRatio).toBeLessThan(0.24);
+    expect(fresnelOn.nearWhitePixelRatio).toBeLessThan(
+      0.08 * Math.max(fresnelOn.nonblankRatio, 1e-6),
+    );
+  });
+
+  test("SMAA topology preserves the carrier color family when disabled", async ({
+    page,
+    browserName,
+  }, testInfo) => {
+    test.setTimeout(60_000);
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await page.goto("/");
+    await waitForControlSurface(page);
+    await setControl(page, "raymarchSteps", 72);
+    await setControl(page, "densityGain", 4);
+    await setControl(page, "laserDeflectionGain", 1.2);
+    await setControl(page, "holographicIntensity", 1);
+    await setControl(page, "holographicFresnelPower", 2.4);
+    await setControl(page, "bloomEnabled", true);
+    await setControl(page, "bloomStrength", 1.18);
+    await setControl(page, "bloomRadius", 0);
+    await setControl(page, "bloomThreshold", 0.5);
+    await setControl(page, "rotationMode", "off");
+    await setControl(page, "motionAmount", 0);
+    await setControl(page, "colorMode", "static");
+    await setControl(page, "volumeColor", "#5be3f4");
+    await setControl(page, "surfaceColor", "#5be3f4");
+    await setControl(page, "auditEnabled", true);
+    await setControl(page, "injectTestTone", true);
+    await setControl(page, "testToneHz", 528);
+    await setControl(page, "testToneAmplitude", 0.5);
+    await setControl(page, "freezeModeSlots", true);
+    await setControl(page, "idleLogoIntensity", 0);
+
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          fieldState:
+            window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
+          volumeVisible:
+            window.__baryonAuditSnapshot?.raymarchDebug?.volumeVisible ?? false,
+        })),
+      )
+      .toEqual({ fieldState: "test", volumeVisible: true });
+
+    await setControl(page, "smaaEnabled", true);
+    await awaitCanvasPresentation(page);
+    await page.waitForTimeout(100);
+    const smaaOn = await captureCanvasMetricArtifact(
+      page,
+      testInfo,
+      "smaa-on-static-528",
+    );
+
+    await setControl(page, "smaaEnabled", false);
+    await awaitCanvasPresentation(page);
+    await page.waitForTimeout(100);
+    const smaaOff = await captureCanvasMetricArtifact(
+      page,
+      testInfo,
+      "smaa-off-static-528",
+    );
+
+    expect(smaaOn.chromaticPixelRatio).toBeGreaterThan(0.1);
+    expect(smaaOff.chromaticPixelRatio).toBeGreaterThan(0.1);
+    expect(smaaOn.activeMeanSaturation).toBeGreaterThan(0.58);
+    expect(smaaOff.activeMeanSaturation).toBeGreaterThan(0.58);
+    expect(smaaOn.activeMeanChroma).toBeGreaterThan(0.06);
+    expect(smaaOff.activeMeanChroma).toBeGreaterThan(0.06);
+    expect(
+      Math.abs(smaaOn.activeMeanSaturation - smaaOff.activeMeanSaturation),
+    ).toBeLessThan(0.03);
+    expect(
+      Math.abs(smaaOn.chromaticPixelRatio - smaaOff.chromaticPixelRatio),
+    ).toBeLessThan(0.02);
+    expect(Math.abs(smaaOn.p98 - smaaOff.p98)).toBeLessThan(
+      Math.max(smaaOn.p98, smaaOff.p98) * 0.05,
+    );
   });
 
   test("dense polyphonic fixture keeps spectral lane cache active with multiple hue families", async ({
@@ -614,6 +922,7 @@ test.describe("laser cymatic optical measurement visual audit", () => {
         ),
       )
       .toBeGreaterThan(0);
+    await awaitCanvasPresentation(page);
 
     const frames = [];
     for (let index = 0; index < 8; index += 1) {
@@ -686,6 +995,7 @@ test.describe("laser cymatic optical measurement visual audit", () => {
         fieldState: "test",
         volumeVisible: true,
       });
+    await awaitCanvasPresentation(page);
 
     const topDown = await captureCanvasMetricArtifact(
       page,
@@ -720,5 +1030,373 @@ test.describe("laser cymatic optical measurement visual audit", () => {
         topDown.broadWashRatio + 0.05,
       );
     }
+  });
+
+  test("frozen descriptor renders identically across capture cadences without new transport work", async ({
+    page,
+    browserName,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await installFrozen528Fixture(page, "frozen-528-front-stability");
+
+    const stability = await page.evaluate(async () => {
+      const fixture = window.__baryonAuditFixture;
+      const waitMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const reference = await fixture.exportBuffers();
+      const referencePixels = reference.displayRgba;
+      const sealedDispatchCount = fixture.status().seal.transportDispatchCount;
+      const meanAbsoluteDifferences = [];
+      // 30, 50, and 60 fps capture cadences over the same sealed fixture.
+      for (const cadenceMs of [33, 20, 16]) {
+        await waitMs(cadenceMs * 4);
+        await fixture.assertSealed();
+        const next = await fixture.exportBuffers();
+        const nextPixels = next.displayRgba;
+        let total = 0;
+        for (let index = 0; index < referencePixels.length; index += 1) {
+          total += Math.abs(nextPixels[index] - referencePixels[index]);
+        }
+        meanAbsoluteDifferences.push(
+          total / Math.max(1, referencePixels.length) / 255,
+        );
+      }
+      const finalStatus = fixture.status();
+      const bufferToBase64 = (typedArray) => {
+        const bytes = new Uint8Array(
+          typedArray.buffer,
+          typedArray.byteOffset,
+          typedArray.byteLength,
+        );
+        let binary = "";
+        for (let index = 0; index < bytes.length; index += 0x8000) {
+          binary += String.fromCharCode.apply(
+            null,
+            bytes.subarray(index, index + 0x8000),
+          );
+        }
+        return btoa(binary);
+      };
+      return {
+        meanAbsoluteDifferences,
+        sealedDispatchCount,
+        finalDispatchCount: finalStatus.seal.transportDispatchCount,
+        captureAllowed: finalStatus.captureAllowed,
+        width: reference.width,
+        height: reference.height,
+        displayRgbaBase64: bufferToBase64(referencePixels),
+      };
+    });
+
+    const frozenPng = await sharp(
+      Buffer.from(stability.displayRgbaBase64, "base64"),
+      {
+        raw: {
+          width: stability.width,
+          height: stability.height,
+          channels: 4,
+        },
+      },
+    )
+      .png()
+      .toBuffer();
+    await writeFile(testInfo.outputPath("frozen-528-front.png"), frozenPng);
+    await testInfo.attach("frozen-528-front", {
+      path: testInfo.outputPath("frozen-528-front.png"),
+      contentType: "image/png",
+    });
+
+    expect(stability.captureAllowed).toBe(true);
+    expect(stability.finalDispatchCount).toBe(stability.sealedDispatchCount);
+    for (const difference of stability.meanAbsoluteDifferences) {
+      expect(difference).toBeLessThanOrEqual(0.005);
+    }
+
+    await teardownFixtureAndAwaitLiveField(page);
+  });
+
+  test("production accent stays a bounded caustic population over the base", async ({
+    page,
+    browserName,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await page.goto("/");
+    await waitForControlSurface(page);
+    await applyOpticalMeasurementControls(page);
+    await setControl(page, "auditEnabled", true);
+    await setControl(page, "injectTestTone", true);
+    await setControl(page, "testToneHz", 528);
+    await setControl(page, "testToneAmplitude", 0.5);
+    await setControl(page, "idleLogoIntensity", 0);
+
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => ({
+            fieldState:
+              window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
+            volumeVisible:
+              window.__baryonAuditSnapshot?.raymarchDebug?.volumeVisible ??
+              false,
+            laserTransportReady:
+              window.__baryonAuditSnapshot?.raymarchDebug
+                ?.laserTransportReady ?? false,
+            fixtureBridge: typeof window.__baryonAuditFixture,
+          })),
+        { timeout: 30_000 },
+      )
+      .toEqual({
+        fieldState: "test",
+        volumeVisible: true,
+        laserTransportReady: true,
+        fixtureBridge: "object",
+      });
+    await awaitCanvasPresentation(page);
+
+    // The selected production accent is readiness-gated and always on with
+    // ready transport: bright lanes stay inside the dossier band and
+    // near-white stays a small caustic population over the readable base.
+    const accentOn = await captureCanvasMetricArtifact(
+      page,
+      testInfo,
+      "production-accent-528",
+    );
+    expect(accentOn.brightLaneRatio).toBeGreaterThanOrEqual(0.015);
+    expect(accentOn.brightLaneRatio).toBeLessThanOrEqual(0.14);
+    expect(accentOn.p98).toBeGreaterThanOrEqual(0.12);
+    expect(accentOn.nearWhitePixelRatio).toBeLessThan(
+      0.08 * Math.max(accentOn.nonblankRatio, 1e-6),
+    );
+    expect(accentOn.negativeSpaceRatio).toBeGreaterThanOrEqual(0.5);
+    expect(accentOn.broadWashRatio).toBeLessThan(0.24);
+  });
+
+  test("16-phase accent attachment stays carrier-contained and follows the field", async ({
+    page,
+    browserName,
+  }) => {
+    test.setTimeout(300_000);
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await installFrozen528Fixture(page, "attachment-basis");
+    await page.evaluate(() => window.__baryonAuditFixture.teardown());
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
+        ),
+      )
+      .toBe("test");
+
+    const phases = await page.evaluate(async () => {
+      const fixture = window.__baryonAuditFixture;
+      const snap = await fixture.snapshotDescriptor({
+        descriptorId: "attachment-16-phase",
+        viewPreset: "front",
+        output: { width: 384, height: 288 },
+        checkpointMode: "current",
+      });
+      const halfToFloat = (half) => {
+        const sign = (half & 0x8000) >> 15;
+        const exponent = (half & 0x7c00) >> 10;
+        const fraction = half & 0x03ff;
+        if (exponent === 0)
+          return (sign ? -1 : 1) * 2 ** -14 * (fraction / 1024);
+        if (exponent === 0x1f)
+          return fraction ? Number.NaN : (sign ? -1 : 1) * Infinity;
+        return (sign ? -1 : 1) * 2 ** (exponent - 15) * (1 + fraction / 1024);
+      };
+      const decode = ({ pixels }) => {
+        if (pixels instanceof Float32Array) return pixels;
+        const out = new Float32Array(pixels.length);
+        for (let i = 0; i < pixels.length; i += 1)
+          out[i] = halfToFloat(pixels[i]);
+        return out;
+      };
+      const toneHz = 528;
+      const period = 1 / toneHz;
+      const baseTime = snap.descriptor.phase.evaluationTimeSec;
+      const results = [];
+      for (let k = 0; k < 16; k += 1) {
+        const candidate = structuredClone(snap.descriptor);
+        candidate.phase.evaluationTimeSec = baseTime + (k * period) / 16;
+        await fixture.install(candidate);
+        const exported = await fixture.exportBuffers();
+        const accent = decode(exported.checkpointAovs.accentRadiance);
+        const coverage = decode(exported.checkpointAovs.coverage);
+        const width = exported.checkpointAovs.width;
+        const height = exported.checkpointAovs.height;
+
+        // Carrier support mask, dilated by one pixel.
+        const support = new Uint8Array(width * height);
+        for (let i = 0; i < width * height; i += 1) {
+          support[i] = coverage[i * 4] > 1e-4 ? 1 : 0;
+        }
+        const dilated = new Uint8Array(width * height);
+        for (let y = 0; y < height; y += 1) {
+          for (let x = 0; x < width; x += 1) {
+            const i = y * width + x;
+            if (!support[i]) continue;
+            for (let dy = -1; dy <= 1; dy += 1) {
+              for (let dx = -1; dx <= 1; dx += 1) {
+                const nx = x + dx;
+                const ny = y + dy;
+                if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                  dilated[ny * width + nx] = 1;
+                }
+              }
+            }
+          }
+        }
+
+        let accentTotal = 0;
+        let accentContained = 0;
+        let accentCentroidX = 0;
+        let accentCentroidY = 0;
+        let carrierCentroidX = 0;
+        let carrierCentroidY = 0;
+        let carrierTotal = 0;
+        for (let i = 0; i < width * height; i += 1) {
+          const energy =
+            Math.max(0, accent[i * 4]) +
+            Math.max(0, accent[i * 4 + 1]) +
+            Math.max(0, accent[i * 4 + 2]);
+          if (energy > 0) {
+            accentTotal += energy;
+            if (dilated[i]) accentContained += energy;
+            accentCentroidX += energy * (i % width);
+            accentCentroidY += energy * Math.floor(i / width);
+          }
+          const cov = coverage[i * 4];
+          if (cov > 1e-4) {
+            carrierTotal += cov;
+            carrierCentroidX += cov * (i % width);
+            carrierCentroidY += cov * Math.floor(i / width);
+          }
+        }
+        results.push({
+          phaseIndex: k,
+          accentTotal,
+          containmentShare: accentTotal > 0 ? accentContained / accentTotal : 1,
+          accentCentroid:
+            accentTotal > 0
+              ? [accentCentroidX / accentTotal, accentCentroidY / accentTotal]
+              : null,
+          carrierCentroid:
+            carrierTotal > 0
+              ? [
+                  carrierCentroidX / carrierTotal,
+                  carrierCentroidY / carrierTotal,
+                ]
+              : null,
+        });
+        await fixture.teardown();
+      }
+      return results;
+    });
+
+    expect(phases).toHaveLength(16);
+    let phasesWithAccent = 0;
+    for (const phase of phases) {
+      if (phase.accentTotal > 0) {
+        phasesWithAccent += 1;
+        // Dossier gate: at least 0.999 of accent-only energy inside a
+        // one-pixel dilation of current carrier support at every checkpoint.
+        expect(phase.containmentShare).toBeGreaterThanOrEqual(0.999);
+        // A world-stuck accent detaches from the carrier centroid; a bounded
+        // multiplicative accent cannot wander off its owning support.
+        const [ax, ay] = phase.accentCentroid;
+        const [cx, cy] = phase.carrierCentroid;
+        expect(Math.hypot(ax - cx, ay - cy)).toBeLessThanOrEqual(48);
+      }
+    }
+    expect(phasesWithAccent).toBeGreaterThan(0);
+  });
+
+  test("frozen base checkpoint passes the pre-tone scene-linear headroom gate", async ({
+    page,
+    browserName,
+  }) => {
+    test.setTimeout(120_000);
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await installFrozen528Fixture(page, "frozen-528-front-headroom");
+
+    const aovTransfer = await page.evaluate(async () => {
+      const exported = await window.__baryonAuditFixture.exportBuffers();
+      const halfToFloat = (half) => {
+        const sign = (half & 0x8000) >> 15;
+        const exponent = (half & 0x7c00) >> 10;
+        const fraction = half & 0x03ff;
+        if (exponent === 0) {
+          return (sign ? -1 : 1) * 2 ** -14 * (fraction / 1024);
+        }
+        if (exponent === 0x1f) {
+          return fraction ? Number.NaN : (sign ? -1 : 1) * Infinity;
+        }
+        return (sign ? -1 : 1) * 2 ** (exponent - 15) * (1 + fraction / 1024);
+      };
+      const decodeAov = ({ pixels }) => {
+        if (pixels instanceof Float32Array) {
+          return pixels;
+        }
+        const decoded = new Float32Array(pixels.length);
+        for (let index = 0; index < pixels.length; index += 1) {
+          decoded[index] = halfToFloat(pixels[index]);
+        }
+        return decoded;
+      };
+      const bufferToBase64 = (floatArray) => {
+        const bytes = new Uint8Array(
+          floatArray.buffer,
+          floatArray.byteOffset,
+          floatArray.byteLength,
+        );
+        let binary = "";
+        for (let index = 0; index < bytes.length; index += 0x8000) {
+          binary += String.fromCharCode.apply(
+            null,
+            bytes.subarray(index, index + 0x8000),
+          );
+        }
+        return btoa(binary);
+      };
+      return {
+        width: exported.checkpointAovs.width,
+        height: exported.checkpointAovs.height,
+        baseRadianceBase64: bufferToBase64(
+          decodeAov(exported.checkpointAovs.baseRadiance),
+        ),
+        coverageBase64: bufferToBase64(
+          decodeAov(exported.checkpointAovs.coverage),
+        ),
+      };
+    });
+
+    const decodeFloatBase64 = (base64) => {
+      const bytes = Buffer.from(base64, "base64");
+      return new Float32Array(
+        bytes.buffer.slice(
+          bytes.byteOffset,
+          bytes.byteOffset + bytes.byteLength,
+        ),
+      );
+    };
+    const headroom = evaluateStraightSceneLinearHeadroom({
+      premultipliedRadiance: decodeFloatBase64(aovTransfer.baseRadianceBase64),
+      coverage: decodeFloatBase64(aovTransfer.coverageBase64),
+    });
+
+    expect(headroom.activeSampleCount).toBeGreaterThan(0);
+    expect(headroom.achieved).toBe(true);
+    expect(headroom.passesLuminance).toBe(true);
+    expect(headroom.passesMaxChannel).toBe(true);
+    expect(headroom.passesOverloadShare).toBe(true);
+
+    await teardownFixtureAndAwaitLiveField(page);
   });
 });

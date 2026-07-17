@@ -28,10 +28,10 @@ describe("analyser sampler", () => {
     const snapshot = sampleAnalyser(createAnalyserHarness());
 
     expect(snapshot.avgAmplitude).toBe(128);
-    expect(snapshot.fftMagnitudes[0]).toBe(0);
-    expect(snapshot.fftMagnitudes[1]).toBeCloseTo(128 / 255);
-    expect(snapshot.fftMagnitudes[2]).toBe(1);
-    expect(snapshot.fftMagnitudes[3]).toBeCloseTo(64 / 255);
+    expect(snapshot.fftLinearAmplitudes[0]).toBe(0);
+    expect(snapshot.fftLinearAmplitudes[1]).toBeCloseTo(128 / 255);
+    expect(snapshot.fftLinearAmplitudes[2]).toBe(1);
+    expect(snapshot.fftLinearAmplitudes[3]).toBeCloseTo(64 / 255);
     expect(snapshot.rms).toBeCloseTo(0.5);
   });
 
@@ -55,7 +55,7 @@ describe("analyser sampler", () => {
     const snapshot = sampleAnalyser(analyser);
 
     expect(snapshot.avgAmplitude).toBeCloseTo((0 + 64 + 128 + 255) / 4);
-    expect(snapshot.fftMagnitudes[1]).toBeCloseTo(64 / 255);
+    expect(snapshot.fftLinearAmplitudes[1]).toBeCloseTo(64 / 255);
     expect(snapshot.rms).toBeCloseTo(0.25);
   });
 
@@ -83,6 +83,132 @@ describe("analyser sampler", () => {
     expect(analyserNode.fftSize).toBe(8);
     expect(analyserNode.smoothingTimeConstant).toBe(0);
     expect(sourceNode.connect).toHaveBeenCalledWith(analyserNode);
+  });
+
+  it("publishes Web Audio decibels as linear FFT amplitude while preserving the legacy meter", () => {
+    const analyserNode = {
+      fftSize: 0,
+      frequencyBinCount: 4,
+      smoothingTimeConstant: 0.8,
+      minDecibels: -100,
+      maxDecibels: -30,
+      getFloatFrequencyData(data) {
+        data.set([-100, -60, -40, -30]);
+      },
+      getFloatTimeDomainData(data) {
+        data.fill(0);
+      },
+    };
+    const analyser = createNodeAnalyser(
+      { createAnalyser: () => analyserNode },
+      { connect: vi.fn() },
+      8,
+    );
+
+    const snapshot = sampleAnalyser(analyser);
+
+    expect(snapshot.fftLinearAmplitudes[0]).toBe(0);
+    expect(snapshot.fftLinearAmplitudes[1]).toBeCloseTo(0.001, 8);
+    expect(snapshot.fftLinearAmplitudes[2]).toBeCloseTo(0.01, 8);
+    expect(snapshot.fftLinearAmplitudes[3]).toBeCloseTo(10 ** (-30 / 20), 8);
+    expect(snapshot.avgAmplitude).toBeCloseTo(
+      ((0 + 40 / 70 + 60 / 70 + 1) / 4) * 255,
+      5,
+    );
+  });
+
+  it("keeps the legacy meter owned by raw decibels when linear amplitude clips", () => {
+    const analyserNode = {
+      fftSize: 0,
+      frequencyBinCount: 1,
+      minDecibels: -100,
+      maxDecibels: 10,
+      getFloatFrequencyData(data) {
+        data[0] = 10;
+      },
+      getFloatTimeDomainData(data) {
+        data.fill(0);
+      },
+    };
+    const snapshot = sampleAnalyser(
+      createNodeAnalyser(
+        { createAnalyser: () => analyserNode },
+        { connect: vi.fn() },
+        8,
+      ),
+    );
+
+    expect(snapshot.fftLinearAmplitudes[0]).toBe(1);
+    expect(snapshot.avgAmplitude).toBe(255);
+  });
+
+  it("matches float and byte analyser amplitude at the acquisition boundary", () => {
+    const makeNode = (useFloat) => ({
+      fftSize: 0,
+      frequencyBinCount: 3,
+      minDecibels: -100,
+      maxDecibels: -30,
+      ...(useFloat
+        ? {
+            getFloatFrequencyData(data) {
+              data.set([-100, -65, -30]);
+            },
+          }
+        : {
+            getByteFrequencyData(data) {
+              data.set([0, 128, 255]);
+            },
+          }),
+      getFloatTimeDomainData(data) {
+        data.fill(0);
+      },
+    });
+    const sample = (node) =>
+      sampleAnalyser(
+        createNodeAnalyser(
+          { createAnalyser: () => node },
+          { connect: vi.fn() },
+          8,
+        ),
+      );
+
+    const floatSnapshot = sample(makeNode(true));
+    const byteSnapshot = sample(makeNode(false));
+
+    expect(byteSnapshot.fftLinearAmplitudes[0]).toBe(0);
+    expect(byteSnapshot.fftLinearAmplitudes[1]).toBeCloseTo(
+      floatSnapshot.fftLinearAmplitudes[1],
+      3,
+    );
+    expect(byteSnapshot.fftLinearAmplitudes[2]).toBeCloseTo(
+      floatSnapshot.fftLinearAmplitudes[2],
+      8,
+    );
+    expect(byteSnapshot.avgAmplitude).toBeCloseTo(127.67, 1);
+  });
+
+  it("treats unresolved and non-finite analyser bins as zero amplitude", () => {
+    const analyserNode = {
+      fftSize: 0,
+      frequencyBinCount: 4,
+      minDecibels: -100,
+      maxDecibels: -30,
+      getFloatFrequencyData(data) {
+        data.set([Number.NEGATIVE_INFINITY, Number.NaN, -101, -100]);
+      },
+      getFloatTimeDomainData(data) {
+        data.fill(0);
+      },
+    };
+    const snapshot = sampleAnalyser(
+      createNodeAnalyser(
+        { createAnalyser: () => analyserNode },
+        { connect: vi.fn() },
+        8,
+      ),
+    );
+
+    expect(Array.from(snapshot.fftLinearAmplitudes)).toEqual([0, 0, 0, 0]);
   });
 
   it("reads frequency data once per sample when using a reusable analyser reader", () => {
@@ -121,7 +247,7 @@ describe("analyser sampler", () => {
     const first = sampleAnalyser(analyser);
     const second = sampleAnalyser(analyser);
 
-    expect(second.fftMagnitudes).toBe(first.fftMagnitudes);
+    expect(second.fftLinearAmplitudes).toBe(first.fftLinearAmplitudes);
     expect(second.timeData).toBe(first.timeData);
   });
 
@@ -150,9 +276,9 @@ describe("analyser sampler", () => {
     };
 
     const snapshot = sampleAnalyser(floatAnalyser);
-    expect(snapshot.fftMagnitudes[1]).toBeCloseTo(0.5);
-    expect(snapshot.fftMagnitudes[2]).toBeCloseTo(1.0);
-    expect(snapshot.fftMagnitudes[3]).toBeCloseTo(0.25);
+    expect(snapshot.fftLinearAmplitudes[1]).toBeCloseTo(0.5);
+    expect(snapshot.fftLinearAmplitudes[2]).toBeCloseTo(1.0);
+    expect(snapshot.fftLinearAmplitudes[3]).toBeCloseTo(0.25);
   });
 
   it("computes rms correctly for a known uniform signal", () => {

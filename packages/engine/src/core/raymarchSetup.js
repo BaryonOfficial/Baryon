@@ -10,6 +10,7 @@ import {
   RENDER_DEFAULTS,
 } from "../defaults.js";
 import { FIELD_STATE_VALUES } from "./fieldState.js";
+import { normalizeVolumeShape } from "./volumeShape.js";
 import {
   createRaymarchVolumeMesh,
   createIdleOverlay,
@@ -58,7 +59,7 @@ function resolveLayerCapacity(
 
 /**
  * @param {object | null} baryonGeometry
- * @param {{ radius?: number, threshold?: number, cavityGeometry?: string }} parameters
+ * @param {{ radius?: number, carrierCoreFwhmWorld?: number, cavityGeometry?: string, volumeShape?: string }} parameters
  * @param {{ capacity?: number, modalFieldCapacity?: number, fftSize?: number, sampleRate?: number }} audioConfig
  * @param {{ method?: string }} [options]
  */
@@ -86,6 +87,7 @@ export function setupRaymarch(
   const modalFieldSpectralLaneABuffer = createModeBuffer(modalFieldCapacity);
   const modalFieldSpectralLaneBBuffer = createModeBuffer(modalFieldCapacity);
   const modalFieldSpectralMetaBuffer = createModeBuffer(modalFieldCapacity);
+  const modalFieldMetadataBuffer = createModeBuffer(modalFieldCapacity);
   const modalFieldPhaseBuffer = createModeBuffer(modalFieldCapacity);
   const modalFieldCoefficientBuffer = createModeBuffer(modalFieldCapacity);
   const modalBasisCache = createRaymarchModalBasisCache();
@@ -95,8 +97,10 @@ export function setupRaymarch(
   const spectralLaneCache = createRaymarchSpectralLaneCache({
     resolution: modalBasisCache.resolution,
   });
+  const volumeShape = normalizeVolumeShape(parameters.volumeShape);
   const laserTransportCache = createRaymarchLaserTransportCache({
     resolution: modalBasisCache.resolution,
+    volumeShape,
   });
   const volumeMesh = createRaymarchVolumeMesh({
     radius: parameters.radius,
@@ -116,6 +120,7 @@ export function setupRaymarch(
     modalFieldCapacity: modalBasisCache.liveSynthesisModeCount,
     uniforms,
     cavityGeometry: effectiveCavityGeometry,
+    volumeShape,
   });
   const idleOverlay = createIdleOverlay({
     baryonGeometry,
@@ -145,6 +150,7 @@ export function setupRaymarch(
     modalFieldSpectralLaneABuffer,
     modalFieldSpectralLaneBBuffer,
     modalFieldSpectralMetaBuffer,
+    modalFieldMetadataBuffer,
     modalFieldPhaseBuffer,
     modalFieldCoefficientBuffer,
     modalBasisCache,
@@ -160,11 +166,9 @@ export function setupRaymarch(
       radius: parameters.radius,
     }),
     reactivityTuning: {
-      reactivity: REACTIVITY_DEFAULTS.reactivity,
       motionAmount: REACTIVITY_DEFAULTS.motionAmount,
     },
     bloomTuning: {
-      bloomResponseBias: RENDER_DEFAULTS.bloomResponseBias,
       stepReference: STEP_REFERENCE,
       stepCompensation: deriveStepCompensation(RAYMARCH_DEFAULTS.raymarchSteps),
       lowStepBloomGuard: deriveLowStepBloomGuard(
@@ -178,7 +182,7 @@ export function setupRaymarch(
       effectiveThreshold: RENDER_DEFAULTS.bloomThreshold,
     },
     baseDensityGain: uniforms.uDensityGain.value,
-    baseThreshold: uniforms.uThreshold.value,
+    baseCarrierCoreFwhmWorld: uniforms.uCarrierCoreFwhmWorld.value,
     baseContourSharpness: uniforms.uContourSharpness.value,
     spectralLight: {
       colorMode: RENDER_DEFAULTS.colorMode,
@@ -199,7 +203,6 @@ export function setupRaymarch(
     accentEnvelope: 0,
     beatPulseEnvelope: 0,
     shaderBeatPhase: null,
-    visibilityDriveEnvelope: 0,
     keyHue: 0,
     keyModeSmooth: 0,
     motionSignal: 0,
@@ -217,6 +220,30 @@ export function tickRaymarch(
   deltaTime,
 ) {
   tickRaymarchRuntime(raymarchState, featureFrame, time, deltaTime, renderer);
+}
+
+export function failClosedRaymarch(
+  raymarchState,
+  { status = null, time = 0, deltaTime = 0, renderer = null } = {},
+) {
+  tickRaymarchRuntime(
+    raymarchState,
+    {
+      fieldState: "idle",
+      renderAuthority: false,
+      renderAuthorityRevoked: true,
+      isLiveInputActive: status?.isLiveInputActive === true,
+      sourceEvidence: {
+        transport: {
+          playing: status?.isPlaying === true,
+          liveInputActive: status?.isLiveInputActive === true,
+        },
+      },
+    },
+    time,
+    deltaTime,
+    renderer,
+  );
 }
 
 export function disposeRaymarch(raymarchState) {

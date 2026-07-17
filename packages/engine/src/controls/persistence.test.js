@@ -57,10 +57,13 @@ describe("serializeControls", () => {
     state.bloomStrength = 1.5;
     state.volumeColor = "#ff0000";
     state.spectralMix = 0.72;
+    state.carrierCoreFwhmWorld = 0.106;
     const serialized = serializeControls(state, CONTROL_DEFINITIONS);
     expect(serialized.bloomStrength).toBe(1.5);
     expect(serialized.volumeColor).toBe("#ff0000");
     expect(serialized.spectralMix).toBe(0.72);
+    expect(serialized).not.toHaveProperty("carrierCoreFwhmWorld");
+    expect(serialized).not.toHaveProperty("zeroPointPrecision");
     expect(serialized).not.toHaveProperty("chromesthesiaMix");
   });
 
@@ -88,12 +91,12 @@ describe("serializeControls", () => {
 });
 
 describe("serializeControlSettings", () => {
-  it("serializes empty explicit settings as an empty v2 envelope", () => {
+  it("serializes empty explicit settings as an empty v6 envelope", () => {
     expect(
       serializeControlSettings(createControlState(), CONTROL_DEFINITIONS, {
         explicitKeys: new Set(),
       }),
-    ).toEqual({ version: 2, controls: {} });
+    ).toEqual({ version: 6, controls: {} });
   });
 
   it("serializes only explicit non-default settings", () => {
@@ -106,7 +109,7 @@ describe("serializeControlSettings", () => {
     });
 
     expect(serialized).toEqual({
-      version: 2,
+      version: 6,
       controls: { bloomStrength: 1.8 },
     });
   });
@@ -119,7 +122,7 @@ describe("serializeControlSettings", () => {
     });
 
     expect(serialized).toEqual({
-      version: 2,
+      version: 6,
       controls: { backgroundColor: "#000000" },
     });
   });
@@ -132,16 +135,16 @@ describe("serializeControlSettings", () => {
       explicitKeys: new Set(["auditEnabled", "missingControl"]),
     });
 
-    expect(serialized).toEqual({ version: 2, controls: {} });
+    expect(serialized).toEqual({ version: 6, controls: {} });
   });
 });
 
 describe("deserializeControlSettings", () => {
-  it("treats malformed v2 envelopes as empty settings, not legacy snapshots", () => {
+  it("treats malformed v6 envelopes as empty settings, not legacy snapshots", () => {
     for (const raw of [
-      { version: 2 },
-      { version: 2, controls: null },
-      { version: 2, controls: [] },
+      { version: 6 },
+      { version: 6, controls: null },
+      { version: 6, controls: [] },
     ]) {
       const result = deserializeControlSettings(raw, CONTROL_DEFINITIONS);
 
@@ -151,10 +154,10 @@ describe("deserializeControlSettings", () => {
     }
   });
 
-  it("deserializes valid v2 settings through live schema filtering", () => {
+  it("deserializes valid v6 settings through live schema filtering", () => {
     const result = deserializeControlSettings(
       {
-        version: 2,
+        version: 6,
         controls: {
           bloomStrength: 0.75,
           backgroundColor: "#000000",
@@ -176,6 +179,92 @@ describe("deserializeControlSettings", () => {
       "bloomStrength",
     ]);
     expect(result.migratedLegacy).toBe(false);
+  });
+
+  it("bakes the removed v5 bloom response into the direct bloom controls", () => {
+    const result = deserializeControlSettings(
+      {
+        version: 5,
+        controls: {
+          bloomStrength: 0.75,
+          bloomResponseBias: 0.5,
+          absorption: 2,
+          opacityGain: 1.4,
+          reactivity: 1.2,
+        },
+      },
+      CONTROL_DEFINITIONS,
+    );
+
+    expect(result.controls).toMatchObject({
+      bloomStrength: 0.675,
+      bloomRadius: 0.1656,
+      bloomThreshold: 0.3,
+    });
+    expect(result.controls).not.toHaveProperty("bloomResponseBias");
+    expect(result.controls).not.toHaveProperty("absorption");
+    expect(result.controls).not.toHaveProperty("opacityGain");
+    expect(result.controls).not.toHaveProperty("reactivity");
+    expect(result.migratedLegacy).toBe(true);
+  });
+
+  it("discards the dimensionless legacy node-thickness threshold", () => {
+    const result = deserializeControlSettings(
+      {
+        version: 2,
+        controls: { zeroPointPrecision: 0.106 },
+      },
+      CONTROL_DEFINITIONS,
+    );
+
+    expect(result.controls).toEqual({});
+    expect(Array.from(result.explicitKeys)).toEqual([]);
+    expect(result.migratedLegacy).toBe(true);
+    expect(result.controls).not.toHaveProperty("zeroPointPrecision");
+  });
+
+  it("discards every thickness setting written by the interim v2 cutover", () => {
+    const result = deserializeControlSettings(
+      {
+        version: 2,
+        controls: {
+          carrierCoreFwhmWorld: 0.142,
+          zeroPointPrecision: 0.2,
+        },
+      },
+      CONTROL_DEFINITIONS,
+    );
+
+    expect(result.controls).toEqual({});
+    expect(result.migratedLegacy).toBe(true);
+  });
+
+  it("discards widths already rewritten into the interim v3 envelope", () => {
+    const result = deserializeControlSettings(
+      {
+        version: 3,
+        controls: { carrierCoreFwhmWorld: 0.142 },
+      },
+      CONTROL_DEFINITIONS,
+    );
+
+    expect(result.controls).toEqual({});
+    expect(Array.from(result.explicitKeys)).toEqual([]);
+    expect(result.migratedLegacy).toBe(true);
+  });
+
+  it("discards the interim v4 width while migrating to fixed apparatus sharpness", () => {
+    const result = deserializeControlSettings(
+      {
+        version: 4,
+        controls: { carrierCoreFwhmWorld: 0.072 },
+      },
+      CONTROL_DEFINITIONS,
+    );
+
+    expect(result.controls).toEqual({});
+    expect(Array.from(result.explicitKeys)).toEqual([]);
+    expect(result.migratedLegacy).toBe(true);
   });
 
   it("normalizes renderQualityPreset values at the settings boundary", () => {
@@ -254,6 +343,16 @@ describe("deserializeControls", () => {
     const result = deserializeControls(raw, CONTROL_DEFINITIONS);
     expect(result.bloomStrength).toBe(0.75);
     expect(result.volumeColor).toBe("#ff0000");
+  });
+
+  it("strips legacy and interim thickness controls from presets", () => {
+    const result = deserializeControls(
+      { zeroPointPrecision: 0.072, carrierCoreFwhmWorld: 0.142 },
+      CONTROL_DEFINITIONS,
+    );
+
+    expect(result).not.toHaveProperty("zeroPointPrecision");
+    expect(result).not.toHaveProperty("carrierCoreFwhmWorld");
   });
 
   it("strips unknown keys not in the schema", () => {
@@ -395,7 +494,7 @@ describe("deserializeControls", () => {
     expect(result.densityGain).toBe(densityGainDef.defaultValue);
   });
 
-  it("maps legacy beat and pulse settings into the new reactivity controls", () => {
+  it("maps legacy rotation settings into the consolidated motion control", () => {
     const result = deserializeControls(
       {
         rotationAudioAmount: 1.35,
@@ -407,7 +506,7 @@ describe("deserializeControls", () => {
     );
 
     expect(result.motionAmount).toBe(1.35);
-    expect(result.reactivity).toBeCloseTo(0.11 / 0.055, 6);
+    expect(result).not.toHaveProperty("reactivity");
     expect(result).not.toHaveProperty("structurePersistence");
   });
 
@@ -422,7 +521,7 @@ describe("deserializeControls", () => {
       CONTROL_DEFINITIONS,
     );
 
-    expect(result.reactivity).toBe(0);
+    expect(result).not.toHaveProperty("reactivity");
     expect(result.motionAmount).toBe(1.5);
   });
 
@@ -436,7 +535,7 @@ describe("deserializeControls", () => {
       CONTROL_DEFINITIONS,
     );
 
-    expect(result.reactivity).toBe(0);
+    expect(result).not.toHaveProperty("reactivity");
     expect(result.motionAmount).toBe(0);
   });
 });

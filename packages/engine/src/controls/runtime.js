@@ -6,15 +6,13 @@ import {
   RAYMARCH_DEFAULTS,
   REACTIVITY_DEFAULTS,
   RENDER_DEFAULTS,
+  SIMULATION_DEFAULTS,
 } from "../defaults.js";
 import {
   normalizeCavityGeometry,
   resolveEffectiveCavityGeometry,
 } from "../core/cavityGeometry.js";
-import {
-  getFieldExtentValue,
-  normalizeFieldExtent,
-} from "../core/fieldExtent.js";
+import { normalizeVolumeShape } from "../core/volumeShape.js";
 import {
   normalizeOutputMode,
   normalizePerformanceProfile,
@@ -38,9 +36,10 @@ import { allowsAudioMotion } from "../core/renderAuthorityContract.js";
 import {
   setRaymarchCavityGeometry,
   setRaymarchBoundaryMode,
-  setRaymarchFieldExtent,
+  setRaymarchVolumeShape,
   syncRaymarchMaterialSteps,
 } from "../core/raymarch/material.js";
+import { setRaymarchLaserTransportVolumeShape } from "../core/raymarch/laserTransport.js";
 import {
   buildSceneSnapshot,
   createSceneMotionState,
@@ -72,27 +71,18 @@ function derivePerceptualSpectralMix(mix) {
 }
 
 function deriveBloomResponse(controls, stepBudget) {
-  const bloomResponseBias = Math.max(0, controls.bloomResponseBias ?? 0);
   const lowStepBloomGuard = deriveLowStepBloomGuard(stepBudget);
   const stepCompensation = deriveStepCompensation(stepBudget);
   return {
-    bloomResponseBias,
     stepReference: STEP_REFERENCE,
     stepCompensation,
     lowStepBloomGuard,
     strength: Math.max(
       0,
-      controls.bloomStrength *
-        (1 - bloomResponseBias * 0.2) *
-        (1 - lowStepBloomGuard * 0.12),
+      controls.bloomStrength * (1 - lowStepBloomGuard * 0.12),
     ),
-    radius: Math.max(0, controls.bloomRadius * (1 - bloomResponseBias * 0.16)),
-    threshold: Math.min(
-      1,
-      controls.bloomThreshold +
-        bloomResponseBias * 0.1 +
-        lowStepBloomGuard * 0.05,
-    ),
+    radius: Math.max(0, controls.bloomRadius),
+    threshold: Math.min(1, controls.bloomThreshold + lowStepBloomGuard * 0.05),
   };
 }
 
@@ -123,20 +113,13 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "surfaceColor",
     "colorMode",
     "spectralMix",
-    "zeroPointPrecision",
-    "fieldExtent",
+    "volumeShape",
     "boundaryMode",
     "cavityGeometry",
     "raymarchSteps",
     "densityGain",
-    "absorption",
     "laserDeflectionGain",
-    "opacityGain",
-    "reactivity",
-    "rimBloomBias",
-    "rimCompression",
     "holographicIntensity",
-    "holographicShift",
     "holographicFresnelPower",
     "idleLogoIntensity",
     "idleLogoSize",
@@ -147,7 +130,6 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "bloomStrength",
     "bloomRadius",
     "bloomThreshold",
-    "bloomResponseBias",
   ]),
   [CONTROL_HANDLERS.scene]: Object.freeze([
     "rotationMode",
@@ -263,7 +245,7 @@ function applyCommonVisualizationControls(runtimeState, controls) {
         )
       : 0;
   const boundaryMode = normalizeBoundaryMode(controls.boundaryMode);
-  const fieldExtent = normalizeFieldExtent(controls.fieldExtent);
+  const volumeShape = normalizeVolumeShape(controls.volumeShape);
   const requestedCavityGeometry = normalizeCavityGeometry(
     controls.cavityGeometry,
   );
@@ -274,28 +256,31 @@ function applyCommonVisualizationControls(runtimeState, controls) {
   uniforms.uColor.value.set(controls.volumeColor);
   uniforms.uSurfaceColor.value.set(controls.surfaceColor);
   uniforms.uSpectralMix.value = spectralMix;
-  uniforms.uThreshold.value = controls.zeroPointPrecision;
+  // Carrier width is a fixed reference-apparatus calibration. Creative
+  // controls must not turn the resolved nodal sheet into a broad gas volume.
+  uniforms.uCarrierCoreFwhmWorld.value =
+    SIMULATION_DEFAULTS.carrierCoreFwhmWorld;
   if (uniforms.uBoundaryMode) {
     uniforms.uBoundaryMode.value = getBoundaryModeValue(boundaryMode);
   }
   setRaymarchBoundaryMode(runtimeState?.volumeMesh, boundaryMode);
+  setRaymarchVolumeShape(runtimeState?.volumeMesh, volumeShape);
+  setRaymarchLaserTransportVolumeShape(
+    runtimeState?.laserTransportCache,
+    volumeShape,
+  );
   setRaymarchCavityGeometry(runtimeState?.volumeMesh, effectiveCavityGeometry);
-  if (uniforms.uUnboundedMix) {
-    uniforms.uUnboundedMix.value = getFieldExtentValue(fieldExtent);
-  }
-  setRaymarchFieldExtent(runtimeState?.volumeMesh, fieldExtent);
   uniforms.uIdleLogoIntensity.value = controls.idleLogoIntensity;
   uniforms.uIdleLogoAlpha.value = idleLogoAlpha;
   uniforms.uIdleLogoSize.value = controls.idleLogoSize;
   uniforms.uIdleLogoColor.value.set(controls.idleLogoColor);
   uniforms.uDensityGain.value = controls.densityGain;
-  uniforms.uOpacityGain.value = controls.opacityGain;
   uniforms.uContourSharpness.value = RAYMARCH_DEFAULTS.contourSharpness;
   runtimeState.baseDensityGain = controls.densityGain;
-  runtimeState.baseThreshold = controls.zeroPointPrecision;
+  runtimeState.baseCarrierCoreFwhmWorld =
+    SIMULATION_DEFAULTS.carrierCoreFwhmWorld;
   runtimeState.baseContourSharpness = RAYMARCH_DEFAULTS.contourSharpness;
   runtimeState.reactivityTuning = {
-    reactivity: controls.reactivity ?? REACTIVITY_DEFAULTS.reactivity,
     motionAmount: controls.motionAmount ?? REACTIVITY_DEFAULTS.motionAmount,
   };
   runtimeState.requestedRaymarchSteps = stepBudget;
@@ -331,7 +316,7 @@ function applyCommonVisualizationControls(runtimeState, controls) {
     colorMode,
     spectralMix,
     boundaryMode,
-    fieldExtent,
+    volumeShape,
     requestedCavityGeometry,
     effectiveCavityGeometry,
   };
@@ -383,7 +368,7 @@ function buildVisualizationControlSnapshot({
   colorMode,
   spectralMix,
   boundaryMode,
-  fieldExtent,
+  volumeShape,
   requestedCavityGeometry,
   effectiveCavityGeometry,
   extraUniforms = {},
@@ -395,18 +380,16 @@ function buildVisualizationControlSnapshot({
       colorMode,
       spectralMix,
       boundaryMode,
-      fieldExtent,
+      volumeShape,
       requestedCavityGeometry,
       effectiveCavityGeometry,
-      threshold: uniforms.uThreshold.value,
+      carrierCoreFwhmWorld: uniforms.uCarrierCoreFwhmWorld.value,
       idleLogoIntensity: uniforms.uIdleLogoIntensity.value,
       idleLogoAlpha,
       idleLogoSize: uniforms.uIdleLogoSize.value,
       idleLogoColor: controls.idleLogoColor,
       densityGain: uniforms.uDensityGain.value,
-      opacityGain: uniforms.uOpacityGain.value,
       contourSharpness: uniforms.uContourSharpness.value,
-      reactivity: runtimeState.reactivityTuning?.reactivity,
       motionAmount: runtimeState.reactivityTuning?.motionAmount,
       ...extraUniforms,
     },
@@ -424,17 +407,13 @@ export function applyRaymarchControls(runtimeState, controls) {
     colorMode,
     spectralMix,
     boundaryMode,
-    fieldExtent,
+    volumeShape,
     requestedCavityGeometry,
     effectiveCavityGeometry,
   } = applyCommonVisualizationControls(runtimeState, controls);
 
-  uniforms.uAbsorption.value = controls.absorption;
   uniforms.uLaserDeflectionGain.value = controls.laserDeflectionGain;
-  uniforms.uRimBloomBias.value = controls.rimBloomBias;
-  uniforms.uRimCompression.value = controls.rimCompression;
   uniforms.uHolographicIntensity.value = controls.holographicIntensity;
-  uniforms.uHolographicShift.value = controls.holographicShift;
   uniforms.uHolographicFresnelPower.value = controls.holographicFresnelPower;
 
   return buildVisualizationControlSnapshot({
@@ -445,16 +424,12 @@ export function applyRaymarchControls(runtimeState, controls) {
     colorMode,
     spectralMix,
     boundaryMode,
-    fieldExtent,
+    volumeShape,
     requestedCavityGeometry,
     effectiveCavityGeometry,
     extraUniforms: {
-      absorption: uniforms.uAbsorption.value,
       laserDeflectionGain: uniforms.uLaserDeflectionGain.value,
-      rimBloomBias: uniforms.uRimBloomBias.value,
-      rimCompression: uniforms.uRimCompression.value,
       holographicIntensity: uniforms.uHolographicIntensity.value,
-      holographicShift: uniforms.uHolographicShift.value,
       holographicFresnelPower: uniforms.uHolographicFresnelPower.value,
       raymarchSteps: Math.round(runtimeState.volumeMesh.material.steps),
     },
@@ -492,7 +467,6 @@ export function applyBloomControls(pipelineState, controls) {
   if (pipelineState.runtimeState) {
     pipelineState.runtimeState.bloomTuning = {
       ...(pipelineState.runtimeState.bloomTuning ?? {}),
-      bloomResponseBias: effective.bloomResponseBias,
       stepReference: effective.stepReference,
       stepCompensation: effective.stepCompensation,
       lowStepBloomGuard: effective.lowStepBloomGuard,
@@ -512,35 +486,32 @@ export function applyBloomControls(pipelineState, controls) {
       strength: effective.strength,
       radius: effective.radius,
       threshold: effective.threshold,
-      bloomResponseBias: effective.bloomResponseBias,
       stepReference: effective.stepReference,
       stepCompensation: effective.stepCompensation,
       lowStepBloomGuard: effective.lowStepBloomGuard,
     };
   }
 
-  const { bloomPass } = postNodes;
-  const bloomActive = effectiveBloomEnabled && effective.strength > 1e-4;
+  // Traditional bloom is a separate additive post-process. The fixed optical
+  // PSF remains immutable and is never parameterized by these controls.
   syncRenderOutputBloomPassUniforms(postNodes, {
     strength: effective.strength,
     radius: effective.radius,
-    threshold: bloomActive ? effective.threshold : 999,
+    threshold: effective.threshold,
   });
   // Control changes request a topology sync; the output-pipeline owner preserves
   // the current temporal-history graph state unless the render loop overrides it.
   syncRenderOutputNodeTopology(pipeline, postNodes, {
     bloomEnabled: effectiveBloomEnabled,
     outputMode,
-    bloomActive,
     smaaEnabled: controls.smaaEnabled !== false,
   });
 
   return {
     enabled: effectiveBloomEnabled,
-    strength: bloomPass?.strength?.value ?? effective.strength,
-    radius: bloomPass?.radius?.value ?? effective.radius,
-    threshold: bloomPass?.threshold?.value ?? effective.threshold,
-    bloomResponseBias: effective.bloomResponseBias,
+    strength: effective.strength,
+    radius: effective.radius,
+    threshold: effective.threshold,
     stepReference: effective.stepReference,
     stepCompensation: effective.stepCompensation,
     lowStepBloomGuard: effective.lowStepBloomGuard,

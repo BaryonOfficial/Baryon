@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import {
@@ -21,8 +28,10 @@ import {
   usesRaymarchVolumePipeline,
 } from "@baryon/engine/visualization/types";
 import { getDefaultAudioSession } from "@baryon/engine/audio";
-import { RENDER_DEFAULTS } from "@baryon/engine/defaults";
-import { DEVTOOLS_ENABLED } from "../../devtools/config.js";
+import {
+  DEVTOOLS_ENABLED,
+  RAYMARCH_AUDIT_FIXTURE_ENABLED,
+} from "../../devtools/config.js";
 import {
   BARYON_UI_INTERACTION_EVENT,
   UI_INTERACTION_ADAPTIVE_SUPPRESSION_MS,
@@ -37,7 +46,6 @@ import {
   isTailDiagnosticsRecorderActive,
   recordTailDiagnosticsSample,
 } from "./tailDiagnostics.js";
-import { shouldSkipSpectralStaticColorInvalidation } from "./controlInvalidation.js";
 import {
   clearAdaptiveRaymarchResumeState,
   maybePublishRuntimePerfSnapshot,
@@ -48,10 +56,10 @@ import {
   updateObservationTransferRenderDiagnostics,
 } from "./baryonEngineRuntimeState.js";
 import { createLiveInputRuntimeStatus } from "../../context/liveInputRuntimeStatus.js";
+import { subscribeControlsChanged } from "../../controls/controlsEvents.js";
 import { createCaptureOutputSession } from "@baryon/engine/render/outputPipeline";
 import {
   applyCachedControlSnapshots,
-  applyReactiveBloomState,
   consumeRenderFramePacerSlot,
   createAuditSnapshotNotifier,
   createRenderFramePacerState,
@@ -59,7 +67,6 @@ import {
   getRenderTargetPixelRatio,
   publishPerformanceHudSnapshot,
   publishDevtoolsSnapshots,
-  applyLiveInputRenderIntent,
   finalizeTerminalVisualIdleState,
   resolveFeatureFrame,
   shouldBypassTemporalHistoryForRaymarchFrame,
@@ -72,14 +79,24 @@ import {
 } from "./baryonEngineRenderLoop.js";
 import { useVisualizationRuntimeLifecycle } from "./useVisualizationRuntimeLifecycle.js";
 import { getSourceAuthoritativeClock } from "./externalFrameClock.js";
+import { AUDIO_FEATURE_AUTHORITY_ROLES } from "@baryon/engine/audio-features";
+import { assertAudioFeatureAuthorityRole } from "../audioFeatureAuthorityRole.js";
 import { createRenderCommandQueue } from "./renderCommandQueue.js";
+import {
+  createRaymarchAuditFixtureRuntimeDriver,
+  RAYMARCH_AUDIT_FIXTURE_RUNTIME_ADAPTER_KEY,
+} from "./raymarchAuditFixtureRuntimeAdapter.js";
 
 function clearCachedControlsSnapshot(cachedControlSnapshotsRef) {
   cachedControlSnapshotsRef.current.controlsSnapshot = null;
 }
 
+function useLazyRef(createInitialValue) {
+  const [ref] = useState(() => ({ current: createInitialValue() }));
+  return ref;
+}
+
 function clearPausedRenderFrameCaches(frameCacheRefs) {
-  frameCacheRefs.lastActiveFrameRef.current = null;
   frameCacheRefs.lastIdleFrameRef.current = null;
   if (frameCacheRefs.pausedFileFrameRef) {
     frameCacheRefs.pausedFileFrameRef.current = null;
@@ -223,6 +240,7 @@ export function useBaryonEngine({
   outputFrameConfig = null,
   onOutputFrame = null,
   onFrameState = null,
+  audioFeatureAuthorityRole,
   externalFrameRef = null,
   structuralControlVersion = 0,
   liveControlSignalRef = null,
@@ -236,15 +254,19 @@ export function useBaryonEngine({
   enableControlEventSync = true,
   cameraRenderKey = null,
 }) {
+  assertAudioFeatureAuthorityRole(audioFeatureAuthorityRole);
+  const externalFeatureAuthorityActive =
+    audioFeatureAuthorityRole ===
+    AUDIO_FEATURE_AUTHORITY_ROLES.externalConsumer;
   const { invalidate } = useThree();
-  const audioRef = useRef(getDefaultAudioSession());
-  const renderControlsRef = useRef(
+  const audioRef = useLazyRef(getDefaultAudioSession);
+  const renderControlsRef = useLazyRef(() =>
     controlsRef?.current ? { ...controlsRef.current } : {},
   );
-  const renderCommandQueueRef = useRef(createRenderCommandQueue());
+  const renderCommandQueueRef = useLazyRef(createRenderCommandQueue);
   const outputSessionRef = useRef(null);
   const outputCaptureInFlightRef = useRef(false);
-  const tailDiagnosticsRef = useRef(createTailDiagnosticsRecorder());
+  const tailDiagnosticsRef = useLazyRef(createTailDiagnosticsRecorder);
   const lastAppliedExternalFrameSequenceRef = useRef(null);
   const lastObservedLocalCameraRenderSignalVersionRef = useRef(0);
   const pendingLocalCameraRenderSignalRef = useRef(null);
@@ -261,8 +283,7 @@ export function useBaryonEngine({
     points,
     runtimeRef,
     runtimeStateRef,
-    audioFeatureRef,
-    audioFeatureEngineRef,
+    audioFeatureRuntimeRef,
     runtimeDiagnosticsRef,
     frameCacheRefs,
     controlCacheRefs,
@@ -273,8 +294,10 @@ export function useBaryonEngine({
   } = useVisualizationRuntimeLifecycle({
     audioRef,
     baryonGeometry,
-    controlsRef: renderControlsRef,
+    controlsRef,
     visualizationMethod,
+    audioFeatureAuthorityRole,
+    audioFeatureConfigurationVersion: structuralControlVersion,
     setIsEngineReady,
     setLiveInputRuntimeStatus,
   });
@@ -299,22 +322,66 @@ export function useBaryonEngine({
     audioRef,
     runtimeRef,
     runtimeStateRef,
-    audioFeatureRef,
-    audioFeatureEngineRef,
+    audioFeatureRuntimeRef,
     controlsRef: renderControlsRef,
   };
   const renderProfileRef = useRef(renderProfile);
-  renderProfileRef.current = renderProfile;
-  const renderProfileKeyRef = useRef(getRenderQualityProfileKey(renderProfile));
+  const renderProfileKeyRef = useLazyRef(() =>
+    getRenderQualityProfileKey(renderProfile),
+  );
   const uiInteractionUntilMsRef = useRef(0);
   const latestUiInteractionRef = useRef({ source: null, kind: null });
   const lastObservedLiveControlSignalVersionRef = useRef(
     liveControlSignalRef?.current?.version ?? 0,
   );
   const forcedExternalRenderPendingRef = useRef(false);
-  const framePacerStateRef = useRef(createRenderFramePacerState());
+  const framePacerStateRef = useLazyRef(createRenderFramePacerState);
   const framePacingFpsRef = useRef(framePacingFps);
-  framePacingFpsRef.current = framePacingFps;
+  const fixtureRuntimeDriverRef = useLazyRef(() =>
+    createRaymarchAuditFixtureRuntimeDriver({
+      camera,
+      scene,
+      gl,
+      runtimeRef,
+      runtimeStateRef,
+      controlsRef: renderControlsRef,
+      renderProfileRef,
+      postNodesRef,
+      ensurePipeline,
+      invalidate,
+      restoreControls(snapshot) {
+        renderControlsRef.current = { ...snapshot };
+        clearFrameCache(frameCacheRefs);
+        clearCachedControlsSnapshot(cachedControlSnapshotsRef);
+        appliedControlVersionRef.current = -1;
+        controlVersionRef.current += 1;
+      },
+    }),
+  );
+
+  useLayoutEffect(() => {
+    renderProfileRef.current = renderProfile;
+  }, [renderProfile]);
+
+  useLayoutEffect(() => {
+    framePacingFpsRef.current = framePacingFps;
+  }, [framePacingFps]);
+
+  useEffect(() => {
+    if (!RAYMARCH_AUDIT_FIXTURE_ENABLED || typeof window === "undefined") {
+      return undefined;
+    }
+    const driver = fixtureRuntimeDriverRef.current;
+    window[RAYMARCH_AUDIT_FIXTURE_RUNTIME_ADAPTER_KEY] = driver.adapter;
+    return () => {
+      driver.dispose();
+      if (
+        window[RAYMARCH_AUDIT_FIXTURE_RUNTIME_ADAPTER_KEY] === driver.adapter
+      ) {
+        delete window[RAYMARCH_AUDIT_FIXTURE_RUNTIME_ADAPTER_KEY];
+      }
+    };
+  }, [fixtureRuntimeDriverRef]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -355,6 +422,7 @@ export function useBaryonEngine({
       resetBaryonTestReady();
     };
   }, [
+    audioRef,
     camera,
     frameCacheRefs,
     gl,
@@ -362,6 +430,7 @@ export function useBaryonEngine({
     lastLiveInputRuntimeStatusRef,
     pixelRatioRef,
     renderSurfaceSizeRef,
+    renderCommandQueueRef,
     runtimeDiagnosticsRef,
     cachedControlSnapshotsRef,
     scene,
@@ -377,6 +446,12 @@ export function useBaryonEngine({
   }, [adaptiveResetNonce, invalidate, runtimeStateRef]);
 
   useEffect(() => {
+    lastAppliedExternalFrameSequenceRef.current = null;
+    forcedExternalRenderPendingRef.current = true;
+    invalidate();
+  }, [audioFeatureAuthorityRole, invalidate]);
+
+  useEffect(() => {
     if (cameraRenderKey == null) {
       return;
     }
@@ -390,7 +465,7 @@ export function useBaryonEngine({
       recorder: tailDiagnosticsRef.current,
       getNowMs: getWallTimeMs,
     });
-  }, []);
+  }, [tailDiagnosticsRef]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -407,7 +482,6 @@ export function useBaryonEngine({
       uiInteractionUntilMsRef.current = 0;
       latestUiInteractionRef.current = { source: null, kind: null };
       clearFrameCache(frameCacheRefs);
-      audioFeatureEngineRef.current?.resetMetrics?.("dev-perf-probe-reset");
       delete window.__baryonPerfMetrics;
       onPerformanceHudSnapshotChange?.(null);
     };
@@ -423,7 +497,6 @@ export function useBaryonEngine({
       );
     };
   }, [
-    audioFeatureEngineRef,
     frameCacheRefs,
     lastAudioIssueSignatureRef,
     onPerformanceHudSnapshotChange,
@@ -442,7 +515,7 @@ export function useBaryonEngine({
     clearAdaptiveRaymarchResumeState(runtimeStateRef.current);
     forcedExternalRenderPendingRef.current = true;
     invalidate();
-  }, [invalidate, renderProfile, runtimeStateRef]);
+  }, [invalidate, renderProfile, renderProfileKeyRef, runtimeStateRef]);
 
   useEffect(() => {
     if (outputFrameConfig?.enabled) {
@@ -524,33 +597,14 @@ export function useBaryonEngine({
     };
 
     handleAudioControlsChange();
-    window.addEventListener(
-      "__baryon-controls-change",
-      handleAudioControlsChange,
-    );
-    return () => {
-      window.removeEventListener(
-        "__baryon-controls-change",
-        handleAudioControlsChange,
-      );
-    };
-  }, [controlsRef, enableControlEventSync]);
+    return subscribeControlsChanged(handleAudioControlsChange);
+  }, [audioRef, controlsRef, enableControlEventSync]);
 
   const applyControlInvalidation = useCallback(
     (nextControls, { clearPausedFrameCache = false } = {}) => {
-      const previousControls =
-        cachedControlSnapshotsRef.current.controlsSnapshot;
-      const shouldSkipInvalidation = shouldSkipSpectralStaticColorInvalidation(
-        previousControls,
-        nextControls,
-      );
       cachedControlSnapshotsRef.current.controlsSnapshot = nextControls
         ? { ...nextControls }
         : null;
-
-      if (shouldSkipInvalidation) {
-        return false;
-      }
 
       controlVersionRef.current += 1;
       appliedControlVersionRef.current = -1;
@@ -580,7 +634,12 @@ export function useBaryonEngine({
       source: "structural-version",
     });
     invalidate();
-  }, [structuralControlVersion, controlsRef, invalidate]);
+  }, [
+    structuralControlVersion,
+    controlsRef,
+    invalidate,
+    renderCommandQueueRef,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -598,16 +657,19 @@ export function useBaryonEngine({
       invalidate();
     };
 
-    window.addEventListener("__baryon-controls-change", handleControlsChange);
-    return () => {
-      window.removeEventListener(
-        "__baryon-controls-change",
-        handleControlsChange,
-      );
-    };
-  }, [controlsRef, invalidate]);
+    return subscribeControlsChanged(handleControlsChange);
+  }, [controlsRef, invalidate, renderCommandQueueRef]);
 
   useFrame((state, rfDelta) => {
+    const runtime = renderLoopContext.runtimeRef.current;
+    const runtimeState = renderLoopContext.runtimeStateRef.current;
+    if (!runtime || !runtimeState) {
+      return;
+    }
+    if (fixtureRuntimeDriverRef.current.renderFixtureFrame()) {
+      return;
+    }
+
     const pendingControlsCommand =
       renderCommandQueueRef.current.drainControlsChanged();
     const controlCommandChanged = Boolean(pendingControlsCommand);
@@ -619,13 +681,6 @@ export function useBaryonEngine({
     }
 
     const pipeline = renderLoopContext.ensurePipeline();
-    const runtime = renderLoopContext.runtimeRef.current;
-    const runtimeState = renderLoopContext.runtimeStateRef.current;
-    const featureState = renderLoopContext.audioFeatureRef.current;
-
-    if (!runtime || !runtimeState || !featureState) {
-      return;
-    }
 
     let controls = renderLoopContext.controlsRef.current;
     const nextLiveControlSignalVersion =
@@ -661,11 +716,18 @@ export function useBaryonEngine({
     runtimeState.renderProbeEnabled =
       controls.auditEnabled === true || tailDiagnosticsActive;
     const audio = renderLoopContext.audioRef.current;
-    const externalFrameState = externalFrameRef?.current ?? null;
-    const fallbackClockSnapshot = {
-      status: audio.getStatus(),
-      ...audio.readClockSnapshot(state.clock.getElapsedTime()),
-    };
+    const externalFrameCandidate = externalFeatureAuthorityActive
+      ? (externalFrameRef?.current ?? null)
+      : null;
+    const externalFrameState = externalFrameCandidate?.featureFrame
+      ? externalFrameCandidate
+      : null;
+    const fallbackClockSnapshot = externalFeatureAuthorityActive
+      ? null
+      : {
+          status: audio.getStatus(),
+          ...audio.readClockSnapshot(state.clock.getElapsedTime()),
+        };
     const {
       status,
       clockMode,
@@ -675,6 +737,7 @@ export function useBaryonEngine({
       frameIdentity: externalFrameIdentity,
       shouldAdvance,
     } = getSourceAuthoritativeClock({
+      audioFeatureAuthorityRole,
       externalFrameState,
       lastAppliedFrameSequence: lastAppliedExternalFrameSequenceRef.current,
       fallbackClockSnapshot,
@@ -722,14 +785,10 @@ export function useBaryonEngine({
         Number.NEGATIVE_INFINITY;
       onPerformanceHudSnapshotChange?.(null);
     }
-    const spectralLightEnabled =
-      controls.colorMode === "spectral" &&
-      (controls.spectralMix ?? RENDER_DEFAULTS.spectralMix) > 0;
     const applyCachedControlSnapshotsStartedAt = getWallTimeMs();
     const controlSnapshots = applyCachedControlSnapshots({
       controls,
       runtimeState,
-      featureState,
       gl: renderLoopContext.gl,
       ensurePipeline: renderLoopContext.ensurePipeline,
       postNodesRef: renderLoopContext.postNodesRef,
@@ -760,18 +819,22 @@ export function useBaryonEngine({
     // free-running local path so a 60fps policy does not render every tick on
     // high-refresh displays. Camera force renders bypass it: they are already
     // throttled and guarantee the end-of-drag pose is presented.
-    const framePacedRenderDue =
-      Boolean(externalFrameState) ||
-      localCameraForceRender ||
-      immediateControlRenderDue ||
-      consumeRenderFramePacerSlot(
-        framePacerStateRef.current,
-        framePacingFpsRef.current,
-        getWallTimeMs(),
-      );
+    const framePacedRenderDue = externalFeatureAuthorityActive
+      ? Boolean(externalFrameState) ||
+        forcedExternalRenderPendingRef.current ||
+        localCameraForceRender ||
+        immediateControlRenderDue
+      : localCameraForceRender ||
+        immediateControlRenderDue ||
+        consumeRenderFramePacerSlot(
+          framePacerStateRef.current,
+          framePacingFpsRef.current,
+          getWallTimeMs(),
+        );
     if (
       !framePacedRenderDue ||
       !shouldRenderExternalFrame({
+        externalFeatureAuthorityActive,
         externalFrameState,
         shouldAdvance,
         controlsChanged,
@@ -787,43 +850,54 @@ export function useBaryonEngine({
       pendingLocalCameraRenderSignalRef.current = null;
       lastLocalCameraRenderAtMsRef.current = getWallTimeMs();
     }
-    const resolvedFrame = externalFrameState?.featureFrame
-      ? {
-          featureFrame: externalFrameState.featureFrame,
-          effectiveFrame: externalFrameState.featureFrame,
-        }
+    const resolvedFrame = externalFeatureAuthorityActive
+      ? externalFrameState?.featureFrame
+        ? {
+            featureFrame: externalFrameState.featureFrame,
+            effectiveFrame: externalFrameState.featureFrame,
+          }
+        : {
+            featureFrame: null,
+            effectiveFrame: null,
+          }
       : resolveFeatureFrame({
-          audio,
-          featureState,
-          featureEngine: renderLoopContext.audioFeatureEngineRef.current,
+          featureRuntime: renderLoopContext.audioFeatureRuntimeRef.current,
           runtimeDiagnostics,
           runtimeState,
           controls,
           status,
-          time,
           clockMode,
           renderLoopRefs,
-          spectralLightEnabled,
         });
-    const featureFrame = applyLiveInputRenderIntent(
-      resolvedFrame.featureFrame,
-      {
-        status,
-        liveInputUiState,
-        liveControlSignal: liveControlSignalRef?.current,
-      },
-    );
-    const effectiveFrame = applyLiveInputRenderIntent(
-      resolvedFrame.effectiveFrame,
-      {
-        status,
-        liveInputUiState,
-        liveControlSignal: liveControlSignalRef?.current,
-      },
-    );
+    const { featureFrame, effectiveFrame } = resolvedFrame;
+
+    fixtureRuntimeDriverRef.current.observeAuthoritativeFrame(effectiveFrame);
 
     if (!featureFrame || !effectiveFrame) {
-      if (!suppressRender && pipeline && output?.outputMode === "opaque") {
+      if (!externalFeatureAuthorityActive) {
+        const runtimeTickStartedAt = getWallTimeMs();
+        runtime.failClosed?.({
+          renderer: renderLoopContext.gl,
+          runtimeState,
+          status,
+          time,
+          deltaTime,
+        });
+        syncUploadedRenderQuantities(runtimeDiagnostics, runtimeState);
+        updateObservationTransferRenderDiagnostics(
+          runtimeDiagnostics,
+          runtimeState?.debugSnapshot,
+          runtimeState,
+        );
+        recordMeasuredRuntimePerf(
+          runtimeDiagnostics,
+          "runtimeTickMs",
+          runtimeTickStartedAt,
+        );
+      }
+      const shouldCompleteFailClosedStageRender =
+        !externalFeatureAuthorityActive || output?.outputMode === "opaque";
+      if (!suppressRender && pipeline && shouldCompleteFailClosedStageRender) {
         const pipelineRenderStartedAt = getWallTimeMs();
         syncRenderOutputNodeTopology(
           pipeline,
@@ -831,7 +905,6 @@ export function useBaryonEngine({
           {
             bloomEnabled: output?.bloomEnabled === true,
             outputMode: output.outputMode,
-            bloomActive: false,
             temporalHistoryEnabled: false,
             smaaEnabled: output?.smaaEnabled !== false,
           },
@@ -846,6 +919,9 @@ export function useBaryonEngine({
           frameSequence: externalFrameSequence,
           qualityPreset: renderProfileRef.current?.qualityPreset ?? null,
         });
+      }
+      if (externalFeatureAuthorityActive) {
+        forcedExternalRenderPendingRef.current = false;
       }
       return;
     }
@@ -994,19 +1070,6 @@ export function useBaryonEngine({
     );
     updateModalEnvelopeDiagnostics(runtimeDiagnostics, runtimeState);
 
-    const reactiveBloomStartedAt = getWallTimeMs();
-    const reactiveBloom = applyReactiveBloomState({
-      controls,
-      runtimeState,
-      postNodesRef: renderLoopContext.postNodesRef,
-      bloom,
-    });
-    recordMeasuredRuntimePerf(
-      runtimeDiagnostics,
-      "applyReactiveBloomMs",
-      reactiveBloomStartedAt,
-    );
-
     const applySceneControlsStartedAt = getWallTimeMs();
     const externalSceneSnapshot = externalFrameState?.sceneSnapshot ?? null;
     const sceneSnapshot =
@@ -1025,13 +1088,12 @@ export function useBaryonEngine({
         runtime,
         runtimeState,
         status,
-        featureState,
         lowLoadPlaybackDiagnosticsActive,
         runtimeDiagnostics,
         shared,
         output,
         visualization,
-        bloom: reactiveBloom,
+        bloom,
         audit,
         sceneSnapshot,
         audio,
@@ -1083,10 +1145,9 @@ export function useBaryonEngine({
         renderLoopContext.postNodesRef.current,
         {
           bloomEnabled: effectiveBloomEnabled,
-          outputMode: controls.outputMode,
-          bloomActive: effectiveBloomEnabled,
+          outputMode: output?.outputMode ?? controls.outputMode,
           temporalHistoryEnabled: !temporalHistoryBypassRequested,
-          smaaEnabled: controls.smaaEnabled !== false,
+          smaaEnabled: output?.smaaEnabled ?? controls.smaaEnabled !== false,
         },
       );
       if (runtimeDiagnostics?.postProcess) {

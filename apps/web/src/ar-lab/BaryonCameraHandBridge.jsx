@@ -7,6 +7,14 @@ import {
 import { createCameraHandSnapshots } from "./cameraHandLandmarks.js";
 import { CAMERA_HAND_TRACKING_STATUS } from "./cameraHandTrackingStatus.js";
 import { createCameraHandLandmarkerOptions } from "./cameraHandRuntimeConfig.js";
+import {
+  PERSON_MASK_EDGE_BLUR_PX,
+  PERSON_SEGMENTATION_MIN_INTERVAL_MS,
+  mapVideoSourceRectToMaskSourceRect,
+  resolveCoverSourceRect,
+  resolvePersonMaskAlpha,
+  smoothPersonMaskAlpha,
+} from "./personSegmentationMask.js";
 
 const HIGH_FPS_CAMERA_CONSTRAINTS = Object.freeze({
   audio: false,
@@ -32,11 +40,6 @@ const MEDIAPIPE_WASM_URL =
   "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm";
 const PERSON_SEGMENTER_MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite";
-const PERSON_SEGMENTATION_MIN_INTERVAL_MS = 66;
-const PERSON_MASK_SOFT_LOW = 0.36;
-const PERSON_MASK_SOFT_HIGH = 0.78;
-const PERSON_MASK_TEMPORAL_RESPONSE = 0.46;
-const PERSON_MASK_EDGE_BLUR_PX = 1.85;
 const PERSON_MASK_SPATIAL_PASSES = 2;
 const PERSON_MASK_ALPHA_FLOOR = 7;
 const PERSON_MASK_ALPHA_CEILING = 248;
@@ -122,29 +125,6 @@ async function createCameraHandLandmarker(HandLandmarker, vision) {
   }
 }
 
-function clamp01(value) {
-  return Math.min(1, Math.max(0, value));
-}
-
-function resolvePersonMaskAlpha(confidence) {
-  const normalized = clamp01(
-    (confidence - PERSON_MASK_SOFT_LOW) /
-      (PERSON_MASK_SOFT_HIGH - PERSON_MASK_SOFT_LOW),
-  );
-  const softened = normalized * normalized * (3 - 2 * normalized);
-  return Math.round(softened * 255);
-}
-
-function smoothPersonMaskAlpha(targetAlpha, previousAlpha) {
-  if (previousAlpha == null || targetAlpha < 12 || targetAlpha > 243) {
-    return targetAlpha;
-  }
-  return Math.round(
-    previousAlpha +
-      (targetAlpha - previousAlpha) * PERSON_MASK_TEMPORAL_RESPONSE,
-  );
-}
-
 function allocateMaskBuffers(maskState, alphaLength) {
   if (
     maskState.alpha?.length !== alphaLength ||
@@ -213,34 +193,6 @@ function smoothPersonMaskSpatially({ maskState, width, height }) {
   }
 }
 
-function resolveCoverSourceRect({
-  sourceWidth,
-  sourceHeight,
-  targetWidth,
-  targetHeight,
-}) {
-  const targetAspect = targetWidth / targetHeight;
-  const sourceAspect = sourceWidth / sourceHeight;
-
-  if (sourceAspect > targetAspect) {
-    const sWidth = sourceHeight * targetAspect;
-    return {
-      sx: (sourceWidth - sWidth) / 2,
-      sy: 0,
-      sWidth,
-      sHeight: sourceHeight,
-    };
-  }
-
-  const sHeight = sourceWidth / targetAspect;
-  return {
-    sx: 0,
-    sy: (sourceHeight - sHeight) / 2,
-    sWidth: sourceWidth,
-    sHeight,
-  };
-}
-
 function drawCoverSource({
   context,
   source,
@@ -249,13 +201,16 @@ function drawCoverSource({
   targetWidth,
   targetHeight,
   mirrored = false,
+  sourceRect = null,
 }) {
-  const { sx, sy, sWidth, sHeight } = resolveCoverSourceRect({
-    sourceWidth,
-    sourceHeight,
-    targetWidth,
-    targetHeight,
-  });
+  const { sx, sy, sWidth, sHeight } =
+    sourceRect ??
+    resolveCoverSourceRect({
+      sourceWidth,
+      sourceHeight,
+      targetWidth,
+      targetHeight,
+    });
 
   if (mirrored) {
     context.save();
@@ -393,6 +348,12 @@ function drawPersonCutout({ canvas, video, maskCanvas, maskReady }) {
 
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = "high";
+  const videoSourceRect = resolveCoverSourceRect({
+    sourceWidth: video.videoWidth,
+    sourceHeight: video.videoHeight,
+    targetWidth: width,
+    targetHeight: height,
+  });
   drawCoverSource({
     context,
     source: video,
@@ -401,6 +362,7 @@ function drawPersonCutout({ canvas, video, maskCanvas, maskReady }) {
     targetWidth: width,
     targetHeight: height,
     mirrored: true,
+    sourceRect: videoSourceRect,
   });
 
   context.globalCompositeOperation = "destination-in";
@@ -408,6 +370,13 @@ function drawPersonCutout({ canvas, video, maskCanvas, maskReady }) {
   context.filter = `blur(${PERSON_MASK_EDGE_BLUR_PX}px)`;
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = "high";
+  const maskSourceRect = mapVideoSourceRectToMaskSourceRect({
+    videoSourceRect,
+    videoWidth: video.videoWidth,
+    videoHeight: video.videoHeight,
+    maskWidth: maskCanvas.width,
+    maskHeight: maskCanvas.height,
+  });
   drawCoverSource({
     context,
     source: maskCanvas,
@@ -416,6 +385,7 @@ function drawPersonCutout({ canvas, video, maskCanvas, maskReady }) {
     targetWidth: width,
     targetHeight: height,
     mirrored: true,
+    sourceRect: maskSourceRect,
   });
   context.restore();
   context.globalCompositeOperation = "source-over";

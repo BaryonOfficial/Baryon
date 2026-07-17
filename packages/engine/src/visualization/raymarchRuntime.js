@@ -1,6 +1,7 @@
 import {
   setupRaymarch,
   tickRaymarch,
+  failClosedRaymarch,
   disposeRaymarch,
 } from "../core/raymarchSetup.js";
 import { VISUALIZATION_METHODS } from "./types.js";
@@ -13,6 +14,14 @@ export function createRaymarchVisualizationRuntime() {
     },
     tick({ renderer, runtimeState, featureFrame, time, deltaTime }) {
       tickRaymarch(renderer, runtimeState, featureFrame, time, deltaTime);
+    },
+    failClosed({ renderer, runtimeState, status, time, deltaTime }) {
+      failClosedRaymarch(runtimeState, {
+        renderer,
+        status,
+        time,
+        deltaTime,
+      });
     },
     dispose(runtimeState) {
       disposeRaymarch(runtimeState);

@@ -1,5 +1,4 @@
 import {
-  applyAuditControls,
   applyBloomControls,
   applyEffectiveRaymarchStepBudget,
   applyOutputControls,
@@ -7,15 +6,7 @@ import {
   applySharedControls,
   buildControlInspectionSnapshot,
 } from "@baryon/engine/controls/runtime";
-import {
-  buildAudioFeatureTransportFrame,
-  buildFastSignalPatchedAudioFeatureAnalysisResult,
-  buildAudioFeatureFrame,
-  composeAudioFeatureFrame,
-  prepareAudioFeatureFrameInputs,
-  runHeavyAudioFeatureAnalysis,
-} from "@baryon/engine/audio-features";
-import { CAVITY_ACOUSTIC_DEFAULTS } from "@baryon/engine/defaults";
+import { createRendererFeatureView } from "@baryon/engine/audio-features";
 import {
   allowsModalDescriptorRenderAuthority,
   allowsCurrentLiveRenderFrame,
@@ -30,13 +21,14 @@ import {
   getRenderQualityProfileTargetFps,
   isAdaptivePerformanceProfile,
   normalizePerformanceTargetFps,
+  normalizeOutputMode,
+  OUTPUT_MODES,
   PERFORMANCE_PROFILES,
+  RENDER_CONTEXTS,
   markRenderOutputVisualIdle,
-  syncRenderOutputBloomPassUniforms,
 } from "@baryon/engine/render/outputPipeline";
 import {
   clearFrameCache,
-  createEmptyAnalysisSchedulerState,
   recordRuntimePerfSample,
   shouldReuseIdleFrame,
   snapshotModalFreshnessDiagnostics,
@@ -56,9 +48,6 @@ const FRAME_DROP_THRESHOLD_50_MS = 50;
 const MAX_RECENT_LONG_FRAME_SAMPLES = 8;
 const PERFORMANCE_HUD_PUBLISH_INTERVAL_MS = 150;
 const PERFORMANCE_HUD_SMOOTHING_ALPHA = 0.25;
-const ACTIVE_FEATURE_ANALYSIS_HZ = 30;
-const ACTIVE_FEATURE_ANALYSIS_INTERVAL_MS = 1000 / ACTIVE_FEATURE_ANALYSIS_HZ;
-const MAX_ANALYSIS_AGE_MS = 50;
 const ADAPTIVE_RAYMARCH_DECISION_WINDOW_SECONDS = 0.33;
 const ADAPTIVE_RAYMARCH_MIN_DECISION_WINDOW_FRAMES = 8;
 const ADAPTIVE_RAYMARCH_MAX_DECISION_WINDOW_FRAMES = 80;
@@ -82,23 +71,16 @@ const STAGE_ATTRIBUTION_TIEBREAK_ORDER = Object.freeze([
   "engine",
 ]);
 const STAGE_ATTRIBUTION_BUCKET_PERF_KEYS = Object.freeze({
-  analysis: Object.freeze([
-    "readAnalysisSnapshotMs",
-    "buildFeatureFrameMs",
-    "heavyAnalysisMs",
-    "fastComposeMs",
-  ]),
-  engine: Object.freeze(["engineEnqueueMs", "readEngineSnapshotMs"]),
+  analysis: Object.freeze([]),
+  engine: Object.freeze(["readFeatureModelMs", "createRendererFeatureViewMs"]),
   control: Object.freeze([
     "applyCachedControlSnapshotsMs",
     "syncLiveInputRuntimeStatusMs",
     "runtimeTickMs",
-    "applyReactiveBloomMs",
     "applySceneControlsMs",
   ]),
   render: Object.freeze(["pipelineRenderMs"]),
 });
-const LIVE_RENDER_INTENT_UI_STATES = new Set(["starting", "active"]);
 
 function readPerfAverageMs(perfBreakdown, key) {
   const averageMs = perfBreakdown?.[key]?.averageMs;
@@ -176,15 +158,25 @@ function buildStageAttribution(runtimeDiagnostics, perfBreakdown) {
 
 function buildStageEngineCounters(runtimeDiagnostics) {
   return {
-    publishCount: runtimeDiagnostics?.engine?.publishCount ?? 0,
-    publishSkipCount: runtimeDiagnostics?.engine?.publishSkipCount ?? 0,
-    fastSignalPatchCount: runtimeDiagnostics?.engine?.fastSignalPatchCount ?? 0,
-    fastSignalUpdateCount:
-      runtimeDiagnostics?.engine?.fastSignalUpdateCount ?? 0,
-    structuralUpdateCount:
-      runtimeDiagnostics?.engine?.structuralUpdateCount ?? 0,
-    chromaUpdateCount: runtimeDiagnostics?.engine?.chromaUpdateCount ?? 0,
-    tempoUpdateCount: runtimeDiagnostics?.engine?.tempoUpdateCount ?? 0,
+    latestDriveAgeMs: runtimeDiagnostics?.engine?.latestDriveAgeMs ?? null,
+    latestAcceptedFrameId:
+      runtimeDiagnostics?.engine?.latestAcceptedFrameId ?? 0,
+    sourceGeneration: runtimeDiagnostics?.engine?.sourceGeneration ?? 0,
+    workerGeneration: runtimeDiagnostics?.engine?.workerGeneration ?? 0,
+    topologyRevision: runtimeDiagnostics?.engine?.topologyRevision ?? 0,
+    processedFrameCount: runtimeDiagnostics?.engine?.processedFrameCount ?? 0,
+    topologyPublishCount: runtimeDiagnostics?.engine?.topologyPublishCount ?? 0,
+    drivePublishCount: runtimeDiagnostics?.engine?.drivePublishCount ?? 0,
+    inputReplacementCount:
+      runtimeDiagnostics?.engine?.inputReplacementCount ?? 0,
+    rejectedPacketCount: runtimeDiagnostics?.engine?.rejectedPacketCount ?? 0,
+    staleAcknowledgementCount:
+      runtimeDiagnostics?.engine?.staleAcknowledgementCount ?? 0,
+    renderAuthorityRevoked:
+      runtimeDiagnostics?.engine?.renderAuthorityRevoked ?? false,
+    queueDepth: runtimeDiagnostics?.engine?.queueDepth ?? 0,
+    state: runtimeDiagnostics?.engine?.state ?? "none",
+    reason: runtimeDiagnostics?.engine?.reason ?? null,
     ...snapshotWorkerPerfCounters(runtimeDiagnostics?.engine),
   };
 }
@@ -324,7 +316,7 @@ export function updateModalFreshnessDiagnostics(
   modalFreshness.fieldState =
     featureFrame.debug?.fieldState ?? featureFrame.fieldState ?? "idle";
   modalFreshness.structuralSnapshotAgeMs = readFiniteNumber(
-    runtimeDiagnostics?.engine?.snapshotAgeMs,
+    runtimeDiagnostics?.engine?.latestDriveAgeMs,
   );
   modalFreshness.featureFrameAgeAtRenderMs = Math.max(
     0,
@@ -530,125 +522,12 @@ export function consumeRenderFramePacerSlot(pacerState, targetFps, nowMs) {
   return true;
 }
 
-function serializeReplayArray(values) {
-  if (values instanceof Float32Array || values instanceof Uint8Array) {
-    return Array.from(values);
-  }
-
-  return values ?? null;
-}
-
-function maybeCaptureReplayFrame({ analysisSnapshot, status, frameTimeMs }) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  const capture = /** @type {any} */ (window).__baryonPerfReplayCapture;
-  if (!capture?.enabled) {
-    return;
-  }
-
-  const frames = Array.isArray(capture.frames) ? capture.frames : [];
-  frames.push({
-    frameTimeMs,
-    status: {
-      audioInputMode: status?.audioInputMode ?? "idle",
-      isPlaying: Boolean(status?.isPlaying),
-      isLiveInputActive: Boolean(status?.isLiveInputActive),
-      liveInputDeviceKind:
-        status?.liveInputDeviceKind ?? status?.liveInputKind ?? null,
-      liveInputKind: status?.liveInputKind ?? null,
-      playbackSessionId: status?.playbackSessionId ?? null,
-      sampleRate: status?.sampleRate ?? null,
-      fftSize: status?.fftSize ?? null,
-      liveInputCalibrationVersion: status?.liveInputCalibrationVersion ?? null,
-    },
-    analysisSnapshot: analysisSnapshot
-      ? {
-          sourceMode: analysisSnapshot.sourceMode ?? null,
-          avgAmplitude: analysisSnapshot.avgAmplitude ?? 0,
-          rms: analysisSnapshot.rms ?? 0,
-          spectralCentroid: analysisSnapshot.spectralCentroid ?? 0,
-          spectralFlux: analysisSnapshot.spectralFlux ?? 0,
-          fftMagnitudes: serializeReplayArray(analysisSnapshot.fftMagnitudes),
-          timeData: serializeReplayArray(analysisSnapshot.timeData),
-        }
-      : null,
-  });
-
-  const maxFrames = Math.max(1, Math.round(capture.maxFrames ?? 24));
-  if (frames.length > maxFrames) {
-    frames.splice(0, frames.length - maxFrames);
-  }
-
-  /** @type {any} */ (window).__baryonPerfReplayCapture = {
-    ...capture,
-    frames,
-  };
-}
-
-function snapshotMatchesPreparedInputs(engineSnapshot, preparedInputs) {
-  return hasMatchingAnalysisContext(engineSnapshot, preparedInputs);
-}
-
-function getSnapshotAgeMsForPreparedInputs(engineSnapshot, preparedInputs) {
-  if (!Number.isFinite(preparedInputs?.currentFrameAtMs)) {
-    return 0;
-  }
-
-  if (!Number.isFinite(engineSnapshot?.frameTimeMs)) {
-    return Number.POSITIVE_INFINITY;
-  }
-
-  return Math.max(
-    0,
-    preparedInputs.currentFrameAtMs - engineSnapshot.frameTimeMs,
-  );
-}
-
-function isLineFeedProgramInput({ preparedInputs, status }) {
-  const inputMode = preparedInputs?.inputMode ?? status?.audioInputMode;
-  return (
-    inputMode === "system" ||
-    (inputMode === "live" &&
-      (preparedInputs?.resolvedLiveInputAnalysisClass === "line-feed" ||
-        preparedInputs?.liveInputPolicy === "line-feed"))
-  );
-}
-
-function shouldRefreshStaleProgramSnapshot({
-  engineSnapshot,
-  preparedInputs,
-  status,
-}) {
-  const inputMode = preparedInputs?.inputMode ?? status?.audioInputMode;
-  const activeFileProgram =
-    inputMode === "file" &&
-    status?.isPlaying === true &&
-    status?.isLiveInputActive !== true;
-  const activeLineFeedProgram =
-    isLineFeedProgramInput({ preparedInputs, status }) &&
-    status?.isLiveInputActive === true;
-
-  if (!activeFileProgram && !activeLineFeedProgram) {
-    return false;
-  }
-
-  return getSnapshotAgeMsForPreparedInputs(engineSnapshot, preparedInputs) > 0;
-}
-
 function classifyFrameSemanticSource(source) {
   switch (source) {
-    case "worker-snapshot":
-    case "worker-fast-signal":
-    case "local-heavy-analysis":
-    case "live-warmup":
-    case "bootstrap-fallback":
-    case "direct-feature-build":
+    case "feature-model":
       return { fresh: true, reused: false };
-    case "scheduled-reuse":
-    case "last-live-cache":
     case "static-idle-cache":
+    case "file-playback-activation-hold":
     case "paused-file-hold":
       return { fresh: false, reused: true };
     default:
@@ -668,197 +547,14 @@ function recordFrameSemanticSource(runtimeDiagnostics, source) {
   modalFreshness.frameSemanticReused = reused;
 }
 
-function hasMatchingAnalysisContext(previousAnalysis, preparedInputs) {
+function isCanonicalStaticIdleFrame(featureFrame) {
   return Boolean(
-    previousAnalysis &&
-    preparedInputs &&
-    previousAnalysis.analysisSessionKey === preparedInputs.analysisSessionKey &&
-    previousAnalysis.analysisInputsSignature ===
-      preparedInputs.analysisInputsSignature,
+    featureFrame &&
+    featureFrame.fieldState === "idle" &&
+    featureFrame.renderAuthority === false &&
+    featureFrame.sourceEvidence?.currentSourceEvidence !== true &&
+    featureFrame.sourceEvidence?.sourceBoundaryState !== "live",
   );
-}
-
-function shouldRunHeavyFeatureAnalysis({
-  schedulerState,
-  preparedInputs,
-  frameTimeMs,
-  runtimeDiagnostics,
-}) {
-  const analysisAgeMs = Number.isFinite(schedulerState.lastHeavyAnalysisAtMs)
-    ? Math.max(0, frameTimeMs - schedulerState.lastHeavyAnalysisAtMs)
-    : Number.POSITIVE_INFINITY;
-  const targetIntervalMs =
-    (runtimeDiagnostics?.smoothedFrameTimeMs ?? 0) >
-    ACTIVE_FEATURE_ANALYSIS_INTERVAL_MS
-      ? MAX_ANALYSIS_AGE_MS
-      : ACTIVE_FEATURE_ANALYSIS_INTERVAL_MS;
-  const forced =
-    !schedulerState.lastHeavyAnalysisResult ||
-    !hasMatchingAnalysisContext(
-      {
-        analysisSessionKey: schedulerState.lastAnalysisSessionKey,
-        analysisInputsSignature: schedulerState.lastAnalysisInputsSignature,
-      },
-      preparedInputs,
-    ) ||
-    analysisAgeMs >= MAX_ANALYSIS_AGE_MS;
-
-  return {
-    analysisAgeMs,
-    forced,
-    shouldRun: forced || analysisAgeMs >= targetIntervalMs,
-  };
-}
-
-function resetAnalysisSchedulerState(analysisSchedulerRef) {
-  if (analysisSchedulerRef?.current) {
-    analysisSchedulerRef.current = createEmptyAnalysisSchedulerState();
-  }
-}
-
-function getAnalysisSchedulerState(analysisSchedulerRef) {
-  return analysisSchedulerRef?.current ?? createEmptyAnalysisSchedulerState();
-}
-
-function isRenderAuthorizedFeatureFrame(featureFrame) {
-  return hasRenderAuthority(featureFrame);
-}
-
-function shouldSeedLiveInputWarmupFrame({
-  status,
-  lastLiveFrame,
-  lastActiveFrame,
-}) {
-  return (
-    status?.isLiveInputActive === true &&
-    !isRenderAuthorizedFeatureFrame(lastLiveFrame) &&
-    !lastActiveFrame
-  );
-}
-
-function shouldBootstrapActiveFeatureFrame({
-  status,
-  controls,
-  lastLiveFrame,
-  lastActiveFrame,
-}) {
-  const audioActive = hasAudioSourceRenderIntent({ status, controls });
-  return (
-    audioActive &&
-    !isRenderAuthorizedFeatureFrame(lastLiveFrame) &&
-    !isRenderAuthorizedFeatureFrame(lastActiveFrame)
-  );
-}
-
-function hasSpectralLightFeatureFrameRequest(featureFrame) {
-  return featureFrame?.spectralLightRequested === true;
-}
-
-function hasPositiveSpectralLaneWeight(laneWeights) {
-  if (!laneWeights?.length) {
-    return false;
-  }
-
-  for (let index = 0; index < laneWeights.length; index += 1) {
-    if ((laneWeights[index] ?? 0) > 1e-8) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function hasRenderableSpectralLanePayload(analysisResult) {
-  const activeModeCount = Math.max(
-    analysisResult?.activeModeCount ?? 0,
-    analysisResult?.activeSourceCoupledModeCount ?? 0,
-    analysisResult?.activeResonantModeCount ?? 0,
-  );
-
-  return (
-    activeModeCount > 0 &&
-    (hasPositiveSpectralLaneWeight(
-      analysisResult?.sourceCoupledSpectralLaneA,
-    ) ||
-      hasPositiveSpectralLaneWeight(
-        analysisResult?.sourceCoupledSpectralLaneB,
-      ) ||
-      hasPositiveSpectralLaneWeight(analysisResult?.resonantSpectralLaneA) ||
-      hasPositiveSpectralLaneWeight(analysisResult?.resonantSpectralLaneB))
-  );
-}
-
-function hasPreparedSourceActivity({ preparedInputs, controls }) {
-  return Boolean(
-    controls?.injectTestTone ||
-    preparedInputs?.soundActive ||
-    preparedInputs?.micActive ||
-    preparedInputs?.lineFeedProgramActive,
-  );
-}
-
-function shouldRebuildEmptySpectralLaneSnapshot({
-  spectralLightEnabled,
-  engineSnapshot,
-  preparedInputs,
-  status,
-  controls,
-}) {
-  return (
-    spectralLightEnabled === true &&
-    preparedInputs?.shouldBuildSpectralLight === true &&
-    hasAudioSourceRenderIntent({ status, controls }) &&
-    hasPreparedSourceActivity({ preparedInputs, controls }) &&
-    !hasRenderableSpectralLanePayload(engineSnapshot?.analysisResult)
-  );
-}
-
-function shouldRefreshSpectralLightFeatureFrame({
-  spectralLightEnabled,
-  status,
-  controls,
-  lastLiveFrame,
-}) {
-  return (
-    spectralLightEnabled === true &&
-    hasAudioSourceRenderIntent({ status, controls }) &&
-    isRenderAuthorizedFeatureFrame(lastLiveFrame) &&
-    !hasSpectralLightFeatureFrameRequest(lastLiveFrame)
-  );
-}
-
-function hasAudioSourceRenderIntent({ status, controls }) {
-  return Boolean(
-    status?.isPlaying || status?.isLiveInputActive || controls?.injectTestTone,
-  );
-}
-
-function hasClosedPreparedSourceEvidence(preparedInputs) {
-  const sourceEvidence = preparedInputs?.sourceEvidence;
-  if (!sourceEvidence) {
-    return false;
-  }
-
-  return (
-    sourceEvidence.currentSourceEvidence !== true ||
-    sourceEvidence.sourceBoundaryState !== "live"
-  );
-}
-
-function shouldComposeSourceCutFeatureFrame({
-  status,
-  controls,
-  preparedInputs,
-}) {
-  return (
-    preparedInputs?.snapshot != null &&
-    (!hasAudioSourceRenderIntent({ status, controls }) ||
-      hasClosedPreparedSourceEvidence(preparedInputs))
-  );
-}
-
-function shouldCaptureLastLiveFrame({ featureFrame }) {
-  return allowsCurrentLiveRenderFrame(featureFrame);
 }
 
 function cloneFrameValue(value, seen = new WeakMap()) {
@@ -1017,81 +713,6 @@ function refreshPausedFileHoldFrame({ frameCacheRefs, status, featureFrame }) {
       frame: createPausedFileHoldFrame(featureFrame),
     };
   }
-}
-
-function resolveCachedLiveFeatureFrame(lastLiveFrame, silentFeatureFrame) {
-  if (allowsCurrentLiveRenderFrame(lastLiveFrame)) {
-    return lastLiveFrame;
-  }
-
-  return silentFeatureFrame;
-}
-
-function shouldApplyLiveInputRenderIntent(
-  { status, liveInputUiState, liveControlSignal } = {
-    status: null,
-    liveInputUiState: null,
-    liveControlSignal: null,
-  },
-) {
-  if (liveControlSignal?.desiredActive === false) {
-    return false;
-  }
-
-  if (liveControlSignal?.desiredActive === true) {
-    return true;
-  }
-
-  return (
-    status?.isLiveInputActive === true ||
-    LIVE_RENDER_INTENT_UI_STATES.has(liveInputUiState)
-  );
-}
-
-export function applyLiveInputRenderIntent(
-  featureFrame,
-  { status, liveInputUiState, liveControlSignal } = {
-    status: null,
-    liveInputUiState: null,
-    liveControlSignal: null,
-  },
-) {
-  if (!featureFrame) {
-    return featureFrame;
-  }
-
-  const isLiveInputActive = shouldApplyLiveInputRenderIntent({
-    status,
-    liveInputUiState,
-    liveControlSignal,
-  });
-  if (featureFrame.isLiveInputActive === isLiveInputActive) {
-    return featureFrame;
-  }
-
-  return {
-    ...featureFrame,
-    isLiveInputActive,
-  };
-}
-
-function storeComposedAnalysisResult(
-  analysisSchedulerRef,
-  preparedInputs,
-  analysisResult,
-  featureFrame,
-) {
-  if (!analysisSchedulerRef?.current) {
-    return;
-  }
-
-  analysisSchedulerRef.current = {
-    lastHeavyAnalysisAtMs: preparedInputs.currentFrameAtMs,
-    lastHeavyAnalysisResult: analysisResult,
-    lastComposedFeatureFrame: featureFrame,
-    lastAnalysisSessionKey: preparedInputs.analysisSessionKey,
-    lastAnalysisInputsSignature: preparedInputs.analysisInputsSignature,
-  };
 }
 
 function resetInterruptedLiveInputVisualResponse(runtimeState) {
@@ -1348,6 +969,7 @@ export function updateRendererDiagnostics(
   { getRequestedPixelRatio = getDevicePixelRatio } = {},
 ) {
   const runtimeDiagnostics = renderLoopRefs.runtimeDiagnosticsRef.current;
+  const sourceStatus = status ?? {};
   const rendererMode =
     gl?.backend?.isWebGLBackend === true ? "webgl" : "webgpu";
   if (runtimeDiagnostics.rendererMode !== rendererMode) {
@@ -1363,7 +985,7 @@ export function updateRendererDiagnostics(
   }
 
   const lowLoadPlaybackDiagnosticsActive = Boolean(
-    controls.lowLoadPlaybackDiagnostics && status.isPlaying,
+    controls.lowLoadPlaybackDiagnostics && sourceStatus.isPlaying,
   );
   const targetPixelRatio = syncRenderSurfacePixelRatio({
     gl,
@@ -1408,7 +1030,7 @@ export function updateRendererDiagnostics(
       runtimeDiagnostics.lastLongFrame = {
         durationMs: frameTimeMs,
         atElapsedTimeSeconds: time,
-        playbackSessionId: status.playbackSessionId ?? null,
+        playbackSessionId: sourceStatus.playbackSessionId ?? null,
       };
       runtimeDiagnostics.frameDrops.recentLongFramesMs.push(frameTimeMs);
       if (
@@ -1444,7 +1066,7 @@ export function updateRendererDiagnostics(
     gl,
   });
 
-  if (status.isPlaying && frameTimeMs !== null) {
+  if (sourceStatus.isPlaying && frameTimeMs !== null) {
     runtimeDiagnostics.activeFrameCount += 1;
     runtimeDiagnostics.averageFrameTimeMs +=
       (frameTimeMs - runtimeDiagnostics.averageFrameTimeMs) /
@@ -1452,21 +1074,22 @@ export function updateRendererDiagnostics(
   }
 
   const playbackIssueSignature =
-    status.lastPlaybackEndReason &&
-    status.lastPlaybackDiagnostics?.playbackSessionId != null
-      ? `${status.lastPlaybackEndReason}:${status.lastPlaybackDiagnostics.playbackSessionId}:${status.lastPlaybackDiagnostics.endedAtContextTimeSeconds ?? "na"}`
+    sourceStatus.lastPlaybackEndReason &&
+    sourceStatus.lastPlaybackDiagnostics?.playbackSessionId != null
+      ? `${sourceStatus.lastPlaybackEndReason}:${sourceStatus.lastPlaybackDiagnostics.playbackSessionId}:${sourceStatus.lastPlaybackDiagnostics.endedAtContextTimeSeconds ?? "na"}`
       : null;
   if (
     playbackIssueSignature &&
     playbackIssueSignature !==
       renderLoopRefs.lastAudioIssueSignatureRef.current &&
-    (status.lastPlaybackEndReason === "premature" ||
-      status.lastPlaybackEndReason === "interrupted")
+    (sourceStatus.lastPlaybackEndReason === "premature" ||
+      sourceStatus.lastPlaybackEndReason === "interrupted")
   ) {
     renderLoopRefs.lastAudioIssueSignatureRef.current = playbackIssueSignature;
     runtimeDiagnostics.lastPlaybackIssue = {
-      reason: status.lastPlaybackEndReason,
-      playbackSessionId: status.lastPlaybackDiagnostics?.playbackSessionId,
+      reason: sourceStatus.lastPlaybackEndReason,
+      playbackSessionId:
+        sourceStatus.lastPlaybackDiagnostics?.playbackSessionId,
       atElapsedTimeSeconds: time,
       averageFrameTimeMs: runtimeDiagnostics.averageFrameTimeMs,
       worstFrameTimeMs: runtimeDiagnostics.worstFrameTimeMs,
@@ -1983,7 +1606,6 @@ export function applyCachedControlSnapshots(
   {
     controls,
     runtimeState,
-    featureState,
     gl,
     ensurePipeline,
     postNodesRef,
@@ -1995,7 +1617,6 @@ export function applyCachedControlSnapshots(
     applyOutputControls,
     applyRaymarchControls,
     applyBloomControls,
-    applyAuditControls,
   },
 ) {
   const {
@@ -2009,18 +1630,33 @@ export function applyCachedControlSnapshots(
     cachedControlSnapshotsRef.current.hasBloomPass !== hasBloomPass;
 
   if (controlsChanged) {
+    const outputControls = resolveRenderSurfaceOutputControls(
+      controls,
+      renderProfileRef.current,
+    );
     cachedControlSnapshotsRef.current = {
       shared: appliers.applySharedControls(gl, controls),
       output: appliers.applyOutputControls(
         { ensurePipeline, postNodesRef, renderProfileRef },
-        controls,
+        outputControls,
       ),
       visualization: appliers.applyRaymarchControls(runtimeState, controls),
       bloom: appliers.applyBloomControls(
         { ensurePipeline, postNodesRef, renderProfileRef, runtimeState },
-        controls,
+        outputControls,
       ),
-      audit: appliers.applyAuditControls(featureState, controls),
+      audit: {
+        enabled: controls.auditEnabled === true,
+        freezeModeSlots: controls.freezeModeSlots === true,
+        forceWebGLFallbackTest: controls.forceWebGLFallbackTest === true,
+        lowLoadPlaybackDiagnostics:
+          controls.lowLoadPlaybackDiagnostics === true,
+        injectTestTone: controls.injectTestTone === true,
+        testToneHz: controls.testToneHz,
+        testToneSignal: controls.testToneSignal,
+        testToneAmplitude: controls.testToneAmplitude,
+        logEveryFrames: controls.logEveryFrames,
+      },
       hasBloomPass,
       controlsSnapshot: cachedControlSnapshotsRef.current.controlsSnapshot,
     };
@@ -2036,430 +1672,140 @@ export function applyCachedControlSnapshots(
   };
 }
 
+/**
+ * The operator preview is an opaque monitor surface. When the program output
+ * is transparent, preview it composited over the same black backdrop the UI
+ * already presents, then run the standard opaque SMAA graph. The external
+ * output surface retains the requested transparent premultiplied-alpha path.
+ */
+export function resolveRenderSurfaceOutputControls(controls, renderProfile) {
+  const requestedOutputMode = normalizeOutputMode(controls?.outputMode);
+  const isPreview =
+    renderProfile?.renderContext !== RENDER_CONTEXTS.externalOutput;
+
+  if (isPreview && requestedOutputMode === OUTPUT_MODES.transparent) {
+    return {
+      ...controls,
+      outputMode: OUTPUT_MODES.opaque,
+      outputBackgroundColor: "#000000",
+    };
+  }
+
+  return controls;
+}
+
+function syncFeatureRuntimeDiagnostics(runtimeDiagnostics, runtimeStatus) {
+  if (!runtimeDiagnostics?.engine) {
+    return;
+  }
+
+  Object.assign(runtimeDiagnostics.engine, {
+    latestDriveAgeMs: runtimeStatus?.latestDriveAgeMs ?? null,
+    latestAcceptedFrameId: runtimeStatus?.latestAcceptedFrameId ?? 0,
+    sourceGeneration: runtimeStatus?.sourceGeneration ?? 0,
+    workerGeneration: runtimeStatus?.workerGeneration ?? 0,
+    topologyRevision: runtimeStatus?.topologyRevision ?? 0,
+    processedFrameCount: runtimeStatus?.processedFrameCount ?? 0,
+    topologyPublishCount: runtimeStatus?.topologyPublishCount ?? 0,
+    drivePublishCount: runtimeStatus?.drivePublishCount ?? 0,
+    inputReplacementCount: runtimeStatus?.inputReplacementCount ?? 0,
+    rejectedPacketCount: runtimeStatus?.rejectedPacketCount ?? 0,
+    staleAcknowledgementCount: runtimeStatus?.staleAcknowledgementCount ?? 0,
+    renderAuthorityRevoked: runtimeStatus?.renderAuthorityRevoked === true,
+    ...snapshotWorkerPerfCounters(runtimeStatus),
+    queueDepth: runtimeStatus?.queueDepth ?? 0,
+    state: runtimeStatus?.state ?? "none",
+    reason: runtimeStatus?.reason ?? null,
+  });
+}
+
 export function resolveFeatureFrame(
   {
-    audio,
-    featureState,
-    featureEngine,
+    featureRuntime,
     runtimeDiagnostics = null,
     runtimeState,
     controls,
     status,
-    time,
     clockMode,
     renderLoopRefs,
-    spectralLightEnabled,
   },
-  {
-    buildFeatureFrame = buildAudioFeatureFrame,
-    prepareFeatureFrame = prepareAudioFeatureFrameInputs,
-    runHeavyFeatureAnalysis = runHeavyAudioFeatureAnalysis,
-    buildFastSignalAnalysisResult = buildFastSignalPatchedAudioFeatureAnalysisResult,
-    composeFeatureFrame = composeAudioFeatureFrame,
-  } = {},
+  { createFeatureView = createRendererFeatureView } = {},
 ) {
-  const {
-    lastLiveFrameRef,
-    lastActiveFrameRef,
-    lastIdleFrameRef,
-    analysisSchedulerRef,
-  } = renderLoopRefs.frameCacheRefs;
+  const { lastIdleFrameRef } = renderLoopRefs.frameCacheRefs;
   const pausedFileHoldFrame = readPausedFileHoldFrame({
     frameCacheRefs: renderLoopRefs.frameCacheRefs,
     status,
     clockMode,
   });
-
+  let featureRuntimeStatus = isActiveFilePlayback(status)
+    ? (featureRuntime?.getStatus?.() ?? null)
+    : null;
+  const filePlaybackActivationHold = Boolean(
+    !pausedFileHoldFrame &&
+    featureRuntimeStatus?.playbackAnalysisPending === true &&
+    isCanonicalStaticIdleFrame(lastIdleFrameRef.current),
+  );
   const shouldReuseStaticIdleFrame =
     !pausedFileHoldFrame &&
-    shouldReuseIdleFrame(status, controls) &&
-    lastIdleFrameRef.current;
+    (shouldReuseIdleFrame(status, controls) || filePlaybackActivationHold) &&
+    isCanonicalStaticIdleFrame(lastIdleFrameRef.current);
 
   let featureFrame = null;
-  let frameSemanticSource = pausedFileHoldFrame
-    ? "paused-file-hold"
-    : shouldReuseStaticIdleFrame
-      ? "static-idle-cache"
-      : null;
+  let frameSemanticSource = null;
+
   if (pausedFileHoldFrame) {
     featureFrame = pausedFileHoldFrame;
-  } else if (!shouldReuseStaticIdleFrame) {
-    const buildFeatureFrameStartedAt = getRenderLoopWallTimeMs();
-    const analysisSnapshotStartedAt = getRenderLoopWallTimeMs();
-    const analysisSnapshot = audio.readAnalysisSnapshot();
+    frameSemanticSource = "paused-file-hold";
+  } else if (shouldReuseStaticIdleFrame) {
+    featureFrame = lastIdleFrameRef.current;
+    frameSemanticSource = filePlaybackActivationHold
+      ? "file-playback-activation-hold"
+      : "static-idle-cache";
+  } else {
+    const readStartedAt = getRenderLoopWallTimeMs();
+    const featureModel = featureRuntime?.readLatestFeatureModel?.() ?? null;
     recordRuntimePerfSample(
       runtimeDiagnostics,
-      "readAnalysisSnapshotMs",
-      getRenderLoopWallTimeMs() - analysisSnapshotStartedAt,
+      "readFeatureModelMs",
+      getRenderLoopWallTimeMs() - readStartedAt,
     );
 
-    maybeCaptureReplayFrame({
-      analysisSnapshot,
-      status,
-      frameTimeMs: time * 1000,
-    });
+    featureRuntimeStatus = featureRuntime?.getStatus?.() ?? null;
 
-    const shouldUseDirectFeatureBuildPath =
-      !featureEngine?.enqueueTransportFrame &&
-      buildFeatureFrame !== buildAudioFeatureFrame &&
-      prepareFeatureFrame === prepareAudioFeatureFrameInputs &&
-      runHeavyFeatureAnalysis === runHeavyAudioFeatureAnalysis &&
-      composeFeatureFrame === composeAudioFeatureFrame;
-
-    if (shouldUseDirectFeatureBuildPath) {
-      featureFrame = buildFeatureFrame({
-        analysisSnapshot,
-        featureState,
-        radius: runtimeState.uniforms.uRadius.value,
-        cavityAcousticScale: CAVITY_ACOUSTIC_DEFAULTS,
-        boundaryMode: controls.boundaryMode,
-        cavityGeometry: controls.cavityGeometry,
-        status,
-        frameTimeMs: time * 1000,
-        includeSpectralLight: spectralLightEnabled,
-      });
-      frameSemanticSource = "direct-feature-build";
-    } else {
-      const preparedInputs = prepareFeatureFrame({
-        analysisSnapshot,
-        featureState,
-        radius: runtimeState.uniforms.uRadius.value,
-        cavityAcousticScale: CAVITY_ACOUSTIC_DEFAULTS,
-        boundaryMode: controls.boundaryMode,
-        cavityGeometry: controls.cavityGeometry,
-        status,
-        frameTimeMs: time * 1000,
-        includeSpectralLight: spectralLightEnabled,
-      });
-
-      if (preparedInputs.silentFeatureFrame) {
-        featureFrame = preparedInputs.silentFeatureFrame;
-        frameSemanticSource = "silent-frame";
-        featureEngine?.reset?.("silent-frame");
-        resetAnalysisSchedulerState(analysisSchedulerRef);
-      } else {
-        const shouldComposeSourceCutFrame = shouldComposeSourceCutFeatureFrame({
-          status,
-          controls,
-          preparedInputs,
-        });
-        if (
-          featureEngine?.enqueueTransportFrame &&
-          !shouldComposeSourceCutFrame
-        ) {
-          const schedulerState =
-            getAnalysisSchedulerState(analysisSchedulerRef);
-          const engineEnqueueStartedAt = getRenderLoopWallTimeMs();
-          const transportFrame = buildAudioFeatureTransportFrame({
-            analysisSnapshot,
-            status: {
-              ...status,
-              capacity: featureState?.capacity ?? null,
-            },
-            frameTimeMs: preparedInputs.currentFrameAtMs,
-            radius: runtimeState.uniforms.uRadius.value,
-            cavityAcousticScale: CAVITY_ACOUSTIC_DEFAULTS,
-            boundaryMode: controls.boundaryMode,
-            cavityGeometry: controls.cavityGeometry,
-            includeSpectralLight: spectralLightEnabled,
-            auditSettings: featureState?.audit?.settings ?? null,
-          });
-          featureEngine.enqueueTransportFrame(transportFrame);
-          recordRuntimePerfSample(
-            runtimeDiagnostics,
-            "engineEnqueueMs",
-            getRenderLoopWallTimeMs() - engineEnqueueStartedAt,
-          );
-
-          const readEngineSnapshotStartedAt = getRenderLoopWallTimeMs();
-          const engineSnapshot = featureEngine.readLatestSnapshot({
-            frameTimeMs: preparedInputs.currentFrameAtMs,
-          });
-          recordRuntimePerfSample(
-            runtimeDiagnostics,
-            "readEngineSnapshotMs",
-            getRenderLoopWallTimeMs() - readEngineSnapshotStartedAt,
-          );
-
-          const engineStatus = featureEngine.getStatus?.() ?? null;
-          if (runtimeDiagnostics?.engine) {
-            runtimeDiagnostics.engine.snapshotAgeMs =
-              engineStatus?.latestSnapshotAgeMs ?? 0;
-            runtimeDiagnostics.engine.publishCount =
-              engineStatus?.publishCount ?? 0;
-            runtimeDiagnostics.engine.droppedFrameCount =
-              engineStatus?.droppedFrameCount ?? 0;
-            runtimeDiagnostics.engine.transportDropCount =
-              engineStatus?.transportDropCount ??
-              engineStatus?.droppedFrameCount ??
-              0;
-            runtimeDiagnostics.engine.publishSkipCount =
-              engineStatus?.publishSkipCount ?? 0;
-            runtimeDiagnostics.engine.fastSignalPatchCount =
-              engineStatus?.fastSignalPatchCount ?? 0;
-            runtimeDiagnostics.engine.fastSignalUpdateCount =
-              engineStatus?.fastSignalUpdateCount ?? 0;
-            runtimeDiagnostics.engine.structuralUpdateCount =
-              engineStatus?.structuralUpdateCount ?? 0;
-            runtimeDiagnostics.engine.chromaUpdateCount =
-              engineStatus?.chromaUpdateCount ?? 0;
-            runtimeDiagnostics.engine.tempoUpdateCount =
-              engineStatus?.tempoUpdateCount ?? 0;
-            runtimeDiagnostics.engine.latestProcessedFrameId =
-              engineStatus?.latestProcessedFrameId ?? 0;
-            runtimeDiagnostics.engine.latestPublishedFrameId =
-              engineStatus?.latestPublishedFrameId ?? 0;
-            Object.assign(
-              runtimeDiagnostics.engine,
-              snapshotWorkerPerfCounters(engineStatus),
-            );
-            runtimeDiagnostics.engine.queueDepth =
-              engineStatus?.queueDepth ?? 0;
-            runtimeDiagnostics.engine.state = engineStatus?.state ?? "none";
-            runtimeDiagnostics.engine.reason = engineStatus?.reason ?? null;
-          }
-
-          const workerSnapshotMatches = snapshotMatchesPreparedInputs(
-            engineSnapshot,
-            preparedInputs,
-          );
-          const shouldRefreshProgramSnapshot =
-            workerSnapshotMatches &&
-            shouldRefreshStaleProgramSnapshot({
-              engineSnapshot,
-              preparedInputs,
-              status,
-            });
-          const shouldRefreshSpectralLightWorkerSnapshot =
-            workerSnapshotMatches &&
-            shouldRebuildEmptySpectralLaneSnapshot({
-              spectralLightEnabled,
-              engineSnapshot,
-              preparedInputs,
-              status,
-              controls,
-            });
-
-          if (
-            workerSnapshotMatches &&
-            !shouldRefreshProgramSnapshot &&
-            !shouldRefreshSpectralLightWorkerSnapshot
-          ) {
-            const fastComposeStartedAt = getRenderLoopWallTimeMs();
-            const snapshotFrameTimeMs = engineSnapshot?.frameTimeMs;
-            const shouldPatchCurrentFastSignals =
-              Number.isFinite(snapshotFrameTimeMs) &&
-              Number.isFinite(preparedInputs.currentFrameAtMs) &&
-              snapshotFrameTimeMs < preparedInputs.currentFrameAtMs;
-            const analysisResult = shouldPatchCurrentFastSignals
-              ? buildFastSignalAnalysisResult({
-                  preparedInputs,
-                  previousAnalysisResult: engineSnapshot.analysisResult,
-                })
-              : engineSnapshot.analysisResult;
-            featureFrame = composeFeatureFrame({
-              preparedInputs,
-              analysisResult,
-              previousFrame: lastLiveFrameRef.current,
-              reuseHeavyAnalysis: true,
-            });
-            frameSemanticSource = shouldPatchCurrentFastSignals
-              ? "worker-fast-signal"
-              : "worker-snapshot";
-            recordRuntimePerfSample(
-              runtimeDiagnostics,
-              "fastComposeMs",
-              getRenderLoopWallTimeMs() - fastComposeStartedAt,
-            );
-          } else {
-            const shouldSeedLiveWarmup = shouldSeedLiveInputWarmupFrame({
-              status,
-              lastLiveFrame: lastLiveFrameRef.current,
-              lastActiveFrame: lastActiveFrameRef.current,
-            });
-            const shouldBootstrapActive = shouldBootstrapActiveFeatureFrame({
-              status,
-              controls,
-              lastLiveFrame: lastLiveFrameRef.current,
-              lastActiveFrame: lastActiveFrameRef.current,
-            });
-            const shouldRefreshSpectralLight =
-              shouldRefreshSpectralLightFeatureFrame({
-                spectralLightEnabled,
-                status,
-                controls,
-                lastLiveFrame: lastLiveFrameRef.current,
-              }) || shouldRefreshSpectralLightWorkerSnapshot;
-
-            if (
-              shouldRefreshProgramSnapshot ||
-              shouldComposeSourceCutFrame ||
-              shouldSeedLiveWarmup ||
-              shouldBootstrapActive ||
-              shouldRefreshSpectralLight
-            ) {
-              const heavyAnalysisStartedAt = getRenderLoopWallTimeMs();
-              const analysisResult = runHeavyFeatureAnalysis(preparedInputs);
-              recordRuntimePerfSample(
-                runtimeDiagnostics,
-                "heavyAnalysisMs",
-                getRenderLoopWallTimeMs() - heavyAnalysisStartedAt,
-              );
-
-              const fastComposeStartedAt = getRenderLoopWallTimeMs();
-              featureFrame = composeFeatureFrame({
-                preparedInputs,
-                analysisResult,
-                previousFrame: schedulerState.lastComposedFeatureFrame,
-                reuseHeavyAnalysis: false,
-              });
-              if (shouldRefreshProgramSnapshot) {
-                frameSemanticSource = "local-heavy-analysis";
-              } else if (shouldSeedLiveWarmup) {
-                frameSemanticSource = "live-warmup";
-              } else if (shouldBootstrapActive) {
-                frameSemanticSource = "bootstrap-fallback";
-              } else {
-                frameSemanticSource = "local-heavy-analysis";
-              }
-              recordRuntimePerfSample(
-                runtimeDiagnostics,
-                "fastComposeMs",
-                getRenderLoopWallTimeMs() - fastComposeStartedAt,
-              );
-
-              storeComposedAnalysisResult(
-                analysisSchedulerRef,
-                preparedInputs,
-                analysisResult,
-                featureFrame,
-              );
-              if (runtimeDiagnostics?.analysisScheduler) {
-                runtimeDiagnostics.analysisScheduler.forcedAnalysisCount += 1;
-              }
-            } else {
-              const hasSourceIntent = hasAudioSourceRenderIntent({
-                status,
-                controls,
-              });
-              const cachedLiveFrame = resolveCachedLiveFeatureFrame(
-                lastLiveFrameRef.current,
-                preparedInputs.silentFeatureFrame,
-              );
-              // hasAudioSourceRenderIntent guards cached live-frame fallback.
-              featureFrame = hasSourceIntent
-                ? cachedLiveFrame
-                : preparedInputs.silentFeatureFrame;
-              frameSemanticSource =
-                hasSourceIntent && cachedLiveFrame === lastLiveFrameRef.current
-                  ? "last-live-cache"
-                  : "silent-frame";
-              if (
-                hasSourceIntent &&
-                lastLiveFrameRef.current &&
-                cachedLiveFrame !== lastLiveFrameRef.current
-              ) {
-                lastLiveFrameRef.current = null;
-              }
-            }
-          }
-        } else {
-          const schedulerState =
-            getAnalysisSchedulerState(analysisSchedulerRef);
-          const { shouldRun, forced, analysisAgeMs } =
-            shouldRunHeavyFeatureAnalysis({
-              schedulerState,
-              preparedInputs,
-              frameTimeMs: preparedInputs.currentFrameAtMs,
-              runtimeDiagnostics,
-            });
-
-          if (runtimeDiagnostics?.analysisScheduler) {
-            runtimeDiagnostics.analysisScheduler.analysisAgeMs =
-              Number.isFinite(analysisAgeMs) ? analysisAgeMs : 0;
-          }
-
-          if (shouldRun) {
-            const heavyAnalysisStartedAt = getRenderLoopWallTimeMs();
-            const analysisResult = runHeavyFeatureAnalysis(preparedInputs);
-            recordRuntimePerfSample(
-              runtimeDiagnostics,
-              "heavyAnalysisMs",
-              getRenderLoopWallTimeMs() - heavyAnalysisStartedAt,
-            );
-
-            const fastComposeStartedAt = getRenderLoopWallTimeMs();
-            featureFrame = composeFeatureFrame({
-              preparedInputs,
-              analysisResult,
-              previousFrame: schedulerState.lastComposedFeatureFrame,
-              reuseHeavyAnalysis: false,
-            });
-            frameSemanticSource = "local-heavy-analysis";
-            recordRuntimePerfSample(
-              runtimeDiagnostics,
-              "fastComposeMs",
-              getRenderLoopWallTimeMs() - fastComposeStartedAt,
-            );
-
-            storeComposedAnalysisResult(
-              analysisSchedulerRef,
-              preparedInputs,
-              analysisResult,
-              featureFrame,
-            );
-            if (runtimeDiagnostics?.analysisScheduler && forced) {
-              runtimeDiagnostics.analysisScheduler.forcedAnalysisCount += 1;
-            }
-          } else {
-            const fastComposeStartedAt = getRenderLoopWallTimeMs();
-            featureFrame = composeFeatureFrame({
-              preparedInputs,
-              analysisResult: schedulerState.lastHeavyAnalysisResult,
-              previousFrame: schedulerState.lastComposedFeatureFrame,
-              reuseHeavyAnalysis: true,
-            });
-            frameSemanticSource = "scheduled-reuse";
-            recordRuntimePerfSample(
-              runtimeDiagnostics,
-              "fastComposeMs",
-              getRenderLoopWallTimeMs() - fastComposeStartedAt,
-            );
-
-            if (analysisSchedulerRef?.current) {
-              analysisSchedulerRef.current = {
-                ...schedulerState,
-                lastComposedFeatureFrame: featureFrame,
-              };
-            }
-            if (runtimeDiagnostics?.analysisScheduler) {
-              runtimeDiagnostics.analysisScheduler.analysisReuseCount += 1;
-              runtimeDiagnostics.analysisScheduler.skippedAnalysisCount += 1;
-            }
-          }
-        }
-      }
+    if (featureModel) {
+      const viewStartedAt = getRenderLoopWallTimeMs();
+      featureFrame = createFeatureView(featureModel);
+      recordRuntimePerfSample(
+        runtimeDiagnostics,
+        "createRendererFeatureViewMs",
+        getRenderLoopWallTimeMs() - viewStartedAt,
+      );
     }
-
-    recordRuntimePerfSample(
-      runtimeDiagnostics,
-      "buildFeatureFrameMs",
-      getRenderLoopWallTimeMs() - buildFeatureFrameStartedAt,
-    );
+    frameSemanticSource = featureFrame
+      ? "feature-model"
+      : "feature-model-unavailable";
 
     if (shouldReuseIdleFrame(status, controls)) {
-      lastIdleFrameRef.current = featureFrame;
+      if (featureFrame && !isCanonicalStaticIdleFrame(featureFrame)) {
+        featureFrame = null;
+        frameSemanticSource = "stale-source-model-rejected";
+      }
+      lastIdleFrameRef.current = isCanonicalStaticIdleFrame(featureFrame)
+        ? featureFrame
+        : null;
     } else {
       lastIdleFrameRef.current = null;
     }
-  } else if (shouldReuseStaticIdleFrame) {
-    featureFrame = lastIdleFrameRef.current;
+  }
+
+  if (featureRuntimeStatus) {
+    syncFeatureRuntimeDiagnostics(runtimeDiagnostics, featureRuntimeStatus);
   }
 
   recordFrameSemanticSource(runtimeDiagnostics, frameSemanticSource);
 
-  if (status.isPlaying || status.isLiveInputActive) {
-    if (isActiveFilePlayback(status)) {
+  if (status?.isPlaying || status?.isLiveInputActive) {
+    if (isActiveFilePlayback(status) && featureFrame) {
       refreshPausedFileHoldFrame({
         frameCacheRefs: renderLoopRefs.frameCacheRefs,
         status,
@@ -2468,68 +1814,21 @@ export function resolveFeatureFrame(
     } else {
       clearPausedFileHoldFrame(renderLoopRefs.frameCacheRefs);
     }
-
-    if (shouldCaptureLastLiveFrame({ featureFrame })) {
-      lastLiveFrameRef.current = featureFrame;
-    } else if (!allowsCurrentLiveRenderFrame(featureFrame)) {
-      lastLiveFrameRef.current = null;
+    if (!filePlaybackActivationHold) {
+      lastIdleFrameRef.current = null;
     }
-    lastActiveFrameRef.current = null;
-    lastIdleFrameRef.current = null;
-  } else {
-    if (status.lastLiveInputInterruption) {
-      clearFrameCache(renderLoopRefs.frameCacheRefs);
-      resetInterruptedLiveInputVisualResponse(runtimeState);
-      if (!controls.injectTestTone) {
-        featureEngine?.reset?.("live-input-interrupted");
-      }
-    } else {
-      if (frameSemanticSource !== "paused-file-hold") {
-        clearPausedFileHoldFrame(renderLoopRefs.frameCacheRefs);
-      }
-      lastLiveFrameRef.current = null;
-      lastActiveFrameRef.current = null;
-      if (!controls.injectTestTone && clockMode !== "paused-playback") {
-        featureEngine?.reset?.("idle");
-      }
-      if (clockMode !== "paused-playback") {
-        resetAnalysisSchedulerState(analysisSchedulerRef);
-      }
-    }
+  } else if (status?.lastLiveInputInterruption) {
+    clearFrameCache(renderLoopRefs.frameCacheRefs);
+    resetInterruptedLiveInputVisualResponse(runtimeState);
+    featureFrame = null;
+  } else if (frameSemanticSource !== "paused-file-hold") {
+    clearPausedFileHoldFrame(renderLoopRefs.frameCacheRefs);
   }
-
-  const effectiveFrame = featureFrame;
 
   return {
     featureFrame,
-    effectiveFrame,
+    effectiveFrame: featureFrame,
   };
-}
-
-export function applyReactiveBloomState({
-  controls,
-  runtimeState,
-  postNodesRef,
-  bloom,
-}) {
-  if (!bloom) {
-    return bloom;
-  }
-
-  const bt = runtimeState?.bloomTuning;
-  const strength = bt?.effectiveStrength ?? bloom.strength;
-  const radius = bt?.effectiveRadius ?? bloom.radius;
-  const threshold = bt?.effectiveThreshold ?? bloom.threshold;
-  const bloomAllowed = bt?.bloomAllowed ?? true;
-
-  const bloomActive = controls.bloomEnabled && bloomAllowed && strength > 1e-4;
-  syncRenderOutputBloomPassUniforms(postNodesRef.current, {
-    strength,
-    radius,
-    threshold: bloomActive ? threshold : 999,
-  });
-
-  return bloom;
 }
 
 function buildAuditSnapshotPayload({
@@ -2559,7 +1858,6 @@ function publishAuditSnapshot(
     runtime,
     runtimeState,
     status,
-    featureState,
     lowLoadPlaybackDiagnosticsActive,
     runtimeDiagnostics,
   },
@@ -2596,7 +1894,7 @@ function publishAuditSnapshot(
     snapshot: payload,
   });
 
-  const frame = featureState.audit?.frame ?? 0;
+  const frame = runtimeDiagnostics?.activeFrameCount ?? 0;
   const interval = Math.max(1, Math.floor(controls.logEveryFrames));
   if (!lowLoadPlaybackDiagnosticsActive && frame % interval === 0) {
     logAudit("[Baryon audit]", payload);
@@ -2670,7 +1968,6 @@ export function publishDevtoolsSnapshots(
     runtime,
     runtimeState,
     status,
-    featureState,
     lowLoadPlaybackDiagnosticsActive,
     runtimeDiagnostics,
     shared,
@@ -2699,7 +1996,6 @@ export function publishDevtoolsSnapshots(
       runtime,
       runtimeState,
       status,
-      featureState,
       lowLoadPlaybackDiagnosticsActive,
       runtimeDiagnostics,
     },

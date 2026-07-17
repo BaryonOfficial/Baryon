@@ -54,11 +54,10 @@ function resolveCompactSectionId(groupTitle) {
       return "performance";
     case "Output":
       return "output";
-    case "Shape":
-    case "Color":
+    case "Volume":
+    case "Appearance":
     case "Logo":
     case "Motion":
-    case "Bloom":
       return "visuals";
     case "Diagnostics":
       return "diagnostics";
@@ -156,6 +155,31 @@ const CSS = `
 
 .baryon-controls-header-text {
   min-width: 0;
+}
+
+.baryon-controls-fullscreen-ui-toggle {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  padding: 0.48rem 0.5rem;
+  border-radius: 0.8rem;
+  background: var(--nd-surface-raised);
+  cursor: pointer;
+}
+
+.baryon-controls-fullscreen-ui-toggle-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+
+.baryon-controls-fullscreen-ui-toggle-description {
+  color: var(--nd-text-secondary);
+  font-size: 0.58rem;
+  line-height: 1.35;
 }
 
 .baryon-controls-close-button {
@@ -325,6 +349,19 @@ const CSS = `
   border: none;
   background: var(--nd-surface-raised);
   border-radius: 0.8rem;
+}
+
+.baryon-controls-pinned-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.baryon-controls-pinned-header-control {
+  display: flex;
+  align-items: center;
+  gap: 0.34rem;
 }
 
 .baryon-controls-section-label {
@@ -510,6 +547,10 @@ const CSS = `
   letter-spacing: var(--baryon-type-action-letter-spacing);
 }
 
+.baryon-controls-segmented-label {
+  white-space: nowrap;
+}
+
 .baryon-controls-help-trigger {
   display: inline-flex;
   align-items: center;
@@ -626,6 +667,11 @@ const CSS = `
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--nd-accent) 55%, #000),
     inset 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+.baryon-controls-toggle input:focus-visible + .baryon-controls-toggle-track {
+  outline: 2px solid var(--nd-text-display);
+  outline-offset: 2px;
 }
 
 .baryon-controls-toggle input:checked + .baryon-controls-toggle-track .baryon-controls-toggle-thumb {
@@ -1448,59 +1494,47 @@ function ControlField({
     />
   );
 
-  if (binding.view === "toggle") {
-    return (
-      <div className="baryon-controls-card">
-        <div className="baryon-controls-card-header">
-          <span className="baryon-controls-card-text">
-            <span className="baryon-controls-card-title-row">
-              <label className="baryon-controls-card-label" htmlFor={controlId}>
-                {definition.label}
-              </label>
-              {helpTrigger}
-            </span>
-          </span>
-          <span className="baryon-controls-toggle">
-            <input
-              id={controlId}
-              aria-label={definition.label}
-              type="checkbox"
-              checked={Boolean(value)}
-              onChange={(event) => onChange(event.target.checked)}
-            />
-            <span className="baryon-controls-toggle-track">
-              <span className="baryon-controls-toggle-thumb" />
-            </span>
-          </span>
-        </div>
-      </div>
+  if (
+    binding.view === "toggle" ||
+    typeof definition.defaultValue === "boolean"
+  ) {
+    const toggle = (
+      <span className="baryon-controls-toggle">
+        <input
+          id={controlId}
+          aria-label={definition.label}
+          type="checkbox"
+          checked={Boolean(value)}
+          onChange={(event) => onChange(event.target.checked)}
+        />
+        <span className="baryon-controls-toggle-track">
+          <span className="baryon-controls-toggle-thumb" />
+        </span>
+      </span>
     );
-  }
+    const titleRow = (
+      <span className="baryon-controls-card-title-row">
+        <label className="baryon-controls-card-label" htmlFor={controlId}>
+          {definition.label}
+        </label>
+        {helpTrigger}
+      </span>
+    );
 
-  if (typeof definition.defaultValue === "boolean") {
+    if (definition.pinnedPlacement === "section-header") {
+      return (
+        <div className="baryon-controls-pinned-header-control">
+          {titleRow}
+          {toggle}
+        </div>
+      );
+    }
+
     return (
       <div className="baryon-controls-card">
         <div className="baryon-controls-card-header">
-          <span className="baryon-controls-card-text">
-            <span className="baryon-controls-card-title-row">
-              <label className="baryon-controls-card-label" htmlFor={controlId}>
-                {definition.label}
-              </label>
-              {helpTrigger}
-            </span>
-          </span>
-          <span className="baryon-controls-toggle">
-            <input
-              id={controlId}
-              aria-label={definition.label}
-              type="checkbox"
-              checked={Boolean(value)}
-              onChange={(event) => onChange(event.target.checked)}
-            />
-            <span className="baryon-controls-toggle-track">
-              <span className="baryon-controls-toggle-thumb" />
-            </span>
-          </span>
+          <span className="baryon-controls-card-text">{titleRow}</span>
+          {toggle}
         </div>
       </div>
     );
@@ -1539,7 +1573,7 @@ function ControlField({
       <div className="baryon-controls-card">
         <div className="baryon-controls-card-title-row">
           <span
-            className="baryon-controls-card-label"
+            className="baryon-controls-card-label baryon-controls-segmented-label"
             id={`${controlId}-label`}
           >
             {definition.label}
@@ -1707,11 +1741,53 @@ function PinnedControlSection({
   onHelpBlur,
   onHelpClick,
 }) {
+  const headerControl = group.controls.find(
+    (definition) => definition.pinnedPlacement === "section-header",
+  );
+  const contentControls = headerControl
+    ? group.controls.filter((definition) => definition !== headerControl)
+    : group.controls;
+  const groupTitlePrefix = `${group.title} `;
+  const controlsOwnGroupTitle =
+    contentControls.length > 0 &&
+    contentControls.every((definition) => {
+      const label = String(definition.label ?? "");
+      return label === group.title || label.startsWith(groupTitlePrefix);
+    });
+  const showPinnedHeader = !controlsOwnGroupTitle || headerControl;
+
   return (
     <section className="baryon-controls-pinned-section">
-      <p className="baryon-controls-section-label">{group.title}</p>
+      {showPinnedHeader ? (
+        <div className="baryon-controls-pinned-header">
+          {controlsOwnGroupTitle ? null : (
+            <p className="baryon-controls-section-label">{group.title}</p>
+          )}
+          {headerControl ? (
+            <ControlField
+              definition={headerControl}
+              value={getDefinitionValue(headerControl, controlsState)}
+              onChange={(nextValue) =>
+                applyDefinitionChange(
+                  headerControl,
+                  nextValue,
+                  controlsState,
+                  onChange,
+                )
+              }
+              activeHelpKey={activeHelpKey}
+              registerHelpTrigger={registerHelpTrigger}
+              onHelpPointerEnter={onHelpPointerEnter}
+              onHelpPointerLeave={onHelpPointerLeave}
+              onHelpFocus={onHelpFocus}
+              onHelpBlur={onHelpBlur}
+              onHelpClick={onHelpClick}
+            />
+          ) : null}
+        </div>
+      ) : null}
       <ControlFieldsList
-        controls={group.controls}
+        controls={contentControls}
         controlsState={controlsState}
         onChange={onChange}
         activeHelpKey={activeHelpKey}
@@ -1795,6 +1871,8 @@ export default function AdvancedControlsSidebar({
   onClose,
   dockWidth,
   triggerRef,
+  showUiInFullscreen = false,
+  onShowUiInFullscreenChange = null,
   footerActions = [],
 }) {
   /** @type {import("react").CSSProperties & { "--baryon-controls-dock-width": string }} */
@@ -2270,6 +2348,36 @@ export default function AdvancedControlsSidebar({
                 </button>
               </section>
             )}
+
+            {(!isCompactInspector || activeCompactSection?.includePresets) &&
+            onShowUiInFullscreenChange ? (
+              <label
+                className="baryon-controls-fullscreen-ui-toggle"
+                data-testid="show-ui-in-fullscreen-toggle"
+              >
+                <span className="baryon-controls-fullscreen-ui-toggle-copy">
+                  <span className="baryon-controls-card-label">
+                    Show UI in fullscreen
+                  </span>
+                  <span className="baryon-controls-fullscreen-ui-toggle-description">
+                    Press F to enter/exit fullscreen.
+                  </span>
+                </span>
+                <span className="baryon-controls-toggle">
+                  <input
+                    aria-label="Show UI in fullscreen"
+                    type="checkbox"
+                    checked={showUiInFullscreen === true}
+                    onChange={(event) =>
+                      onShowUiInFullscreenChange(event.target.checked)
+                    }
+                  />
+                  <span className="baryon-controls-toggle-track">
+                    <span className="baryon-controls-toggle-thumb" />
+                  </span>
+                </span>
+              </label>
+            ) : null}
 
             {(!isCompactInspector ||
               activeCompactSection?.includePerformance) &&

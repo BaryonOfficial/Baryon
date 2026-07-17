@@ -1,7 +1,7 @@
 import { clamp01 } from "../math.js";
 
 export const DEFAULT_RENDER_ENERGY_EPSILON = 1e-6;
-export const ENERGY_OWNER_VERSION = "av-energy-ledger:v1";
+const ENERGY_OWNER_VERSION = "av-energy-ledger:v1";
 
 function shouldBoundarySuppressProjection(renderBoundaryState) {
   return renderBoundaryState === "absent" || renderBoundaryState === "muted";
@@ -133,8 +133,7 @@ export function buildModalEnergyLedger({
         storedModalLayerScale,
     ),
     storedModalResonantEnergy: clamp01(
-      (modalResponse?.modalResponseResonantEnergy ?? 0) *
-        storedModalLayerScale,
+      (modalResponse?.modalResponseResonantEnergy ?? 0) * storedModalLayerScale,
     ),
     projectedRenderEnergy,
     rawProjectedRenderEnergy,

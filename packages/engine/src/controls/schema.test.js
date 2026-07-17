@@ -26,13 +26,10 @@ const EXPECTED_CONTROL_KEYS = [
   "noiseSuppression",
   "autoGainControl",
   // Shape
-  "fieldExtent",
-  "zeroPointPrecision",
+  "volumeShape",
   "boundaryMode",
   "densityGain",
-  "absorption",
   "laserDeflectionGain",
-  "opacityGain",
   "raymarchSteps",
   // Color
   "volumeColor",
@@ -41,7 +38,6 @@ const EXPECTED_CONTROL_KEYS = [
   "colorMode",
   "spectralMix",
   "holographicIntensity",
-  "holographicShift",
   "holographicFresnelPower",
   // Logo
   "idleLogoIntensity",
@@ -50,7 +46,6 @@ const EXPECTED_CONTROL_KEYS = [
   // Motion
   "rotationMode",
   "rotationSpeed",
-  "reactivity",
   "motionAmount",
   // Bloom / performance / output
   "bloomEnabled",
@@ -66,9 +61,6 @@ const EXPECTED_CONTROL_KEYS = [
   // Display (continued)
   "visualizationMethod",
   "cameraLocked",
-  "bloomResponseBias",
-  "rimBloomBias",
-  "rimCompression",
   // Diagnostics
   "traaEnabled",
   "smaaEnabled",
@@ -196,23 +188,26 @@ describe("control schema", () => {
     expect(state.volumeColor).toBe("#5be3f4");
     expect(state.surfaceColor).toBe("#5be3f4");
     expect(state.idleLogoColor).toBe("#f7fdff");
-    expect(state.zeroPointPrecision).toBe(0.072);
+    expect(state).not.toHaveProperty("carrierCoreFwhmWorld");
+    expect(state).not.toHaveProperty("zeroPointPrecision");
     expect(state).not.toHaveProperty("structureMin");
     expect(state).not.toHaveProperty("structureMax");
     expect(state.boundaryMode).toBe("neumann");
-    expect(state.fieldExtent).toBe("sphere");
+    expect(state.volumeShape).toBe("sphere");
+    expect(state).not.toHaveProperty("fieldExtent");
     expect(state.raymarchSteps).toBe(RAYMARCH_DEFAULTS.raymarchSteps);
     expect(state.densityGain).toBe(4);
-    expect(state.laserDeflectionGain).toBe(0.9);
-    expect(state.absorption).toBe(RAYMARCH_DEFAULTS.absorption);
-    expect(state.opacityGain).toBe(3);
+    expect(state.laserDeflectionGain).toBe(1.2);
+    expect(state).not.toHaveProperty("absorption");
+    expect(state).not.toHaveProperty("opacityGain");
     expect(state).not.toHaveProperty("contourSharpness");
     expect(state.holographicIntensity).toBe(1);
-    expect(state.holographicShift).toBe(0.42);
-    expect(state.holographicFresnelPower).toBe(4.8);
-    expect(state.bloomStrength).toBe(1.05);
-    expect(state.bloomRadius).toBe(0.18);
-    expect(state.bloomThreshold).toBe(0.25);
+    expect(state).not.toHaveProperty("holographicShift");
+    expect(state.holographicFresnelPower).toBe(2.4);
+    expect(state.bloomEnabled).toBe(true);
+    expect(state.bloomStrength).toBe(1.18);
+    expect(state.bloomRadius).toBe(0);
+    expect(state.bloomThreshold).toBe(0.5);
     expect(state.smaaEnabled).toBe(RENDER_DEFAULTS.smaaEnabled);
     expect(state.performanceHudEnabled).toBe(
       RENDER_DEFAULTS.performanceHudEnabled,
@@ -220,9 +215,10 @@ describe("control schema", () => {
     expect(state.renderQualityPreset).toBe(RENDER_DEFAULTS.renderQualityPreset);
     expect(state.customTargetFps).toBe(RENDER_DEFAULTS.customTargetFps);
     expect(state.traaEnabled).toBe(RENDER_DEFAULTS.traaEnabled);
-    expect(state.bloomResponseBias).toBe(1);
-    expect(state.rimBloomBias).toBe(1.2);
-    expect(state.rimCompression).toBe(1.2);
+    expect(state).not.toHaveProperty("reactivity");
+    expect(state).not.toHaveProperty("bloomResponseBias");
+    expect(state).not.toHaveProperty("rimBloomBias");
+    expect(state).not.toHaveProperty("rimCompression");
   });
 
   it("does not expose contour sharpness as a control", () => {
@@ -233,16 +229,12 @@ describe("control schema", () => {
     expect(contourSharpness).toBeUndefined();
   });
 
-  it("keeps the node-threshold slider wide enough for cymatic tuning", () => {
-    const nodeThreshold = CONTROL_DEFINITIONS.find(
-      (definition) => definition.key === "zeroPointPrecision",
+  it("keeps the fixed world-space carrier FWHM out of the public schema", () => {
+    const carrierCoreWidth = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "carrierCoreFwhmWorld",
     );
 
-    expect(nodeThreshold?.binding).toMatchObject({
-      min: 0.001,
-      max: 0.3,
-      step: 0.001,
-    });
+    expect(carrierCoreWidth).toBeUndefined();
   });
 
   it("keeps legacy background color as hidden compatibility state", () => {
@@ -261,6 +253,9 @@ describe("control schema", () => {
     const performanceProfileControl = CONTROL_DEFINITIONS.find(
       (definition) => definition.key === "renderQualityPreset",
     );
+    const performanceHudControl = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "performanceHudEnabled",
+    );
 
     expect(performanceProfileControl?.title).toContain("Max Quality");
     expect(performanceProfileControl?.binding).toMatchObject({
@@ -270,6 +265,7 @@ describe("control schema", () => {
         Max: "max-quality",
       },
     });
+    expect(performanceHudControl?.pinnedPlacement).toBe("section-header");
   });
 
   it("defines program output controls separately from the preview backdrop", () => {
@@ -280,6 +276,7 @@ describe("control schema", () => {
       (definition) => definition.key === "outputBackgroundColor",
     );
 
+    expect(outputModeControl?.label).toBe("Output Mode");
     expect(outputModeControl?.runtimePath).toBe("program.outputMode");
     expect(outputFillControl?.runtimePath).toBe("program.backgroundColor");
   });
@@ -301,7 +298,19 @@ describe("control schema", () => {
     });
   });
 
-  it("exposes cavity geometry as a debug-only requested-state control", () => {
+  it("keeps default-on TRAA scoped to the raymarch pipeline", () => {
+    const traaControl = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "traaEnabled",
+    );
+
+    expect(traaControl).toMatchObject({
+      defaultValue: true,
+      methods: [VISUALIZATION_METHODS.raymarch],
+      status: CONTROL_STATUSES.debugOnly,
+    });
+  });
+
+  it("keeps non-operative cavity geometry out of user-facing controls", () => {
     const cavityGeometryControl = CONTROL_DEFINITIONS.find(
       (definition) => definition.key === "cavityGeometry",
     );
@@ -314,6 +323,8 @@ describe("control schema", () => {
       runtimePath: "runtime.requestedCavityGeometry",
       status: CONTROL_STATUSES.debugOnly,
       methods: [VISUALIZATION_METHODS.raymarch],
+      sidebarHidden: true,
+      publicReferenceHidden: true,
     });
     expect(cavityGeometryControl?.binding?.options).toEqual({
       Rectangular: "rectangular",
@@ -379,10 +390,9 @@ describe("control schema", () => {
     expect(getControlFolders(DEFAULT_VISUALIZATION_METHOD)).toEqual([
       "Performance",
       "Output",
-      "Shape",
-      "Color",
+      "Volume",
+      "Appearance",
       "Motion",
-      "Bloom",
       "Logo",
       "Diagnostics",
     ]);
@@ -404,21 +414,18 @@ describe("control schema", () => {
       ),
     ).toEqual(["outputMode", "outputBackgroundColor"]);
     expect(
-      getControlsForFolder("Shape", DEFAULT_VISUALIZATION_METHOD).map(
+      getControlsForFolder("Volume", DEFAULT_VISUALIZATION_METHOD).map(
         (definition) => definition.key,
       ),
     ).toEqual([
-      "fieldExtent",
+      "volumeShape",
       "boundaryMode",
-      "zeroPointPrecision",
       "densityGain",
-      "absorption",
       "laserDeflectionGain",
-      "opacityGain",
       "raymarchSteps",
     ]);
     expect(
-      getControlsForFolder("Color", DEFAULT_VISUALIZATION_METHOD).map(
+      getControlsForFolder("Appearance", DEFAULT_VISUALIZATION_METHOD).map(
         (definition) => definition.key,
       ),
     ).toEqual([
@@ -427,27 +434,17 @@ describe("control schema", () => {
       "surfaceColor",
       "spectralMix",
       "holographicIntensity",
-      "holographicShift",
       "holographicFresnelPower",
+      "bloomEnabled",
+      "bloomStrength",
+      "bloomRadius",
+      "bloomThreshold",
     ]);
     expect(
       getControlsForFolder("Motion", DEFAULT_VISUALIZATION_METHOD).map(
         (definition) => definition.key,
       ),
-    ).toEqual(["rotationMode", "rotationSpeed", "motionAmount", "reactivity"]);
-    expect(
-      getControlsForFolder("Bloom", DEFAULT_VISUALIZATION_METHOD).map(
-        (definition) => definition.key,
-      ),
-    ).toEqual([
-      "bloomEnabled",
-      "bloomStrength",
-      "bloomRadius",
-      "bloomThreshold",
-      "bloomResponseBias",
-      "rimBloomBias",
-      "rimCompression",
-    ]);
+    ).toEqual(["rotationMode", "rotationSpeed", "motionAmount"]);
     expect(
       getControlsForFolder("Logo", DEFAULT_VISUALIZATION_METHOD).map(
         (definition) => definition.key,
@@ -464,13 +461,29 @@ describe("control schema", () => {
       "freezeModeSlots",
       "forceWebGLFallbackTest",
       "lowLoadPlaybackDiagnostics",
-      "cavityGeometry",
       "injectTestTone",
       "testToneHz",
       "testToneSignal",
       "testToneAmplitude",
       "logEveryFrames",
     ]);
+  });
+
+  it("offers only finite observation shapes", () => {
+    const volumeShapeControl = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "volumeShape",
+    );
+
+    expect(volumeShapeControl).toMatchObject({
+      label: "Shape",
+      defaultValue: "sphere",
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.volumeMesh.userData.raymarchVolumeShape",
+    });
+    expect(volumeShapeControl?.binding?.options).toEqual({
+      Sphere: "sphere",
+      Cube: "cube",
+    });
   });
 
   it("maps every live control to runtime coverage", () => {
@@ -484,45 +497,17 @@ describe("control schema", () => {
     }
   });
 
-  it("keeps fine-grained bloom controls live while preserving method scope", () => {
-    const bloomResponseBias = CONTROL_DEFINITIONS.find(
-      (definition) => definition.key === "bloomResponseBias",
-    );
-    const rimBloomBias = CONTROL_DEFINITIONS.find(
-      (definition) => definition.key === "rimBloomBias",
-    );
-    const rimCompression = CONTROL_DEFINITIONS.find(
-      (definition) => definition.key === "rimCompression",
-    );
+  it("keeps the direct Fresnel controls raymarch-scoped", () => {
     const holographicIntensity = CONTROL_DEFINITIONS.find(
       (definition) => definition.key === "holographicIntensity",
-    );
-    const holographicShift = CONTROL_DEFINITIONS.find(
-      (definition) => definition.key === "holographicShift",
     );
     const holographicFresnelPower = CONTROL_DEFINITIONS.find(
       (definition) => definition.key === "holographicFresnelPower",
     );
 
-    expect(bloomResponseBias).toMatchObject({
-      group: "Bloom",
-      status: CONTROL_STATUSES.live,
-      methods: [VISUALIZATION_METHODS.raymarch],
-    });
-    expect(rimBloomBias).toMatchObject({
-      group: "Bloom",
-      status: CONTROL_STATUSES.live,
-      methods: [VISUALIZATION_METHODS.raymarch],
-    });
-    expect(rimCompression).toMatchObject({
-      group: "Bloom",
-      status: CONTROL_STATUSES.live,
-      methods: [VISUALIZATION_METHODS.raymarch],
-    });
     expect(holographicIntensity?.methods).toEqual([
       VISUALIZATION_METHODS.raymarch,
     ]);
-    expect(holographicShift?.methods).toEqual([VISUALIZATION_METHODS.raymarch]);
     expect(holographicFresnelPower?.methods).toEqual([
       VISUALIZATION_METHODS.raymarch,
     ]);

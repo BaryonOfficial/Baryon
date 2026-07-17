@@ -74,8 +74,6 @@ describe("ListenerControls compact dock layout", () => {
     });
 
     useAudioMock.mockReturnValue({
-      soundCloudEnabled: false,
-      playbackSource: "local-file",
       selectedSource: "file",
       displayName: "Upload Audio",
       liveReturnLocalFile: null,
@@ -97,18 +95,6 @@ describe("ListenerControls compact dock layout", () => {
       handleVolumeChange: () => {},
       handleMuteToggle: () => {},
       setShowDeviceMenu: () => {},
-      showSoundCloudPanel: false,
-      setShowSoundCloudPanel: () => {},
-      soundCloudInput: "",
-      setSoundCloudInput: () => {},
-      soundCloudError: "",
-      soundCloudInfo: null,
-      soundCloudQueue: [],
-      soundCloudCollectionTitle: "",
-      soundCloudCurrentTrack: null,
-      soundCloudCurrentIndex: 0,
-      isSoundCloudLoading: false,
-      loadSoundCloudTrack: () => {},
       scrubPreviewSeconds: null,
       isScrubbing: false,
       beginScrub: () => Promise.resolve(),
@@ -145,7 +131,6 @@ describe("ListenerControls compact dock layout", () => {
 
   it("shows the source control without the compact file dock in system mode", () => {
     renderControls({
-      playbackSource: "local-file",
       selectedSource: "system",
       liveInputDeviceKind: "live",
       recentUploads: [createRecentUpload()],
@@ -172,7 +157,6 @@ describe("ListenerControls compact dock layout", () => {
 
   it("aligns the standalone source control to the top-right overlay rail", () => {
     renderControls({
-      playbackSource: "local-file",
       selectedSource: "system",
       liveInputDeviceKind: "system",
     });
@@ -188,7 +172,6 @@ describe("ListenerControls compact dock layout", () => {
 
   it("shows upload-audio placeholder copy for the file source before a file is loaded", () => {
     renderControls({
-      playbackSource: "local-file",
       selectedSource: "file",
       displayName: "Upload Audio",
     });
@@ -203,7 +186,6 @@ describe("ListenerControls compact dock layout", () => {
   it("uses a semantic button for the full track upload trigger", () => {
     renderControls(
       {
-        playbackSource: "local-file",
         selectedSource: "file",
         displayName: "Upload Audio",
       },
@@ -339,7 +321,6 @@ describe("ListenerControls compact dock layout", () => {
 
   it("shows the loaded file name for the file source on compact layouts", () => {
     renderControls({
-      playbackSource: "local-file",
       selectedSource: "file",
       displayName: "set-break-live.wav",
       isAudioLoaded: true,

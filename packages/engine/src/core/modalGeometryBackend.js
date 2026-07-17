@@ -196,7 +196,7 @@ function resolveModalSolveOptions({ radius, acousticScale, boundaryMode }) {
   if (normalizedBoundaryMode) {
     return {
       acousticScale: {
-        radiusMeters: radius,
+        sideLengthMeters: radius,
       },
       boundaryMode: normalizedBoundaryMode,
     };

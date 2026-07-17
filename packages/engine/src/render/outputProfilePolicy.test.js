@@ -59,11 +59,13 @@ describe("render performance profiles", () => {
         renderScale: 0.67,
         traaEnabled: false,
         bloomAllowed: false,
+        carrierTruthEnabled: true,
         unexpected: true,
       }),
     ).toEqual({
       traaEnabled: false,
       bloomAllowed: false,
+      carrierTruthEnabled: true,
     });
 
     expect(
@@ -71,8 +73,25 @@ describe("render performance profiles", () => {
         renderScale: 0,
         traaEnabled: "nope",
         bloomAllowed: null,
+        carrierTruthEnabled: "yes",
       }),
     ).toBeNull();
+  });
+
+  it("defaults carrier truth off and enables it only by explicit override", () => {
+    const normalProfile = resolveRenderQualityProfile({
+      qualityPreset: "auto",
+    });
+    const carrierTruthProfile = resolveRenderQualityProfile({
+      qualityPreset: "auto",
+      postProcessOverrides: { carrierTruthEnabled: true },
+    });
+
+    expect(normalProfile.carrierTruthEnabled).toBe(false);
+    expect(carrierTruthProfile.carrierTruthEnabled).toBe(true);
+    expect(
+      getRenderQualityProfileKey(carrierTruthProfile),
+    ).not.toBe(getRenderQualityProfileKey(normalProfile));
   });
 
   it("normalizes resolved profiles without accepting render-scale ownership", () => {
@@ -90,6 +109,7 @@ describe("render performance profiles", () => {
       startupRaymarchSteps: null,
       traaEnabled: true,
       bloomAllowed: true,
+      carrierTruthEnabled: false,
       renderContext: RENDER_CONTEXTS.externalOutput,
     });
 
@@ -108,6 +128,7 @@ describe("render performance profiles", () => {
       startupRaymarchSteps: 32,
       traaEnabled: false,
       bloomAllowed: false,
+      carrierTruthEnabled: false,
       renderContext: RENDER_CONTEXTS.externalOutput,
     });
 
@@ -167,6 +188,7 @@ describe("render performance profiles", () => {
       startupRaymarchSteps: 32,
       traaEnabled: true,
       bloomAllowed: true,
+      carrierTruthEnabled: false,
       renderContext: RENDER_CONTEXTS.preview,
     });
 
@@ -182,6 +204,7 @@ describe("render performance profiles", () => {
       startupRaymarchSteps: 16,
       traaEnabled: true,
       bloomAllowed: true,
+      carrierTruthEnabled: false,
       renderContext: RENDER_CONTEXTS.preview,
     });
 
@@ -198,6 +221,7 @@ describe("render performance profiles", () => {
       startupRaymarchSteps: 16,
       traaEnabled: true,
       bloomAllowed: true,
+      carrierTruthEnabled: false,
       renderContext: RENDER_CONTEXTS.preview,
     });
   });
@@ -216,6 +240,7 @@ describe("render performance profiles", () => {
       startupRaymarchSteps: 32,
       traaEnabled: true,
       bloomAllowed: true,
+      carrierTruthEnabled: false,
       renderContext: RENDER_CONTEXTS.externalOutput,
     });
 
@@ -261,6 +286,7 @@ describe("render performance profiles", () => {
       startupRaymarchSteps: 16,
       traaEnabled: true,
       bloomAllowed: true,
+      carrierTruthEnabled: false,
       renderContext: RENDER_CONTEXTS.externalOutput,
     });
 
@@ -277,6 +303,7 @@ describe("render performance profiles", () => {
       startupRaymarchSteps: null,
       traaEnabled: true,
       bloomAllowed: true,
+      carrierTruthEnabled: false,
       renderContext: RENDER_CONTEXTS.externalOutput,
     });
   });
@@ -331,6 +358,7 @@ describe("render performance profiles", () => {
       startupRaymarchSteps: 32,
       traaEnabled: false,
       bloomAllowed: false,
+      carrierTruthEnabled: false,
       renderContext: RENDER_CONTEXTS.preview,
     });
     expect(profile).not.toHaveProperty("renderScale");

@@ -180,18 +180,19 @@ function installRendererRuntimeDiagnostics(renderer, forceWebGLFallbackTest) {
 export async function createBaryonRenderer(
   glDefaults,
   forceWebGLFallbackTest,
-  { initialPixelRatio = null, xrMode = false } = {},
+  { initialPixelRatio = null, xrMode = false, alpha = true } = {},
 ) {
   const canvas = /** @type {HTMLCanvasElement} */ (glDefaults.canvas);
+  const transparentCanvas = alpha !== false;
   const context = forceWebGLFallbackTest
     ? canvas.getContext("webgl2", {
         antialias: true,
-        alpha: true,
+        alpha: transparentCanvas,
       })
     : undefined;
   const rendererParameters = /** @type {any} */ ({
     canvas,
-    alpha: true,
+    alpha: transparentCanvas,
     antialias: !!forceWebGLFallbackTest,
     forceWebGL: forceWebGLFallbackTest,
     ...(context ? { context } : {}),

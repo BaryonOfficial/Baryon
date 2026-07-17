@@ -10,15 +10,17 @@ import { clamp01, smoothstep } from "../math.js";
 const EPSILON = 1e-9;
 const TWO_PI = Math.PI * 2;
 
+// Fixed reference apparatus profile used when a mode has no measured response
+// metadata. Q=10 is a declared calibration value, not physical ground truth
+// for every cavity, material, frequency, or mode order.
 export const DEFAULT_MODAL_RESPONSE_REFERENCE = Object.freeze({
   qualityFactor: 10,
+  apparatusTransfer: 1,
 });
 
 const DEFAULT_MODAL_RESPONSE_BUDGET = 1;
 const SOURCE_COUPLED_RESPONSE_BUDGET_SHARE = 0.82;
 const MIN_RELATIVE_PHYSICAL_MODAL_ENERGY = 0.035;
-const FREQUENCY_DAMPING_REFERENCE_HZ = 4800;
-const ORDER_DAMPING_REFERENCE = 42;
 const MIN_MODAL_QUALITY_FACTOR = 0.5;
 const MAX_MODAL_QUALITY_FACTOR = 50000;
 const DEFAULT_STORED_ENERGY_TAU_MS = 320;
@@ -53,18 +55,15 @@ function readPreviousModalResponseState(previous) {
     };
   }
 
-  const energy = clamp01(
-    previous.modalResponseEnergy ??
-      previous.retainedEnergy ??
-      previous.energy ??
-      previous.amplitude ??
-      0,
-  );
   const hasEnvelopeState =
     Number.isFinite(previous.modalOscillatorEnvelopeRe) &&
     Number.isFinite(previous.modalOscillatorEnvelopeIm) &&
     Number.isFinite(previous.modalOscillatorRotationRad);
   if (hasEnvelopeState) {
+    const energy = clamp01(
+      previous.modalOscillatorEnvelopeRe ** 2 +
+        previous.modalOscillatorEnvelopeIm ** 2,
+    );
     return {
       energy,
       rotationRad: normalizePhaseRad(previous.modalOscillatorRotationRad),
@@ -78,6 +77,13 @@ function readPreviousModalResponseState(previous) {
         : 0,
     };
   }
+
+  const explicitEnergy =
+    previous.modalResponseEnergy ?? previous.retainedEnergy ?? previous.energy;
+  const legacyAmplitude = Number.isFinite(previous.amplitude)
+    ? previous.amplitude
+    : 0;
+  const energy = clamp01(explicitEnergy ?? legacyAmplitude * legacyAmplitude);
 
   // Legacy state carries only a lab-frame phase: fold it into the rotation
   // accumulator so the published phase stays continuous, with the envelope
@@ -124,12 +130,7 @@ function resolveModeQualityFactor(mode) {
       ),
     );
   }
-  const frequencyHz = mode?.naturalFrequencyHz ?? mode?.frequencyHz ?? 0;
-  const order = computeModeOrder(mode);
-  const frequencyShape = smoothstep(120, 1800, frequencyHz);
-  const orderShape = smoothstep(3, 26, order);
-  const retainedShape = Math.max(frequencyShape, orderShape);
-  return 4 + retainedShape * 28;
+  return DEFAULT_MODAL_RESPONSE_REFERENCE.qualityFactor;
 }
 
 function resolveDiagnosticLayer(mode, qualityFactor) {
@@ -259,6 +260,13 @@ function updateDrivenOscillatorState({
 function getModeProfile(mode) {
   const qualityFactor = resolveModeQualityFactor(mode);
   const modeFrequencyHz = mode?.naturalFrequencyHz ?? mode?.frequencyHz ?? 0;
+  const explicitApparatusTransfer =
+    mode?.modalResponseProfile?.apparatusTransfer;
+  const apparatusTransfer = clamp01(
+    Number.isFinite(explicitApparatusTransfer)
+      ? explicitApparatusTransfer
+      : DEFAULT_MODAL_RESPONSE_REFERENCE.apparatusTransfer,
+  );
   const storedEnergyTauMs = computeStoredEnergyTimeConstantMs({
     modeFrequencyHz,
     qualityFactor,
@@ -267,6 +275,7 @@ function getModeProfile(mode) {
     ...DEFAULT_MODAL_RESPONSE_REFERENCE,
     ...mode?.modalResponseProfile,
     qualityFactor,
+    apparatusTransfer,
     dampingRatio: 1 / (2 * qualityFactor),
     storedEnergyTauMs,
   };
@@ -274,7 +283,7 @@ function getModeProfile(mode) {
 
 function computePhysicalModalTransfer({
   mode,
-  modeFrequencyHz,
+  apparatusTransfer,
   coherence,
   previousEnergy,
 }) {
@@ -299,14 +308,11 @@ function computePhysicalModalTransfer({
       mode?.modalPersistence ??
       (previousEnergy > 0 ? 0.72 : 1),
   );
-  const frequencyDamping =
-    modeFrequencyHz > 0
-      ? 1 /
-        (1 + Math.pow(modeFrequencyHz / FREQUENCY_DAMPING_REFERENCE_HZ, 1.35))
-      : 1;
-  const orderDamping =
-    order > 0 ? 1 / (1 + Math.pow(order / ORDER_DAMPING_REFERENCE, 1.55)) : 1;
-  const dampingEnvelope = clamp01(frequencyDamping * orderDamping);
+  // This packet field is the apparatus transmission term consumed by the
+  // existing modal-response boundary. It is measured per mode when supplied,
+  // otherwise fixed by the declared reference profile; frequency and order
+  // cannot invent additional attenuation.
+  const dampingEnvelope = clamp01(apparatusTransfer);
   const persistenceEnvelope = clamp01(0.35 + persistence * 0.65);
 
   return {
@@ -324,14 +330,17 @@ function computePhysicalModalTransfer({
   };
 }
 
-function getInputEnergy(fftMagnitudes) {
-  if (!(fftMagnitudes instanceof Float32Array) || fftMagnitudes.length === 0) {
+function getInputEnergy(fftLinearAmplitudes) {
+  if (
+    !(fftLinearAmplitudes instanceof Float32Array) ||
+    fftLinearAmplitudes.length === 0
+  ) {
     return 0;
   }
 
   let total = 0;
-  for (let index = 1; index < fftMagnitudes.length; index += 1) {
-    const amplitude = Math.max(0, fftMagnitudes[index] ?? 0);
+  for (let index = 1; index < fftLinearAmplitudes.length; index += 1) {
+    const amplitude = Math.max(0, fftLinearAmplitudes[index] ?? 0);
     total += amplitude * amplitude;
   }
   return total;
@@ -339,7 +348,6 @@ function getInputEnergy(fftMagnitudes) {
 
 const EMPTY_SPECTRAL_DRIVE_CONTEXT = Object.freeze({
   binIndices: new Int32Array(0),
-  binEnergies: new Float64Array(0),
   binCount: 0,
   inputEnergy: 0,
 });
@@ -348,21 +356,22 @@ const EMPTY_SPECTRAL_DRIVE_CONTEXT = Object.freeze({
 // per-bin objects every analysis tick. Analysis is single-threaded and each
 // context is consumed synchronously within the frame that built it.
 let spectralDriveScratchIndices = new Int32Array(0);
-let spectralDriveScratchEnergies = new Float64Array(0);
 
-function buildSpectralDriveContext(fftMagnitudes) {
-  if (!(fftMagnitudes instanceof Float32Array) || fftMagnitudes.length === 0) {
+function buildSpectralDriveContext(fftLinearAmplitudes) {
+  if (
+    !(fftLinearAmplitudes instanceof Float32Array) ||
+    fftLinearAmplitudes.length === 0
+  ) {
     return EMPTY_SPECTRAL_DRIVE_CONTEXT;
   }
 
-  if (spectralDriveScratchIndices.length < fftMagnitudes.length) {
-    spectralDriveScratchIndices = new Int32Array(fftMagnitudes.length);
-    spectralDriveScratchEnergies = new Float64Array(fftMagnitudes.length);
+  if (spectralDriveScratchIndices.length < fftLinearAmplitudes.length) {
+    spectralDriveScratchIndices = new Int32Array(fftLinearAmplitudes.length);
   }
   let binCount = 0;
   let inputEnergy = 0;
-  for (let index = 1; index < fftMagnitudes.length; index += 1) {
-    const amplitude = fftMagnitudes[index] ?? 0;
+  for (let index = 1; index < fftLinearAmplitudes.length; index += 1) {
+    const amplitude = fftLinearAmplitudes[index] ?? 0;
     if (!(amplitude > 0)) {
       continue;
     }
@@ -370,22 +379,22 @@ function buildSpectralDriveContext(fftMagnitudes) {
     const binEnergy = amplitude * amplitude;
     inputEnergy += binEnergy;
     spectralDriveScratchIndices[binCount] = index;
-    spectralDriveScratchEnergies[binCount] = binEnergy;
     binCount += 1;
   }
 
   return {
     binIndices: spectralDriveScratchIndices,
-    binEnergies: spectralDriveScratchEnergies,
     binCount,
     inputEnergy,
   };
 }
 
-function computeInputExposure({ inputEnergy, inputRms }) {
-  const rmsExposure = smoothstep(0.0007, 0.008, inputRms);
-  const spectralExposure = smoothstep(0.0008, 0.018, Math.sqrt(inputEnergy));
-  return clamp01(Math.max(rmsExposure, spectralExposure));
+function computeInputExposure({ inputRms }) {
+  return smoothstep(0.0007, 0.008, inputRms);
+}
+
+export function computeModalInputExposure({ inputRms = 0 }) {
+  return computeInputExposure({ inputRms });
 }
 
 export function computeModalFrequencyResponse({
@@ -436,12 +445,12 @@ function getModalSpectralResponseWeights({
   return weights;
 }
 
-export function computeModalSpectralDrive({
-  fftMagnitudes,
+function computeModalSpectralDrive({
+  fftLinearAmplitudes,
   sampleRate,
   modeFrequencyHz,
   qualityFactor,
-  inputEnergy = getInputEnergy(fftMagnitudes),
+  inputEnergy = getInputEnergy(fftLinearAmplitudes),
   spectralDriveContext = null,
 }) {
   if (sampleRate <= 0 || modeFrequencyHz <= 0 || inputEnergy <= EPSILON) {
@@ -450,12 +459,13 @@ export function computeModalSpectralDrive({
 
   // The context must be built from the same magnitude buffer so its bin
   // indices stay inside the response-weight table.
-  const context = spectralDriveContext ?? buildSpectralDriveContext(fftMagnitudes);
+  const context =
+    spectralDriveContext ?? buildSpectralDriveContext(fftLinearAmplitudes);
   if (context.binCount === 0) {
     return 0;
   }
   const responseWeights = getModalSpectralResponseWeights({
-    binCount: fftMagnitudes?.length ?? 0,
+    binCount: fftLinearAmplitudes?.length ?? 0,
     sampleRate,
     modeFrequencyHz,
     qualityFactor,
@@ -464,9 +474,10 @@ export function computeModalSpectralDrive({
   let weightedEnergy = 0;
   let peakWeightedEnergy = 0;
   for (let bin = 0; bin < context.binCount; bin += 1) {
+    const binIndex = context.binIndices[bin];
+    const binAmplitude = Math.max(0, fftLinearAmplitudes[binIndex] ?? 0);
     const weightedBinEnergy =
-      context.binEnergies[bin] *
-      (responseWeights[context.binIndices[bin]] ?? 0);
+      binAmplitude * binAmplitude * (responseWeights[binIndex] ?? 0);
     weightedEnergy += weightedBinEnergy;
     if (weightedBinEnergy > peakWeightedEnergy) {
       peakWeightedEnergy = weightedBinEnergy;
@@ -518,10 +529,9 @@ function normalizeModalResponseBudget(entries, budget) {
     entry.modalResponseEnergy = clamp01(entry.modalResponseEnergy * scale);
     entry.displayAmplitude = Math.sqrt(entry.modalResponseEnergy);
     entry.signedModalCoefficient *= amplitudeScale;
-    // Keep the oscillator envelope consistent with the scaled energy so the
-    // state that round-trips into the next frame is |Z|² = modalResponseEnergy.
-    entry.modalOscillatorEnvelopeRe *= amplitudeScale;
-    entry.modalOscillatorEnvelopeIm *= amplitudeScale;
+    // This budget belongs to the projected representation. The oscillator
+    // envelope remains the pre-projection physical state that rings down on
+    // the next frame.
   }
   return {
     energy: entries.reduce(
@@ -550,7 +560,10 @@ function sumModalCurrentSignalEnergyByLayer(entries, layer) {
     (total, entry) =>
       entry.layer === layer
         ? total +
-          Math.min(entry.modalResponseEnergy ?? 0, entry.modalResponseDrive ?? 0)
+          Math.min(
+            entry.modalResponseEnergy ?? 0,
+            entry.modalResponseDrive ?? 0,
+          )
         : total,
     0,
   );
@@ -655,7 +668,7 @@ function averageEntryMetric(entries, key) {
 
 function buildModalResponseCandidates({
   modes,
-  fftMagnitudes,
+  fftLinearAmplitudes,
   sampleRate,
   previousEnergies,
   hasInput,
@@ -663,9 +676,11 @@ function buildModalResponseCandidates({
   inputExposure,
   spectralDriveContext,
   coherence,
+  exactDriveResult = null,
 }) {
   const candidates = [];
-  for (const mode of modes ?? []) {
+  for (let modeIndex = 0; modeIndex < (modes?.length ?? 0); modeIndex += 1) {
+    const mode = modes[modeIndex];
     const modeKey =
       mode?.modeKey ?? `${mode?.u ?? 0}:${mode?.v ?? 0}:${mode?.w ?? 0}`;
     const profile = getModeProfile(mode);
@@ -673,19 +688,21 @@ function buildModalResponseCandidates({
     const previousState = readPreviousModalResponseState(
       previousEnergies?.get?.(modeKey) ?? mode,
     );
-    const spectralDrive = hasInput
-      ? computeModalSpectralDrive({
-          fftMagnitudes,
-          sampleRate,
-          modeFrequencyHz,
-          qualityFactor: profile.qualityFactor,
-          inputEnergy,
-          spectralDriveContext,
-        })
-      : 0;
+    const spectralDrive = exactDriveResult
+      ? clamp01(exactDriveResult.energyShareByMode?.[modeIndex] ?? 0)
+      : hasInput
+        ? computeModalSpectralDrive({
+            fftLinearAmplitudes,
+            sampleRate,
+            modeFrequencyHz,
+            qualityFactor: profile.qualityFactor,
+            inputEnergy,
+            spectralDriveContext,
+          })
+        : 0;
     const physicalTransfer = computePhysicalModalTransfer({
       mode,
-      modeFrequencyHz,
+      apparatusTransfer: profile.apparatusTransfer,
       coherence,
       previousEnergy: previousState.energy,
     });
@@ -697,8 +714,9 @@ function buildModalResponseCandidates({
       previousState,
       spectralDrive,
       physicalTransfer,
-      targetEnergy:
-        spectralDrive * inputExposure * physicalTransfer.physicalTransfer,
+      targetEnergy: exactDriveResult
+        ? clamp01(exactDriveResult.targetEnergyByMode?.[modeIndex] ?? 0)
+        : spectralDrive * inputExposure * physicalTransfer.physicalTransfer,
     });
   }
   return candidates;
@@ -722,7 +740,9 @@ function resolveModalDrivePhaseLocks({
   }
 
   const drivenCandidates = candidates
-    .filter((candidate) => candidate.spectralDrive > DRIVE_PHASE_MEASUREMENT_GATE)
+    .filter(
+      (candidate) => candidate.spectralDrive > DRIVE_PHASE_MEASUREMENT_GATE,
+    )
     .sort((left, right) => right.spectralDrive - left.spectralDrive)
     .slice(0, DRIVE_PHASE_MEASUREMENT_MODE_LIMIT);
   const measurements = [];
@@ -748,7 +768,7 @@ function resolveModalDrivePhaseLocks({
 /**
  * @param {{
  *   modes?: Array<any>,
- *   fftMagnitudes?: Float32Array,
+ *   fftLinearAmplitudes?: Float32Array,
  *   timeDomainData?: Float32Array | null,
  *   sampleRate?: number,
  *   previousEnergies?: Map<string, number>,
@@ -758,11 +778,12 @@ function resolveModalDrivePhaseLocks({
  *   coherence?: number,
  *   responseBudget?: number,
  *   minimumEnergy?: number,
+ *   exactDriveResult?: any,
  * }} [options]
  */
 export function updateModalResponseFrame({
   modes,
-  fftMagnitudes,
+  fftLinearAmplitudes,
   timeDomainData = null,
   sampleRate,
   previousEnergies = new Map(),
@@ -772,21 +793,22 @@ export function updateModalResponseFrame({
   coherence = 1,
   responseBudget = DEFAULT_MODAL_RESPONSE_BUDGET,
   minimumEnergy = 0.0001,
+  exactDriveResult = null,
 } = {}) {
   const sourceHardSilent = hardSilence === true;
   const spectralDriveContext = sourceHardSilent
     ? EMPTY_SPECTRAL_DRIVE_CONTEXT
-    : buildSpectralDriveContext(fftMagnitudes);
+    : buildSpectralDriveContext(fftLinearAmplitudes);
   const inputEnergy = spectralDriveContext.inputEnergy;
   const effectiveInputRms = sourceHardSilent ? 0 : inputRms;
   const hasInput =
     !sourceHardSilent && (inputEnergy > EPSILON || effectiveInputRms > 0);
   const inputExposure = hasInput
-    ? computeInputExposure({ inputEnergy, inputRms: effectiveInputRms })
+    ? computeInputExposure({ inputRms: effectiveInputRms })
     : 0;
   const candidates = buildModalResponseCandidates({
     modes,
-    fftMagnitudes,
+    fftLinearAmplitudes,
     sampleRate,
     previousEnergies,
     hasInput,
@@ -794,13 +816,16 @@ export function updateModalResponseFrame({
     inputExposure,
     spectralDriveContext,
     coherence,
+    exactDriveResult,
   });
-  const drivePhaseLocks = resolveModalDrivePhaseLocks({
-    candidates,
-    timeDomainData,
-    sampleRate,
-    hasInput,
-  });
+  const drivePhaseLocks = exactDriveResult
+    ? resolveHarmonicDrivePhaseLocks(exactDriveResult.measurements)
+    : resolveModalDrivePhaseLocks({
+        candidates,
+        timeDomainData,
+        sampleRate,
+        hasInput,
+      });
   const entries = [];
 
   for (const candidate of candidates) {
@@ -894,6 +919,7 @@ export function updateModalResponseFrame({
   return {
     entries: significantEntries,
     modalResponseInputEnergy: inputEnergy,
+    modalResponseInputExposure: inputExposure,
     modalResponseEnergy,
     modalResponseSourceCoupledEnergy,
     modalResponseResonantEnergy,

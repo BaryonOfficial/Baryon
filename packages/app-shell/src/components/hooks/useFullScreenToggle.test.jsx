@@ -44,10 +44,8 @@ describe("useFullscreen", () => {
     window.electronAPI = {
       windowControls: {
         toggleFullscreen,
-        subscribeFullscreenState(listener) {
-          listener({ fullscreen: true });
-          return () => {};
-        },
+        getFullscreenState: () => ({ fullscreen: true }),
+        subscribeFullscreenState: () => () => {},
       },
     };
 

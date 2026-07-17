@@ -114,7 +114,6 @@ function createBandState() {
     liveInputBaselineRms: 0,
     liveInputBaselinePeak: 0,
     liveInputBaselineCentroid: 0,
-    liveInputBaselineLowBandEnergy: 0,
     liveInputOpenFrames: 0,
     liveInputQuietFrames: 0,
   };
@@ -146,7 +145,7 @@ export function createAudioFeatureState(capacity = AUDIO_SLOT_CAPACITY) {
       referenceResonantSlots: new Float32Array(capacity * 4),
       referenceModeSlots: new Float32Array(capacity * 4),
       bandEnergies: new Float32Array(BAND_BUCKET_COUNT),
-      fftMagnitudes: new Float32Array(0),
+      fftLinearAmplitudes: new Float32Array(0),
       sourceCoupledState: createModalLayerState(capacity),
       resonantState: createModalLayerState(capacity),
       bandState: createBandState(),
@@ -246,19 +245,11 @@ export function copyFloatArray(target, source) {
   target.set(source.subarray(0, target.length));
 }
 
-export function writeColorSlot(target, index, color, weight) {
-  const offset = index * COLOR_SLOT_STRIDE;
-  target[offset] = color.r;
-  target[offset + 1] = color.g;
-  target[offset + 2] = color.b;
-  target[offset + 3] = weight;
-}
-
 export const BLEND_ATTACK = 0.18;
 export const BLEND_TRACKING = 0.28;
 export const BLEND_RELEASE = 0.94;
 export const BLEND_DROP_THRESHOLD = 1e-4;
-export const BLEND_FRESH_ADMISSION_UNLIMITED = 0;
+const BLEND_FRESH_ADMISSION_UNLIMITED = 0;
 
 function modeKey(u, v, w) {
   return `${u}:${v}:${w}`;

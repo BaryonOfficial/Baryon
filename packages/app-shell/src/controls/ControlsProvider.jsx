@@ -5,19 +5,10 @@ import {
   resetBaryonTestReady,
 } from "../devtools/testReady.js";
 import { ControlsContext } from "./ControlsContext.js";
-const EXTERNAL_CONTROL_COMMAND_EVENT = "__baryon-controls-command";
-
-function emitControlsChanged(controlsState) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.dispatchEvent(
-    new CustomEvent("__baryon-controls-change", {
-      detail: { ...controlsState },
-    }),
-  );
-}
+import {
+  dispatchControlsChanged,
+  subscribeControlsCommand,
+} from "./controlsEvents.js";
 
 function normalizeControlPersistMode(value) {
   if (value === "debounced" || value === "none") {
@@ -28,10 +19,10 @@ function normalizeControlPersistMode(value) {
 
 function ControlsEventBridge({ store }) {
   useEffect(() => {
-    emitControlsChanged(store.getSnapshot().controlsState);
+    dispatchControlsChanged(store.getSnapshot().controlsState);
 
     const unsubscribe = store.subscribe(() => {
-      emitControlsChanged(store.getSnapshot().controlsState);
+      dispatchControlsChanged(store.getSnapshot().controlsState);
     });
 
     const handleExternalControlCommand = (event) => {
@@ -46,17 +37,13 @@ function ControlsEventBridge({ store }) {
       store.updateControl(key, event.detail.value, { persistMode });
     };
 
-    window.addEventListener(
-      EXTERNAL_CONTROL_COMMAND_EVENT,
+    const unsubscribeCommands = subscribeControlsCommand(
       handleExternalControlCommand,
     );
 
     return () => {
       unsubscribe();
-      window.removeEventListener(
-        EXTERNAL_CONTROL_COMMAND_EVENT,
-        handleExternalControlCommand,
-      );
+      unsubscribeCommands();
     };
   }, [store]);
 

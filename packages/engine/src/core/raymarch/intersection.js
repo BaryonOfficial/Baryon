@@ -1,6 +1,3 @@
-export const RAYMARCH_BOUNDARY_START = 0.74;
-export const RAYMARCH_BOUNDARY_END = 0.98;
-
 export function intersectRaySphereSegment(
   origin,
   direction,

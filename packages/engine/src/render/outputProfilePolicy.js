@@ -1,7 +1,7 @@
 export const MIN_PERFORMANCE_TARGET_FPS = 24;
 export const MAX_PERFORMANCE_TARGET_FPS = 240;
 export const DEFAULT_PERFORMANCE_TARGET_FPS = 60;
-export const MAX_QUALITY_PERFORMANCE_TARGET_FPS = 240;
+const MAX_QUALITY_PERFORMANCE_TARGET_FPS = 240;
 
 const STARTUP_RAYMARCH_STEPS_BY_RESOLUTION_BAND = Object.freeze({
   "1080p-": 32,
@@ -46,6 +46,7 @@ export const RENDER_CONTEXTS = Object.freeze({
  * @property {number | null} startupRaymarchSteps
  * @property {boolean} traaEnabled
  * @property {boolean} bloomAllowed
+ * @property {boolean} carrierTruthEnabled
  * @property {RenderContext} renderContext
  */
 
@@ -53,6 +54,7 @@ export const RENDER_CONTEXTS = Object.freeze({
  * @typedef {{
  *   bloomAllowed?: boolean,
  *   traaEnabled?: boolean,
+ *   carrierTruthEnabled?: boolean,
  * }} RenderPostProcessOverrides
  */
 
@@ -208,6 +210,7 @@ function buildRenderQualityProfile({
   startupRaymarchSteps,
   traaEnabled,
   bloomAllowed = true,
+  carrierTruthEnabled = false,
   renderContext,
 }) {
   return {
@@ -216,6 +219,7 @@ function buildRenderQualityProfile({
     startupRaymarchSteps,
     traaEnabled,
     bloomAllowed,
+    carrierTruthEnabled,
     renderContext,
   };
 }
@@ -275,6 +279,9 @@ export function normalizeRenderPostProcessOverrides(overrides) {
   if (typeof candidate.traaEnabled === "boolean") {
     nextOverrides.traaEnabled = candidate.traaEnabled;
   }
+  if (typeof candidate.carrierTruthEnabled === "boolean") {
+    nextOverrides.carrierTruthEnabled = candidate.carrierTruthEnabled;
+  }
 
   return Object.keys(nextOverrides).length > 0 ? nextOverrides : null;
 }
@@ -296,6 +303,9 @@ export function applyRenderProfilePostProcessOverrides(profile, overrides) {
   }
   if (typeof normalizedOverrides.traaEnabled === "boolean") {
     nextProfile.traaEnabled = normalizedOverrides.traaEnabled;
+  }
+  if (typeof normalizedOverrides.carrierTruthEnabled === "boolean") {
+    nextProfile.carrierTruthEnabled = normalizedOverrides.carrierTruthEnabled;
   }
 
   return nextProfile;
@@ -330,6 +340,10 @@ export function normalizeResolvedRenderQualityProfile(profile) {
       typeof candidate.bloomAllowed === "boolean"
         ? candidate.bloomAllowed
         : true,
+    carrierTruthEnabled:
+      typeof candidate.carrierTruthEnabled === "boolean"
+        ? candidate.carrierTruthEnabled
+        : false,
     renderContext:
       candidate.renderContext === RENDER_CONTEXTS.externalOutput
         ? RENDER_CONTEXTS.externalOutput
@@ -369,6 +383,7 @@ export function getRenderQualityProfileTargetFps(profile) {
  *   postProcessOverrides?: RenderPostProcessOverrides | null,
  *   bloomAllowed?: boolean,
  *   traaEnabled?: boolean,
+ *   carrierTruthEnabled?: boolean,
  *   renderContext?: RenderContext,
  * }=} options
  * @returns {RenderQualityProfile}
@@ -381,17 +396,21 @@ export function resolveRenderQualityProfile(options = {}) {
     postProcessOverrides = null,
     bloomAllowed,
     traaEnabled,
+    carrierTruthEnabled,
     renderContext = RENDER_CONTEXTS.preview,
   } = options;
   const targetFps = options.targetFps ?? DEFAULT_PERFORMANCE_TARGET_FPS;
   const hasInlineOverrides =
-    typeof bloomAllowed === "boolean" || typeof traaEnabled === "boolean";
+    typeof bloomAllowed === "boolean" ||
+    typeof traaEnabled === "boolean" ||
+    typeof carrierTruthEnabled === "boolean";
   const effectiveOverrides =
     postProcessOverrides ??
     (hasInlineOverrides
       ? {
           bloomAllowed,
           traaEnabled,
+          carrierTruthEnabled,
         }
       : null);
   const normalizedPerformanceProfile =
@@ -442,6 +461,9 @@ export function getRenderQualityProfileKey(profile) {
     renderContext,
     normalizedProfile.traaEnabled === false ? "no-traa" : "traa",
     normalizedProfile.bloomAllowed === false ? "no-bloom" : "bloom",
+    normalizedProfile.carrierTruthEnabled === true
+      ? "carrier-truth"
+      : "normal-output",
   ].join(":");
 }
 

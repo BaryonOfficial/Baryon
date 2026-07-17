@@ -10,18 +10,18 @@ import {
   solveCavityModeForPitch,
 } from "./cavityModes.js";
 
-const RADIUS = 1;
+const SIDE_LENGTH = 1;
 
 describe("solveCavityModeForPitch", () => {
-  it("returns null for invalid pitch or radius", () => {
-    expect(solveCavityModeForPitch(0, RADIUS)).toBeNull();
-    expect(solveCavityModeForPitch(-100, RADIUS)).toBeNull();
+  it("returns null for invalid pitch or side length", () => {
+    expect(solveCavityModeForPitch(0, SIDE_LENGTH)).toBeNull();
+    expect(solveCavityModeForPitch(-100, SIDE_LENGTH)).toBeNull();
     expect(solveCavityModeForPitch(440, 0)).toBeNull();
     expect(solveCavityModeForPitch(440, NaN)).toBeNull();
   });
 
   it("maps the lowest cavity frequency to (1,1,1)", () => {
-    expect(solveCavityModeForPitch(740 * Math.sqrt(3), RADIUS)).toEqual({
+    expect(solveCavityModeForPitch(740 * Math.sqrt(3), SIDE_LENGTH)).toEqual({
       u: 1,
       v: 1,
       w: 1,
@@ -29,12 +29,12 @@ describe("solveCavityModeForPitch", () => {
   });
 
   it("maps exact equal-sided cavity frequencies to canonical triplets", () => {
-    expect(solveCavityModeForPitch(740 * Math.sqrt(6), RADIUS)).toEqual({
+    expect(solveCavityModeForPitch(740 * Math.sqrt(6), SIDE_LENGTH)).toEqual({
       u: 1,
       v: 1,
       w: 2,
     });
-    expect(solveCavityModeForPitch(2220, RADIUS)).toEqual({
+    expect(solveCavityModeForPitch(2220, SIDE_LENGTH)).toEqual({
       u: 1,
       v: 2,
       w: 2,
@@ -43,7 +43,7 @@ describe("solveCavityModeForPitch", () => {
 
   it("returns canonical positive integer triplets for typical audio frequencies", () => {
     for (const pitch of [110, 220, 440, 880, 1760, 3520]) {
-      const mode = solveCavityModeForPitch(pitch, RADIUS);
+      const mode = solveCavityModeForPitch(pitch, SIDE_LENGTH);
       expect(mode, `pitch=${pitch}`).not.toBeNull();
       expect(Number.isInteger(mode.u), "u is integer").toBe(true);
       expect(Number.isInteger(mode.v), "v is integer").toBe(true);
@@ -54,7 +54,7 @@ describe("solveCavityModeForPitch", () => {
     }
   });
 
-  it("preserves the same cavity mode when pitch and radius scale together", () => {
+  it("preserves the same cavity mode when pitch and side length vary inversely", () => {
     expect(solveCavityModeForPitch(440, 1)).toEqual(
       solveCavityModeForPitch(220, 2),
     );
@@ -63,7 +63,7 @@ describe("solveCavityModeForPitch", () => {
 
 describe("solveCavityModeFamilyForPitch", () => {
   it("returns the nearest canonical cavity modes without permutation duplicates", () => {
-    const family = solveCavityModeFamilyForPitch(440, RADIUS, 4);
+    const family = solveCavityModeFamilyForPitch(440, SIDE_LENGTH, 4);
 
     expect(family).toHaveLength(4);
     expect(
@@ -76,14 +76,14 @@ describe("solveCavityModeFamilyForPitch", () => {
   });
 
   it("keeps the nearest single mode as the first family entry", () => {
-    const primary = solveCavityModeForPitch(440, RADIUS);
-    const family = solveCavityModeFamilyForPitch(440, RADIUS, 4);
+    const primary = solveCavityModeForPitch(440, SIDE_LENGTH);
+    const family = solveCavityModeFamilyForPitch(440, SIDE_LENGTH, 4);
 
     expect(family[0]).toMatchObject(primary);
   });
 
   it("orders family results by nearest cavity fit instead of diversity spacing", () => {
-    const family = solveCavityModeFamilyForPitch(440, RADIUS, 4);
+    const family = solveCavityModeFamilyForPitch(440, SIDE_LENGTH, 4);
     const frequencyErrors = family.map((mode) => mode.frequencyError);
 
     expect(frequencyErrors).toEqual([...frequencyErrors].sort((a, b) => a - b));
@@ -91,7 +91,7 @@ describe("solveCavityModeFamilyForPitch", () => {
 });
 
 describe("getMinimumCavityFrequency", () => {
-  it("matches the (1,1,1) cavity mode frequency across radii", () => {
+  it("matches the (1,1,1) cavity mode frequency across side lengths", () => {
     expect(getMinimumCavityFrequency(1)).toBeCloseTo(740 * Math.sqrt(3));
     expect(getMinimumCavityFrequency(3)).toBeCloseTo((740 * Math.sqrt(3)) / 3);
     expect(getMinimumCavityFrequency(5)).toBeCloseTo((740 * Math.sqrt(3)) / 5);
@@ -118,7 +118,7 @@ describe("acoustic cavity scale", () => {
   it("uses boundary-aware zero index modes for the neumann acoustic floor", () => {
     const options = {
       acousticScale: {
-        radiusMeters: 3,
+        sideLengthMeters: 3,
         soundSpeedMetersPerSecond: 1480,
         subfloorPolicy: "project-subfundamental",
       },
@@ -126,20 +126,20 @@ describe("acoustic cavity scale", () => {
     };
 
     expect(getCavityAcousticFloorHz(options)).toBeCloseTo(1480 / 6);
-    expect(resolveCavityModeFamilyForPitch(1480 / 6, options, 1)[0]).toMatchObject(
-      {
-        u: 0,
-        v: 0,
-        w: 1,
-        subfloorProjectionActive: false,
-      },
-    );
+    expect(
+      resolveCavityModeFamilyForPitch(1480 / 6, options, 1)[0],
+    ).toMatchObject({
+      u: 0,
+      v: 0,
+      w: 1,
+      subfloorProjectionActive: false,
+    });
   });
 
   it("reports subfloor projection instead of silently pretending bass is resolved", () => {
     const options = {
       acousticScale: {
-        radiusMeters: 3,
+        sideLengthMeters: 3,
         soundSpeedMetersPerSecond: 1480,
         subfloorPolicy: "project-subfundamental",
       },
@@ -155,13 +155,15 @@ describe("acoustic cavity scale", () => {
       subfloorProjectionActive: true,
       subfloorPolicy: "project-subfundamental",
     });
-    expect(mode.subfloorFrequencyHz).toBeCloseTo(getCavityAcousticFloorHz(options));
+    expect(mode.subfloorFrequencyHz).toBeCloseTo(
+      getCavityAcousticFloorHz(options),
+    );
   });
 
   it("translates the retired subfloor policy name only at the cavity boundary", () => {
     const options = {
       acousticScale: {
-        radiusMeters: 3,
+        sideLengthMeters: 3,
         soundSpeedMetersPerSecond: 1480,
         subfloorPolicy: "project-low-q",
       },
@@ -178,11 +180,11 @@ describe("acoustic cavity scale", () => {
 
 describe("getCavityModeFrequency", () => {
   it("returns the expected frequency for a known cavity triplet", () => {
-    expect(getCavityModeFrequency(1, 2, 2, RADIUS)).toBeCloseTo(2220);
+    expect(getCavityModeFrequency(1, 2, 2, SIDE_LENGTH)).toBeCloseTo(2220);
   });
 
-  it("returns 0 for invalid triplets or radius", () => {
-    expect(getCavityModeFrequency(NaN, 1, 1, RADIUS)).toBe(0);
+  it("returns 0 for invalid triplets or side length", () => {
+    expect(getCavityModeFrequency(NaN, 1, 1, SIDE_LENGTH)).toBe(0);
     expect(getCavityModeFrequency(1, 1, 1, 0)).toBe(0);
   });
 });
@@ -192,11 +194,11 @@ describe("sampleFFTAmplitudeForFrequency", () => {
   const fftSize = 32;
 
   it("returns the amplitude at the nearest FFT bin", () => {
-    const fftMagnitudes = new Float32Array(16);
-    fftMagnitudes[2] = 0.75;
+    const fftLinearAmplitudes = new Float32Array(16);
+    fftLinearAmplitudes[2] = 0.75;
     const result = sampleFFTAmplitudeForFrequency(
       2940,
-      fftMagnitudes,
+      fftLinearAmplitudes,
       sampleRate,
       fftSize,
     );
@@ -204,25 +206,25 @@ describe("sampleFFTAmplitudeForFrequency", () => {
   });
 
   it("returns 0 for frequency 0", () => {
-    const fftMagnitudes = new Float32Array(16).fill(0.5);
+    const fftLinearAmplitudes = new Float32Array(16).fill(0.5);
     expect(
-      sampleFFTAmplitudeForFrequency(0, fftMagnitudes, sampleRate, fftSize),
+      sampleFFTAmplitudeForFrequency(0, fftLinearAmplitudes, sampleRate, fftSize),
     ).toBe(0);
   });
 
   it("clamps above-Nyquist frequencies to the last bin", () => {
-    const fftMagnitudes = new Float32Array(16);
-    fftMagnitudes[15] = 0.9;
+    const fftLinearAmplitudes = new Float32Array(16);
+    fftLinearAmplitudes[15] = 0.9;
     const result = sampleFFTAmplitudeForFrequency(
       99999,
-      fftMagnitudes,
+      fftLinearAmplitudes,
       sampleRate,
       fftSize,
     );
     expect(result).toBeCloseTo(0.9);
   });
 
-  it("returns 0 for null or empty fftMagnitudes", () => {
+  it("returns 0 for null or empty fftLinearAmplitudes", () => {
     expect(sampleFFTAmplitudeForFrequency(440, null, sampleRate, fftSize)).toBe(
       0,
     );
@@ -237,23 +239,23 @@ describe("sampleFFTAmplitudeForFrequency", () => {
   });
 
   it("returns 0 for invalid sampling inputs", () => {
-    const fftMagnitudes = new Float32Array(16).fill(0.5);
+    const fftLinearAmplitudes = new Float32Array(16).fill(0.5);
     expect(
-      sampleFFTAmplitudeForFrequency(-1, fftMagnitudes, sampleRate, fftSize),
+      sampleFFTAmplitudeForFrequency(-1, fftLinearAmplitudes, sampleRate, fftSize),
     ).toBe(0);
-    expect(sampleFFTAmplitudeForFrequency(440, fftMagnitudes, 0, fftSize)).toBe(
+    expect(sampleFFTAmplitudeForFrequency(440, fftLinearAmplitudes, 0, fftSize)).toBe(
       0,
     );
     expect(
-      sampleFFTAmplitudeForFrequency(440, fftMagnitudes, sampleRate, 0),
+      sampleFFTAmplitudeForFrequency(440, fftLinearAmplitudes, sampleRate, 0),
     ).toBe(0);
   });
 });
 
 describe("solveCavityModeFamilyForPitch", () => {
   it("returns an empty family for invalid inputs", () => {
-    expect(solveCavityModeFamilyForPitch(0, RADIUS, 4)).toStrictEqual([]);
+    expect(solveCavityModeFamilyForPitch(0, SIDE_LENGTH, 4)).toStrictEqual([]);
     expect(solveCavityModeFamilyForPitch(440, 0, 4)).toStrictEqual([]);
-    expect(solveCavityModeFamilyForPitch(440, RADIUS, 0)).toStrictEqual([]);
+    expect(solveCavityModeFamilyForPitch(440, SIDE_LENGTH, 0)).toStrictEqual([]);
   });
 });

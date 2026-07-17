@@ -1,5 +1,5 @@
 import { DEFAULT_REQUESTED_CAVITY_GEOMETRY } from "./core/cavityGeometry.js";
-import { FIELD_EXTENTS } from "./core/fieldExtent.js";
+import { VOLUME_SHAPES } from "./core/volumeShape.js";
 import { DEFAULT_PERFORMANCE_PROFILE } from "./render/outputProfilePolicy.js";
 
 const DEFAULT_MODAL_FIELD_CAPACITY = 160;
@@ -25,7 +25,7 @@ export const TEST_TONE_SIGNALS = Object.freeze({
 });
 
 export const CAVITY_ACOUSTIC_DEFAULTS = Object.freeze({
-  radiusMeters: 12.5,
+  sideLengthMeters: 12.5,
   soundSpeedMetersPerSecond: 1480,
   subfloorPolicy: "project-subfundamental",
 });
@@ -33,10 +33,14 @@ export const CAVITY_ACOUSTIC_DEFAULTS = Object.freeze({
 export const SIMULATION_DEFAULTS = Object.freeze({
   radius: 3.0,
   cavityAcousticScale: CAVITY_ACOUSTIC_DEFAULTS,
-  zeroPointPrecision: 0.072,
+  // Fixed world-space FWHM of the resolved cymatic carrier core. This is a
+  // reference-apparatus dimension, not an audio- or frame-dependent threshold.
+  // The analytic interval integral resolves this width below the field-cache
+  // cell size without making the carrier depend on cache resolution.
+  carrierCoreFwhmWorld: 0.024,
   boundaryMode: "neumann",
   cavityGeometry: DEFAULT_REQUESTED_CAVITY_GEOMETRY,
-  fieldExtent: FIELD_EXTENTS.sphere,
+  volumeShape: VOLUME_SHAPES.sphere,
 });
 
 export const RENDER_DEFAULTS = Object.freeze({
@@ -56,10 +60,9 @@ export const RENDER_DEFAULTS = Object.freeze({
   outputMode: "transparent",
   outputBackgroundColor: "#000000",
   bloomEnabled: true,
-  bloomStrength: 1.05,
-  bloomRadius: 0.18,
-  bloomThreshold: 0.25,
-  bloomResponseBias: 1,
+  bloomStrength: 1.18,
+  bloomRadius: 0,
+  bloomThreshold: 0.5,
   smaaEnabled: true,
   performanceHudEnabled: false,
   traaEnabled: true,
@@ -67,9 +70,11 @@ export const RENDER_DEFAULTS = Object.freeze({
 });
 
 export const REACTIVITY_DEFAULTS = Object.freeze({
-  reactivity: 2.5,
   motionAmount: 0.88,
 });
+
+/** Fixed response shaping retained after consolidating public response controls. */
+export const AUDIO_RESPONSE_GAIN = 2.5;
 
 export const BEAT_DEFAULTS = Object.freeze({
   beatSensitivity: 0.78,
@@ -87,15 +92,10 @@ export const RAYMARCH_AVERAGE_AMPLITUDE_SHADER_REFERENCE = 96;
 export const RAYMARCH_DEFAULTS = Object.freeze({
   raymarchSteps: 72,
   densityGain: 4,
-  absorption: 4,
-  opacityGain: 3,
-  laserDeflectionGain: 0.9,
+  laserDeflectionGain: 1.2,
   contourSharpness: 8,
-  rimBloomBias: 1.2,
-  rimCompression: 1.2,
   holographicIntensity: 1,
-  holographicShift: 0.42,
-  holographicFresnelPower: 4.8,
+  holographicFresnelPower: 2.4,
 });
 
 export const AUDIT_DEFAULTS = Object.freeze({

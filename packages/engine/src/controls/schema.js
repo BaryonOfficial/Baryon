@@ -64,24 +64,19 @@ const CONTROL_GROUPS = Object.freeze({
     order: 20,
     expanded: false,
   }),
-  shape: Object.freeze({
-    title: "Shape",
+  volume: Object.freeze({
+    title: "Volume",
     order: 30,
     expanded: false,
   }),
-  color: Object.freeze({
-    title: "Color",
+  appearance: Object.freeze({
+    title: "Appearance",
     order: 40,
     expanded: false,
   }),
   motion: Object.freeze({
     title: "Motion",
     order: 50,
-    expanded: false,
-  }),
-  bloom: Object.freeze({
-    title: "Bloom",
-    order: 60,
     expanded: false,
   }),
   logo: Object.freeze({
@@ -214,45 +209,28 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     CONTROL_GROUPS.input,
   ),
 
-  // ── Shape ──────────────────────────────────────────────────────────────────
+  // ── Volume ─────────────────────────────────────────────────────────────────
   withControlGroup(
     {
-      key: "fieldExtent",
-      label: "Extent",
+      key: "volumeShape",
+      label: "Shape",
       title:
-        "Keep the cymatic field contained inside the flagship sphere, or let the waves radiate past it and fade naturally into open space",
-      defaultValue: SIMULATION_DEFAULTS.fieldExtent,
+        "Clip the rectangular cymatic field to a sphere, or reveal its full cubic domain",
+      defaultValue: SIMULATION_DEFAULTS.volumeShape,
       methods: methodsFor("shared"),
       binding: {
         options: {
           Sphere: "sphere",
-          Unbounded: "unbounded",
+          Cube: "cube",
         },
       },
-      targetType: CONTROL_TARGET_TYPES.uniform,
+      targetType: CONTROL_TARGET_TYPES.object,
       handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uUnboundedMix.value",
+      runtimePath: "runtime.volumeMesh.userData.raymarchVolumeShape",
       status: CONTROL_STATUSES.live,
       controlOrder: 5,
     },
-    CONTROL_GROUPS.shape,
-  ),
-  withControlGroup(
-    {
-      key: "zeroPointPrecision",
-      label: "Node Threshold",
-      title:
-        "How sharp the bright ring structures appear — lower values create crisper, more defined rings; higher values soften them into blends",
-      defaultValue: SIMULATION_DEFAULTS.zeroPointPrecision,
-      methods: ALL_METHODS,
-      binding: { min: 0.001, max: 0.3, step: 0.001 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uThreshold.value",
-      status: CONTROL_STATUSES.live,
-      controlOrder: 20,
-    },
-    CONTROL_GROUPS.shape,
+    CONTROL_GROUPS.volume,
   ),
   withControlGroup(
     {
@@ -274,14 +252,14 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       status: CONTROL_STATUSES.live,
       controlOrder: 10,
     },
-    CONTROL_GROUPS.shape,
+    CONTROL_GROUPS.volume,
   ),
   withControlGroup(
     {
       key: "densityGain",
-      label: "Density",
+      label: "Material Density",
       title:
-        "How thick and bright the overall volume body appears — raise for a bolder, denser orb",
+        "Scales the organized cymatic material before its fixed scattering, absorption, and emission response",
       defaultValue: RAYMARCH_DEFAULTS.densityGain,
       methods: methodsFor("shared"),
       binding: { min: 0.1, max: 4, step: 0.01 },
@@ -291,31 +269,14 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       status: CONTROL_STATUSES.live,
       controlOrder: 30,
     },
-    CONTROL_GROUPS.shape,
-  ),
-  withControlGroup(
-    {
-      key: "absorption",
-      label: "Absorption",
-      title:
-        "Depth contrast inside the orb — raise for crisper internal layers and less haze",
-      defaultValue: RAYMARCH_DEFAULTS.absorption,
-      methods: methodsFor("raymarchOnly"),
-      binding: { min: 0.1, max: 4, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uAbsorption.value",
-      status: CONTROL_STATUSES.live,
-      controlOrder: 40,
-    },
-    CONTROL_GROUPS.shape,
+    CONTROL_GROUPS.volume,
   ),
   withControlGroup(
     {
       key: "laserDeflectionGain",
-      label: "Refraction",
+      label: "Laser Bending",
       title:
-        "How strongly the laser bends through the acoustic pressure field — higher values focus tighter, brighter caustic webs",
+        "How strongly laser rays bend through the acoustic pressure field, changing caustic placement and concentration",
       defaultValue: RAYMARCH_DEFAULTS.laserDeflectionGain,
       methods: methodsFor("raymarchOnly"),
       binding: { min: 0, max: 1.2, step: 0.01 },
@@ -325,31 +286,14 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       status: CONTROL_STATUSES.live,
       controlOrder: 45,
     },
-    CONTROL_GROUPS.shape,
-  ),
-  withControlGroup(
-    {
-      key: "opacityGain",
-      label: "Opacity",
-      title:
-        "How solid the orb appears — raise for a stronger presence, especially when compositing over video",
-      defaultValue: RAYMARCH_DEFAULTS.opacityGain,
-      methods: ALL_METHODS,
-      binding: { min: 0.1, max: 3, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uOpacityGain.value",
-      status: CONTROL_STATUSES.live,
-      controlOrder: 50,
-    },
-    CONTROL_GROUPS.shape,
+    CONTROL_GROUPS.volume,
   ),
   withControlGroup(
     {
       key: "raymarchSteps",
-      label: "Steps",
+      label: "Max Steps",
       title:
-        "Rendering quality vs. speed — higher values look smoother but may reduce frame rate on slower GPUs",
+        "Maximum raymarch quality budget; Auto and Custom profiles may use fewer steps to hold their target frame rate",
       defaultValue: RAYMARCH_DEFAULTS.raymarchSteps,
       methods: methodsFor("volume"),
       binding: { min: 16, max: 192, step: 1 },
@@ -359,15 +303,15 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       status: CONTROL_STATUSES.live,
       controlOrder: 60,
     },
-    CONTROL_GROUPS.shape,
+    CONTROL_GROUPS.volume,
   ),
 
-  // ── Color ──────────────────────────────────────────────────────────────────
+  // ── Appearance ─────────────────────────────────────────────────────────────
   withControlGroup(
     {
       key: "volumeColor",
       label: "Volume",
-      title: "Main volume color of the orb interior",
+      title: "Main color of the volume interior",
       defaultValue: RENDER_DEFAULTS.volumeColor,
       methods: ALL_METHODS,
       binding: { view: "color" },
@@ -377,13 +321,13 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       status: CONTROL_STATUSES.live,
       controlOrder: 20,
     },
-    CONTROL_GROUPS.color,
+    CONTROL_GROUPS.appearance,
   ),
   withControlGroup(
     {
       key: "surfaceColor",
-      label: "Contour",
-      title: "Color of the sharpest ring edges and contour highlights",
+      label: "Fresnel Color",
+      title: "Color of the grazing-angle laser energy emitted at field edges",
       defaultValue: RENDER_DEFAULTS.surfaceColor,
       methods: ALL_METHODS,
       binding: { view: "color" },
@@ -393,7 +337,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       status: CONTROL_STATUSES.live,
       controlOrder: 30,
     },
-    CONTROL_GROUPS.color,
+    CONTROL_GROUPS.appearance,
   ),
   withControlGroup(
     {
@@ -432,7 +376,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       status: CONTROL_STATUSES.live,
       controlOrder: 10,
     },
-    CONTROL_GROUPS.color,
+    CONTROL_GROUPS.appearance,
   ),
   withControlGroup(
     {
@@ -450,13 +394,14 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       visibleWhen: { key: "colorMode", value: "spectral" },
       controlOrder: 40,
     },
-    CONTROL_GROUPS.color,
+    CONTROL_GROUPS.appearance,
   ),
   withControlGroup(
     {
       key: "holographicIntensity",
-      label: "Sheen",
-      title: "Adds a holographic sheen to the orb's surface edges",
+      label: "Fresnel Strength",
+      title:
+        "Strength of the grazing-angle laser energy emitted at field edges",
       defaultValue: RAYMARCH_DEFAULTS.holographicIntensity,
       methods: methodsFor("raymarchOnly"),
       binding: { min: 0, max: 1, step: 0.01 },
@@ -466,30 +411,14 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       status: CONTROL_STATUSES.live,
       controlOrder: 50,
     },
-    CONTROL_GROUPS.color,
-  ),
-  withControlGroup(
-    {
-      key: "holographicShift",
-      label: "Sheen Color",
-      title: "How far the sheen color shifts toward cool blue-green tones",
-      defaultValue: RAYMARCH_DEFAULTS.holographicShift,
-      methods: methodsFor("raymarchOnly"),
-      binding: { min: 0, max: 1, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uHolographicShift.value",
-      status: CONTROL_STATUSES.live,
-      controlOrder: 60,
-    },
-    CONTROL_GROUPS.color,
+    CONTROL_GROUPS.appearance,
   ),
   withControlGroup(
     {
       key: "holographicFresnelPower",
-      label: "Sheen Edge",
+      label: "Fresnel Tightness",
       title:
-        "How tight the sheen is to the very edge — higher values confine it to a thinner rim",
+        "How tightly Fresnel energy hugs the edge — higher values confine it to a thinner rim",
       defaultValue: RAYMARCH_DEFAULTS.holographicFresnelPower,
       methods: methodsFor("raymarchOnly"),
       binding: { min: 0.5, max: 8, step: 0.1 },
@@ -499,7 +428,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       status: CONTROL_STATUSES.live,
       controlOrder: 70,
     },
-    CONTROL_GROUPS.color,
+    CONTROL_GROUPS.appearance,
   ),
   withControlGroup(
     {
@@ -556,7 +485,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "rotationMode",
       label: "Rotation Mode",
       title:
-        "Audio = orb rotates with the music; Manual = set a fixed speed below; Off = stationary",
+        "Audio = shape rotates with the music; Manual = set a fixed speed below; Off = stationary",
       defaultValue: RENDER_DEFAULTS.rotationMode,
       methods: methodsFor("raymarchOnly"),
       binding: {
@@ -594,23 +523,6 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   ),
   withControlGroup(
     {
-      key: "reactivity",
-      label: "Reactivity",
-      title:
-        "How strongly the visuals respond to the audio — raise for more dramatic reactions",
-      defaultValue: REACTIVITY_DEFAULTS.reactivity,
-      methods: ALL_METHODS,
-      binding: { min: 0, max: 3, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.object,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.reactivityTuning.reactivity",
-      status: CONTROL_STATUSES.live,
-      controlOrder: 40,
-    },
-    CONTROL_GROUPS.motion,
-  ),
-  withControlGroup(
-    {
       key: "motionAmount",
       label: "Motion Scale",
       title:
@@ -626,21 +538,22 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     },
     CONTROL_GROUPS.motion,
   ),
-  // ── Bloom ──────────────────────────────────────────────────────────────────
+  // Bloom follows color and surface-light controls in the Appearance section.
   withControlGroup(
     {
       key: "bloomEnabled",
       label: "Bloom",
-      title: "Toggle the bloom/halo effect around bright parts of the orb",
+      title:
+        "Optional soft optical halo. Leave off for the sharp scene-radiance render.",
       defaultValue: RENDER_DEFAULTS.bloomEnabled,
       methods: ALL_METHODS,
       targetType: CONTROL_TARGET_TYPES.pipeline,
       handler: CONTROL_HANDLERS.bloom,
       runtimePath: "pipeline.outputNode",
       status: CONTROL_STATUSES.live,
-      controlOrder: 10,
+      controlOrder: 110,
     },
-    CONTROL_GROUPS.bloom,
+    CONTROL_GROUPS.appearance,
   ),
   withControlGroup(
     {
@@ -654,9 +567,9 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.bloom,
       runtimePath: "bloomPass.strength.value",
       status: CONTROL_STATUSES.live,
-      controlOrder: 20,
+      controlOrder: 120,
     },
-    CONTROL_GROUPS.bloom,
+    CONTROL_GROUPS.appearance,
   ),
   withControlGroup(
     {
@@ -670,9 +583,9 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.bloom,
       runtimePath: "bloomPass.radius.value",
       status: CONTROL_STATUSES.live,
-      controlOrder: 30,
+      controlOrder: 130,
     },
-    CONTROL_GROUPS.bloom,
+    CONTROL_GROUPS.appearance,
   ),
   withControlGroup(
     {
@@ -687,9 +600,9 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.bloom,
       runtimePath: "bloomPass.threshold.value",
       status: CONTROL_STATUSES.live,
-      controlOrder: 40,
+      controlOrder: 140,
     },
-    CONTROL_GROUPS.bloom,
+    CONTROL_GROUPS.appearance,
   ),
   withControlGroup(
     {
@@ -760,7 +673,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "outputMode",
-      label: "Mode",
+      label: "Output Mode",
       title:
         "Transparent composites over other content; Opaque renders its own solid background",
       defaultValue: RENDER_DEFAULTS.outputMode,
@@ -791,6 +704,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.shared,
       runtimePath: "ui.performanceHudEnabled",
       status: CONTROL_STATUSES.live,
+      pinnedPlacement: "section-header",
       controlOrder: 30,
     },
     CONTROL_GROUPS.performance,
@@ -828,58 +742,6 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     CONTROL_GROUPS.motion,
   ),
 
-  // ── Fine-grained bloom shaping ─────────────────────────────────────────────
-  withControlGroup(
-    {
-      key: "bloomResponseBias",
-      label: "Bloom Response",
-      title:
-        "Makes the bloom smaller and more stable by trimming how easily bloom reacts during crowded frames.",
-      defaultValue: RENDER_DEFAULTS.bloomResponseBias,
-      methods: ALL_METHODS,
-      binding: { min: 0, max: 1, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.pipeline,
-      handler: CONTROL_HANDLERS.bloom,
-      runtimePath: "runtime.bloomTuning.bloomResponseBias",
-      status: CONTROL_STATUSES.live,
-      controlOrder: 50,
-    },
-    CONTROL_GROUPS.bloom,
-  ),
-  withControlGroup(
-    {
-      key: "rimBloomBias",
-      label: "Rim Bloom",
-      title:
-        "Pushes more brightness toward the outer rim before bloom is applied.",
-      defaultValue: RAYMARCH_DEFAULTS.rimBloomBias,
-      methods: methodsFor("raymarchOnly"),
-      binding: { min: 0, max: 1.2, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uRimBloomBias.value",
-      status: CONTROL_STATUSES.live,
-      controlOrder: 60,
-    },
-    CONTROL_GROUPS.bloom,
-  ),
-  withControlGroup(
-    {
-      key: "rimCompression",
-      label: "Rim Compression",
-      title: "Tames sharp edge spikes before they reach the bloom pass.",
-      defaultValue: RAYMARCH_DEFAULTS.rimCompression,
-      methods: methodsFor("raymarchOnly"),
-      binding: { min: 0, max: 1.2, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uRimCompression.value",
-      status: CONTROL_STATUSES.live,
-      controlOrder: 70,
-    },
-    CONTROL_GROUPS.bloom,
-  ),
-
   // ── Diagnostics (debug-only) ───────────────────────────────────────────────
   withControlGroup(
     {
@@ -888,7 +750,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Toggle temporal anti-aliasing for diagnostics. Disable only when isolating render latency, shimmer, or post-process cost.",
       defaultValue: RENDER_DEFAULTS.traaEnabled,
-      methods: ALL_METHODS,
+      methods: methodsFor("raymarchOnly"),
       targetType: CONTROL_TARGET_TYPES.object,
       handler: CONTROL_HANDLERS.shared,
       runtimePath: "ui.traaEnabled",
@@ -990,6 +852,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.requestedCavityGeometry",
       status: CONTROL_STATUSES.debugOnly,
+      sidebarHidden: true,
+      publicReferenceHidden: true,
     },
     CONTROL_GROUPS.diagnostics,
   ),

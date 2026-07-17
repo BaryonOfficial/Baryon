@@ -12,7 +12,7 @@ describe("lineFeedProgramActivity", () => {
 
     const playing = resolveLineFeedProgramActivity({
       bandState,
-      metrics: { avgAmplitude: 24, rms: 0.16, peakAmplitude: 0.9 },
+      metrics: { avgAmplitude: 24, rms: 0.16 },
       deltaMs: 33,
       analysisSessionKey: "system",
     });
@@ -25,7 +25,6 @@ describe("lineFeedProgramActivity", () => {
         metrics: {
           avgAmplitude: 1.2,
           rms: 0.0068,
-          peakAmplitude: 0.02,
           transportSpectrumSilent: true,
         },
         deltaMs: 33,
@@ -38,7 +37,6 @@ describe("lineFeedProgramActivity", () => {
       metrics: {
         avgAmplitude: 1.24,
         rms: 0.0157,
-        peakAmplitude: 0.34,
         transportSpectrumSilent: true,
       },
       deltaMs: 33,
@@ -54,7 +52,7 @@ describe("lineFeedProgramActivity", () => {
 
     resolveLineFeedProgramActivity({
       bandState,
-      metrics: { avgAmplitude: 38, rms: 0.28, peakAmplitude: 0.95 },
+      metrics: { avgAmplitude: 38, rms: 0.28 },
       deltaMs: 33,
       analysisSessionKey: "system",
     });
@@ -62,7 +60,7 @@ describe("lineFeedProgramActivity", () => {
     for (let frame = 0; frame < 30; frame += 1) {
       const bridge = resolveLineFeedProgramActivity({
         bandState,
-        metrics: { avgAmplitude: 0, rms: 0.00001, peakAmplitude: 0 },
+        metrics: { avgAmplitude: 0, rms: 0.00001 },
         deltaMs: 33,
         analysisSessionKey: "system",
       });
@@ -76,7 +74,7 @@ describe("lineFeedProgramActivity", () => {
 
     const playing = resolveLineFeedProgramActivity({
       bandState,
-      metrics: { avgAmplitude: 38, rms: 0.28, peakAmplitude: 0.95 },
+      metrics: { avgAmplitude: 38, rms: 0.28 },
       deltaMs: 33,
       analysisSessionKey: "system",
     });
@@ -87,7 +85,6 @@ describe("lineFeedProgramActivity", () => {
       metrics: {
         avgAmplitude: 0.34,
         rms: 0.0017,
-        peakAmplitude: 0,
         transportSpectrumSilent: true,
         timeDomainPeakAmplitude: 0,
       },
@@ -105,7 +102,7 @@ describe("lineFeedProgramActivity", () => {
 
     resolveLineFeedProgramActivity({
       bandState,
-      metrics: { avgAmplitude: 38, rms: 0.28, peakAmplitude: 0.95 },
+      metrics: { avgAmplitude: 38, rms: 0.28 },
       deltaMs: 33,
       analysisSessionKey: "system",
     });
@@ -117,7 +114,6 @@ describe("lineFeedProgramActivity", () => {
         metrics: {
           avgAmplitude: 0,
           rms: 0.000015,
-          peakAmplitude: 0,
           transportSpectrumSilent: true,
           timeDomainPeakAmplitude: 0,
         },
@@ -136,7 +132,7 @@ describe("lineFeedProgramActivity", () => {
 
     resolveLineFeedProgramActivity({
       bandState,
-      metrics: { avgAmplitude: 38, rms: 0.28, peakAmplitude: 0.95 },
+      metrics: { avgAmplitude: 38, rms: 0.28 },
       deltaMs: 33,
       analysisSessionKey: "system",
     });
@@ -146,7 +142,6 @@ describe("lineFeedProgramActivity", () => {
       metrics: {
         avgAmplitude: 0.18,
         rms: 0.0008,
-        peakAmplitude: 0,
         transportSpectrumSilent: true,
         timeDomainPeakAmplitude: 0.006,
       },
@@ -160,13 +155,64 @@ describe("lineFeedProgramActivity", () => {
 
   it("derives higher excitation above calibrated device floor", () => {
     const low = deriveLineFeedProgramExcitation(
-      { avgAmplitude: 1.2, rms: 0.0068, peakAmplitude: 0.01 },
-      { deviceFloorAvg: 1.15, deviceFloorRms: 0.006, deviceFloorPeak: 0.01 },
+      { avgAmplitude: 1.2, rms: 0.0068 },
+      { deviceFloorRms: 0.006 },
     );
     const high = deriveLineFeedProgramExcitation(
-      { avgAmplitude: 24, rms: 0.16, peakAmplitude: 0.85 },
-      { deviceFloorAvg: 1.15, deviceFloorRms: 0.006, deviceFloorPeak: 0.01 },
+      { avgAmplitude: 24, rms: 0.16 },
+      { deviceFloorRms: 0.006 },
     );
     expect(high).toBeGreaterThan(low);
+  });
+
+  it("opens for a quiet coherent spectrum above the measured noise floor", () => {
+    const bandState = {};
+    resetLineFeedProgramActivityState(bandState, "system");
+
+    const result = resolveLineFeedProgramActivity({
+      bandState,
+      metrics: {
+        avgAmplitude: 0.1844,
+        rms: 0.005,
+        credibleSpectralPeakCount: 1,
+      },
+      deltaMs: 33,
+      analysisSessionKey: "system",
+    });
+
+    expect(result.programActive).toBe(true);
+    expect(result.programExcitation).toBe(1);
+  });
+
+  it("does not learn the first active frame as the device floor", () => {
+    const bandState = {};
+    resetLineFeedProgramActivityState(bandState, "system");
+
+    const strike = resolveLineFeedProgramActivity({
+      bandState,
+      metrics: {
+        avgAmplitude: 42,
+        rms: 0.32,
+        timeDomainPeakAmplitude: 1,
+      },
+      deltaMs: 33,
+      analysisSessionKey: "system",
+    });
+    expect(strike.programActive).toBe(true);
+    expect(strike.deviceFloorRms).toBe(0);
+
+    const sustain = resolveLineFeedProgramActivity({
+      bandState,
+      metrics: {
+        avgAmplitude: 16,
+        rms: 0.075,
+        transportSpectrumSilent: true,
+        timeDomainPeakAmplitude: 0.28,
+      },
+      deltaMs: 33,
+      analysisSessionKey: "system",
+    });
+    expect(sustain.programActive).toBe(true);
+    expect(sustain.programExcitation).toBeGreaterThan(0.28);
   });
 });

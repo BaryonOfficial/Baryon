@@ -88,6 +88,7 @@ vi.mock("./hooks/useDefaultBaryonGeometry", () => ({
 }));
 
 import { BaryonScene, CAMERA_CONTROL_MODES } from "./BaryonScene.jsx";
+import { AUDIO_FEATURE_AUTHORITY_ROLES } from "@baryon/engine/audio-features";
 
 function createSceneProps(cameraPose, overrides = {}) {
   return {
@@ -99,11 +100,39 @@ function createSceneProps(cameraPose, overrides = {}) {
     visualizationMethod: "raymarch",
     performanceProfile: "auto",
     onPerformanceHudSnapshotChange: null,
+    audioFeatureAuthorityRole: AUDIO_FEATURE_AUTHORITY_ROLES.localProducer,
     cameraPose,
     cameraControlMode: CAMERA_CONTROL_MODES.externalSynced,
     ...overrides,
   };
 }
+
+test("forwards the required audio feature authority role to the engine hook", async () => {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  await act(async () => {
+    root.render(
+      React.createElement(
+        BaryonScene,
+        createSceneProps(resolvePresetCameraPose("top-down"), {
+          audioFeatureAuthorityRole:
+            AUDIO_FEATURE_AUTHORITY_ROLES.externalConsumer,
+        }),
+      ),
+    );
+  });
+
+  expect(
+    useBaryonEngineSpy.mock.calls.at(-1)?.[0]?.audioFeatureAuthorityRole,
+  ).toBe(AUDIO_FEATURE_AUTHORITY_ROLES.externalConsumer);
+
+  await act(async () => {
+    root.unmount();
+  });
+  container.remove();
+});
 
 function lastResolvedRenderProfile() {
   const lastCall = useBaryonPipelineSpy.mock.calls.at(-1);

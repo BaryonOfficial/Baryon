@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { Canvas } from "@react-three/fiber";
+import { AUDIO_FEATURE_AUTHORITY_ROLES } from "@baryon/engine/audio-features";
 import {
   normalizeOutputMode,
   OUTPUT_MODES,
@@ -54,6 +55,33 @@ import { TOP_RIGHT_OVERLAY_DESKTOP_STACK_GAP } from "./topRightOverlayLayout.js"
 
 const ADVANCED_CONTROLS_DOCK_WIDTH = "min(17.5rem, calc(100vw - 2.4rem))";
 const TRANSPARENT_PREVIEW_BACKDROP_COLOR = "#000000";
+const THREE_SCENE_CONTROL_KEYS = [
+  "autoGainControl",
+  "backgroundColor",
+  "cameraLocked",
+  "customTargetFps",
+  "echoCancellation",
+  "noiseSuppression",
+  "outputBackgroundColor",
+  "outputMode",
+  "performanceHudEnabled",
+  "renderQualityPreset",
+  "traaEnabled",
+  "visualizationMethod",
+];
+
+function selectThreeSceneControls(snapshot) {
+  const controls = snapshot.controlsState;
+  return Object.fromEntries(
+    THREE_SCENE_CONTROL_KEYS.map((key) => [key, controls[key]]),
+  );
+}
+
+function areThreeSceneControlsEqual(previous, next) {
+  return THREE_SCENE_CONTROL_KEYS.every((key) =>
+    Object.is(previous?.[key], next?.[key]),
+  );
+}
 
 function resolveSceneBackdropColor(controlsState) {
   const backgroundColor = controlsState.backgroundColor ?? "#000000";
@@ -116,6 +144,8 @@ function createCameraPoseDisplayKey(cameraPose) {
  *   controlsOverlay?: import("react").ReactNode,
  *   controlsBrandAccessory?: import("react").ReactNode,
  *   controlsFooterActions?: Array<{ label: string, onSelect: () => void }>,
+ *   showUiInFullscreen?: boolean,
+ *   onShowUiInFullscreenChange?: ((nextValue: boolean) => void) | null,
  *   allowUnsupportedShellUi?: boolean,
  *   topRightOverlay?: import("react").ReactNode,
  *   liveInputPanel?: {
@@ -163,6 +193,8 @@ const ThreeScene = ({
   controlsOverlay = null,
   controlsBrandAccessory = null,
   controlsFooterActions = [],
+  showUiInFullscreen = false,
+  onShowUiInFullscreenChange = null,
   allowUnsupportedShellUi = false,
   topRightOverlay = null,
   liveInputPanel = null,
@@ -178,7 +210,8 @@ const ThreeScene = ({
   const containerRef = useRef(null);
   const controlsRef = useControlsStore().controlsRef;
   const controlsState = useControlsSnapshot(
-    (snapshot) => snapshot.controlsState,
+    selectThreeSceneControls,
+    areThreeSceneControlsEqual,
   );
   const { updateControl } = useControlsActions();
   const [isControlsDockOpen, setIsControlsDockOpen] = useState(false);
@@ -292,9 +325,10 @@ const ThreeScene = ({
   const resolvedLiveInputPanel = resolveLiveInputPanelConfig({
     liveInputPanel,
   });
-  const showRendererOverlayUi = isSupportReady && !isFullscreen;
+  const fullscreenUiVisible = !isFullscreen || showUiInFullscreen;
+  const showRendererOverlayUi = isSupportReady && fullscreenUiVisible;
   const showShellUi =
-    !isFullscreen &&
+    fullscreenUiVisible &&
     (isSupportReady || (allowUnsupportedShellUi && isUnsupported));
   const showUnsupportedWarning = isUnsupported && !allowUnsupportedShellUi;
   const previewOverlayState = resolvePreviewOverlayState(previewState);
@@ -540,7 +574,9 @@ const ThreeScene = ({
             }}
             // @ts-ignore — WebGPURenderer is runtime-compatible; R3F types predate WebGPU
             gl={(glDefaults) =>
-              createBaryonRenderer(glDefaults, activeRendererFallback)
+              createBaryonRenderer(glDefaults, activeRendererFallback, {
+                alpha: false,
+              })
             }
           >
             <Suspense fallback={null}>
@@ -558,6 +594,9 @@ const ThreeScene = ({
                 outputFrameConfig={outputFrameConfig}
                 onOutputFrame={onOutputFrame}
                 onFrameState={handleFrameState}
+                audioFeatureAuthorityRole={
+                  AUDIO_FEATURE_AUTHORITY_ROLES.localProducer
+                }
                 cameraControlMode={CAMERA_CONTROL_MODES.previewLocal}
                 cameraPose={effectiveCameraPose}
                 cameraResetNonce={cameraResetNonce}
@@ -592,6 +631,8 @@ const ThreeScene = ({
           operatorControlKeys={operatorControlKeys}
           dockWidth={ADVANCED_CONTROLS_DOCK_WIDTH}
           brandAccessory={controlsBrandAccessory}
+          showUiInFullscreen={showUiInFullscreen}
+          onShowUiInFullscreenChange={onShowUiInFullscreenChange}
           footerActions={controlsFooterActions}
           onOpenChange={setIsControlsDockOpen}
         />

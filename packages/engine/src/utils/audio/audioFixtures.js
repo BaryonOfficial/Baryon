@@ -4,12 +4,12 @@ import { clamp } from "../math.js";
 const DEFAULT_SAMPLE_RATE = 44100;
 const DEFAULT_FFT_SIZE = 4096;
 
-function writeFftPeak(fftMagnitudes, frequency, amplitude, sampleRate) {
+function writeFftPeak(fftLinearAmplitudes, frequency, amplitude, sampleRate) {
   const bin = Math.max(
     1,
-    frequencyToBinIndex(frequency, fftMagnitudes.length, sampleRate),
+    frequencyToBinIndex(frequency, fftLinearAmplitudes.length, sampleRate),
   );
-  fftMagnitudes[bin] = Math.max(fftMagnitudes[bin] ?? 0, amplitude);
+  fftLinearAmplitudes[bin] = Math.max(fftLinearAmplitudes[bin] ?? 0, amplitude);
 }
 
 function synthesizeTimeData(components, sampleRate, fftSize) {
@@ -28,14 +28,14 @@ function synthesizeTimeData(components, sampleRate, fftSize) {
 function createFixture(components, options = {}) {
   const sampleRate = options.sampleRate ?? DEFAULT_SAMPLE_RATE;
   const fftSize = options.fftSize ?? DEFAULT_FFT_SIZE;
-  const fftMagnitudes = new Float32Array(fftSize / 2);
+  const fftLinearAmplitudes = new Float32Array(fftSize / 2);
   for (const [frequency, amplitude] of components) {
-    writeFftPeak(fftMagnitudes, frequency, amplitude, sampleRate);
+    writeFftPeak(fftLinearAmplitudes, frequency, amplitude, sampleRate);
   }
   return {
     sampleRate,
     fftSize,
-    fftMagnitudes,
+    fftLinearAmplitudes,
     timeData: synthesizeTimeData(components, sampleRate, fftSize),
   };
 }
@@ -59,7 +59,7 @@ export function createMajorTriadFixture(rootFrequency, options = {}) {
 export function createBassHatFixture(options = {}) {
   const sampleRate = options.sampleRate ?? DEFAULT_SAMPLE_RATE;
   const fftSize = options.fftSize ?? DEFAULT_FFT_SIZE;
-  const fftMagnitudes = new Float32Array(fftSize / 2);
+  const fftLinearAmplitudes = new Float32Array(fftSize / 2);
   for (const [frequency, amplitude] of [
     [82.41, 0.95],
     [164.82, 0.52],
@@ -67,12 +67,12 @@ export function createBassHatFixture(options = {}) {
     [6600, 0.42],
     [8100, 0.34],
   ]) {
-    writeFftPeak(fftMagnitudes, frequency, amplitude, sampleRate);
+    writeFftPeak(fftLinearAmplitudes, frequency, amplitude, sampleRate);
   }
   return {
     sampleRate,
     fftSize,
-    fftMagnitudes,
+    fftLinearAmplitudes,
     timeData: synthesizeTimeData(
       [
         [82.41, 0.72],
@@ -102,9 +102,9 @@ export function createVocalLikeFixture(rootFrequency = 220, options = {}) {
 export function createBroadbandNoiseFixture(options = {}) {
   const sampleRate = options.sampleRate ?? DEFAULT_SAMPLE_RATE;
   const fftSize = options.fftSize ?? DEFAULT_FFT_SIZE;
-  const fftMagnitudes = new Float32Array(fftSize / 2);
+  const fftLinearAmplitudes = new Float32Array(fftSize / 2);
   for (let frequency = 120; frequency <= 10000; frequency += 220) {
-    writeFftPeak(fftMagnitudes, frequency, 0.28, sampleRate);
+    writeFftPeak(fftLinearAmplitudes, frequency, 0.28, sampleRate);
   }
   const timeData = new Float32Array(fftSize);
   let seed = 123456789;
@@ -115,7 +115,7 @@ export function createBroadbandNoiseFixture(options = {}) {
   return {
     sampleRate,
     fftSize,
-    fftMagnitudes,
+    fftLinearAmplitudes,
     timeData,
   };
 }

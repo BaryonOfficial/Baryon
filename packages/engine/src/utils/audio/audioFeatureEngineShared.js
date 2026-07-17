@@ -1,78 +1,57 @@
-export const DEFAULT_AUDIO_FEATURE_ENGINE_SETTINGS = Object.freeze(
-  /** @type {{ runtime: string, structuralCadenceMs: number, snapshotPublishCadenceMs: number, chromaCadenceMs: number, tempoCadenceMs: number, maxSnapshotAgeMs: number }} */ ({
-    runtime: "worker",
-    structuralCadenceMs: 33,
-    snapshotPublishCadenceMs: 33,
-    chromaCadenceMs: 66,
-    tempoCadenceMs: 120,
-    maxSnapshotAgeMs: 96,
-  }),
-);
+export const DEFAULT_AUDIO_FEATURE_RUNTIME_SETTINGS = Object.freeze({
+  runtime: "worker",
+  fastCadenceMs: 16,
+  structuralCadenceMs: 33,
+  chromaCadenceMs: 66,
+  tempoCadenceMs: 120,
+  staleDriveTimeoutMs: 96,
+  workerRestartTimeoutMs: 288,
+});
 
-export const FAST_SIGNAL_PATCH_ANALYSIS_KEYS = Object.freeze([
-  "soundActive",
-  "micActive",
-  "bandEnergies",
-  "transientEnergy",
-  "spectralCentroid",
-  "spectralFlux",
-  "beatDetected",
-  "beatPulseId",
-  "beatStrength",
-  "beatConfidence",
-  "avgAmplitude",
-  "analyserRms",
-  "sourceNormalization",
-  "liveInputNoiseGateActive",
-  "liveInputHardSilenceActive",
-  "liveInputCalibrationInvalid",
-  "liveInputCalibrationInvalidReason",
-  "liveInputCalibrationActive",
-  "beatLowBandEnergy",
-  "beatOnsetDriver",
-  "beatThreshold",
-  "micFftNormGain",
-  "preModalFftPeak",
-  "postNormalizationFftPeak",
-]);
-
-export function normalizeAudioFeatureEngineSettings(settings = {}) {
+export function normalizeAudioFeatureRuntimeSettings(settings = {}) {
   return Object.freeze({
-    ...DEFAULT_AUDIO_FEATURE_ENGINE_SETTINGS,
+    ...DEFAULT_AUDIO_FEATURE_RUNTIME_SETTINGS,
     ...settings,
+    fastCadenceMs: Math.max(
+      8,
+      Math.round(
+        settings.fastCadenceMs ??
+          DEFAULT_AUDIO_FEATURE_RUNTIME_SETTINGS.fastCadenceMs,
+      ),
+    ),
     structuralCadenceMs: Math.max(
       16,
       Math.round(
-        settings?.structuralCadenceMs ??
-          DEFAULT_AUDIO_FEATURE_ENGINE_SETTINGS.structuralCadenceMs,
-      ),
-    ),
-    snapshotPublishCadenceMs: Math.max(
-      16,
-      Math.round(
-        settings?.snapshotPublishCadenceMs ??
-          DEFAULT_AUDIO_FEATURE_ENGINE_SETTINGS.snapshotPublishCadenceMs,
+        settings.structuralCadenceMs ??
+          DEFAULT_AUDIO_FEATURE_RUNTIME_SETTINGS.structuralCadenceMs,
       ),
     ),
     chromaCadenceMs: Math.max(
       16,
       Math.round(
-        settings?.chromaCadenceMs ??
-          DEFAULT_AUDIO_FEATURE_ENGINE_SETTINGS.chromaCadenceMs,
+        settings.chromaCadenceMs ??
+          DEFAULT_AUDIO_FEATURE_RUNTIME_SETTINGS.chromaCadenceMs,
       ),
     ),
     tempoCadenceMs: Math.max(
       16,
       Math.round(
-        settings?.tempoCadenceMs ??
-          DEFAULT_AUDIO_FEATURE_ENGINE_SETTINGS.tempoCadenceMs,
+        settings.tempoCadenceMs ??
+          DEFAULT_AUDIO_FEATURE_RUNTIME_SETTINGS.tempoCadenceMs,
       ),
     ),
-    maxSnapshotAgeMs: Math.max(
+    staleDriveTimeoutMs: Math.max(
       32,
       Math.round(
-        settings?.maxSnapshotAgeMs ??
-          DEFAULT_AUDIO_FEATURE_ENGINE_SETTINGS.maxSnapshotAgeMs,
+        settings.staleDriveTimeoutMs ??
+          DEFAULT_AUDIO_FEATURE_RUNTIME_SETTINGS.staleDriveTimeoutMs,
+      ),
+    ),
+    workerRestartTimeoutMs: Math.max(
+      96,
+      Math.round(
+        settings.workerRestartTimeoutMs ??
+          DEFAULT_AUDIO_FEATURE_RUNTIME_SETTINGS.workerRestartTimeoutMs,
       ),
     ),
   });

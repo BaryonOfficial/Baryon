@@ -1,64 +1,181 @@
 import { useEffect, useRef, useState } from "react";
 import { createVisualizationRuntime } from "@baryon/engine/visualization/runtime";
 import {
-  createAudioFeatureEngine,
-  createAudioFeatureState,
-  createNoopAudioFeatureEngine,
+  AUDIO_FEATURE_AUTHORITY_ROLES,
+  createAudioFeatureRuntime,
 } from "@baryon/engine/audio-features";
-import { SIMULATION_DEFAULTS } from "@baryon/engine/defaults";
+import {
+  CAVITY_ACOUSTIC_DEFAULTS,
+  RENDER_DEFAULTS,
+  SIMULATION_DEFAULTS,
+} from "@baryon/engine/defaults";
 import { createLiveInputRuntimeStatus } from "../../context/liveInputRuntimeStatus.js";
+import { subscribeControlsChanged } from "../../controls/controlsEvents.js";
 import {
   clearFrameCache,
   clearAdaptiveRaymarchResumeState,
-  createEmptyAnalysisSchedulerState,
   createEmptyControlSnapshots,
   createRuntimeDiagnostics,
   initializeAdaptiveRaymarchRuntimeState,
 } from "./baryonEngineRuntimeState.js";
+
+function buildAudioFeatureRuntimeConfiguration(controls = {}) {
+  return {
+    radius: SIMULATION_DEFAULTS.radius,
+    cavityAcousticScale: CAVITY_ACOUSTIC_DEFAULTS,
+    boundaryMode: controls.boundaryMode ?? SIMULATION_DEFAULTS.boundaryMode,
+    cavityGeometry:
+      controls.cavityGeometry ?? SIMULATION_DEFAULTS.cavityGeometry,
+    includeSpectralLight:
+      controls.colorMode === "spectral" &&
+      (controls.spectralMix ?? RENDER_DEFAULTS.spectralMix) > 0,
+    auditSettings: {
+      enabled: controls.auditEnabled === true,
+      freezeModeSlots: controls.freezeModeSlots === true,
+      forceWebGLFallbackTest: controls.forceWebGLFallbackTest === true,
+      lowLoadPlaybackDiagnostics: controls.lowLoadPlaybackDiagnostics === true,
+      injectTestTone: controls.injectTestTone === true,
+      testToneHz: controls.testToneHz,
+      testToneSignal: controls.testToneSignal,
+      testToneAmplitude: controls.testToneAmplitude,
+      logEveryFrames: controls.logEveryFrames,
+    },
+  };
+}
 
 export function useVisualizationRuntimeLifecycle({
   audioRef,
   baryonGeometry,
   controlsRef,
   visualizationMethod,
+  audioFeatureAuthorityRole = AUDIO_FEATURE_AUTHORITY_ROLES.localProducer,
+  audioFeatureConfigurationVersion = 0,
   setIsEngineReady,
   setLiveInputRuntimeStatus,
 }) {
-  const runtimeRef = useRef(createVisualizationRuntime(visualizationMethod));
+  const runtimeRef = useRef(null);
   const runtimeStateRef = useRef(null);
-  const audioFeatureRef = useRef(null);
-  const audioFeatureEngineRef = useRef(createNoopAudioFeatureEngine());
-  const lastLiveFrameRef = useRef(null);
-  const lastActiveFrameRef = useRef(null);
+  const audioFeatureRuntimeRef = useRef(null);
+  const initialAudioFeatureAuthorityRoleRef = useRef(audioFeatureAuthorityRole);
+  const [initialAudioFeatureConfiguration] = useState(() =>
+    buildAudioFeatureRuntimeConfiguration(controlsRef?.current),
+  );
+  const initialAudioFeatureConfigurationRef = useRef(
+    initialAudioFeatureConfiguration,
+  );
+  const initialAudioFeatureConfigurationVersionRef = useRef(
+    audioFeatureConfigurationVersion,
+  );
+  const lastCommandedAudioFeatureAuthorityRoleRef = useRef(null);
+  const lastCommandedAudioFeatureConfigurationVersionRef = useRef(null);
   const lastIdleFrameRef = useRef(null);
   const pausedFileFrameRef = useRef(null);
-  const analysisSchedulerRef = useRef(createEmptyAnalysisSchedulerState());
   const lastLiveInputRuntimeStatusRef = useRef(null);
   const controlVersionRef = useRef(0);
   const appliedControlVersionRef = useRef(-1);
-  const runtimeDiagnosticsRef = useRef(createRuntimeDiagnostics());
+  const [initialRuntimeDiagnostics] = useState(createRuntimeDiagnostics);
+  const runtimeDiagnosticsRef = useRef(initialRuntimeDiagnostics);
   const pixelRatioRef = useRef(null);
   const renderSurfaceSizeRef = useRef(null);
   const lastAudioIssueSignatureRef = useRef(null);
-  const cachedControlSnapshotsRef = useRef(
+  const [initialControlSnapshots] = useState(() =>
     createEmptyControlSnapshots(
       controlsRef?.current ? { ...controlsRef.current } : null,
     ),
   );
+  const cachedControlSnapshotsRef = useRef(initialControlSnapshots);
+  const setIsEngineReadyRef = useRef(setIsEngineReady);
+  const setLiveInputRuntimeStatusRef = useRef(setLiveInputRuntimeStatus);
   const [points, setPoints] = useState(null);
 
-  const frameCacheRefs = useRef({
-    lastLiveFrameRef,
-    lastActiveFrameRef,
+  const [frameCacheRefs] = useState(() => ({
     lastIdleFrameRef,
     pausedFileFrameRef,
-    analysisSchedulerRef,
-  }).current;
-  const controlCacheRefs = useRef({
+  }));
+  const [controlCacheRefs] = useState(() => ({
     controlVersionRef,
     appliedControlVersionRef,
     cachedControlSnapshotsRef,
-  }).current;
+  }));
+
+  useEffect(() => {
+    setIsEngineReadyRef.current = setIsEngineReady;
+  }, [setIsEngineReady]);
+
+  useEffect(() => {
+    setLiveInputRuntimeStatusRef.current = setLiveInputRuntimeStatus;
+  }, [setLiveInputRuntimeStatus]);
+
+  useEffect(() => {
+    const audioSession = audioRef.current;
+    if (!audioSession) {
+      return undefined;
+    }
+
+    const featureRuntime = createAudioFeatureRuntime({}, { audioSession });
+    audioFeatureRuntimeRef.current = featureRuntime;
+    featureRuntime.configure(initialAudioFeatureConfigurationRef.current);
+    lastCommandedAudioFeatureConfigurationVersionRef.current =
+      initialAudioFeatureConfigurationVersionRef.current;
+    featureRuntime.setAuthorityRole(
+      initialAudioFeatureAuthorityRoleRef.current,
+    );
+    lastCommandedAudioFeatureAuthorityRoleRef.current =
+      initialAudioFeatureAuthorityRoleRef.current;
+    featureRuntime.start();
+
+    return () => {
+      featureRuntime.dispose();
+      if (audioFeatureRuntimeRef.current === featureRuntime) {
+        audioFeatureRuntimeRef.current = null;
+      }
+    };
+  }, [audioRef]);
+
+  useEffect(() => {
+    if (
+      lastCommandedAudioFeatureAuthorityRoleRef.current ===
+      audioFeatureAuthorityRole
+    ) {
+      return;
+    }
+    const featureRuntime = audioFeatureRuntimeRef.current;
+    if (!featureRuntime) {
+      return;
+    }
+    featureRuntime.setAuthorityRole(audioFeatureAuthorityRole);
+    lastCommandedAudioFeatureAuthorityRoleRef.current =
+      audioFeatureAuthorityRole;
+  }, [audioFeatureAuthorityRole]);
+
+  useEffect(() => {
+    if (
+      lastCommandedAudioFeatureConfigurationVersionRef.current ===
+      audioFeatureConfigurationVersion
+    ) {
+      return;
+    }
+    audioFeatureRuntimeRef.current?.configure(
+      buildAudioFeatureRuntimeConfiguration(controlsRef?.current),
+    );
+    lastCommandedAudioFeatureConfigurationVersionRef.current =
+      audioFeatureConfigurationVersion;
+  }, [audioFeatureConfigurationVersion, controlsRef]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const handleControlsChange = (event) => {
+      audioFeatureRuntimeRef.current?.configure(
+        buildAudioFeatureRuntimeConfiguration(
+          event?.detail ?? controlsRef?.current,
+        ),
+      );
+    };
+    return subscribeControlsChanged(handleControlsChange);
+  }, [controlsRef]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -67,12 +184,12 @@ export function useVisualizationRuntimeLifecycle({
       : null;
 
     if (!audio || !baryonGeometry) {
-      setIsEngineReady?.(false);
+      setIsEngineReadyRef.current?.(false);
       setPoints(null);
       return undefined;
     }
 
-    setIsEngineReady?.(false);
+    setIsEngineReadyRef.current?.(false);
     setPoints(null);
 
     try {
@@ -81,6 +198,12 @@ export function useVisualizationRuntimeLifecycle({
       const audioStatus = audio.getStatus();
       const parameters = {
         radius: SIMULATION_DEFAULTS.radius,
+        // This is apparatus calibration, not user state. Keeping it outside
+        // the control snapshot makes sharpness invariant across sessions.
+        carrierCoreFwhmWorld: SIMULATION_DEFAULTS.carrierCoreFwhmWorld,
+        volumeShape:
+          initialControlsSnapshot?.volumeShape ??
+          SIMULATION_DEFAULTS.volumeShape,
       };
       const audioConfig = {
         capacity: audioStatus.capacity,
@@ -88,9 +211,6 @@ export function useVisualizationRuntimeLifecycle({
         sampleRate: audioStatus.sampleRate,
       };
 
-      audioFeatureEngineRef.current?.dispose?.();
-      audioFeatureEngineRef.current = createAudioFeatureEngine();
-      audioFeatureRef.current = createAudioFeatureState(audioConfig.capacity);
       const runtimeState = runtime.setup({
         baryonGeometry,
         parameters,
@@ -104,14 +224,14 @@ export function useVisualizationRuntimeLifecycle({
       );
       appliedControlVersionRef.current = -1;
       setPoints(runtimeState.points);
-      setIsEngineReady?.(true);
+      setIsEngineReadyRef.current?.(true);
     } catch (error) {
       console.error("[BaryonScene] Setup failed:", error);
     }
 
     return () => {
       const runtime = runtimeRef.current;
-      setIsEngineReady?.(false);
+      setIsEngineReadyRef.current?.(false);
       setPoints(null);
       if (typeof window !== "undefined") {
         delete (/** @type {any} */ (window).__baryonPerfMetrics);
@@ -121,21 +241,16 @@ export function useVisualizationRuntimeLifecycle({
         runtime.dispose(runtimeStateRef.current);
         runtimeStateRef.current = null;
       }
-      audioFeatureEngineRef.current?.dispose?.();
-      audioFeatureEngineRef.current = createNoopAudioFeatureEngine();
       clearFrameCache(frameCacheRefs);
-      audioFeatureRef.current = null;
       lastLiveInputRuntimeStatusRef.current = null;
       cachedControlSnapshotsRef.current = createEmptyControlSnapshots(null);
-      setLiveInputRuntimeStatus?.(createLiveInputRuntimeStatus());
+      setLiveInputRuntimeStatusRef.current?.(createLiveInputRuntimeStatus());
     };
   }, [
     audioRef,
     baryonGeometry,
     controlsRef,
     frameCacheRefs,
-    setIsEngineReady,
-    setLiveInputRuntimeStatus,
     visualizationMethod,
   ]);
 
@@ -143,8 +258,7 @@ export function useVisualizationRuntimeLifecycle({
     points,
     runtimeRef,
     runtimeStateRef,
-    audioFeatureRef,
-    audioFeatureEngineRef,
+    audioFeatureRuntimeRef,
     runtimeDiagnosticsRef,
     frameCacheRefs,
     controlCacheRefs,

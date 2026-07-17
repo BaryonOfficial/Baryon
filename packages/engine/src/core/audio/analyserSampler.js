@@ -57,18 +57,18 @@ function refreshSpectrumCache(reader) {
     reader._rawFrequencyData;
   reader._spectrumData = sourceData;
 
-  reader._normalizedFrequencyData = ensureTypedBuffer(
-    reader._normalizedFrequencyData,
+  reader._fftLinearAmplitudes = ensureTypedBuffer(
+    reader._fftLinearAmplitudes,
     sourceData.length,
     Float32Array,
   );
-  normaliseSpectrumInto(sourceData, reader._normalizedFrequencyData);
+  normaliseSpectrumInto(sourceData, reader._fftLinearAmplitudes);
   reader._averageFrequency =
-    computeAverageFrequency(reader._normalizedFrequencyData) * 255;
+    reader._computeMeterLevel(reader._fftLinearAmplitudes) * 255;
 
   return {
     avgAmplitude: reader._averageFrequency,
-    fftMagnitudes: reader._normalizedFrequencyData,
+    fftLinearAmplitudes: reader._fftLinearAmplitudes,
   };
 }
 
@@ -113,18 +113,21 @@ export function computeRms(timeData) {
  * @param {AnalyserNode} analyserNode
  * @param {(data: Uint8Array | Float32Array) => Uint8Array | Float32Array} readFrequencyData
  * @param {Uint8ArrayConstructor | Float32ArrayConstructor} [RawType=Uint8Array]
+ * @param {(data: Float32Array) => number} [computeMeterLevel=computeAverageFrequency]
  */
 export function createAnalyserReader(
   analyserNode,
   readFrequencyData,
   RawType = Uint8Array,
+  computeMeterLevel = computeAverageFrequency,
 ) {
   return {
     analyser: analyserNode,
     _readFrequencyData: readFrequencyData,
+    _computeMeterLevel: computeMeterLevel,
     _rawFrequencyData: new RawType(analyserNode.frequencyBinCount),
     _spectrumData: null,
-    _normalizedFrequencyData: new Float32Array(analyserNode.frequencyBinCount),
+    _fftLinearAmplitudes: new Float32Array(analyserNode.frequencyBinCount),
     _timeDomainData: new Float32Array(analyserNode.fftSize),
     _averageFrequency: 0,
     _refreshSpectrumData() {
@@ -150,6 +153,13 @@ function normalizeDecibelMagnitude(value, minDecibels, maxDecibels) {
   return Math.max(0, Math.min(1, (value - minDecibels) / span));
 }
 
+function decibelsToLinearAmplitude(value, minDecibels) {
+  if (!Number.isFinite(value) || value <= minDecibels) {
+    return 0;
+  }
+  return Math.max(0, Math.min(1, 10 ** (value / 20)));
+}
+
 export function createNodeAnalyser(audioCtx, sourceNode, fftSize) {
   const analyserNode = audioCtx.createAnalyser();
   analyserNode.fftSize = fftSize;
@@ -158,6 +168,17 @@ export function createNodeAnalyser(audioCtx, sourceNode, fftSize) {
 
   const supportsFloatFrequencyData =
     typeof analyserNode.getFloatFrequencyData === "function";
+  const minDecibels = Number.isFinite(analyserNode.minDecibels)
+    ? analyserNode.minDecibels
+    : -100;
+  const maxDecibels = Number.isFinite(analyserNode.maxDecibels)
+    ? analyserNode.maxDecibels
+    : -30;
+  const decibelSpan = Math.max(1e-6, maxDecibels - minDecibels);
+  // Preserve the raw analyser meter while projecting the FFT to linear
+  // amplitude. Reconstructing either representation from the other is lossy
+  // once the linear projection clips or the analyser reports its floor.
+  let legacyMeterLevel = 0;
 
   return createAnalyserReader(
     analyserNode,
@@ -165,29 +186,38 @@ export function createNodeAnalyser(audioCtx, sourceNode, fftSize) {
       if (!supportsFloatFrequencyData) {
         const byteData = new Uint8Array(data.length);
         analyserNode.getByteFrequencyData(byteData);
+        let meterTotal = 0;
         for (let index = 0; index < data.length; index += 1) {
-          data[index] = (byteData[index] ?? 0) / 255;
+          const byteValue = byteData[index] ?? 0;
+          meterTotal += byteValue / 255;
+          data[index] =
+            byteValue <= 0
+              ? 0
+              : decibelsToLinearAmplitude(
+                  minDecibels + (byteValue / 255) * decibelSpan,
+                  minDecibels,
+                );
         }
+        legacyMeterLevel = data.length ? meterTotal / data.length : 0;
         return data;
       }
 
       analyserNode.getFloatFrequencyData(data);
-      const minDecibels = Number.isFinite(analyserNode.minDecibels)
-        ? analyserNode.minDecibels
-        : -100;
-      const maxDecibels = Number.isFinite(analyserNode.maxDecibels)
-        ? analyserNode.maxDecibels
-        : -30;
+      let meterTotal = 0;
       for (let index = 0; index < data.length; index += 1) {
-        data[index] = normalizeDecibelMagnitude(
-          data[index],
+        const decibels = data[index];
+        meterTotal += normalizeDecibelMagnitude(
+          decibels,
           minDecibels,
           maxDecibels,
         );
+        data[index] = decibelsToLinearAmplitude(decibels, minDecibels);
       }
+      legacyMeterLevel = data.length ? meterTotal / data.length : 0;
       return data;
     },
     Float32Array,
+    () => legacyMeterLevel,
   );
 }
 
@@ -201,7 +231,7 @@ export function sampleAnalyser(analyser) {
   if (cachedSpectrum) {
     return {
       avgAmplitude: cachedSpectrum.avgAmplitude,
-      fftMagnitudes: cachedSpectrum.fftMagnitudes,
+      fftLinearAmplitudes: cachedSpectrum.fftLinearAmplitudes,
       timeData,
       rms: computeRms(timeData),
     };
@@ -211,7 +241,7 @@ export function sampleAnalyser(analyser) {
 
   return {
     avgAmplitude: analyser.getAverageFrequency(),
-    fftMagnitudes: normaliseSpectrumInto(
+    fftLinearAmplitudes: normaliseSpectrumInto(
       frequencyData,
       new Float32Array(frequencyData.length),
     ),

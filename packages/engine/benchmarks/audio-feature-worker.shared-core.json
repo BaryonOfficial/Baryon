@@ -1,0 +1,53 @@
+{
+  "recordedAt": "2026-07-12",
+  "environment": {
+    "node": "v26.3.0",
+    "platform": "darwin",
+    "arch": "arm64"
+  },
+  "contract": {
+    "modes": 48,
+    "fastWindowSamples": 2048,
+    "warmUpFrames": 100,
+    "measuredFrames": 1000,
+    "goertzelP95GateMs": 2.5,
+    "fastLaneP95GateMs": 4,
+    "steadyStateTypedArrayAllocations": 0
+  },
+  "exactFrequencyEstimator": [
+    {
+      "sampleRate": 44100,
+      "goertzelP50Ms": 0.105,
+      "goertzelP95Ms": 0.248,
+      "passed": true
+    },
+    {
+      "sampleRate": 48000,
+      "goertzelP50Ms": 0.133,
+      "goertzelP95Ms": 0.562,
+      "passed": true
+    }
+  ],
+  "integratedFastLane": [
+    {
+      "sampleRate": 44100,
+      "committedModeCount": 48,
+      "probeModeCount": 48,
+      "topologySetupBufferAllocations": 2,
+      "steadyStateBufferAllocations": 0,
+      "fastLaneP50Ms": 0.394,
+      "fastLaneP95Ms": 1.047,
+      "passed": true
+    },
+    {
+      "sampleRate": 48000,
+      "committedModeCount": 48,
+      "probeModeCount": 48,
+      "topologySetupBufferAllocations": 2,
+      "steadyStateBufferAllocations": 0,
+      "fastLaneP50Ms": 0.34,
+      "fastLaneP95Ms": 0.536,
+      "passed": true
+    }
+  ]
+}

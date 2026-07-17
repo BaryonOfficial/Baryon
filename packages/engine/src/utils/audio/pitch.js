@@ -43,12 +43,6 @@ export function getPitchClassForFrequency(frequency) {
   return mod(Math.round(midi), 12);
 }
 
-export function getOctaveForFrequency(frequency) {
-  const midi = frequencyToMidi(frequency);
-  if (midi == null) return null;
-  return Math.floor(Math.round(midi) / 12) - 1;
-}
-
 export function getNoteNameForFrequency(frequency) {
   const pitchClass = getPitchClassForFrequency(frequency);
   if (pitchClass == null) return null;

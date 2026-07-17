@@ -10,10 +10,7 @@ import {
   normalizeMidiAutomationCommand,
   normalizeOscAutomationCommand,
 } from "./automation.js";
-import {
-  CONTROL_DEFINITIONS,
-  CONTROL_STATUSES,
-} from "./schema.js";
+import { CONTROL_DEFINITIONS, CONTROL_STATUSES } from "./schema.js";
 
 function getDefinition(key) {
   return CONTROL_DEFINITIONS.find((definition) => definition.key === key);
@@ -26,7 +23,7 @@ describe("parameter automation registry", () => {
       (definition) => definition.key,
     );
 
-    expect(AUTOMATION_CONTROL_SCHEMA_VERSION).toBe(1);
+    expect(AUTOMATION_CONTROL_SCHEMA_VERSION).toBe(4);
     expect(automatableKeys).toEqual(AUTOMATABLE_CONTROL_KEYS);
     for (const key of AUTOMATABLE_CONTROL_KEYS) {
       const definition = getDefinition(key);
@@ -45,6 +42,7 @@ describe("parameter automation registry", () => {
     expect(automatableKeys.has("cameraLocked")).toBe(false);
     expect(automatableKeys.has("auditEnabled")).toBe(false);
     expect(automatableKeys.has("smaaEnabled")).toBe(false);
+    expect(automatableKeys.has("carrierCoreFwhmWorld")).toBe(false);
   });
 });
 
@@ -54,17 +52,7 @@ describe("parameter automation OSCQuery projection", () => {
     const controlContents = tree.CONTENTS.baryon.CONTENTS.control.CONTENTS;
 
     expect(Object.keys(controlContents)).toEqual(AUTOMATABLE_CONTROL_KEYS);
-    expect(controlContents.zeroPointPrecision).toMatchObject({
-      FULL_PATH: "/baryon/control/zeroPointPrecision",
-      TYPE: "f",
-      ACCESS: 2,
-      RANGE: [{ MIN: 0.001, MAX: 0.3 }],
-      BARYON_PARAMETER: {
-        key: "zeroPointPrecision",
-        label: "Node Threshold",
-        valueKind: "scalar",
-      },
-    });
+    expect(controlContents).not.toHaveProperty("carrierCoreFwhmWorld");
     expect(controlContents.bloomEnabled).toMatchObject({
       TYPE: "i",
       RANGE: [{ VALS: [0, 1] }],
@@ -170,7 +158,7 @@ describe("normalizeOscAutomationCommand", () => {
     expect(result).toMatchObject({
       ok: true,
       command: {
-        schemaVersion: 1,
+        schemaVersion: 4,
         transport: "osc",
         key: "densityGain",
         value: 1.8,
@@ -219,7 +207,7 @@ describe("normalizeMidiAutomationCommand", () => {
     expect(result).toMatchObject({
       ok: true,
       command: {
-        schemaVersion: 1,
+        schemaVersion: 4,
         transport: "midi",
         key: "densityGain",
         persistMode: "none",

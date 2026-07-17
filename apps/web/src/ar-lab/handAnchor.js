@@ -24,13 +24,13 @@ export const REQUIRED_HAND_JOINTS = Object.freeze([
   "thumb-tip",
 ]);
 
-export const PINCH_DISTANCE_M = 0.025;
-export const CAMERA_PINCH_DISTANCE_M = 0.075;
+const PINCH_DISTANCE_M = 0.025;
+const CAMERA_PINCH_DISTANCE_M = 0.075;
 // Camera hand landmarks jitter more than XR joints, so pinch uses a wide
 // release threshold for visual emphasis hysteresis only.
-export const CAMERA_PINCH_RELEASE_DISTANCE_M = 0.16;
-export const WEBXR_PINCH_RELEASE_DISTANCE_M = 0.04;
-export const CRADLE_REFERENCE_SEPARATION_M = 0.18;
+const CAMERA_PINCH_RELEASE_DISTANCE_M = 0.16;
+const WEBXR_PINCH_RELEASE_DISTANCE_M = 0.04;
+const CRADLE_REFERENCE_SEPARATION_M = 0.18;
 export const CRADLE_SCALE_MIN = 0.5;
 export const CRADLE_SCALE_MAX = 2.5;
 export const CAMERA_HAND_TRACKING_STALE_MS = 650;
@@ -195,10 +195,11 @@ function normalizeVector(vector) {
 }
 
 function averageVectors(vectors) {
-  const total = vectors.reduce(
-    (sum, vector) => addVector(sum, vector),
-    { x: 0, y: 0, z: 0 },
-  );
+  const total = vectors.reduce((sum, vector) => addVector(sum, vector), {
+    x: 0,
+    y: 0,
+    z: 0,
+  });
   return scaleVector(total, 1 / vectors.length);
 }
 
@@ -226,10 +227,7 @@ function resolveCameraPalmCenter(hand) {
 function resolveCameraPalmSurfaceNormal(hand, palmCenter) {
   const wrist = hand.joints.wrist.position;
   const middleMetacarpal = hand.joints["middle-finger-metacarpal"].position;
-  const indexMetacarpal = resolveJointPosition(
-    hand,
-    "index-finger-metacarpal",
-  );
+  const indexMetacarpal = resolveJointPosition(hand, "index-finger-metacarpal");
   const outerMetacarpal =
     resolveJointPosition(hand, "pinky-finger-metacarpal") ??
     resolveJointPosition(hand, "ring-finger-metacarpal");
@@ -279,14 +277,8 @@ function resolveCameraConductorTip(hand) {
 function resolveCameraWorldHandSpan(hand) {
   const wrist = hand.joints.wrist.position;
   const tip = resolveCameraConductorTip(hand);
-  const indexMetacarpal = resolveJointPosition(
-    hand,
-    "index-finger-metacarpal",
-  );
-  const pinkyMetacarpal = resolveJointPosition(
-    hand,
-    "pinky-finger-metacarpal",
-  );
+  const indexMetacarpal = resolveJointPosition(hand, "index-finger-metacarpal");
+  const pinkyMetacarpal = resolveJointPosition(hand, "pinky-finger-metacarpal");
   const spans = [
     tip ? distanceBetween(wrist, tip) : null,
     indexMetacarpal && pinkyMetacarpal
@@ -666,7 +658,7 @@ function deriveHeldAnchor(validHands, previous, nowMs, dtMs, source) {
   const scaleReferenceSpan =
     source === HAND_ANCHOR_SOURCES.cameraHand
       ? resolveCameraScaleReferenceSpan(previous, span, fallbackReferenceSpan)
-      : previous.scaleReferenceSpan ?? null;
+      : (previous.scaleReferenceSpan ?? null);
   return {
     source,
     phase: HAND_ANCHOR_PHASES.holding,
