@@ -21,10 +21,9 @@ test("builds the advanced controls presentation layout", () => {
   expect(folderGroups.map((group) => group.title)).toStrictEqual([
     "Performance",
     "Output",
-    "Shape",
-    "Color",
+    "Volume",
+    "Appearance",
     "Motion",
-    "Bloom",
     "Logo",
     "Diagnostics",
   ]);
@@ -52,36 +51,42 @@ test("builds the advanced controls presentation layout", () => {
     "outputMode",
     "outputBackgroundColor",
   ]);
+  expect(outputGroup.controls[0].label).toBe("Output Mode");
 
-  const shapeGroup = groupByTitle.get("Shape");
-  expect(shapeGroup).toMatchObject({
-    title: "Shape",
+  const volumeGroup = groupByTitle.get("Volume");
+  expect(volumeGroup).toMatchObject({
+    title: "Volume",
     controls: expect.any(Array),
   });
-  expect(shapeGroup.controls.map((control) => control.key)).toStrictEqual([
-    "fieldExtent",
+  expect(volumeGroup.controls.map((control) => control.key)).toStrictEqual([
+    "volumeShape",
     "boundaryMode",
-    "zeroPointPrecision",
     "densityGain",
-    "absorption",
     "laserDeflectionGain",
-    "opacityGain",
     "raymarchSteps",
   ]);
+  expect(volumeGroup.controls[0]).toMatchObject({
+    key: "volumeShape",
+    label: "Shape",
+  });
+  expect(volumeGroup.title).not.toBe(volumeGroup.controls[0].label);
 
-  const colorGroup = groupByTitle.get("Color");
-  expect(colorGroup).toMatchObject({
-    title: "Color",
+  const appearanceGroup = groupByTitle.get("Appearance");
+  expect(appearanceGroup).toMatchObject({
+    title: "Appearance",
     controls: expect.any(Array),
   });
-  expect(colorGroup.controls.map((control) => control.key)).toStrictEqual([
+  expect(appearanceGroup.controls.map((control) => control.key)).toStrictEqual([
     "colorMode",
     "volumeColor",
     "surfaceColor",
     "spectralMix",
     "holographicIntensity",
-    "holographicShift",
     "holographicFresnelPower",
+    "bloomEnabled",
+    "bloomStrength",
+    "bloomRadius",
+    "bloomThreshold",
   ]);
 
   const motionGroup = groupByTitle.get("Motion");
@@ -93,7 +98,6 @@ test("builds the advanced controls presentation layout", () => {
     "rotationMode",
     "rotationSpeed",
     "motionAmount",
-    "reactivity",
   ]);
 
   const diagnosticsGroup = groupByTitle.get("Diagnostics");
@@ -109,7 +113,6 @@ test("builds the advanced controls presentation layout", () => {
       "freezeModeSlots",
       "forceWebGLFallbackTest",
       "lowLoadPlaybackDiagnostics",
-      "cavityGeometry",
       "injectTestTone",
       "testToneHz",
       "testToneSignal",
@@ -117,21 +120,6 @@ test("builds the advanced controls presentation layout", () => {
       "logEveryFrames",
     ],
   );
-
-  const bloomGroup = groupByTitle.get("Bloom");
-  expect(bloomGroup).toMatchObject({
-    title: "Bloom",
-    controls: expect.any(Array),
-  });
-  expect(bloomGroup.controls.map((control) => control.key)).toStrictEqual([
-    "bloomEnabled",
-    "bloomStrength",
-    "bloomRadius",
-    "bloomThreshold",
-    "bloomResponseBias",
-    "rimBloomBias",
-    "rimCompression",
-  ]);
 
   const logoGroup = groupByTitle.get("Logo");
   expect(logoGroup).toMatchObject({
@@ -243,7 +231,7 @@ test("persistControls rewrites settings to the current schema and drops removed 
   );
 
   expect(JSON.parse(storage.get(SETTINGS_KEY))).toEqual({
-    version: 2,
+    version: 6,
     controls: {
       backgroundColor: "#102030",
     },

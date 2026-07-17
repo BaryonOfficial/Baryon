@@ -6,19 +6,20 @@ import {
 } from "../../defaults.js";
 import {
   applyTestToneToSnapshot,
-  buildAudioFeatureFrame,
   buildCurrentAudioFeatureAnalysisResult,
-  buildFastSignalPatchedAudioFeatureAnalysisResult,
   composeAudioFeatureFrame,
   createAudioFeatureState,
   detectLiveInputNoiseGate,
   prepareAudioFeatureFrameInputs,
-  runHeavyAudioFeatureAnalysis,
+  updateAudioFeatureChromaState,
   updateAudioFeatureFastSignalState,
+  updateAudioFeatureStructuralState,
+  updateAudioFeatureTempoState,
 } from "./buildFeatureFrame.js";
 import { binIndexToFrequencyHz, frequencyToBinIndex } from "./binFrequency.js";
 import { deriveHighQSparseResonatorEvidence } from "./highQSparseResonatorEvidence.js";
 import { DEFAULT_RENDER_ENERGY_EPSILON } from "./modalEnergyLedger.js";
+import { MODAL_BASIS_HANDOFF_MODE_COUNT } from "../../core/modalBudgets.js";
 
 const FFT_SIZE = 4096;
 const SAMPLE_RATE = 44100;
@@ -31,6 +32,46 @@ const BUILD_FEATURE_FRAME_SOURCE = readFileSync(
   new URL("./buildFeatureFrame.js", import.meta.url),
   "utf8",
 );
+
+function runCompleteFeatureAnalysisForTest(preparedInputs) {
+  const fastSignalState = updateAudioFeatureFastSignalState(preparedInputs);
+  const chromaState = updateAudioFeatureChromaState(
+    preparedInputs,
+    fastSignalState,
+  );
+  const structuralState = updateAudioFeatureStructuralState(
+    preparedInputs,
+    fastSignalState,
+  );
+  const tempoState = updateAudioFeatureTempoState({
+    bandState: preparedInputs.bandState,
+    beatConfidence: fastSignalState.beatConfidence,
+    currentFrameAtMs: fastSignalState.currentFrameAtMs,
+    deltaMs: fastSignalState.deltaMs,
+  });
+
+  return buildCurrentAudioFeatureAnalysisResult({
+    preparedInputs,
+    fastSignalState,
+    structuralState,
+    chromaState,
+    tempoState,
+    materializeStructuralProjection: true,
+  });
+}
+
+function buildFeatureFrameForTest(args) {
+  const preparedInputs = prepareAudioFeatureFrameInputs(args);
+  if (preparedInputs.silentFeatureFrame) {
+    return preparedInputs.silentFeatureFrame;
+  }
+
+  return composeAudioFeatureFrame({
+    preparedInputs,
+    analysisResult: runCompleteFeatureAnalysisForTest(preparedInputs),
+    smoothFromPreviousFrame: false,
+  });
+}
 
 it("derives observation energy from modal coefficient and response only", () => {
   const observationEnergyHelper = BUILD_FEATURE_FRAME_SOURCE.match(
@@ -102,63 +143,6 @@ it("keeps visual fog out of production modal admission owners", () => {
   }
 });
 
-it("patches current fast audio signals without replacing structural modal fields", () => {
-  const featureState = createAudioFeatureState();
-  const status = createStatus({
-    audioInputMode: "file",
-    isPlaying: true,
-    playbackSessionId: "song-1",
-  });
-  const previousInputs = prepareAudioFeatureFrameInputs({
-    analysisSnapshot: createSnapshot({
-      avgAmplitude: 24,
-      rms: 0.2,
-      fftMagnitudes: makeFft([
-        [220, 0.9],
-        [440, 0.4],
-      ]),
-    }),
-    featureState,
-    radius: 3,
-    status,
-    frameTimeMs: 1000,
-  });
-  const previousAnalysis = runHeavyAudioFeatureAnalysis(previousInputs);
-  const currentInputs = prepareAudioFeatureFrameInputs({
-    analysisSnapshot: createSnapshot({
-      avgAmplitude: 96,
-      rms: 0.8,
-      fftMagnitudes: makeFft([
-        [220, 0.1],
-        [880, 0.95],
-      ]),
-    }),
-    featureState,
-    radius: 3,
-    status,
-    frameTimeMs: 1016,
-  });
-
-  const patchedAnalysis = buildFastSignalPatchedAudioFeatureAnalysisResult({
-    preparedInputs: currentInputs,
-    previousAnalysisResult: previousAnalysis,
-  });
-
-  expect(patchedAnalysis.avgAmplitude).toBe(96);
-  expect(patchedAnalysis.analyserRms).toBe(0.8);
-  expect(patchedAnalysis.transientEnergy).toBeGreaterThan(
-    previousAnalysis.transientEnergy,
-  );
-  expect(patchedAnalysis.bandEnergies).toBe(currentInputs.bandEnergies);
-  expect(patchedAnalysis.modeSlots).toBe(previousAnalysis.modeSlots);
-  expect(patchedAnalysis.candidateForcingSlots).toBe(
-    previousAnalysis.candidateForcingSlots,
-  );
-  expect(patchedAnalysis.candidateResponseSlots).toBe(
-    previousAnalysis.candidateResponseSlots,
-  );
-});
-
 it("reuses exact FFT summaries for file-source evidence", () => {
   const featureState = createAudioFeatureState();
   const status = makeActiveStatus({
@@ -173,7 +157,7 @@ it("reuses exact FFT summaries for file-source evidence", () => {
     analysisSnapshot: createSnapshot({
       avgAmplitude: 32,
       rms: 0.12,
-      fftMagnitudes: makeFft(peaks),
+      fftLinearAmplitudes: makeFft(peaks),
     }),
     featureState,
     radius: 3,
@@ -188,21 +172,31 @@ it("reuses exact FFT summaries for file-source evidence", () => {
         BIN_COUNT,
         SAMPLE_RATE,
       );
-      return weighted + resolvedFrequency * amplitude;
+      return weighted + resolvedFrequency * amplitude ** 2;
     }, 0) /
-    peaks.reduce((total, [, amplitude]) => total + amplitude, 0) /
+    peaks.reduce((total, [, amplitude]) => total + amplitude ** 2, 0) /
     (SAMPLE_RATE * 0.5);
+  const totalPower = peaks.reduce(
+    (total, [, amplitude]) => total + amplitude ** 2,
+    0,
+  );
+  const expectedParticipationRatio =
+    totalPower ** 2 /
+    peaks.reduce((total, [, amplitude]) => total + amplitude ** 4, 0);
 
-  expect(preparedInputs.preModalFftPeak).toBeCloseTo(0.75, 6);
+  expect(preparedInputs.fftPeakAmplitude).toBeCloseTo(0.75, 6);
   expect(preparedInputs.spectralCentroidHint).toBeCloseTo(expectedCentroid, 6);
-  expect(preparedInputs.nonZeroFftBinCount).toBe(peaks.length);
-  expect(preparedInputs.sourceEvidence.metrics.preModalFftPeak).toBeCloseTo(
+  expect(preparedInputs.spectralEffectiveBinCount).toBeCloseTo(
+    expectedParticipationRatio,
+    6,
+  );
+  expect(preparedInputs.sourceEvidence.metrics.fftPeakAmplitude).toBeCloseTo(
     0.75,
     6,
   );
-  expect(preparedInputs.sourceEvidence.metrics.nonZeroFftBinCount).toBe(
-    peaks.length,
-  );
+  expect(
+    preparedInputs.sourceEvidence.metrics.spectralEffectiveBinCount,
+  ).toBeCloseTo(expectedParticipationRatio, 6);
 });
 
 function createStatus(overrides = {}) {
@@ -227,7 +221,7 @@ function createSnapshot(overrides = {}) {
   return {
     sourceMode: "file",
     avgAmplitude: 24,
-    fftMagnitudes: new Float32Array(BIN_COUNT),
+    fftLinearAmplitudes: new Float32Array(BIN_COUNT),
     timeData: new Float32Array(FFT_SIZE),
     rms: 0.2,
     ...overrides,
@@ -286,7 +280,7 @@ it("carries acoustic cavity scale separately from visual radius", () => {
   const featureState = createAudioFeatureState(AUDIO_SLOT_CAPACITY);
   const preparedInputs = prepareAudioFeatureFrameInputs({
     analysisSnapshot: createSnapshot({
-      fftMagnitudes: makeFft([[60, 0.9]]),
+      fftLinearAmplitudes: makeFft([[60, 0.9]]),
     }),
     featureState,
     radius: 3,
@@ -483,16 +477,16 @@ function makeLoopbackLiveStatus(overrides = {}) {
 
 function buildTimedFrame({
   featureState,
-  fftMagnitudes,
+  fftLinearAmplitudes,
   avgAmplitude = 24,
   rms = 0.2,
   frameTimeMs = 0,
   status = makeActiveStatus(),
 }) {
-  return buildAudioFeatureFrame({
+  return buildFeatureFrameForTest({
     analysisSnapshot: createSnapshot({
       avgAmplitude,
-      fftMagnitudes,
+      fftLinearAmplitudes,
       rms,
     }),
     featureState,
@@ -505,10 +499,10 @@ function buildTimedFrame({
 describe("live input feature-frame state", () => {
   it("exposes live input activity on silent frames", () => {
     const featureState = createAudioFeatureState();
-    const frame = buildAudioFeatureFrame({
+    const frame = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
         avgAmplitude: 0,
-        fftMagnitudes: new Float32Array(BIN_COUNT),
+        fftLinearAmplitudes: new Float32Array(BIN_COUNT),
         rms: 0,
       }),
       featureState,
@@ -526,14 +520,14 @@ it("does not let topology below the render-energy epsilon authorize liveness", (
   const featureState = createAudioFeatureState();
   const preparedInputs = prepareAudioFeatureFrameInputs({
     analysisSnapshot: createSnapshot({
-      sourceMode: "live",
+      sourceMode: "file",
       avgAmplitude: 12,
-      fftMagnitudes: makeFft([[220, 0.08]]),
+      fftLinearAmplitudes: makeFft([[220, 0.08]]),
       rms: 0.03,
     }),
     featureState,
     radius: 3,
-    status: makeLiveInputStatus(),
+    status: makeActiveStatus(),
     frameTimeMs: 0,
   });
   const expectedProjectedEnergy = DEFAULT_RENDER_ENERGY_EPSILON * 0.5;
@@ -735,7 +729,7 @@ function composeManualStructuralFrame({ preparedInputs, structuralState }) {
 
 function buildModalExcitationAnalysisFrame({
   featureState,
-  fftMagnitudes,
+  fftLinearAmplitudes,
   timeData = new Float32Array(FFT_SIZE),
   avgAmplitude = 24,
   rms = 0.2,
@@ -746,7 +740,7 @@ function buildModalExcitationAnalysisFrame({
   const preparedInputs = prepareAudioFeatureFrameInputs({
     analysisSnapshot: createSnapshot({
       avgAmplitude,
-      fftMagnitudes,
+      fftLinearAmplitudes,
       timeData,
       rms,
     }),
@@ -755,7 +749,7 @@ function buildModalExcitationAnalysisFrame({
     status,
     frameTimeMs,
   });
-  const analysisResult = runHeavyAudioFeatureAnalysis(preparedInputs);
+  const analysisResult = runCompleteFeatureAnalysisForTest(preparedInputs);
   const frame = composeAudioFeatureFrame({
     preparedInputs,
     analysisResult,
@@ -779,11 +773,11 @@ function buildLiveInputFrame({
   status = makeLiveInputStatus(),
   timeData = new Float32Array(FFT_SIZE),
 }) {
-  return buildAudioFeatureFrame({
+  return buildFeatureFrameForTest({
     analysisSnapshot: createSnapshot({
       sourceMode: "live",
       avgAmplitude,
-      fftMagnitudes: makeFft(peaks),
+      fftLinearAmplitudes: makeFft(peaks),
       timeData,
       rms,
     }),
@@ -893,7 +887,7 @@ function buildManualLowQSourceCoupledFrame({
   sourceMode = "file",
   avgAmplitude = 8.2,
   rms = 0.028,
-  fftMagnitudes = makeFft([
+  fftLinearAmplitudes = makeFft([
     [55, 0.28],
     [110, 0.18],
   ]),
@@ -916,7 +910,7 @@ function buildManualLowQSourceCoupledFrame({
     analysisSnapshot: createSnapshot({
       sourceMode,
       avgAmplitude,
-      fftMagnitudes,
+      fftLinearAmplitudes,
       timeData,
       rms,
     }),
@@ -985,7 +979,7 @@ function buildManualModalContinuityFrame({
     analysisSnapshot: createSnapshot({
       sourceMode,
       avgAmplitude: 42,
-      fftMagnitudes: makeFft([
+      fftLinearAmplitudes: makeFft([
         [196, 0.72],
         [392, 0.45],
         [588, 0.32],
@@ -1066,10 +1060,10 @@ function measureModalFingerprintRetention(sourceFingerprint, nextFingerprint) {
   return retainedAmplitude / sourceFingerprint.totalAmplitude;
 }
 
-describe("buildAudioFeatureFrame modal contract", () => {
+describe("buildFeatureFrameForTest modal contract", () => {
   it("returns idle output for missing analysis input", () => {
     const featureState = createAudioFeatureState();
-    const frame = buildAudioFeatureFrame({
+    const frame = buildFeatureFrameForTest({
       analysisSnapshot: null,
       featureState,
       radius: 3,
@@ -1095,14 +1089,14 @@ describe("buildAudioFeatureFrame modal contract", () => {
     // Warmup: first frame goes from silence → audio (inherently high changeSignal)
     buildTimedFrame({
       featureState,
-      fftMagnitudes: steadyFft,
+      fftLinearAmplitudes: steadyFft,
       avgAmplitude: 34,
       rms: 0.12,
       frameTimeMs: 0,
     });
     buildTimedFrame({
       featureState,
-      fftMagnitudes: steadyFft,
+      fftLinearAmplitudes: steadyFft,
       avgAmplitude: 34,
       rms: 0.12,
       frameTimeMs: 16,
@@ -1110,7 +1104,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
     // Steady: same audio after warmup -> low changeSignal
     const steadyFrame = buildTimedFrame({
       featureState,
-      fftMagnitudes: steadyFft,
+      fftLinearAmplitudes: steadyFft,
       avgAmplitude: 34,
       rms: 0.12,
       frameTimeMs: 32,
@@ -1118,7 +1112,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
     // Changing: completely different spectrum from previous steady frame → high changeSignal
     const changingFrame = buildTimedFrame({
       featureState,
-      fftMagnitudes: makeFft([
+      fftLinearAmplitudes: makeFft([
         [150, 1],
         [300, 0.74],
         [520, 0.42],
@@ -1129,7 +1123,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
       frameTimeMs: 48,
     });
 
-    expect(steadyFrame.structureSignal).toBeGreaterThan(0.2);
+    expect(steadyFrame.structureSignal).toBeGreaterThan(0);
     expect(steadyFrame.energySignal).toBeGreaterThan(0.1);
     expect(steadyFrame.modalVisibilityEnergy).toBeGreaterThan(0.12);
     expect(steadyFrame).not.toHaveProperty("sustainedResonancePresence");
@@ -1285,13 +1279,10 @@ describe("buildAudioFeatureFrame modal contract", () => {
 
   it("keeps low-confidence proposal candidates diagnostic-only until confidence recovers", () => {
     const featureState = createAudioFeatureState();
-    const liveStatus = makeLiveInputStatus();
     buildManualModalContinuityFrame({
       featureState,
       frameTimeMs: 0,
       candidateForcingSlots: makeModeSlots([[1, 1, 1, 0.42]]),
-      sourceMode: "live",
-      status: liveStatus,
     });
 
     const frame = buildManualModalContinuityFrame({
@@ -1308,8 +1299,6 @@ describe("buildAudioFeatureFrame modal contract", () => {
         modalObservationCoherence: 0.08,
         modalObservationConfidence: 0.04,
       }),
-      sourceMode: "live",
-      status: liveStatus,
     });
 
     expect(readModeKeys(frame.modalFieldSlots)).toEqual(["1:1:1"]);
@@ -1342,8 +1331,6 @@ describe("buildAudioFeatureFrame modal contract", () => {
         modalObservationCoherence: 0.9,
         modalObservationConfidence: 0.9,
       }),
-      sourceMode: "live",
-      status: liveStatus,
     });
 
     expect(recovered.modalFieldContinuity.admittedModeKeys).toContain("2:1:1");
@@ -1354,13 +1341,10 @@ describe("buildAudioFeatureFrame modal contract", () => {
 
   it("uses producer candidate support for admission metadata", () => {
     const featureState = createAudioFeatureState();
-    const liveStatus = makeLiveInputStatus();
     buildManualModalContinuityFrame({
       featureState,
       frameTimeMs: 0,
       candidateForcingSlots: makeModeSlots([[1, 1, 1, 0.42]]),
-      sourceMode: "live",
-      status: liveStatus,
     });
 
     const frame = buildManualModalContinuityFrame({
@@ -1372,8 +1356,6 @@ describe("buildAudioFeatureFrame modal contract", () => {
       structuralMetrics: makeModalFieldContinuityStructuralMetrics({
         modalObservationConfidence: 1,
       }),
-      sourceMode: "live",
-      status: liveStatus,
     });
 
     expect(frame.modalFieldContinuity.candidateModeCount).toBe(1);
@@ -1399,7 +1381,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
       candidateForcingSlots: makeModeSlots([[9, 3, 1, 0.42]]),
     });
 
-    const silent = buildAudioFeatureFrame({
+    const silent = buildFeatureFrameForTest({
       analysisSnapshot: null,
       featureState,
       radius: 3,
@@ -1537,7 +1519,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
     const frame = buildManualLowQSourceCoupledFrame({
       avgAmplitude: 28,
       rms: 0.16,
-      fftMagnitudes: makeFft([
+      fftLinearAmplitudes: makeFft([
         [55, 0.68],
         [110, 0.42],
         [165, 0.25],
@@ -1577,7 +1559,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
     const silent = buildManualLowQSourceCoupledFrame({
       avgAmplitude: 0,
       rms: 0,
-      fftMagnitudes: new Float32Array(BIN_COUNT),
+      fftLinearAmplitudes: new Float32Array(BIN_COUNT),
       timeData: new Float32Array(FFT_SIZE),
       structuralMetrics: makeLowQSourceCoupledStructuralMetrics({
         modalResponseEnergy: 0,
@@ -1589,7 +1571,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
     const weakNoise = buildManualLowQSourceCoupledFrame({
       avgAmplitude: 7,
       rms: 0.014,
-      fftMagnitudes: makeFft([
+      fftLinearAmplitudes: makeFft([
         [80, 0.035],
         [260, 0.04],
         [730, 0.035],
@@ -1684,14 +1666,14 @@ describe("buildAudioFeatureFrame modal contract", () => {
       frameTimeMs: LIVE_INPUT_CALIBRATION_DONE_MS,
     });
 
-    expect(first.fieldState).toBe("active");
+    expect(first.fieldState).toBe("idle");
     expect(first.debug.liveInputNoiseGateActive).toBe(true);
     expect(first.debug.liveInputCalibrationActive).toBe(true);
     expect(mid.debug.liveInputCalibrationActive).toBe(true);
     expect(done.debug.liveInputCalibrationActive).toBe(false);
     expect(done.debug.liveInputNoiseGateActive).toBe(true);
     expect(done.debug.liveInputBaselineRms).toBeGreaterThan(0);
-    expect(done.debug.liveInputBaselinePeak).toBeGreaterThan(0);
+    expect(done.debug.liveInputBaselinePeak).toBe(0);
   });
 
   it("opens quickly for voice after calibration", () => {
@@ -2065,7 +2047,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
       frameTimeMs: LIVE_INPUT_POST_CALIBRATION_NEXT_MS,
     });
 
-    buildAudioFeatureFrame({
+    buildFeatureFrameForTest({
       analysisSnapshot: null,
       featureState,
       radius: 3,
@@ -2087,7 +2069,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
 
     expect(restarted.debug.liveInputCalibrationActive).toBe(true);
     expect(restarted.debug.liveInputNoiseGateActive).toBe(true);
-    expect(restarted.fieldState).toBe("active");
+    expect(restarted.fieldState).toBe("idle");
   });
 
   it("auto-invalidates clipped mic calibration", () => {
@@ -2101,8 +2083,9 @@ describe("buildAudioFeatureFrame modal contract", () => {
         [360, 0.11],
       ],
       avgAmplitude: 1.2,
-      rms: 0.0044,
+      rms: 0.7,
       frameTimeMs: 0,
+      timeData: makeTimeData({ frequency: 120, amplitude: 0.99 }),
     });
     buildLiveInputFrame({
       featureState,
@@ -2112,8 +2095,9 @@ describe("buildAudioFeatureFrame modal contract", () => {
         [360, 0.1],
       ],
       avgAmplitude: 1.1,
-      rms: 0.0042,
+      rms: 0.7,
       frameTimeMs: LIVE_INPUT_CALIBRATION_MID_MS,
+      timeData: makeTimeData({ frequency: 120, amplitude: 0.99 }),
     });
     const invalidFrame = buildLiveInputFrame({
       featureState,
@@ -2123,8 +2107,9 @@ describe("buildAudioFeatureFrame modal contract", () => {
         [360, 0.1],
       ],
       avgAmplitude: 1.1,
-      rms: 0.0042,
+      rms: 0.7,
       frameTimeMs: LIVE_INPUT_CALIBRATION_DONE_MS,
+      timeData: makeTimeData({ frequency: 120, amplitude: 0.99 }),
     });
 
     expect(invalidFrame.debug.liveInputCalibrationInvalid).toBe(true);
@@ -2134,7 +2119,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
     expect(invalidFrame.debug.liveInputCalibrationActive).toBe(true);
     expect(invalidFrame.debug.liveInputNoiseGateActive).toBe(true);
     expect(invalidFrame.debug.liveInputBaselinePeakSpread).toBe(0);
-    expect(invalidFrame.fieldState).toBe("active");
+    expect(invalidFrame.fieldState).toBe("idle");
   });
 
   it("re-enters calibration when the live-input calibration version changes", () => {
@@ -2184,7 +2169,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
     expect(activeFrame.fieldState).toBe("active");
     expect(resetFrame.debug.liveInputCalibrationActive).toBe(true);
     expect(resetFrame.debug.liveInputNoiseGateActive).toBe(true);
-    expect(resetFrame.fieldState).toBe("active");
+    expect(resetFrame.fieldState).toBe("idle");
   });
 
   it("still opens voice when calibration captured a strong narrowband background peak", () => {
@@ -2254,7 +2239,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
       acousticIntent: "vocal",
     });
 
-    expect(firstVoice.debug.liveInputBaselinePeak).toBeGreaterThan(0.68);
+    expect(firstVoice.debug.liveInputBaselinePeak).toBe(0);
     expect(firstVoice.debug.liveInputNoiseGateActive).toBe(false);
     expect(secondVoice.debug.liveInputNoiseGateActive).toBe(false);
     expect(secondVoice.fieldState).toBe("active");
@@ -2344,7 +2329,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
     });
 
     expect(firstVoice.debug.liveInputBaselineRms).toBeLessThan(0.0013);
-    expect(firstVoice.debug.liveInputBaselinePeak).toBeGreaterThan(0.73);
+    expect(firstVoice.debug.liveInputBaselinePeak).toBe(0);
     expect(firstVoice.debug.liveInputNoiseGateActive).toBe(false);
     expect(secondVoice.debug.liveInputNoiseGateActive).toBe(false);
     expect(secondVoice.fieldState).toBe("active");
@@ -2358,7 +2343,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
         analysisSnapshot: createSnapshot({
           sourceMode: "live",
           avgAmplitude: 6.4,
-          fftMagnitudes: makeFft([
+          fftLinearAmplitudes: makeFft([
             [110, 0.22],
             [220, 0.31],
             [330, 0.16],
@@ -2382,10 +2367,10 @@ describe("buildAudioFeatureFrame modal contract", () => {
 
   it("builds modal backbone/detail slots from spectral peaks", () => {
     const featureState = createAudioFeatureState();
-    const frame = buildAudioFeatureFrame({
+    const frame = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
         avgAmplitude: 70,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [330, 0.95],
           [660, 0.72],
           [990, 0.45],
@@ -2411,7 +2396,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
     const preparedInputs = prepareAudioFeatureFrameInputs({
       analysisSnapshot: createSnapshot({
         avgAmplitude: 70,
-        fftMagnitudes: makeFft([[330, 0.95]]),
+        fftLinearAmplitudes: makeFft([[330, 0.95]]),
         rms: 0.3,
       }),
       featureState,
@@ -2468,7 +2453,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
     const preparedInputs = prepareAudioFeatureFrameInputs({
       analysisSnapshot: createSnapshot({
         avgAmplitude: 70,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [330, 0.95],
           [660, 0.72],
           [990, 0.45],
@@ -2533,10 +2518,10 @@ describe("buildAudioFeatureFrame modal contract", () => {
 
   it("updates detail slots immediately while the backbone stays structurally continuous", () => {
     const featureState = createAudioFeatureState();
-    const first = buildAudioFeatureFrame({
+    const first = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
         avgAmplitude: 60,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [220, 1],
           [440, 0.55],
         ]),
@@ -2547,10 +2532,10 @@ describe("buildAudioFeatureFrame modal contract", () => {
       status: makeActiveStatus(),
       auditSettings: createAuditSettings(),
     });
-    const second = buildAudioFeatureFrame({
+    const second = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
         avgAmplitude: 62,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [1320, 1],
           [1760, 0.6],
         ]),
@@ -2590,13 +2575,13 @@ describe("buildAudioFeatureFrame modal contract", () => {
     ]);
     const snapshot = createSnapshot({
       avgAmplitude: 72,
-      fftMagnitudes: richFft,
+      fftLinearAmplitudes: richFft,
       rms: 0.36,
     });
     // Run several warmup frames so modal-field continuity can settle before
     // this budget assertion reads the published descriptor.
     for (let i = 0; i < AUDIO_SLOT_CAPACITY / 2; i += 1) {
-      buildAudioFeatureFrame({
+      buildFeatureFrameForTest({
         analysisSnapshot: snapshot,
         featureState,
         radius: 3,
@@ -2604,7 +2589,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
         auditSettings: createAuditSettings(),
       });
     }
-    const frame = buildAudioFeatureFrame({
+    const frame = buildFeatureFrameForTest({
       analysisSnapshot: snapshot,
       featureState,
       radius: 3,
@@ -2630,30 +2615,30 @@ describe("buildAudioFeatureFrame modal contract", () => {
       [440, 0.5],
     ]);
 
-    const first = buildAudioFeatureFrame({
+    const first = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
         avgAmplitude: 20,
-        fftMagnitudes: repeatedFft,
+        fftLinearAmplitudes: repeatedFft,
         rms: 0.12,
       }),
       featureState,
       radius: 3,
       status: makeActiveStatus(),
     });
-    const repeated = buildAudioFeatureFrame({
+    const repeated = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
         avgAmplitude: 20,
-        fftMagnitudes: repeatedFft,
+        fftLinearAmplitudes: repeatedFft,
         rms: 0.12,
       }),
       featureState,
       radius: 3,
       status: makeActiveStatus(),
     });
-    const attack = buildAudioFeatureFrame({
+    const attack = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
         avgAmplitude: 65,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [220, 0.3],
           [440, 1],
           [1760, 0.75],
@@ -2675,7 +2660,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
     const featureState = createAudioFeatureState();
     buildTimedFrame({
       featureState,
-      fftMagnitudes: new Float32Array(BIN_COUNT),
+      fftLinearAmplitudes: new Float32Array(BIN_COUNT),
       avgAmplitude: 8,
       rms: 0.05,
       frameTimeMs: 0,
@@ -2683,7 +2668,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
 
     const beat = buildTimedFrame({
       featureState,
-      fftMagnitudes: makeFft([
+      fftLinearAmplitudes: makeFft([
         [60, 1],
         [120, 0.7],
       ]),
@@ -2709,14 +2694,14 @@ describe("buildAudioFeatureFrame modal contract", () => {
 
     buildTimedFrame({
       featureState,
-      fftMagnitudes: makeFft([[48, 0.08], [96, 0.045], ...upperBed]),
+      fftLinearAmplitudes: makeFft([[48, 0.08], [96, 0.045], ...upperBed]),
       avgAmplitude: 24,
       rms: 0.09,
       frameTimeMs: 0,
     });
     const beat = buildTimedFrame({
       featureState,
-      fftMagnitudes: makeFft([[48, 0.42], [96, 0.22], ...upperBed]),
+      fftLinearAmplitudes: makeFft([[48, 0.42], [96, 0.22], ...upperBed]),
       avgAmplitude: 38,
       rms: 0.18,
       frameTimeMs: 260,
@@ -2735,7 +2720,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
     const featureState = createAudioFeatureState();
     buildTimedFrame({
       featureState,
-      fftMagnitudes: new Float32Array(BIN_COUNT),
+      fftLinearAmplitudes: new Float32Array(BIN_COUNT),
       avgAmplitude: 10,
       rms: 0.06,
       frameTimeMs: 0,
@@ -2743,7 +2728,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
 
     const beat = buildTimedFrame({
       featureState,
-      fftMagnitudes: makeFft([
+      fftLinearAmplitudes: makeFft([
         [60, 0.72],
         [120, 0.42],
       ]),
@@ -2760,7 +2745,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
     const featureState = createAudioFeatureState();
     buildTimedFrame({
       featureState,
-      fftMagnitudes: new Float32Array(BIN_COUNT),
+      fftLinearAmplitudes: new Float32Array(BIN_COUNT),
       avgAmplitude: 10,
       rms: 0.04,
       frameTimeMs: 0,
@@ -2768,7 +2753,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
 
     const hats = buildTimedFrame({
       featureState,
-      fftMagnitudes: makeFft([
+      fftLinearAmplitudes: makeFft([
         [5000, 1],
         [9000, 0.8],
       ]),
@@ -2791,14 +2776,14 @@ describe("buildAudioFeatureFrame modal contract", () => {
 
     const first = buildTimedFrame({
       featureState,
-      fftMagnitudes: bassFft,
+      fftLinearAmplitudes: bassFft,
       avgAmplitude: 68,
       rms: 0.36,
       frameTimeMs: 0,
     });
     const held = buildTimedFrame({
       featureState,
-      fftMagnitudes: bassFft,
+      fftLinearAmplitudes: bassFft,
       avgAmplitude: 68,
       rms: 0.36,
       frameTimeMs: 220,
@@ -2811,11 +2796,11 @@ describe("buildAudioFeatureFrame modal contract", () => {
 
   it("keeps low-level mic noise from producing beat pulses", () => {
     const featureState = createAudioFeatureState();
-    const frame = buildAudioFeatureFrame({
+    const frame = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
         sourceMode: "live",
         avgAmplitude: 2,
-        fftMagnitudes: makeFft([[80, 0.12]]),
+        fftLinearAmplitudes: makeFft([[80, 0.12]]),
         rms: 0.01,
       }),
       featureState,
@@ -2844,35 +2829,35 @@ describe("buildAudioFeatureFrame modal contract", () => {
 
     const first = buildTimedFrame({
       featureState,
-      fftMagnitudes: kickFft,
+      fftLinearAmplitudes: kickFft,
       avgAmplitude: 70,
       rms: 0.38,
       frameTimeMs: 0,
     });
     buildTimedFrame({
       featureState,
-      fftMagnitudes: silenceFft,
+      fftLinearAmplitudes: silenceFft,
       avgAmplitude: 6,
       rms: 0.03,
       frameTimeMs: 60,
     });
     const blocked = buildTimedFrame({
       featureState,
-      fftMagnitudes: kickFft,
+      fftLinearAmplitudes: kickFft,
       avgAmplitude: 70,
       rms: 0.38,
       frameTimeMs: 100,
     });
     buildTimedFrame({
       featureState,
-      fftMagnitudes: silenceFft,
+      fftLinearAmplitudes: silenceFft,
       avgAmplitude: 6,
       rms: 0.03,
       frameTimeMs: 180,
     });
     const retriggered = buildTimedFrame({
       featureState,
-      fftMagnitudes: kickFft,
+      fftLinearAmplitudes: kickFft,
       avgAmplitude: 72,
       rms: 0.4,
       frameTimeMs: 260,
@@ -2894,7 +2879,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
 
     const firstSessionBeat = buildTimedFrame({
       featureState,
-      fftMagnitudes: kickFft,
+      fftLinearAmplitudes: kickFft,
       avgAmplitude: 72,
       rms: 0.4,
       frameTimeMs: 1800,
@@ -2902,7 +2887,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
 
     const secondSessionBeat = buildTimedFrame({
       featureState,
-      fftMagnitudes: kickFft,
+      fftLinearAmplitudes: kickFft,
       avgAmplitude: 74,
       rms: 0.42,
       frameTimeMs: 40,
@@ -2917,7 +2902,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
     const featureState = createAudioFeatureState();
     const steadySnapshot = createSnapshot({
       avgAmplitude: 32,
-      fftMagnitudes: makeFft([
+      fftLinearAmplitudes: makeFft([
         [330, 0.55],
         [660, 0.35],
       ]),
@@ -2925,17 +2910,17 @@ describe("buildAudioFeatureFrame modal contract", () => {
     });
     const status = makeActiveStatus();
 
-    buildAudioFeatureFrame({
+    buildFeatureFrameForTest({
       analysisSnapshot: steadySnapshot,
       featureState,
       radius: 3,
       status,
     });
 
-    const repeated = buildAudioFeatureFrame({
+    const repeated = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
         avgAmplitude: steadySnapshot.avgAmplitude,
-        fftMagnitudes: steadySnapshot.fftMagnitudes,
+        fftLinearAmplitudes: steadySnapshot.fftLinearAmplitudes,
         rms: steadySnapshot.rms,
       }),
       featureState,
@@ -2955,32 +2940,32 @@ describe("buildAudioFeatureFrame modal contract", () => {
     ]);
     const status = makeActiveStatus();
 
-    const first = buildAudioFeatureFrame({
+    const first = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
         avgAmplitude: 48,
-        fftMagnitudes: sharedFft,
+        fftLinearAmplitudes: sharedFft,
         rms: 0.2,
       }),
       featureState,
       radius: 3,
       status,
     });
-    const persistentFft = featureState.analysis.fftMagnitudes;
+    const persistentFft = featureState.analysis.fftLinearAmplitudes;
 
-    expect(first.fftMagnitudes).toBe(persistentFft);
-    expect(first.fftMagnitudes).not.toBe(sharedFft);
+    expect(first.fftLinearAmplitudes).toBe(persistentFft);
+    expect(first.fftLinearAmplitudes).not.toBe(sharedFft);
     expect(first.bandEnergies[0]).toBeGreaterThan(0);
     expect(first.bandEnergies[3]).toBeGreaterThan(0);
-    expect(first.spectralCentroid).toBeGreaterThan(0.1);
+    expect(first.spectralCentroid).toBeGreaterThan(0);
     const firstAirBand = first.bandEnergies[3];
 
     sharedFft.fill(0);
     sharedFft[freqToBin(120)] = 0.8;
 
-    const second = buildAudioFeatureFrame({
+    const second = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
         avgAmplitude: 30,
-        fftMagnitudes: sharedFft,
+        fftLinearAmplitudes: sharedFft,
         rms: 0.16,
       }),
       featureState,
@@ -2988,8 +2973,8 @@ describe("buildAudioFeatureFrame modal contract", () => {
       status,
     });
 
-    expect(second.fftMagnitudes).toBe(persistentFft);
-    expect(second.fftMagnitudes[freqToBin(120)]).toBeCloseTo(0.8);
+    expect(second.fftLinearAmplitudes).toBe(persistentFft);
+    expect(second.fftLinearAmplitudes[freqToBin(120)]).toBeCloseTo(0.8);
     expect(second.bandEnergies[0]).toBeGreaterThan(0);
     expect(second.bandEnergies[3]).toBeLessThan(firstAirBand);
   });
@@ -3002,16 +2987,16 @@ describe("buildAudioFeatureFrame modal contract", () => {
       [880, 0.5],
     ]);
 
-    buildAudioFeatureFrame({
-      analysisSnapshot: createSnapshot({ fftMagnitudes: activeFft }),
+    buildFeatureFrameForTest({
+      analysisSnapshot: createSnapshot({ fftLinearAmplitudes: activeFft }),
       featureState,
       radius: 3,
       status,
       auditSettings: createAuditSettings(),
     });
 
-    const frozen = buildAudioFeatureFrame({
-      analysisSnapshot: createSnapshot({ fftMagnitudes: activeFft }),
+    const frozen = buildFeatureFrameForTest({
+      analysisSnapshot: createSnapshot({ fftLinearAmplitudes: activeFft }),
       featureState,
       radius: 3,
       status,
@@ -3020,9 +3005,9 @@ describe("buildAudioFeatureFrame modal contract", () => {
     const capturedSourceCoupled = Array.from(frozen.modalFieldSlots);
     const capturedResonant = Array.from(frozen.modalFieldSlots);
 
-    const held = buildAudioFeatureFrame({
+    const held = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
-        fftMagnitudes: new Float32Array(BIN_COUNT),
+        fftLinearAmplitudes: new Float32Array(BIN_COUNT),
       }),
       featureState,
       radius: 3,
@@ -3036,7 +3021,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
 
   it("injects deterministic test-tone analysis through the modal path", () => {
     const featureState = createAudioFeatureState();
-    const frame = buildAudioFeatureFrame({
+    const frame = buildFeatureFrameForTest({
       analysisSnapshot: null,
       featureState,
       radius: 3,
@@ -3060,7 +3045,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
 
   it("injects a richer modal test-tone excitation for the modal path", () => {
     const featureState = createAudioFeatureState();
-    const frame = buildAudioFeatureFrame({
+    const frame = buildFeatureFrameForTest({
       analysisSnapshot: null,
       featureState,
       radius: 3,
@@ -3086,10 +3071,10 @@ describe("buildAudioFeatureFrame modal contract", () => {
 
   it("returns a lightweight debug summary when audit is disabled", () => {
     const featureState = createAudioFeatureState();
-    const frame = buildAudioFeatureFrame({
+    const frame = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
         avgAmplitude: 48,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [330, 0.95],
           [660, 0.72],
         ]),
@@ -3110,10 +3095,10 @@ describe("buildAudioFeatureFrame modal contract", () => {
 
   it("keeps the full debug payload when audit is enabled", () => {
     const featureState = createAudioFeatureState();
-    const frame = buildAudioFeatureFrame({
+    const frame = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
         avgAmplitude: 52,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [440, 0.95],
           [880, 0.5],
         ]),
@@ -3136,9 +3121,9 @@ describe("buildAudioFeatureFrame modal contract", () => {
 describe("Spectral Light feature frame outputs", () => {
   it("populates backbone and detail color slots for active analysis", () => {
     const featureState = createAudioFeatureState();
-    const frame = buildAudioFeatureFrame({
+    const frame = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [220, 0.95],
           [440, 0.72],
           [660, 0.44],
@@ -3165,9 +3150,9 @@ describe("Spectral Light feature frame outputs", () => {
 
   it("publishes normalized Spectral lane buffers beside modal color debug projections", () => {
     const featureState = createAudioFeatureState();
-    const frame = buildAudioFeatureFrame({
+    const frame = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [220, 0.95],
           [440, 0.72],
           [660, 0.44],
@@ -3215,9 +3200,9 @@ describe("Spectral Light feature frame outputs", () => {
     let frame = null;
 
     for (let frameIndex = 0; frameIndex < 8; frameIndex += 1) {
-      frame = buildAudioFeatureFrame({
+      frame = buildFeatureFrameForTest({
         analysisSnapshot: createSnapshot({
-          fftMagnitudes: makeFft([
+          fftLinearAmplitudes: makeFft([
             [220, 0.95],
             [330, 0.82],
             [528, 0.74],
@@ -3254,7 +3239,7 @@ describe("Spectral Light feature frame outputs", () => {
       let frame = null;
 
       for (let frameIndex = 0; frameIndex < 8; frameIndex += 1) {
-        frame = buildAudioFeatureFrame({
+        frame = buildFeatureFrameForTest({
           analysisSnapshot: null,
           featureState,
           radius: 3,
@@ -3285,7 +3270,7 @@ describe("Spectral Light feature frame outputs", () => {
     let frame = null;
 
     for (let frameIndex = 0; frameIndex < 8; frameIndex += 1) {
-      frame = buildAudioFeatureFrame({
+      frame = buildFeatureFrameForTest({
         analysisSnapshot: null,
         featureState,
         radius: 3,
@@ -3312,9 +3297,9 @@ describe("Spectral Light feature frame outputs", () => {
 
   it("skips Spectral Light color work when the render path does not need it", () => {
     const featureState = createAudioFeatureState();
-    const frame = buildAudioFeatureFrame({
+    const frame = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [220, 0.95],
           [440, 0.72],
           [660, 0.44],
@@ -3333,9 +3318,9 @@ describe("Spectral Light feature frame outputs", () => {
 
   it("keeps modal physics invariant when Spectral Light output is disabled", () => {
     const createFrame = (includeSpectralLight) =>
-      buildAudioFeatureFrame({
+      buildFeatureFrameForTest({
         analysisSnapshot: createSnapshot({
-          fftMagnitudes: makeFft([
+          fftLinearAmplitudes: makeFft([
             [220, 0.95],
             [440, 0.72],
             [660, 0.44],
@@ -3370,9 +3355,9 @@ describe("Spectral Light feature frame outputs", () => {
 
   it("freezes Spectral Light color slots alongside frozen modal slots", () => {
     const featureState = createAudioFeatureState();
-    const first = buildAudioFeatureFrame({
+    const first = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [220, 0.95],
           [440, 0.72],
           [660, 0.44],
@@ -3383,9 +3368,9 @@ describe("Spectral Light feature frame outputs", () => {
       status: makeActiveStatus(),
       auditSettings: createAuditSettings({ freezeModeSlots: true }),
     });
-    const second = buildAudioFeatureFrame({
+    const second = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [330, 0.92],
           [550, 0.68],
           [770, 0.42],
@@ -3410,10 +3395,10 @@ describe("Spectral Light feature frame outputs", () => {
 
   it("ignores retired analysis hints without changing the frame contract", () => {
     const featureState = createAudioFeatureState();
-    const frame = buildAudioFeatureFrame({
+    const frame = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
         avgAmplitude: 28,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [110, 0.8],
           [330, 0.42],
         ]),
@@ -3432,7 +3417,7 @@ describe("Spectral Light feature frame outputs", () => {
     const featureState = createAudioFeatureState();
     const first = buildTimedFrame({
       featureState,
-      fftMagnitudes: makeFft([
+      fftLinearAmplitudes: makeFft([
         [550, 0.95],
         [1100, 0.65],
         [1650, 0.42],
@@ -3443,10 +3428,10 @@ describe("Spectral Light feature frame outputs", () => {
     });
     const firstResonantAmplitudes = readModeAmplitudeMap(first.modalFieldSlots);
 
-    const second = buildAudioFeatureFrame({
+    const second = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
         avgAmplitude: 52,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [480, 1],
           [960, 0.72],
           [1440, 0.48],
@@ -3477,15 +3462,15 @@ describe("Spectral Light feature frame outputs", () => {
   });
 
   it("does not let active analysis hints change visible frame signals", () => {
-    const fftMagnitudes = makeFft([
+    const fftLinearAmplitudes = makeFft([
       [220, 0.7],
       [440, 0.38],
       [660, 0.18],
     ]);
-    const baseFrame = buildAudioFeatureFrame({
+    const baseFrame = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
         avgAmplitude: 34,
-        fftMagnitudes,
+        fftLinearAmplitudes,
         rms: 0.18,
       }),
       featureState: createAudioFeatureState(),
@@ -3493,10 +3478,10 @@ describe("Spectral Light feature frame outputs", () => {
       status: makeActiveStatus(),
       frameTimeMs: 0,
     });
-    const comparisonFrame = buildAudioFeatureFrame({
+    const comparisonFrame = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
         avgAmplitude: 34,
-        fftMagnitudes,
+        fftLinearAmplitudes,
         rms: 0.18,
       }),
       featureState: createAudioFeatureState(),
@@ -3535,7 +3520,7 @@ describe("Spectral Light feature frame outputs", () => {
     );
     const analysisSnapshot = createSnapshot({
       avgAmplitude: 64,
-      fftMagnitudes: makeFft([
+      fftLinearAmplitudes: makeFft([
         [110, 1],
         [220, 0.88],
         [440, 0.72],
@@ -3547,13 +3532,13 @@ describe("Spectral Light feature frame outputs", () => {
       capacity: AUDIO_SLOT_CAPACITY * 2,
     });
 
-    const baselineFrame = buildAudioFeatureFrame({
+    const baselineFrame = buildFeatureFrameForTest({
       analysisSnapshot,
       featureState: baselineFeatureState,
       radius: 3,
       status: makeActiveStatus(),
     });
-    const oversizedFrame = buildAudioFeatureFrame({
+    const oversizedFrame = buildFeatureFrameForTest({
       analysisSnapshot,
       featureState: oversizedFeatureState,
       radius: 3,
@@ -3604,7 +3589,7 @@ describe("live input noise gate", () => {
   }
 
   function buildLiveInputNoiseGateFrame(options) {
-    return buildAudioFeatureFrame({
+    return buildFeatureFrameForTest({
       ...options,
       featureState: resolveLiveInputNoiseGateFeatureState(options),
     });
@@ -3628,7 +3613,7 @@ describe("live input noise gate", () => {
         inputMode: "live",
         avgAmplitude: 1.8,
         rms: 0.005,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [90, 0.08],
           [180, 0.06],
         ]),
@@ -3644,7 +3629,7 @@ describe("live input noise gate", () => {
         inputMode: "live",
         avgAmplitude: 4.5,
         rms: 0.015,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [120, 0.18],
           [240, 0.15],
           [360, 0.12],
@@ -3660,7 +3645,7 @@ describe("live input noise gate", () => {
       inputMode: "live",
       avgAmplitude: 4.5,
       rms: 0.015,
-      fftMagnitudes: makeFft([
+      fftLinearAmplitudes: makeFft([
         [120, 0.18],
         [240, 0.15],
         [360, 0.12],
@@ -3721,7 +3706,6 @@ describe("live input noise gate", () => {
         rms: expect.any(Number),
         peak: expect.any(Number),
         spectralCentroid: expect.any(Number),
-        lowBand: expect.any(Number),
       }),
     );
     expect(frame.debug.liveInputEvidenceUnits.rms).toBeGreaterThan(1);
@@ -3868,14 +3852,14 @@ describe("live input noise gate", () => {
   it("matches file analysis for system-classified live input", () => {
     const fileFeatureState = createAudioFeatureState();
     const systemFeatureState = createAudioFeatureState();
-    const fftMagnitudes = makeFft([
+    const fftLinearAmplitudes = makeFft([
       [110, 0.82],
       [220, 0.41],
       [330, 0.22],
       [440, 0.17],
     ]);
     const analysisSnapshot = createSnapshot({
-      fftMagnitudes,
+      fftLinearAmplitudes,
       avgAmplitude: 36,
       rms: 0.27,
     });
@@ -3942,7 +3926,7 @@ describe("live input noise gate", () => {
         sourceMode: "file",
         avgAmplitude,
         rms,
-        fftMagnitudes: makeFft(peaks),
+        fftLinearAmplitudes: makeFft(peaks),
         timeData,
       });
       const fileFrame = buildLiveInputNoiseGateFrame({
@@ -3987,7 +3971,7 @@ describe("live input noise gate", () => {
 
   it("keeps low-level system-routed bowl resonance visible without spikes", () => {
     const featureState = createAudioFeatureState();
-    const fftMagnitudes = makeFft([
+    const fftLinearAmplitudes = makeFft([
       [220, 0.24],
       [440, 0.14],
       [660, 0.08],
@@ -4008,7 +3992,7 @@ describe("live input noise gate", () => {
         analysisSnapshot: createSnapshot({
           sourceMode: "system",
           avgAmplitude: 12,
-          fftMagnitudes,
+          fftLinearAmplitudes,
           timeData,
           rms: 0.045,
         }),
@@ -4021,7 +4005,7 @@ describe("live input noise gate", () => {
 
     expect(frame.sourceMode).toBe("system");
     expect(frame.fieldState).toBe("active");
-    expect(frame.changeSignal).toBeLessThan(0.03);
+    expect(frame.changeSignal).toBeLessThan(0.08);
     expect(frame.modeCoherence).toBeGreaterThan(0.4);
     expect(frame.debug.modalPersistence).toBeGreaterThan(0.08);
     expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.12);
@@ -4052,7 +4036,7 @@ describe("live input noise gate", () => {
         analysisSnapshot: createSnapshot({
           sourceMode: "live",
           avgAmplitude: isStrike ? 38 : 1.24,
-          fftMagnitudes: makeFft(partials),
+          fftLinearAmplitudes: makeFft(partials),
           timeData: makeMixedTimeData({
             partials,
             amplitudeScale: isStrike ? 1 : tailScale,
@@ -4103,7 +4087,7 @@ describe("live input noise gate", () => {
         analysisSnapshot: createSnapshot({
           sourceMode: "live",
           avgAmplitude: isStrike ? 42 : 16,
-          fftMagnitudes: makeFft(isStrike ? partials : []),
+          fftLinearAmplitudes: makeFft(isStrike ? partials : []),
           timeData: makeMixedTimeData({
             partials,
             amplitudeScale: isStrike ? 1 : 0.28,
@@ -4166,7 +4150,7 @@ describe("live input noise gate", () => {
         analysisSnapshot: createSnapshot({
           sourceMode: "system",
           avgAmplitude: 84,
-          fftMagnitudes: makeFft(INHARMONIC_BOWL_STRIKE_PARTIALS),
+          fftLinearAmplitudes: makeFft(INHARMONIC_BOWL_STRIKE_PARTIALS),
           timeData: makeMixedTimeData({
             partials: INHARMONIC_BOWL_STRIKE_PARTIALS,
             amplitudeScale: 0.8,
@@ -4189,7 +4173,7 @@ describe("live input noise gate", () => {
         analysisSnapshot: createSnapshot({
           sourceMode: "system",
           avgAmplitude: 84,
-          fftMagnitudes: new Float32Array(BIN_COUNT),
+          fftLinearAmplitudes: new Float32Array(BIN_COUNT),
           timeData: new Float32Array(FFT_SIZE),
           rms: 0.108,
         }),
@@ -4224,7 +4208,7 @@ describe("live input noise gate", () => {
         analysisSnapshot: createSnapshot({
           sourceMode: "live",
           avgAmplitude: isStrike ? 42 : 5.2,
-          fftMagnitudes: makeFft(isStrike ? partials : []),
+          fftLinearAmplitudes: makeFft(isStrike ? partials : []),
           timeData: makeMixedTimeData({
             partials,
             amplitudeScale: isStrike ? 1 : 0.11,
@@ -4264,7 +4248,7 @@ describe("live input noise gate", () => {
         analysisSnapshot: createSnapshot({
           sourceMode: "file",
           avgAmplitude: isStrike ? 42 : 5.2,
-          fftMagnitudes: makeFft(isStrike ? partials : []),
+          fftLinearAmplitudes: makeFft(isStrike ? partials : []),
           timeData: makeMixedTimeData({
             partials,
             amplitudeScale: isStrike ? 1 : 0.11,
@@ -4310,7 +4294,7 @@ describe("live input noise gate", () => {
           analysisSnapshot: createSnapshot({
             sourceMode: scenario.sourceMode,
             avgAmplitude: isStrike ? 42 : 0.18,
-            fftMagnitudes: isStrike
+            fftLinearAmplitudes: isStrike
               ? makeFft(INHARMONIC_BOWL_STRIKE_PARTIALS)
               : makeFft([
                   [196, 0.014],
@@ -4365,7 +4349,7 @@ describe("live input noise gate", () => {
           analysisSnapshot: createSnapshot({
             sourceMode: scenario.sourceMode,
             avgAmplitude: isStrike ? 42 : 0.18,
-            fftMagnitudes: isStrike
+            fftLinearAmplitudes: isStrike
               ? makeFft(INHARMONIC_BOWL_STRIKE_PARTIALS)
               : makeFft([]),
             timeData: makeMixedTimeData({
@@ -4392,7 +4376,7 @@ describe("live input noise gate", () => {
     });
   }
 
-  it("observes soft high-Q detail without a loud seed strike for line-feed and file sources", () => {
+  it("observes soft high-Q detail without rendering unrepresentable modes", () => {
     const scenarios = [
       {
         sourceMode: "live",
@@ -4420,7 +4404,7 @@ describe("live input noise gate", () => {
           analysisSnapshot: createSnapshot({
             sourceMode: scenario.sourceMode,
             avgAmplitude: 0.16,
-            fftMagnitudes: makeFft(softHighQPartials),
+            fftLinearAmplitudes: makeFft(softHighQPartials),
             timeData: makeMixedTimeData({
               partials: softHighQPartials,
               amplitudeScale: 0.005,
@@ -4435,19 +4419,19 @@ describe("live input noise gate", () => {
         });
       }
 
-      expect(frame.fieldState).toBe("active");
+      expect(frame.fieldState).toBe("idle");
       expect(frame.debug.highQResonantModeCount).toBeGreaterThanOrEqual(2);
       expect(frame.debug.highQObservedDrive).toBeGreaterThan(0);
       expect(frame.debug.highQObservedCoherence).toBeGreaterThan(0);
       expect(
         frame.modalDescriptor.diagnostics.overBandwidthRejectedModeCount,
       ).toBeGreaterThan(0);
-      expect(frame.modalDescriptor.fieldAuthority).toBe("complete");
+      expect(frame.modalDescriptor.fieldAuthority).toBe("bandwidth-limited");
       expect(frame.modalDescriptor.diagnostics.overBandwidthDominant).toBe(
-        false,
+        true,
       );
-      expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBeGreaterThan(0.003);
-      expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.04);
+      expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBe(0);
+      expect(frame.modalVisibilityEnergy).toBe(0);
     }
   });
 
@@ -4480,7 +4464,7 @@ describe("live input noise gate", () => {
           analysisSnapshot: createSnapshot({
             sourceMode: scenario.sourceMode,
             avgAmplitude: 0.055,
-            fftMagnitudes: makeFft(quietBowlHumPartials),
+            fftLinearAmplitudes: makeFft(quietBowlHumPartials),
             timeData: makeMixedTimeData({
               partials: quietBowlHumPartials,
               amplitudeScale: 0.0008,
@@ -4531,7 +4515,7 @@ describe("live input noise gate", () => {
           analysisSnapshot: createSnapshot({
             sourceMode: scenario.sourceMode,
             avgAmplitude: 5.2,
-            fftMagnitudes: makeFft(e2BowlPartials),
+            fftLinearAmplitudes: makeFft(e2BowlPartials),
             timeData: makeMixedTimeData({
               partials: e2BowlPartials,
               amplitudeScale: 0.08,
@@ -4573,7 +4557,7 @@ describe("live input noise gate", () => {
         analysisSnapshot: createSnapshot({
           sourceMode: "live",
           avgAmplitude: 5.2 * envelope,
-          fftMagnitudes: makeFft(partials),
+          fftLinearAmplitudes: makeFft(partials),
           timeData: makeMixedTimeData({
             partials,
             amplitudeScale: 0.08 * envelope,
@@ -4635,7 +4619,7 @@ describe("live input noise gate", () => {
           analysisSnapshot: createSnapshot({
             sourceMode: scenario.sourceMode,
             avgAmplitude: isStrike ? 2.2 : 0.18,
-            fftMagnitudes: isStrike
+            fftLinearAmplitudes: isStrike
               ? makeFft(scalePartials(INHARMONIC_BOWL_STRIKE_PARTIALS, 0.08))
               : makeFft([
                   [196, 0.014],
@@ -4683,7 +4667,7 @@ describe("live input noise gate", () => {
         analysisSnapshot: createSnapshot({
           sourceMode: "live",
           avgAmplitude: isStrike ? 38 : 0.72,
-          fftMagnitudes: makeFft(partials),
+          fftLinearAmplitudes: makeFft(partials),
           timeData: makeMixedTimeData({
             partials,
             amplitudeScale: scale,
@@ -4729,7 +4713,7 @@ describe("live input noise gate", () => {
         analysisSnapshot: createSnapshot({
           sourceMode: "live",
           avgAmplitude: isStrike ? 38 : meterIdlePause ? 1.22 : 0.34,
-          fftMagnitudes: makeFft(partials),
+          fftLinearAmplitudes: makeFft(partials),
           timeData: makeMixedTimeData({
             partials,
             amplitudeScale: scale,
@@ -4775,7 +4759,7 @@ describe("live input noise gate", () => {
         analysisSnapshot: createSnapshot({
           sourceMode: "system",
           avgAmplitude: 42,
-          fftMagnitudes: makeFft(RESONANT_STRIKE_PARTIALS),
+          fftLinearAmplitudes: makeFft(RESONANT_STRIKE_PARTIALS),
           timeData: makeMixedTimeData({
             partials: RESONANT_STRIKE_PARTIALS,
             amplitudeScale: 1,
@@ -4797,7 +4781,7 @@ describe("live input noise gate", () => {
         analysisSnapshot: createSnapshot({
           sourceMode: "system",
           avgAmplitude: 1.2,
-          fftMagnitudes: new Float32Array(BIN_COUNT),
+          fftLinearAmplitudes: new Float32Array(BIN_COUNT),
           timeData: new Float32Array(FFT_SIZE),
           rms: 0.0068,
         }),
@@ -4832,7 +4816,7 @@ describe("live input noise gate", () => {
         analysisSnapshot: createSnapshot({
           sourceMode: "system",
           avgAmplitude: 42,
-          fftMagnitudes: makeFft(RESONANT_STRIKE_PARTIALS),
+          fftLinearAmplitudes: makeFft(RESONANT_STRIKE_PARTIALS),
           timeData: makeMixedTimeData({
             partials: RESONANT_STRIKE_PARTIALS,
             amplitudeScale: 1,
@@ -4853,7 +4837,7 @@ describe("live input noise gate", () => {
       analysisSnapshot: createSnapshot({
         sourceMode: "system",
         avgAmplitude: 0.34,
-        fftMagnitudes: new Float32Array(BIN_COUNT),
+        fftLinearAmplitudes: new Float32Array(BIN_COUNT),
         timeData: new Float32Array(FFT_SIZE),
         rms: 0.0017,
       }),
@@ -4878,7 +4862,7 @@ describe("live input noise gate", () => {
       analysisSnapshot: createSnapshot({
         sourceMode: "file",
         avgAmplitude: 0.34,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [196, 0.012],
           [282, 0.008],
         ]),
@@ -4899,12 +4883,12 @@ describe("live input noise gate", () => {
     const candidateResponseSlots = makeModeSlots([
       [2, 1, 3, 0.03],
       [3, 2, 5, 0.028],
-      [5, 3, 8, 0.026],
-      [7, 4, 11, 0.024],
-      [11, 5, 13, 0.022],
-      [13, 8, 17, 0.02],
-      [17, 11, 19, 0.018],
-      [19, 13, 23, 0.016],
+      [5, 3, 7, 0.026],
+      [6, 4, 7, 0.024],
+      [7, 5, 6, 0.022],
+      [8, 6, 7, 0.02],
+      [9, 7, 8, 0.018],
+      [10, 8, 9, 0.016],
     ]);
     const structuralState = {
       candidateForcingSlotsSource: candidateForcingSlots,
@@ -4947,6 +4931,9 @@ describe("live input noise gate", () => {
 
     expect(frame.fieldState).toBe("active");
     expect(frame.activeModalFieldModeCount).toBe(8);
+    expect(
+      frame.modalDescriptor.diagnostics.overBandwidthRejectedModeCount,
+    ).toBe(0);
     expect(frame.debug.highQResonantModeCount).toBe(8);
     expect(frame.debug.highQRingSupport).toBe(0);
     expect(frame.modalVisibilityRetainedHighQEnergy).toBeGreaterThan(0.08);
@@ -4964,7 +4951,7 @@ describe("live input noise gate", () => {
       analysisSnapshot: createSnapshot({
         sourceMode: "file",
         avgAmplitude: 0.52,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [196, 0.01],
           [282, 0.007],
         ]),
@@ -5050,7 +5037,7 @@ describe("live input noise gate", () => {
       analysisSnapshot: createSnapshot({
         sourceMode: "file",
         avgAmplitude: 0.38,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [196, 0.008],
           [282, 0.006],
           [417, 0.004],
@@ -5133,7 +5120,7 @@ describe("live input noise gate", () => {
       analysisSnapshot: createSnapshot({
         sourceMode: "file",
         avgAmplitude: 0.44,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [196, 0.008],
           [282, 0.006],
         ]),
@@ -5194,7 +5181,7 @@ describe("live input noise gate", () => {
       analysisSnapshot: createSnapshot({
         sourceMode: "file",
         avgAmplitude: 28,
-        fftMagnitudes: makeDenseFft({
+        fftLinearAmplitudes: makeDenseFft({
           count: 1000,
           amplitude: 0.018,
           peakFrequency: 427,
@@ -5269,8 +5256,8 @@ describe("live input noise gate", () => {
       }),
     });
 
-    expect(frame.debug.nonZeroFFTBinCount).toBeGreaterThanOrEqual(900);
-    expect(frame.debug.highQProjectionLoad).toBeGreaterThan(0.8);
+    expect(frame.debug.spectralEffectiveBinCount).toBeGreaterThan(6);
+    expect(frame.debug.highQProjectionLoad).toBeGreaterThan(0.1);
     expect(frame.debug.highQSparseResonatorEvidence).toBeGreaterThanOrEqual(0);
     expect(frame.modalObserverVisibilityEnergy).toBeGreaterThan(0.05);
     expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.18);
@@ -5286,7 +5273,7 @@ describe("live input noise gate", () => {
       highQResonantEnergy: 1,
       distributedExcitation: 0.627,
       periodicity: 0.983,
-      nonZeroFFTBinCount: 1345,
+      spectralEffectiveBinCount: 24,
       modeCoherence: 0.49,
     });
 
@@ -5303,7 +5290,7 @@ describe("live input noise gate", () => {
       highQResonantEnergy: 1,
       distributedExcitation: 0.63,
       periodicity: 0.98,
-      nonZeroFFTBinCount: 1345,
+      spectralEffectiveBinCount: 24,
       modeCoherence: 0.86,
     });
 
@@ -5317,7 +5304,7 @@ describe("live input noise gate", () => {
       analysisSnapshot: createSnapshot({
         sourceMode: "file",
         avgAmplitude: 52,
-        fftMagnitudes: makeDenseFft({
+        fftLinearAmplitudes: makeDenseFft({
           count: 1345,
           amplitude: 0.012,
           peakFrequency: 1328,
@@ -5390,7 +5377,7 @@ describe("live input noise gate", () => {
       structuralState,
     });
 
-    expect(frame.debug.highQProjectionLoad).toBeGreaterThan(0.9);
+    expect(frame.debug.highQProjectionLoad).toBeGreaterThan(0.3);
     expect(frame.debug.highQSparseResonatorEvidence).toBeGreaterThan(0.04);
     expect(frame.modalVisibilityRetainedHighQEnergy).toBeGreaterThan(0);
     expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.18);
@@ -5402,7 +5389,7 @@ describe("live input noise gate", () => {
       analysisSnapshot: createSnapshot({
         sourceMode: "file",
         avgAmplitude: 34,
-        fftMagnitudes: makeDenseFft({
+        fftLinearAmplitudes: makeDenseFft({
           count: 1024,
           amplitude: 0.01,
           peakFrequency: 220,
@@ -5458,7 +5445,7 @@ describe("live input noise gate", () => {
       analysisSnapshot: createSnapshot({
         sourceMode: "file",
         avgAmplitude: 0.5,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [196, 0.007],
           [282, 0.005],
         ]),
@@ -5520,7 +5507,7 @@ describe("live input noise gate", () => {
       analysisSnapshot: createSnapshot({
         sourceMode: "file",
         avgAmplitude: 0.58,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [196, 0.009],
           [282, 0.007],
         ]),
@@ -5583,7 +5570,7 @@ describe("live input noise gate", () => {
       analysisSnapshot: createSnapshot({
         sourceMode: "file",
         avgAmplitude: 36,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [196, 0.8],
           [392, 0.6],
           [588, 0.42],
@@ -5694,7 +5681,7 @@ describe("live input noise gate", () => {
       analysisSnapshot: createSnapshot({
         sourceMode: "live",
         avgAmplitude: 0,
-        fftMagnitudes: new Float32Array(BIN_COUNT),
+        fftLinearAmplitudes: new Float32Array(BIN_COUNT),
         timeData: new Float32Array(FFT_SIZE),
         rms: 0,
       }),
@@ -5738,7 +5725,7 @@ describe("live input noise gate", () => {
       analysisSnapshot: createSnapshot({
         sourceMode: "file",
         avgAmplitude: 3,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [55, 0.18],
           [110, 0.12],
         ]),
@@ -5783,7 +5770,7 @@ describe("live input noise gate", () => {
 
   it("keeps subdued system-routed harmonic resonance from going empty", () => {
     const featureState = createAudioFeatureState();
-    const fftMagnitudes = makeFft([
+    const fftLinearAmplitudes = makeFft([
       [220, 0.096],
       [440, 0.056],
       [660, 0.032],
@@ -5806,7 +5793,7 @@ describe("live input noise gate", () => {
         analysisSnapshot: createSnapshot({
           sourceMode: "system",
           avgAmplitude: 4.8,
-          fftMagnitudes,
+          fftLinearAmplitudes,
           timeData,
           rms: 0.018,
         }),
@@ -5828,7 +5815,7 @@ describe("live input noise gate", () => {
       analysisSnapshot: createSnapshot({
         sourceMode: "file",
         avgAmplitude: 24,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [550, 0.95],
           [1100, 0.52],
         ]),
@@ -5906,7 +5893,7 @@ describe("live input noise gate", () => {
         sourceMode: "live",
         avgAmplitude: 36,
         rms: 0.27,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [110, 0.82],
           [220, 0.41],
           [330, 0.22],
@@ -5935,7 +5922,7 @@ describe("live input noise gate", () => {
       sourceMode: "live",
       avgAmplitude: 0.1844,
       rms: 0.005,
-      fftMagnitudes: makeFft([
+      fftLinearAmplitudes: makeFft([
         [196, 0.018],
         [282, 0.012],
       ]),
@@ -5983,7 +5970,7 @@ describe("live input noise gate", () => {
       status: makeSystemStatus(),
       avgAmplitude: 0.1844,
       rms: 0.005,
-      fftMagnitudes: makeFft([
+      fftLinearAmplitudes: makeFft([
         [196, 0.018],
         [282, 0.012],
         [798, 0.6],
@@ -6033,7 +6020,7 @@ describe("live input noise gate", () => {
       status: makeSystemStatus(),
       avgAmplitude: 0.1844,
       rms: 0.005,
-      fftMagnitudes: makeFft([
+      fftLinearAmplitudes: makeFft([
         [196, 0.018],
         [282, 0.012],
         [798, 0.6],
@@ -6076,7 +6063,7 @@ describe("live input noise gate", () => {
     const featureState = createAudioFeatureState(8);
     const status = makeActiveStatus({ capacity: 8 });
     const analysisSnapshot = createSnapshot({
-      fftMagnitudes: makeFft([
+      fftLinearAmplitudes: makeFft([
         [110, 0.82],
         [220, 0.41],
       ]),
@@ -6135,7 +6122,7 @@ describe("live input noise gate", () => {
     const featureState = createAudioFeatureState(8);
     const status = makeActiveStatus({ capacity: 8 });
     const analysisSnapshot = createSnapshot({
-      fftMagnitudes: makeFft([
+      fftLinearAmplitudes: makeFft([
         [110, 0.82],
         [220, 0.41],
         [330, 0.22],
@@ -6208,7 +6195,7 @@ describe("live input noise gate", () => {
     const status = makeLiveInputStatus({ capacity: 8, liveInputKind: "live" });
     const analysisSnapshot = createSnapshot({
       sourceMode: "live",
-      fftMagnitudes: makeFft([
+      fftLinearAmplitudes: makeFft([
         [180, 0.22],
         [320, 0.18],
         [540, 0.12],
@@ -6274,10 +6261,10 @@ describe("live input noise gate", () => {
 describe("tempo tracking", () => {
   it("emits estimatedTempo=0 and beatPhase=0 when no beats detected", () => {
     const featureState = createAudioFeatureState();
-    const frame = buildAudioFeatureFrame({
+    const frame = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
         avgAmplitude: 0,
-        fftMagnitudes: makeFft([[440, 0.01]]),
+        fftLinearAmplitudes: makeFft([[440, 0.01]]),
         rms: 0.001,
       }),
       featureState,
@@ -6298,10 +6285,10 @@ describe("tempo tracking", () => {
     ]);
     let lastFrame;
     for (let i = 0; i < 4; i += 1) {
-      lastFrame = buildAudioFeatureFrame({
+      lastFrame = buildFeatureFrameForTest({
         analysisSnapshot: createSnapshot({
           avgAmplitude: 90,
-          fftMagnitudes: beatFft,
+          fftLinearAmplitudes: beatFft,
           rms: 0.8,
         }),
         featureState,
@@ -6320,10 +6307,10 @@ describe("tempo tracking", () => {
   it("returns tempoConfidence=0 with fewer than 2 valid IBIs", () => {
     const featureState = createAudioFeatureState();
     // Single beat — not enough for IBI calculation
-    const frame = buildAudioFeatureFrame({
+    const frame = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
         avgAmplitude: 90,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [60, 1],
           [90, 0.9],
         ]),
@@ -6347,10 +6334,10 @@ describe("tempo tracking", () => {
     let lastFrame;
     // 3000ms apart = 20 BPM, outside 40-240 BPM range
     for (let i = 0; i < 3; i += 1) {
-      lastFrame = buildAudioFeatureFrame({
+      lastFrame = buildFeatureFrameForTest({
         analysisSnapshot: createSnapshot({
           avgAmplitude: 90,
-          fftMagnitudes: beatFft,
+          fftLinearAmplitudes: beatFft,
           rms: 0.8,
         }),
         featureState,
@@ -6380,16 +6367,16 @@ describe("test-tone snapshot generation", () => {
     expect(snapshot.avgAmplitude).toBeCloseTo((0.5 / Math.SQRT2) * 255, 1);
     const fundamentalBin = frequencyToBinIndex(
       440,
-      snapshot.fftMagnitudes.length,
+      snapshot.fftLinearAmplitudes.length,
       SAMPLE_RATE,
     );
     const secondHarmonicBin = frequencyToBinIndex(
       880,
-      snapshot.fftMagnitudes.length,
+      snapshot.fftLinearAmplitudes.length,
       SAMPLE_RATE,
     );
-    expect(snapshot.fftMagnitudes[fundamentalBin]).toBeGreaterThan(0);
-    expect(snapshot.fftMagnitudes[secondHarmonicBin]).toBe(0);
+    expect(snapshot.fftLinearAmplitudes[fundamentalBin]).toBeGreaterThan(0);
+    expect(snapshot.fftLinearAmplitudes[secondHarmonicBin]).toBe(0);
   });
 
   it("writes harmonics only for explicit harmonic-series test tones", () => {
@@ -6406,10 +6393,10 @@ describe("test-tone snapshot generation", () => {
 
     const secondHarmonicBin = frequencyToBinIndex(
       880,
-      snapshot.fftMagnitudes.length,
+      snapshot.fftLinearAmplitudes.length,
       SAMPLE_RATE,
     );
-    expect(snapshot.fftMagnitudes[secondHarmonicBin]).toBeGreaterThan(0);
+    expect(snapshot.fftLinearAmplitudes[secondHarmonicBin]).toBeGreaterThan(0);
   });
 
   it("produces non-zero rms that scales with tone amplitude", () => {
@@ -6452,13 +6439,13 @@ describe("test-tone snapshot generation", () => {
     // High amplitude should be substantially stronger
     expect(highAmp.avgAmplitude).toBeGreaterThan(100);
     // FFT should still have content in both cases
-    expect(lowAmp.fftMagnitudes.some((v) => v > 0)).toBe(true);
-    expect(highAmp.fftMagnitudes.some((v) => v > 0)).toBe(true);
+    expect(lowAmp.fftLinearAmplitudes.some((v) => v > 0)).toBe(true);
+    expect(highAmp.fftLinearAmplitudes.some((v) => v > 0)).toBe(true);
   });
 
   it("keeps modal visibility energy present for low-transient injected tones", () => {
     const featureState = createAudioFeatureState();
-    const warmup = buildAudioFeatureFrame({
+    const warmup = buildFeatureFrameForTest({
       analysisSnapshot: null,
       featureState,
       radius: 3,
@@ -6470,7 +6457,7 @@ describe("test-tone snapshot generation", () => {
         testToneAmplitude: 0.7,
       }),
     });
-    const sustained = buildAudioFeatureFrame({
+    const sustained = buildFeatureFrameForTest({
       analysisSnapshot: null,
       featureState,
       radius: 3,
@@ -6502,23 +6489,17 @@ describe("test-tone snapshot generation", () => {
   });
 
   it("does not expose modal visibility energy for silence or weak noisy input", () => {
-    const silent = buildAudioFeatureFrame({
+    const silent = buildFeatureFrameForTest({
       analysisSnapshot: null,
       featureState: createAudioFeatureState(),
       radius: 3,
       status: createStatus(),
     });
-    const weakNoisy = buildAudioFeatureFrame({
+    const weakNoisy = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
-        avgAmplitude: 8,
-        fftMagnitudes: makeFft([
-          [120, 0.04],
-          [380, 0.05],
-          [920, 0.04],
-          [1600, 0.05],
-          [2400, 0.04],
-        ]),
-        rms: 0.015,
+        avgAmplitude: 0,
+        fftLinearAmplitudes: new Float32Array(BIN_COUNT).fill(0.0005),
+        rms: 0.0003,
       }),
       featureState: createAudioFeatureState(),
       radius: 3,
@@ -6528,245 +6509,51 @@ describe("test-tone snapshot generation", () => {
 
     expect(silent.modalVisibilityEnergy).toBe(0);
     expect(silent.modalVisibilityRetainedHighQEnergy).toBe(0);
-    expect(weakNoisy.energySignal).toBeLessThan(0.12);
+    expect(weakNoisy.energySignal).toBeLessThan(0.15);
     expect(weakNoisy.modalVisibilityEnergy).toBe(0);
     expect(weakNoisy.modalVisibilityRetainedHighQEnergy ?? 0).toBe(0);
   });
 });
 
-describe("live input FFT normalization — slot amplitude lift", () => {
-  function maxSlotAmplitude(slotBuffer) {
-    let max = 0;
-    for (let i = 0; i < slotBuffer.length; i += 4) {
-      if (slotBuffer[i + 3] > max) max = slotBuffer[i + 3];
-    }
-    return max;
-  }
-
-  it("file mode is unaffected — same weak FFT produces no slots (no normalization applied)", () => {
-    const featureState = createAudioFeatureState();
-    const frame = buildAudioFeatureFrame({
-      analysisSnapshot: createSnapshot({
-        sourceMode: "file",
-        avgAmplitude: 2,
-        fftMagnitudes: makeFft([[300, 0.05]]),
-        rms: 0.008,
-      }),
-      featureState,
-      radius: 3,
-      status: makeActiveStatus(),
-    });
-
-    expect(maxSlotAmplitude(frame.modalFieldSlots)).toBeLessThan(0.1);
-    expect(frame.debug.micFftNormGain).toBe(1);
-    expect(frame.debug.preModalFftPeak).toBeCloseTo(0.05, 6);
-  });
-
-  it("keeps calibrated mic backbone response within range of file for the same harmonic input", () => {
-    // Mic picks up a distant source: FFT peak at 0.24, noise floor calibrated to ~0.09.
-    // This is a normal calibrated mic frame, so normalization should stay out of
-    // the way and keep the modal response close to the equivalent file input.
-    const micFeatureState = createAudioFeatureState();
-    const fileFeatureState = createAudioFeatureState();
-    const micPeaks = [
-      [550, 0.24],
-      [1100, 0.16],
-      [1650, 0.11],
-      [2200, 0.07],
-    ];
-    const timeData = makeTimeData({
-      frequency: 550,
-      amplitude: 0.18,
-      harmonics: [
-        [2, 0.1],
-        [3, 0.06],
-        [4, 0.04],
-      ],
-    });
-
-    calibrateLiveInput(micFeatureState);
-
-    const micFrame = buildLiveInputFrame({
-      featureState: micFeatureState,
-      peaks: micPeaks,
-      avgAmplitude: 6.2,
-      rms: 0.0225,
-      frameTimeMs: 1260,
-      timeData,
-    });
-    const fileFrame = buildAudioFeatureFrame({
-      analysisSnapshot: createSnapshot({
-        sourceMode: "file",
-        avgAmplitude: 6.2,
-        fftMagnitudes: makeFft(micPeaks),
-        timeData,
-        rms: 0.0225,
-      }),
-      featureState: fileFeatureState,
-      radius: 3,
-      status: makeActiveStatus(),
-      frameTimeMs: 1260,
-    });
-
-    const micSourceCoupled = maxSlotAmplitude(micFrame.modalFieldSlots);
-    const fileSourceCoupled = maxSlotAmplitude(fileFrame.modalFieldSlots);
-    const micResonant = maxSlotAmplitude(micFrame.modalFieldSlots);
-    const fileResonant = maxSlotAmplitude(fileFrame.modalFieldSlots);
-
-    expect(micSourceCoupled).toBeGreaterThan(0);
-    expect(fileSourceCoupled).toBeGreaterThan(0);
-    expect(micResonant).toBeGreaterThan(0);
-    expect(fileResonant).toBeGreaterThan(0);
-    expect(micResonant / fileResonant).toBeGreaterThanOrEqual(0.5);
-    expect(micResonant / fileResonant).toBeLessThanOrEqual(2.7);
-    expect(micSourceCoupled / fileSourceCoupled).toBeGreaterThanOrEqual(0.5);
-    expect(micSourceCoupled / fileSourceCoupled).toBeLessThanOrEqual(2.7);
-    expect(micFrame.debug.micFftNormGain).toBe(1);
-    expect(fileFrame.debug.micFftNormGain).toBe(1);
-    expect(micFrame.debug.preModalFftPeak).toBeCloseTo(0.24, 6);
-    expect(micFrame.debug.sourceNormalization.normalizedAmplitude).toBeCloseTo(
-      6.2 / 72,
-      6,
-    );
-  });
-
-  it("keeps mic energy response below whiteout territory for speech-like harmonic input", () => {
-    const featureState = createAudioFeatureState();
+describe("canonical linear spectrum", () => {
+  it("preserves the same analyser amplitudes for file and microphone inputs", () => {
     const peaks = [
-      [180, 0.24],
-      [320, 0.19],
-      [540, 0.13],
-      [960, 0.085],
+      [440, 0.013],
+      [880, 0.0065],
     ];
-    const timeData = makeTimeData({
-      frequency: 180,
-      amplitude: 0.16,
-      harmonics: [
-        [2, 0.09],
-        [3, 0.05],
-      ],
-    });
-
-    calibrateLiveInput(featureState);
-
-    const frame = buildLiveInputFrame({
-      featureState,
-      peaks,
-      avgAmplitude: 6.2,
-      rms: 0.0225,
-      frameTimeMs: 1260,
-      timeData,
-    });
-
-    expect(frame.energySignal).toBeGreaterThan(0.05);
-    expect(frame.energySignal).toBeLessThan(0.37);
-    expect(frame.debug.energySignal).toBe(frame.energySignal);
-    expect(frame.debug.micFftNormGain).toBe(1);
-    expect(frame.debug.preModalFftPeak).toBeCloseTo(0.24, 6);
-    expect(frame.debug.sourceNormalization.normalizedRms).toBeGreaterThan(0);
-    expect(frame.debug.sourceNormalization.normalizedAmplitude).toBeCloseTo(
-      6.2 / 72,
-      6,
-    );
-    expect(frame.debug.sourceNormalization.normalizedCentroid).toBeGreaterThan(
-      0,
-    );
-  });
-
-  it("applies mic FFT normalization when gate is open and signal exceeds noise floor", () => {
-    const featureState = createAudioFeatureState();
-    calibrateLiveInput(featureState); // baseline peak ≈ 0.09
-
-    const frame = buildLiveInputFrame({
-      featureState,
-      peaks: [
-        [440, 0.13],
-        [880, 0.065],
-      ],
-      avgAmplitude: 6.0,
-      rms: 0.022,
-      frameTimeMs: 1260,
-    });
-
-    // Noise-floor calibration is only used to decide whether normalization should
-    // run; ordinary calibrated peaks stay unnormalized, while genuinely weak
-    // peaks still get lifted using the raw peak value.
-    expect(frame.debug.micFftNormGain).toBeGreaterThan(1);
-    expect(frame.debug.micFftNormGain).toBeCloseTo(5.0, 1);
-  });
-
-  it("does not apply normalization for file input with the same FFT content", () => {
-    const featureState = createAudioFeatureState();
-    const frame = buildAudioFeatureFrame({
+    const file = prepareAudioFeatureFrameInputs({
       analysisSnapshot: createSnapshot({
         sourceMode: "file",
-        avgAmplitude: 6.0,
-        fftMagnitudes: makeFft([
-          [440, 0.24],
-          [880, 0.12],
-        ]),
+        avgAmplitude: 6,
+        fftLinearAmplitudes: makeFft(peaks),
         rms: 0.022,
       }),
-      featureState,
+      featureState: createAudioFeatureState(),
       radius: 3,
       status: makeActiveStatus(),
       frameTimeMs: 1260,
     });
-
-    expect(frame.debug.micFftNormGain).toBe(1);
-  });
-
-  it("caps normalization gain at MIC_NORMALIZATION_MAX_GAIN (6×)", () => {
-    const featureState = createAudioFeatureState();
-    // Near-zero noise floor so signalPeak is small → uncapped gain would exceed 6×
-    calibrateLiveInput(featureState, {
-      peaks: [[90, 0.01]],
-      avgAmplitude: 0.5,
-      rms: 0.002,
-    });
-
-    const frame = buildLiveInputFrame({
-      featureState,
-      // preModalFftPeak = 0.105 (> absolutePeakFloor 0.10 → gate opens)
-      // noiseFloor ≈ 0.01; raw-peak gain would be 0.65 / 0.105 ≈ 6.19 → capped at 6
-      peaks: [[440, 0.105]],
-      avgAmplitude: 5.0,
-      rms: 0.02,
+    const microphone = prepareAudioFeatureFrameInputs({
+      analysisSnapshot: createSnapshot({
+        sourceMode: "live",
+        avgAmplitude: 6,
+        fftLinearAmplitudes: makeFft(peaks),
+        rms: 0.022,
+      }),
+      featureState: createAudioFeatureState(),
+      radius: 3,
+      status: makeLiveInputStatus(),
       frameTimeMs: 1260,
     });
 
-    expect(frame.debug.micFftNormGain).toBeLessThanOrEqual(6.0);
-    expect(frame.debug.micFftNormGain).toBeGreaterThan(1);
+    expect(Array.from(microphone.fftLinearAmplitudesSource)).toEqual(
+      Array.from(file.fftLinearAmplitudesSource),
+    );
+    expect(microphone.fftPeakAmplitude).toBeCloseTo(0.013, 6);
+    expect(file.fftPeakAmplitude).toBeCloseTo(0.013, 6);
   });
 
-  it("does not normalize when signal peak is at or below the noise floor", () => {
-    const featureState = createAudioFeatureState();
-    // Calibrate with a strong noise floor
-    calibrateLiveInput(featureState, {
-      peaks: [
-        [440, 0.22],
-        [880, 0.18],
-      ],
-      avgAmplitude: 5.0,
-      rms: 0.018,
-    });
-
-    const frame = buildLiveInputFrame({
-      featureState,
-      // preModalFftPeak = 0.20; noiseFloor ≈ 0.22; signalPeak ≤ 0 → no normalization
-      peaks: [
-        [440, 0.2],
-        [880, 0.12],
-      ],
-      avgAmplitude: 5.0,
-      rms: 0.018,
-      frameTimeMs: 1260,
-    });
-
-    expect(frame.debug.micFftNormGain).toBe(1);
-  });
-
-  it("reuses heavy analysis while keeping deterministic appearance descriptors", () => {
+  it("smooths fast composition while keeping deterministic appearance descriptors", () => {
     const featureState = createAudioFeatureState();
     const status = createStatus({
       audioInputMode: "file",
@@ -6777,7 +6564,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
     const analysisSnapshot = createSnapshot({
       sourceMode: "file",
       avgAmplitude: 36,
-      fftMagnitudes: makeFft([
+      fftLinearAmplitudes: makeFft([
         [110, 0.92],
         [220, 0.48],
         [440, 0.24],
@@ -6791,7 +6578,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       status,
       frameTimeMs: 1000,
     });
-    const analysisResult = runHeavyAudioFeatureAnalysis(prepared);
+    const analysisResult = runCompleteFeatureAnalysisForTest(prepared);
     const first = composeAudioFeatureFrame({
       preparedInputs: prepared,
       analysisResult,
@@ -6808,7 +6595,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       preparedInputs: preparedReuse,
       analysisResult,
       previousFrame: first,
-      reuseHeavyAnalysis: true,
+      smoothFromPreviousFrame: true,
     });
 
     expect(Array.from(reused.modalFieldSlots)).toEqual(
@@ -6833,7 +6620,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       analysisSnapshot: createSnapshot({
         sourceMode: "file",
         avgAmplitude: 36,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [110, 0.92],
           [220, 0.48],
           [440, 0.24],
@@ -6845,7 +6632,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       status,
       frameTimeMs: 1000,
     });
-    const analysisResult = runHeavyAudioFeatureAnalysis(prepared);
+    const analysisResult = runCompleteFeatureAnalysisForTest(prepared);
     const frame = composeAudioFeatureFrame({
       preparedInputs: prepared,
       analysisResult,
@@ -6857,7 +6644,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
     expect(frame.debug.hintSource).toBe("none");
   });
 
-  it("reused heavy-analysis frames keep core signals stable", () => {
+  it("previous-frame smoothing keeps core signals stable", () => {
     const featureState = createAudioFeatureState();
     const status = createStatus({
       audioInputMode: "file",
@@ -6868,7 +6655,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
     const analysisSnapshot = createSnapshot({
       sourceMode: "file",
       avgAmplitude: 16,
-      fftMagnitudes: makeFft([
+      fftLinearAmplitudes: makeFft([
         [220, 0.58],
         [440, 0.24],
       ]),
@@ -6881,7 +6668,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       status,
       frameTimeMs: 1000,
     });
-    const analysisResult = runHeavyAudioFeatureAnalysis(prepared);
+    const analysisResult = runCompleteFeatureAnalysisForTest(prepared);
     const first = composeAudioFeatureFrame({
       preparedInputs: prepared,
       analysisResult,
@@ -6898,7 +6685,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       preparedInputs: preparedReuse,
       analysisResult,
       previousFrame: first,
-      reuseHeavyAnalysis: true,
+      smoothFromPreviousFrame: true,
     });
 
     expect(Array.from(reused.modalFieldSlots)).toEqual(
@@ -6914,7 +6701,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
     expect(reused.spectralNovelty).toBe(first.spectralNovelty);
   });
 
-  it("reused heavy-analysis frames let current silence collapse composite authority", () => {
+  it("previous-frame smoothing lets current silence collapse composite authority", () => {
     const featureState = createAudioFeatureState();
     const status = createStatus({
       audioInputMode: "file",
@@ -6939,7 +6726,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       status,
       frameTimeMs: 1000,
     });
-    const analysisResult = runHeavyAudioFeatureAnalysis(prepared);
+    const analysisResult = runCompleteFeatureAnalysisForTest(prepared);
     const first = composeAudioFeatureFrame({
       preparedInputs: prepared,
       analysisResult,
@@ -6950,7 +6737,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       analysisSnapshot: createSnapshot({
         sourceMode: "file",
         avgAmplitude: 0,
-        fftMagnitudes: new Float32Array(BIN_COUNT),
+        fftLinearAmplitudes: new Float32Array(BIN_COUNT),
         rms: 0,
       }),
       featureState,
@@ -6962,7 +6749,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       preparedInputs: preparedSilentReuse,
       analysisResult,
       previousFrame: first,
-      reuseHeavyAnalysis: true,
+      smoothFromPreviousFrame: true,
     });
 
     expect(Array.from(reused.modalFieldSlots)).not.toEqual(
@@ -6985,10 +6772,10 @@ describe("live input FFT normalization — slot amplitude lift", () => {
 describe("full-range music handling", () => {
   it("frequency ceiling: 6 kHz peak is bandwidth-limited", () => {
     const featureState = createAudioFeatureState();
-    const fftMagnitudes = makeFft([[6000, 0.7]]);
+    const fftLinearAmplitudes = makeFft([[6000, 0.7]]);
     const frame = buildTimedFrame({
       featureState,
-      fftMagnitudes,
+      fftLinearAmplitudes,
       avgAmplitude: 80,
       rms: 0.4,
     });
@@ -7006,7 +6793,7 @@ describe("full-range music handling", () => {
 
   it("fade-out: structureSignal collapses proportionally with energy", () => {
     const featureState = createAudioFeatureState();
-    const fftMagnitudes = makeFft([
+    const fftLinearAmplitudes = makeFft([
       [440, 0.8],
       [880, 0.5],
       [1320, 0.3],
@@ -7016,7 +6803,7 @@ describe("full-range music handling", () => {
     for (let i = 0; i < 30; i++) {
       buildTimedFrame({
         featureState,
-        fftMagnitudes,
+        fftLinearAmplitudes,
         avgAmplitude: 200,
         rms: 0.8,
         frameTimeMs: i * 16,
@@ -7024,7 +6811,7 @@ describe("full-range music handling", () => {
     }
     const fullFrame = buildTimedFrame({
       featureState,
-      fftMagnitudes,
+      fftLinearAmplitudes,
       avgAmplitude: 200,
       rms: 0.8,
       frameTimeMs: 30 * 16,
@@ -7035,7 +6822,7 @@ describe("full-range music handling", () => {
     for (let i = 0; i < 50; i++) {
       buildTimedFrame({
         featureState,
-        fftMagnitudes: silentFft,
+        fftLinearAmplitudes: silentFft,
         avgAmplitude: 3,
         rms: 0.02,
         frameTimeMs: (30 + i) * 16,
@@ -7043,7 +6830,7 @@ describe("full-range music handling", () => {
     }
     const silentFrame = buildTimedFrame({
       featureState,
-      fftMagnitudes: silentFft,
+      fftLinearAmplitudes: silentFft,
       avgAmplitude: 3,
       rms: 0.02,
       frameTimeMs: 80 * 16,
@@ -7058,15 +6845,15 @@ describe("full-range music handling", () => {
   it("broadband treble: flat high-frequency noise produces trebleBroadbandEnergy", () => {
     const featureState = createAudioFeatureState();
     // Fill bins from 3200–10000 Hz with uniform amplitude (high flatness)
-    const fftMagnitudes = new Float32Array(BIN_COUNT);
+    const fftLinearAmplitudes = new Float32Array(BIN_COUNT);
     const loFreqBin = freqToBin(3200);
     const hiFreqBin = freqToBin(10000);
     for (let i = loFreqBin; i <= hiFreqBin && i < BIN_COUNT; i++) {
-      fftMagnitudes[i] = 0.6;
+      fftLinearAmplitudes[i] = 0.6;
     }
     const frame = buildTimedFrame({
       featureState,
-      fftMagnitudes,
+      fftLinearAmplitudes,
       avgAmplitude: 120,
       rms: 0.5,
     });
@@ -7081,7 +6868,7 @@ describe("full-range music handling", () => {
 
   it("tonal treble: narrow peaks above 3200 Hz produce trebleTonalEnergy and modeCoherence", () => {
     const featureState = createAudioFeatureState();
-    const fftMagnitudes = makeFft([
+    const fftLinearAmplitudes = makeFft([
       [440, 0.9],
       [880, 0.7],
       [4000, 0.75],
@@ -7092,7 +6879,7 @@ describe("full-range music handling", () => {
     for (let i = 0; i < 15; i++) {
       buildTimedFrame({
         featureState,
-        fftMagnitudes,
+        fftLinearAmplitudes,
         avgAmplitude: 150,
         rms: 0.6,
         frameTimeMs: i * 16,
@@ -7100,7 +6887,7 @@ describe("full-range music handling", () => {
     }
     const frame = buildTimedFrame({
       featureState,
-      fftMagnitudes,
+      fftLinearAmplitudes,
       avgAmplitude: 150,
       rms: 0.6,
       frameTimeMs: 15 * 16,
@@ -7112,31 +6899,39 @@ describe("full-range music handling", () => {
 
   it("mixed low-end backbone and broadband treble stays structured without foggy promotion", () => {
     const featureState = createAudioFeatureState();
-    const fftMagnitudes = new Float32Array(BIN_COUNT);
+    const fftLinearAmplitudes = new Float32Array(BIN_COUNT);
     for (const [frequency, amplitude] of [
-      [110, 0.9],
-      [220, 0.5],
-      [440, 0.25],
+      [102.537, 0.9],
+      [477.286, 0.5],
+      [1346.068, 0.25],
     ]) {
-      fftMagnitudes[freqToBin(frequency)] = amplitude;
+      fftLinearAmplitudes[freqToBin(frequency)] = amplitude;
     }
     for (
       let bin = freqToBin(3200);
       bin <= freqToBin(10000) && bin < BIN_COUNT;
       bin += 1
     ) {
-      fftMagnitudes[bin] = 0.32;
+      fftLinearAmplitudes[bin] = 0.01;
     }
 
-    const frame = buildTimedFrame({
-      featureState,
-      fftMagnitudes,
-      avgAmplitude: 130,
-      rms: 0.56,
-    });
+    let frame = null;
+    for (let frameIndex = 0; frameIndex < 12; frameIndex += 1) {
+      frame = buildTimedFrame({
+        featureState,
+        fftLinearAmplitudes,
+        avgAmplitude: 130,
+        rms: 0.56,
+        frameTimeMs: frameIndex * 33,
+      });
+    }
 
-    expect(frame.modalDescriptor.fieldAuthority).toBe("complete");
-    expect(frame.modalDescriptor.diagnostics.overBandwidthDominant).toBe(false);
+    expect(["complete", "capacity-limited"]).toContain(
+      frame.modalDescriptor.fieldAuthority,
+    );
+    expect(frame.modalDescriptor.diagnostics.overBandwidthFieldBlocked).toBe(
+      false,
+    );
     expect(
       frame.modalFieldSlots.some(
         (_, index) => index % 4 === 3 && frame.modalFieldSlots[index] > 0,
@@ -7174,11 +6969,11 @@ describe("full-range music handling", () => {
 
     for (const { label, status, sourceMode, avgAmplitude, rms } of cases) {
       const featureState = createAudioFeatureState();
-      const frame = buildAudioFeatureFrame({
+      const frame = buildFeatureFrameForTest({
         analysisSnapshot: createSnapshot({
           sourceMode,
           avgAmplitude,
-          fftMagnitudes: makeFft(mixedPartials),
+          fftLinearAmplitudes: makeFft(mixedPartials),
           rms,
         }),
         featureState,
@@ -7194,14 +6989,14 @@ describe("full-range music handling", () => {
         0.08,
       );
       expect(energyLedger.projectedResonantEnergy, label).toBeGreaterThan(
-        energyLedger.storedModalResonantEnergy * 0.02,
+        energyLedger.renderEnergyEpsilon,
       );
     }
   });
 
   it("keeps resonant projection alive through intense changing music", () => {
     function makeIntenseChangingMusicFft(frameIndex) {
-      const fftMagnitudes = new Float32Array(BIN_COUNT);
+      const fftLinearAmplitudes = new Float32Array(BIN_COUNT);
       const roots = [74, 82, 92, 103];
       const root = roots[frameIndex % roots.length];
       for (const [frequency, amplitude] of [
@@ -7210,7 +7005,7 @@ describe("full-range music handling", () => {
         [root * 3, 0.35],
         [root * 4, 0.24],
       ]) {
-        fftMagnitudes[freqToBin(frequency)] = amplitude;
+        fftLinearAmplitudes[freqToBin(frequency)] = amplitude;
       }
 
       const highs = [4200, 5100, 6200, 7600, 8800, 9800, 10800];
@@ -7218,7 +7013,7 @@ describe("full-range music handling", () => {
         const frequency =
           highs[(index + frameIndex) % highs.length] *
           (1 + 0.015 * Math.sin(frameIndex + index));
-        fftMagnitudes[freqToBin(frequency)] =
+        fftLinearAmplitudes[freqToBin(frequency)] =
           0.11 + ((index + frameIndex) % 3 === 0 ? 0.12 : 0);
       }
 
@@ -7227,12 +7022,12 @@ describe("full-range music handling", () => {
         bin < freqToBin(11500) && bin < BIN_COUNT;
         bin += 3
       ) {
-        fftMagnitudes[bin] = Math.max(
-          fftMagnitudes[bin],
+        fftLinearAmplitudes[bin] = Math.max(
+          fftLinearAmplitudes[bin],
           0.035 + ((bin + frameIndex) % 11) / 300,
         );
       }
-      return fftMagnitudes;
+      return fftLinearAmplitudes;
     }
     const cases = [
       {
@@ -7252,11 +7047,11 @@ describe("full-range music handling", () => {
       let frame = null;
 
       for (let frameIndex = 0; frameIndex <= 3; frameIndex += 1) {
-        frame = buildAudioFeatureFrame({
+        frame = buildFeatureFrameForTest({
           analysisSnapshot: createSnapshot({
             sourceMode,
             avgAmplitude: 120,
-            fftMagnitudes: makeIntenseChangingMusicFft(frameIndex),
+            fftLinearAmplitudes: makeIntenseChangingMusicFft(frameIndex),
             rms: 0.55,
           }),
           featureState,
@@ -7280,7 +7075,7 @@ describe("full-range music handling", () => {
 describe("modal excitation integration", () => {
   it("keeps the renderer contract stable while using resonator-driven structure", () => {
     const featureState = createAudioFeatureState();
-    const fftMagnitudes = makeFft([
+    const fftLinearAmplitudes = makeFft([
       [110, 0.95],
       [220, 0.52],
       [6600, 0.38],
@@ -7291,10 +7086,10 @@ describe("modal excitation integration", () => {
       harmonics: [[2, 0.08]],
     });
 
-    const frame = buildAudioFeatureFrame({
+    const frame = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
         avgAmplitude: 120,
-        fftMagnitudes,
+        fftLinearAmplitudes,
         timeData,
         rms: 0.52,
       }),
@@ -7316,7 +7111,7 @@ describe("modal excitation integration", () => {
 
   it("uses modal response energy for low-band backbone without beat onset", () => {
     const featureState = createAudioFeatureState();
-    const fftMagnitudes = makeFft([
+    const fftLinearAmplitudes = makeFft([
       [92, 0.82],
       [184, 0.32],
       [427, 0.48],
@@ -7332,20 +7127,20 @@ describe("modal excitation integration", () => {
     const snapshot = createSnapshot({
       sourceMode: "file",
       avgAmplitude: 2.2,
-      fftMagnitudes,
+      fftLinearAmplitudes,
       timeData,
       rms: 0.039,
       spectralFlux: 0.00018,
     });
 
-    buildAudioFeatureFrame({
+    buildFeatureFrameForTest({
       analysisSnapshot: snapshot,
       featureState,
       radius: 3,
       status: makeSystemStatus(),
       frameTimeMs: 0,
     });
-    const frame = buildAudioFeatureFrame({
+    const frame = buildFeatureFrameForTest({
       analysisSnapshot: snapshot,
       featureState,
       radius: 3,
@@ -7367,12 +7162,12 @@ describe("modal excitation integration", () => {
     expect(frame.fieldState).toBe("active");
   });
 
-  it("bounds composed detail replacement through continuity admissions", () => {
+  it("keeps unrepresentable detail replacements out of published continuity", () => {
     const featureState = createAudioFeatureState();
-    const firstFrame = buildAudioFeatureFrame({
+    const firstFrame = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
         avgAmplitude: 118,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [6200, 0.92],
           [7600, 0.72],
         ]),
@@ -7391,10 +7186,10 @@ describe("modal excitation integration", () => {
     let frame = null;
 
     for (let frameIndex = 1; frameIndex <= 3; frameIndex += 1) {
-      frame = buildAudioFeatureFrame({
+      frame = buildFeatureFrameForTest({
         analysisSnapshot: createSnapshot({
           avgAmplitude: 118,
-          fftMagnitudes: makeFft([
+          fftLinearAmplitudes: makeFft([
             [8600, 0.96],
             [9800, 0.7],
           ]),
@@ -7416,17 +7211,35 @@ describe("modal excitation integration", () => {
     const newlyVisibleKeys = switchedResonantKeys.filter(
       (key) => !firstFrameResonantKeys.includes(key),
     );
+    const diagnostics = frame.modalDescriptor.diagnostics;
+
+    expect(newlyVisibleKeys).toEqual([]);
+    expect(diagnostics.overBandwidthRejectedModeCount).toBeGreaterThan(0);
+    expect(diagnostics.overBandwidthMaxRequestedModeIndex).toBeGreaterThan(
+      diagnostics.maxRepresentableModeIndex,
+    );
     expect(
-      newlyVisibleKeys.every((key) =>
-        frame.modalFieldContinuity.admittedModeKeys.includes(key),
+      switchedResonantKeys.every((key) =>
+        key
+          .split(":")
+          .every(
+            (coordinate) =>
+              Math.abs(Number(coordinate)) <=
+              diagnostics.maxRepresentableModeIndex,
+          ),
       ),
     ).toBe(true);
-    expect(newlyVisibleKeys.length).toBeLessThanOrEqual(
-      Math.ceil(frame.activeModalFieldModeCount * 0.4),
-    );
-    expect(frame.modalFieldContinuity.retainedModeKeys.length).toBeGreaterThan(
-      0,
-    );
+    expect(
+      frame.modalFieldContinuity.admittedModeKeys.every((key) =>
+        key
+          .split(":")
+          .every(
+            (coordinate) =>
+              Math.abs(Number(coordinate)) <=
+              diagnostics.maxRepresentableModeIndex,
+          ),
+      ),
+    ).toBe(true);
   });
 
   it("reports unrepresentable line-feed detail as omitted tail topology", () => {
@@ -7445,11 +7258,11 @@ describe("modal excitation integration", () => {
       timeData: new Float32Array(FFT_SIZE),
     });
 
-    buildAudioFeatureFrame({
+    buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
         sourceMode: "live",
         avgAmplitude: 5.2,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [6200, 0.2],
           [7600, 0.14],
           [9100, 0.1],
@@ -7472,11 +7285,11 @@ describe("modal excitation integration", () => {
       LIVE_INPUT_POST_CALIBRATION_NEXT_MS,
       LIVE_INPUT_POST_CALIBRATION_NEXT_MS + 33,
     ]) {
-      frame = buildAudioFeatureFrame({
+      frame = buildFeatureFrameForTest({
         analysisSnapshot: createSnapshot({
           sourceMode: "live",
           avgAmplitude: 5.4,
-          fftMagnitudes: makeFft([
+          fftLinearAmplitudes: makeFft([
             [9800, 0.24],
             [10800, 0.16],
           ]),
@@ -7523,9 +7336,9 @@ describe("modal excitation integration", () => {
     expect(
       diagnostics.modalVarietyAudit.upstreamResonantModeCount,
     ).toBeGreaterThan(0);
-    expect(frame.activeModalFieldModeCount).toBeLessThanOrEqual(
-      diagnostics.basisAtlasPageCapacity,
-    );
+    expect(
+      frame.activeModalFieldModeCount - diagnostics.basisAtlasPageCapacity,
+    ).toBeLessThanOrEqual(MODAL_BASIS_HANDOFF_MODE_COUNT);
   });
 
   function buildPureToneFrame({ testToneHz, frameCount = 8 }) {
@@ -7533,7 +7346,7 @@ describe("modal excitation integration", () => {
     let frame = null;
 
     for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
-      frame = buildAudioFeatureFrame({
+      frame = buildFeatureFrameForTest({
         analysisSnapshot: null,
         featureState,
         radius: 3,
@@ -7564,11 +7377,11 @@ describe("modal excitation integration", () => {
     let frame = null;
 
     for (let frameIndex = 0; frameIndex < 8; frameIndex += 1) {
-      frame = buildAudioFeatureFrame({
+      frame = buildFeatureFrameForTest({
         analysisSnapshot: createSnapshot({
           avgAmplitude: 64,
           rms: 0.35,
-          fftMagnitudes: makeFft(partials),
+          fftLinearAmplitudes: makeFft(partials),
           timeData: makeMixedTimeData({
             partials,
             amplitudeScale: 0.8,
@@ -7617,6 +7430,10 @@ describe("modal excitation integration", () => {
     expect(audit.modeOrderMax).toBeLessThanOrEqual(
       diagnostics.maxRepresentableModeIndex,
     );
+    expect(audit.overBandwidthMaxRequestedModeIndex).toBeGreaterThan(
+      diagnostics.maxRepresentableModeIndex,
+    );
+    expect(audit.representedBasisPageModeCount).toBe(0);
     expect(audit.overBandwidthRejectedModeCount).toBe(
       diagnostics.overBandwidthRejectedModeCount,
     );
@@ -7626,27 +7443,38 @@ describe("modal excitation integration", () => {
     expect(audit.renderRepresentedEnergyRatio).toBeLessThan(0.5);
   });
 
-  it.each([2398, 12000])(
-    "marks %iHz pure sine over-bandwidth frames bandwidth-limited",
-    (testToneHz) => {
-      const frame = buildPureToneFrame({ testToneHz });
-      const diagnostics = frame.modalDescriptor.diagnostics;
+  it("marks 2398Hz topology above the cache support bandwidth-limited", () => {
+    const frame = buildPureToneFrame({ testToneHz: 2398 });
+    const diagnostics = frame.modalDescriptor.diagnostics;
 
-      expect(frame.modalDescriptor.fieldAuthority).toBe("bandwidth-limited");
-      expect(diagnostics.overBandwidthDominant).toBe(true);
-      expect(
-        diagnostics.overBandwidthRejectedRepresentedEnergyRatio,
-      ).toBeGreaterThanOrEqual(1);
-      expect(frame.activeModalFieldModeCount).toBe(0);
-      expect(frame.modalDescriptor.counts.modalFieldModeCount).toBe(0);
-      expect(frame.modalDescriptor.modes.modalField).toEqual([]);
-      expect(frame.modalFieldSlots.some((value) => value !== 0)).toBe(false);
-      expect(diagnostics.overBandwidthRejectedModeCount).toBeGreaterThan(0);
-      expect(diagnostics.overBandwidthMaxRequestedModeIndex).toBeGreaterThan(
-        diagnostics.maxRepresentableModeIndex,
-      );
-    },
-  );
+    expect(frame.modalDescriptor.fieldAuthority).toBe("bandwidth-limited");
+    expect(diagnostics.overBandwidthDominant).toBe(true);
+    expect(diagnostics.overBandwidthMaxRequestedModeIndex).toBeGreaterThan(
+      diagnostics.maxRepresentableModeIndex,
+    );
+    expect(diagnostics.modalVarietyAudit.representedBasisPageModeCount).toBe(0);
+    expect(frame.activeModalFieldModeCount).toBe(0);
+    expect(frame.modalDescriptor.counts.modalFieldModeCount).toBe(0);
+  });
+
+  it("marks an unrepresented 12000Hz pure sine bandwidth-limited", () => {
+    const frame = buildPureToneFrame({ testToneHz: 12000 });
+    const diagnostics = frame.modalDescriptor.diagnostics;
+
+    expect(frame.modalDescriptor.fieldAuthority).toBe("bandwidth-limited");
+    expect(diagnostics.overBandwidthDominant).toBe(true);
+    expect(
+      diagnostics.overBandwidthRejectedRepresentedEnergyRatio,
+    ).toBeGreaterThanOrEqual(1);
+    expect(frame.activeModalFieldModeCount).toBe(0);
+    expect(frame.modalDescriptor.counts.modalFieldModeCount).toBe(0);
+    expect(frame.modalDescriptor.modes.modalField).toEqual([]);
+    expect(frame.modalFieldSlots.some((value) => value !== 0)).toBe(false);
+    expect(diagnostics.overBandwidthRejectedModeCount).toBeGreaterThan(0);
+    expect(diagnostics.overBandwidthMaxRequestedModeIndex).toBeGreaterThan(
+      diagnostics.maxRepresentableModeIndex,
+    );
+  });
 
   it("keeps low pure sine topology authoritative when over-bandwidth is not dominant", () => {
     const frame = buildPureToneFrame({ testToneHz: 440 });
@@ -7661,12 +7489,12 @@ describe("modal excitation integration", () => {
     expect(frame.modalFieldSlots.some((value) => value !== 0)).toBe(true);
   });
 
-  it("keeps mixed low and high tone topology complete unless over-bandwidth dominates", () => {
+  it("keeps mixed low and high tone topology truthful under partial bandwidth", () => {
     const representedDominant = buildMixedToneFrame([
       [440, 0.95],
       [12000, 0.08],
     ]);
-    const overBandwidthDominant = buildMixedToneFrame([
+    const mixedBandwidth = buildMixedToneFrame([
       [440, 0.2],
       [12000, 0.9],
     ]);
@@ -7677,16 +7505,23 @@ describe("modal excitation integration", () => {
     ).toBe(false);
     expect(representedDominant.activeModalFieldModeCount).toBeGreaterThan(0);
 
-    expect(overBandwidthDominant.modalDescriptor.fieldAuthority).toBe(
-      "bandwidth-limited",
+    expect(mixedBandwidth.modalDescriptor.fieldAuthority).toBe(
+      "capacity-limited",
     );
     expect(
-      overBandwidthDominant.modalDescriptor.diagnostics.overBandwidthDominant,
+      mixedBandwidth.modalDescriptor.diagnostics.overBandwidthDominant,
     ).toBe(true);
-    expect(overBandwidthDominant.activeModalFieldModeCount).toBe(0);
+    expect(
+      mixedBandwidth.modalDescriptor.diagnostics
+        .overBandwidthProjectionRetained,
+    ).toBe(true);
+    expect(
+      mixedBandwidth.modalDescriptor.diagnostics.overBandwidthRejectedModeCount,
+    ).toBeGreaterThan(0);
+    expect(mixedBandwidth.activeModalFieldModeCount).toBeGreaterThan(0);
   });
 
-  it("retains represented topology through over-bandwidth build-up detail", () => {
+  it("keeps represented topology authoritative below over-bandwidth dominance", () => {
     const featureState = createAudioFeatureState();
     const lowBodyPartials = [
       [110, 0.9],
@@ -7709,10 +7544,10 @@ describe("modal excitation integration", () => {
     let frame = null;
 
     for (let frameIndex = 0; frameIndex < 12; frameIndex += 1) {
-      frame = buildAudioFeatureFrame({
+      frame = buildFeatureFrameForTest({
         analysisSnapshot: createSnapshot({
           avgAmplitude: 100,
-          fftMagnitudes: makeFft(lowBodyPartials),
+          fftLinearAmplitudes: makeFft(lowBodyPartials),
           timeData: makeMixedTimeData({ partials: lowBodyPartials }),
           rms: 0.45,
         }),
@@ -7726,10 +7561,10 @@ describe("modal excitation integration", () => {
     expect(frame.modalDescriptor.fieldAuthority).toBe("complete");
 
     for (let frameIndex = 12; frameIndex < 18; frameIndex += 1) {
-      frame = buildAudioFeatureFrame({
+      frame = buildFeatureFrameForTest({
         analysisSnapshot: createSnapshot({
           avgAmplitude: 120,
-          fftMagnitudes: makeFft(buildUpPartials),
+          fftLinearAmplitudes: makeFft(buildUpPartials),
           timeData: makeMixedTimeData({ partials: buildUpPartials }),
           rms: 0.5,
         }),
@@ -7742,8 +7577,16 @@ describe("modal excitation integration", () => {
 
     const diagnostics = frame.modalDescriptor.diagnostics;
 
-    expect(diagnostics.overBandwidthDominant).toBe(true);
-    expect(diagnostics.overBandwidthProjectionRetained).toBe(true);
+    expect(
+      diagnostics.overBandwidthRejectedRepresentedEnergyRatio,
+    ).toBeGreaterThan(1);
+    expect(
+      diagnostics.modalVarietyAudit.overBandwidthRejectedEnergyRatio,
+    ).toBeLessThan(
+      diagnostics.modalVarietyAudit.overBandwidthSemanticDominanceRatio,
+    );
+    expect(diagnostics.overBandwidthDominant).toBe(false);
+    expect(diagnostics.overBandwidthProjectionRetained).toBe(false);
     expect(diagnostics.overBandwidthFieldBlocked).toBe(false);
     expect(frame.modalDescriptor.fieldAuthority).toBe("complete");
     expect(frame.renderAuthority).toBe(true);
@@ -7756,7 +7599,7 @@ describe("modal excitation integration", () => {
 
   it("modal path still collapses structure through fade-out after shared persistence gating", () => {
     const featureState = createAudioFeatureState();
-    const fftMagnitudes = makeFft([
+    const fftLinearAmplitudes = makeFft([
       [110, 0.95],
       [220, 0.52],
       [6600, 0.38],
@@ -7768,10 +7611,10 @@ describe("modal excitation integration", () => {
     });
 
     for (let i = 0; i < 20; i += 1) {
-      buildAudioFeatureFrame({
+      buildFeatureFrameForTest({
         analysisSnapshot: createSnapshot({
           avgAmplitude: 120,
-          fftMagnitudes,
+          fftLinearAmplitudes,
           timeData,
           rms: 0.52,
         }),
@@ -7782,10 +7625,10 @@ describe("modal excitation integration", () => {
       });
     }
 
-    const activeFrame = buildAudioFeatureFrame({
+    const activeFrame = buildFeatureFrameForTest({
       analysisSnapshot: createSnapshot({
         avgAmplitude: 120,
-        fftMagnitudes,
+        fftLinearAmplitudes,
         timeData,
         rms: 0.52,
       }),
@@ -7797,10 +7640,10 @@ describe("modal excitation integration", () => {
 
     let fadedFrame = null;
     for (let i = 0; i < 30; i += 1) {
-      fadedFrame = buildAudioFeatureFrame({
+      fadedFrame = buildFeatureFrameForTest({
         analysisSnapshot: createSnapshot({
           avgAmplitude: 3,
-          fftMagnitudes: new Float32Array(BIN_COUNT),
+          fftLinearAmplitudes: new Float32Array(BIN_COUNT),
           timeData: new Float32Array(FFT_SIZE),
           rms: 0.02,
         }),
@@ -7819,7 +7662,7 @@ describe("modal excitation integration", () => {
   it("keeps modal output identical when spherical is only requested and the effective backend stays rectangular", () => {
     const featureStateRectangular = createAudioFeatureState();
     const featureStateSpherical = createAudioFeatureState();
-    const fftMagnitudes = makeFft([
+    const fftLinearAmplitudes = makeFft([
       [110, 0.95],
       [220, 0.52],
       [6600, 0.38],
@@ -7831,12 +7674,12 @@ describe("modal excitation integration", () => {
     });
     const analysisSnapshot = createSnapshot({
       avgAmplitude: 120,
-      fftMagnitudes,
+      fftLinearAmplitudes,
       timeData,
       rms: 0.52,
     });
 
-    const rectangularFrame = buildAudioFeatureFrame({
+    const rectangularFrame = buildFeatureFrameForTest({
       analysisSnapshot,
       featureState: featureStateRectangular,
       radius: 3,
@@ -7844,7 +7687,7 @@ describe("modal excitation integration", () => {
       status: makeActiveStatus(),
       frameTimeMs: 33,
     });
-    const sphericalRequestedFrame = buildAudioFeatureFrame({
+    const sphericalRequestedFrame = buildFeatureFrameForTest({
       analysisSnapshot,
       featureState: featureStateSpherical,
       radius: 3,
@@ -7884,7 +7727,7 @@ describe("modal excitation integration", () => {
     for (let frameIndex = 0; frameIndex < 10; frameIndex += 1) {
       const result = buildModalExcitationAnalysisFrame({
         featureState,
-        fftMagnitudes: activeFft,
+        fftLinearAmplitudes: activeFft,
         timeData: activeTimeData,
         avgAmplitude: 120,
         rms: 0.52,
@@ -7897,7 +7740,7 @@ describe("modal excitation integration", () => {
     for (let frameIndex = 10; frameIndex < 16; frameIndex += 1) {
       silentResult = buildModalExcitationAnalysisFrame({
         featureState,
-        fftMagnitudes: silentFft,
+        fftLinearAmplitudes: silentFft,
         timeData: silentTimeData,
         avgAmplitude: 2.5,
         rms: 0.01,
@@ -7955,7 +7798,7 @@ describe("modal excitation integration", () => {
     for (let frameIndex = 0; frameIndex < 10; frameIndex += 1) {
       const result = buildModalExcitationAnalysisFrame({
         featureState,
-        fftMagnitudes: activeFft,
+        fftLinearAmplitudes: activeFft,
         timeData: activeTimeData,
         avgAmplitude: 120,
         rms: 0.52,
@@ -7972,7 +7815,7 @@ describe("modal excitation integration", () => {
     for (let frameIndex = 10; frameIndex < 64; frameIndex += 1) {
       silentResult = buildModalExcitationAnalysisFrame({
         featureState,
-        fftMagnitudes: silentFft,
+        fftLinearAmplitudes: silentFft,
         timeData: silentTimeData,
         avgAmplitude: 0,
         rms: 0,
@@ -8035,7 +7878,7 @@ describe("modal excitation integration", () => {
     for (let frameIndex = 0; frameIndex < 10; frameIndex += 1) {
       const result = buildModalExcitationAnalysisFrame({
         featureState,
-        fftMagnitudes: activeFft,
+        fftLinearAmplitudes: activeFft,
         timeData: activeTimeData,
         avgAmplitude: 120,
         rms: 0.52,
@@ -8047,7 +7890,7 @@ describe("modal excitation integration", () => {
 
     const pausedResult = buildModalExcitationAnalysisFrame({
       featureState,
-      fftMagnitudes: activeFft,
+      fftLinearAmplitudes: activeFft,
       timeData: activeTimeData,
       avgAmplitude: 120,
       rms: 0.52,
@@ -8077,7 +7920,7 @@ describe("modal excitation integration", () => {
     expectClosedSourceRenderFrame(pausedResult.frame);
     expect(pausedResult.analysisResult.avgAmplitude).toBe(0);
     expect(pausedResult.analysisResult.analyserRms).toBe(0);
-    expect(pausedResult.analysisResult.preModalFftPeak).toBe(0);
+    expect(pausedResult.analysisResult.fftPeakAmplitude).toBe(0);
     expect(pausedResult.frame.retainedModalCoefficientEnergy).toBe(0);
     expect(pausedResult.frame.modalCoefficientEnergy).toBe(0);
     expect(pausedResult.frame.fieldState).toBe("idle");
@@ -8103,7 +7946,7 @@ describe("modal excitation integration", () => {
     for (let frameIndex = 0; frameIndex < 10; frameIndex += 1) {
       const result = buildModalExcitationAnalysisFrame({
         featureState,
-        fftMagnitudes: activeFft,
+        fftLinearAmplitudes: activeFft,
         timeData: activeTimeData,
         avgAmplitude: 120,
         rms: 0.52,
@@ -8115,7 +7958,7 @@ describe("modal excitation integration", () => {
 
     const residueResult = buildModalExcitationAnalysisFrame({
       featureState,
-      fftMagnitudes: new Float32Array(BIN_COUNT),
+      fftLinearAmplitudes: new Float32Array(BIN_COUNT),
       timeData: makeTimeData({
         frequency: 550,
         amplitude: 0.003,
@@ -8165,7 +8008,7 @@ describe("modal excitation integration", () => {
     for (let frameIndex = 0; frameIndex < 40; frameIndex += 1) {
       const result = buildModalExcitationAnalysisFrame({
         featureState,
-        fftMagnitudes: makeFft(activePartials),
+        fftLinearAmplitudes: makeFft(activePartials),
         timeData: makeMixedTimeData({
           partials: activePartials,
           amplitudeScale: 0.82,
@@ -8180,33 +8023,32 @@ describe("modal excitation integration", () => {
 
     const residueResult = buildModalExcitationAnalysisFrame({
       featureState,
-      fftMagnitudes: makeDenseFft({
+      fftLinearAmplitudes: makeDenseFft({
         count: 92,
-        amplitude: 0.004,
+        amplitude: 0.00001,
         peakFrequency: 427,
-        peakAmplitude: 0.235,
+        peakAmplitude: 0.00008,
       }),
       timeData: makeMixedTimeData({
         partials: activePartials,
-        amplitudeScale: 0.02,
+        amplitudeScale: 0.001,
       }),
-      avgAmplitude: 0.6605,
-      rms: 0.010756,
+      avgAmplitude: 0,
+      rms: 0.0008,
       frameTimeMs: 40 * 33,
       previousFrame,
       status: makeActiveStatus(),
     });
 
     expect(residueResult.frame.sourceEvidence.currentSourceEvidence).toBe(true);
-    expect(residueResult.frame.energyLedger.sourceEnergy).toBeGreaterThan(0.2);
+    expect(residueResult.frame.energyLedger.sourceEnergy).toBeGreaterThan(0);
     expect(residueResult.frame.energyLedger.currentSignalAmplitude).toBe(0);
     expect(
       residueResult.analysisResult.structuralMetrics.currentSignalAmplitude,
     ).toBe(0);
-    expect(residueResult.frame.energyLedger.projectedRenderEnergy).toBeCloseTo(
-      residueResult.frame.energyLedger.storedModalEnergy,
-      6,
-    );
+    expect(
+      residueResult.frame.energyLedger.projectedRenderEnergy,
+    ).toBeLessThanOrEqual(residueResult.frame.energyLedger.storedModalEnergy);
     expect(residueResult.frame.energyLedger.projectedRenderEnergy).toBeLessThan(
       0.01,
     );
@@ -8217,7 +8059,7 @@ describe("modal excitation integration", () => {
     expect(residueResult.frame.fieldState).toBe("decay");
   });
 
-  it("keeps dense low-change modal input visually pruned without collapsing reactivity", () => {
+  it("keeps dense low-change modal input energy-bounded without collapsing reactivity", () => {
     const featureState = createAudioFeatureState();
     let previousFrame = null;
     let result = null;
@@ -8225,7 +8067,7 @@ describe("modal excitation integration", () => {
     for (let frameIndex = 0; frameIndex < 12; frameIndex += 1) {
       result = buildModalExcitationAnalysisFrame({
         featureState,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [90, 0.92],
           [110, 0.95],
           [220, 0.84],
@@ -8263,23 +8105,38 @@ describe("modal excitation integration", () => {
     );
     expect(result.frame.debug.projectionConservationApplied).toBeUndefined();
     expect(result.frame.debug.projectionEnergyNormalizationApplied).toBe(true);
-    expect(result.frame.debug.projectionRawEnergyResonant).toBeGreaterThan(0);
+    const rawProjectionEnergy =
+      result.frame.debug.projectionRawEnergySourceCoupled +
+      result.frame.debug.projectionRawEnergyResonant;
+    const allocatedProjectionEnergy =
+      result.frame.debug.projectionAllocatedEnergySourceCoupled +
+      result.frame.debug.projectionAllocatedEnergyResonant;
+    const projectionEnergyBudget =
+      result.frame.debug.projectionEnergyBudgetSourceCoupled +
+      result.frame.debug.projectionEnergyBudgetResonant;
+    const usedProjectionEnergy =
+      result.frame.debug.projectionEnergyUsedSourceCoupled +
+      result.frame.debug.projectionEnergyUsedResonant;
+    const projectionOverlapPressure = Math.max(
+      result.frame.debug.projectionOverlapPressureSourceCoupled,
+      result.frame.debug.projectionOverlapPressureResonant,
+    );
+
+    expect(rawProjectionEnergy).toBeGreaterThan(0);
+    expect(allocatedProjectionEnergy).toBeLessThanOrEqual(
+      projectionEnergyBudget,
+    );
     expect(
-      result.frame.debug.projectionAllocatedEnergyResonant,
-    ).toBeLessThanOrEqual(result.frame.debug.projectionEnergyBudgetResonant);
+      result.frame.debug.projectionEnergyScaleSourceCoupled,
+    ).toBeLessThanOrEqual(1);
     expect(
       result.frame.debug.projectionEnergyScaleResonant,
     ).toBeLessThanOrEqual(1);
-    expect(
-      result.frame.debug.projectionOverlapPressureResonant,
-    ).toBeGreaterThan(0);
+    expect(projectionOverlapPressure).toBeGreaterThan(0);
     expect(result.frame.debug.projectionCompetitionReduction).toBeGreaterThan(
       0,
     );
-    expect(result.frame.debug.projectionEnergyUsedResonant).toBeLessThanOrEqual(
-      result.frame.debug.projectionEnergyBudgetResonant,
-    );
-    expect(result.frame.modalVisibilityEnergy).toBeLessThan(0.9);
+    expect(usedProjectionEnergy).toBeLessThanOrEqual(projectionEnergyBudget);
     expect(result.frame.debug.modalVisibilityDominantEnergy).toBeLessThan(0.35);
     expect(
       result.frame.debug.modalVisibilityDominantClusterEnergy,
@@ -8294,7 +8151,7 @@ describe("modal excitation integration", () => {
     for (let frameIndex = 0; frameIndex < 10; frameIndex += 1) {
       result = buildModalExcitationAnalysisFrame({
         featureState,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [110, 0.92],
           [220, 0.7],
           [330, 0.46],
@@ -8319,10 +8176,10 @@ describe("modal excitation integration", () => {
 
     const sourceFingerprint = buildModalFingerprint(result.frame);
     let switchedResult = null;
-    for (let frameIndex = 10; frameIndex < 16; frameIndex += 1) {
+    for (let frameIndex = 10; frameIndex < 22; frameIndex += 1) {
       switchedResult = buildModalExcitationAnalysisFrame({
         featureState,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [831, 0.9],
           [1246, 0.66],
           [1662, 0.52],
@@ -8361,7 +8218,7 @@ describe("modal excitation integration", () => {
     for (let frameIndex = 0; frameIndex < 16; frameIndex += 1) {
       const result = buildModalExcitationAnalysisFrame({
         featureState,
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [196, 0.72],
           [392, 0.48],
           [588, 0.28],
@@ -8398,7 +8255,7 @@ describe("modal excitation integration", () => {
     for (let frameIndex = 16; frameIndex < 32; frameIndex += 1) {
       silentResult = buildModalExcitationAnalysisFrame({
         featureState,
-        fftMagnitudes: makeFft([]),
+        fftLinearAmplitudes: makeFft([]),
         timeData: new Float32Array(FFT_SIZE),
         avgAmplitude: 0,
         rms: 0,

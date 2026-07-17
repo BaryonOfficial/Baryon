@@ -12,6 +12,38 @@ import {
   normalizeBoundaryMode,
 } from "./modeFamily.js";
 
+const estimateFamilyMeanSquare = ({
+  u,
+  v,
+  w,
+  boundaryMode,
+  coefficient = 1,
+  samplesPerAxis = 24,
+}) => {
+  let sum = 0;
+  for (let xi = 0; xi < samplesPerAxis; xi += 1) {
+    const x = -1 + (2 * (xi + 0.5)) / samplesPerAxis;
+    for (let yi = 0; yi < samplesPerAxis; yi += 1) {
+      const y = -1 + (2 * (yi + 0.5)) / samplesPerAxis;
+      for (let zi = 0; zi < samplesPerAxis; zi += 1) {
+        const z = -1 + (2 * (zi + 0.5)) / samplesPerAxis;
+        const { field } = evaluatePermutationFamilyMode({
+          u,
+          v,
+          w,
+          x,
+          y,
+          z,
+          scale: Math.PI,
+          boundaryMode,
+        });
+        sum += (coefficient * field) ** 2;
+      }
+    }
+  }
+  return sum / samplesPerAxis ** 3;
+};
+
 describe("mode family helpers", () => {
   it("normalizes boundary mode strings and numeric encodings", () => {
     expect(normalizeBoundaryMode("dirichlet")).toBe(BOUNDARY_MODES.dirichlet);
@@ -103,7 +135,7 @@ describe("mode family helpers", () => {
       z: 0,
     });
 
-    expect(center.field).toBeCloseTo(1, 6);
+    expect(center.field).toBeCloseTo(Math.SQRT2 ** 3, 6);
     expect(negativeFace.field).toBeCloseTo(0, 6);
     expect(positiveFace.field).toBeCloseTo(0, 6);
   });
@@ -148,6 +180,75 @@ describe("mode family helpers", () => {
     expect(
       Math.abs(family.field / Math.max(Math.abs(single.field), 1e-4)),
     ).toBeLessThan(8);
+  });
+
+  it("gives every Neumann family unit mean-square basis energy", () => {
+    for (const [u, v, w] of [
+      [0, 0, 1],
+      [0, 1, 1],
+      [1, 1, 1],
+      [1, 2, 3],
+    ]) {
+      expect(
+        estimateFamilyMeanSquare({
+          u,
+          v,
+          w,
+          boundaryMode: BOUNDARY_MODES.neumann,
+        }),
+      ).toBeCloseTo(1, 6);
+    }
+  });
+
+  it("gives every Dirichlet family unit mean-square basis energy", () => {
+    for (const [u, v, w] of [
+      [1, 1, 1],
+      [1, 1, 2],
+      [1, 2, 3],
+    ]) {
+      expect(
+        estimateFamilyMeanSquare({
+          u,
+          v,
+          w,
+          boundaryMode: BOUNDARY_MODES.dirichlet,
+        }),
+      ).toBeCloseTo(1, 6);
+    }
+  });
+
+  it("makes squared coefficient magnitude equal represented modal energy", () => {
+    const coefficient = 0.37;
+    const representedEnergy = coefficient * coefficient;
+
+    expect(
+      estimateFamilyMeanSquare({
+        u: 0,
+        v: 0,
+        w: 1,
+        coefficient,
+        boundaryMode: BOUNDARY_MODES.neumann,
+      }),
+    ).toBeCloseTo(representedEnergy, 6);
+    expect(
+      estimateFamilyMeanSquare({
+        u: 1,
+        v: 1,
+        w: 1,
+        coefficient,
+        boundaryMode: BOUNDARY_MODES.neumann,
+      }),
+    ).toBeCloseTo(representedEnergy, 6);
+  });
+
+  it("keeps the TSL basis on the same energy-normalized convention", () => {
+    const source = readFileSync(
+      new URL("./modeFamilyNode.js", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("createDirichletBasisEnergyNormalizationNode");
+    expect(source).toContain("createNeumannBasisEnergyNormalizationNode");
   });
 });
 

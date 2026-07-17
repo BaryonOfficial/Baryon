@@ -44,6 +44,7 @@ vi.mock("./rendererDiagnostics.js", () => ({
 
 import { DEFAULT_ACTIVE_CAMERA_POSE } from "./cameraPosePresets.js";
 import { OutputStageSurface } from "./OutputStageSurface.jsx";
+import { AUDIO_FEATURE_AUTHORITY_ROLES } from "@baryon/engine/audio-features";
 
 describe("OutputStageSurface", () => {
   /** @type {HTMLDivElement | null} */
@@ -86,6 +87,8 @@ describe("OutputStageSurface", () => {
       React.createElement(OutputStageSurface, {
         controlsRef: { current: { backgroundColor: "#000000" } },
         visualizationMethod: "raymarch",
+        audioFeatureAuthorityRole:
+          AUDIO_FEATURE_AUTHORITY_ROLES.externalConsumer,
       }),
     );
 
@@ -93,6 +96,7 @@ describe("OutputStageSurface", () => {
     expect(baryonSceneSpy.mock.calls[0][0]).toMatchObject({
       enableControlEventSync: false,
       renderContext: "external-output",
+      audioFeatureAuthorityRole: AUDIO_FEATURE_AUTHORITY_ROLES.externalConsumer,
     });
   });
 
@@ -316,5 +320,36 @@ describe("OutputStageSurface", () => {
     });
 
     expect(onFrameState).toHaveBeenCalledWith(frameState);
+  });
+
+  it("keeps the engine-ready callback stable across ordinary stage rerenders", async () => {
+    const controlsRef = { current: { backgroundColor: "#000000" } };
+
+    await act(async () => {
+      root.render(
+        React.createElement(OutputStageSurface, {
+          controlsRef,
+          visualizationMethod: "raymarch",
+          onStageRender: vi.fn(),
+        }),
+      );
+    });
+    const firstCallback =
+      baryonSceneSpy.mock.calls.at(-1)?.[0]?.setIsEngineReady;
+
+    await act(async () => {
+      root.render(
+        React.createElement(OutputStageSurface, {
+          controlsRef,
+          visualizationMethod: "raymarch",
+          onStageRender: vi.fn(),
+        }),
+      );
+    });
+
+    expect(firstCallback).toBeTypeOf("function");
+    expect(baryonSceneSpy.mock.calls.at(-1)?.[0]?.setIsEngineReady).toBe(
+      firstCallback,
+    );
   });
 });

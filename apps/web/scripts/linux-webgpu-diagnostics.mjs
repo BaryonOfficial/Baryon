@@ -215,7 +215,7 @@ async function collectBrowserDiagnostics(
   return result;
 }
 
-export async function runLinuxWebGpuDiagnostics() {
+async function runLinuxWebGpuDiagnostics() {
   const cwd = process.cwd();
   const outputPath = path.resolve(cwd, OUTPUT_PATH);
   const summaryPath = path.resolve(cwd, SUMMARY_PATH);

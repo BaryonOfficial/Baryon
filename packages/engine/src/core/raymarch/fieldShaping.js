@@ -1,158 +1,455 @@
 import { clamp01, mix, smoothstep } from "../../utils/math.js";
 
-export const EDGE_FADE_START = 0.88;
-export const EDGE_FADE_END = 1.0;
-export const SHELL_WEIGHT_MIN = 0.54;
-export const SHELL_WEIGHT_START = 0.16;
-export const SHELL_WEIGHT_END = 0.96;
-export const SHELL_WEIGHT_MAX = 0.7;
-export const COLOR_BLEND_START = 0.42;
-export const COLOR_BLEND_END = 0.94;
-export const DENSITY_BOOST = 4.6;
-export const DENSITY_MAX = 6.0;
-export const BROAD_BAND_SCALE = 1.65;
+const LOCAL_FIELD_DISTANCE_GRADIENT_EPSILON = 1e-8;
+
+/**
+ * Fixed reference medium for the flagship laser-cymatics apparatus.
+ *
+ * These values describe a display apparatus, not measured laboratory ground
+ * truth. Widths are local/world lengths; the two non-negative energy weights
+ * are normalized before use so their sum cannot create or remove carrier
+ * energy. These are internal apparatus constants, not creative controls; none
+ * may depend on pitch, audio features, frame state, the camera, or the selected
+ * performance profile.
+ */
+export const CYMATIC_CARRIER_REFERENCE_PROFILE = Object.freeze({
+  // A 0.024-world-unit core spans roughly one backing pixel at the reference
+  // presentation scale and one quarter of a 64^3 cache cell across the
+  // six-unit cavity. The analytic interval integral resolves it without
+  // widening it to the ray step or cache spacing.
+  coreFwhmWorld: 0.024,
+  sheathWidthRatio: 2,
+  coreEnergyWeight: 97,
+  sheathEnergyWeight: 3,
+  gradientEpsilon: 1e-8,
+});
+
+const BROAD_BAND_SCALE = 1.65;
 export const CONTOUR_BLEND = 0.82;
-export const INTERIOR_MASK_START = 0.52;
-export const INTERIOR_MASK_END = 0.96;
 export const BODY_DENSITY_GAIN = 0.12;
 export const BODY_DENSITY_MIX = 0.5;
-export const BODY_BOUNDARY_REDUCTION = 0.35;
 export const BODY_EXCITATION_VISIBILITY_POWER = 1.2;
-export const INCOHERENT_TREBLE_BODY_SUPPRESSION_MAX = 0.45;
-export const RIM_BLOOM_BIAS_BASE = 0.35;
-export const RIM_BLOOM_BIAS_GAIN = 0.45;
-export const RIM_COMPRESSION_BOUNDARY_GAIN = 0.45;
-export const RIM_COMPRESSION_OUTER_GAIN = 0.12;
-export const INNER_BAND_WEIGHT = 0.18;
-export const LOW_MID_BAND_WEIGHT = 0.08;
-export const HIGH_MID_BAND_WEIGHT = 0.035;
-export const AIR_BAND_WEIGHT = 0.055;
-export const COLOR_BIAS_SCALE = 0.82;
-export const BEAM_POWER_BASE = 1.55;
-export const BEAM_POWER_TRANSIENT_GAIN = 0.35;
-export const BEAM_TRANSIENT_GAIN = 0.9;
-export const BEAM_SPECTRAL_GAIN = 0.55;
-export const EMISSION_ROLLOFF_BASE = 0.42;
-export const EMISSION_ROLLOFF_TRANSIENT_GAIN = 0.18;
+const EMISSION_ROLLOFF_BASE = 0.42;
+const EMISSION_ROLLOFF_TRANSIENT_GAIN = 0.18;
 export const EMISSION_ROLLOFF_MIX = 0.68;
 export const MODAL_CROWDING_BODY_COMPRESSION = 0.55;
-export const MODAL_CROWDING_ACCUMULATION_COMPRESSION = 0.7;
+const MODAL_CROWDING_ACCUMULATION_COMPRESSION = 0.7;
 export const HOT_CORE_START = 0.56;
 export const HOT_CORE_END = 0.94;
 export const HOT_CORE_CROWDING_THRESHOLD_LIFT = 0.14;
 export const HOT_CORE_SURFACE_CROWDING_REDUCTION = 0.34;
 export const WHITE_EMISSION_CROWDING_REDUCTION = 0.72;
-export const WHITE_EMISSION_CROWDING_TRANSIENT_RELIEF = 0.08;
-export const STRUCTURE_AWARE_EMISSION_CROWDING_START = 0.04;
-export const STRUCTURE_AWARE_EMISSION_CROWDING_END = 0.34;
-export const STRUCTURE_AWARE_EMISSION_RIDGE_WEIGHT = 0.62;
-export const STRUCTURE_AWARE_EMISSION_CONTOUR_WEIGHT = 0.28;
-export const STRUCTURE_AWARE_EMISSION_HIGHLIGHT_WEIGHT = 0.18;
-export const STRUCTURE_AWARE_EMISSION_DETAIL_GATE_START = 0.28;
-export const STRUCTURE_AWARE_EMISSION_DETAIL_GATE_END = 0.76;
-export const STRUCTURE_AWARE_EMISSION_RIDGE_LOCK_START = 0.82;
-export const STRUCTURE_AWARE_EMISSION_RIDGE_LOCK_END = 0.94;
-export const STRUCTURE_AWARE_EMISSION_RIDGE_LOCK_WEIGHT = 0.18;
+const WHITE_EMISSION_CROWDING_TRANSIENT_RELIEF = 0.08;
+const STRUCTURE_AWARE_EMISSION_CROWDING_START = 0.04;
+const STRUCTURE_AWARE_EMISSION_CROWDING_END = 0.34;
+const STRUCTURE_AWARE_EMISSION_RIDGE_WEIGHT = 0.62;
+const STRUCTURE_AWARE_EMISSION_CONTOUR_WEIGHT = 0.28;
+const STRUCTURE_AWARE_EMISSION_HIGHLIGHT_WEIGHT = 0.18;
+const STRUCTURE_AWARE_EMISSION_DETAIL_GATE_START = 0.28;
+const STRUCTURE_AWARE_EMISSION_DETAIL_GATE_END = 0.76;
+const STRUCTURE_AWARE_EMISSION_RIDGE_LOCK_START = 0.82;
+const STRUCTURE_AWARE_EMISSION_RIDGE_LOCK_END = 0.94;
+const STRUCTURE_AWARE_EMISSION_RIDGE_LOCK_WEIGHT = 0.18;
 export const STRUCTURE_AWARE_EMISSION_BODY_SUPPRESSION = 0.72;
-export const STRUCTURE_AWARE_EMISSION_TRANSIENT_RELIEF = 0.08;
+const STRUCTURE_AWARE_EMISSION_TRANSIENT_RELIEF = 0.08;
 export const STRUCTURE_AWARE_EMISSION_MIN_GAIN = 0.42;
-export const HIGHLIGHT_MASK_START = 0.38;
-export const HIGHLIGHT_MASK_END = 0.96;
 export const BOUNDARY_CONTOUR_ACCENT_WEIGHT = 0.08;
 export const HIGHLIGHT_CONTOUR_ACCENT_WEIGHT = 0.04;
-export const PROJECTED_CAUSTIC_RADIANCE_COMPRESSION = 0.6;
-export const PROJECTED_CAUSTIC_RADIANCE_MIN_SCALE = 0.48;
-export const PROJECTED_CAUSTIC_RADIANCE_RIDGE_AUTHORITY_FLOOR = 0.35;
-export const HOLOGRAPHIC_TINT_RED = 0.62;
-export const HOLOGRAPHIC_TINT_GREEN = 0.94;
-export const HOLOGRAPHIC_TINT_BLUE = 1.0;
-export const LATCHED_FOG_STRUCTURE_START = 0.55;
-export const LATCHED_FOG_STRUCTURE_RANGE = 0.25;
-export const LATCHED_FOG_CHANGE_END = 0.08;
-export const LATCHED_FOG_TRANSIENT_RELEASE_START = 0.12;
-export const LATCHED_FOG_TRANSIENT_RELEASE_END = 0.42;
+const PROJECTED_CAUSTIC_RADIANCE_COMPRESSION = 0.6;
+const PROJECTED_CAUSTIC_RADIANCE_MIN_SCALE = 0.48;
+const PROJECTED_CAUSTIC_RADIANCE_RIDGE_AUTHORITY_FLOOR = 0.35;
+const LATCHED_FOG_STRUCTURE_START = 0.55;
+const LATCHED_FOG_STRUCTURE_RANGE = 0.25;
+const LATCHED_FOG_CHANGE_END = 0.08;
+const LATCHED_FOG_TRANSIENT_RELEASE_START = 0.12;
+const LATCHED_FOG_TRANSIENT_RELEASE_END = 0.42;
 export const LATCHED_FOG_BODY_REDUCTION = 0.18;
-export const LATCHED_FOG_BEAM_REDUCTION = 0.12;
-export const EXCITATION_VISIBILITY_COHERENCE_WEIGHT = 0.42;
-export const EXCITATION_VISIBILITY_MODAL_ENERGY_WEIGHT = 0.48;
-export const EXCITATION_VISIBILITY_MAX_FLOOR = 0.52;
-export const EXCITATION_VISIBILITY_MODAL_AUTHORITY_START = 0.04;
-export const EXCITATION_VISIBILITY_MODAL_AUTHORITY_END = 0.24;
-export const EXCITATION_VISIBILITY_MODAL_AUTHORITY_WEIGHT = 0.82;
-export const SIGNED_INTERFERENCE_BODY_AUTHORITY_START = 0.015;
-export const SIGNED_INTERFERENCE_BODY_AUTHORITY_END = 0.12;
-export const SIGNED_INTERFERENCE_BODY_AUTHORITY_POWER = 1.2;
-export const SIGNED_INTERFERENCE_RADIANCE_GATE_MIN = 0.24;
-export const SIGNED_INTERFERENCE_RADIANCE_CANCELLATION_POWER = 1.15;
+const CAUSTIC_FOG_REDUCTION = 0.12;
+const SIGNED_INTERFERENCE_BODY_AUTHORITY_START = 0.015;
+const SIGNED_INTERFERENCE_BODY_AUTHORITY_END = 0.12;
+const SIGNED_INTERFERENCE_BODY_AUTHORITY_POWER = 1.2;
+const SIGNED_INTERFERENCE_RADIANCE_GATE_MIN = 0.24;
+const SIGNED_INTERFERENCE_RADIANCE_CANCELLATION_POWER = 1.15;
 export const LIVE_SYNTHESIS_CANCELLATION_SUPPRESSION_SCALE = 0.85;
-export const CAUSTIC_DENSITY_GAIN = 1.15;
-export const CAUSTIC_FOCUS_POWER = 1.15;
+const CAUSTIC_DENSITY_GAIN = 1.15;
+const CAUSTIC_FOCUS_POWER = 1.15;
 export const CAUSTIC_BODY_MIX_MAX = 0.35;
-export const CAUSTIC_OBSERVATION_ANCHOR_WEIGHT = 0.85;
-export const CAUSTIC_EMISSION_GAIN = 1.2;
+const CAUSTIC_OBSERVATION_ANCHOR_WEIGHT = 0.85;
+const CAUSTIC_EMISSION_GAIN = 1.2;
 export const CANCELLATION_LUMINANCE_DROP_MIN = 0.65;
 export const CAUSTIC_BROAD_CONTOUR_LEAK_MAX = 0.015;
 export const CAUSTIC_COLOR_DENSITY_DELTA_MAX = 1e-6;
-export const OPTICAL_SLOPE_POWER = 1.35;
-export const OPTICAL_FOCUS_POWER = 1.55;
-export const OPTICAL_SPACE_GATE_START = 0.035;
-export const OPTICAL_SPACE_GATE_END = 0.18;
+const OPTICAL_SLOPE_POWER = 1.35;
+const OPTICAL_FOCUS_POWER = 1.55;
+const OPTICAL_SPACE_GATE_START = 0.035;
+const OPTICAL_SPACE_GATE_END = 0.18;
 export const OPTICAL_BODY_SUPPRESSION_MAX = 0.48;
-export const OPTICAL_LASER_GAIN = 1.55;
-export const OPTICAL_FRINGE_MIX_MAX = 0.18;
+const OPTICAL_LASER_GAIN = 1.55;
+const OPTICAL_FRINGE_MIX_MAX = 0.18;
 export const OPTICAL_COLOR_DENSITY_DELTA_MAX = 1e-6;
 export const OPTICAL_RECTANGULAR_STARTUP_IMPORT_DELTA_MAX = 0;
-export const PHOTOGRAPHIC_SHELL_INNER_START = 0.12;
-export const PHOTOGRAPHIC_SHELL_INNER_END = 0.42;
-export const PHOTOGRAPHIC_SHELL_INNER_FADE_START = 0.64;
-export const PHOTOGRAPHIC_SHELL_INNER_FADE_END = 0.92;
-export const PHOTOGRAPHIC_SHELL_RIM_START = 0.38;
-export const PHOTOGRAPHIC_SHELL_RIM_END = 0.86;
-export const PHOTOGRAPHIC_SHELL_RIM_FADE_START = 0.92;
-export const PHOTOGRAPHIC_SHELL_RIM_FADE_END = 1.0;
-export const PHOTOGRAPHIC_APERTURE_FADE_START = 0.08;
-export const PHOTOGRAPHIC_APERTURE_FADE_END = 0.28;
-export const PHOTOGRAPHIC_SHELL_SUPPRESSION_START = 0.94;
-export const PHOTOGRAPHIC_SHELL_SUPPRESSION_END = 1.0;
-export const PHOTOGRAPHIC_SHELL_FOCUS_GAIN = 0.55;
-export const PHOTOGRAPHIC_FOCUS_POWER = 1.35;
-export const PHOTOGRAPHIC_BLACKFIELD_GATE_START = 0.02;
-export const PHOTOGRAPHIC_BLACKFIELD_GATE_END = 0.16;
-export const PHOTOGRAPHIC_DARK_BODY_RATIO = 0.18;
-export const PHOTOGRAPHIC_DARK_CAUSTIC_RATIO = 0.52;
-export const PHOTOGRAPHIC_LASER_GAIN = 0.75;
-// Caustic focal law: irradiance at a fold caustic diverges as 1 / (1 − κ·d).
-// The boost applies to source radiance only — never to extinction density.
-export const CAUSTIC_FOCAL_CONVERGENCE = 0.8;
-export const CAUSTIC_FOCAL_FLOOR = 0.15;
-export const PHASE_INTERFERENCE_FRINGE_MIN = 0.72;
-export const PHASE_INTERFERENCE_FRINGE_MAX = 1.28;
-export const PHOTOGRAPHIC_PEAK_WHITE_START = 0.28;
-export const PHOTOGRAPHIC_PEAK_WHITE_END = 0.72;
-export const PHOTOGRAPHIC_BLACKFIELD_BODY_REDUCTION_MIN = 0.6;
-export const PHOTOGRAPHIC_COLOR_DENSITY_DELTA_MAX =
-  OPTICAL_COLOR_DENSITY_DELTA_MAX;
-
-function mixColor(left, right, t) {
-  return left.map((channel, index) => mix(channel, right[index] ?? channel, t));
-}
-
-function multiplyColor(color, scalar) {
-  return color.map((channel) => channel * scalar);
-}
-
-function clampColor(color, minValue, maxValue) {
-  return color.map((channel) =>
-    Math.min(maxValue, Math.max(minValue, channel)),
-  );
-}
-
-function addColor(left, right) {
-  return left.map((channel, index) => channel + (right[index] ?? 0));
-}
 
 function safeFinite(value, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
+}
+
+const GAUSSIAN_FWHM_EXPONENT = 4 * Math.LN2;
+const GAUSSIAN_UNIT_AREA_SCALE = 2 * Math.sqrt(Math.LN2 / Math.PI);
+const GAUSSIAN_CDF_SCALE = 2 * Math.sqrt(Math.LN2);
+
+/**
+ * First-order distance from a scalar-field sample to its local zero set.
+ *
+ * `fieldValue` and `gradientMagnitude` must describe the same scalar field.
+ * If the field has units P and its gradient has units P / worldLength, the
+ * returned distance has units worldLength. `gradientEpsilon` is only a
+ * numerical denominator guard; `gradientValid` remains false when it owns the
+ * denominator so callers cannot turn a degenerate critical point into light.
+ *
+ * @param {{
+ *   fieldValue?: number,
+ *   gradientMagnitude?: number,
+ *   gradientEpsilon?: number,
+ * }} [options]
+ */
+export function deriveLocalFieldDistance({
+  fieldValue = 0,
+  gradientMagnitude = 0,
+  gradientEpsilon = LOCAL_FIELD_DISTANCE_GRADIENT_EPSILON,
+} = {}) {
+  const fieldValid = Number.isFinite(fieldValue);
+  const gradientFinite = Number.isFinite(gradientMagnitude);
+  const fieldMagnitude = fieldValid ? Math.abs(fieldValue) : 0;
+  const safeGradientMagnitude = gradientFinite
+    ? Math.abs(gradientMagnitude)
+    : 0;
+  const safeGradientEpsilon = Math.max(
+    Number.EPSILON,
+    Math.abs(
+      safeFinite(gradientEpsilon, LOCAL_FIELD_DISTANCE_GRADIENT_EPSILON),
+    ),
+  );
+  const gradientValid =
+    gradientFinite && safeGradientMagnitude > safeGradientEpsilon;
+  const localFieldDistance = fieldValid
+    ? fieldMagnitude / Math.max(safeGradientMagnitude, safeGradientEpsilon)
+    : Number.MAX_VALUE;
+
+  return {
+    fieldMagnitude,
+    gradientMagnitude: safeGradientMagnitude,
+    gradientEpsilon: safeGradientEpsilon,
+    localFieldDistance,
+    fieldValid,
+    gradientValid,
+  };
+}
+
+function deriveUnitAreaGaussianProfile(localFieldDistance, fwhmWorld) {
+  const safeFwhmWorld = safeFinite(fwhmWorld, 0);
+  const widthValid = safeFwhmWorld > 0;
+  const distanceValid = Number.isFinite(localFieldDistance);
+  if (!widthValid || !distanceValid) {
+    return {
+      profile: 0,
+      fwhmWorld: widthValid ? safeFwhmWorld : 0,
+      widthValid,
+    };
+  }
+
+  const normalizedDistance = Math.max(0, localFieldDistance) / safeFwhmWorld;
+  const profile =
+    (GAUSSIAN_UNIT_AREA_SCALE / safeFwhmWorld) *
+    Math.exp(-GAUSSIAN_FWHM_EXPONENT * normalizedDistance ** 2);
+
+  return {
+    profile: safeFinite(profile, 0),
+    fwhmWorld: safeFwhmWorld,
+    widthValid,
+  };
+}
+
+function approximateErrorFunction(value) {
+  if (value === 0) return 0;
+  const sign = value < 0 ? -1 : 1;
+  const magnitude = Math.abs(value);
+  const t = 1 / (1 + 0.3275911 * magnitude);
+  const approximation =
+    1 -
+    ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) *
+      t +
+      0.254829592) *
+      t *
+      Math.exp(-magnitude * magnitude);
+  return sign * approximation;
+}
+
+/**
+ * Closed-form interval average of the same unit-area Gaussian used by the
+ * point profile. The interval is centered at `localFieldDistance` and spans a
+ * world-space distance along the local surface normal. `intervalEnergy` is
+ * dimensionless; `intervalAverage` has units 1 / worldLength.
+ *
+ * @param {{
+ *   localFieldDistance?: number,
+ *   intervalWidthWorld?: number,
+ *   fwhmWorld?: number,
+ * }} [options]
+ */
+export function deriveNormalizedGaussianIntervalAverage({
+  localFieldDistance = 0,
+  intervalWidthWorld = 0,
+  fwhmWorld,
+} = {}) {
+  const safeDistance = Number.isFinite(localFieldDistance)
+    ? Math.abs(localFieldDistance)
+    : Number.MAX_VALUE;
+  const safeIntervalWidthWorld = safeFinite(intervalWidthWorld, -1);
+  const pointProfile = deriveUnitAreaGaussianProfile(safeDistance, fwhmWorld);
+  const intervalValid = pointProfile.widthValid && safeIntervalWidthWorld >= 0;
+  if (!intervalValid) {
+    return {
+      intervalAverage: 0,
+      intervalEnergy: 0,
+      intervalWidthWorld: 0,
+      fwhmWorld: pointProfile.fwhmWorld,
+      intervalValid: false,
+    };
+  }
+  if (safeIntervalWidthWorld === 0) {
+    return {
+      intervalAverage: pointProfile.profile,
+      intervalEnergy: 0,
+      intervalWidthWorld: 0,
+      fwhmWorld: pointProfile.fwhmWorld,
+      intervalValid: true,
+    };
+  }
+
+  const halfWidthWorld = safeIntervalWidthWorld / 2;
+  const lowerWorld = safeDistance - halfWidthWorld;
+  const upperWorld = safeDistance + halfWidthWorld;
+  const cdfScale = GAUSSIAN_CDF_SCALE / pointProfile.fwhmWorld;
+  const intervalEnergy = clamp01(
+    0.5 *
+      (approximateErrorFunction(cdfScale * upperWorld) -
+        approximateErrorFunction(cdfScale * lowerWorld)),
+  );
+
+  return {
+    intervalAverage: intervalEnergy / safeIntervalWidthWorld,
+    intervalEnergy,
+    intervalWidthWorld: safeIntervalWidthWorld,
+    fwhmWorld: pointProfile.fwhmWorld,
+    intervalValid: true,
+  };
+}
+
+/**
+ * Unit-area core and sheath profiles around the same zero-set surface.
+ *
+ * Both FWHM values are fixed world-space lengths. Their profiles integrate to
+ * one across the signed surface normal, so changing either width changes peak
+ * density without changing the energy subsequently assigned to that lane.
+ *
+ * @param {{
+ *   localFieldDistance?: number,
+ *   coreFwhmWorld?: number,
+ *   sheathFwhmWorld?: number,
+ * }} [options]
+ */
+export function deriveFixedWorldSpaceCarrierProfiles({
+  localFieldDistance = 0,
+  coreFwhmWorld,
+  sheathFwhmWorld,
+} = {}) {
+  const core = deriveUnitAreaGaussianProfile(localFieldDistance, coreFwhmWorld);
+  const sheath = deriveUnitAreaGaussianProfile(
+    localFieldDistance,
+    sheathFwhmWorld,
+  );
+
+  return {
+    coreProfile: core.profile,
+    sheathProfile: sheath.profile,
+    coreFwhmWorld: core.fwhmWorld,
+    sheathFwhmWorld: sheath.fwhmWorld,
+    profileWidthsValid: core.widthValid && sheath.widthValid,
+  };
+}
+
+/**
+ * Normalize fixed, non-negative lane energies without any scene/audio input.
+ *
+ * @param {{
+ *   coreEnergyWeight?: number,
+ *   sheathEnergyWeight?: number,
+ * }} [options]
+ */
+function deriveNormalizedCarrierEnergyFractions({
+  coreEnergyWeight = 0,
+  sheathEnergyWeight = 0,
+} = {}) {
+  const safeCoreEnergyWeight = Math.max(0, safeFinite(coreEnergyWeight, 0));
+  const safeSheathEnergyWeight = Math.max(0, safeFinite(sheathEnergyWeight, 0));
+  const totalEnergyWeight = safeCoreEnergyWeight + safeSheathEnergyWeight;
+  const energyWeightsValid = totalEnergyWeight > Number.EPSILON;
+
+  return {
+    coreEnergyFraction: energyWeightsValid
+      ? safeCoreEnergyWeight / totalEnergyWeight
+      : 0,
+    sheathEnergyFraction: energyWeightsValid
+      ? safeSheathEnergyWeight / totalEnergyWeight
+      : 0,
+    totalEnergyFraction: energyWeightsValid ? 1 : 0,
+    energyWeightsValid,
+  };
+}
+
+/**
+ * CPU/reference carrier contract for a thin zero-set core and its co-located
+ * wider sheath. The returned energy densities have units 1 / worldLength and
+ * integrate to the normalized fixed fractions across the surface normal.
+ *
+ * @param {{
+ *   fieldValue?: number,
+ *   gradientMagnitude?: number,
+ *   gradientEpsilon?: number,
+ *   coreFwhmWorld?: number,
+ *   sheathFwhmWorld?: number,
+ *   coreEnergyWeight?: number,
+ *   sheathEnergyWeight?: number,
+ * }} [options]
+ */
+export function deriveCoreAndLinkedSheathCarrier({
+  fieldValue = 0,
+  gradientMagnitude = 0,
+  gradientEpsilon = LOCAL_FIELD_DISTANCE_GRADIENT_EPSILON,
+  coreFwhmWorld,
+  sheathFwhmWorld,
+  coreEnergyWeight = 0,
+  sheathEnergyWeight = 0,
+} = {}) {
+  const distance = deriveLocalFieldDistance({
+    fieldValue,
+    gradientMagnitude,
+    gradientEpsilon,
+  });
+  const profiles = deriveFixedWorldSpaceCarrierProfiles({
+    localFieldDistance: distance.localFieldDistance,
+    coreFwhmWorld,
+    sheathFwhmWorld,
+  });
+  const energy = deriveNormalizedCarrierEnergyFractions({
+    coreEnergyWeight,
+    sheathEnergyWeight,
+  });
+  const carrierValid =
+    distance.fieldValid &&
+    distance.gradientValid &&
+    profiles.profileWidthsValid &&
+    energy.energyWeightsValid;
+  const coreProfile = carrierValid ? profiles.coreProfile : 0;
+  const sheathProfile = carrierValid ? profiles.sheathProfile : 0;
+  const coreEnergyDensity = coreProfile * energy.coreEnergyFraction;
+  const sheathEnergyDensity = sheathProfile * energy.sheathEnergyFraction;
+
+  return {
+    ...distance,
+    ...energy,
+    coreFwhmWorld: profiles.coreFwhmWorld,
+    sheathFwhmWorld: profiles.sheathFwhmWorld,
+    profileWidthsValid: profiles.profileWidthsValid,
+    carrierValid,
+    coreProfile,
+    sheathProfile,
+    coreEnergyDensity,
+    sheathEnergyDensity,
+    carrierEnergyDensity: coreEnergyDensity + sheathEnergyDensity,
+  };
+}
+
+/**
+ * CPU mirror of the production TSL interval carrier. The scalar-field value
+ * and gradient are one matched linear sample; `rayDirLocal` is the normalized
+ * local ray direction and `stepSize` is a world-space segment length.
+ *
+ * @param {{
+ *   fieldValue?: number,
+ *   gradient?: ArrayLike<number>,
+ *   rayDirLocal?: ArrayLike<number>,
+ *   stepSize?: number,
+ *   coreFwhmWorld?: number,
+ * }} [options]
+ */
+export function deriveFixedWorldSpaceCarrierDensity({
+  fieldValue = 0,
+  gradient = [0, 0, 0],
+  rayDirLocal = [0, 0, 1],
+  stepSize = 0,
+  coreFwhmWorld = CYMATIC_CARRIER_REFERENCE_PROFILE.coreFwhmWorld,
+} = {}) {
+  const safeGradient = readVector3(gradient, [0, 0, 0]);
+  const safeRayDirection = readVector3(rayDirLocal, [0, 0, 1]);
+  const gradientMagnitude = Math.hypot(...safeGradient);
+  const distance = deriveLocalFieldDistance({
+    fieldValue,
+    gradientMagnitude,
+    gradientEpsilon: CYMATIC_CARRIER_REFERENCE_PROFILE.gradientEpsilon,
+  });
+  const inverseGradientMagnitude = distance.gradientValid
+    ? 1 / gradientMagnitude
+    : 0;
+  const normalDotRay = Math.abs(
+    dotVector3(
+      safeGradient.map((component) => component * inverseGradientMagnitude),
+      safeRayDirection,
+    ),
+  );
+  const intervalWidthWorld =
+    Math.max(0, safeFinite(stepSize, 0)) * normalDotRay;
+  const sheathFwhmWorld =
+    coreFwhmWorld * CYMATIC_CARRIER_REFERENCE_PROFILE.sheathWidthRatio;
+  const energy = deriveNormalizedCarrierEnergyFractions({
+    coreEnergyWeight: CYMATIC_CARRIER_REFERENCE_PROFILE.coreEnergyWeight,
+    sheathEnergyWeight: CYMATIC_CARRIER_REFERENCE_PROFILE.sheathEnergyWeight,
+  });
+  const core = deriveNormalizedGaussianIntervalAverage({
+    localFieldDistance: distance.localFieldDistance,
+    intervalWidthWorld,
+    fwhmWorld: coreFwhmWorld,
+  });
+  const sheath = deriveNormalizedGaussianIntervalAverage({
+    localFieldDistance: distance.localFieldDistance,
+    intervalWidthWorld,
+    fwhmWorld: sheathFwhmWorld,
+  });
+  const carrierValid =
+    distance.fieldValid &&
+    distance.gradientValid &&
+    core.intervalValid &&
+    sheath.intervalValid &&
+    energy.energyWeightsValid;
+  const coreDensity = carrierValid
+    ? core.intervalAverage * energy.coreEnergyFraction
+    : 0;
+  const sheathDensity = carrierValid
+    ? sheath.intervalAverage * energy.sheathEnergyFraction
+    : 0;
+
+  return {
+    ...distance,
+    ...energy,
+    coreFwhmWorld,
+    sheathFwhmWorld,
+    intervalWidthWorld,
+    normalDotRay,
+    carrierValid,
+    coreDensity,
+    sheathDensity,
+    carrierDensity: coreDensity + sheathDensity,
+  };
 }
 
 export function deriveLiveSynthesisCancellationSuppression({
@@ -219,10 +516,6 @@ export function deriveSignedInterferenceBodyAuthority(fieldAbs) {
   );
 }
 
-function deriveInteriorMask(radialDistance) {
-  return 1 - smoothstep(INTERIOR_MASK_START, INTERIOR_MASK_END, radialDistance);
-}
-
 export function deriveLatchedFogMask({
   structureSignal = 0,
   changeSignal = 1,
@@ -265,19 +558,7 @@ export function deriveContourShape({
   };
 }
 
-export function deriveShellFocus({ shellWeight = SHELL_WEIGHT_MIN } = {}) {
-  const safeShellWeight = Math.max(
-    0,
-    Number.isFinite(shellWeight) ? shellWeight : SHELL_WEIGHT_MIN,
-  );
-
-  return clamp01(
-    (safeShellWeight - SHELL_WEIGHT_MIN) /
-      Math.max(SHELL_WEIGHT_MAX - SHELL_WEIGHT_MIN, 1e-4),
-  );
-}
-
-export function deriveLocalFieldSupportAuthority({
+function deriveLocalFieldSupportAuthority({
   effectiveUnsignedSupport = 1,
 } = {}) {
   return clamp01(safeFinite(effectiveUnsignedSupport, 0));
@@ -305,32 +586,20 @@ export function deriveLocalGradientEvidence({
 export function deriveCausticRidgeAuthority({
   modalStructureSupport = 0,
   localGradientEvidence = 0,
-  shellFocus = 0,
-  edgeFade = 1,
   activeMask = 1,
   effectiveUnsignedSupport = 1,
-  signedBodyAuthority = 0,
 } = {}) {
   const safeModalStructureSupport = clamp01(modalStructureSupport);
   const safeLocalGradientEvidence = clamp01(localGradientEvidence);
-  const safeShellFocus = clamp01(shellFocus);
-  const safeSignedBodyAuthority = clamp01(signedBodyAuthority);
   const localFieldSupportAuthority = deriveLocalFieldSupportAuthority({
     effectiveUnsignedSupport,
   });
   const gradientFieldAuthority =
     safeLocalGradientEvidence * localFieldSupportAuthority;
-  const shellFieldAuthority =
-    localFieldSupportAuthority *
-    Math.max(safeLocalGradientEvidence, safeSignedBodyAuthority);
   const causticFocusAuthority = clamp01(
-    Math.max(
-      gradientFieldAuthority * safeModalStructureSupport,
-      safeShellFocus * safeModalStructureSupport * shellFieldAuthority,
-    ),
+    gradientFieldAuthority * safeModalStructureSupport,
   );
-  const causticRidgeAuthority =
-    causticFocusAuthority * clamp01(edgeFade) * clamp01(activeMask);
+  const causticRidgeAuthority = causticFocusAuthority * clamp01(activeMask);
 
   return {
     causticFocusAuthority,
@@ -338,29 +607,16 @@ export function deriveCausticRidgeAuthority({
   };
 }
 
-export function deriveCausticVisibility({
+function deriveCausticVisibility({
   causticRidgeAuthority = 0,
   signedRadianceAuthority = 1,
 } = {}) {
   return clamp01(causticRidgeAuthority) * clamp01(signedRadianceAuthority);
 }
 
-export function deriveIncoherentTrebleBodySuppression({
-  trebleBroadbandEnergy = 0,
-  modeCoherence = 1,
-} = {}) {
-  return (
-    1 -
-    clamp01(trebleBroadbandEnergy) *
-      (1 - clamp01(modeCoherence)) *
-      INCOHERENT_TREBLE_BODY_SUPPRESSION_MAX
-  );
-}
-
-export function deriveCausticDensity({
+function deriveCausticDensity({
   causticFocusAuthority = 0,
   causticVisibility = 0,
-  shellWeight = 1,
   transientBoost = 1,
   boundaryDensity = 1,
   latchedFogMask = 0,
@@ -369,10 +625,9 @@ export function deriveCausticDensity({
     CAUSTIC_DENSITY_GAIN *
     Math.pow(clamp01(causticFocusAuthority), CAUSTIC_FOCUS_POWER) *
     clamp01(causticVisibility) *
-    Math.max(0, Number.isFinite(shellWeight) ? shellWeight : 0) *
     Math.max(0, Number.isFinite(transientBoost) ? transientBoost : 0) *
     clamp01(boundaryDensity) *
-    (1 - clamp01(latchedFogMask) * LATCHED_FOG_BEAM_REDUCTION)
+    (1 - clamp01(latchedFogMask) * CAUSTIC_FOG_REDUCTION)
   );
 }
 
@@ -382,8 +637,6 @@ export function deriveCausticMaterialTransferProbe({
   modalStructureSupport = null,
   broadBand = null,
   localGradientEvidence = 0,
-  shellFocus = 0,
-  edgeFade = 1,
   activeMask = 1,
   effectiveUnsignedSupport = 1,
   effectiveCancellationRatio = null,
@@ -391,11 +644,8 @@ export function deriveCausticMaterialTransferProbe({
   signedRadianceAuthority = 1,
   colorWeight = 0,
   transientBoost = 1,
-  shellWeight = 1,
   boundaryDensity = 1,
   latchedFogMask = 0,
-  trebleBroadbandEnergy = 0,
-  modeCoherence = 1,
 } = {}) {
   const safeFieldAbs = Math.max(0, Number.isFinite(fieldAbs) ? fieldAbs : 0);
   const safeThreshold = Math.max(
@@ -412,11 +662,8 @@ export function deriveCausticMaterialTransferProbe({
     deriveCausticRidgeAuthority({
       modalStructureSupport: resolvedModalStructureSupport,
       localGradientEvidence,
-      shellFocus,
-      edgeFade,
       activeMask,
       effectiveUnsignedSupport,
-      signedBodyAuthority,
     });
   const cancellationSuppression = deriveLiveSynthesisCancellationSuppression({
     effectiveCancellationRatio:
@@ -434,7 +681,6 @@ export function deriveCausticMaterialTransferProbe({
   const causticDensity = deriveCausticDensity({
     causticFocusAuthority,
     causticVisibility,
-    shellWeight,
     transientBoost,
     boundaryDensity,
     latchedFogMask,
@@ -443,19 +689,13 @@ export function deriveCausticMaterialTransferProbe({
     broadBand == null
       ? deriveBroadBand(safeFieldAbs, safeThreshold)
       : broadBand;
-  const incoherentTrebleSuppression = deriveIncoherentTrebleBodySuppression({
-    trebleBroadbandEnergy,
-    modeCoherence,
-  });
   const bodyDensity =
     clamp01(resolvedBroadBand) *
-    clamp01(edgeFade) *
     clamp01(activeMask) *
     BODY_DENSITY_GAIN *
     signedBodyAuthority *
     resolvedSignedRadianceAuthority *
-    Math.pow(clamp01(excitationVisibility), BODY_EXCITATION_VISIBILITY_POWER) *
-    incoherentTrebleSuppression;
+    Math.pow(clamp01(excitationVisibility), BODY_EXCITATION_VISIBILITY_POWER);
   const bodyContribution = Math.min(
     bodyDensity * CAUSTIC_BODY_MIX_MAX,
     causticDensity * CAUSTIC_BODY_MIX_MAX,
@@ -483,7 +723,6 @@ export function deriveCausticMaterialTransferProbe({
     bodyContribution,
     localDensity,
     ridgeConcentration,
-    incoherentTrebleSuppression,
     observationAnchor,
     signedRadianceAuthority: resolvedSignedRadianceAuthority,
     colorConfidence,
@@ -492,7 +731,7 @@ export function deriveCausticMaterialTransferProbe({
   };
 }
 
-export function deriveOpticalSlopeAuthority({
+function deriveOpticalSlopeAuthority({
   normalDotMeasurement = 1,
   gradientPresence = 0,
   slopePower = OPTICAL_SLOPE_POWER,
@@ -546,7 +785,7 @@ export function deriveOpticalConvergenceAuthority({
   };
 }
 
-export function deriveOpticalFocusAuthority({
+function deriveOpticalFocusAuthority({
   causticRidgeAuthority = 0,
   opticalSlopeAuthority = 0,
   ridgeConcentration = 0,
@@ -561,7 +800,7 @@ export function deriveOpticalFocusAuthority({
   );
 }
 
-export function deriveOpticalNegativeSpaceGate({
+function deriveOpticalNegativeSpaceGate({
   opticalFocus = 0,
   causticRidgeAuthority = 0,
   gateStart = OPTICAL_SPACE_GATE_START,
@@ -574,7 +813,7 @@ export function deriveOpticalNegativeSpaceGate({
   );
 }
 
-export function deriveLaserCausticRadiance({
+function deriveLaserCausticRadiance({
   signedCausticDensity = 0,
   opticalFocus = 0,
   laserGain = OPTICAL_LASER_GAIN,
@@ -669,378 +908,39 @@ export function deriveLaserCymaticOpticalProbe({
   };
 }
 
-export function derivePhotographicShellAuthority({
-  radialDistance = 0,
-  shellFocus = 0,
-  shellWeight = SHELL_WEIGHT_MIN,
-  contourCore = 0,
-  edgeFade = 1,
-  activeMask = 1,
-} = {}) {
-  const safeRadialDistance = clamp01(safeFinite(radialDistance, 0));
-  const safeShellFocus =
-    shellFocus == null
-      ? deriveShellFocus({ shellWeight })
-      : clamp01(safeFinite(shellFocus, 0));
-  const safeContourCore = clamp01(safeFinite(contourCore, 0));
-  const shellPresence = Math.max(
-    safeShellFocus,
-    deriveShellFocus({ shellWeight }),
-  );
-  const innerLensAuthority =
-    smoothstep(
-      PHOTOGRAPHIC_SHELL_INNER_START,
-      PHOTOGRAPHIC_SHELL_INNER_END,
-      safeRadialDistance,
-    ) *
-    (1 -
-      smoothstep(
-        PHOTOGRAPHIC_SHELL_INNER_FADE_START,
-        PHOTOGRAPHIC_SHELL_INNER_FADE_END,
-        safeRadialDistance,
-      )) *
-    shellPresence;
-  const rimShellAuthority =
-    smoothstep(
-      PHOTOGRAPHIC_SHELL_RIM_START,
-      PHOTOGRAPHIC_SHELL_RIM_END,
-      safeRadialDistance,
-    ) *
-    (1 -
-      smoothstep(
-        PHOTOGRAPHIC_SHELL_RIM_FADE_START,
-        PHOTOGRAPHIC_SHELL_RIM_FADE_END,
-        safeRadialDistance,
-      )) *
-    Math.max(safeContourCore, shellPresence * 0.5);
-  const apertureAuthority =
-    (1 -
-      smoothstep(
-        PHOTOGRAPHIC_APERTURE_FADE_START,
-        PHOTOGRAPHIC_APERTURE_FADE_END,
-        safeRadialDistance,
-      )) *
-    safeContourCore;
-  const shellSuppression = smoothstep(
-    PHOTOGRAPHIC_SHELL_SUPPRESSION_START,
-    PHOTOGRAPHIC_SHELL_SUPPRESSION_END,
-    safeRadialDistance,
-  );
-  const photographicShellAuthority =
-    clamp01(
-      innerLensAuthority * 0.46 +
-        rimShellAuthority * 0.36 +
-        apertureAuthority * 0.24,
-    ) *
-    (1 - shellSuppression) *
-    clamp01(edgeFade) *
-    clamp01(activeMask);
-
-  return {
-    innerLensAuthority,
-    rimShellAuthority,
-    apertureAuthority,
-    shellSuppression,
-    photographicShellAuthority,
-  };
-}
-
-export function deriveBlackfieldGate({
-  photographicFocus = 0,
-  causticRidgeAuthority = 0,
-  gateStart = PHOTOGRAPHIC_BLACKFIELD_GATE_START,
-  gateEnd = PHOTOGRAPHIC_BLACKFIELD_GATE_END,
-} = {}) {
-  return smoothstep(
-    safeFinite(gateStart, PHOTOGRAPHIC_BLACKFIELD_GATE_START),
-    safeFinite(gateEnd, PHOTOGRAPHIC_BLACKFIELD_GATE_END),
-    clamp01(photographicFocus) * clamp01(causticRidgeAuthority),
-  );
-}
-
-export function derivePhotographicBodyContribution({
-  opticalBodyContribution = 0,
-  blackfieldGate = 0,
-} = {}) {
-  const gate = clamp01(blackfieldGate);
-  const bodyAttenuation = mix(PHOTOGRAPHIC_DARK_BODY_RATIO, 1, gate);
-  const photographicBodyContribution =
-    Math.max(0, safeFinite(opticalBodyContribution, 0)) * bodyAttenuation;
-
-  return {
-    bodyAttenuation,
-    photographicBodyContribution,
-  };
-}
-
-export function derivePhotographicRadianceScale({
-  photographicFocus = 0,
-  blackfieldGate = 0,
-} = {}) {
-  const focusedRadianceScale =
-    1 + clamp01(photographicFocus) * PHOTOGRAPHIC_LASER_GAIN;
-
-  return mix(
-    PHOTOGRAPHIC_DARK_CAUSTIC_RATIO,
-    focusedRadianceScale,
-    clamp01(blackfieldGate),
-  );
-}
-
-export function derivePhotographicColorMix({
-  colorWeight = 0,
-  photographicFocus = 0,
-  opticalFringeWeight = 0,
-  signedRadianceAuthority = 1,
-  causticRidgeAuthority = 0,
-  causticVisibility = 0,
-} = {}) {
-  const focus = clamp01(photographicFocus);
-  const radianceAuthority = clamp01(signedRadianceAuthority);
-  const ridgeAuthority = clamp01(causticRidgeAuthority);
-  const visibility = clamp01(causticVisibility);
-  const photographicSpectralWeight =
-    clamp01(colorWeight) * focus * radianceAuthority;
-  const photographicFringeWeight = clamp01(
-    opticalFringeWeight + focus * ridgeAuthority * 0.035,
-  );
-  const peakWhiteSignal = focus * visibility;
-  const peakWhiteMix = smoothstep(
-    PHOTOGRAPHIC_PEAK_WHITE_START,
-    PHOTOGRAPHIC_PEAK_WHITE_END,
-    peakWhiteSignal,
-  );
-
-  return {
-    photographicSpectralWeight,
-    photographicFringeWeight,
-    peakWhiteSignal,
-    peakWhiteMix,
-  };
-}
-
-export function derivePhotographicCymaticProbe({
-  radialDistance = 0,
-  shellWeight = SHELL_WEIGHT_MIN,
-  shellFocus = null,
-  contourCore = 0,
-  localGradientEvidence = 0,
-  edgeFade = 1,
-  activeMask = 1,
-  colorWeight = 0,
-  signedRadianceAuthority = 1,
-  ...opticalInputs
-} = {}) {
-  const passthroughInputs = /** @type {any} */ (opticalInputs);
-  const resolvedShellFocus = shellFocus ?? passthroughInputs.shellFocus;
-  const opticalProbeInputs = {
-    ...opticalInputs,
-    contourCore,
-    localGradientEvidence,
-    shellWeight,
-    shellFocus: resolvedShellFocus,
-    edgeFade,
-    activeMask,
-    colorWeight,
-    signedRadianceAuthority,
-  };
-  const optical = deriveLaserCymaticOpticalProbe(
-    /** @type {any} */ (opticalProbeInputs),
-  );
-  const shell = derivePhotographicShellAuthority({
-    radialDistance,
-    shellWeight,
-    shellFocus: resolvedShellFocus,
-    contourCore,
-    edgeFade,
-    activeMask,
-  });
-  const photographicFocusAuthority = clamp01(
-    optical.opticalFocusAuthority *
-      (1 + shell.photographicShellAuthority * PHOTOGRAPHIC_SHELL_FOCUS_GAIN),
-  );
-  const photographicFocus = Math.pow(
-    photographicFocusAuthority,
-    PHOTOGRAPHIC_FOCUS_POWER,
-  );
-  const blackfieldGate = deriveBlackfieldGate({
-    photographicFocus,
-    causticRidgeAuthority: optical.causticRidgeAuthority,
-  });
-  const body = derivePhotographicBodyContribution({
-    opticalBodyContribution: optical.opticalBodyContribution,
-    blackfieldGate,
-  });
-  const photographicRadianceScale = derivePhotographicRadianceScale({
-    photographicFocus,
-    blackfieldGate,
-  });
-  const photographicLaserCausticRadiance =
-    optical.laserCausticRadiance * photographicRadianceScale;
-  const physicalDensity =
-    photographicLaserCausticRadiance + body.photographicBodyContribution;
-  const color = derivePhotographicColorMix({
-    colorWeight,
-    photographicFocus,
-    opticalFringeWeight: optical.opticalFringeWeight,
-    signedRadianceAuthority: optical.signedRadianceAuthority,
-    causticRidgeAuthority: optical.causticRidgeAuthority,
-    causticVisibility: optical.causticVisibility,
-  });
-  const localLuminance =
-    physicalDensity *
-    optical.emissionGain *
-    (0.72 + color.photographicSpectralWeight * 0.08);
-
-  return {
-    ...optical,
-    ...shell,
-    ...body,
-    ...color,
-    photographicFocusAuthority,
-    photographicFocus,
-    blackfieldGate,
-    photographicRadianceScale,
-    photographicLaserCausticRadiance,
-    physicalDensity,
-    localDensity: physicalDensity,
-    localLuminance,
-  };
-}
-
-export function deriveShellWeight({
-  radialDistance,
-  rimBloomBias,
-  bandEnergies,
-}) {
-  const [sub = 0, lowMid = 0, highMid = 0, air = 0] = bandEnergies ?? [];
-  const innerShellAccent = smoothstep(0, 0.45, radialDistance);
-  const outerShellAccent = smoothstep(0.35, 1.0, radialDistance);
-  const rimBandBias = RIM_BLOOM_BIAS_BASE + rimBloomBias * RIM_BLOOM_BIAS_GAIN;
-  const shellBandMod =
-    1 +
-    sub * INNER_BAND_WEIGHT * (1 - innerShellAccent) +
-    lowMid * LOW_MID_BAND_WEIGHT +
-    highMid * HIGH_MID_BAND_WEIGHT * rimBandBias * outerShellAccent +
-    air * AIR_BAND_WEIGHT * rimBandBias * outerShellAccent;
-
-  const shellWeight =
-    mix(
-      SHELL_WEIGHT_MIN,
-      SHELL_WEIGHT_MAX,
-      smoothstep(SHELL_WEIGHT_START, SHELL_WEIGHT_END, radialDistance),
-    ) * shellBandMod;
-
-  return {
-    innerShellAccent,
-    outerShellAccent,
-    rimBandBias,
-    shellBandMod,
-    shellWeight,
-  };
-}
-
 export function deriveBodyDensity({
   fieldAbs,
   threshold,
-  edgeFade,
   activeMask,
-  radialDistance,
-  boundaryMask,
   signedRadianceAuthority = 1,
   excitationVisibility = 1,
-  trebleBroadbandEnergy = 0,
-  modeCoherence = 1,
   structureSignal = 0,
   changeSignal = 1,
   transientEnergy = 0,
 }) {
   const broadBand = deriveBroadBand(fieldAbs, threshold);
-  const interiorMask = deriveInteriorMask(radialDistance);
-  const bodyBoundaryAttenuation = 1 - boundaryMask * BODY_BOUNDARY_REDUCTION;
   const signedBodyAuthority = deriveSignedInterferenceBodyAuthority(fieldAbs);
   const latchedFogMask = deriveLatchedFogMask({
     structureSignal,
     changeSignal,
     transientEnergy,
   });
-  const incoherentTrebleSuppression = deriveIncoherentTrebleBodySuppression({
-    trebleBroadbandEnergy,
-    modeCoherence,
-  });
   const bodyDensity =
     broadBand *
-    edgeFade *
     activeMask *
-    interiorMask *
     BODY_DENSITY_GAIN *
-    bodyBoundaryAttenuation *
     signedBodyAuthority *
     clamp01(signedRadianceAuthority) *
     Math.pow(clamp01(excitationVisibility), BODY_EXCITATION_VISIBILITY_POWER) *
-    incoherentTrebleSuppression *
     (1 - latchedFogMask * LATCHED_FOG_BODY_REDUCTION);
 
   return {
     broadBand,
-    interiorMask,
     signedBodyAuthority,
     signedRadianceAuthority: clamp01(signedRadianceAuthority),
     excitationVisibility: clamp01(excitationVisibility),
-    incoherentTrebleSuppression,
     latchedFogMask,
     bodyDensity,
-  };
-}
-
-export function deriveBeamMask({
-  contourShape,
-  shellWeight,
-  localGradientEvidence,
-  transientEnergy,
-  spectralFlux,
-  radialDistance,
-  rimCompression,
-  boundaryMask,
-  structureSignal = 0,
-  changeSignal = 1,
-  signedRadianceAuthority = 1,
-}) {
-  const outerShellAccent = smoothstep(0.35, 1.0, radialDistance);
-  const transientBoost =
-    1 +
-    transientEnergy * BEAM_TRANSIENT_GAIN +
-    spectralFlux * BEAM_SPECTRAL_GAIN;
-  const rimCompressionMix = clamp01(
-    boundaryMask * rimCompression * RIM_COMPRESSION_BOUNDARY_GAIN +
-      outerShellAccent * rimCompression * RIM_COMPRESSION_OUTER_GAIN,
-  );
-  const compressedShellWeight = shellWeight * (1 - rimCompressionMix);
-  const beamCore = Math.pow(
-    contourShape,
-    BEAM_POWER_BASE + transientEnergy * BEAM_POWER_TRANSIENT_GAIN,
-  );
-  const latchedFogMask = deriveLatchedFogMask({
-    structureSignal,
-    changeSignal,
-    transientEnergy,
-  });
-  const beamMask =
-    beamCore *
-    clamp01(localGradientEvidence) *
-    compressedShellWeight *
-    transientBoost *
-    clamp01(signedRadianceAuthority) *
-    (1 - latchedFogMask * LATCHED_FOG_BEAM_REDUCTION);
-
-  return {
-    outerShellAccent,
-    transientBoost,
-    rimCompressionMix,
-    compressedShellWeight,
-    beamCore,
-    latchedFogMask,
-    beamMask,
   };
 }
 
@@ -1122,34 +1022,6 @@ export function deriveHolographicFresnel({
   };
 }
 
-export function deriveHolographicColorMix({
-  baseColor,
-  surfaceColor,
-  holographicShift,
-  holographicFresnel,
-}) {
-  const tintTarget = [
-    HOLOGRAPHIC_TINT_RED,
-    HOLOGRAPHIC_TINT_GREEN,
-    HOLOGRAPHIC_TINT_BLUE,
-  ];
-  const tintBlend = clamp01(0.25 + (holographicShift ?? 0) * 0.75);
-  const accentColor = mixColor(surfaceColor, tintTarget, tintBlend);
-  const colorMix = clamp01(
-    (holographicFresnel ?? 0) * (0.35 + (holographicShift ?? 0) * 0.65),
-  );
-  const emissiveLift = clamp01(
-    (holographicFresnel ?? 0) * (0.12 + (holographicShift ?? 0) * 0.18),
-  );
-
-  return {
-    accentColor,
-    colorMix,
-    emissiveLift,
-    holographicColor: mixColor(baseColor, accentColor, colorMix),
-  };
-}
-
 export function deriveHotCoreCrowding({
   ridgeConcentration = 1,
   bodyCrowding = 0,
@@ -1222,7 +1094,7 @@ export function deriveCrowdedHighlightMix({
 export function deriveWhiteEmissionFieldAuthority({
   ridgeConcentration = 0,
   causticRidgeAuthority = 0,
-  photographicFocus = 0,
+  opticalFocusEvidence = 0,
   structuralConcentration = 0,
   modalCoefficientEnergy = 0,
 } = {}) {
@@ -1232,7 +1104,7 @@ export function deriveWhiteEmissionFieldAuthority({
   const whiteEmissionLocalEvidence = clamp01(
     Math.max(
       ridgeConcentration,
-      clamp01(photographicFocus) * whiteEmissionRidgeEvidence,
+      clamp01(opticalFocusEvidence) * whiteEmissionRidgeEvidence,
     ),
   );
   const whiteEmissionStructuralDrive = clamp01(
@@ -1279,7 +1151,7 @@ export function deriveProjectedCausticRadianceDensity({
   causticVisibleDensity = 0,
   ridgeConcentration = 0,
   causticRidgeAuthority = 0,
-  photographicFocus = 0,
+  opticalFocusEvidence = 0,
   structuralConcentration = 0,
   modalCoefficientEnergy = 0,
   compression = PROJECTED_CAUSTIC_RADIANCE_COMPRESSION,
@@ -1289,7 +1161,7 @@ export function deriveProjectedCausticRadianceDensity({
     Math.max(ridgeConcentration, causticRidgeAuthority),
   );
   const focusEvidence = clamp01(
-    clamp01(photographicFocus) * mix(0.35, 1, ridgeEvidence),
+    clamp01(opticalFocusEvidence) * mix(0.35, 1, ridgeEvidence),
   );
   const localEvidence = clamp01(Math.max(ridgeEvidence, focusEvidence));
   const structuralDrive = clamp01(
@@ -1301,7 +1173,9 @@ export function deriveProjectedCausticRadianceDensity({
       ridgeEvidence * PROJECTED_CAUSTIC_RADIANCE_RIDGE_AUTHORITY_FLOOR,
     ),
   );
-  const authorityResponse = Math.sqrt(radianceAuthority);
+  // Authority is already a bounded physical-evidence fraction. Expanding it
+  // with a square root turns weak, broad support into bright caustic readout.
+  const authorityResponse = radianceAuthority;
   const compressionGate = (1 - radianceAuthority) ** 2;
   const compressedDensity =
     physicalDensity /
@@ -1323,90 +1197,6 @@ export function deriveProjectedCausticRadianceDensity({
     projectedCausticLocalEvidence: localEvidence,
     projectedCausticCompressedDensity: compressedDensity,
     projectedCausticRadianceScale: radianceScale,
-  };
-}
-
-/**
- * Fold-caustic focal amplification: 1 / max(1 − c·focus·ridgeAuthority, floor).
- * Ridge authority gates the singularity so diffuse body fill never boosts.
- */
-export function deriveCausticFocalBoost({
-  photographicFocus = 0,
-  causticRidgeAuthority = 0,
-} = {}) {
-  const focusEvidence =
-    clamp01(photographicFocus) * clamp01(causticRidgeAuthority);
-  return (
-    1 /
-    Math.max(
-      1 - CAUSTIC_FOCAL_CONVERGENCE * focusEvidence,
-      CAUSTIC_FOCAL_FLOOR,
-    )
-  );
-}
-
-export function deriveMaterialRadianceTransfer({
-  stabilizedDensity = 0,
-  causticVisibleDensity = 0,
-  projectedCausticRadianceDensity = 0,
-  volumeColor = [1, 1, 1],
-  structureAwareEmissionGain = 1,
-  causticFocalBoost = 1,
-} = {}) {
-  const safeStabilizedDensity = Math.max(0, safeFinite(stabilizedDensity, 0));
-  const safeCausticVisibleDensity = Math.max(
-    0,
-    safeFinite(causticVisibleDensity, 0),
-  );
-  const safeProjectedCausticRadianceDensity = Math.max(
-    0,
-    safeFinite(projectedCausticRadianceDensity, 0),
-  );
-  const safeGain = Math.max(0, safeFinite(structureAwareEmissionGain, 1));
-  const resolvedVolumeColor = readVector3(volumeColor, [1, 1, 1]);
-  const supportVisibleDensity = Math.max(
-    safeStabilizedDensity - safeCausticVisibleDensity,
-    0,
-  );
-  // Mirrors the GPU node: support reveal carries the laser (volume) color.
-  const supportRevealColor = clampColor(
-    multiplyColor(resolvedVolumeColor, PHOTOGRAPHIC_DARK_BODY_RATIO),
-    0,
-    PHOTOGRAPHIC_DARK_BODY_RATIO,
-  );
-  const causticRadianceContribution = multiplyColor(
-    resolvedVolumeColor,
-    safeProjectedCausticRadianceDensity,
-  );
-  const supportRevealContribution = multiplyColor(
-    supportRevealColor,
-    supportVisibleDensity,
-  );
-  const safeCausticFocalBoost = Math.max(
-    1,
-    safeFinite(causticFocalBoost, 1),
-  );
-  const baseRadiance = addColor(
-    multiplyColor(causticRadianceContribution, safeGain),
-    supportRevealContribution,
-  );
-  const finalRadiance = addColor(
-    multiplyColor(causticRadianceContribution, safeGain * safeCausticFocalBoost),
-    supportRevealContribution,
-  );
-  // Extinction stays on the unboosted radiance: focal light concentration
-  // brightens the medium without making it more opaque.
-  const extinctionDensity =
-    baseRadiance[0] * 0.2126 + baseRadiance[1] * 0.7152 + baseRadiance[2] * 0.0722;
-
-  return {
-    supportVisibleDensity,
-    supportRevealColor,
-    causticRadianceContribution,
-    supportRevealContribution,
-    baseRadiance,
-    extinctionDensity,
-    finalRadiance,
   };
 }
 

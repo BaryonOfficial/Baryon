@@ -1,9 +1,6 @@
-import {
-  CONTROL_DEFINITIONS,
-  CONTROL_STATUSES,
-} from "./schema.js";
+import { CONTROL_DEFINITIONS, CONTROL_STATUSES } from "./schema.js";
 
-export const AUTOMATION_CONTROL_SCHEMA_VERSION = 1;
+export const AUTOMATION_CONTROL_SCHEMA_VERSION = 4;
 
 export const AUTOMATABLE_CONTROL_KEYS = Object.freeze([
   "renderQualityPreset",
@@ -12,29 +9,22 @@ export const AUTOMATABLE_CONTROL_KEYS = Object.freeze([
   "outputMode",
   "outputBackgroundColor",
   "boundaryMode",
-  "zeroPointPrecision",
   "densityGain",
-  "absorption",
-  "opacityGain",
+  "laserDeflectionGain",
   "raymarchSteps",
   "colorMode",
   "volumeColor",
   "surfaceColor",
   "spectralMix",
   "holographicIntensity",
-  "holographicShift",
   "holographicFresnelPower",
   "rotationMode",
   "rotationSpeed",
   "motionAmount",
-  "reactivity",
   "bloomEnabled",
   "bloomStrength",
   "bloomRadius",
   "bloomThreshold",
-  "bloomResponseBias",
-  "rimBloomBias",
-  "rimCompression",
   "idleLogoIntensity",
   "idleLogoSize",
   "idleLogoColor",
@@ -54,7 +44,11 @@ function createFailure(reason, detail = null) {
   };
 }
 
-function clamp(value, min = Number.NEGATIVE_INFINITY, max = Number.POSITIVE_INFINITY) {
+function clamp(
+  value,
+  min = Number.NEGATIVE_INFINITY,
+  max = Number.POSITIVE_INFINITY,
+) {
   return Math.min(max, Math.max(min, value));
 }
 
@@ -65,7 +59,10 @@ function getDefinitionValueKind(definition) {
   if (definition.binding?.view === "color") {
     return "color";
   }
-  if (definition.binding?.options && typeof definition.binding.options === "object") {
+  if (
+    definition.binding?.options &&
+    typeof definition.binding.options === "object"
+  ) {
     return "enum";
   }
   if (typeof definition.defaultValue === "boolean") {
@@ -202,7 +199,9 @@ function findControlDefinition(key, definitions = CONTROL_DEFINITIONS) {
 export function getAutomatableControlDefinitions(
   definitions = CONTROL_DEFINITIONS,
 ) {
-  return AUTOMATABLE_CONTROL_KEYS.map((key) => findControlDefinition(key, definitions)).filter(
+  return AUTOMATABLE_CONTROL_KEYS.map((key) =>
+    findControlDefinition(key, definitions),
+  ).filter(
     (definition) =>
       definition &&
       definition.status === CONTROL_STATUSES.live &&
@@ -407,9 +406,10 @@ function createAutomationCommand({
     transport,
     key,
     value,
-    persistMode: persistMode === "immediate" || persistMode === "debounced"
-      ? persistMode
-      : "none",
+    persistMode:
+      persistMode === "immediate" || persistMode === "debounced"
+        ? persistMode
+        : "none",
     receivedAtMs,
   };
 }

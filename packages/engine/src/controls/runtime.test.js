@@ -25,6 +25,7 @@ import {
   AUDIO_SLOT_CAPACITY,
   RAYMARCH_DEFAULTS,
   RENDER_DEFAULTS,
+  SIMULATION_DEFAULTS,
 } from "../defaults.js";
 import { syncRenderOutputNodeTopology } from "../render/outputPipeline.js";
 
@@ -51,41 +52,42 @@ function withRenderLedger(featureFrame) {
 }
 
 function createRaymarchHarness(method = DEFAULT_VISUALIZATION_METHOD) {
-  const dirichletMaterial = { steps: 0 };
-  const neumannMaterial = { steps: 0 };
+  const dirichletMaterial = {
+    steps: 0,
+    raymarchBoundaryMode: "dirichlet",
+    raymarchVolumeShape: "sphere",
+  };
+  const neumannMaterial = {
+    steps: 0,
+    raymarchBoundaryMode: "neumann",
+    raymarchVolumeShape: "sphere",
+  };
   return {
     method,
     uniforms: {
       uColor: { value: { set: vi.fn() } },
       uSurfaceColor: { value: { set: vi.fn() } },
       uSpectralMix: { value: 0 },
-      uThreshold: { value: 0 },
+      uCarrierCoreFwhmWorld: { value: 0 },
       uBoundaryMode: { value: 1 },
       uIdleLogoIntensity: { value: 0 },
       uIdleLogoAlpha: { value: 0 },
       uIdleLogoSize: { value: 0 },
       uIdleLogoColor: { value: { set: vi.fn() } },
       uDensityGain: { value: 0 },
-      uAbsorption: { value: 0 },
       uLaserDeflectionGain: { value: 0 },
-      uOpacityGain: { value: 0 },
       uContourSharpness: { value: 0 },
-      uRimBloomBias: { value: 0 },
-      uRimCompression: { value: 0 },
       uHolographicIntensity: { value: 0 },
-      uHolographicShift: { value: 0 },
       uHolographicFresnelPower: { value: 0 },
       uRaymarchSteps: { value: 0 },
       uSlicePosition: { value: 0 },
       uRadius: { value: 3 },
     },
     reactivityTuning: {
-      reactivity: 1,
       motionAmount: 1,
       structurePersistence: 1,
     },
     bloomTuning: {
-      bloomResponseBias: 0.4,
       stepReference: STEP_REFERENCE,
       stepCompensation: deriveStepCompensation(STEP_REFERENCE),
       lowStepBloomGuard: deriveLowStepBloomGuard(STEP_REFERENCE),
@@ -102,6 +104,7 @@ function createRaymarchHarness(method = DEFAULT_VISUALIZATION_METHOD) {
       material: neumannMaterial,
       userData: {
         raymarchBoundaryMode: "neumann",
+        raymarchVolumeShape: "sphere",
         raymarchSpectralLightEvaluationMode: "off",
         raymarchCavityGeometry: "rectangular",
         raymarchMaterialCache: {
@@ -113,6 +116,18 @@ function createRaymarchHarness(method = DEFAULT_VISUALIZATION_METHOD) {
           },
         },
       },
+    },
+    laserTransportCache: {
+      volumeShape: "sphere",
+      kernels: {
+        trace: { dispose: vi.fn() },
+      },
+      kernelFieldTexture: { id: "field" },
+      kernelVolumeShape: "sphere",
+      calibrationReady: true,
+      active: true,
+      ready: true,
+      lastComputeReason: "frame-current",
     },
     points: {
       rotation: { x: 0, y: 0, z: 0 },
@@ -148,6 +163,28 @@ function createRaymarchHarness(method = DEFAULT_VISUALIZATION_METHOD) {
 }
 
 describe("control runtime sync", () => {
+  it("invalidates spherical optical transport when the cube domain is selected", () => {
+    const runtimeState = createRaymarchHarness();
+    const controls = createControlState();
+    controls.volumeShape = "cube";
+    const sphereTraceKernel = runtimeState.laserTransportCache.kernels.trace;
+
+    const snapshot = applyRaymarchControls(runtimeState, controls);
+
+    expect(snapshot.uniforms.volumeShape).toBe("cube");
+    expect(runtimeState.laserTransportCache).toMatchObject({
+      volumeShape: "cube",
+      kernels: null,
+      kernelFieldTexture: null,
+      kernelVolumeShape: null,
+      calibrationReady: false,
+      active: false,
+      ready: false,
+      lastComputeReason: "volume-shape-changed",
+    });
+    expect(sphereTraceKernel.dispose).toHaveBeenCalledOnce();
+  });
+
   it("applies audio controls to the shared audio session", async () => {
     const controls = createControlState();
     controls.echoCancellation = true;
@@ -181,20 +218,13 @@ describe("control runtime sync", () => {
   it("applies raymarch controls through the default simulation helper", () => {
     const controls = createControlState();
     controls.idleLogoIntensity = 0.42;
-    controls.zeroPointPrecision = 0.033;
     controls.idleLogoSize = 1.4;
     controls.idleLogoColor = "#eef7ff";
     controls.boundaryMode = "dirichlet";
     controls.densityGain = 1.75;
-    controls.absorption = 1.35;
-    controls.opacityGain = 1.4;
     controls.contourSharpness = 5.2;
-    controls.rimBloomBias = 0.65;
-    controls.rimCompression = 0.72;
     controls.holographicIntensity = 0.52;
-    controls.holographicShift = 0.41;
     controls.holographicFresnelPower = 4.1;
-    controls.reactivity = 1.2;
     controls.motionAmount = 1.1;
     controls.raymarchSteps = 64;
     controls.colorMode = "spectral";
@@ -208,7 +238,9 @@ describe("control runtime sync", () => {
 
     expect(gl.setClearColor).toHaveBeenCalledTimes(1);
     expect(gl.setClearColor).toHaveBeenCalledWith(expect.any(THREE.Color), 0);
-    expect(runtimeState.uniforms.uThreshold.value).toBe(0.033);
+    expect(runtimeState.uniforms.uCarrierCoreFwhmWorld.value).toBe(
+      SIMULATION_DEFAULTS.carrierCoreFwhmWorld,
+    );
     expect(runtimeState.uniforms.uIdleLogoIntensity.value).toBe(0.42);
     expect(runtimeState.uniforms.uIdleLogoAlpha.value).toBe(0.84);
     expect(runtimeState.uniforms.uIdleLogoSize.value).toBe(1.4);
@@ -221,6 +253,7 @@ describe("control runtime sync", () => {
     expect(runtimeState.volumeMesh.userData.raymarchBoundaryMode).toBe(
       "dirichlet",
     );
+    expect(runtimeState.volumeMesh.userData.raymarchVolumeShape).toBe("sphere");
     expect(runtimeState.requestedCavityGeometry).toBe("rectangular");
     expect(runtimeState.effectiveCavityGeometry).toBe("rectangular");
     expect(runtimeState.volumeMesh.userData.raymarchCavityGeometry).toBe(
@@ -228,18 +261,16 @@ describe("control runtime sync", () => {
     );
     expect(runtimeState.uniforms.uDensityGain.value).toBe(1.75);
     expect(runtimeState.baseDensityGain).toBe(1.75);
-    expect(runtimeState.uniforms.uAbsorption.value).toBe(1.35);
-    expect(runtimeState.uniforms.uOpacityGain.value).toBe(1.4);
+    expect(runtimeState.uniforms).not.toHaveProperty("uAbsorption");
+    expect(runtimeState.uniforms).not.toHaveProperty("uOpacityGain");
     expect(runtimeState.uniforms.uContourSharpness.value).toBe(
       RAYMARCH_DEFAULTS.contourSharpness,
     );
     expect(runtimeState.baseContourSharpness).toBe(
       RAYMARCH_DEFAULTS.contourSharpness,
     );
-    expect(runtimeState.uniforms.uRimBloomBias.value).toBe(0.65);
-    expect(runtimeState.uniforms.uRimCompression.value).toBe(0.72);
     expect(runtimeState.uniforms.uHolographicIntensity.value).toBe(0.52);
-    expect(runtimeState.uniforms.uHolographicShift.value).toBe(0.41);
+    expect(runtimeState.uniforms).not.toHaveProperty("uHolographicShift");
     expect(runtimeState.uniforms.uHolographicFresnelPower.value).toBe(4.1);
     expect(runtimeState.uniforms.uRaymarchSteps.value).toBe(64);
     expect(runtimeState.uniforms.uSpectralMix.value).toBeCloseTo(
@@ -250,7 +281,6 @@ describe("control runtime sync", () => {
       spectralMix: Math.sqrt(0.6),
     });
     expect(runtimeState.reactivityTuning).toEqual({
-      reactivity: 1.2,
       motionAmount: 1.1,
     });
     expect(runtimeState.reactivityTuning).not.toHaveProperty(
@@ -278,14 +308,12 @@ describe("control runtime sync", () => {
     expect(snapshot.uniforms).not.toHaveProperty("structureMin");
     expect(snapshot.uniforms).not.toHaveProperty("structureMax");
     expect(snapshot.uniforms.densityGain).toBe(1.75);
-    expect(snapshot.uniforms.absorption).toBe(1.35);
-    expect(snapshot.uniforms.opacityGain).toBe(1.4);
-    expect(snapshot.uniforms.rimBloomBias).toBe(0.65);
-    expect(snapshot.uniforms.rimCompression).toBe(0.72);
+    expect(snapshot.uniforms).not.toHaveProperty("absorption");
+    expect(snapshot.uniforms).not.toHaveProperty("opacityGain");
     expect(snapshot.uniforms.holographicIntensity).toBe(0.52);
-    expect(snapshot.uniforms.holographicShift).toBe(0.41);
+    expect(snapshot.uniforms).not.toHaveProperty("holographicShift");
     expect(snapshot.uniforms.holographicFresnelPower).toBe(4.1);
-    expect(snapshot.uniforms.reactivity).toBe(1.2);
+    expect(snapshot.uniforms).not.toHaveProperty("reactivity");
     expect(snapshot.uniforms.motionAmount).toBe(1.1);
     expect(snapshot.uniforms).not.toHaveProperty("structurePersistence");
     expect(snapshot.uniforms.raymarchSteps).toBe(64);
@@ -294,8 +322,11 @@ describe("control runtime sync", () => {
     expect(snapshot.uniforms.boundaryMode).toBe("dirichlet");
     expect(snapshot.uniforms.requestedCavityGeometry).toBe("rectangular");
     expect(snapshot.uniforms.effectiveCavityGeometry).toBe("rectangular");
+    expect(snapshot.uniforms.volumeShape).toBe("sphere");
     expect(snapshot.overlay.scale).toBe(1.4);
-    expect(runtimeState.baseThreshold).toBe(0.033);
+    expect(runtimeState.baseCarrierCoreFwhmWorld).toBe(
+      SIMULATION_DEFAULTS.carrierCoreFwhmWorld,
+    );
     expect(runtimeState.baseContourSharpness).toBe(
       RAYMARCH_DEFAULTS.contourSharpness,
     );
@@ -371,13 +402,13 @@ describe("control runtime sync", () => {
       RENDER_DEFAULTS.renderQualityPreset,
     );
     expect(sharedSnapshot.customTargetFps).toBe(60);
-    expect(sharedSnapshot.traaEnabled).toBe(true);
+    expect(sharedSnapshot.traaEnabled).toBe(RENDER_DEFAULTS.traaEnabled);
     expect(sharedSnapshot.visualizationMethod).toBe(
       DEFAULT_VISUALIZATION_METHOD,
     );
     expect(sharedSnapshot.cameraLocked).toBe(true);
-    expect(raymarchSnapshot.uniforms.threshold).toBe(
-      controls.zeroPointPrecision,
+    expect(raymarchSnapshot.uniforms.carrierCoreFwhmWorld).toBe(
+      SIMULATION_DEFAULTS.carrierCoreFwhmWorld,
     );
     expect(raymarchSnapshot.uniforms.boundaryMode).toBe("dirichlet");
   });
@@ -404,15 +435,9 @@ describe("control runtime sync", () => {
     controls.idleLogoColor = "#ffeedd";
     controls.raymarchSteps = 72;
     controls.densityGain = 2.1;
-    controls.absorption = 1.6;
-    controls.opacityGain = 1.75;
     controls.contourSharpness = 6.4;
-    controls.rimBloomBias = 0.35;
-    controls.rimCompression = 0.5;
     controls.holographicIntensity = 0.61;
-    controls.holographicShift = 0.24;
     controls.holographicFresnelPower = 2.8;
-    controls.reactivity = 0.9;
     controls.motionAmount = 1.3;
     controls.colorMode = "static";
     controls.spectralMix = 0.88;
@@ -424,20 +449,17 @@ describe("control runtime sync", () => {
     expect(runtimeState.volumeMesh.material.steps).toBe(72);
     expect(runtimeState.uniforms.uDensityGain.value).toBe(2.1);
     expect(runtimeState.baseDensityGain).toBe(2.1);
-    expect(runtimeState.uniforms.uAbsorption.value).toBe(1.6);
-    expect(runtimeState.uniforms.uOpacityGain.value).toBe(1.75);
+    expect(runtimeState.uniforms).not.toHaveProperty("uAbsorption");
+    expect(runtimeState.uniforms).not.toHaveProperty("uOpacityGain");
     expect(runtimeState.uniforms.uContourSharpness.value).toBe(
       RAYMARCH_DEFAULTS.contourSharpness,
     );
     expect(runtimeState.baseContourSharpness).toBe(
       RAYMARCH_DEFAULTS.contourSharpness,
     );
-    expect(runtimeState.uniforms.uRimBloomBias.value).toBe(0.35);
-    expect(runtimeState.uniforms.uRimCompression.value).toBe(0.5);
     expect(runtimeState.uniforms.uHolographicIntensity.value).toBe(0.61);
-    expect(runtimeState.uniforms.uHolographicShift.value).toBe(0.24);
+    expect(runtimeState.uniforms).not.toHaveProperty("uHolographicShift");
     expect(runtimeState.uniforms.uHolographicFresnelPower.value).toBe(2.8);
-    expect(runtimeState.reactivityTuning.reactivity).toBe(0.9);
     expect(runtimeState.reactivityTuning.motionAmount).toBe(1.3);
     expect(runtimeState.reactivityTuning).not.toHaveProperty(
       "structurePersistence",
@@ -446,6 +468,12 @@ describe("control runtime sync", () => {
       deriveStepCompensation(72),
     );
     expect(runtimeState.bloomTuning.lowStepBloomGuard).toBe(0);
+    expect(runtimeState.uniforms.uColor.value.set).toHaveBeenCalledWith(
+      "#224466",
+    );
+    expect(runtimeState.uniforms.uSurfaceColor.value.set).toHaveBeenCalledWith(
+      "#88ccff",
+    );
     expect(runtimeState.uniforms.uSpectralMix.value).toBe(0);
     expect(runtimeState.idleOverlay.material.color.set).toHaveBeenCalledWith(
       "#ffeedd",
@@ -455,9 +483,9 @@ describe("control runtime sync", () => {
     expect(snapshot.uniforms.colorMode).toBe("static");
     expect(snapshot.uniforms.spectralMix).toBe(0);
     expect(snapshot.uniforms.boundaryMode).toBe("neumann");
-    expect(snapshot.uniforms.opacityGain).toBe(1.75);
+    expect(snapshot.uniforms).not.toHaveProperty("opacityGain");
     expect(snapshot.uniforms.holographicIntensity).toBe(0.61);
-    expect(snapshot.uniforms.holographicShift).toBe(0.24);
+    expect(snapshot.uniforms).not.toHaveProperty("holographicShift");
     expect(snapshot.uniforms.holographicFresnelPower).toBe(2.8);
   });
 
@@ -473,14 +501,13 @@ describe("control runtime sync", () => {
     expect(snapshot.uniforms).not.toHaveProperty("structurePersistence");
   });
 
-  it("applies bloom controls to the pipeline", () => {
+  it("applies direct bloom controls without changing the fixed optical PSF", () => {
     const controls = createControlState();
     controls.raymarchSteps = STEP_REFERENCE;
     controls.bloomEnabled = false;
     controls.bloomStrength = 0.77;
     controls.bloomRadius = 0.31;
     controls.bloomThreshold = 0.44;
-    controls.bloomResponseBias = 0.5;
 
     const pipeline = { outputNode: null, needsUpdate: false };
     const sceneColor = {
@@ -497,28 +524,34 @@ describe("control runtime sync", () => {
       {
         ensurePipeline: () => pipeline,
         postNodesRef: {
-          current: { sceneColor, bloomPass, composeOutputNode },
+          current: {
+            sceneColor,
+            bloomPass,
+            bloomPasses: [bloomPass],
+            composeOutputNode,
+          },
         },
         runtimeState: createRaymarchHarness(),
       },
       controls,
     );
 
-    expect(bloomPass.strength.value).toBeCloseTo(0.693);
-    expect(bloomPass.radius.value).toBeCloseTo(0.2852);
-    // Bloom bypass: when bloomEnabled is false, threshold is set to 999
-    // to short-circuit the bloom pass computation
-    expect(bloomPass.threshold.value).toBe(999);
+    expect(bloomPass.strength.value).toBeCloseTo(0.77);
+    expect(bloomPass.radius.value).toBeCloseTo(0.31);
+    expect(bloomPass.threshold.value).toBeCloseTo(0.44);
+    expect(snapshot.strength).toBeCloseTo(0.77);
+    expect(snapshot.radius).toBeCloseTo(0.31);
+    expect(snapshot.threshold).toBeCloseTo(0.44);
     expect(composeOutputNode).toHaveBeenCalledWith({
       bloomEnabled: false,
       outputMode: controls.outputMode,
       temporalHistoryEnabled: false,
-      smaaEnabled: true,
+      smaaEnabled: false,
     });
     expect(pipeline.outputNode).toBe("transparent-output");
     expect(pipeline.needsUpdate).toBe(true);
     expect(snapshot.enabled).toBe(false);
-    expect(snapshot.bloomResponseBias).toBe(0.5);
+    expect(snapshot).not.toHaveProperty("bloomResponseBias");
     expect(snapshot.stepReference).toBe(STEP_REFERENCE);
     expect(snapshot.stepCompensation).toBe(1);
     expect(snapshot.lowStepBloomGuard).toBe(0);
@@ -527,7 +560,6 @@ describe("control runtime sync", () => {
   it("enables bloom output when the control is on", () => {
     const controls = createControlState();
     controls.bloomEnabled = true;
-    controls.bloomResponseBias = 0.4;
 
     const pipeline = { outputNode: null, needsUpdate: false };
     const sceneColor = { add: vi.fn(() => "bloomed-output") };
@@ -542,7 +574,12 @@ describe("control runtime sync", () => {
       {
         ensurePipeline: () => pipeline,
         postNodesRef: {
-          current: { sceneColor, bloomPass, composeOutputNode },
+          current: {
+            sceneColor,
+            bloomPass,
+            bloomPasses: [bloomPass],
+            composeOutputNode,
+          },
         },
         runtimeState: createRaymarchHarness(),
       },
@@ -553,19 +590,21 @@ describe("control runtime sync", () => {
       bloomEnabled: true,
       outputMode: controls.outputMode,
       temporalHistoryEnabled: false,
-      smaaEnabled: true,
+      smaaEnabled: false,
     });
     expect(pipeline.outputNode).toBe("transparent-output");
     expect(pipeline.needsUpdate).toBe(true);
+    expect(bloomPass.strength.value).toBeCloseTo(snapshot.strength);
+    expect(bloomPass.radius.value).toBeCloseTo(snapshot.radius);
+    expect(bloomPass.threshold.value).toBeCloseTo(snapshot.threshold);
     expect(snapshot.enabled).toBe(true);
-    expect(snapshot.strength).toBeCloseTo(controls.bloomStrength * 0.92);
+    expect(snapshot.strength).toBeCloseTo(controls.bloomStrength);
     expect(snapshot.lowStepBloomGuard).toBe(0);
   });
 
   it("guards bloom response below 64 steps", () => {
     const controls = createControlState();
     controls.bloomEnabled = true;
-    controls.bloomResponseBias = 0.4;
     controls.raymarchSteps = 32;
 
     const runtimeState = createRaymarchHarness();
@@ -582,7 +621,12 @@ describe("control runtime sync", () => {
       {
         ensurePipeline: () => pipeline,
         postNodesRef: {
-          current: { sceneColor, bloomPass, composeOutputNode },
+          current: {
+            sceneColor,
+            bloomPass,
+            bloomPasses: [bloomPass],
+            composeOutputNode,
+          },
         },
         runtimeState,
       },
@@ -591,18 +635,21 @@ describe("control runtime sync", () => {
 
     expect(snapshot.lowStepBloomGuard).toBeCloseTo(deriveLowStepBloomGuard(32));
     expect(snapshot.stepCompensation).toBeCloseTo(deriveStepCompensation(32));
-    expect(snapshot.strength).toBeCloseTo(controls.bloomStrength * 0.92 * 0.92);
-    expect(snapshot.radius).toBeCloseTo(controls.bloomRadius * 0.936);
+    expect(snapshot.strength).toBeCloseTo(controls.bloomStrength * 0.92);
+    expect(snapshot.radius).toBeCloseTo(controls.bloomRadius);
     expect(snapshot.threshold).toBeCloseTo(
-      controls.bloomThreshold + 0.04 + 0.0333333333,
+      controls.bloomThreshold + 0.0333333333,
     );
     expect(composeOutputNode).toHaveBeenCalledWith({
       bloomEnabled: true,
       outputMode: controls.outputMode,
       temporalHistoryEnabled: false,
-      smaaEnabled: true,
+      smaaEnabled: false,
     });
     expect(pipeline.needsUpdate).toBe(true);
+    expect(bloomPass.strength.value).toBeCloseTo(snapshot.strength);
+    expect(bloomPass.radius.value).toBeCloseTo(snapshot.radius);
+    expect(bloomPass.threshold.value).toBeCloseTo(snapshot.threshold);
     expect(runtimeState.bloomTuning.lowStepBloomGuard).toBeCloseTo(
       deriveLowStepBloomGuard(32),
     );
@@ -669,7 +716,6 @@ describe("control runtime sync", () => {
       syncRenderOutputNodeTopology(pipeline, postNodes, {
         bloomEnabled: true,
         outputMode: "transparent",
-        bloomActive: true,
         temporalHistoryEnabled: true,
       }),
     ).toBe(true);
@@ -677,7 +723,7 @@ describe("control runtime sync", () => {
       bloomEnabled: true,
       outputMode: "transparent",
       temporalHistoryEnabled: true,
-      smaaEnabled: true,
+      smaaEnabled: false,
     });
 
     pipeline.needsUpdate = false;
@@ -687,7 +733,6 @@ describe("control runtime sync", () => {
       syncRenderOutputNodeTopology(pipeline, postNodes, {
         bloomEnabled: true,
         outputMode: "transparent",
-        bloomActive: true,
         temporalHistoryEnabled: false,
       }),
     ).toBe(true);
@@ -695,24 +740,20 @@ describe("control runtime sync", () => {
       bloomEnabled: true,
       outputMode: "transparent",
       temporalHistoryEnabled: false,
-      smaaEnabled: true,
+      smaaEnabled: false,
     });
     expect(pipeline.needsUpdate).toBe(true);
   });
 
-  it("updates both temporal and raw-scene bloom passes", () => {
+  it("updates bloom while leaving the fixed optical PSF immutable", () => {
     const controls = createControlState();
     controls.bloomEnabled = true;
     controls.bloomStrength = 0.77;
     controls.bloomRadius = 0.31;
     controls.bloomThreshold = 0.44;
 
-    const temporalBloomPass = {
-      strength: { value: 0 },
-      radius: { value: 0 },
-      threshold: { value: 0 },
-    };
-    const rawSceneBloomPass = {
+    const opticalPsfPass = Object.freeze({ kind: "fixed-optical-psf" });
+    const bloomPass = {
       strength: { value: 0 },
       radius: { value: 0 },
       threshold: { value: 0 },
@@ -724,9 +765,9 @@ describe("control runtime sync", () => {
         postNodesRef: {
           current: {
             sceneColor: {},
-            bloomPass: temporalBloomPass,
-            rawSceneBloomPass,
-            bloomPasses: [temporalBloomPass, rawSceneBloomPass],
+            opticalPsfPass,
+            bloomPass,
+            bloomPasses: [bloomPass],
             composeOutputNode: vi.fn(() => "output"),
           },
         },
@@ -735,11 +776,13 @@ describe("control runtime sync", () => {
       controls,
     );
 
-    for (const bloomPass of [temporalBloomPass, rawSceneBloomPass]) {
-      expect(bloomPass.strength.value).toBeCloseTo(snapshot.strength);
-      expect(bloomPass.radius.value).toBeCloseTo(snapshot.radius);
-      expect(bloomPass.threshold.value).toBeCloseTo(snapshot.threshold);
-    }
+    expect(bloomPass.strength.value).toBeCloseTo(snapshot.strength);
+    expect(bloomPass.radius.value).toBeCloseTo(snapshot.radius);
+    expect(bloomPass.threshold.value).toBeCloseTo(snapshot.threshold);
+    expect(opticalPsfPass).toEqual({ kind: "fixed-optical-psf" });
+    expect(snapshot.strength).toBeGreaterThan(0);
+    expect(snapshot.radius).toBeGreaterThan(0);
+    expect(snapshot.threshold).toBeGreaterThan(0);
   });
 
   it("rebuilds pipeline topology when bloomEnabled changes", () => {
@@ -823,6 +866,7 @@ describe("control runtime sync", () => {
   it("rebuilds pipeline topology when SMAA changes", () => {
     const controls = createControlState();
     controls.bloomEnabled = true;
+    controls.outputMode = "opaque";
     controls.smaaEnabled = true;
 
     const pipeline = { outputNode: null, needsUpdate: false };
@@ -1433,8 +1477,10 @@ describe("control runtime sync", () => {
     expect(
       runtimeState.points.children.filter((child) => child.isLight),
     ).toHaveLength(2);
-    expect(runtimeState.sceneLighting.primary.intensity).toBeCloseTo(0.9);
-    expect(runtimeState.sceneLighting.secondary.intensity).toBeCloseTo(0.9);
+    expect(runtimeState.sceneLighting.primary.color.getHex()).toBe(0xe6f7ff);
+    expect(runtimeState.sceneLighting.secondary.color.getHex()).toBe(0xe6f7ff);
+    expect(runtimeState.sceneLighting.primary.intensity).toBeCloseTo(1.25);
+    expect(runtimeState.sceneLighting.secondary.intensity).toBeCloseTo(1.25);
     expect(runtimeState.sceneLighting.primary.position.x).toBeCloseTo(3 * 1.15);
     expect(runtimeState.sceneLighting.secondary.position.x).toBeCloseTo(
       -3 * 1.15,
@@ -1487,7 +1533,6 @@ describe("control runtime sync", () => {
   it("does not throw when applyBloomControls is called before the pipeline is ready", () => {
     const controls = createControlState();
     controls.bloomEnabled = true;
-    controls.bloomResponseBias = 0;
     controls.bloomStrength = 0.75;
     controls.bloomRadius = 0.22;
     controls.bloomThreshold = 0.18;

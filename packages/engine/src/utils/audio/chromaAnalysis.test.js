@@ -28,13 +28,13 @@ describe("buildChromaVector", () => {
     expect(chroma.length).toBe(12);
   });
 
-  it("returns all zeros when fftMagnitudes is all-zero", () => {
+  it("returns all zeros when fftLinearAmplitudes is all-zero", () => {
     const fft = new Float32Array(FFT_SIZE / 2);
     const chroma = buildChromaVector(fft, SAMPLE_RATE, FFT_SIZE);
     expect(Array.from(chroma).every((v) => v === 0)).toBe(true);
   });
 
-  it("returns all zeros when fftMagnitudes is null", () => {
+  it("returns all zeros when fftLinearAmplitudes is null", () => {
     const chroma = buildChromaVector(null, SAMPLE_RATE, FFT_SIZE);
     expect(Array.from(chroma).every((v) => v === 0)).toBe(true);
   });

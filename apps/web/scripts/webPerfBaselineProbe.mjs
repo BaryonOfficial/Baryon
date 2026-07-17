@@ -46,7 +46,7 @@ export const DEFAULT_BASELINE_CASES = Object.freeze([
   }),
 ]);
 
-export const DEFAULT_CONTROL_MUTATIONS = Object.freeze([
+const DEFAULT_CONTROL_MUTATIONS = Object.freeze([
   Object.freeze(["performanceHudEnabled", true]),
   Object.freeze(["auditEnabled", true]),
   Object.freeze(["renderQualityPreset", "max-quality"]),
@@ -784,9 +784,7 @@ function formatCaseLine(result) {
   return `${label}: ${fps} fps, ${frameMs} ms avg, ${surfaceLabel}`;
 }
 
-export async function runWebPerfBaselineProbe(
-  config = resolvePerfProbeConfig(),
-) {
+async function runWebPerfBaselineProbe(config = resolvePerfProbeConfig()) {
   if (config.cases.length === 0) {
     throw new Error("[web-perf-baseline] No baseline cases selected.");
   }

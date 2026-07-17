@@ -417,6 +417,116 @@ async function readCanvasSample(page) {
 }
 
 test.describe("Baryon control smoke", () => {
+  test("stacks pinned output and performance controls", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.goto("/");
+    await waitForControlSurface(page);
+    await page.getByTestId("advanced-controls-trigger").click();
+
+    const outputModeCard = page
+      .locator(".baryon-controls-card")
+      .filter({ hasText: "Output Mode" })
+      .first();
+    const label = outputModeCard.getByText("Output Mode", { exact: true });
+    const switcher = outputModeCard.locator(".baryon-controls-segmented");
+    await expect(label).toBeVisible();
+    await expect(switcher).toBeVisible();
+    await expect(
+      outputModeCard.locator(".baryon-controls-segmented-option"),
+    ).toHaveText(["Transparent", "Opaque"]);
+
+    const [labelBox, switcherBox] = await Promise.all([
+      label.boundingBox(),
+      switcher.boundingBox(),
+    ]);
+    expect(labelBox).not.toBeNull();
+    expect(switcherBox).not.toBeNull();
+    expect(labelBox.y + labelBox.height).toBeLessThanOrEqual(switcherBox.y);
+
+    const performanceSection = page
+      .locator(".baryon-controls-pinned-section")
+      .filter({ hasText: "Performance" })
+      .first();
+    const performanceHeader = performanceSection.locator(
+      ".baryon-controls-pinned-header",
+    );
+    const profileCard = performanceSection
+      .locator(".baryon-controls-card")
+      .filter({ hasText: "Profile" })
+      .first();
+    await expect(
+      performanceHeader.getByText("Performance", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      performanceHeader.getByRole("checkbox", { name: "HUD" }),
+    ).toBeVisible();
+    await expect(profileCard).toBeVisible();
+
+    const [performanceHeaderBox, profileBox] = await Promise.all([
+      performanceHeader.boundingBox(),
+      profileCard.boundingBox(),
+    ]);
+    expect(performanceHeaderBox).not.toBeNull();
+    expect(profileBox).not.toBeNull();
+    expect(performanceHeaderBox.y + performanceHeaderBox.height).toBeLessThan(
+      profileBox.y,
+    );
+  });
+
+  test("switches the modal volume from sphere to cube", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    const runtimeErrors = [];
+    page.on("pageerror", (error) => runtimeErrors.push(String(error)));
+    page.on("console", (message) => {
+      if (message.type() === "error") {
+        runtimeErrors.push(message.text());
+      }
+    });
+
+    await page.goto("/");
+    await waitForControlSurface(page);
+
+    await page.getByTestId("advanced-controls-trigger").click();
+    const volumeSection = page.getByRole("button", { name: /^Volume\s/ });
+    await expect(volumeSection).toBeVisible();
+    const shapeSelect = page.getByRole("combobox", { name: "Shape" });
+    if (!(await shapeSelect.isVisible())) {
+      await volumeSection.click();
+    }
+
+    await expect(shapeSelect).toHaveValue("sphere");
+    await expect(
+      page.getByRole("combobox", { name: "Cavity Geometry" }),
+    ).toHaveCount(0);
+    await shapeSelect.selectOption("cube");
+    await expect(shapeSelect).toHaveValue("cube");
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            window.__baryonControlState?.raymarch?.uniforms?.volumeShape ??
+            null,
+        ),
+      )
+      .toBe("cube");
+
+    await page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(resolve));
+        }),
+    );
+    expect(runtimeErrors).toEqual([]);
+  });
+
   test("keeps transparent canvas corners over a black preview backdrop", async ({
     page,
     browserName,
@@ -629,12 +739,7 @@ test.describe("Baryon control smoke", () => {
       .toBeCloseTo(
         await page.evaluate(() => {
           const controls = window.__baryonControls?.getState?.() ?? {};
-          const bloomStrength = controls.bloomStrength ?? 0;
-          const bloomResponseBias = Math.max(
-            0,
-            controls.bloomResponseBias ?? 0,
-          );
-          return bloomStrength * (1 - bloomResponseBias * 0.2);
+          return controls.bloomStrength ?? 0;
         }),
         6,
       );
@@ -649,16 +754,6 @@ test.describe("Baryon control smoke", () => {
         ),
       )
       .toBe(1.37);
-
-    await setControl(page, "zeroPointPrecision", 0.042);
-    await expect
-      .poll(() =>
-        page.evaluate(
-          () =>
-            window.__baryonControlState?.raymarch?.uniforms?.threshold ?? null,
-        ),
-      )
-      .toBeCloseTo(0.042, 6);
 
     await setControl(page, "densityGain", 2.15);
     await expect
@@ -1370,7 +1465,7 @@ test.describe("Baryon control smoke", () => {
 
     const bloomThresholdInput = page.getByLabel("Bloom Threshold value");
     if (!(await bloomThresholdInput.isVisible())) {
-      await page.getByRole("button", { name: /Bloom/ }).click();
+      await page.getByRole("button", { name: /Appearance/ }).click();
     }
     await bloomThresholdInput.fill("0.41");
     await bloomThresholdInput.blur();
@@ -1384,21 +1479,14 @@ test.describe("Baryon control smoke", () => {
       .toBe(0.41);
     const expectedEffectiveBloomThreshold = await page.evaluate(() => {
       const controls = window.__baryonControls?.getState?.() ?? {};
-      const threshold = controls.bloomThreshold ?? 0;
-      const bloomResponseBias = Math.max(0, controls.bloomResponseBias ?? 0);
-      return threshold + bloomResponseBias * 0.1;
+      return controls.bloomThreshold ?? 0;
     });
     await expect
       .poll(() =>
         page.evaluate(() => {
           const controls = window.__baryonControls?.getState?.() ?? {};
           const threshold = controls.bloomThreshold ?? 0;
-          const bloomResponseBias = Math.max(
-            0,
-            controls.bloomResponseBias ?? 0,
-          );
-          return window.__baryonControlState?.bloom?.threshold ===
-            threshold + bloomResponseBias * 0.1
+          return window.__baryonControlState?.bloom?.threshold === threshold
             ? window.__baryonControlState.bloom.threshold
             : null;
         }),

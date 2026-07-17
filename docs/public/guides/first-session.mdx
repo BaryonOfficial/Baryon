@@ -49,16 +49,14 @@ Open the GUI in the top-right corner and use **Mode** and **Motion**:
 
 Start with these controls before fine-tuning color or diagnostics:
 
-| Control            | Use it for                                                                                          |
-| ------------------ | --------------------------------------------------------------------------------------------------- |
-| **Reactivity**     | How strongly the field responds to the incoming audio.                                              |
-| **Node Threshold** | How sharp or soft the ring structures feel. Lower values make crisper contours.                     |
-| **Density**        | Overall thickness and brightness of the volume.                                                     |
-| **Absorption**     | Internal depth contrast. Higher values reduce haze and reveal stronger layering.                    |
-| **Opacity**        | How solid the orb feels, especially over video or a transparent stage output.                       |
-| **Color Mode**     | `Static` for controlled color, `Spectral` when you want the audio spectrum to color promoted modes. |
+| Control              | Use it for                                                                                          |
+| -------------------- | --------------------------------------------------------------------------------------------------- |
+| **Material Density** | Overall material concentration, thickness, and radiance.                                            |
+| **Laser Bending**    | Placement and concentration of laser caustics within the acoustic field.                             |
+| **Fresnel Strength** | Amount of grazing-angle laser energy along the field edges.                                         |
+| **Color Mode**       | `Static` for controlled color, `Spectral` when you want the audio spectrum to color promoted modes. |
 
-For quiet or sparse material, start lower on **Reactivity**, **Density**, and **Opacity**, then raise **Node Threshold** only if the field feels too diffuse.
+For quiet or sparse material, start lower on **Material Density** and **Fresnel Strength**. Audio-to-field response is calibrated automatically; **Motion Scale** only changes audio-driven rotation.
 
 ## Save a repeatable setup
 

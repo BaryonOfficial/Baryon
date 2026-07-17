@@ -111,6 +111,58 @@ describe("createControlsStore", () => {
     );
   });
 
+  it("strips legacy thickness controls from settings and presets", () => {
+    seedStorage({
+      controls: {
+        version: 2,
+        controls: { zeroPointPrecision: 0.106 },
+      },
+      presets: [
+        {
+          name: "Legacy carrier",
+          controls: { zeroPointPrecision: 0.084 },
+        },
+      ],
+    });
+
+    const store = createControlsStore();
+
+    expect(store.controlsRef.current).not.toHaveProperty("zeroPointPrecision");
+    expect(store.controlsRef.current).not.toHaveProperty(
+      "carrierCoreFwhmWorld",
+    );
+    expect(store.getSnapshot().presets[0].controls).not.toHaveProperty(
+      "zeroPointPrecision",
+    );
+  });
+
+  it("discards an interim v3 width on migration", () => {
+    seedStorage({
+      controls: {
+        version: 3,
+        controls: {
+          carrierCoreFwhmWorld: 0.142,
+          backgroundColor: "#102030",
+        },
+      },
+    });
+
+    const store = createControlsStore();
+
+    expect(store.controlsRef.current).not.toHaveProperty(
+      "carrierCoreFwhmWorld",
+    );
+    store.updateControl("backgroundColor", "#203040", {
+      persistMode: "immediate",
+    });
+    expect(readStoredSettings()).toEqual({
+      version: 6,
+      controls: {
+        backgroundColor: "#203040",
+      },
+    });
+  });
+
   it("does not rewrite legacy raw settings until the next allowed persist", () => {
     const legacySettings = {
       bloomStrength: 1.02,
@@ -135,15 +187,14 @@ describe("createControlsStore", () => {
     expect(store.controlsRef.current.backgroundColor).toBe("#102030");
     expect(window.localStorage.getItem(SETTINGS_KEY)).toBe(storedBeforeCreate);
 
-    store.updateControl("zeroPointPrecision", 0.106, {
+    store.updateControl("backgroundColor", "#203040", {
       persistMode: "immediate",
     });
 
     expect(readStoredSettings()).toEqual({
-      version: 2,
+      version: 6,
       controls: {
-        backgroundColor: "#102030",
-        zeroPointPrecision: 0.106,
+        backgroundColor: "#203040",
       },
     });
   });
@@ -187,13 +238,13 @@ describe("createControlsStore", () => {
   it("flushes pending remembered control changes when disposed", () => {
     const store = createControlsStore();
 
-    store.updateControl("zeroPointPrecision", 0.106, {
+    store.updateControl("bloomStrength", 1.4, {
       persistMode: "debounced",
     });
     store.dispose();
 
     const restoredStore = createControlsStore();
-    expect(restoredStore.controlsRef.current.zeroPointPrecision).toBe(0.106);
+    expect(restoredStore.controlsRef.current.bloomStrength).toBe(1.4);
   });
 
   it("persists unchanged non-default updates by adding explicit ownership", () => {
@@ -209,7 +260,7 @@ describe("createControlsStore", () => {
     });
 
     expect(readStoredSettings()).toEqual({
-      version: 2,
+      version: 6,
       controls: {
         backgroundColor: "#223344",
       },
@@ -219,7 +270,7 @@ describe("createControlsStore", () => {
   it("clears explicit ownership when directly updated to the default", () => {
     seedStorage({
       controls: {
-        version: 2,
+        version: 5,
         controls: {
           backgroundColor: "#000000",
         },
@@ -231,7 +282,7 @@ describe("createControlsStore", () => {
       persistMode: "immediate",
     });
 
-    expect(readStoredSettings()).toEqual({ version: 2, controls: {} });
+    expect(readStoredSettings()).toEqual({ version: 6, controls: {} });
   });
 
   it("does not make derived Spectral Light mix explicit", () => {
@@ -251,7 +302,7 @@ describe("createControlsStore", () => {
     // "spectral" is an explicit non-default choice under the static baseline;
     // the derived spectralMix repair must still stay out of storage.
     expect(readStoredSettings()).toEqual({
-      version: 2,
+      version: 6,
       controls: { colorMode: "spectral" },
     });
   });
@@ -262,14 +313,14 @@ describe("createControlsStore", () => {
     store.updateControl("backgroundColor", "#445566", {
       persistMode: "none",
     });
-    store.updateControl("zeroPointPrecision", 0.106, {
+    store.updateControl("bloomStrength", 1.4, {
       persistMode: "immediate",
     });
 
     expect(readStoredSettings()).toEqual({
-      version: 2,
+      version: 6,
       controls: {
-        zeroPointPrecision: 0.106,
+        bloomStrength: 1.4,
       },
     });
   });
@@ -287,7 +338,7 @@ describe("createControlsStore", () => {
 
     expect(store.controlsRef.current.backgroundColor).toBe("#222222");
     expect(readStoredSettings()).toEqual({
-      version: 2,
+      version: 6,
       controls: {
         backgroundColor: "#111111",
       },
@@ -312,7 +363,7 @@ describe("createControlsStore", () => {
     });
   });
 
-  it("resetControls writes empty v2 settings", () => {
+  it("resetControls writes empty v6 settings", () => {
     const store = createControlsStore();
 
     store.updateControl("backgroundColor", "#223344", {
@@ -320,7 +371,7 @@ describe("createControlsStore", () => {
     });
     store.resetControls();
 
-    expect(readStoredSettings()).toEqual({ version: 2, controls: {} });
+    expect(readStoredSettings()).toEqual({ version: 6, controls: {} });
     expect(store.controlsRef.current.backgroundColor).toBe(
       createControlState().backgroundColor,
     );
@@ -382,7 +433,7 @@ describe("createControlsStore", () => {
     expect(store.controlsRef.current.renderQualityPreset).toBe("max-quality");
   });
 
-  it("loads presets as full explicit v2 settings", () => {
+  it("loads presets as full explicit v6 settings", () => {
     seedStorage({
       presets: [
         {
@@ -399,7 +450,7 @@ describe("createControlsStore", () => {
     store.loadPreset("Full Stage");
 
     const settings = readStoredSettings();
-    expect(settings.version).toBe(2);
+    expect(settings.version).toBe(6);
     expect(Object.keys(settings.controls).sort()).toEqual(
       liveControlKeys.slice().sort(),
     );

@@ -141,9 +141,9 @@ test("treats line feed live boundary as listening when source energy is zero", (
       metrics: {
         avgAmplitude: 0,
         analyserRms: 0,
-        preModalFftPeak: 0,
+        fftPeakAmplitude: 0,
         timeDomainPeakAmplitude: 0.002,
-        nonZeroFftBinCount: 0,
+        spectralEffectiveBinCount: 0,
       },
       transport: {
         lineFeedProgramActive: true,

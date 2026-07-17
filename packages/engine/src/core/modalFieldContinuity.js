@@ -7,10 +7,10 @@ import { getModalGeometryBackend } from "./modalGeometryBackend.js";
 import { normalizeModalTopologyCoordinate } from "./modalTopology.js";
 import { clamp01 } from "../utils/math.js";
 
-export const TOPOLOGY_ADMIT_EVIDENCE = 0.08;
+const TOPOLOGY_ADMIT_EVIDENCE = 0.08;
 export const TOPOLOGY_PROMOTE_SECONDS = 0.05;
-export const TOPOLOGY_RELEASE_EVIDENCE = 0.025;
-export const TOPOLOGY_BOOTSTRAP_EVIDENCE = 0;
+const TOPOLOGY_RELEASE_EVIDENCE = 0.025;
+const TOPOLOGY_BOOTSTRAP_EVIDENCE = 0;
 export const TOPOLOGY_RELEASE_SECONDS = 0.13;
 // Crossfade windows for admission/eviction transitions. When a mode carries
 // damping metadata the window derives from its own amplitude time constant
@@ -19,12 +19,11 @@ export const TOPOLOGY_RELEASE_SECONDS = 0.13;
 // bookkeeping bounds (frame quantization and visible-slot budget), not physics.
 export const TOPOLOGY_ADMISSION_FADE_SECONDS = 0.08;
 export const TOPOLOGY_EVICTION_FADE_SECONDS = 0.08;
-export const TOPOLOGY_FADE_SETTLE_FACTOR = 3;
-export const TOPOLOGY_FADE_MIN_SECONDS = 1 / 30;
-export const TOPOLOGY_FADE_MAX_SECONDS = 0.25;
+const TOPOLOGY_FADE_SETTLE_FACTOR = 3;
+const TOPOLOGY_FADE_MIN_SECONDS = 1 / 30;
+const TOPOLOGY_FADE_MAX_SECONDS = 0.25;
 export const BASIS_REASSIGN_MIN_SECONDS = 0.067;
-export const IDENTITY_RETENTION_MIN = 0.72;
-export const STRUCTURAL_ADMISSION_REFERENCE_MODE_ORDER_FRACTION = 0.25;
+const STRUCTURAL_ADMISSION_REFERENCE_MODE_ORDER_FRACTION = 0.25;
 const TOPOLOGY_REPLACE_EVIDENCE_MARGIN = 0.08;
 const TOPOLOGY_REPLACE_EVIDENCE_RATIO = 1.35;
 const TOPOLOGY_REPLACE_MISSING_SHELL_SCORE_RATIO = 0.4;
@@ -335,7 +334,7 @@ function markBasisChanged(state, nowSec) {
  *   [naturalFrequencyHz, qualityFactor, dampingRatio, observedSupport]
  * @param {number} fallbackSeconds Window when no usable damping metadata.
  */
-export function deriveModalFadeWindowSeconds(metadata, fallbackSeconds) {
+function deriveModalFadeWindowSeconds(metadata, fallbackSeconds) {
   const naturalFrequencyHz = metadata?.[0] ?? 0;
   const qualityFactor = metadata?.[1] ?? 0;
   const dampingRatio = metadata?.[2] ?? 0;
@@ -833,6 +832,7 @@ function selectReplacementPairs({
   state,
   candidateRecords,
   maxVisibleModeCount,
+  maxHandoffModeCount,
   alreadyAdmittedCount,
   modalGeometryBackend,
 }) {
@@ -843,11 +843,13 @@ function selectReplacementPairs({
   ) {
     return [];
   }
-  const replacementBudget = Math.max(
-    0,
-    Math.ceil(maxVisibleModeCount * TOPOLOGY_REPLACE_MAX_FRACTION) -
-      alreadyAdmittedCount -
-      countEvictingRecords(state),
+  const replacementBudget = Math.min(
+    Math.max(
+      0,
+      Math.ceil(maxVisibleModeCount * TOPOLOGY_REPLACE_MAX_FRACTION) -
+        alreadyAdmittedCount,
+    ),
+    Math.max(0, maxHandoffModeCount - countEvictingRecords(state)),
   );
   if (replacementBudget <= 0) {
     return [];
@@ -879,9 +881,6 @@ function selectReplacementPairs({
 
       const candidateRole = getAdmissionRole(candidate);
       const targetRole = getAdmissionRole(record);
-      if (targetRole === "structural" && candidateRole !== "structural") {
-        return false;
-      }
 
       const evidenceReplacement =
         candidate.evidenceScore >
@@ -1219,6 +1218,7 @@ function buildDormantResult({
  *   resetToken?: unknown,
  *   renderAuthority?: boolean,
  *   maxVisibleModeCount?: number,
+ *   maxHandoffModeCount?: number,
  *   maxBasisModeOrder?: number,
  *   releaseSeconds?: number,
  *   allowImmediateBootstrap?: boolean,
@@ -1234,6 +1234,7 @@ export function updateModalFieldContinuity(
     resetToken = null,
     renderAuthority = true,
     maxVisibleModeCount = Infinity,
+    maxHandoffModeCount = 0,
     maxBasisModeOrder = Infinity,
     releaseSeconds = TOPOLOGY_RELEASE_SECONDS,
     allowImmediateBootstrap = false,
@@ -1246,6 +1247,9 @@ export function updateModalFieldContinuity(
   const normalizedMaxVisibleModeCount = Number.isFinite(maxVisibleModeCount)
     ? Math.max(0, Math.floor(maxVisibleModeCount))
     : Infinity;
+  const normalizedMaxHandoffModeCount = Number.isFinite(maxHandoffModeCount)
+    ? Math.max(0, Math.floor(maxHandoffModeCount))
+    : 0;
   const resolvedReleaseSeconds = normalizeReleaseSeconds(releaseSeconds);
   const hadResetToken = state.lastResetToken !== undefined;
   const reset = hadResetToken && state.lastResetToken !== resetToken;
@@ -1318,6 +1322,7 @@ export function updateModalFieldContinuity(
     allowImmediateBootstrap && previousVisibleKeys.length === 0;
   if (canReassignBasis(state, nowSec)) {
     let basisChanged = false;
+    let completedEviction = false;
     // Complete evictions whose fade has elapsed before selecting admissions,
     // so the freed slots are available to this same reassign event.
     for (const [modeKey, record] of Array.from(
@@ -1327,12 +1332,14 @@ export function updateModalFieldContinuity(
         removeRecord(state, modeKey);
         removedModeKeys.push(modeKey);
         basisChanged = true;
+        completedEviction = true;
       }
     }
 
     const eligibleRecords = [];
     for (const record of state.recordsByModeKey.values()) {
       if (
+        record.basisRepresentable &&
         !record.basisEligible &&
         (record.qualifyingEvidenceSec >= TOPOLOGY_PROMOTE_SECONDS ||
           (allowBootstrapAdmission &&
@@ -1364,15 +1371,18 @@ export function updateModalFieldContinuity(
     const selectedRecordKeys = new Set(
       selectedRecords.map((record) => record.modeKey),
     );
-    const replacementPairs = selectReplacementPairs({
-      state,
-      candidateRecords: eligibleRecords.filter(
-        (record) => !selectedRecordKeys.has(record.modeKey),
-      ),
-      maxVisibleModeCount: normalizedMaxVisibleModeCount,
-      alreadyAdmittedCount: selectedRecords.length,
-      modalGeometryBackend,
-    });
+    const replacementPairs = completedEviction
+      ? []
+      : selectReplacementPairs({
+          state,
+          candidateRecords: eligibleRecords.filter(
+            (record) => !selectedRecordKeys.has(record.modeKey),
+          ),
+          maxVisibleModeCount: normalizedMaxVisibleModeCount,
+          maxHandoffModeCount: normalizedMaxHandoffModeCount,
+          alreadyAdmittedCount: selectedRecords.length,
+          modalGeometryBackend,
+        });
     if (selectedRecords.length > 0 || replacementPairs.length > 0) {
       // Fade admissions in unless the field was empty: modes appearing out of
       // silence pop in at full strength by design.
@@ -1381,12 +1391,13 @@ export function updateModalFieldContinuity(
         activateRecord(record, state, nowSec, { fadeIn });
         admittedModeKeys.push(record.modeKey);
       }
-      // Replacements crossfade instead of swapping in place: the target fades
-      // out where it stands and is removed by a later reassign event's sweep
-      // above, which frees its slot for the successor to be admitted (and
-      // faded in) through the normal admission path.
+      // A provisioned handoff page keeps both signed modal contributions in
+      // the descriptor. The raymarch carrier therefore sums them coherently
+      // before any magnitude, density, or radiance transform.
       for (const pair of replacementPairs) {
         beginRecordEviction(pair.target, nowSec);
+        activateRecord(pair.candidate, state, nowSec, { fadeIn: true });
+        admittedModeKeys.push(pair.candidate.modeKey);
       }
       basisChanged = true;
     }
@@ -1431,7 +1442,12 @@ export function updateModalFieldContinuity(
   const outputRecords = state.visibleModeKeys
     .map((modeKey) => state.recordsByModeKey.get(modeKey))
     .filter((record) => record?.basisEligible)
-    .slice(0, normalizedMaxVisibleModeCount);
+    .slice(
+      0,
+      Number.isFinite(normalizedMaxVisibleModeCount)
+        ? normalizedMaxVisibleModeCount + normalizedMaxHandoffModeCount
+        : undefined,
+    );
   const descriptorSourceOutput = writeDescriptorSource(outputRecords, {
     nowSec,
     deltaTimeSec: resolvedDeltaTimeSec,

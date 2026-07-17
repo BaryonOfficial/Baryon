@@ -37,9 +37,10 @@ import {
 } from "./lineFeedProgramActivity.js";
 import { createModalExcitationState } from "./modalExcitationState.js";
 import {
-  findSpectralPeakFrequencies,
-  HARMONIC_ORDERS,
-} from "./modalResolvers.js";
+  SPECTRAL_EVIDENCE_POLICY,
+  computeSpectralEffectiveBinCount,
+  findCredibleSpectralPeaks,
+} from "./spectralEvidence.js";
 import { deriveFieldState } from "./fieldState.js";
 import { AUDIO_ANALYSIS_POLICY, SPECTRAL_MODAL_POLICY } from "./policy.js";
 import { FIELD_STATES } from "./types.js";
@@ -71,14 +72,13 @@ import {
 } from "../../core/modalFieldContinuity.js";
 import { getModalGeometryBackend } from "../../core/modalGeometryBackend.js";
 import {
-  MODAL_BASIS_ATLAS_PAGE_CAPACITY,
+  MODAL_BASIS_CACHE_PAGE_CAPACITY,
   MODAL_BASIS_CACHE_RESOLUTION,
+  MODAL_BASIS_HANDOFF_MODE_COUNT,
+  MODAL_BASIS_STEADY_MODE_COUNT,
   getModalBasisCacheMaxRepresentableModeIndex,
 } from "../../core/modalBudgets.js";
-import {
-  countNonZeroFftBins,
-  deriveHighQSparseResonatorEvidence,
-} from "./highQSparseResonatorEvidence.js";
+import { deriveHighQSparseResonatorEvidence } from "./highQSparseResonatorEvidence.js";
 import {
   buildModalEnergyLedger,
   hasProjectedRenderAuthority,
@@ -97,12 +97,10 @@ const LIVE_SOURCE_MODAL_CONTINUITY_RELEASE_SECONDS = 0.75;
 
 /** @typedef {import("../../core/cavityGeometry.js").CavityGeometry} CavityGeometry */
 
-const {
-  liveInputSilenceAvgAmplitude: LIVE_INPUT_SILENCE_AVG_AMPLITUDE,
-  requestedPitchSource: REQUESTED_PITCH_SOURCE,
-} = AUDIO_ANALYSIS_POLICY;
+const { requestedPitchSource: REQUESTED_PITCH_SOURCE } = AUDIO_ANALYSIS_POLICY;
 const TEST_TONE_HARMONIC_ATTENUATION =
   SPECTRAL_MODAL_POLICY.harmonicAttenuation;
+const HARMONIC_ORDERS = SPECTRAL_MODAL_POLICY.harmonicOrders;
 
 function resolveTestToneSignal(value) {
   return value === TEST_TONE_SIGNALS.harmonicSeries
@@ -110,16 +108,11 @@ function resolveTestToneSignal(value) {
     : TEST_TONE_SIGNALS.pureSine;
 }
 
-const LIVE_INPUT_NORMALIZATION_TARGET = 0.65;
-const LIVE_INPUT_NORMALIZATION_MAX_GAIN = 6.0;
-const LIVE_INPUT_NORMALIZATION_MIN_SIGNAL = 0.03;
-const LIVE_INPUT_NORMALIZATION_MAX_RAW_PEAK = 0.16;
 const LIVE_INPUT_INVALID_BASELINE_PEAK = 0.94;
 const LIVE_INPUT_INVALID_COMPRESSED_BASELINE_PEAK = 0.82;
 const LIVE_INPUT_INVALID_COMPRESSED_BASELINE_RMS = 0.0085;
 const LIVE_INPUT_INVALID_CURRENT_SATURATED_PEAK = 0.98;
 const LIVE_INPUT_INVALID_CURRENT_WEAK_RMS = 0.012;
-const LIVE_INPUT_INVALID_CURRENT_WEAK_AVG = 10;
 const RENDER_ENERGY_EPSILON = 1e-6;
 const BAND_LIMITS_HZ = [140, 600, 2400, 8000];
 const SPECTRAL_BAND_6_LIMITS_HZ = [140, 400, 1200, 3200, 6400, 12000];
@@ -199,11 +192,9 @@ const EMPTY_MODAL_OBSERVER_VISIBILITY = Object.freeze({
   highQProjectionLoad: 0,
 });
 const LIVE_INPUT_ACOUSTIC_GATE_BASE_CONFIG = Object.freeze({
-  absoluteAvgAmplitude: Math.max(2.2, LIVE_INPUT_SILENCE_AVG_AMPLITUDE * 0.3),
   absoluteRmsFloor: 0.0065,
   absolutePeakFloor: 0.075,
   absoluteCentroidFloor: 0.006,
-  absoluteLowBandFloor: 0.012,
   openFrames: 1,
   releaseFrames: 4,
   evidenceFloorScale: 0.08,
@@ -214,15 +205,11 @@ const LIVE_INPUT_ACOUSTIC_GATE_BASE_CONFIG = Object.freeze({
   hardSilenceRmsOffset: 0.00005,
   hardSilencePeakMultiplier: 1.02,
   hardSilencePeakOffset: 0.004,
-  hardSilenceAvgMultiplier: 0.28,
-  hardSilenceAvgOffset: 0.2,
   confidenceWeights: Object.freeze({
-    avgAmplitude: 0.22,
-    rms: 0.28,
-    peak: 0.2,
-    spectralCentroid: 0.1,
-    lowBand: 0.06,
-    peakClarity: 0.14,
+    rms: 0.4,
+    peak: 0.32,
+    spectralCentroid: 0.12,
+    peakClarity: 0.16,
   }),
   humPenaltyWeight: 0.65,
   ambientResonanceWeight: 0,
@@ -260,11 +247,9 @@ const LIVE_INPUT_ACOUSTIC_INTENT_CONFIGS = Object.freeze(
 
 /**
  * @typedef {{
- *   avgAmplitude: number,
  *   rms: number,
  *   peak: number,
  *   spectralCentroid: number,
- *   lowBand: number,
  *   peakClarity?: number,
  * }} LiveInputEvidenceUnits
  *
@@ -276,11 +261,9 @@ const LIVE_INPUT_ACOUSTIC_INTENT_CONFIGS = Object.freeze(
  *   confidenceCloseThreshold: number,
  *   humPenalty: number,
  *   ambientResonanceSupport: number,
- *   baselineAvgAmplitudeSpread: number,
  *   baselineRmsSpread: number,
  *   baselinePeakSpread: number,
  *   baselineCentroidSpread: number,
- *   baselineLowBandSpread: number,
  *   openFrames: number,
  *   releaseFrames: number,
  * }} LiveInputGateDiagnostics
@@ -288,11 +271,9 @@ const LIVE_INPUT_ACOUSTIC_INTENT_CONFIGS = Object.freeze(
 
 /** @type {Readonly<LiveInputEvidenceUnits>} */
 const EMPTY_LIVE_INPUT_EVIDENCE_UNITS = Object.freeze({
-  avgAmplitude: 0,
   rms: 0,
   peak: 0,
   spectralCentroid: 0,
-  lowBand: 0,
 });
 /** @type {Readonly<LiveInputGateDiagnostics>} */
 const EMPTY_LIVE_INPUT_GATE_DIAGNOSTICS = Object.freeze({
@@ -303,11 +284,9 @@ const EMPTY_LIVE_INPUT_GATE_DIAGNOSTICS = Object.freeze({
   confidenceCloseThreshold: 0,
   humPenalty: 0,
   ambientResonanceSupport: 0,
-  baselineAvgAmplitudeSpread: 0,
   baselineRmsSpread: 0,
   baselinePeakSpread: 0,
   baselineCentroidSpread: 0,
-  baselineLowBandSpread: 0,
   openFrames: 0,
   releaseFrames: 0,
 });
@@ -338,7 +317,6 @@ const LIVE_INPUT_PULSE_RESPONSE_SCALE = 0.9;
 const LIVE_INPUT_RESONANCE_PEAK_COUNT = 4;
 const LIVE_INPUT_AMBIENT_RESONANCE_MIN_PEAK = 0.03;
 const LIVE_INPUT_AMBIENT_RESONANCE_MIN_CLARITY = 0.42;
-const LIVE_INPUT_AMBIENT_RESONANCE_MIN_AVG = 0.9;
 const LIVE_INPUT_AMBIENT_RESONANCE_MIN_CENTROID = 0.006;
 
 export { createAudioFeatureState };
@@ -624,7 +602,6 @@ function averageArray(values) {
 
 function getSourceNormalization({
   inputMode,
-  avgAmplitude,
   analyserRms,
   spectralCentroid,
   bandState,
@@ -635,14 +612,14 @@ function getSourceNormalization({
       0,
       bandState?.liveInputBaselineCentroid ?? 0,
     );
+    const normalizedRms = clamp01(
+      baselineRms > 0
+        ? (analyserRms - baselineRms * 0.75) / Math.max(0.003, baselineRms * 12)
+        : analyserRms / 0.028,
+    );
     return {
-      normalizedRms: clamp01(
-        baselineRms > 0
-          ? (analyserRms - baselineRms * 0.75) /
-              Math.max(0.003, baselineRms * 12)
-          : analyserRms / 0.028,
-      ),
-      normalizedAmplitude: clamp01(avgAmplitude / 72),
+      normalizedRms,
+      normalizedAmplitude: normalizedRms,
       normalizedCentroid: clamp01(
         baselineCentroid > 0
           ? spectralCentroid / Math.max(0.02, baselineCentroid * 1.8)
@@ -651,9 +628,10 @@ function getSourceNormalization({
     };
   }
 
+  const normalizedRms = clamp01(analyserRms * 2.8);
   return {
-    normalizedRms: clamp01(analyserRms * 2.8),
-    normalizedAmplitude: clamp01(avgAmplitude / 96),
+    normalizedRms,
+    normalizedAmplitude: normalizedRms,
     normalizedCentroid: clamp01(spectralCentroid * 1.25),
   };
 }
@@ -667,7 +645,7 @@ function deriveSourceEnergyAuthority(sourceNormalization) {
   );
 }
 
-function deriveReusedAnalysisSourceAuthorityScale({
+function derivePreviousCompositionSourceAuthorityScale({
   preparedInputs,
   analysisResult,
 }) {
@@ -680,7 +658,6 @@ function deriveReusedAnalysisSourceAuthorityScale({
 
   const currentNormalization = getSourceNormalization({
     inputMode: preparedInputs.analysisInputMode,
-    avgAmplitude: preparedInputs.avgAmplitude,
     analyserRms: preparedInputs.analyserRms,
     spectralCentroid: analysisResult?.spectralCentroid ?? 0,
     bandState: preparedInputs.bandState,
@@ -745,16 +722,12 @@ function resetLiveInputGateState(
   bandState.liveInputCalibrationInvalid = invalid;
   bandState.liveInputCalibrationInvalidReason = invalidReason;
   bandState.liveInputPreviousFrameAtMs = 0;
-  bandState.liveInputBaselineAvgAmplitude = 0;
   bandState.liveInputBaselineRms = 0;
   bandState.liveInputBaselinePeak = 0;
   bandState.liveInputBaselineCentroid = 0;
-  bandState.liveInputBaselineLowBandEnergy = 0;
-  bandState.liveInputBaselineAvgAmplitudeSpread = 0;
   bandState.liveInputBaselineRmsSpread = 0;
   bandState.liveInputBaselinePeakSpread = 0;
   bandState.liveInputBaselineCentroidSpread = 0;
-  bandState.liveInputBaselineLowBandEnergySpread = 0;
   bandState.liveInputGateDiagnostics = EMPTY_LIVE_INPUT_GATE_DIAGNOSTICS;
   bandState.liveInputOpenFrames = 0;
   bandState.liveInputQuietFrames = 0;
@@ -905,44 +878,46 @@ function shouldBuildResonantedDebug(auditSettings) {
   return Boolean(auditSettings?.enabled);
 }
 
-function countNonZeroFFTBinCount(fftMagnitudes) {
-  return countNonZeroFftBins(fftMagnitudes);
-}
-
-function computeBasicFftSummary(fftMagnitudes, sampleRate) {
+function computeBasicFftSummary(fftLinearAmplitudes, sampleRate) {
   const summary = {
     peakMagnitude: 0,
-    nonZeroBinCount: 0,
+    crediblePeakCount: 0,
+    spectralEffectiveBinCount: 0,
     spectralCentroid: 0,
   };
-  if (!fftMagnitudes?.length) return summary;
+  if (!fftLinearAmplitudes?.length) return summary;
 
   const nyquist = sampleRate ? sampleRate * 0.5 : 0;
   let weightedFrequency = 0;
-  let amplitudeTotal = 0;
-  for (let i = 0; i < fftMagnitudes.length; i += 1) {
-    const amplitude = fftMagnitudes[i] ?? 0;
+  let powerTotal = 0;
+  for (let i = 0; i < fftLinearAmplitudes.length; i += 1) {
+    const amplitude = fftLinearAmplitudes[i] ?? 0;
     if (amplitude > summary.peakMagnitude) {
       summary.peakMagnitude = amplitude;
-    }
-    if (amplitude > 0.001) {
-      summary.nonZeroBinCount += 1;
     }
     if (amplitude > 0 && sampleRate) {
       const frequency = binIndexToFrequencyHz(
         i,
-        fftMagnitudes.length,
+        fftLinearAmplitudes.length,
         sampleRate,
       );
-      weightedFrequency += frequency * amplitude;
-      amplitudeTotal += amplitude;
+      const power = amplitude * amplitude;
+      weightedFrequency += frequency * power;
+      powerTotal += power;
     }
   }
+  summary.spectralEffectiveBinCount =
+    computeSpectralEffectiveBinCount(fftLinearAmplitudes);
+  summary.crediblePeakCount = findCredibleSpectralPeaks(
+    fftLinearAmplitudes,
+    sampleRate,
+    LIVE_INPUT_RESONANCE_PEAK_COUNT,
+  ).length;
 
-  if (amplitudeTotal > 1e-6) {
+  if (powerTotal > Number.EPSILON) {
     summary.spectralCentroid = Math.min(
       1,
-      weightedFrequency / amplitudeTotal / Math.max(1, nyquist),
+      weightedFrequency / powerTotal / Math.max(1, nyquist),
     );
   }
 
@@ -959,77 +934,6 @@ function computeTimeDataPeakAmplitude(timeData) {
     peak = Math.max(peak, Math.abs(timeData[index] ?? 0));
   }
   return peak;
-}
-
-function findPeakFftMagnitude(fftMagnitudes) {
-  if (!fftMagnitudes?.length) return 0;
-
-  let peak = 0;
-  for (let i = 0; i < fftMagnitudes.length; i++) {
-    peak = Math.max(peak, fftMagnitudes[i] ?? 0);
-  }
-
-  return peak;
-}
-
-function scaleFftMagnitudes(fftMagnitudes, gain) {
-  if (!(gain > 1) || !fftMagnitudes?.length) {
-    return fftMagnitudes;
-  }
-
-  const scaled = new Float32Array(fftMagnitudes.length);
-  for (let index = 0; index < fftMagnitudes.length; index += 1) {
-    scaled[index] = Math.min(1, (fftMagnitudes[index] ?? 0) * gain);
-  }
-  return scaled;
-}
-
-function cloneFloat32Array(values) {
-  return values instanceof Float32Array ? new Float32Array(values) : null;
-}
-
-function cloneSpectralLightComponents(components) {
-  if (!Array.isArray(components) || components.length === 0) {
-    return [];
-  }
-
-  return components.map((component) => ({ ...component }));
-}
-
-function buildSourceCoupledStateSummary(sourceCoupledState) {
-  if (!sourceCoupledState) {
-    return null;
-  }
-
-  return {
-    uniqueModeCount: sourceCoupledState.uniqueModeCount ?? 0,
-    harmonicSupport: cloneFloat32Array(sourceCoupledState.harmonicSupport),
-    fundamental: sourceCoupledState.fundamental ?? 0,
-    fundamentalConfidence: sourceCoupledState.fundamentalConfidence ?? 0,
-    driverFrequency: sourceCoupledState.driverFrequency ?? 0,
-    candidateFrequency: sourceCoupledState.candidateFrequency ?? 0,
-    candidateConfidence: sourceCoupledState.candidateConfidence ?? 0,
-    candidateFrames: sourceCoupledState.candidateFrames ?? 0,
-    candidatePeriodicity: sourceCoupledState.candidatePeriodicity ?? 0,
-    candidateHarmonicSupport: sourceCoupledState.candidateHarmonicSupport ?? 0,
-    candidateDirectSupport: sourceCoupledState.candidateDirectSupport ?? 0,
-    candidateLowEnergy: sourceCoupledState.candidateLowEnergy ?? false,
-    voicingActive: sourceCoupledState.voicingActive ?? false,
-    highCandidateRejected: sourceCoupledState.highCandidateRejected ?? false,
-    rejectionReason: sourceCoupledState.rejectionReason ?? "none",
-    latchHoldFrames: sourceCoupledState.latchHoldFrames ?? 0,
-    latchLowSupportFrames: sourceCoupledState.latchLowSupportFrames ?? 0,
-  };
-}
-
-function buildResonantStateSummary(resonantState) {
-  if (!resonantState) {
-    return null;
-  }
-
-  return {
-    uniqueModeCount: resonantState.uniqueModeCount ?? 0,
-  };
 }
 
 function deriveModalObservationEnergy(
@@ -1122,8 +1026,8 @@ function buildDebugSummary({
   dominantAmplitude = 0,
   avgAmplitude = 0,
   analyserRms = 0,
-  fftMagnitudes,
-  nonZeroFFTBinCount = null,
+  fftLinearAmplitudes,
+  spectralEffectiveBinCount = null,
   candidateForcingSlots,
   candidateResponseSlots,
   modeSlots,
@@ -1150,9 +1054,7 @@ function buildDebugSummary({
   sampleRate = 0,
   fftSize = 0,
   structuralMetrics = null,
-  micFftNormGain = 1,
-  preModalFftPeak = 0,
-  postNormalizationFftPeak = preModalFftPeak,
+  fftPeakAmplitude = 0,
   referencePitchBinAmplitude = null,
   sourceNormalization = undefined,
   requestedCavityGeometry = /** @type {CavityGeometry} */ (
@@ -1179,8 +1081,9 @@ function buildDebugSummary({
     sourceNormalization,
     bandEnergies,
     activeSourceCoupledModeCount: sourceCoupledModeCount,
-    nonZeroFFTBinCount:
-      nonZeroFFTBinCount ?? countNonZeroFFTBinCount(fftMagnitudes),
+    spectralEffectiveBinCount:
+      spectralEffectiveBinCount ??
+      computeSpectralEffectiveBinCount(fftLinearAmplitudes),
     periodicity: sourceCoupledState?.candidatePeriodicity ?? 0,
   });
   const modalVisibilityDriveEnergy = clamp01(
@@ -1251,13 +1154,10 @@ function buildDebugSummary({
     liveInputHumPenalty: gateDiagnostics.humPenalty ?? 0,
     liveInputAmbientResonanceSupport:
       gateDiagnostics.ambientResonanceSupport ?? 0,
-    liveInputBaselineAvgAmplitudeSpread:
-      gateDiagnostics.baselineAvgAmplitudeSpread ?? 0,
     liveInputBaselineRmsSpread: gateDiagnostics.baselineRmsSpread ?? 0,
     liveInputBaselinePeakSpread: gateDiagnostics.baselinePeakSpread ?? 0,
     liveInputBaselineCentroidSpread:
       gateDiagnostics.baselineCentroidSpread ?? 0,
-    liveInputBaselineLowBandSpread: gateDiagnostics.baselineLowBandSpread ?? 0,
     liveInputOpenFramesRequired: gateDiagnostics.openFrames ?? 0,
     liveInputReleaseFrames: gateDiagnostics.releaseFrames ?? 0,
     liveInputAnalysisClass,
@@ -1277,11 +1177,10 @@ function buildDebugSummary({
     uniqueModeCount:
       (sourceCoupledState?.uniqueModeCount ?? 0) +
       (resonantState?.uniqueModeCount ?? 0),
-    nonZeroFFTBinCount:
-      nonZeroFFTBinCount ?? countNonZeroFFTBinCount(fftMagnitudes),
-    micFftNormGain,
-    preModalFftPeak,
-    postNormalizationFftPeak,
+    spectralEffectiveBinCount:
+      spectralEffectiveBinCount ??
+      computeSpectralEffectiveBinCount(fftLinearAmplitudes),
+    fftPeakAmplitude,
     modeSlotCount,
     sourceCoupledModeCount,
     resonantModeCount,
@@ -1341,7 +1240,7 @@ function buildDebugSummary({
       (dominantFrequency
         ? sampleFFTAmplitudeForFrequency(
             dominantFrequency,
-            fftMagnitudes,
+            fftLinearAmplitudes,
             sampleRate,
             fftSize,
           )
@@ -1515,7 +1414,7 @@ function buildZeroDebugSnapshot({
     liveInputHardSilenceActive: false,
     sourceCoupledState: null,
     resonantState: null,
-    fftMagnitudes: null,
+    fftLinearAmplitudes: null,
     candidateForcingSlots,
     candidateResponseSlots,
     modeSlots,
@@ -1596,7 +1495,7 @@ function buildEmptyModalFieldDescriptor({
   return buildCanonicalFullModalDescriptor({
     generation,
     maxTotalModes,
-    basisAtlasPageCapacity: MODAL_BASIS_ATLAS_PAGE_CAPACITY,
+    basisAtlasPageCapacity: MODAL_BASIS_STEADY_MODE_COUNT,
     modalFieldSlots: modalFieldSlots ?? emptySlots,
     modalFieldPhaseSlots: modalFieldPhaseSlots ?? emptySlots,
     modalFieldColorSlots: modalFieldColorSlots ?? emptySlots,
@@ -1679,14 +1578,14 @@ function buildSilentFeatureFrame({
     featureState.analysis.lastModalFieldContinuityFrameAtMs = undefined;
   }
 
-  let silentFft = featureState?.analysis?.fftMagnitudes;
+  let silentFft = featureState?.analysis?.fftLinearAmplitudes;
   if (!silentFft?.length) {
     silentFft = new Float32Array((fftSize ?? 0) / 2);
   }
   silentFft.fill(0);
 
   if (featureState?.analysis) {
-    featureState.analysis.fftMagnitudes = silentFft;
+    featureState.analysis.fftLinearAmplitudes = silentFft;
   }
 
   const modalDescriptor = buildEmptyModalFieldDescriptor({
@@ -1730,7 +1629,7 @@ function buildSilentFeatureFrame({
     soundActive,
     micActive,
     averageAmplitude: 0,
-    fftMagnitudes: silentFft,
+    fftLinearAmplitudes: silentFft,
     activeModeCount: 0,
     activeModalFieldModeCount: 0,
     modalDescriptor,
@@ -1805,15 +1704,15 @@ export function applyTestToneToSnapshot({
   const snapshot = analysisSnapshot ?? {
     sourceMode: "test",
     avgAmplitude: 0,
-    fftMagnitudes: new Float32Array(fftSize / 2),
+    fftLinearAmplitudes: new Float32Array(fftSize / 2),
     timeData: null,
     rms: 0,
   };
-  const fftMagnitudes = snapshot.fftMagnitudes?.length
-    ? snapshot.fftMagnitudes
+  const fftLinearAmplitudes = snapshot.fftLinearAmplitudes?.length
+    ? snapshot.fftLinearAmplitudes
     : new Float32Array(fftSize / 2);
 
-  fftMagnitudes.fill(0);
+  fftLinearAmplitudes.fill(0);
   const testBinAmplitude = Math.max(
     0,
     Math.min(1, auditSettings.testToneAmplitude),
@@ -1825,19 +1724,22 @@ export function applyTestToneToSnapshot({
   const writeToneBin = (frequency, amplitude) => {
     const index = frequencyToBinIndex(
       frequency,
-      fftMagnitudes.length,
+      fftLinearAmplitudes.length,
       sampleRate,
     );
-    fftMagnitudes[index] = Math.max(fftMagnitudes[index] ?? 0, amplitude);
+    fftLinearAmplitudes[index] = Math.max(
+      fftLinearAmplitudes[index] ?? 0,
+      amplitude,
+    );
     if (index > 0) {
-      fftMagnitudes[index - 1] = Math.max(
-        fftMagnitudes[index - 1] ?? 0,
+      fftLinearAmplitudes[index - 1] = Math.max(
+        fftLinearAmplitudes[index - 1] ?? 0,
         amplitude * 0.35,
       );
     }
-    if (index < fftMagnitudes.length - 1) {
-      fftMagnitudes[index + 1] = Math.max(
-        fftMagnitudes[index + 1] ?? 0,
+    if (index < fftLinearAmplitudes.length - 1) {
+      fftLinearAmplitudes[index + 1] = Math.max(
+        fftLinearAmplitudes[index + 1] ?? 0,
         amplitude * 0.35,
       );
     }
@@ -1919,66 +1821,50 @@ export function applyTestToneToSnapshot({
     ...snapshot,
     sourceMode: "test",
     avgAmplitude: syntheticAvgAmplitude,
-    fftMagnitudes,
+    fftLinearAmplitudes,
     timeData,
     rms: syntheticRms,
   };
 }
 
 function computeLiveInputMetrics({
-  avgAmplitude,
   rms,
-  fftMagnitudes,
+  fftLinearAmplitudes,
   sampleRate,
-  fftSize,
-  peakAmplitude: providedPeakAmplitude = null,
+  timeDomainPeakAmplitude = 0,
   spectralCentroid: providedSpectralCentroid = null,
 }) {
-  const spectrum = fftMagnitudes ?? new Float32Array(0);
-  const peaks = findSpectralPeakFrequencies(
+  const spectrum = fftLinearAmplitudes ?? new Float32Array(0);
+  const peaks = findCredibleSpectralPeaks(
     spectrum,
     sampleRate,
-    fftSize,
     LIVE_INPUT_RESONANCE_PEAK_COUNT,
   );
-  let peakAmplitude = Number.isFinite(providedPeakAmplitude)
-    ? Math.max(0, providedPeakAmplitude)
-    : 0;
-  if (!Number.isFinite(providedPeakAmplitude)) {
-    for (let i = 0; i < spectrum.length; i++) {
-      peakAmplitude = Math.max(peakAmplitude, spectrum[i] ?? 0);
-    }
-  }
-  const totalPeakAmplitude = peaks.reduce(
+  const totalCrediblePeakAmplitude = peaks.reduce(
     (sum, peak) => sum + (peak?.amplitude ?? 0),
     0,
   );
-  const peakClarity =
-    peakAmplitude > 0
-      ? peakAmplitude / Math.max(peakAmplitude, totalPeakAmplitude)
-      : 0;
+  const peakClarity = peaks.length
+    ? (peaks[0]?.amplitude ?? 0) /
+      Math.max(Number.EPSILON, totalCrediblePeakAmplitude)
+    : 0;
   const peakFrequency = peaks[0]?.frequency ?? 0;
-  const bandEnergies = computeBandEnergies(spectrum, sampleRate, fftSize);
-  const lowBandEnergy =
-    (bandEnergies[0] ?? 0) * LOW_BAND_PRIMARY_WEIGHT +
-    (bandEnergies[1] ?? 0) * LOW_BAND_SECONDARY_WEIGHT;
-
   return {
-    avgAmplitude,
     rms,
-    peakAmplitude,
+    peakAmplitude: Number.isFinite(timeDomainPeakAmplitude)
+      ? Math.max(0, timeDomainPeakAmplitude)
+      : 0,
     peakFrequency,
+    crediblePeakCount: peaks.length,
     peakClarity,
     spectralCentroid: Number.isFinite(providedSpectralCentroid)
       ? clamp01(providedSpectralCentroid)
       : computeSpectralCentroid(spectrum, sampleRate),
-    lowBandEnergy,
   };
 }
 
 function detectLiveInputHardSilence(metrics, thresholds) {
   return (
-    metrics.avgAmplitude <= thresholds.hardSilenceAvg &&
     metrics.rms <= thresholds.hardSilenceRms &&
     metrics.peakAmplitude <= thresholds.hardSilencePeak
   );
@@ -1987,11 +1873,10 @@ function detectLiveInputHardSilence(metrics, thresholds) {
 export function detectLiveInputNoiseGate({
   injectTestTone,
   inputMode,
-  avgAmplitude,
   rms,
-  fftMagnitudes,
+  fftLinearAmplitudes,
   sampleRate = DEFAULT_SAMPLE_RATE,
-  fftSize = DEFAULT_FFT_SIZE,
+  timeDomainPeakAmplitude = 0,
   micAnalysisSettings = undefined,
   liveInputAnalysisSettings = undefined,
 }) {
@@ -2000,14 +1885,12 @@ export function detectLiveInputNoiseGate({
   );
   const config = getLiveInputAcousticIntentConfig(acousticIntent);
   const metrics = computeLiveInputMetrics({
-    avgAmplitude,
     rms,
-    fftMagnitudes,
+    fftLinearAmplitudes,
     sampleRate,
-    fftSize,
+    timeDomainPeakAmplitude,
   });
   const thresholds = {
-    hardSilenceAvg: config.absoluteAvgAmplitude,
     hardSilenceRms: config.absoluteRmsFloor,
     hardSilencePeak: config.absolutePeakFloor,
   };
@@ -2016,17 +1899,16 @@ export function detectLiveInputNoiseGate({
     !injectTestTone &&
     inputMode === "live" &&
     detectLiveInputHardSilence(metrics, thresholds) &&
+    metrics.crediblePeakCount === 0 &&
     metrics.spectralCentroid < config.absoluteCentroidFloor
   );
 }
 
 function isLiveInputCalibrationBaselineEmpty(bandState) {
   return (
-    !(bandState.liveInputBaselineAvgAmplitude > 0) &&
     !(bandState.liveInputBaselineRms > 0) &&
     !(bandState.liveInputBaselinePeak > 0) &&
-    !(bandState.liveInputBaselineCentroid > 0) &&
-    !(bandState.liveInputBaselineLowBandEnergy > 0)
+    !(bandState.liveInputBaselineCentroid > 0)
   );
 }
 
@@ -2048,26 +1930,15 @@ function updateLiveInputBaselineMetric(
 function updateLiveInputCalibrationBaseline(bandState, metrics, deltaMs) {
   const alpha = computeEmaAlpha(deltaMs, LIVE_INPUT_CALIBRATION_SMOOTHING_MS);
   if (isLiveInputCalibrationBaselineEmpty(bandState)) {
-    bandState.liveInputBaselineAvgAmplitude = metrics.avgAmplitude;
     bandState.liveInputBaselineRms = metrics.rms;
     bandState.liveInputBaselinePeak = metrics.peakAmplitude;
     bandState.liveInputBaselineCentroid = metrics.spectralCentroid;
-    bandState.liveInputBaselineLowBandEnergy = metrics.lowBandEnergy;
-    bandState.liveInputBaselineAvgAmplitudeSpread = 0;
     bandState.liveInputBaselineRmsSpread = 0;
     bandState.liveInputBaselinePeakSpread = 0;
     bandState.liveInputBaselineCentroidSpread = 0;
-    bandState.liveInputBaselineLowBandEnergySpread = 0;
     return;
   }
 
-  updateLiveInputBaselineMetric(
-    bandState,
-    "liveInputBaselineAvgAmplitude",
-    "liveInputBaselineAvgAmplitudeSpread",
-    metrics.avgAmplitude,
-    alpha,
-  );
   updateLiveInputBaselineMetric(
     bandState,
     "liveInputBaselineRms",
@@ -2089,13 +1960,6 @@ function updateLiveInputCalibrationBaseline(bandState, metrics, deltaMs) {
     metrics.spectralCentroid,
     alpha,
   );
-  updateLiveInputBaselineMetric(
-    bandState,
-    "liveInputBaselineLowBandEnergy",
-    "liveInputBaselineLowBandEnergySpread",
-    metrics.lowBandEnergy,
-    alpha,
-  );
 }
 
 function classifyLiveInputCalibrationInvalid(bandState, metrics) {
@@ -2110,8 +1974,7 @@ function classifyLiveInputCalibrationInvalid(bandState, metrics) {
     baselinePeak >= LIVE_INPUT_INVALID_COMPRESSED_BASELINE_PEAK &&
     baselineRms <= LIVE_INPUT_INVALID_COMPRESSED_BASELINE_RMS &&
     metrics.peakAmplitude >= LIVE_INPUT_INVALID_CURRENT_SATURATED_PEAK &&
-    metrics.rms <= LIVE_INPUT_INVALID_CURRENT_WEAK_RMS &&
-    metrics.avgAmplitude <= LIVE_INPUT_INVALID_CURRENT_WEAK_AVG
+    metrics.rms <= LIVE_INPUT_INVALID_CURRENT_WEAK_RMS
   ) {
     return "compressed-baseline";
   }
@@ -2132,10 +1995,6 @@ function deriveLiveInputHardSilenceThresholds(bandState, profileConfig) {
         profileConfig.hardSilencePeakMultiplier +
         profileConfig.hardSilencePeakOffset,
     ),
-    hardSilenceAvg:
-      profileConfig.absoluteAvgAmplitude *
-        profileConfig.hardSilenceAvgMultiplier +
-      profileConfig.hardSilenceAvgOffset,
   };
 }
 
@@ -2164,13 +2023,6 @@ function computePositiveLiveInputEvidenceUnit({
 
 function computeLiveInputEvidenceUnits(bandState, metrics, profileConfig) {
   return {
-    avgAmplitude: computePositiveLiveInputEvidenceUnit({
-      value: metrics.avgAmplitude,
-      baseline: bandState.liveInputBaselineAvgAmplitude,
-      spread: bandState.liveInputBaselineAvgAmplitudeSpread,
-      safetyFloor: profileConfig.absoluteAvgAmplitude,
-      profileConfig,
-    }),
     rms: computePositiveLiveInputEvidenceUnit({
       value: metrics.rms,
       baseline: bandState.liveInputBaselineRms,
@@ -2192,13 +2044,6 @@ function computeLiveInputEvidenceUnits(bandState, metrics, profileConfig) {
       safetyFloor: profileConfig.absoluteCentroidFloor,
       profileConfig,
     }),
-    lowBand: computePositiveLiveInputEvidenceUnit({
-      value: metrics.lowBandEnergy,
-      baseline: bandState.liveInputBaselineLowBandEnergy,
-      spread: bandState.liveInputBaselineLowBandEnergySpread,
-      safetyFloor: profileConfig.absoluteLowBandFloor,
-      profileConfig,
-    }),
   };
 }
 
@@ -2214,11 +2059,6 @@ function computeLiveInputAmbientResonanceSupport(metrics, profileConfig) {
   }
 
   return Math.min(
-    smoothstep(
-      LIVE_INPUT_AMBIENT_RESONANCE_MIN_AVG * 0.8,
-      LIVE_INPUT_AMBIENT_RESONANCE_MIN_AVG,
-      metrics.avgAmplitude,
-    ),
     smoothstep(
       LIVE_INPUT_AMBIENT_RESONANCE_MIN_PEAK * 0.8,
       LIVE_INPUT_AMBIENT_RESONANCE_MIN_PEAK,
@@ -2240,15 +2080,11 @@ function computeLiveInputAmbientResonanceSupport(metrics, profileConfig) {
 function computeLiveInputHumPenalty(metrics, evidenceSupports) {
   const lowCentroid = 1 - smoothstep(0.006, 0.0132, metrics.spectralCentroid);
   const narrowLowPeak = evidenceSupports.peak * clamp01(metrics.peakClarity);
-  const lowBandOrPeakSupport = Math.max(
-    evidenceSupports.lowBand,
-    narrowLowPeak,
-  );
   const weakRms = 1 - evidenceSupports.rms;
   const missingSpectralSpread = 1 - evidenceSupports.spectralCentroid;
   return clamp01(
     lowCentroid *
-      lowBandOrPeakSupport *
+      narrowLowPeak *
       weakRms *
       Math.max(clamp01(metrics.peakClarity), missingSpectralSpread),
   );
@@ -2260,18 +2096,10 @@ function computeLiveInputSourceConfidence(
   profileConfig,
 ) {
   const rawSupports = {
-    avgAmplitude: liveInputEvidenceUnitToSupport(
-      evidenceUnits.avgAmplitude,
-      profileConfig,
-    ),
     rms: liveInputEvidenceUnitToSupport(evidenceUnits.rms, profileConfig),
     peak: liveInputEvidenceUnitToSupport(evidenceUnits.peak, profileConfig),
     spectralCentroid: liveInputEvidenceUnitToSupport(
       evidenceUnits.spectralCentroid,
-      profileConfig,
-    ),
-    lowBand: liveInputEvidenceUnitToSupport(
-      evidenceUnits.lowBand,
       profileConfig,
     ),
   };
@@ -2284,27 +2112,18 @@ function computeLiveInputSourceConfidence(
     ambientResonanceSupport,
     rawSupports.rms * 0.5,
   );
-  const sourceEnvelopeSupport = Math.max(
-    rawSupports.rms,
-    rawSupports.peak,
-    rawSupports.avgAmplitude * 0.5,
-  );
+  const sourceEnvelopeSupport = Math.max(rawSupports.rms, rawSupports.peak);
   const evidenceSupports = {
     ...rawSupports,
-    lowBand:
-      rawSupports.lowBand *
-      Math.max(rawSupports.spectralCentroid, ambientResonanceSupport),
     peakClarity:
       clamp01(metrics.peakClarity) * coherenceSupport * sourceEnvelopeSupport,
   };
   const humPenalty = computeLiveInputHumPenalty(metrics, rawSupports);
   const weights = profileConfig.confidenceWeights;
   const weightedConfidence =
-    weights.avgAmplitude * evidenceSupports.avgAmplitude +
     weights.rms * evidenceSupports.rms +
     weights.peak * evidenceSupports.peak +
     weights.spectralCentroid * evidenceSupports.spectralCentroid +
-    weights.lowBand * evidenceSupports.lowBand +
     weights.peakClarity * evidenceSupports.peakClarity +
     profileConfig.ambientResonanceWeight * ambientResonanceSupport -
     profileConfig.humPenaltyWeight * humPenalty;
@@ -2334,12 +2153,9 @@ function buildLiveInputGateDiagnostics({
     confidenceCloseThreshold: profileConfig.confidenceCloseThreshold,
     humPenalty,
     ambientResonanceSupport,
-    baselineAvgAmplitudeSpread:
-      bandState.liveInputBaselineAvgAmplitudeSpread ?? 0,
     baselineRmsSpread: bandState.liveInputBaselineRmsSpread ?? 0,
     baselinePeakSpread: bandState.liveInputBaselinePeakSpread ?? 0,
     baselineCentroidSpread: bandState.liveInputBaselineCentroidSpread ?? 0,
-    baselineLowBandSpread: bandState.liveInputBaselineLowBandEnergySpread ?? 0,
     openFrames: profileConfig.openFrames,
     releaseFrames: profileConfig.releaseFrames,
   };
@@ -2349,12 +2165,10 @@ function resolveLiveInputNoiseGate({
   analysisMemory,
   injectTestTone,
   inputMode,
-  avgAmplitude,
   rms,
-  fftMagnitudes,
+  fftLinearAmplitudes,
   sampleRate,
-  fftSize,
-  preModalFftPeak = null,
+  timeDomainPeakAmplitude = 0,
   spectralCentroidHint = null,
   currentFrameAtMs,
   calibrationVersion = 0,
@@ -2396,12 +2210,10 @@ function resolveLiveInputNoiseGate({
   }
 
   const metrics = computeLiveInputMetrics({
-    avgAmplitude,
     rms,
-    fftMagnitudes,
+    fftLinearAmplitudes,
     sampleRate,
-    fftSize,
-    peakAmplitude: preModalFftPeak,
+    timeDomainPeakAmplitude,
     spectralCentroid: spectralCentroidHint,
   });
   const deltaMs = getFrameDeltaMs(
@@ -2492,7 +2304,6 @@ function resolveLiveInputNoiseGate({
     !injectTestTone &&
     inputMode === "live" &&
     detectLiveInputHardSilence(metrics, {
-      hardSilenceAvg: acousticIntentConfig.absoluteAvgAmplitude,
       hardSilenceRms: acousticIntentConfig.absoluteRmsFloor,
       hardSilencePeak: acousticIntentConfig.absolutePeakFloor,
     }) &&
@@ -2521,10 +2332,9 @@ function resolveLiveInputNoiseGate({
     ambientResonanceSupport: confidenceResult.ambientResonanceSupport,
   });
   bandState.liveInputGateDiagnostics = gateDiagnostics;
-  const hardSilence = detectLiveInputHardSilence(
-    metrics,
-    hardSilenceThresholds,
-  );
+  const hardSilence =
+    detectLiveInputHardSilence(metrics, hardSilenceThresholds) &&
+    metrics.crediblePeakCount === 0;
 
   if (hardSilence) {
     bandState.liveInputGateState = "closed";
@@ -2615,75 +2425,31 @@ function resolveLiveInputNoiseGate({
   };
 }
 
-function computeBandEnergies(fftMagnitudes, sampleRate, fftSize) {
-  const bands = new Float32Array(BAND_BUCKET_COUNT);
-  if (!fftMagnitudes?.length || !sampleRate || !fftSize) {
-    return bands;
-  }
-
-  const sums = new Float32Array(BAND_BUCKET_COUNT);
-  const squareSums = new Float32Array(BAND_BUCKET_COUNT);
-  const peaks = new Float32Array(BAND_BUCKET_COUNT);
-  const counts = new Float32Array(BAND_BUCKET_COUNT);
-
-  for (let i = 0; i < fftMagnitudes.length; i++) {
-    const frequency = binIndexToFrequencyHz(
-      i,
-      fftMagnitudes.length,
-      sampleRate,
-    );
-    const amplitude = fftMagnitudes[i] ?? 0;
-    let bandIndex = BAND_BUCKET_COUNT - 1;
-    for (let j = 0; j < BAND_LIMITS_HZ.length; j++) {
-      if (frequency <= BAND_LIMITS_HZ[j]) {
-        bandIndex = j;
-        break;
-      }
-    }
-    sums[bandIndex] += amplitude;
-    squareSums[bandIndex] += amplitude * amplitude;
-    peaks[bandIndex] = Math.max(peaks[bandIndex], amplitude);
-    counts[bandIndex] += 1;
-  }
-
-  for (let i = 0; i < BAND_BUCKET_COUNT; i++) {
-    if (counts[i] <= 0) {
-      bands[i] = 0;
-      continue;
-    }
-
-    const mean = sums[i] / counts[i];
-    const rms = Math.sqrt(squareSums[i] / counts[i]);
-    bands[i] = Math.min(1, Math.max(mean, rms * 0.55, peaks[i] * 0.18));
-  }
-
-  return bands;
-}
-
-function computeSpectralCentroid(fftMagnitudes, sampleRate) {
-  if (!fftMagnitudes?.length || !sampleRate) return 0;
+function computeSpectralCentroid(fftLinearAmplitudes, sampleRate) {
+  if (!fftLinearAmplitudes?.length || !sampleRate) return 0;
 
   const nyquist = sampleRate * 0.5;
   let weightedFrequency = 0;
-  let amplitudeTotal = 0;
-  for (let i = 0; i < fftMagnitudes.length; i++) {
-    const amplitude = fftMagnitudes[i] ?? 0;
+  let powerTotal = 0;
+  for (let i = 0; i < fftLinearAmplitudes.length; i++) {
+    const amplitude = fftLinearAmplitudes[i] ?? 0;
     if (amplitude <= 0) continue;
     const frequency = binIndexToFrequencyHz(
       i,
-      fftMagnitudes.length,
+      fftLinearAmplitudes.length,
       sampleRate,
     );
-    weightedFrequency += frequency * amplitude;
-    amplitudeTotal += amplitude;
+    const power = amplitude * amplitude;
+    weightedFrequency += frequency * power;
+    powerTotal += power;
   }
 
-  if (amplitudeTotal <= 1e-6) return 0;
-  return Math.min(1, weightedFrequency / amplitudeTotal / Math.max(1, nyquist));
+  if (powerTotal <= Number.EPSILON) return 0;
+  return Math.min(1, weightedFrequency / powerTotal / Math.max(1, nyquist));
 }
 
 function computeSignalSpectrumMetrics({
-  fftMagnitudes,
+  fftLinearAmplitudes,
   previousSpectrum,
   sampleRate,
   fftSize,
@@ -2698,48 +2464,39 @@ function computeSignalSpectrumMetrics({
     spectralCentroid: 0,
     spectralFlux: 0,
   };
-  if (!fftMagnitudes?.length) {
+  if (!fftLinearAmplitudes?.length) {
     return empty;
   }
 
   const hasFrequencyDomain = Boolean(sampleRate);
   const hasBandEnergyDomain = hasFrequencyDomain && Boolean(fftSize);
-  const bandSums = hasBandEnergyDomain
+  const bandPowerSums = hasBandEnergyDomain
     ? new Float32Array(BAND_BUCKET_COUNT)
     : null;
-  const bandSquareSums = hasBandEnergyDomain
-    ? new Float32Array(BAND_BUCKET_COUNT)
-    : null;
-  const bandPeaks = hasBandEnergyDomain
-    ? new Float32Array(BAND_BUCKET_COUNT)
-    : null;
-  const bandCounts = hasBandEnergyDomain
-    ? new Float32Array(BAND_BUCKET_COUNT)
-    : null;
-  const spectralSums = hasFrequencyDomain
-    ? new Float32Array(SPECTRAL_BAND_6_COUNT)
-    : null;
-  const spectralCounts = hasFrequencyDomain
+  const spectralPowerSums = hasFrequencyDomain
     ? new Float32Array(SPECTRAL_BAND_6_COUNT)
     : null;
   const fluxLimit = previousSpectrum?.length
-    ? Math.min(fftMagnitudes.length, previousSpectrum.length)
+    ? Math.min(fftLinearAmplitudes.length, previousSpectrum.length)
     : 0;
   const nyquist = hasFrequencyDomain ? sampleRate * 0.5 : 0;
   let weightedFrequency = 0;
-  let amplitudeTotal = 0;
-  let positiveDelta = 0;
-  let trebleSum = 0;
+  let totalPower = 0;
+  let positivePowerDelta = 0;
+  let trebleAmplitudeSum = 0;
+  let treblePower = 0;
   let trebleLogSum = 0;
   let trebleCount = 0;
-  let treblePeakEnergy = 0;
 
-  for (let i = 0; i < fftMagnitudes.length; i += 1) {
-    const amplitude = fftMagnitudes[i] ?? 0;
+  for (let i = 0; i < fftLinearAmplitudes.length; i += 1) {
+    const amplitude = fftLinearAmplitudes[i] ?? 0;
+    const power = amplitude * amplitude;
+    totalPower += power;
 
     if (i < fluxLimit) {
-      const delta = amplitude - (previousSpectrum[i] ?? 0);
-      if (delta > 0) positiveDelta += delta;
+      const previousAmplitude = previousSpectrum[i] ?? 0;
+      const powerDelta = power - previousAmplitude * previousAmplitude;
+      if (powerDelta > 0) positivePowerDelta += powerDelta;
     }
 
     if (!hasFrequencyDomain) {
@@ -2748,12 +2505,11 @@ function computeSignalSpectrumMetrics({
 
     const frequency = binIndexToFrequencyHz(
       i,
-      fftMagnitudes.length,
+      fftLinearAmplitudes.length,
       sampleRate,
     );
     if (amplitude > 0) {
-      weightedFrequency += frequency * amplitude;
-      amplitudeTotal += amplitude;
+      weightedFrequency += frequency * power;
     }
 
     if (hasBandEnergyDomain) {
@@ -2764,10 +2520,7 @@ function computeSignalSpectrumMetrics({
           break;
         }
       }
-      bandSums[bandIndex] += amplitude;
-      bandSquareSums[bandIndex] += amplitude * amplitude;
-      bandPeaks[bandIndex] = Math.max(bandPeaks[bandIndex], amplitude);
-      bandCounts[bandIndex] += 1;
+      bandPowerSums[bandIndex] += power;
     }
 
     let spectralBandIndex = SPECTRAL_BAND_6_COUNT - 1;
@@ -2777,66 +2530,56 @@ function computeSignalSpectrumMetrics({
         break;
       }
     }
-    spectralSums[spectralBandIndex] += amplitude;
-    spectralCounts[spectralBandIndex] += 1;
+    spectralPowerSums[spectralBandIndex] += power;
 
     if (
       frequency >= TREBLE_FLATNESS_MIN_HZ &&
       frequency <= TREBLE_FLATNESS_MAX_HZ
     ) {
-      trebleSum += amplitude;
+      trebleAmplitudeSum += amplitude;
+      treblePower += power;
       trebleLogSum += Math.log(Math.max(amplitude, 1e-8));
       trebleCount += 1;
-      if (amplitude > treblePeakEnergy) treblePeakEnergy = amplitude;
     }
   }
 
   if (fluxLimit > 0) {
-    empty.spectralFlux = Math.min(1, positiveDelta / Math.max(1, fluxLimit));
+    empty.spectralFlux = Math.min(
+      1,
+      positivePowerDelta / Math.max(Number.EPSILON, totalPower),
+    );
   }
 
-  if (hasBandEnergyDomain) {
+  if (hasBandEnergyDomain && totalPower > Number.EPSILON) {
     for (let i = 0; i < BAND_BUCKET_COUNT; i += 1) {
-      if (bandCounts[i] <= 0) {
-        bandEnergies[i] = 0;
-        continue;
-      }
-
-      const mean = bandSums[i] / bandCounts[i];
-      const rms = Math.sqrt(bandSquareSums[i] / bandCounts[i]);
-      bandEnergies[i] = Math.min(
-        1,
-        Math.max(mean, rms * 0.55, bandPeaks[i] * 0.18),
-      );
+      bandEnergies[i] = bandPowerSums[i] / totalPower;
     }
   }
 
-  if (hasFrequencyDomain) {
+  if (hasFrequencyDomain && totalPower > Number.EPSILON) {
     for (let i = 0; i < SPECTRAL_BAND_6_COUNT; i += 1) {
-      spectralBandEnergies[i] =
-        spectralCounts[i] > 0
-          ? Math.min(1, spectralSums[i] / spectralCounts[i])
-          : 0;
+      spectralBandEnergies[i] = spectralPowerSums[i] / totalPower;
     }
 
-    if (amplitudeTotal > 1e-6) {
-      empty.spectralCentroid = Math.min(
-        1,
-        weightedFrequency / amplitudeTotal / Math.max(1, nyquist),
-      );
-    }
+    empty.spectralCentroid = Math.min(
+      1,
+      weightedFrequency / totalPower / Math.max(1, nyquist),
+    );
 
     let trebleFlatness = 0;
     let trebleMean = 0;
     if (trebleCount > 0) {
-      trebleMean = trebleSum / trebleCount;
+      trebleMean = trebleAmplitudeSum / trebleCount;
       const trebleGeometricMean = Math.exp(trebleLogSum / trebleCount);
       trebleFlatness =
         trebleMean > 1e-8 ? Math.min(1, trebleGeometricMean / trebleMean) : 0;
     }
-    empty.trebleBroadbandEnergy = clamp01(trebleMean * trebleFlatness * 6);
+    const trebleEnergyFraction = treblePower / totalPower;
+    empty.trebleBroadbandEnergy = clamp01(
+      trebleEnergyFraction * trebleFlatness,
+    );
     empty.trebleTonalEnergy = clamp01(
-      treblePeakEnergy * (1 - trebleFlatness) * 4,
+      trebleEnergyFraction * (1 - trebleFlatness),
     );
   }
 
@@ -2976,8 +2719,7 @@ function buildModalFieldFrequencyOptions({
     acousticScale:
       cavityAcousticScale && typeof cavityAcousticScale === "object"
         ? cavityAcousticScale
-        : { radiusMeters: radius },
-    radiusMeters: radius,
+        : { sideLengthMeters: radius },
     boundaryMode,
   };
 }
@@ -3438,7 +3180,7 @@ function deriveModalObserverVisibilityComponents({
   sourceNormalization = undefined,
   bandEnergies = null,
   activeSourceCoupledModeCount = 0,
-  nonZeroFFTBinCount = 0,
+  spectralEffectiveBinCount = 0,
   periodicity = 0,
 } = {}) {
   if (hardSilent || !structuralMetrics) {
@@ -3464,7 +3206,7 @@ function deriveModalObserverVisibilityComponents({
     highQResonantEnergy,
     distributedExcitation: structuralMetrics.distributedExcitation ?? 0,
     periodicity,
-    nonZeroFFTBinCount,
+    spectralEffectiveBinCount,
     modeCoherence,
   });
   const highQSignalSupport = Math.max(
@@ -3577,7 +3319,7 @@ function deriveModalVisibilityComponents({
   sourceNormalization = undefined,
   bandEnergies = null,
   activeSourceCoupledModeCount = 0,
-  nonZeroFFTBinCount = 0,
+  spectralEffectiveBinCount = 0,
   periodicity = 0,
 }) {
   const emptySummary = {
@@ -3632,7 +3374,7 @@ function deriveModalVisibilityComponents({
     sourceNormalization,
     bandEnergies,
     activeSourceCoupledModeCount,
-    nonZeroFFTBinCount,
+    spectralEffectiveBinCount,
     periodicity,
   });
   const slotEnergy = slotSummary.averageSlotEnergy;
@@ -3833,7 +3575,6 @@ function deriveCompositeSignals({
   resonantState,
   bandEnergies,
   analyserRms,
-  avgAmplitude,
   dominantAmplitude,
   spectralCentroid,
   spectralFlux,
@@ -3848,7 +3589,7 @@ function deriveCompositeSignals({
   sourceNormalization = undefined,
   liveInputHardSilenceActive = false,
   activeSourceCoupledModeCount = 0,
-  nonZeroFFTBinCount = 0,
+  spectralEffectiveBinCount = 0,
 }) {
   const activeModeCount = countActiveSlots(modeSlots, modeCapacity);
   const uniqueModeCount =
@@ -3869,7 +3610,6 @@ function deriveCompositeSignals({
     sourceNormalization ??
     getSourceNormalization({
       inputMode,
-      avgAmplitude,
       analyserRms,
       spectralCentroid,
       bandState,
@@ -3947,7 +3687,7 @@ function deriveCompositeSignals({
     sourceNormalization,
     bandEnergies,
     activeSourceCoupledModeCount,
-    nonZeroFFTBinCount,
+    spectralEffectiveBinCount,
     periodicity: sourceCoupledState?.candidatePeriodicity ?? 0,
   });
   const modalVisibilityEnergy = modalVisibilityComponents.modalVisibilityEnergy;
@@ -4018,12 +3758,13 @@ function recordBeatTimestamp(bandState, currentFrameAtMs) {
 
 function updateBandSignalState({
   analysisMemory,
-  fftMagnitudes,
+  fftLinearAmplitudes,
   sampleRate,
   fftSize,
   rms,
   frameTimeMs,
   beatSettings,
+  suppressBeat = false,
 }) {
   const previousSpectrum = analysisMemory.previousSpectrum;
   const bandState = analysisMemory.bandState;
@@ -4043,7 +3784,7 @@ function updateBandSignalState({
     spectralCentroid,
     spectralFlux,
   } = computeSignalSpectrumMetrics({
-    fftMagnitudes,
+    fftLinearAmplitudes,
     previousSpectrum,
     sampleRate,
     fftSize,
@@ -4095,6 +3836,7 @@ function updateBandSignalState({
   );
   const beatConfidence = clamp01(onsetExcess * 0.75 + lowBandEnergy * 0.25);
   const beatDetected =
+    !suppressBeat &&
     onsetDriver > adaptiveThreshold &&
     lowBandEnergy >= resolvedBeatSettings.lowBandFloor &&
     refractorySatisfied;
@@ -4130,11 +3872,13 @@ function updateBandSignalState({
 
   if (
     !(previousSpectrum instanceof Float32Array) ||
-    previousSpectrum.length !== fftMagnitudes.length
+    previousSpectrum.length !== fftLinearAmplitudes.length
   ) {
-    analysisMemory.previousSpectrum = new Float32Array(fftMagnitudes.length);
+    analysisMemory.previousSpectrum = new Float32Array(
+      fftLinearAmplitudes.length,
+    );
   }
-  analysisMemory.previousSpectrum.set(fftMagnitudes);
+  analysisMemory.previousSpectrum.set(fftLinearAmplitudes);
 
   return {
     bandEnergies: analysisMemory.bandEnergies,
@@ -4280,8 +4024,8 @@ function finalizeFeatureDebugSnapshot({
   avgAmplitude,
   analyserRms,
   spectralCandidates,
-  fftMagnitudes,
-  nonZeroFFTBinCount = null,
+  fftLinearAmplitudes,
+  spectralEffectiveBinCount = null,
   candidateForcingSlots,
   candidateResponseSlots,
   modeSlots,
@@ -4311,9 +4055,7 @@ function finalizeFeatureDebugSnapshot({
   sampleRate,
   fftSize,
   structuralMetrics = null,
-  micFftNormGain = 1,
-  preModalFftPeak = 0,
-  postNormalizationFftPeak = preModalFftPeak,
+  fftPeakAmplitude = 0,
   referencePitchBinAmplitude = null,
   sourceNormalization = undefined,
   requestedCavityGeometry = /** @type {CavityGeometry} */ (
@@ -4351,8 +4093,8 @@ function finalizeFeatureDebugSnapshot({
     dominantAmplitude,
     avgAmplitude,
     analyserRms,
-    fftMagnitudes,
-    nonZeroFFTBinCount,
+    fftLinearAmplitudes,
+    spectralEffectiveBinCount,
     candidateForcingSlots,
     candidateResponseSlots,
     modeSlots,
@@ -4385,9 +4127,7 @@ function finalizeFeatureDebugSnapshot({
     sampleRate,
     fftSize,
     structuralMetrics,
-    micFftNormGain,
-    preModalFftPeak,
-    postNormalizationFftPeak,
+    fftPeakAmplitude,
     referencePitchBinAmplitude,
     sourceNormalization,
     requestedCavityGeometry,
@@ -4432,18 +4172,20 @@ function finalizeFeatureDebugSnapshot({
 }
 
 function resolveFeatureAnalysisSessionKey(status, inputMode) {
+  if (typeof status?.sessionKey === "string" && status.sessionKey) {
+    return status.sessionKey;
+  }
+
   if (inputMode === "file") {
     return `file:${status?.playbackSessionId ?? "none"}`;
   }
 
   if (inputMode === "live") {
-    return `live:${normalizeLiveInputDeviceKind(
-      status?.liveInputDeviceKind ?? status?.liveInputKind,
-    )}`;
+    return `live:${status?.liveInputSessionId ?? "none"}`;
   }
 
   if (inputMode === "system") {
-    return "system";
+    return `system:${status?.liveInputSessionId ?? "none"}`;
   }
 
   return "idle";
@@ -4507,7 +4249,7 @@ function buildMutedAnalysisSnapshot(snapshot, fftSize) {
     sourceMode: "silent",
     avgAmplitude: 0,
     rms: 0,
-    fftMagnitudes: new Float32Array(safeFftSize / 2),
+    fftLinearAmplitudes: new Float32Array(safeFftSize / 2),
     timeData: new Float32Array(safeFftSize),
   };
 }
@@ -4718,8 +4460,8 @@ export function prepareAudioFeatureFrameInputs({
         metrics: {
           avgAmplitude: 0,
           analyserRms: 0,
-          preModalFftPeak: 0,
-          nonZeroFftBinCount: 0,
+          fftPeakAmplitude: 0,
+          spectralEffectiveBinCount: 0,
         },
       }),
     );
@@ -4836,10 +4578,16 @@ export function prepareAudioFeatureFrameInputs({
 
   const avgAmplitude = snapshot?.avgAmplitude ?? 0;
   const analyserRms = snapshot?.rms ?? 0;
-  const fftMagnitudesSource =
-    snapshot?.fftMagnitudes ?? new Float32Array(fftSize / 2);
-  const fftSummary = computeBasicFftSummary(fftMagnitudesSource, sampleRate);
-  const preModalFftPeak = fftSummary.peakMagnitude;
+  const timeDomainPeakAmplitude = computeTimeDataPeakAmplitude(
+    snapshot?.timeData,
+  );
+  const fftLinearAmplitudesSource =
+    snapshot?.fftLinearAmplitudes ?? new Float32Array(fftSize / 2);
+  const fftSummary = computeBasicFftSummary(
+    fftLinearAmplitudesSource,
+    sampleRate,
+  );
+  const fftPeakAmplitude = fftSummary.peakMagnitude;
   const spectralCentroidHint = fftSummary.spectralCentroid;
   const {
     active: liveInputNoiseGateActive,
@@ -4852,12 +4600,10 @@ export function prepareAudioFeatureFrameInputs({
         analysisMemory,
         injectTestTone: resolvedAuditSettings.injectTestTone,
         inputMode,
-        avgAmplitude,
         rms: analyserRms,
-        fftMagnitudes: fftMagnitudesSource,
+        fftLinearAmplitudes: fftLinearAmplitudesSource,
         sampleRate,
-        fftSize,
-        preModalFftPeak,
+        timeDomainPeakAmplitude,
         spectralCentroidHint,
         currentFrameAtMs,
         calibrationVersion,
@@ -4885,19 +4631,18 @@ export function prepareAudioFeatureFrameInputs({
   const lineFeedMetrics = isLineFeedLiveInput
     ? {
         ...computeLiveInputMetrics({
-          avgAmplitude,
           rms: analyserRms,
-          fftMagnitudes: fftMagnitudesSource,
+          fftLinearAmplitudes: fftLinearAmplitudesSource,
           sampleRate,
-          fftSize,
-          peakAmplitude: preModalFftPeak,
+          timeDomainPeakAmplitude,
           spectralCentroid: spectralCentroidHint,
         }),
-        timeDomainPeakAmplitude: computeTimeDataPeakAmplitude(
-          snapshot?.timeData,
-        ),
+        avgAmplitude,
+        timeDomainPeakAmplitude,
+        credibleSpectralPeakCount: fftSummary.crediblePeakCount,
         transportSpectrumSilent:
-          fftSummary.nonZeroBinCount === 0 && preModalFftPeak <= 0.003,
+          fftSummary.spectralEffectiveBinCount === 0 &&
+          fftPeakAmplitude <= SPECTRAL_EVIDENCE_POLICY.analyserAmplitudeFloor,
       }
     : null;
   const lineFeedProgramActivity = isLineFeedLiveInput
@@ -4920,9 +4665,7 @@ export function prepareAudioFeatureFrameInputs({
         return {
           programActive: true,
           programExcitation: 1,
-          deviceFloorAvg: 0,
           deviceFloorRms: 0,
-          deviceFloorPeak: 0,
           quietHoldMs: 0,
         };
       })();
@@ -4941,11 +4684,10 @@ export function prepareAudioFeatureFrameInputs({
       metrics: {
         avgAmplitude,
         analyserRms,
-        preModalFftPeak,
-        timeDomainPeakAmplitude: computeTimeDataPeakAmplitude(
-          snapshot?.timeData,
-        ),
-        nonZeroFftBinCount: fftSummary.nonZeroBinCount,
+        fftPeakAmplitude,
+        credibleSpectralPeakCount: fftSummary.crediblePeakCount,
+        timeDomainPeakAmplitude,
+        spectralEffectiveBinCount: fftSummary.spectralEffectiveBinCount,
       },
     }),
   );
@@ -5019,10 +4761,10 @@ export function prepareAudioFeatureFrameInputs({
     snapshot,
     avgAmplitude,
     analyserRms,
-    fftMagnitudesSource,
-    preModalFftPeak,
+    fftLinearAmplitudesSource,
+    fftPeakAmplitude,
     spectralCentroidHint,
-    nonZeroFftBinCount: fftSummary.nonZeroBinCount,
+    spectralEffectiveBinCount: fftSummary.spectralEffectiveBinCount,
     liveInputNoiseGateActive,
     liveInputHardSilenceActive,
     liveInputCalibrationInvalid,
@@ -5031,7 +4773,6 @@ export function prepareAudioFeatureFrameInputs({
       liveInputGateDiagnostics ?? EMPTY_LIVE_INPUT_GATE_DIAGNOSTICS,
     lineFeedProgramActive: lineFeedProgramActivity.programActive === true,
     lineFeedProgramExcitation: lineFeedProgramActivity.programExcitation ?? 0,
-    lineFeedDeviceFloorAvg: lineFeedProgramActivity.deviceFloorAvg ?? 0,
     lineFeedDeviceFloorRms: lineFeedProgramActivity.deviceFloorRms ?? 0,
     analysisSessionKey,
     analysisInputsSignature: buildFeatureAnalysisInputsSignature({
@@ -5054,80 +4795,22 @@ export function prepareAudioFeatureFrameInputs({
   };
 }
 
-function resolveEffectiveFftState(preparedInputs) {
-  const {
-    bandState,
-    isAcousticLiveInput,
-    liveInputNoiseGateActive,
-    liveInputHardSilenceActive,
-    fftMagnitudesSource,
-    snapshot,
-    preModalFftPeak,
-    nonZeroFftBinCount,
-  } = preparedInputs;
+function ensureAnalysisFftBuffer(preparedInputs) {
+  const { analysisMemory, featureState, fftLinearAmplitudesSource } =
+    preparedInputs;
 
-  let micFftNormGain = 1;
+  let fftLinearAmplitudes = analysisMemory.fftLinearAmplitudes;
   if (
-    isAcousticLiveInput &&
-    !liveInputNoiseGateActive &&
-    !liveInputHardSilenceActive
+    !fftLinearAmplitudes ||
+    fftLinearAmplitudes.length !== fftLinearAmplitudesSource.length
   ) {
-    const noiseFloor = bandState.liveInputBaselinePeak ?? 0;
-    const signalPeak = Math.max(0, preModalFftPeak - noiseFloor);
-    if (
-      signalPeak >= LIVE_INPUT_NORMALIZATION_MIN_SIGNAL &&
-      preModalFftPeak <= LIVE_INPUT_NORMALIZATION_MAX_RAW_PEAK
-    ) {
-      const normGain = Math.min(
-        LIVE_INPUT_NORMALIZATION_MAX_GAIN,
-        LIVE_INPUT_NORMALIZATION_TARGET / Math.max(preModalFftPeak, 1e-6),
-      );
-      if (normGain > 1.05) {
-        micFftNormGain = normGain;
-      }
-    }
-  }
-
-  const effectiveFftMagnitudes =
-    isAcousticLiveInput && micFftNormGain > 1
-      ? scaleFftMagnitudes(fftMagnitudesSource, micFftNormGain)
-      : fftMagnitudesSource;
-  const effectiveSnapshot =
-    effectiveFftMagnitudes === fftMagnitudesSource
-      ? snapshot
-      : {
-          ...snapshot,
-          fftMagnitudes: effectiveFftMagnitudes,
-        };
-
-  return {
-    micFftNormGain,
-    effectiveFftMagnitudes,
-    effectiveSnapshot,
-    postNormalizationFftPeak:
-      effectiveFftMagnitudes === fftMagnitudesSource
-        ? preModalFftPeak
-        : findPeakFftMagnitude(effectiveFftMagnitudes),
-    nonZeroFFTBinCount:
-      effectiveFftMagnitudes === fftMagnitudesSource &&
-      Number.isFinite(nonZeroFftBinCount)
-        ? nonZeroFftBinCount
-        : countNonZeroFFTBinCount(effectiveFftMagnitudes),
-  };
-}
-
-function ensureAnalysisFftBuffer(preparedInputs, effectiveFftMagnitudes) {
-  const { analysisMemory, featureState, fftMagnitudesSource } = preparedInputs;
-
-  let fftMagnitudes = analysisMemory.fftMagnitudes;
-  if (!fftMagnitudes || fftMagnitudes.length !== fftMagnitudesSource.length) {
-    fftMagnitudes = new Float32Array(fftMagnitudesSource.length);
+    fftLinearAmplitudes = new Float32Array(fftLinearAmplitudesSource.length);
     if (featureState?.analysis) {
-      featureState.analysis.fftMagnitudes = fftMagnitudes;
+      featureState.analysis.fftLinearAmplitudes = fftLinearAmplitudes;
     }
   }
-  fftMagnitudes.set(effectiveFftMagnitudes);
-  return fftMagnitudes;
+  fftLinearAmplitudes.set(fftLinearAmplitudesSource);
+  return fftLinearAmplitudes;
 }
 
 function getAudioPerfNow() {
@@ -6057,34 +5740,33 @@ export function updateAudioFeatureFastSignalState(preparedInputs) {
     currentFrameAtMs,
     beatSettings,
     analysisInputMode,
-    avgAmplitude,
     bandState,
   } = preparedInputs;
-  const effectiveFftState = resolveEffectiveFftState(preparedInputs);
-  const fftMagnitudes = ensureAnalysisFftBuffer(
-    preparedInputs,
-    effectiveFftState.effectiveFftMagnitudes,
-  );
+  const fftLinearAmplitudes = ensureAnalysisFftBuffer(preparedInputs);
   const bandMetrics = updateBandSignalState({
     analysisMemory,
-    fftMagnitudes,
+    fftLinearAmplitudes,
     sampleRate,
     fftSize,
     rms: analyserRms,
     frameTimeMs: currentFrameAtMs,
     beatSettings,
+    suppressBeat: preparedInputs.liveInputNoiseGateActive === true,
   });
   const sourceNormalization = getSourceNormalization({
     inputMode: analysisInputMode,
-    avgAmplitude,
     analyserRms,
     spectralCentroid: bandMetrics.spectralCentroid,
     bandState,
   });
 
   return {
-    ...effectiveFftState,
-    fftMagnitudes,
+    fftLinearAmplitudes,
+    spectralEffectiveBinCount: Number.isFinite(
+      preparedInputs.spectralEffectiveBinCount,
+    )
+      ? preparedInputs.spectralEffectiveBinCount
+      : computeSpectralEffectiveBinCount(fftLinearAmplitudes),
     sourceNormalization,
     ...bandMetrics,
   };
@@ -6113,7 +5795,7 @@ export function updateAudioFeatureStructuralState(
 export function updateAudioFeatureChromaState(preparedInputs, fastSignalState) {
   const chromaState = preparedInputs.featureState.analysis.chromaState;
   const rawChroma = buildChromaVector(
-    fastSignalState.fftMagnitudes,
+    fastSignalState.fftLinearAmplitudes,
     preparedInputs.sampleRate,
     preparedInputs.fftSize,
   );
@@ -6359,10 +6041,10 @@ export function buildCurrentAudioFeatureAnalysisResult({
     preparedInputs,
     soundActive: preparedInputs.soundActive,
     micActive: preparedInputs.micActive,
-    fftMagnitudes: fastSignalState.fftMagnitudes,
-    nonZeroFFTBinCount:
-      fastSignalState.nonZeroFFTBinCount ??
-      countNonZeroFFTBinCount(fastSignalState.fftMagnitudes),
+    fftLinearAmplitudes: fastSignalState.fftLinearAmplitudes,
+    spectralEffectiveBinCount:
+      fastSignalState.spectralEffectiveBinCount ??
+      computeSpectralEffectiveBinCount(fastSignalState.fftLinearAmplitudes),
     candidateForcingSlots: resolvedStructural.candidateForcingSlots,
     candidateResponseSlots: resolvedStructural.candidateResponseSlots,
     sourceCoupledPhaseSlots: resolvedStructural.sourceCoupledPhaseSlots,
@@ -6427,9 +6109,7 @@ export function buildCurrentAudioFeatureAnalysisResult({
     beatLowBandEnergy: fastSignalState.beatLowBandEnergy,
     beatOnsetDriver: fastSignalState.beatOnsetDriver,
     beatThreshold: fastSignalState.beatThreshold,
-    micFftNormGain: fastSignalState.micFftNormGain,
-    preModalFftPeak: preparedInputs.preModalFftPeak,
-    postNormalizationFftPeak: fastSignalState.postNormalizationFftPeak,
+    fftPeakAmplitude: preparedInputs.fftPeakAmplitude,
     activeModeCount: resolvedStructural.activeModeCount,
     structuralFingerprint: resolvedStructural.structuralFingerprint,
     structuralMetrics: resolvedStructural.structuralMetrics ?? null,
@@ -6445,232 +6125,13 @@ export function buildCurrentAudioFeatureAnalysisResult({
   };
 }
 
-export function buildFastSignalPatchedAudioFeatureAnalysisResult({
-  preparedInputs,
-  previousAnalysisResult,
-}) {
-  const fastSignalState = updateAudioFeatureFastSignalState(preparedInputs);
-
-  return {
-    ...previousAnalysisResult,
-    preparedInputs,
-    soundActive: preparedInputs.soundActive,
-    micActive: preparedInputs.micActive,
-    fftMagnitudes: fastSignalState.fftMagnitudes,
-    nonZeroFFTBinCount:
-      fastSignalState.nonZeroFFTBinCount ??
-      countNonZeroFFTBinCount(fastSignalState.fftMagnitudes),
-    bandEnergies: fastSignalState.bandEnergies,
-    spectralBandEnergies: fastSignalState.spectralBandEnergies,
-    trebleBroadbandEnergy: fastSignalState.trebleBroadbandEnergy,
-    trebleTonalEnergy: fastSignalState.trebleTonalEnergy,
-    transientEnergy: fastSignalState.transientEnergy,
-    spectralCentroid: fastSignalState.spectralCentroid,
-    spectralFlux: fastSignalState.spectralFlux,
-    beatDetected: fastSignalState.beatDetected,
-    beatPulseId: fastSignalState.beatPulseId,
-    beatStrength: fastSignalState.beatStrength,
-    beatConfidence: fastSignalState.beatConfidence,
-    avgAmplitude: preparedInputs.avgAmplitude,
-    analyserRms: preparedInputs.analyserRms,
-    sourceNormalization: fastSignalState.sourceNormalization,
-    liveInputNoiseGateActive: preparedInputs.liveInputNoiseGateActive,
-    liveInputHardSilenceActive: preparedInputs.liveInputHardSilenceActive,
-    liveInputCalibrationInvalid: preparedInputs.liveInputCalibrationInvalid,
-    liveInputCalibrationInvalidReason:
-      preparedInputs.liveInputCalibrationInvalidReason,
-    liveInputGateDiagnostics: preparedInputs.liveInputGateDiagnostics,
-    liveInputCalibrationActive: Boolean(
-      preparedInputs.bandState.liveInputCalibrationActive,
-    ),
-    beatLowBandEnergy: fastSignalState.beatLowBandEnergy,
-    beatOnsetDriver: fastSignalState.beatOnsetDriver,
-    beatThreshold: fastSignalState.beatThreshold,
-    micFftNormGain: fastSignalState.micFftNormGain,
-    preModalFftPeak: preparedInputs.preModalFftPeak,
-    postNormalizationFftPeak: fastSignalState.postNormalizationFftPeak,
-    bandState: preparedInputs.bandState,
-    sourceEvidence: preparedInputs.sourceEvidence,
-    debug: null,
-  };
-}
-
-export function runHeavyAudioFeatureAnalysis(preparedInputs) {
-  const fastSignalState = updateAudioFeatureFastSignalState(preparedInputs);
-  const chromaState = updateAudioFeatureChromaState(
-    preparedInputs,
-    fastSignalState,
-  );
-  const structuralState = updateAudioFeatureStructuralState(
-    preparedInputs,
-    fastSignalState,
-  );
-  const tempoState = updateAudioFeatureTempoState({
-    bandState: preparedInputs.bandState,
-    beatConfidence: fastSignalState.beatConfidence,
-    currentFrameAtMs: fastSignalState.currentFrameAtMs,
-    deltaMs: fastSignalState.deltaMs,
-  });
-
-  return buildCurrentAudioFeatureAnalysisResult({
-    preparedInputs,
-    fastSignalState,
-    structuralState,
-    chromaState,
-    tempoState,
-    materializeStructuralProjection: true,
-  });
-}
-
-export function buildAudioFeatureAnalysisSnapshot({
-  preparedInputs,
-  analysisResult,
-  publishCount = 0,
-}) {
-  const sourceCoupledStateSummary = buildSourceCoupledStateSummary(
-    analysisResult.sourceCoupledState,
-  );
-  const resonantStateSummary = buildResonantStateSummary(
-    analysisResult.resonantState,
-  );
-  const spectralLightComponents = cloneSpectralLightComponents(
-    [
-      ...(analysisResult.sourceCoupledState?.spectralLightComponents ?? []),
-      ...(analysisResult.resonantState?.spectralLightComponents ?? []),
-    ]
-      .sort((left, right) => (right.weight ?? 0) - (left.weight ?? 0))
-      .slice(0, 8),
-  );
-  const nonZeroFFTBinCount =
-    analysisResult.nonZeroFFTBinCount ??
-    countNonZeroFFTBinCount(analysisResult.fftMagnitudes);
-  const referencePitchBinAmplitude = analysisResult.dominantFrequency
-    ? sampleFFTAmplitudeForFrequency(
-        analysisResult.dominantFrequency,
-        analysisResult.fftMagnitudes,
-        preparedInputs.sampleRate,
-        preparedInputs.fftSize,
-      )
-    : 0;
-
-  return {
-    analysisSessionKey: preparedInputs.analysisSessionKey,
-    analysisInputsSignature: preparedInputs.analysisInputsSignature,
-    frameTimeMs: preparedInputs.currentFrameAtMs,
-    publishCount,
-    analysisResult: {
-      soundActive: analysisResult.soundActive,
-      micActive: analysisResult.micActive,
-      candidateForcingSlots: cloneFloat32Array(
-        analysisResult.candidateForcingSlots,
-      ),
-      candidateResponseSlots: cloneFloat32Array(
-        analysisResult.candidateResponseSlots,
-      ),
-      sourceCoupledPhaseSlots: cloneFloat32Array(
-        analysisResult.sourceCoupledPhaseSlots,
-      ),
-      resonantPhaseSlots: cloneFloat32Array(analysisResult.resonantPhaseSlots),
-      activeSourceCoupledModeCount: analysisResult.activeSourceCoupledModeCount,
-      activeResonantModeCount: analysisResult.activeResonantModeCount,
-      sourceCoupledColorSlots: cloneFloat32Array(
-        analysisResult.sourceCoupledColorSlots,
-      ),
-      resonantColorSlots: cloneFloat32Array(analysisResult.resonantColorSlots),
-      bandEnergies: cloneFloat32Array(analysisResult.bandEnergies),
-      transientEnergy: analysisResult.transientEnergy,
-      spectralCentroid: analysisResult.spectralCentroid,
-      spectralFlux: analysisResult.spectralFlux,
-      beatDetected: analysisResult.beatDetected,
-      beatPulseId: analysisResult.beatPulseId,
-      beatStrength: analysisResult.beatStrength,
-      beatConfidence: analysisResult.beatConfidence,
-      estimatedTempo: analysisResult.estimatedTempo,
-      tempoConfidence: analysisResult.tempoConfidence,
-      beatPhase: analysisResult.beatPhase,
-      rhythmicDensity: analysisResult.rhythmicDensity,
-      keyTonic: analysisResult.keyTonic,
-      keyMode: analysisResult.keyMode,
-      keyConfidence: analysisResult.keyConfidence,
-      keyTonicHue: analysisResult.keyTonicHue,
-      modeSlots: cloneFloat32Array(analysisResult.modeSlots),
-      signalModeSlots: cloneFloat32Array(analysisResult.signalModeSlots),
-      referenceModeSlots: cloneFloat32Array(analysisResult.referenceModeSlots),
-      signalReferenceModeSlots: cloneFloat32Array(
-        analysisResult.signalReferenceModeSlots,
-      ),
-      sourceMode: analysisResult.sourceMode,
-      sourceEvidence: analysisResult.sourceEvidence
-        ? {
-            ...analysisResult.sourceEvidence,
-            metrics: { ...analysisResult.sourceEvidence.metrics },
-            transport: { ...analysisResult.sourceEvidence.transport },
-          }
-        : null,
-      sourceCoupledStateSummary,
-      resonantStateSummary,
-      avgAmplitude: analysisResult.avgAmplitude,
-      analyserRms: analysisResult.analyserRms,
-      dominantFrequency: analysisResult.dominantFrequency,
-      dominantAmplitude: analysisResult.dominantAmplitude,
-      analysisEngine: analysisResult.analysisEngine,
-      pitchSource: analysisResult.pitchSource,
-      usedDecay: analysisResult.usedDecay,
-      sourceNormalization: analysisResult.sourceNormalization
-        ? { ...analysisResult.sourceNormalization }
-        : null,
-      liveInputNoiseGateActive: analysisResult.liveInputNoiseGateActive,
-      liveInputHardSilenceActive: analysisResult.liveInputHardSilenceActive,
-      liveInputCalibrationInvalid: analysisResult.liveInputCalibrationInvalid,
-      liveInputCalibrationInvalidReason:
-        analysisResult.liveInputCalibrationInvalidReason,
-      liveInputGateDiagnostics: analysisResult.liveInputGateDiagnostics
-        ? {
-            ...analysisResult.liveInputGateDiagnostics,
-            evidenceUnits: {
-              ...analysisResult.liveInputGateDiagnostics.evidenceUnits,
-            },
-            evidenceSupports: {
-              ...analysisResult.liveInputGateDiagnostics.evidenceSupports,
-            },
-          }
-        : EMPTY_LIVE_INPUT_GATE_DIAGNOSTICS,
-      liveInputCalibrationActive: analysisResult.liveInputCalibrationActive,
-      liveInputAcousticIntent:
-        analysisResult.bandState?.liveInputPolicy ??
-        (preparedInputs.isAcousticLiveInput
-          ? DEFAULT_LIVE_INPUT_ACOUSTIC_INTENT
-          : null),
-      liveInputPolicy: analysisResult.bandState?.liveInputPolicy ?? null,
-      liveInputBaselineRms: analysisResult.bandState?.liveInputBaselineRms ?? 0,
-      liveInputBaselinePeak:
-        analysisResult.bandState?.liveInputBaselinePeak ?? 0,
-      beatLowBandEnergy: analysisResult.beatLowBandEnergy,
-      beatOnsetDriver: analysisResult.beatOnsetDriver,
-      beatThreshold: analysisResult.beatThreshold,
-      micFftNormGain: analysisResult.micFftNormGain,
-      preModalFftPeak: analysisResult.preModalFftPeak,
-      postNormalizationFftPeak: analysisResult.postNormalizationFftPeak,
-      activeModeCount: analysisResult.activeModeCount,
-      structuralFingerprint: analysisResult.structuralFingerprint
-        ? { ...analysisResult.structuralFingerprint }
-        : null,
-      structuralMetrics: analysisResult.structuralMetrics
-        ? { ...analysisResult.structuralMetrics }
-        : null,
-      spectralLightComponents,
-      nonZeroFFTBinCount,
-      referencePitchBinAmplitude,
-      debug: null,
-    },
-  };
-}
-
 export function composeAudioFeatureFrame({
   preparedInputs,
   analysisResult,
   previousFrame = null,
-  reuseHeavyAnalysis = false,
+  smoothFromPreviousFrame = false,
+  topologyFrame = null,
+  topologyOnly = false,
 }) {
   const sourceCoupledState =
     analysisResult.sourceCoupledStateSummary ??
@@ -6702,7 +6163,6 @@ export function composeAudioFeatureFrame({
     resonantState,
     bandEnergies: analysisResult.bandEnergies,
     analyserRms: analysisResult.analyserRms,
-    avgAmplitude: analysisResult.avgAmplitude,
     dominantAmplitude: analysisResult.dominantAmplitude,
     spectralCentroid: analysisResult.spectralCentroid,
     spectralFlux: analysisResult.spectralFlux,
@@ -6717,17 +6177,17 @@ export function composeAudioFeatureFrame({
     sourceNormalization: analysisResult.sourceNormalization,
     liveInputHardSilenceActive: analysisResult.liveInputHardSilenceActive,
     activeSourceCoupledModeCount: analysisResult.activeSourceCoupledModeCount,
-    nonZeroFFTBinCount:
-      analysisResult.nonZeroFFTBinCount ??
-      countNonZeroFFTBinCount(analysisResult.fftMagnitudes),
+    spectralEffectiveBinCount:
+      analysisResult.spectralEffectiveBinCount ??
+      computeSpectralEffectiveBinCount(analysisResult.fftLinearAmplitudes),
   });
-  const reusedAnalysisSourceAuthorityScale = reuseHeavyAnalysis
-    ? deriveReusedAnalysisSourceAuthorityScale({
+  const previousCompositionSourceAuthorityScale = smoothFromPreviousFrame
+    ? derivePreviousCompositionSourceAuthorityScale({
         preparedInputs,
         analysisResult,
       })
     : 1;
-  if (reuseHeavyAnalysis && previousFrame) {
+  if (smoothFromPreviousFrame && previousFrame) {
     const deltaMs = getFrameDeltaMs(
       preparedInputs.analysisMemory.lastComposedFrameAtMs,
       preparedInputs.currentFrameAtMs,
@@ -6796,13 +6256,14 @@ export function composeAudioFeatureFrame({
       },
     );
   }
-  if (reusedAnalysisSourceAuthorityScale < 1) {
-    structureSignal *= reusedAnalysisSourceAuthorityScale;
-    energySignal *= reusedAnalysisSourceAuthorityScale;
-    modalVisibilityEnergy *= reusedAnalysisSourceAuthorityScale;
-    modalObserverVisibilityEnergy *= reusedAnalysisSourceAuthorityScale;
-    modalVisibilityRetainedHighQEnergy *= reusedAnalysisSourceAuthorityScale;
-    modeCoherence *= reusedAnalysisSourceAuthorityScale;
+  if (previousCompositionSourceAuthorityScale < 1) {
+    structureSignal *= previousCompositionSourceAuthorityScale;
+    energySignal *= previousCompositionSourceAuthorityScale;
+    modalVisibilityEnergy *= previousCompositionSourceAuthorityScale;
+    modalObserverVisibilityEnergy *= previousCompositionSourceAuthorityScale;
+    modalVisibilityRetainedHighQEnergy *=
+      previousCompositionSourceAuthorityScale;
+    modeCoherence *= previousCompositionSourceAuthorityScale;
   }
   const retainedModalCoefficientEnergy = clamp01(
     sumSlotAmplitudeTotal(analysisResult.modeSlots, preparedInputs.capacity),
@@ -6843,7 +6304,9 @@ export function composeAudioFeatureFrame({
     sourceEvidence: preparedInputs.sourceEvidence,
     modalResponse: analysisResult.structuralMetrics,
   });
-  analysisResult.sourceEvidence = resolvedSourceEvidence;
+  if (!topologyOnly) {
+    analysisResult.sourceEvidence = resolvedSourceEvidence;
+  }
   let energyLedger = buildModalEnergyLedger({
     sourceEnergy: resolvedSourceEvidence.sourceEnergy,
     renderBoundaryState:
@@ -6860,7 +6323,7 @@ export function composeAudioFeatureFrame({
     injectTestTone: preparedInputs.resolvedAuditSettings.injectTestTone,
   });
   const projectedRenderAuthority = hasProjectedRenderAuthority(energyLedger);
-  if (analysisResult.structuralMetrics) {
+  if (!topologyOnly && analysisResult.structuralMetrics) {
     analysisResult.structuralMetrics.energyLedger = energyLedger;
     analysisResult.structuralMetrics.sourceEvidence = resolvedSourceEvidence;
   }
@@ -6884,8 +6347,10 @@ export function composeAudioFeatureFrame({
     beatOnsetDriver: analysisResult.beatOnsetDriver,
     beatDetected: analysisResult.beatDetected,
   });
-  preparedInputs.analysisMemory.lastComposedFrameAtMs =
-    preparedInputs.currentFrameAtMs;
+  if (!topologyOnly) {
+    preparedInputs.analysisMemory.lastComposedFrameAtMs =
+      preparedInputs.currentFrameAtMs;
+  }
 
   if (!projectedRenderAuthority) {
     structureSignal = 0;
@@ -6947,6 +6412,7 @@ export function composeAudioFeatureFrame({
     renderAuthority = false;
   }
   const modalProjectionContinuityHold =
+    !topologyFrame &&
     !renderAuthority &&
     resolvedSourceEvidence.currentSourceEvidence === true &&
     energyLedger.renderBoundaryState === "live" &&
@@ -7052,274 +6518,370 @@ export function composeAudioFeatureFrame({
     activeResonantModeCount = 0;
   }
 
-  const continuityDescriptorSources =
-    resolveModalFieldContinuityDescriptorSources({
-      preparedInputs,
-      structuralState: analysisResult.structuralState,
-      renderSourceCoupledSlots,
-      renderResonantSlots,
-      renderSourceCoupledPhaseSlots,
-      renderResonantPhaseSlots,
-      renderSourceCoupledColorSlots,
-      renderResonantColorSlots,
-      renderSourceCoupledSpectralLaneA,
-      renderSourceCoupledSpectralLaneB,
-      renderSourceCoupledSpectralMeta,
-      renderResonantSpectralLaneA,
-      renderResonantSpectralLaneB,
-      renderResonantSpectralMeta,
-      activeSourceCoupledModeCount,
-      activeResonantModeCount,
-      scale: renderAuthority ? energyLedger.projectedEnergyScale : 1,
-      allowProposalCandidates:
-        (renderAuthority || modalProjectionContinuityHold) &&
-        analysisResult.structuralState?.freezeModeSlots !== true,
+  let modalFieldContinuityDiagnostics =
+    topologyFrame?.modalFieldContinuity ?? null;
+  let modalDescriptor = topologyFrame?.modalDescriptor ?? null;
+  if (!modalDescriptor) {
+    const continuityDescriptorSources =
+      resolveModalFieldContinuityDescriptorSources({
+        preparedInputs,
+        structuralState: analysisResult.structuralState,
+        renderSourceCoupledSlots,
+        renderResonantSlots,
+        renderSourceCoupledPhaseSlots,
+        renderResonantPhaseSlots,
+        renderSourceCoupledColorSlots,
+        renderResonantColorSlots,
+        renderSourceCoupledSpectralLaneA,
+        renderSourceCoupledSpectralLaneB,
+        renderSourceCoupledSpectralMeta,
+        renderResonantSpectralLaneA,
+        renderResonantSpectralLaneB,
+        renderResonantSpectralMeta,
+        activeSourceCoupledModeCount,
+        activeResonantModeCount,
+        scale: renderAuthority ? energyLedger.projectedEnergyScale : 1,
+        allowProposalCandidates:
+          (renderAuthority || modalProjectionContinuityHold) &&
+          analysisResult.structuralState?.freezeModeSlots !== true,
+      });
+    const modalCandidateState =
+      analysisResult.structuralState?.modalCandidateState;
+    const sourceCoupledMetadataSlots = buildModalCandidateMetadataSlots({
+      slots: continuityDescriptorSources.descriptorSourceCoupledSlots,
+      activeModeCount: continuityDescriptorSources.activeSourceCoupledModeCount,
+      capacity: preparedInputs.capacity,
+      candidateState: modalCandidateState,
     });
-  const modalCandidateState =
-    analysisResult.structuralState?.modalCandidateState;
-  const sourceCoupledMetadataSlots = buildModalCandidateMetadataSlots({
-    slots: continuityDescriptorSources.descriptorSourceCoupledSlots,
-    activeModeCount: continuityDescriptorSources.activeSourceCoupledModeCount,
-    capacity: preparedInputs.capacity,
-    candidateState: modalCandidateState,
-  });
-  const resonantMetadataSlots = buildModalCandidateMetadataSlots({
-    slots: continuityDescriptorSources.descriptorResonantSlots,
-    activeModeCount: continuityDescriptorSources.activeResonantModeCount,
-    capacity: preparedInputs.capacity,
-    candidateState: modalCandidateState,
-  });
-  const modalFieldDescriptorSource = buildModalFieldDescriptorSource({
-    candidateForcingSlots:
-      continuityDescriptorSources.descriptorSourceCoupledSlots,
-    candidateResponseSlots: continuityDescriptorSources.descriptorResonantSlots,
-    sourceCoupledPhaseSlots:
-      continuityDescriptorSources.sourceCoupledPhaseSlots,
-    resonantPhaseSlots: continuityDescriptorSources.resonantPhaseSlots,
-    sourceCoupledColorSlots:
-      continuityDescriptorSources.sourceCoupledColorSlots,
-    resonantColorSlots: continuityDescriptorSources.resonantColorSlots,
-    sourceCoupledSpectralLaneA:
-      continuityDescriptorSources.sourceCoupledSpectralLaneA,
-    sourceCoupledSpectralLaneB:
-      continuityDescriptorSources.sourceCoupledSpectralLaneB,
-    sourceCoupledSpectralMeta:
-      continuityDescriptorSources.sourceCoupledSpectralMeta,
-    resonantSpectralLaneA: continuityDescriptorSources.resonantSpectralLaneA,
-    resonantSpectralLaneB: continuityDescriptorSources.resonantSpectralLaneB,
-    resonantSpectralMeta: continuityDescriptorSources.resonantSpectralMeta,
-    sourceCoupledMetadataSlots,
-    resonantMetadataSlots,
-    activeSourceCoupledModeCount:
-      continuityDescriptorSources.activeSourceCoupledModeCount,
-    activeResonantModeCount:
-      continuityDescriptorSources.activeResonantModeCount,
-    radius: preparedInputs.radius,
-    cavityAcousticScale: preparedInputs.cavityAcousticScale,
-    boundaryMode: preparedInputs.boundaryMode,
-    modalObservationConfidence,
-  });
-  const modalGeometryBackend = getModalGeometryBackend(
-    preparedInputs.effectiveCavityGeometry,
-  );
-  const upstreamSourceCoupledTopology =
-    modalGeometryBackend.summarizeModalSlotTopologyRange(
-      continuityDescriptorSources.descriptorSourceCoupledSlots,
-      { count: continuityDescriptorSources.activeSourceCoupledModeCount },
+    const resonantMetadataSlots = buildModalCandidateMetadataSlots({
+      slots: continuityDescriptorSources.descriptorResonantSlots,
+      activeModeCount: continuityDescriptorSources.activeResonantModeCount,
+      capacity: preparedInputs.capacity,
+      candidateState: modalCandidateState,
+    });
+    const modalFieldDescriptorSource = buildModalFieldDescriptorSource({
+      candidateForcingSlots:
+        continuityDescriptorSources.descriptorSourceCoupledSlots,
+      candidateResponseSlots:
+        continuityDescriptorSources.descriptorResonantSlots,
+      sourceCoupledPhaseSlots:
+        continuityDescriptorSources.sourceCoupledPhaseSlots,
+      resonantPhaseSlots: continuityDescriptorSources.resonantPhaseSlots,
+      sourceCoupledColorSlots:
+        continuityDescriptorSources.sourceCoupledColorSlots,
+      resonantColorSlots: continuityDescriptorSources.resonantColorSlots,
+      sourceCoupledSpectralLaneA:
+        continuityDescriptorSources.sourceCoupledSpectralLaneA,
+      sourceCoupledSpectralLaneB:
+        continuityDescriptorSources.sourceCoupledSpectralLaneB,
+      sourceCoupledSpectralMeta:
+        continuityDescriptorSources.sourceCoupledSpectralMeta,
+      resonantSpectralLaneA: continuityDescriptorSources.resonantSpectralLaneA,
+      resonantSpectralLaneB: continuityDescriptorSources.resonantSpectralLaneB,
+      resonantSpectralMeta: continuityDescriptorSources.resonantSpectralMeta,
+      sourceCoupledMetadataSlots,
+      resonantMetadataSlots,
+      activeSourceCoupledModeCount:
+        continuityDescriptorSources.activeSourceCoupledModeCount,
+      activeResonantModeCount:
+        continuityDescriptorSources.activeResonantModeCount,
+      radius: preparedInputs.radius,
+      cavityAcousticScale: preparedInputs.cavityAcousticScale,
+      boundaryMode: preparedInputs.boundaryMode,
+      modalObservationConfidence,
+    });
+    const modalGeometryBackend = getModalGeometryBackend(
+      preparedInputs.effectiveCavityGeometry,
     );
-  const upstreamResonantTopology =
-    modalGeometryBackend.summarizeModalSlotTopologyRange(
+    const upstreamSourceCoupledTopology =
+      modalGeometryBackend.summarizeModalSlotTopologyRange(
+        continuityDescriptorSources.descriptorSourceCoupledSlots,
+        { count: continuityDescriptorSources.activeSourceCoupledModeCount },
+      );
+    const upstreamResonantTopology =
+      modalGeometryBackend.summarizeModalSlotTopologyRange(
+        continuityDescriptorSources.descriptorResonantSlots,
+        {
+          count: continuityDescriptorSources.activeResonantModeCount,
+        },
+      );
+    const upstreamCandidateTopology =
+      modalGeometryBackend.summarizeModalSlotTopologyRange(
+        modalFieldDescriptorSource.modalFieldSlots,
+        { count: modalFieldDescriptorSource.activeModalFieldModeCount },
+      );
+    const upstreamSourceCoupledModalEnergy = sumModalSlotCoefficientEnergy(
+      continuityDescriptorSources.descriptorSourceCoupledSlots,
+      continuityDescriptorSources.activeSourceCoupledModeCount,
+    );
+    const upstreamResonantModalEnergy = sumModalSlotCoefficientEnergy(
       continuityDescriptorSources.descriptorResonantSlots,
+      continuityDescriptorSources.activeResonantModeCount,
+    );
+    const upstreamCandidateModalEnergy =
+      upstreamSourceCoupledModalEnergy + upstreamResonantModalEnergy;
+    const previousModalFieldContinuityFrameAtMs =
+      preparedInputs.analysisMemory.lastModalFieldContinuityFrameAtMs;
+    const modalFieldContinuityResetToken = `${preparedInputs.analysisSessionKey}|${preparedInputs.analysisInputsSignature}`;
+    const allowImmediateModalFieldBootstrap =
+      !Number.isFinite(previousModalFieldContinuityFrameAtMs) ||
+      (preparedInputs.modalFieldContinuityState?.lastResetToken !== undefined &&
+        preparedInputs.modalFieldContinuityState.lastResetToken !==
+          modalFieldContinuityResetToken);
+    const modalFieldContinuityDeltaMs = getModalFieldContinuityDeltaMs(
+      previousModalFieldContinuityFrameAtMs,
+      preparedInputs.currentFrameAtMs,
+    );
+    preparedInputs.analysisMemory.lastModalFieldContinuityFrameAtMs =
+      preparedInputs.currentFrameAtMs;
+    const modalFieldContinuityResult = updateModalFieldContinuity(
+      preparedInputs.modalFieldContinuityState,
       {
-        count: continuityDescriptorSources.activeResonantModeCount,
+        descriptorSource: modalFieldDescriptorSource,
+        deltaTimeSec: modalFieldContinuityDeltaMs / 1000,
+        resetToken: modalFieldContinuityResetToken,
+        renderAuthority: renderAuthority || modalProjectionContinuityHold,
+        maxVisibleModeCount: Math.min(
+          preparedInputs.capacity,
+          MODAL_BASIS_STEADY_MODE_COUNT,
+        ),
+        maxHandoffModeCount: Math.min(
+          MODAL_BASIS_HANDOFF_MODE_COUNT,
+          Math.max(
+            0,
+            Math.min(preparedInputs.capacity, MODAL_BASIS_CACHE_PAGE_CAPACITY) -
+              Math.min(preparedInputs.capacity, MODAL_BASIS_STEADY_MODE_COUNT),
+          ),
+        ),
+        maxBasisModeOrder: MODAL_FIELD_CONTINUITY_MAX_BASIS_MODE_ORDER,
+        releaseSeconds: modalProjectionContinuityHold
+          ? LIVE_SOURCE_MODAL_CONTINUITY_RELEASE_SECONDS
+          : undefined,
+        allowImmediateBootstrap: allowImmediateModalFieldBootstrap,
+        normalizeCandidateEvidence: true,
+        cavityGeometry: preparedInputs.effectiveCavityGeometry,
       },
     );
-  const upstreamCandidateTopology =
-    modalGeometryBackend.summarizeModalSlotTopologyRange(
-      modalFieldDescriptorSource.modalFieldSlots,
-      { count: modalFieldDescriptorSource.activeModalFieldModeCount },
+    const continuityDescriptorSource =
+      modalFieldContinuityResult.descriptorSource;
+    modalFieldContinuityDiagnostics = modalFieldContinuityResult.diagnostics;
+    const overBandwidthDiagnosticModeCount = Math.max(
+      0,
+      analysisResult.structuralMetrics?.overBandwidthRejectedModeCount ?? 0,
     );
-  const upstreamSourceCoupledModalEnergy = sumModalSlotCoefficientEnergy(
-    continuityDescriptorSources.descriptorSourceCoupledSlots,
-    continuityDescriptorSources.activeSourceCoupledModeCount,
-  );
-  const upstreamResonantModalEnergy = sumModalSlotCoefficientEnergy(
-    continuityDescriptorSources.descriptorResonantSlots,
-    continuityDescriptorSources.activeResonantModeCount,
-  );
-  const upstreamCandidateModalEnergy =
-    upstreamSourceCoupledModalEnergy + upstreamResonantModalEnergy;
-  const previousModalFieldContinuityFrameAtMs =
-    preparedInputs.analysisMemory.lastModalFieldContinuityFrameAtMs;
-  const modalFieldContinuityResetToken = `${preparedInputs.analysisSessionKey}|${preparedInputs.analysisInputsSignature}`;
-  const allowImmediateModalFieldBootstrap =
-    !Number.isFinite(previousModalFieldContinuityFrameAtMs) ||
-    (preparedInputs.modalFieldContinuityState?.lastResetToken !== undefined &&
-      preparedInputs.modalFieldContinuityState.lastResetToken !==
-        modalFieldContinuityResetToken);
-  const modalFieldContinuityDeltaMs = getModalFieldContinuityDeltaMs(
-    previousModalFieldContinuityFrameAtMs,
-    preparedInputs.currentFrameAtMs,
-  );
-  preparedInputs.analysisMemory.lastModalFieldContinuityFrameAtMs =
-    preparedInputs.currentFrameAtMs;
-  const modalFieldContinuityResult = updateModalFieldContinuity(
-    preparedInputs.modalFieldContinuityState,
-    {
-      descriptorSource: modalFieldDescriptorSource,
-      deltaTimeSec: modalFieldContinuityDeltaMs / 1000,
-      resetToken: modalFieldContinuityResetToken,
-      renderAuthority: renderAuthority || modalProjectionContinuityHold,
-      maxVisibleModeCount: Math.min(
-        preparedInputs.capacity,
-        MODAL_BASIS_ATLAS_PAGE_CAPACITY,
-      ),
-      maxBasisModeOrder: MODAL_FIELD_CONTINUITY_MAX_BASIS_MODE_ORDER,
-      releaseSeconds: modalProjectionContinuityHold
-        ? LIVE_SOURCE_MODAL_CONTINUITY_RELEASE_SECONDS
-        : undefined,
-      allowImmediateBootstrap: allowImmediateModalFieldBootstrap,
-      normalizeCandidateEvidence: true,
-      cavityGeometry: preparedInputs.effectiveCavityGeometry,
-    },
-  );
-  const continuityDescriptorSource =
-    modalFieldContinuityResult.descriptorSource;
-  const modalFieldContinuityDiagnostics =
-    modalFieldContinuityResult.diagnostics;
-  if (modalProjectionContinuityHold) {
-    const heldProjectedRenderEnergy = sumProjectedSlotEnergy(
-      continuityDescriptorSource.modalFieldSlots,
-      continuityDescriptorSource.activeModalFieldModeCount,
+    const overBandwidthDiagnosticModalEnergy = Math.max(
+      0,
+      analysisResult.structuralMetrics?.overBandwidthRejectedModalEnergy ?? 0,
     );
-    if (heldProjectedRenderEnergy > energyLedger.renderEnergyEpsilon) {
-      const storedSourceCoupledEnergy = clamp01(
-        energyLedger.storedModalSourceCoupledEnergy ?? 0,
+    const overBandwidthDiagnosticMaxModeIndex = Math.max(
+      0,
+      analysisResult.structuralMetrics?.overBandwidthMaxRequestedModeIndex ?? 0,
+    );
+    const continuityOverBandwidthMaxModeIndex = Math.max(
+      0,
+      modalFieldContinuityDiagnostics.overBandwidthMaxRequestedModeIndex ?? 0,
+    );
+    const overBandwidthMaxRequestedMode =
+      overBandwidthDiagnosticMaxModeIndex >
+      continuityOverBandwidthMaxModeIndex
+        ? analysisResult.structuralMetrics?.overBandwidthMaxRequestedMode
+        : modalFieldContinuityDiagnostics.overBandwidthMaxRequestedMode;
+    if (modalProjectionContinuityHold) {
+      const heldProjectedRenderEnergy = sumProjectedSlotEnergy(
+        continuityDescriptorSource.modalFieldSlots,
+        continuityDescriptorSource.activeModalFieldModeCount,
       );
-      const storedResonantEnergy = clamp01(
-        energyLedger.storedModalResonantEnergy ?? 0,
-      );
-      const storedLayerEnergy =
-        storedSourceCoupledEnergy + storedResonantEnergy;
-      const sourceCoupledShare =
-        storedLayerEnergy > 0
-          ? storedSourceCoupledEnergy / storedLayerEnergy
-          : 1;
-      const resonantShare =
-        storedLayerEnergy > 0 ? storedResonantEnergy / storedLayerEnergy : 0;
+      if (heldProjectedRenderEnergy > energyLedger.renderEnergyEpsilon) {
+        const storedSourceCoupledEnergy = clamp01(
+          energyLedger.storedModalSourceCoupledEnergy ?? 0,
+        );
+        const storedResonantEnergy = clamp01(
+          energyLedger.storedModalResonantEnergy ?? 0,
+        );
+        const storedLayerEnergy =
+          storedSourceCoupledEnergy + storedResonantEnergy;
+        const sourceCoupledShare =
+          storedLayerEnergy > 0
+            ? storedSourceCoupledEnergy / storedLayerEnergy
+            : 1;
+        const resonantShare =
+          storedLayerEnergy > 0 ? storedResonantEnergy / storedLayerEnergy : 0;
 
-      projectedModalRenderEnergy = heldProjectedRenderEnergy;
-      modalResponseSourceCoupledEnergy =
-        heldProjectedRenderEnergy * sourceCoupledShare;
-      modalResponseResonantEnergy = heldProjectedRenderEnergy * resonantShare;
-      observationEnergy = deriveModalObservationEnergy(
-        projectedModalRenderEnergy,
-        modalResponseEnergy,
-      );
-      renderAuthority = true;
-      fieldState = FIELD_STATES.decay;
-      hasModalField = true;
-      modalPhaseAuthority = Math.max(
-        modalPhaseAuthority,
-        clamp01(analysisResult.structuralMetrics?.modalPhaseAuthority ?? 0),
-      );
-      energyLedger = {
-        ...energyLedger,
-        projectedRenderEnergy: heldProjectedRenderEnergy,
-        rawProjectedRenderEnergy: Math.max(
-          energyLedger.rawProjectedRenderEnergy ?? 0,
-          heldProjectedRenderEnergy,
-        ),
-        projectedSourceCoupledEnergy: modalResponseSourceCoupledEnergy,
-        projectedResonantEnergy: modalResponseResonantEnergy,
-        projectedEnergyScale: 1,
-        renderAuthority: true,
-      };
-      if (analysisResult.structuralMetrics) {
-        analysisResult.structuralMetrics.energyLedger = energyLedger;
-        analysisResult.structuralMetrics.modalResponseRenderEnergy =
-          heldProjectedRenderEnergy;
-        analysisResult.structuralMetrics.modalResponseRenderSourceCoupledEnergy =
-          modalResponseSourceCoupledEnergy;
-        analysisResult.structuralMetrics.modalResponseRenderResonantEnergy =
-          modalResponseResonantEnergy;
+        projectedModalRenderEnergy = heldProjectedRenderEnergy;
+        modalResponseSourceCoupledEnergy =
+          heldProjectedRenderEnergy * sourceCoupledShare;
+        modalResponseResonantEnergy = heldProjectedRenderEnergy * resonantShare;
+        observationEnergy = deriveModalObservationEnergy(
+          projectedModalRenderEnergy,
+          modalResponseEnergy,
+        );
+        renderAuthority = true;
+        fieldState = FIELD_STATES.decay;
+        hasModalField = true;
+        modalPhaseAuthority = Math.max(
+          modalPhaseAuthority,
+          clamp01(analysisResult.structuralMetrics?.modalPhaseAuthority ?? 0),
+        );
+        energyLedger = {
+          ...energyLedger,
+          projectedRenderEnergy: heldProjectedRenderEnergy,
+          rawProjectedRenderEnergy: Math.max(
+            energyLedger.rawProjectedRenderEnergy ?? 0,
+            heldProjectedRenderEnergy,
+          ),
+          projectedSourceCoupledEnergy: modalResponseSourceCoupledEnergy,
+          projectedResonantEnergy: modalResponseResonantEnergy,
+          projectedEnergyScale: 1,
+          renderAuthority: true,
+        };
+        if (analysisResult.structuralMetrics) {
+          analysisResult.structuralMetrics.energyLedger = energyLedger;
+          analysisResult.structuralMetrics.modalResponseRenderEnergy =
+            heldProjectedRenderEnergy;
+          analysisResult.structuralMetrics.modalResponseRenderSourceCoupledEnergy =
+            modalResponseSourceCoupledEnergy;
+          analysisResult.structuralMetrics.modalResponseRenderResonantEnergy =
+            modalResponseResonantEnergy;
+        }
+      } else {
+        fieldState = FIELD_STATES.idle;
+        hasModalField = false;
+        renderAuthority = false;
       }
-    } else {
-      fieldState = FIELD_STATES.idle;
-      hasModalField = false;
-      renderAuthority = false;
+    }
+    modalDescriptor = buildCanonicalFullModalDescriptor({
+      generation: preparedInputs.auditState?.frame ?? 0,
+      maxTotalModes: Math.min(
+        preparedInputs.capacity,
+        AUDIO_DEFAULTS.maxModalFieldDescriptorModes,
+      ),
+      // Structural coverage remains the 12 steady pages. The extra physical
+      // atlas page is reserved exclusively for an active/pending handoff.
+      basisAtlasPageCapacity: MODAL_BASIS_STEADY_MODE_COUNT,
+      modalFieldSlots: continuityDescriptorSource.modalFieldSlots,
+      modalFieldPhaseSlots: continuityDescriptorSource.modalFieldPhaseSlots,
+      modalFieldColorSlots: continuityDescriptorSource.modalFieldColorSlots,
+      modalFieldSpectralLaneA:
+        continuityDescriptorSource.modalFieldSpectralLaneA,
+      modalFieldSpectralLaneB:
+        continuityDescriptorSource.modalFieldSpectralLaneB,
+      modalFieldSpectralMeta: continuityDescriptorSource.modalFieldSpectralMeta,
+      modalFieldMetadataSlots:
+        continuityDescriptorSource.modalFieldMetadataSlots,
+      activeModalFieldModeCount:
+        continuityDescriptorSource.activeModalFieldModeCount,
+      observerCandidateModeCount:
+        analysisResult.structuralMetrics?.excitedModeCount,
+      observedModalModeCount:
+        analysisResult.structuralMetrics?.observedModalModeCount,
+      phaseAuthorityModeCount:
+        analysisResult.structuralMetrics?.modalPhaseCoherentFieldModeCount,
+      rawCandidateModeCount:
+        modalFieldContinuityDiagnostics.rawCandidateModeCount,
+      confidenceQualifiedCandidateModeCount:
+        modalFieldContinuityDiagnostics.confidenceQualifiedCandidateModeCount,
+      lowConfidenceCandidateModeCount:
+        modalFieldContinuityDiagnostics.lowConfidenceCandidateModeCount,
+      rawCandidateModalEnergy:
+        modalFieldContinuityDiagnostics.rawCandidateModalEnergy,
+      confidenceWeightedCandidateEnergy:
+        modalFieldContinuityDiagnostics.confidenceWeightedCandidateEnergy,
+      modalObservationCoherence,
+      modalObservationConfidence,
+      overBandwidthRejectedModeCount:
+        modalFieldContinuityDiagnostics.overBandwidthRejectedModeCount +
+        overBandwidthDiagnosticModeCount,
+      overBandwidthRejectedModalEnergy:
+        modalFieldContinuityDiagnostics.overBandwidthRejectedModalEnergy +
+        overBandwidthDiagnosticModalEnergy,
+      overBandwidthMaxRequestedModeIndex:
+        Math.max(
+          continuityOverBandwidthMaxModeIndex,
+          overBandwidthDiagnosticMaxModeIndex,
+        ),
+      overBandwidthMaxRequestedMode: /** @type {[number, number, number]} */ ([
+        overBandwidthMaxRequestedMode?.[0] ?? 0,
+        overBandwidthMaxRequestedMode?.[1] ?? 0,
+        overBandwidthMaxRequestedMode?.[2] ?? 0,
+      ]),
+      upstreamSourceCoupledModeCount:
+        continuityDescriptorSources.activeSourceCoupledModeCount,
+      upstreamResonantModeCount:
+        continuityDescriptorSources.activeResonantModeCount,
+      upstreamCandidateModeCount:
+        modalFieldDescriptorSource.activeModalFieldModeCount,
+      upstreamSourceCoupledShellCount: upstreamSourceCoupledTopology.shellCount,
+      upstreamResonantShellCount: upstreamResonantTopology.shellCount,
+      upstreamCandidateShellCount: upstreamCandidateTopology.shellCount,
+      upstreamSourceCoupledModalEnergy,
+      upstreamResonantModalEnergy,
+      upstreamCandidateModalEnergy,
+      cavityGeometry: preparedInputs.effectiveCavityGeometry,
+      modeIdentityRetentionRatio:
+        modalFieldContinuityDiagnostics.modeIdentityRetentionRatio,
+      previousFieldAuthority:
+        preparedInputs.modalDescriptorAuthorityState?.previousFieldAuthority,
+      allowOverBandwidthProjectionRetention:
+        !preparedInputs.resolvedAuditSettings.injectTestTone &&
+        resolvedSourceEvidence.currentSourceEvidence === true &&
+        energyLedger.renderBoundaryState === "live",
+    });
+    if (preparedInputs.modalDescriptorAuthorityState) {
+      preparedInputs.modalDescriptorAuthorityState.previousFieldAuthority =
+        modalDescriptor.fieldAuthority;
     }
   }
-  const modalDescriptor = buildCanonicalFullModalDescriptor({
-    generation: preparedInputs.auditState?.frame ?? 0,
-    maxTotalModes: Math.min(
-      preparedInputs.capacity,
-      AUDIO_DEFAULTS.maxModalFieldDescriptorModes,
-    ),
-    basisAtlasPageCapacity: MODAL_BASIS_ATLAS_PAGE_CAPACITY,
-    modalFieldSlots: continuityDescriptorSource.modalFieldSlots,
-    modalFieldPhaseSlots: continuityDescriptorSource.modalFieldPhaseSlots,
-    modalFieldColorSlots: continuityDescriptorSource.modalFieldColorSlots,
-    modalFieldSpectralLaneA: continuityDescriptorSource.modalFieldSpectralLaneA,
-    modalFieldSpectralLaneB: continuityDescriptorSource.modalFieldSpectralLaneB,
-    modalFieldSpectralMeta: continuityDescriptorSource.modalFieldSpectralMeta,
-    modalFieldMetadataSlots: continuityDescriptorSource.modalFieldMetadataSlots,
-    activeModalFieldModeCount:
-      continuityDescriptorSource.activeModalFieldModeCount,
-    observerCandidateModeCount:
-      analysisResult.structuralMetrics?.excitedModeCount,
-    observedModalModeCount:
-      analysisResult.structuralMetrics?.observedModalModeCount,
-    phaseAuthorityModeCount:
-      analysisResult.structuralMetrics?.modalPhaseCoherentFieldModeCount,
-    rawCandidateModeCount:
-      modalFieldContinuityDiagnostics.rawCandidateModeCount,
-    confidenceQualifiedCandidateModeCount:
-      modalFieldContinuityDiagnostics.confidenceQualifiedCandidateModeCount,
-    lowConfidenceCandidateModeCount:
-      modalFieldContinuityDiagnostics.lowConfidenceCandidateModeCount,
-    rawCandidateModalEnergy:
-      modalFieldContinuityDiagnostics.rawCandidateModalEnergy,
-    confidenceWeightedCandidateEnergy:
-      modalFieldContinuityDiagnostics.confidenceWeightedCandidateEnergy,
-    modalObservationCoherence,
-    modalObservationConfidence,
-    overBandwidthRejectedModeCount:
-      modalFieldContinuityDiagnostics.overBandwidthRejectedModeCount,
-    overBandwidthRejectedModalEnergy:
-      modalFieldContinuityDiagnostics.overBandwidthRejectedModalEnergy,
-    overBandwidthMaxRequestedModeIndex:
-      modalFieldContinuityDiagnostics.overBandwidthMaxRequestedModeIndex,
-    overBandwidthMaxRequestedMode: /** @type {[number, number, number]} */ ([
-      modalFieldContinuityDiagnostics.overBandwidthMaxRequestedMode?.[0] ?? 0,
-      modalFieldContinuityDiagnostics.overBandwidthMaxRequestedMode?.[1] ?? 0,
-      modalFieldContinuityDiagnostics.overBandwidthMaxRequestedMode?.[2] ?? 0,
-    ]),
-    upstreamSourceCoupledModeCount:
-      continuityDescriptorSources.activeSourceCoupledModeCount,
-    upstreamResonantModeCount:
-      continuityDescriptorSources.activeResonantModeCount,
-    upstreamCandidateModeCount:
-      modalFieldDescriptorSource.activeModalFieldModeCount,
-    upstreamSourceCoupledShellCount: upstreamSourceCoupledTopology.shellCount,
-    upstreamResonantShellCount: upstreamResonantTopology.shellCount,
-    upstreamCandidateShellCount: upstreamCandidateTopology.shellCount,
-    upstreamSourceCoupledModalEnergy,
-    upstreamResonantModalEnergy,
-    upstreamCandidateModalEnergy,
-    cavityGeometry: preparedInputs.effectiveCavityGeometry,
-    modeIdentityRetentionRatio:
-      modalFieldContinuityDiagnostics.modeIdentityRetentionRatio,
-    previousFieldAuthority:
-      preparedInputs.modalDescriptorAuthorityState?.previousFieldAuthority,
-    allowOverBandwidthProjectionRetention:
-      !preparedInputs.resolvedAuditSettings.injectTestTone &&
-      resolvedSourceEvidence.currentSourceEvidence === true &&
-      energyLedger.renderBoundaryState === "live",
-  });
-  if (preparedInputs.modalDescriptorAuthorityState) {
-    preparedInputs.modalDescriptorAuthorityState.previousFieldAuthority =
-      modalDescriptor.fieldAuthority;
+  if (modalDescriptor.fieldAuthority === "bandwidth-limited") {
+    fieldState = FIELD_STATES.idle;
+    hasModalField = false;
+    renderAuthority = false;
+    structureSignal = 0;
+    energySignal = 0;
+    changeSignal = 0;
+    pulseSignal = 0;
+    modeCoherence = 0;
+    modalVisibilityEnergy = 0;
+    modalObserverVisibilityEnergy = 0;
+    modalVisibilityRetainedHighQEnergy = 0;
+    projectedModalRenderEnergy = 0;
+    modalResponseSourceCoupledEnergy = 0;
+    modalResponseResonantEnergy = 0;
+    observationEnergy = 0;
+    modalPhaseAuthority = 0;
+    timbreSpread = 0;
+    spectralNovelty = 0;
+    energyLedger = {
+      ...energyLedger,
+      projectedRenderEnergy: 0,
+      projectedSourceCoupledEnergy: 0,
+      projectedResonantEnergy: 0,
+      projectedEnergyScale: 0,
+      renderAuthority: false,
+    };
+    if (analysisResult.structuralMetrics) {
+      analysisResult.structuralMetrics.energyLedger = energyLedger;
+      analysisResult.structuralMetrics.modalResponseRenderEnergy = 0;
+      analysisResult.structuralMetrics.modalResponseRenderSourceCoupledEnergy = 0;
+      analysisResult.structuralMetrics.modalResponseRenderResonantEnergy = 0;
+    }
+  }
+  if (topologyOnly) {
+    return {
+      activeModeCount: modalDescriptor.counts.modalFieldModeCount,
+      activeModalFieldModeCount: modalDescriptor.counts.modalFieldModeCount,
+      modalFieldContinuity: modalFieldContinuityDiagnostics,
+      modalDescriptor,
+      modalFieldSlots: modalDescriptor.slotViews.modalFieldSlots,
+      modalFieldPhaseSlots: modalDescriptor.slotViews.modalFieldPhaseSlots,
+      modalFieldColorSlots: modalDescriptor.slotViews.modalFieldColorSlots,
+      modalFieldSpectralLaneA:
+        modalDescriptor.slotViews.modalFieldSpectralLaneA,
+      modalFieldSpectralLaneB:
+        modalDescriptor.slotViews.modalFieldSpectralLaneB,
+      modalFieldSpectralMeta: modalDescriptor.slotViews.modalFieldSpectralMeta,
+      modalFieldMetadataSlots:
+        modalDescriptor.slotViews.modalFieldMetadataSlots,
+    };
   }
   let debug = analysisResult.debug;
   if (!debug) {
@@ -7370,8 +6932,9 @@ export function composeAudioFeatureFrame({
       avgAmplitude: analysisResult.avgAmplitude,
       analyserRms: analysisResult.analyserRms,
       spectralCandidates: analysisResult.spectralCandidates ?? [],
-      fftMagnitudes: analysisResult.fftMagnitudes ?? null,
-      nonZeroFFTBinCount: analysisResult.nonZeroFFTBinCount ?? null,
+      fftLinearAmplitudes: analysisResult.fftLinearAmplitudes ?? null,
+      spectralEffectiveBinCount:
+        analysisResult.spectralEffectiveBinCount ?? null,
       candidateForcingSlots: renderSourceCoupledSlots,
       candidateResponseSlots: renderResonantSlots,
       sourceCoupledColorSlots: renderSourceCoupledColorSlots,
@@ -7401,9 +6964,7 @@ export function composeAudioFeatureFrame({
       sampleRate: preparedInputs.sampleRate,
       fftSize: preparedInputs.fftSize,
       structuralMetrics: analysisResult.structuralMetrics,
-      micFftNormGain: analysisResult.micFftNormGain,
-      preModalFftPeak: analysisResult.preModalFftPeak,
-      postNormalizationFftPeak: analysisResult.postNormalizationFftPeak,
+      fftPeakAmplitude: analysisResult.fftPeakAmplitude,
       referencePitchBinAmplitude:
         analysisResult.referencePitchBinAmplitude ?? null,
       sourceNormalization: analysisResult.sourceNormalization,
@@ -7446,7 +7007,7 @@ export function composeAudioFeatureFrame({
     soundActive: analysisResult.soundActive,
     micActive: analysisResult.micActive,
     averageAmplitude: analysisResult.avgAmplitude,
-    fftMagnitudes: analysisResult.fftMagnitudes,
+    fftLinearAmplitudes: analysisResult.fftLinearAmplitudes,
     activeModeCount: modalDescriptor.counts.modalFieldModeCount,
     activeModalFieldModeCount: modalDescriptor.counts.modalFieldModeCount,
     modalFieldContinuity: modalFieldContinuityDiagnostics,
@@ -7527,18 +7088,4 @@ export function composeAudioFeatureFrame({
     debug,
     audit: preparedInputs.resolvedAuditSettings,
   };
-}
-
-export function buildAudioFeatureFrame(args) {
-  const preparedInputs = prepareAudioFeatureFrameInputs(args);
-  if (preparedInputs.silentFeatureFrame) {
-    return preparedInputs.silentFeatureFrame;
-  }
-
-  const analysisResult = runHeavyAudioFeatureAnalysis(preparedInputs);
-  return composeAudioFeatureFrame({
-    preparedInputs,
-    analysisResult,
-    reuseHeavyAnalysis: false,
-  });
 }

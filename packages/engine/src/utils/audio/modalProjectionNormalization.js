@@ -13,7 +13,7 @@ const PROJECTION_RESONANT_LAYER_BUDGET = 0.34;
 const PROJECTION_HIGH_Q_PROTECTION_ENERGY_START = 0.00045;
 const PROJECTION_HIGH_Q_PROTECTION_ENERGY_FULL = 0.018;
 
-export function createEmptyProjectionNormalizationMetrics() {
+function createEmptyProjectionNormalizationMetrics() {
   return {
     projectionEnergyBudgetSourceCoupled: 0,
     projectionEnergyBudgetResonant: 0,
@@ -244,8 +244,7 @@ export function applyProjectionEnergyNormalization({
   );
   const energyScale =
     competitionAdjustedProjectedRenderEnergyTotal > budget
-      ? budget /
-        Math.max(competitionAdjustedProjectedRenderEnergyTotal, 1e-9)
+      ? budget / Math.max(competitionAdjustedProjectedRenderEnergyTotal, 1e-9)
       : 1;
   const conservedEntries = competed.map((item) => ({
     ...item.entry,

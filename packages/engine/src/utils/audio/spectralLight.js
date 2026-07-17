@@ -3,9 +3,9 @@ import { clamp, clamp01, smoothstep } from "../math.js";
 export const SPECTRAL_VISIBLE_RED_NM = 780;
 export const SPECTRAL_VISIBLE_VIOLET_NM = 380;
 export const SPECTRAL_CIE_STEP_NM = 5;
-export const SPECTRAL_REFERENCE_OCTAVES = 40;
-export const SPECTRAL_PHASE_DEFAULT = 0;
-export const SPECTRAL_EPSILON = 1e-6;
+const SPECTRAL_REFERENCE_OCTAVES = 40;
+const SPECTRAL_PHASE_DEFAULT = 0;
+const SPECTRAL_EPSILON = 1e-6;
 export const SPECTRAL_LIGHT_LANE_COUNT = 8;
 
 const SPEED_OF_LIGHT_M_PER_S = 299_792_458;
@@ -383,7 +383,7 @@ export function sampleCie1931(wavelengthNm) {
   };
 }
 
-export function xyzToLinearSrgb(xyz) {
+function xyzToLinearSrgb(xyz) {
   const adapted = adaptXyzBradford(
     normalizeChromaticXyz(xyz),
     EQUAL_ENERGY_WHITE,
@@ -529,47 +529,4 @@ export function createSpectralLightColor({
     observerLuminance,
     observerLuminanceScale,
   };
-}
-
-const WEAK_COMPONENT_FLOOR = 0.24;
-const FAMILY_DISTANCE_SEMITONES = 1.15;
-
-function frequencyDistanceInSemitones(left, right) {
-  if (
-    !Number.isFinite(left) ||
-    !Number.isFinite(right) ||
-    left <= 0 ||
-    right <= 0
-  ) {
-    return Number.POSITIVE_INFINITY;
-  }
-  return Math.abs(12 * Math.log2(left / right));
-}
-
-export function collapseFrequencyToNearestFamily(frequency, weight, families) {
-  if (
-    !Number.isFinite(frequency) ||
-    frequency <= 0 ||
-    !Array.isArray(families) ||
-    !families.length ||
-    weight >= WEAK_COMPONENT_FLOOR
-  ) {
-    return frequency;
-  }
-
-  let bestFamily = null;
-  let bestDistance = Number.POSITIVE_INFINITY;
-  for (const family of families) {
-    const distance = frequencyDistanceInSemitones(frequency, family.frequency);
-    if (
-      distance <= FAMILY_DISTANCE_SEMITONES &&
-      distance < bestDistance &&
-      family.weight > weight
-    ) {
-      bestDistance = distance;
-      bestFamily = family;
-    }
-  }
-
-  return bestFamily?.frequency ?? frequency;
 }

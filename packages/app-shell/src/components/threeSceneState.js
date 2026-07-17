@@ -84,7 +84,8 @@ export function shouldUseAuthoritativePerformanceHud({
 } = {}) {
   const authoritativeOutputActive =
     previewState?.authorityMode === "output-stage-authoritative";
-  const visualOutputActive = previewState?.programOutputActive === true;
+  const visualOutputActive =
+    previewState?.programOutputConfiguredActive === true;
   const hasAuthoritativeHudData =
     authoritativeStageTelemetry?.performanceHudSnapshot != null ||
     authoritativeOutputHudMetrics != null;

@@ -38,6 +38,8 @@ export default function AdvancedControlsDock({
   operatorControlKeys = [],
   dockWidth = DEFAULT_DOCK_WIDTH,
   brandAccessory = null,
+  showUiInFullscreen = false,
+  onShowUiInFullscreenChange = null,
   footerActions = [],
   onOpenChange = null,
 }) {
@@ -213,6 +215,8 @@ export default function AdvancedControlsDock({
           }}
           dockWidth={dockWidth}
           triggerRef={triggerRef}
+          showUiInFullscreen={showUiInFullscreen}
+          onShowUiInFullscreenChange={onShowUiInFullscreenChange}
           footerActions={footerActions}
         />
       ) : null}

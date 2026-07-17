@@ -1,15 +1,9 @@
+import { MODAL_BASIS_ATLAS_PAGE_CAPACITY } from "../../core/modalBudgets.js";
 import { clamp01, smoothstep } from "../math.js";
 
-export function countNonZeroFftBins(fftMagnitudes, threshold = 0.001) {
-  if (!fftMagnitudes?.length) return 0;
-  let count = 0;
-  for (let index = 0; index < fftMagnitudes.length; index += 1) {
-    if ((fftMagnitudes[index] ?? 0) > threshold) {
-      count += 1;
-    }
-  }
-  return count;
-}
+const SPECTRAL_PARTICIPATION_LOAD_START = MODAL_BASIS_ATLAS_PAGE_CAPACITY * 0.5;
+const SPECTRAL_PARTICIPATION_LOAD_FULL = MODAL_BASIS_ATLAS_PAGE_CAPACITY * 1.5;
+const SPECTRAL_PARTICIPATION_SPARSE_END = MODAL_BASIS_ATLAS_PAGE_CAPACITY * 2;
 
 export function deriveHighQSparseResonatorEvidence({
   highQObservedSnr = 0,
@@ -19,7 +13,7 @@ export function deriveHighQSparseResonatorEvidence({
   highQResonantEnergy = 0,
   distributedExcitation = 0,
   periodicity = 0,
-  nonZeroFFTBinCount = 0,
+  spectralEffectiveBinCount = 0,
   modeCoherence = 0,
 } = {}) {
   const observedSnr = clamp01(highQObservedSnr);
@@ -30,10 +24,15 @@ export function deriveHighQSparseResonatorEvidence({
   const distribution = clamp01(distributedExcitation);
   const periodic = clamp01(periodicity);
   const coherence = clamp01(Math.max(modeCoherence, observedCoherence));
-  const binCount = Math.max(0, nonZeroFFTBinCount ?? 0);
+  const binCount = Math.max(0, spectralEffectiveBinCount ?? 0);
 
   const projectionLoad = clamp01(
-    smoothstep(640, 900, binCount) * 0.38 +
+    smoothstep(
+      SPECTRAL_PARTICIPATION_LOAD_START,
+      SPECTRAL_PARTICIPATION_LOAD_FULL,
+      binCount,
+    ) *
+      0.38 +
       smoothstep(0.38, 0.58, distribution) * 0.32 +
       (1 - smoothstep(0.26, 0.48, observedSnr)) * 0.14 +
       (1 - smoothstep(0.004, 0.018, observedDrive)) * 0.08 +
@@ -41,7 +40,12 @@ export function deriveHighQSparseResonatorEvidence({
   );
 
   const sparseSpectrumEvidence =
-    (1 - smoothstep(360, 760, binCount)) *
+    (1 -
+      smoothstep(
+        SPECTRAL_PARTICIPATION_LOAD_START,
+        SPECTRAL_PARTICIPATION_SPARSE_END,
+        binCount,
+      )) *
     (1 - smoothstep(0.62, 0.9, distribution) * 0.32) *
     Math.max(
       smoothstep(0.3, 0.5, coherence) *

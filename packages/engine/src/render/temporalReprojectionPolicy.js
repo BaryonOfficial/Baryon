@@ -18,9 +18,10 @@ function readRaymarchSceneMotion(sceneSnapshot) {
 /**
  * Resolve the complete temporal-reprojection policy for a raymarch frame.
  *
- * TRAA is valid only when the renderer has meaningful geometric velocity: the
- * rotatable 3D raymarch volume may accumulate history only during scene-root
- * motion. Audio energy is deliberately not an input.
+ * Authorized raymarch frames may accumulate history whether the scene is
+ * moving or stable. Zero geometric velocity is still a valid reprojection
+ * input and lets temporal jitter converge on stationary detail. Audio energy
+ * is deliberately not an input.
  *
  * @param {object} params
  * @param {unknown} [params.visualizationMethod]
@@ -64,14 +65,14 @@ export function resolveTemporalReprojectionPolicy({
   }
 
   const sceneMotion = readRaymarchSceneMotion(sceneSnapshot);
-  const accumulateHistory = sceneMotion > REPROJECTABLE_RAYMARCH_MOTION_EPSILON;
+  const hasSceneMotion = sceneMotion > REPROJECTABLE_RAYMARCH_MOTION_EPSILON;
 
   return {
     traaEnabled: true,
-    accumulateHistory,
-    shouldBypassHistory: !accumulateHistory,
-    reason: accumulateHistory
+    accumulateHistory: true,
+    shouldBypassHistory: false,
+    reason: hasSceneMotion
       ? "reprojectable-scene-motion"
-      : "no-reprojectable-scene-motion",
+      : "stable-raymarch-frame",
   };
 }

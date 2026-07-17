@@ -3,8 +3,18 @@ import * as THREE from "three";
 import { prepareBaryonGeometryFromScene } from "./defaultBaryonGeometry.js";
 import { DEFAULT_BARYON_GEOMETRY_URL } from "./useDefaultBaryonGeometry.js";
 
-test("default Baryon geometry loads from the app root", () => {
-  expect(DEFAULT_BARYON_GEOMETRY_URL).toBe("/glb/Baryon_v2.glb");
+test("default Baryon geometry stays inside web and packaged renderer roots", () => {
+  expect(
+    new URL(DEFAULT_BARYON_GEOMETRY_URL, "https://baryon.live/").href,
+  ).toBe("https://baryon.live/glb/Baryon_v2.glb");
+  expect(
+    new URL(
+      DEFAULT_BARYON_GEOMETRY_URL,
+      "file:///Applications/Baryon.app/Contents/Resources/app.asar/.vite/renderer/main_window/index.html",
+    ).href,
+  ).toBe(
+    "file:///Applications/Baryon.app/Contents/Resources/app.asar/.vite/renderer/main_window/glb/Baryon_v2.glb",
+  );
 });
 
 test("prepareBaryonGeometryFromScene clones mesh geometry and bakes scale", () => {

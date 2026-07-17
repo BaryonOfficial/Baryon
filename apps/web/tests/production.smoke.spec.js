@@ -89,10 +89,6 @@ test.describe("Baryon production smoke", () => {
     await page.goto("/");
     await expect(page.locator("#root > div canvas").first()).toBeVisible();
     await expect(page.getByText("Upload Audio")).toBeVisible();
-    await expect(page.getByRole("button", { name: "SoundCloud" })).toHaveCount(
-      0,
-    );
-    await expect(page.getByLabel("SoundCloud URL")).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "Toggle advanced controls" }),
     ).toBeVisible();
@@ -141,9 +137,9 @@ test.describe("Baryon production smoke", () => {
       .click();
     await page.getByRole("button", { name: /^Shape\s/ }).click();
 
-    const slider = page.getByRole("slider", { name: "Node Threshold" });
+    const slider = page.getByRole("slider", { name: "Density" });
     const helpTrigger = page.getByRole("button", {
-      name: "Show help for Node Threshold",
+      name: "Show help for Density",
     });
 
     const before = await slider.boundingBox();
@@ -152,7 +148,7 @@ test.describe("Baryon production smoke", () => {
     await helpTrigger.hover();
     const tooltip = page.getByTestId("advanced-controls-help-tooltip");
     await expect(tooltip).toBeVisible();
-    await expect(tooltip).toContainText("Node Threshold");
+    await expect(tooltip).toContainText("Density");
 
     const after = await slider.boundingBox();
     expect(after).not.toBeNull();

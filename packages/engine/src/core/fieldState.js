@@ -16,11 +16,3 @@ export const FIELD_STATE_VALUES = Object.freeze({
   active: 2,
   test: 3,
 });
-
-export function isFieldDrivenState(fieldState) {
-  return (
-    fieldState === FIELD_STATES.decay ||
-    fieldState === FIELD_STATES.active ||
-    fieldState === FIELD_STATES.test
-  );
-}

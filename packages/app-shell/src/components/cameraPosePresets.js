@@ -218,4 +218,6 @@ export const DEFAULT_IDLE_PERFORMER_CAMERA_POSE = Object.freeze(
   resolvePresetCameraPose(CAMERA_VIEW_PRESETS.side),
 );
 
+// Live-performer state is a separate semantic contract even while its default
+// remains aligned with the shared active-scene camera pose.
 export const DEFAULT_LIVE_PERFORMER_CAMERA_POSE = DEFAULT_ACTIVE_CAMERA_POSE;

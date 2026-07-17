@@ -8,11 +8,20 @@ function isEditingElement(element) {
   );
 }
 
+function readFullscreenState() {
+  if (typeof window !== "undefined") {
+    const desktopFullscreenState =
+      window.electronAPI?.windowControls?.getFullscreenState?.();
+    if (desktopFullscreenState) {
+      return desktopFullscreenState.fullscreen === true;
+    }
+  }
+
+  return typeof document !== "undefined" && Boolean(document.fullscreenElement);
+}
+
 export function useFullscreen(elementRef) {
-  const [isFullscreen, setIsFullscreen] = useState(
-    () =>
-      typeof document !== "undefined" && Boolean(document.fullscreenElement),
-  );
+  const [isFullscreen, setIsFullscreen] = useState(readFullscreenState);
   const toggleFullscreen = useCallback(() => {
     const desktopWindowControls = window.electronAPI?.windowControls;
     if (desktopWindowControls?.toggleFullscreen) {
@@ -65,6 +74,7 @@ export function useFullscreen(elementRef) {
 
   useEffect(() => {
     const desktopWindowControls = window.electronAPI?.windowControls;
+    setIsFullscreen(readFullscreenState());
     if (!desktopWindowControls?.subscribeFullscreenState) {
       return undefined;
     }

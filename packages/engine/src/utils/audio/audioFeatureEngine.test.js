@@ -1,984 +1,1257 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
-  AUDIO_SLOT_CAPACITY,
-  CAVITY_ACOUSTIC_DEFAULTS,
-} from "../../defaults.js";
+  AUDIO_FEATURE_AUTHORITY_ROLES,
+  createAudioFeatureRuntime,
+  DEFAULT_AUDIO_FEATURE_RUNTIME_SETTINGS,
+} from "./audioFeatureEngine.js";
+import { AUDIO_FEATURE_PROTOCOL_VERSION } from "./audioFeaturePackets.js";
 import {
-  buildAudioFeatureAnalysisSnapshot,
-  buildCurrentAudioFeatureAnalysisResult,
-  composeAudioFeatureFrame,
-  createAudioFeatureState,
-  prepareAudioFeatureFrameInputs,
-  runHeavyAudioFeatureAnalysis,
-  updateAudioFeatureFastSignalState,
-  updateAudioFeatureStructuralState,
-} from "../audioFeatures.js";
-import * as audioFeatureEngine from "./audioFeatureEngine.js";
-import { buildAudioFeatureTransportFrame } from "./audioFeatureEngine.js";
-import { frequencyToBinIndex } from "./binFrequency.js";
-import * as audioFeatureWorker from "./audioFeatureEngine.worker.js";
-import {
-  buildLaneRunDecisions,
-  buildEngineStatus,
-  createEngineState,
-  deriveDirtyState,
-  shouldPublishDirtySnapshot,
-  recordWorkerPerfSample,
+  createFeatureWorkerState,
+  processFeatureWorkerFrame,
 } from "./audioFeatureEngine.worker.js";
+import { AUDIO_SLOT_CAPACITY } from "../../defaults.js";
 
-const FFT_SIZE = 4096;
-const SAMPLE_RATE = 44100;
+class FakeWorker {
+  constructor() {
+    this.listeners = new Map();
+    this.messages = [];
+    this.terminated = false;
+  }
+
+  addEventListener(type, listener) {
+    const listeners = this.listeners.get(type) ?? [];
+    listeners.push(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  removeEventListener(type, listener) {
+    this.listeners.set(
+      type,
+      (this.listeners.get(type) ?? []).filter((entry) => entry !== listener),
+    );
+  }
+
+  postMessage(message, transferables = []) {
+    this.messages.push({ message, transferables });
+  }
+
+  emit(type, data) {
+    for (const listener of this.listeners.get(type) ?? []) {
+      listener({ data });
+    }
+  }
+
+  terminate() {
+    this.terminated = true;
+  }
+}
 
 function createStatus(overrides = {}) {
   return {
     audioInputMode: "file",
     analysisSource: "file",
     pitchSourceMode: "spectral",
-    fftSize: FFT_SIZE,
+    fftSize: 8192,
+    fastFftSize: 2048,
     capacity: AUDIO_SLOT_CAPACITY,
-    sampleRate: SAMPLE_RATE,
+    sampleRate: 44100,
     isAudioLoaded: true,
     isPlaying: true,
+    isPlaybackPaused: false,
     isLiveInputActive: false,
     hasAnalysisSource: true,
-    workerStatus: null,
-    liveInputCalibrationVersion: 0,
+    playbackSourceSessionId: 1,
+    playbackSessionId: 1,
+    lastPlaybackEndReason: null,
     ...overrides,
   };
 }
 
-function createSnapshot(overrides = {}) {
+function createAnalysisSnapshot(fftSize, frequencyHz = 220) {
+  const timeData = new Float32Array(fftSize);
+  for (let index = 0; index < timeData.length; index += 1) {
+    timeData[index] =
+      Math.sin((2 * Math.PI * frequencyHz * index) / 44100) * 0.35;
+  }
+  const fftLinearAmplitudes = new Float32Array(fftSize / 2);
+  const bin = Math.max(1, Math.round((frequencyHz * fftSize) / 44100));
+  fftLinearAmplitudes[bin] = 0.8;
   return {
     sourceMode: "file",
-    avgAmplitude: 24,
-    fftMagnitudes: new Float32Array(FFT_SIZE / 2),
-    timeData: new Float32Array(FFT_SIZE),
-    rms: 0.2,
-    spectralCentroid: 0.3,
+    avgAmplitude: 32,
+    rms: 0.24,
+    spectralCentroid: 0.2,
     spectralFlux: 0.1,
-    ...overrides,
+    fftLinearAmplitudes,
+    timeData,
   };
 }
 
-function makeToneFft(peaks, length = FFT_SIZE / 2) {
-  const fft = new Float32Array(length);
-  for (const [frequencyHz, amplitude] of peaks) {
-    const bin = Math.max(
-      1,
-      frequencyToBinIndex(frequencyHz, length, SAMPLE_RATE),
-    );
-    fft[bin] = amplitude;
-  }
-  return fft;
+function createSilentAnalysisSnapshot(fftSize) {
+  return {
+    sourceMode: "file",
+    // Keep transport/source evidence active while the exact 2048-sample
+    // window itself carries no modal forcing.
+    avgAmplitude: 32,
+    rms: 0.24,
+    spectralCentroid: 0,
+    spectralFlux: 0,
+    fftLinearAmplitudes: new Float32Array(fftSize / 2),
+    timeData: new Float32Array(fftSize),
+  };
 }
 
-function maxColorWeight(colorSlots) {
-  let max = 0;
-  for (let offset = 3; offset < (colorSlots?.length ?? 0); offset += 4) {
-    max = Math.max(max, colorSlots[offset] ?? 0);
-  }
-  return max;
-}
-
-function createPreparedInputs(frameTimeMs, overrides = {}) {
-  return prepareAudioFeatureFrameInputs({
-    analysisSnapshot: createSnapshot({
-      fftMagnitudes: new Float32Array([0, 0.95, 0.6, 0.2]),
-      ...overrides.analysisSnapshot,
-    }),
-    featureState: overrides.featureState ?? createAudioFeatureState(),
-    radius: 3,
-    status: createStatus(overrides.status),
-    frameTimeMs,
-  });
-}
-
-function createLoopbackLiveStatus(overrides = {}) {
-  return createStatus({
-    audioInputMode: "live",
-    analysisSource: "live",
-    isPlaying: false,
-    isLiveInputActive: true,
-    hasAnalysisSource: true,
-    liveInputKind: "system",
-    liveInputDeviceKind: "system",
-    liveInputAnalysisClass: "line-feed",
-    ...overrides,
-  });
-}
-
-function createSystemStatus(overrides = {}) {
-  return createStatus({
-    audioInputMode: "system",
-    analysisSource: "file",
-    isPlaying: false,
-    isLiveInputActive: true,
-    hasAnalysisSource: true,
-    liveInputKind: "system",
-    liveInputDeviceKind: "system",
-    liveInputAnalysisClass: "line-feed",
-    ...overrides,
-  });
-}
-
-function createFakeWorker() {
-  const listeners = new Map();
-  const worker = {
-    messages: [],
-    addEventListener(type, listener) {
-      const typedListeners = listeners.get(type) ?? [];
-      typedListeners.push(listener);
-      listeners.set(type, typedListeners);
-    },
-    postMessage(message) {
-      worker.messages.push(message);
-    },
-    terminate() {},
-    emit(type, data) {
-      for (const listener of listeners.get(type) ?? []) {
-        listener({ data });
+function createRuntimeHarness(statusOverrides = {}, dependencyOverrides = {}) {
+  let currentTimeMs = 0;
+  let status = createStatus(statusOverrides);
+  const captures = [];
+  const scheduled = [];
+  const workers = [];
+  const audioSession = {
+    getStatus: vi.fn(() => status),
+    readFeatureAnalysisCapture: vi.fn(({ includeStructural }) => {
+      captures.push(includeStructural);
+      if (dependencyOverrides.readFeatureAnalysisCapture) {
+        return dependencyOverrides.readFeatureAnalysisCapture({
+          includeStructural,
+          currentTimeMs,
+        });
       }
+      return {
+        captureTimestampMs: currentTimeMs,
+        fast: createAnalysisSnapshot(2048),
+        structural: includeStructural ? createAnalysisSnapshot(8192) : null,
+      };
+    }),
+  };
+  const runtime = createAudioFeatureRuntime(
+    {
+      fastCadenceMs: 8,
+      structuralCadenceMs: 16,
+      staleDriveTimeoutMs: 96,
+      workerRestartTimeoutMs: 288,
+    },
+    {
+      audioSession,
+      now: () => currentTimeMs,
+      schedule(callback) {
+        const handle = { callback, cancelled: false };
+        scheduled.push(handle);
+        return handle;
+      },
+      cancel(handle) {
+        handle.cancelled = true;
+      },
+      createWorker() {
+        const worker = dependencyOverrides.createWorker
+          ? dependencyOverrides.createWorker()
+          : new FakeWorker();
+        workers.push(worker);
+        return worker;
+      },
+    },
+  );
+
+  return {
+    runtime,
+    audioSession,
+    captures,
+    workers,
+    setStatus(next) {
+      status = { ...status, ...next };
+    },
+    setTime(next) {
+      currentTimeMs = next;
+    },
+    runNextCapture() {
+      const next = scheduled.find((entry) => !entry.cancelled);
+      if (!next) {
+        return false;
+      }
+      next.cancelled = true;
+      next.callback();
+      return true;
     },
   };
-  return worker;
 }
 
-it("carries acoustic cavity scale and boundary mode in worker transport frames", () => {
-  const frame = buildAudioFeatureTransportFrame({
-    analysisSnapshot: createSnapshot(),
-    status: createStatus(),
-    frameTimeMs: 16,
-    radius: 3,
-    cavityAcousticScale: CAVITY_ACOUSTIC_DEFAULTS,
-    boundaryMode: "neumann",
+function findMessages(worker, type) {
+  return worker.messages
+    .map((entry) => entry.message)
+    .filter((message) => message.type === type);
+}
+
+function createTopologyPacket(runtimeStatus, overrides = {}) {
+  return {
+    protocolVersion: AUDIO_FEATURE_PROTOCOL_VERSION,
+    sourceGeneration: runtimeStatus.sourceGeneration,
+    workerGeneration: runtimeStatus.workerGeneration,
+    topologyRevision: 1,
+    activeModeCount: 1,
+    committedModeCount: 1,
+    modalIdentitySlots: new Float32Array([1, 2, 3]),
+    committedModeIdentitySlots: new Float32Array([1, 2, 3]),
+    committedModeFrequenciesHz: new Float32Array([220]),
+    modalRoleMetadata: new Uint8Array([1]),
+    committedModeRoleMetadata: new Uint8Array([1]),
+    fastProbeModeIndices: new Uint16Array([0]),
+    modalFieldColorSlots: new Float32Array(4),
+    modalFieldSpectralLaneA: new Float32Array(4),
+    modalFieldSpectralLaneB: new Float32Array(4),
+    modalFieldSpectralMeta: new Float32Array(4),
+    modalFieldMetadataSlots: new Float32Array(4),
+    ...overrides,
+  };
+}
+
+function createDrivePacket(runtimeStatus, overrides = {}) {
+  return {
+    protocolVersion: AUDIO_FEATURE_PROTOCOL_VERSION,
+    sourceGeneration: runtimeStatus.sourceGeneration,
+    workerGeneration: runtimeStatus.workerGeneration,
+    topologyRevision: 1,
+    frameId: 1,
+    captureTimestampMs: 0,
+    processingTimestampMs: 1,
+    activeModeCount: 1,
+    committedModeCount: 1,
+    modalCoefficients: new Float32Array([0.5]),
+    phaseSlots: new Float32Array(4),
+    bandEnergies: new Float32Array(4),
+    spectralBandEnergies: new Float32Array(4),
+    renderState: {},
+    ...overrides,
+  };
+}
+
+function publishModel(harness, overrides = {}) {
+  const runtimeStatus = harness.runtime.getStatus();
+  const worker = harness.workers.at(-1);
+  const topology = createTopologyPacket(runtimeStatus, overrides.topology);
+  const drive = createDrivePacket(runtimeStatus, overrides.drive);
+  worker.emit("message", { type: "topology-packet", packet: topology });
+  worker.emit("message", { type: "drive-packet", packet: drive });
+  return { topology, drive };
+}
+
+describe("audio feature runtime", () => {
+  it("publishes structural analysis at a realtime 30 Hz cadence", () => {
+    expect(DEFAULT_AUDIO_FEATURE_RUNTIME_SETTINGS.fastCadenceMs).toBe(16);
+    expect(DEFAULT_AUDIO_FEATURE_RUNTIME_SETTINGS.structuralCadenceMs).toBe(33);
   });
 
-  expect(frame.radius).toBe(3);
-  expect(frame.cavityAcousticScale).toEqual(CAVITY_ACOUSTIC_DEFAULTS);
-  expect(frame.boundaryMode).toBe("neumann");
-});
+  it("starts one worker and captures synchronized structural bootstrap data", () => {
+    const harness = createRuntimeHarness();
+    expect(harness.runtime.start()).toBe(true);
 
-describe("audio feature engine transport", () => {
-  it("always includes time data for file transport because modal excitation owns structural analysis", () => {
-    const frame = buildAudioFeatureTransportFrame({
-      analysisSnapshot: createSnapshot({
-        fftMagnitudes: new Float32Array([0, 1, 0.5]),
-        timeData: new Float32Array([0, 0.1, -0.1]),
-      }),
-      status: createStatus({
-        playbackSessionId: "file-session",
-      }),
-      frameTimeMs: 1000,
-      radius: 3,
-    });
-
-    expect(frame.sessionKey).toBe("file:file-session");
-    expect(frame.audioInputMode).toBe("file");
-    expect(frame.status).toBeUndefined();
-    expect(frame.analysisSnapshot).toBeUndefined();
-    expect(frame.fftMagnitudes).toBeInstanceOf(Float32Array);
-    expect(frame.timeData).toBeInstanceOf(Float32Array);
-    expect(frame).not.toHaveProperty("analysisHints");
+    expect(harness.workers).toHaveLength(1);
+    expect(findMessages(harness.workers[0], "init")).toHaveLength(1);
+    const inputs = findMessages(harness.workers[0], "analysis-input");
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0].frame.fastPayload.timeData).toHaveLength(2048);
+    expect(inputs[0].frame.structuralPayload.timeData).toHaveLength(8192);
+    expect(inputs[0].frame).not.toHaveProperty("configuration");
+    expect(harness.captures).toEqual([true]);
+    expect(harness.runtime.start()).toBe(false);
   });
 
-  it("does not expose structural implementation on transport frames", () => {
-    const frame = buildAudioFeatureTransportFrame({
-      analysisSnapshot: createSnapshot({
-        timeData: new Float32Array([0, 0.1, -0.1]),
-      }),
-      status: createStatus({
-        playbackSessionId: "file-session",
-      }),
-      frameTimeMs: 1000,
-      radius: 3,
-    });
-
-    expect(frame).not.toHaveProperty("structuralImplementation");
-    expect(frame.timeData).toBeInstanceOf(Float32Array);
-  });
-
-  it("passes requested cavity geometry through the worker transport frame", () => {
-    const frame = buildAudioFeatureTransportFrame({
-      analysisSnapshot: createSnapshot(),
-      status: createStatus({
-        playbackSessionId: "file-session",
-      }),
-      frameTimeMs: 1000,
-      radius: 3,
-      cavityGeometry: "spherical",
-    });
-
-    expect(frame.cavityGeometry).toBe("spherical");
-  });
-
-  it("includes time data for acoustic live input transport", () => {
-    const frame = buildAudioFeatureTransportFrame({
-      analysisSnapshot: createSnapshot({
-        sourceMode: "live",
-        fftMagnitudes: new Float32Array([0, 0.8, 0.4]),
-        timeData: new Float32Array([0, 0.2, -0.2]),
-      }),
-      status: createStatus({
-        audioInputMode: "live",
-        analysisSource: "live",
-        isLiveInputActive: true,
-        liveInputDeviceKind: "live",
-        liveInputAnalysisClass: "acoustic-mic",
-      }),
-      frameTimeMs: 1500,
-      radius: 3,
-    });
-
-    expect(frame.audioInputMode).toBe("live");
-    expect(frame.timeData).toBeInstanceOf(Float32Array);
-  });
-
-  it("includes time data for system transport", () => {
-    const frame = buildAudioFeatureTransportFrame({
-      analysisSnapshot: createSnapshot({
-        sourceMode: "system",
-        timeData: new Float32Array([0, 0.2, -0.2]),
-      }),
-      status: createSystemStatus(),
-      frameTimeMs: 1500,
-      radius: 3,
-    });
-
-    expect(frame.audioInputMode).toBe("system");
-    expect(frame.timeData).toBeInstanceOf(Float32Array);
-  });
-});
-
-describe("audio feature engine worker lanes", () => {
-  it("reports averaged worker lane timings instead of the last sample", () => {
-    const engineState = createEngineState();
-    recordWorkerPerfSample(engineState, "structuralMs", 10);
-    recordWorkerPerfSample(engineState, "structuralMs", 20);
-    recordWorkerPerfSample(engineState, "projectionMs", 0.5);
-
-    const status = buildEngineStatus(engineState);
-
-    expect(status.workerStructuralMs).toBe(15);
-    expect(status.workerStructuralLastMs).toBe(20);
-    expect(status.workerStructuralMaxMs).toBe(20);
-    expect(status.workerProjectionMs).toBe(0.5);
-    expect(status.workerProjectionLastMs).toBe(0.5);
-    expect(status.workerProjectionMaxMs).toBe(0.5);
-  });
-
-  it("resets wrapper and worker metrics without clearing the latest snapshot", () => {
-    const worker = createFakeWorker();
-    const engine = audioFeatureEngine.createAudioFeatureEngine(
-      { runtime: "worker" },
-      { createWorker: () => worker },
+  it("requests a worker-owned test-tone topology when no audio capture exists", () => {
+    const harness = createRuntimeHarness(
+      {
+        audioInputMode: "idle",
+        analysisSource: "idle",
+        isAudioLoaded: false,
+        isPlaying: false,
+        hasAnalysisSource: false,
+        playbackSessionId: null,
+      },
+      { readFeatureAnalysisCapture: () => null },
     );
+    harness.runtime.configure({
+      radius: 1,
+      includeSpectralLight: true,
+      auditSettings: {
+        injectTestTone: true,
+        testToneHz: 528,
+        testToneAmplitude: 0.8,
+      },
+    });
+    harness.runtime.start();
+
+    const worker = harness.workers[0];
+    const input = findMessages(worker, "analysis-input")[0].frame;
+    expect(input).toMatchObject({
+      fastPayload: null,
+      structuralPayload: null,
+      structuralRequested: true,
+    });
+
+    const state = createFeatureWorkerState();
+    state.sourceGeneration = input.sourceGeneration;
+    state.workerGeneration = input.workerGeneration;
+    state.configuration = findMessages(worker, "init")[0].configuration;
+    const result = processFeatureWorkerFrame(state, input);
+
+    expect(result.topologyPacket.activeModeCount).toBeGreaterThan(0);
+    expect(result.drivePacket.renderState).toMatchObject({
+      fieldState: "test",
+      renderAuthority: true,
+    });
+    expect(state.latestAnalysisResult.preparedInputs.fftSize).toBe(2048);
+  });
+
+  it("keeps one input in flight and one newest coalesced pending input", () => {
+    const harness = createRuntimeHarness();
+    harness.runtime.start();
+    harness.setTime(8);
+    harness.runNextCapture();
+    harness.setTime(16);
+    harness.runNextCapture();
+
+    const worker = harness.workers[0];
+    expect(findMessages(worker, "analysis-input")).toHaveLength(1);
+    expect(harness.runtime.getStatus()).toMatchObject({
+      queueDepth: 2,
+      inputReplacementCount: 1,
+    });
+
+    const firstFrame = findMessages(worker, "analysis-input")[0].frame;
+    worker.emit("message", {
+      type: "analysis-input-ack",
+      sourceGeneration: firstFrame.sourceGeneration,
+      workerGeneration: firstFrame.workerGeneration,
+      frameId: firstFrame.frameId,
+    });
+
+    const sent = findMessages(worker, "analysis-input");
+    expect(sent).toHaveLength(2);
+    expect(sent[1].frame.captureTimestampMs).toBe(16);
+    expect(sent[1].frame.structuralPayload).not.toBeNull();
+  });
+
+  it("publishes only a matching immutable topology and drive model", () => {
+    const harness = createRuntimeHarness();
+    harness.runtime.start();
+    const { topology, drive } = publishModel(harness);
+    const model = harness.runtime.readLatestFeatureModel();
+
+    expect(model.topology).toBe(topology);
+    expect(model.drive).toBe(drive);
+    expect(model.topology.modalIdentitySlots).toBe(topology.modalIdentitySlots);
+    expect(model.drive.modalCoefficients).toBe(drive.modalCoefficients);
+    expect(Object.isFrozen(model)).toBe(true);
+  });
+
+  it("treats authority role as the only local start and suspend command", () => {
+    const harness = createRuntimeHarness();
+    harness.runtime.setAuthorityRole(
+      AUDIO_FEATURE_AUTHORITY_ROLES.externalConsumer,
+    );
+    harness.runtime.start();
+
+    expect(harness.workers).toHaveLength(0);
+    expect(
+      harness.audioSession.readFeatureAnalysisCapture,
+    ).not.toHaveBeenCalled();
+    expect(harness.runtime.readLatestFeatureModel()).toBeNull();
+
+    harness.runtime.setAuthorityRole(
+      AUDIO_FEATURE_AUTHORITY_ROLES.localProducer,
+    );
+    expect(harness.workers).toHaveLength(1);
+    expect(
+      harness.audioSession.readFeatureAnalysisCapture,
+    ).toHaveBeenCalledTimes(1);
+  });
+
+  it("forces structural capture for config changes without changing authority", () => {
+    const harness = createRuntimeHarness();
+    harness.runtime.start();
+    const worker = harness.workers[0];
+    const firstFrame = findMessages(worker, "analysis-input")[0].frame;
+    worker.emit("message", {
+      type: "analysis-input-ack",
+      sourceGeneration: firstFrame.sourceGeneration,
+      workerGeneration: firstFrame.workerGeneration,
+      frameId: firstFrame.frameId,
+    });
+
+    expect(harness.runtime.configure({ radius: 2 })).toBe(true);
+    expect(harness.runtime.configure({ radius: 2 })).toBe(false);
+    harness.setTime(8);
+    harness.runNextCapture();
+
+    expect(harness.captures.at(-1)).toBe(true);
+    expect(findMessages(worker, "configure")).toHaveLength(1);
+    expect(harness.runtime.getStatus().authorityRole).toBe(
+      AUDIO_FEATURE_AUTHORITY_ROLES.localProducer,
+    );
+  });
+
+  it("increments the source generation exactly once for one session change", () => {
+    const harness = createRuntimeHarness();
+    harness.runtime.start();
+    const initialGeneration = harness.runtime.getStatus().sourceGeneration;
+    harness.setStatus({ playbackSourceSessionId: 2, playbackSessionId: 2 });
+    harness.setTime(8);
+    harness.runNextCapture();
+
+    expect(harness.runtime.getStatus()).toMatchObject({
+      sourceGeneration: initialGeneration + 1,
+      sourceBootstrapCount: 1,
+    });
+    harness.setTime(16);
+    harness.runNextCapture();
+    expect(harness.runtime.getStatus().sourceGeneration).toBe(
+      initialGeneration + 1,
+    );
+  });
+
+  it("does not rebootstrap when playback restarts within one loaded source", () => {
+    const harness = createRuntimeHarness();
+    harness.runtime.start();
+    const initialStatus = harness.runtime.getStatus();
+
+    harness.setStatus({ playbackSessionId: 2 });
+    harness.setTime(8);
+    harness.runNextCapture();
+
+    expect(harness.runtime.getStatus()).toMatchObject({
+      sourceGeneration: initialStatus.sourceGeneration,
+      sourceBootstrapCount: initialStatus.sourceBootstrapCount,
+    });
+  });
+
+  it("keeps structural bootstrap pending until file playback analysis activates", () => {
+    let analysisReady = false;
+    const harness = createRuntimeHarness(
+      {
+        analysisSource: "idle",
+        isPlaying: false,
+        hasAnalysisSource: false,
+        hasPlaybackAnalysisSource: false,
+        playbackSessionId: null,
+      },
+      {
+        readFeatureAnalysisCapture: ({ includeStructural, currentTimeMs }) =>
+          analysisReady
+            ? {
+                captureTimestampMs: currentTimeMs,
+                fast: createAnalysisSnapshot(2048),
+                structural: includeStructural
+                  ? createAnalysisSnapshot(8192)
+                  : null,
+              }
+            : null,
+      },
+    );
+
+    harness.runtime.start();
+    const worker = harness.workers[0];
+    const acknowledgeLatestInput = () => {
+      const frame = findMessages(worker, "analysis-input").at(-1).frame;
+      worker.emit("message", {
+        type: "analysis-input-ack",
+        sourceGeneration: frame.sourceGeneration,
+        workerGeneration: frame.workerGeneration,
+        frameId: frame.frameId,
+      });
+    };
+
+    expect(harness.captures).toEqual([true]);
+    acknowledgeLatestInput();
+
+    harness.setTime(8);
+    harness.runNextCapture();
+    expect(harness.captures.at(-1)).toBe(false);
+    acknowledgeLatestInput();
+
+    analysisReady = true;
+    harness.setStatus({
+      analysisSource: "file",
+      isPlaying: true,
+      hasAnalysisSource: true,
+      hasPlaybackAnalysisSource: true,
+      playbackSessionId: 1,
+    });
+    harness.setTime(9);
+    harness.runNextCapture();
+
+    const activeInput = findMessages(worker, "analysis-input").at(-1).frame;
+    expect(activeInput.structuralPayload).not.toBeNull();
+    expect(harness.runtime.getStatus().playbackAnalysisPending).toBe(true);
+
+    publishModel(harness, {
+      drive: {
+        captureTimestampMs: activeInput.captureTimestampMs - 1,
+      },
+    });
+    expect(harness.runtime.getStatus().playbackAnalysisPending).toBe(true);
+
+    worker.emit("message", {
+      type: "drive-packet",
+      packet: createDrivePacket(harness.runtime.getStatus(), {
+        frameId: 2,
+        captureTimestampMs: activeInput.captureTimestampMs,
+      }),
+    });
+
+    expect(harness.runtime.getStatus().playbackAnalysisPending).toBe(false);
+  });
+
+  it("restarts a stalled worker at most once per source generation", () => {
+    const harness = createRuntimeHarness();
+    harness.runtime.start();
+    harness.setTime(288);
+    harness.runNextCapture();
+    expect(harness.workers).toHaveLength(2);
+    expect(harness.runtime.getStatus()).toMatchObject({
+      workerRestartCount: 1,
+      configurationReplayCount: 1,
+    });
+
+    harness.setTime(600);
+    harness.runNextCapture();
+    expect(harness.workers).toHaveLength(2);
+  });
+
+  it("fails closed after 96 ms only for an advancing active local source", () => {
+    const harness = createRuntimeHarness();
+    harness.runtime.start();
+    publishModel(harness);
+    harness.setTime(97);
+
+    expect(harness.runtime.readLatestFeatureModel()).toBeNull();
+    expect(harness.runtime.getStatus().renderAuthorityRevoked).toBe(true);
+  });
+
+  it("exempts explicit paused-file hold from stale revocation", () => {
+    const harness = createRuntimeHarness();
+    harness.runtime.start();
+    publishModel(harness);
+    harness.setStatus({
+      isPlaying: false,
+      isPlaybackPaused: true,
+      audioInputMode: "idle",
+    });
+    harness.setTime(500);
+    harness.runNextCapture();
+
+    expect(harness.runtime.readLatestFeatureModel()).not.toBeNull();
+    expect(harness.runtime.getStatus().renderAuthorityRevoked).toBe(false);
+  });
+
+  it.each(["premature", "interrupted"])(
+    "does not classify a %s playback end as an explicit pause",
+    (lastPlaybackEndReason) => {
+      const harness = createRuntimeHarness();
+      harness.runtime.start();
+      harness.setStatus({
+        isPlaying: false,
+        isPlaybackPaused: false,
+        audioInputMode: "idle",
+        lastPlaybackEndReason,
+      });
+      harness.setTime(500);
+      harness.runNextCapture();
+
+      expect(harness.runtime.getStatus().sourceGeneration).toBe(1);
+      expect(harness.runtime.getStatus().reason).not.toBe("paused-file-hold");
+    },
+  );
+
+  it("rejects delayed worker status from a stale generation", () => {
+    const harness = createRuntimeHarness();
+    harness.runtime.start();
+    const worker = harness.workers[0];
+    const staleGeneration = harness.runtime.getStatus();
+    harness.setStatus({ playbackSourceSessionId: 2, playbackSessionId: 2 });
+    harness.setTime(8);
+    harness.runNextCapture();
+
     worker.emit("message", {
       type: "status",
       status: {
-        state: "ready",
-        reason: "published",
-        publishCount: 5,
-        droppedFrameCount: 2,
-        workerStructuralMs: 7,
+        sourceGeneration: staleGeneration.sourceGeneration,
+        workerGeneration: staleGeneration.workerGeneration,
+        state: "failed",
+        reason: "stale-worker-failure",
       },
     });
-    const latestSnapshot = {
-      frameTimeMs: 2000,
-      publishCount: 5,
-      analysisSessionKey: "file:test",
-      analysisInputsSignature: "baseline",
-      analysisResult: {},
-    };
+
+    expect(harness.runtime.getStatus()).toMatchObject({
+      state: "loading",
+      reason: "source-session-changed",
+      staleWorkerStatusCount: 1,
+    });
+  });
+
+  it("does not retry an initial worker creation failure before timeout", () => {
+    const createWorker = vi.fn(() => {
+      throw new Error("worker unavailable");
+    });
+    const harness = createRuntimeHarness({}, { createWorker });
+
+    harness.runtime.start();
+    for (let index = 1; index <= 35; index += 1) {
+      harness.setTime(index * 8);
+      harness.runNextCapture();
+    }
+
+    expect(createWorker).toHaveBeenCalledTimes(1);
+    expect(harness.runtime.getStatus()).toMatchObject({
+      state: "failed",
+      reason: "worker-create-failed",
+      workerRestartCount: 0,
+    });
+  });
+
+  it("automatically recovers once after an initial creation timeout", () => {
+    const recoveredWorker = new FakeWorker();
+    const createWorker = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error("worker unavailable");
+      })
+      .mockReturnValueOnce(recoveredWorker);
+    const harness = createRuntimeHarness({}, { createWorker });
+    harness.runtime.start();
+
+    for (let index = 1; index <= 35; index += 1) {
+      harness.setTime(index * 8);
+      harness.runNextCapture();
+    }
+    expect(createWorker).toHaveBeenCalledTimes(1);
+
+    harness.setTime(288);
+    harness.runNextCapture();
+
+    expect(createWorker).toHaveBeenCalledTimes(2);
+    expect(harness.workers).toEqual([recoveredWorker]);
+    expect(findMessages(recoveredWorker, "init")).toHaveLength(1);
+    expect(findMessages(recoveredWorker, "analysis-input")).toHaveLength(1);
+    expect(harness.runtime.getStatus()).toMatchObject({
+      state: "loading",
+      workerRestartCount: 1,
+      configurationReplayCount: 1,
+    });
+  });
+
+  it("bounds a failed automatic retry after initial creation failure", () => {
+    const createWorker = vi.fn(() => {
+      throw new Error("worker unavailable");
+    });
+    const harness = createRuntimeHarness({}, { createWorker });
+    harness.runtime.start();
+
+    for (let index = 1; index <= 80; index += 1) {
+      harness.setTime(index * 8);
+      harness.runNextCapture();
+    }
+
+    expect(createWorker).toHaveBeenCalledTimes(2);
+    expect(harness.runtime.getStatus()).toMatchObject({
+      state: "failed",
+      reason: "worker-create-failed",
+      workerRestartCount: 0,
+    });
+  });
+
+  it("allows one fresh worker creation attempt after the source changes", () => {
+    const recoveredWorker = new FakeWorker();
+    const createWorker = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error("worker unavailable");
+      })
+      .mockReturnValueOnce(recoveredWorker);
+    const harness = createRuntimeHarness({}, { createWorker });
+    harness.runtime.start();
+    harness.setStatus({ playbackSourceSessionId: 2, playbackSessionId: 2 });
+
+    harness.setTime(8);
+    harness.runNextCapture();
+    harness.setTime(16);
+    harness.runNextCapture();
+
+    expect(createWorker).toHaveBeenCalledTimes(2);
+    expect(harness.workers).toEqual([recoveredWorker]);
+    expect(findMessages(recoveredWorker, "init")).toHaveLength(1);
+    expect(findMessages(recoveredWorker, "analysis-input")).toHaveLength(1);
+  });
+
+  it("does not retry after the one automatic restart fails to create", () => {
+    const initialWorker = new FakeWorker();
+    const createWorker = vi
+      .fn()
+      .mockReturnValueOnce(initialWorker)
+      .mockImplementationOnce(() => {
+        throw new Error("restart unavailable");
+      });
+    const harness = createRuntimeHarness({}, { createWorker });
+    harness.runtime.start();
+
+    initialWorker.emit("error", new Error("worker failed"));
+    for (let index = 1; index <= 12; index += 1) {
+      harness.setTime(index * 8);
+      harness.runNextCapture();
+    }
+
+    expect(createWorker).toHaveBeenCalledTimes(2);
+    expect(harness.runtime.getStatus()).toMatchObject({
+      state: "failed",
+      reason: "worker-create-failed",
+      workerRestartCount: 0,
+    });
+  });
+
+  it("absorbs the current source when external authority returns local", () => {
+    const harness = createRuntimeHarness();
+    harness.runtime.start();
+    harness.runtime.setAuthorityRole(
+      AUDIO_FEATURE_AUTHORITY_ROLES.externalConsumer,
+    );
+    harness.setStatus({ playbackSourceSessionId: 2, playbackSessionId: 2 });
+    const beforeLocal = harness.runtime.getStatus();
+
+    harness.runtime.setAuthorityRole(
+      AUDIO_FEATURE_AUTHORITY_ROLES.localProducer,
+    );
+    const afterLocal = harness.runtime.getStatus();
+    harness.setTime(8);
+    harness.runNextCapture();
+
+    expect(afterLocal.sourceGeneration).toBe(beforeLocal.sourceGeneration + 1);
+    expect(afterLocal.sourceBootstrapCount).toBe(
+      beforeLocal.sourceBootstrapCount + 1,
+    );
+    expect(harness.runtime.getStatus()).toMatchObject({
+      sourceGeneration: afterLocal.sourceGeneration,
+      sourceBootstrapCount: afterLocal.sourceBootstrapCount,
+    });
+  });
+
+  it("does not restart a failed local worker while externally suspended", () => {
+    const harness = createRuntimeHarness();
+    harness.runtime.start();
+    const worker = harness.workers[0];
+    harness.runtime.setAuthorityRole(
+      AUDIO_FEATURE_AUTHORITY_ROLES.externalConsumer,
+    );
+
+    worker.emit("error", new Error("worker failed while suspended"));
+
+    expect(worker.terminated).toBe(true);
+    expect(harness.workers).toHaveLength(1);
+    expect(harness.runtime.getStatus()).toMatchObject({
+      state: "suspended",
+      reason: "worker-error-suspended",
+      workerRestartCount: 0,
+    });
+  });
+
+  it("applies cached configuration before releasing a pending input", () => {
+    const harness = createRuntimeHarness();
+    harness.runtime.start();
+    const worker = harness.workers[0];
+    harness.setTime(8);
+    harness.runNextCapture();
+
+    harness.runtime.configure({ radius: 2 });
+    const firstFrame = findMessages(worker, "analysis-input")[0].frame;
     worker.emit("message", {
-      type: "snapshot",
-      snapshot: latestSnapshot,
-    });
-    engine.resetMetrics("probe-reset");
-
-    expect(worker.messages.at(-1)).toEqual({
-      type: "reset-metrics",
-      reason: "probe-reset",
-    });
-    expect(engine.getStatus()).toMatchObject({
-      state: "ready",
-      reason: "probe-reset",
-      publishCount: 0,
-      droppedFrameCount: 0,
-      workerStructuralMs: 0,
-      workerStructuralLastMs: 0,
-      workerStructuralMaxMs: 0,
-    });
-    expect(engine.readLatestSnapshot()).toBe(latestSnapshot);
-    engine.dispose();
-  });
-
-  it("runs structural, chroma, and tempo lanes at separate cadences", () => {
-    const engineState = createEngineState({
-      runtime: "worker",
-      structuralCadenceMs: 33,
-      snapshotPublishCadenceMs: 33,
-      chromaCadenceMs: 66,
-      tempoCadenceMs: 120,
-      maxSnapshotAgeMs: 96,
-    });
-    engineState.latestSnapshot = {
-      frameTimeMs: 1000,
-      analysisSessionKey: "file:file-session",
-      analysisInputsSignature: '"baseline"',
-      analysisResult: {},
-    };
-    engineState.latestAnalysisResult = {};
-    engineState.lastPublishedAtMs = 1000;
-    engineState.lastAnalysisSessionKey = "file:file-session";
-    engineState.lastAnalysisInputsSignature = '"baseline"';
-    engineState.lastStructuralUpdateAtMs = 1000;
-    engineState.lastChromaUpdateAtMs = 1000;
-    engineState.lastTempoUpdateAtMs = 1000;
-
-    const earlyDecisions = buildLaneRunDecisions(engineState, {
-      currentFrameAtMs: 1020,
-      analysisSessionKey: "file:file-session",
-      analysisInputsSignature: '"baseline"',
-    });
-    expect(earlyDecisions.fastSignal).toBe(true);
-    expect(earlyDecisions.structural).toBe(false);
-    expect(earlyDecisions.chroma).toBe(false);
-    expect(earlyDecisions.tempo).toBe(false);
-
-    const structuralDecisions = buildLaneRunDecisions(engineState, {
-      currentFrameAtMs: 1040,
-      analysisSessionKey: "file:file-session",
-      analysisInputsSignature: '"baseline"',
-    });
-    expect(structuralDecisions.structural).toBe(true);
-    expect(structuralDecisions.chroma).toBe(false);
-    expect(structuralDecisions.tempo).toBe(false);
-
-    const chromaDecisions = buildLaneRunDecisions(engineState, {
-      currentFrameAtMs: 1070,
-      analysisSessionKey: "file:file-session",
-      analysisInputsSignature: '"baseline"',
-    });
-    expect(chromaDecisions.structural).toBe(true);
-    expect(chromaDecisions.chroma).toBe(true);
-    expect(chromaDecisions.tempo).toBe(false);
-
-    const tempoDecisions = buildLaneRunDecisions(engineState, {
-      currentFrameAtMs: 1130,
-      analysisSessionKey: "file:file-session",
-      analysisInputsSignature: '"baseline"',
-    });
-    expect(tempoDecisions.structural).toBe(true);
-    expect(tempoDecisions.chroma).toBe(true);
-    expect(tempoDecisions.tempo).toBe(true);
-  });
-
-  it("forces all lanes when the session signature changes", () => {
-    const engineState = createEngineState();
-    engineState.latestSnapshot = {
-      frameTimeMs: 1000,
-      analysisSessionKey: "file:old-session",
-      analysisInputsSignature: '"sig-a"',
-      analysisResult: {},
-    };
-    engineState.latestAnalysisResult = {};
-    engineState.lastPublishedAtMs = 1000;
-    engineState.lastAnalysisSessionKey = "file:old-session";
-    engineState.lastAnalysisInputsSignature = '"sig-a"';
-    engineState.lastStructuralUpdateAtMs = 1000;
-    engineState.lastChromaUpdateAtMs = 1000;
-    engineState.lastTempoUpdateAtMs = 1000;
-
-    const decisions = buildLaneRunDecisions(engineState, {
-      currentFrameAtMs: 1010,
-      analysisSessionKey: "file:new-session",
-      analysisInputsSignature: '"sig-b"',
+      type: "analysis-input-ack",
+      sourceGeneration: firstFrame.sourceGeneration,
+      workerGeneration: firstFrame.workerGeneration,
+      frameId: firstFrame.frameId,
     });
 
-    expect(decisions.forced).toBe(true);
-    expect(decisions.structural).toBe(true);
-    expect(decisions.chroma).toBe(true);
-    expect(decisions.tempo).toBe(true);
-  });
-
-  it("suppresses publishes until a dirty lane crosses the publish cadence", () => {
-    const featureState = createAudioFeatureState();
-    const preparedInputs = createPreparedInputs(2000, { featureState });
-    const analysisResult = runHeavyAudioFeatureAnalysis(preparedInputs);
-    const previousSnapshot = buildAudioFeatureAnalysisSnapshot({
-      preparedInputs,
-      analysisResult,
-      publishCount: 1,
-    });
-    const nextAnalysisResult = {
-      ...analysisResult,
-      beatPulseId: (analysisResult.beatPulseId ?? 0) + 1,
-    };
-    const dirtyState = deriveDirtyState(previousSnapshot, nextAnalysisResult, {
-      fastSignal: true,
-      structural: false,
-      chroma: false,
-      tempo: false,
-    });
-    const engineState = createEngineState({
-      runtime: "worker",
-      structuralCadenceMs: 33,
-      snapshotPublishCadenceMs: 33,
-      chromaCadenceMs: 66,
-      tempoCadenceMs: 120,
-      maxSnapshotAgeMs: 96,
-    });
-    engineState.latestSnapshot = previousSnapshot;
-    engineState.lastPublishedAtMs = 2000;
-
-    expect(dirtyState.fastSignal).toBe(true);
-    expect(
-      shouldPublishDirtySnapshot(engineState, dirtyState, false, 2010),
-    ).toBe(false);
-    expect(
-      shouldPublishDirtySnapshot(engineState, dirtyState, false, 2040),
-    ).toBe(true);
-  });
-
-  it("allows fast-only patch emission before the full publish cadence after the first structural snapshot", () => {
-    const featureState = createAudioFeatureState();
-    const preparedInputs = createPreparedInputs(2000, { featureState });
-    const analysisResult = runHeavyAudioFeatureAnalysis(preparedInputs);
-    const previousSnapshot = buildAudioFeatureAnalysisSnapshot({
-      preparedInputs,
-      analysisResult,
-      publishCount: 1,
-    });
-    const nextAnalysisResult = {
-      ...analysisResult,
-      bandEnergies: new Float32Array([0.1, 0.8, 0.3, 0.2]),
-      transientEnergy: (analysisResult.transientEnergy ?? 0) + 0.2,
-      beatPulseId: (analysisResult.beatPulseId ?? 0) + 1,
-    };
-    const dirtyState = {
-      fastSignal: true,
-      structural: false,
-      chroma: false,
-      tempo: false,
-    };
-    const engineState = createEngineState({
-      runtime: "worker",
-      structuralCadenceMs: 33,
-      snapshotPublishCadenceMs: 33,
-      chromaCadenceMs: 66,
-      tempoCadenceMs: 120,
-      maxSnapshotAgeMs: 96,
-    });
-    engineState.latestSnapshot = previousSnapshot;
-    engineState.lastPublishedAtMs = 2000;
-
-    expect(
-      shouldPublishDirtySnapshot(engineState, dirtyState, false, 2010),
-    ).toBe(false);
-    expect(typeof audioFeatureWorker.shouldEmitFastSignalPatch).toBe(
-      "function",
+    const messages = worker.messages.map((entry) => entry.message);
+    const configureIndex = messages.findIndex(
+      (message) => message.type === "configure",
     );
-    expect(
-      audioFeatureWorker.shouldEmitFastSignalPatch({
-        engineState,
-        dirtyState,
-        forced: false,
-      }),
-    ).toBe(true);
-
-    const patch = audioFeatureWorker.buildFastSignalPatch({
-      preparedInputs: {
-        currentFrameAtMs: 2010,
-        analysisSessionKey: previousSnapshot.analysisSessionKey,
-        analysisInputsSignature: previousSnapshot.analysisInputsSignature,
-      },
-      analysisResult: nextAnalysisResult,
-      patchCount: 1,
-    });
-
-    expect(patch).toMatchObject({
-      frameTimeMs: 2010,
-      analysisSessionKey: previousSnapshot.analysisSessionKey,
-      analysisInputsSignature: previousSnapshot.analysisInputsSignature,
-      fastSignalPatchCount: 1,
-    });
-    expect(patch.analysisResult.bandEnergies).toBeInstanceOf(Float32Array);
-    expect(patch.analysisResult.beatPulseId).toBe(
-      nextAnalysisResult.beatPulseId,
+    const pendingInputIndex = messages.findLastIndex(
+      (message) => message.type === "analysis-input",
     );
-    expect(patch.analysisResult).not.toHaveProperty("modeSlots");
-    expect(patch.analysisResult).not.toHaveProperty("structuralMetrics");
+    expect(configureIndex).toBeGreaterThan(-1);
+    expect(pendingInputIndex).toBeGreaterThan(configureIndex);
+    expect(messages[pendingInputIndex].frame).not.toHaveProperty(
+      "configuration",
+    );
   });
 
-  it("does not emit fast-only patches before the first full structural snapshot or during forced refreshes", () => {
-    const engineState = createEngineState();
-    const dirtyState = {
-      fastSignal: true,
-      structural: false,
-      chroma: false,
-      tempo: false,
-    };
-
-    expect(typeof audioFeatureWorker.shouldEmitFastSignalPatch).toBe(
-      "function",
-    );
-    expect(
-      audioFeatureWorker.shouldEmitFastSignalPatch({
-        engineState,
-        dirtyState,
-        forced: false,
+  it("accepts advancing silent drive packets as valid progress", () => {
+    const harness = createRuntimeHarness();
+    harness.runtime.start();
+    publishModel(harness);
+    harness.setTime(80);
+    const runtimeStatus = harness.runtime.getStatus();
+    harness.workers[0].emit("message", {
+      type: "drive-packet",
+      packet: createDrivePacket(runtimeStatus, {
+        frameId: 2,
+        captureTimestampMs: 80,
+        modalCoefficients: new Float32Array([0]),
       }),
-    ).toBe(false);
+    });
+    harness.setTime(150);
 
-    engineState.latestSnapshot = { analysisResult: {} };
-    expect(
-      audioFeatureWorker.shouldEmitFastSignalPatch({
-        engineState,
-        dirtyState,
-        forced: true,
-      }),
-    ).toBe(false);
+    expect(harness.runtime.readLatestFeatureModel()).not.toBeNull();
   });
 
-  it("marks structural changes from fingerprints even when projected arrays are reused", () => {
-    const previousSnapshot = {
-      analysisResult: {
-        activeSourceCoupledModeCount: 1,
-        activeResonantModeCount: 0,
-        activeModeCount: 1,
-        dominantFrequency: 220,
-        dominantAmplitude: 0.4,
-        analysisEngine: "spectral",
-        pitchSource: "fft",
-        usedDecay: false,
-        sourceMode: "file",
-        structuralFingerprint: {
-          activeSourceCoupledModeCount: 1,
-          activeResonantModeCount: 0,
-          activeModeCount: 1,
-          dominantFrequency: 220,
-          dominantAmplitude: 0.4,
-          analysisEngine: "spectral",
-          pitchSource: "fft",
-          usedDecay: false,
-          sourceMode: "file",
-          sourceCoupledSignature: 1.2,
-          resonantSignature: 0,
-          referenceSourceCoupledSignature: 1.2,
-          referenceResonantSignature: 0,
-          sourceCoupledColorSignature: 0.8,
-          resonantColorSignature: 0,
-        },
-      },
-    };
-    const nextAnalysisResult = {
-      ...previousSnapshot.analysisResult,
-      structuralFingerprint: {
-        ...previousSnapshot.analysisResult.structuralFingerprint,
-        dominantFrequency: 330,
-        sourceCoupledSignature: 2.4,
-      },
-    };
+  it("does not clear stale authority until a future drive has matching topology", () => {
+    const harness = createRuntimeHarness();
+    harness.runtime.start();
+    publishModel(harness);
+    harness.setTime(97);
+    expect(harness.runtime.readLatestFeatureModel()).toBeNull();
+    expect(harness.runtime.getStatus().renderAuthorityRevoked).toBe(true);
 
-    const dirtyState = deriveDirtyState(previousSnapshot, nextAnalysisResult, {
-      fastSignal: false,
-      structural: true,
-      chroma: false,
-      tempo: false,
+    const runtimeStatus = harness.runtime.getStatus();
+    harness.workers[0].emit("message", {
+      type: "drive-packet",
+      packet: createDrivePacket(runtimeStatus, {
+        topologyRevision: 2,
+        frameId: 2,
+        captureTimestampMs: 97,
+        processingTimestampMs: 98,
+      }),
     });
+    expect(harness.runtime.getStatus().renderAuthorityRevoked).toBe(true);
 
-    expect(dirtyState.structural).toBe(true);
+    harness.workers[0].emit("message", {
+      type: "topology-packet",
+      packet: createTopologyPacket(runtimeStatus, { topologyRevision: 2 }),
+    });
+    expect(harness.runtime.getStatus()).toMatchObject({
+      latestAcceptedFrameId: 2,
+      latestDriveCaptureTimestampMs: 97,
+      latestDriveProcessingTimestampMs: 98,
+      renderAuthorityRevoked: false,
+    });
+    expect(harness.runtime.readLatestFeatureModel()).not.toBeNull();
   });
 });
 
-describe("audio feature engine snapshots", () => {
-  it("carries requested geometry through prepared inputs while resolving the effective backend once", () => {
-    const preparedInputs = prepareAudioFeatureFrameInputs({
-      analysisSnapshot: createSnapshot({
-        fftMagnitudes: new Float32Array([0, 0.95, 0.6, 0.2]),
-      }),
-      featureState: createAudioFeatureState(),
-      radius: 3,
-      cavityGeometry: "spherical",
-      status: createStatus(),
-      frameTimeMs: 2000,
-    });
-
-    expect(preparedInputs.requestedCavityGeometry).toBe("spherical");
-    expect(preparedInputs.effectiveCavityGeometry).toBe("rectangular");
-    expect(preparedInputs.analysisInputsSignature).toContain(
-      '"requestedCavityGeometry":"spherical"',
-    );
-    expect(preparedInputs.analysisInputsSignature).toContain(
-      '"effectiveCavityGeometry":"rectangular"',
-    );
-  });
-
-  it("reuses the previous projected structural arrays on non-publish updates", () => {
-    const featureState = createAudioFeatureState();
-    const firstPreparedInputs = createPreparedInputs(2000, { featureState });
-    const firstAnalysisResult =
-      runHeavyAudioFeatureAnalysis(firstPreparedInputs);
-    const nextPreparedInputs = createPreparedInputs(2040, {
-      featureState,
-      analysisSnapshot: {
-        fftMagnitudes: new Float32Array([0, 0.25, 0.95, 0.4]),
-        spectralFlux: 0.2,
-      },
-    });
-    const nextFastSignalState =
-      updateAudioFeatureFastSignalState(nextPreparedInputs);
-    const nextStructuralState = updateAudioFeatureStructuralState(
-      nextPreparedInputs,
-      nextFastSignalState,
-    );
-    const leanAnalysisResult = buildCurrentAudioFeatureAnalysisResult({
-      preparedInputs: nextPreparedInputs,
-      previousAnalysisResult: firstAnalysisResult,
-      fastSignalState: nextFastSignalState,
-      structuralState: nextStructuralState,
-      materializeStructuralProjection: false,
-    });
-
-    expect(leanAnalysisResult.candidateForcingSlots).toBe(
-      firstAnalysisResult.candidateForcingSlots,
-    );
-    expect(leanAnalysisResult.candidateResponseSlots).toBe(
-      firstAnalysisResult.candidateResponseSlots,
-    );
-    expect(leanAnalysisResult.modeSlots).toBe(firstAnalysisResult.modeSlots);
-    expect(leanAnalysisResult.referenceModeSlots).toBe(
-      firstAnalysisResult.referenceModeSlots,
-    );
-    expect(leanAnalysisResult.sourceCoupledColorSlots).toBe(
-      firstAnalysisResult.sourceCoupledColorSlots,
-    );
-    expect(leanAnalysisResult.resonantColorSlots).toBe(
-      firstAnalysisResult.resonantColorSlots,
-    );
-    expect(leanAnalysisResult.structuralState.candidateForcingSlotsSource).toBe(
-      nextStructuralState.candidateForcingSlotsSource,
-    );
-  });
-
-  it("skips signal projections only for lean dirty-check analysis results", () => {
-    const featureState = createAudioFeatureState();
-    const firstPreparedInputs = createPreparedInputs(2000, { featureState });
-    const firstAnalysisResult =
-      runHeavyAudioFeatureAnalysis(firstPreparedInputs);
-    const previousSignalModeSlots = firstAnalysisResult.signalModeSlots.slice();
-    const previousSignalReferenceModeSlots =
-      firstAnalysisResult.signalReferenceModeSlots.slice();
-    const previousAnalysisResult = {
-      ...firstAnalysisResult,
-      signalModeSlots: previousSignalModeSlots,
-      signalReferenceModeSlots: previousSignalReferenceModeSlots,
+describe("feature worker packets", () => {
+  it("composes semantics in the worker and separates topology from drive", () => {
+    const state = createFeatureWorkerState();
+    state.sourceGeneration = 1;
+    state.workerGeneration = 1;
+    state.configuration = { radius: 1, includeSpectralLight: true };
+    const frame = {
+      frameId: 1,
+      sourceGeneration: 1,
+      workerGeneration: 1,
+      captureTimestampMs: 10,
+      fastPayload: createAnalysisSnapshot(2048),
+      structuralPayload: createAnalysisSnapshot(8192),
+      status: createStatus({ sessionKey: "file:1" }),
     };
-    const nextPreparedInputs = createPreparedInputs(2040, {
-      featureState,
-      analysisSnapshot: {
-        fftMagnitudes: new Float32Array([0, 0.25, 0.95, 0.4]),
-        spectralFlux: 0.2,
-      },
-    });
-    nextPreparedInputs.signalModeSlots.fill(123);
-    nextPreparedInputs.signalReferenceModeSlots.fill(456);
-    const nextFastSignalState =
-      updateAudioFeatureFastSignalState(nextPreparedInputs);
-    const nextStructuralState = updateAudioFeatureStructuralState(
-      nextPreparedInputs,
-      nextFastSignalState,
-    );
-    const leanAnalysisResult = buildCurrentAudioFeatureAnalysisResult({
-      preparedInputs: nextPreparedInputs,
-      previousAnalysisResult,
-      fastSignalState: nextFastSignalState,
-      structuralState: nextStructuralState,
-      materializeStructuralProjection: false,
-      materializeSignalProjection: false,
-    });
 
-    expect(leanAnalysisResult.signalModeSlots).toBe(previousSignalModeSlots);
-    expect(leanAnalysisResult.signalReferenceModeSlots).toBe(
-      previousSignalReferenceModeSlots,
+    const { topologyPacket, drivePacket } = processFeatureWorkerFrame(
+      state,
+      frame,
     );
-    expect(nextPreparedInputs.signalModeSlots[0]).toBe(123);
-    expect(nextPreparedInputs.signalReferenceModeSlots[0]).toBe(456);
-    expect(leanAnalysisResult.structuralFingerprint).toEqual(
-      nextStructuralState.structuralFingerprint,
+
+    expect(topologyPacket).not.toBeNull();
+    expect(topologyPacket).not.toHaveProperty("modalCoefficients");
+    expect(drivePacket).not.toHaveProperty("modalIdentitySlots");
+    expect(drivePacket).not.toHaveProperty("candidateForcingSlots");
+    expect(drivePacket.renderState).not.toHaveProperty("fftLinearAmplitudes");
+    expect(drivePacket.frameId).toBe(1);
+    expect(drivePacket.topologyRevision).toBe(topologyPacket.topologyRevision);
+    expect(state.latestAnalysisResult.preparedInputs.radius).toBe(1);
+    expect(topologyPacket.committedModeCount).toBe(state.committedModes.length);
+    expect(drivePacket.committedModeCount).toBe(state.committedModes.length);
+    expect(drivePacket.modalCoefficients).toHaveLength(
+      state.committedModes.length,
     );
+    expect(
+      Array.from(topologyPacket.modalRoleMetadata).every((role) => role > 0),
+    ).toBe(true);
+    expect(
+      Array.from(topologyPacket.fastProbeModeIndices).every(
+        (index) => index < topologyPacket.committedModeCount,
+      ),
+    ).toBe(true);
+    expect(
+      Array.from(topologyPacket.committedModeIdentitySlots).slice(
+        0,
+        topologyPacket.modalIdentitySlots.length,
+      ),
+    ).toEqual(Array.from(topologyPacket.modalIdentitySlots));
   });
 
-  it("builds a lean structural snapshot without heavy debug payloads", () => {
-    const featureState = createAudioFeatureState();
-    const preparedInputs = prepareAudioFeatureFrameInputs({
-      analysisSnapshot: createSnapshot({
-        fftMagnitudes: new Float32Array([0, 0.95, 0.6, 0.2]),
-      }),
-      featureState,
-      radius: 3,
-      status: createStatus(),
-      frameTimeMs: 2000,
+  it("does not republish topology for a fast-only coefficient update", () => {
+    const state = createFeatureWorkerState();
+    state.sourceGeneration = 1;
+    state.workerGeneration = 1;
+    state.configuration = { radius: 1, includeSpectralLight: true };
+    const base = {
+      sourceGeneration: 1,
+      workerGeneration: 1,
+      structuralPayload: createAnalysisSnapshot(8192),
+      status: createStatus({ sessionKey: "file:1" }),
+    };
+    const first = processFeatureWorkerFrame(state, {
+      ...base,
+      frameId: 1,
+      captureTimestampMs: 10,
+      fastPayload: createAnalysisSnapshot(2048, 220),
     });
-    const analysisResult = runHeavyAudioFeatureAnalysis(preparedInputs);
-    const snapshot = buildAudioFeatureAnalysisSnapshot({
-      preparedInputs,
-      analysisResult,
-      publishCount: 3,
+    const cachedTopologySlots = state.latestTopologyFrame.modalFieldSlots;
+    const fastOnlyResults = Array.from({ length: 24 }, (_, index) =>
+      processFeatureWorkerFrame(state, {
+        ...base,
+        frameId: index + 2,
+        captureTimestampMs: 26 + index * 16,
+        fastPayload: createAnalysisSnapshot(2048, 240 + index * 17),
+        structuralPayload: null,
+      }),
+    );
+
+    expect(first.topologyPacket).not.toBeNull();
+    expect(fastOnlyResults.every(({ topologyPacket }) => !topologyPacket)).toBe(
+      true,
+    );
+    expect(
+      new Set(
+        fastOnlyResults.map(({ drivePacket }) => drivePacket.topologyRevision),
+      ),
+    ).toEqual(new Set([first.topologyPacket.topologyRevision]));
+    expect(fastOnlyResults.at(-1).drivePacket.frameId).toBe(25);
+    expect(state.topologyPublishCount).toBe(1);
+    expect(state.latestTopologyFrame.modalFieldSlots).toBe(cachedTopologySlots);
+  });
+
+  it("keeps fast drive ordering after the published topology buffer transfers", () => {
+    const state = createFeatureWorkerState();
+    state.sourceGeneration = 1;
+    state.workerGeneration = 1;
+    state.configuration = { radius: 1, includeSpectralLight: true };
+    const base = {
+      sourceGeneration: 1,
+      workerGeneration: 1,
+      status: createStatus({ sessionKey: "file:1" }),
+    };
+    const first = processFeatureWorkerFrame(state, {
+      ...base,
+      frameId: 1,
+      captureTimestampMs: 10,
+      fastPayload: createAnalysisSnapshot(2048, 220),
+      structuralPayload: createAnalysisSnapshot(8192, 220),
+    });
+    const activeModeCount = first.topologyPacket.activeModeCount;
+    structuredClone(first.topologyPacket.modalIdentitySlots, {
+      transfer: [first.topologyPacket.modalIdentitySlots.buffer],
+    });
+    expect(first.topologyPacket.modalIdentitySlots.byteLength).toBe(0);
+
+    const second = processFeatureWorkerFrame(state, {
+      ...base,
+      frameId: 2,
+      captureTimestampMs: 26,
+      fastPayload: createAnalysisSnapshot(2048, 220),
+      structuralPayload: null,
     });
 
-    expect(snapshot.publishCount).toBe(3);
-    expect(snapshot.analysisResult.modeSlots).toBeInstanceOf(Float32Array);
-    expect(snapshot.analysisResult.candidateForcingSlots).toBeInstanceOf(
-      Float32Array,
+    expect(second.topologyPacket).toBeNull();
+    expect(second.drivePacket.activeModeCount).toBe(activeModeCount);
+    expect(second.drivePacket.committedModeCount).toBe(
+      state.committedModes.length,
     );
-    expect(snapshot.analysisResult.bandEnergies).toBeInstanceOf(Float32Array);
-    expect(snapshot.analysisResult.fftMagnitudes).toBeUndefined();
-    expect(snapshot.analysisResult.spectralCandidates).toBeUndefined();
-    expect(snapshot.analysisResult.bandState).toBeUndefined();
-    expect(snapshot.analysisResult.sourceCoupledStateSummary).toMatchObject({
-      uniqueModeCount: expect.any(Number),
+    expect(second.drivePacket.modalCoefficients).toHaveLength(
+      state.committedModes.length,
+    );
+    expect(
+      Array.from(second.drivePacket.modalCoefficients).some(
+        (coefficient) => coefficient > 0,
+      ),
+    ).toBe(true);
+  });
+
+  it("does not let structural FFT analysis seed live modal coefficients", () => {
+    const state = createFeatureWorkerState();
+    state.sourceGeneration = 1;
+    state.workerGeneration = 1;
+    state.configuration = { radius: 1, includeSpectralLight: true };
+
+    const result = processFeatureWorkerFrame(state, {
+      frameId: 1,
+      sourceGeneration: 1,
+      workerGeneration: 1,
+      captureTimestampMs: 10,
+      fastPayload: createSilentAnalysisSnapshot(2048),
+      structuralPayload: createAnalysisSnapshot(8192, 220),
+      status: createStatus({ sessionKey: "file:1" }),
     });
-    expect(snapshot.analysisResult.resonantStateSummary).toMatchObject({
-      uniqueModeCount: expect.any(Number),
+
+    expect(result.topologyPacket.activeModeCount).toBeGreaterThan(0);
+    expect(
+      Array.from(result.drivePacket.modalCoefficients).every(
+        (coefficient) => coefficient === 0,
+      ),
+    ).toBe(true);
+    expect(result.drivePacket.renderState.modalResponseEnergy).toBe(0);
+    expect(result.drivePacket.renderState.renderAuthority).toBe(false);
+  });
+
+  it("keeps hidden committed decay out of visible render semantics", () => {
+    const state = createFeatureWorkerState();
+    state.sourceGeneration = 1;
+    state.workerGeneration = 1;
+    state.configuration = { radius: 1, includeSpectralLight: true };
+    const base = {
+      sourceGeneration: 1,
+      workerGeneration: 1,
+      status: createStatus({ sessionKey: "file:1" }),
+    };
+    const first = processFeatureWorkerFrame(state, {
+      ...base,
+      frameId: 1,
+      captureTimestampMs: 10,
+      fastPayload: createSilentAnalysisSnapshot(2048),
+      structuralPayload: createAnalysisSnapshot(8192, 220),
+      structuralRequested: true,
     });
-    expect(snapshot.analysisResult.nonZeroFFTBinCount).toBeGreaterThanOrEqual(
+    const hiddenModeIndex = first.topologyPacket.activeModeCount;
+    expect(first.topologyPacket.committedModeCount).toBeGreaterThan(
+      hiddenModeIndex,
+    );
+    const hiddenMode = state.committedModes[hiddenModeIndex];
+    const modalExcitationState =
+      state.featureState.analysis.modalExcitationState;
+    const previous =
+      modalExcitationState.activeModes.get(hiddenMode.modeKey) ??
+      modalExcitationState.modalCandidateState.get(hiddenMode.modeKey) ??
+      hiddenMode;
+    const retainedEnergy = 0.8;
+    const hiddenEntry = {
+      ...previous,
+      modalResponseEnergy: retainedEnergy,
+      amplitude: Math.sqrt(retainedEnergy),
+      displayAmplitude: Math.sqrt(retainedEnergy),
+      modalResponseDrive: 0,
+      currentDriveEnergy: 0,
+      forcingEnergy: 0,
+      modalOscillatorEnvelopeRe: Math.sqrt(retainedEnergy),
+      modalOscillatorEnvelopeIm: 0,
+      modalOscillatorRotationRad: 0,
+      fastModalOscillatorOwned: true,
+    };
+    modalExcitationState.activeModes.set(hiddenMode.modeKey, hiddenEntry);
+    modalExcitationState.modalCandidateState.set(
+      hiddenMode.modeKey,
+      hiddenEntry,
+    );
+    if (modalExcitationState.observedModes.has(hiddenMode.modeKey)) {
+      modalExcitationState.observedModes.set(hiddenMode.modeKey, hiddenEntry);
+    }
+
+    const second = processFeatureWorkerFrame(state, {
+      ...base,
+      frameId: 2,
+      captureTimestampMs: 26,
+      fastPayload: createSilentAnalysisSnapshot(2048),
+      structuralPayload: null,
+      structuralRequested: false,
+    });
+    const visibleCoefficients = second.drivePacket.modalCoefficients.subarray(
       0,
+      second.drivePacket.activeModeCount,
     );
+
     expect(
-      snapshot.analysisResult.referencePitchBinAmplitude,
-    ).toBeGreaterThanOrEqual(0);
+      second.drivePacket.modalCoefficients[hiddenModeIndex],
+    ).toBeGreaterThan(0);
+    expect(Array.from(visibleCoefficients).every((value) => value === 0)).toBe(
+      true,
+    );
+    expect(second.drivePacket.renderState).toMatchObject({
+      fieldState: "idle",
+      modalResponseEnergy: 0,
+      renderAuthority: false,
+    });
+    expect(second.drivePacket.renderState.energyLedger).toMatchObject({
+      projectedRenderEnergy: 0,
+      renderAuthority: false,
+    });
   });
 
-  it("merges fast-signal patches without replacing structural arrays", () => {
-    const featureState = createAudioFeatureState();
-    const preparedInputs = createPreparedInputs(2000, { featureState });
-    const analysisResult = runHeavyAudioFeatureAnalysis(preparedInputs);
-    const previousSnapshot = buildAudioFeatureAnalysisSnapshot({
-      preparedInputs,
-      analysisResult,
-      publishCount: 1,
+  it("reuses fast packet typed buffers after topology setup", () => {
+    const state = createFeatureWorkerState();
+    state.sourceGeneration = 1;
+    state.workerGeneration = 1;
+    state.configuration = { radius: 1, includeSpectralLight: true };
+    const base = {
+      sourceGeneration: 1,
+      workerGeneration: 1,
+      status: createStatus({ sessionKey: "file:1" }),
+    };
+    const first = processFeatureWorkerFrame(state, {
+      ...base,
+      frameId: 1,
+      captureTimestampMs: 10,
+      fastPayload: createAnalysisSnapshot(2048, 220),
+      structuralPayload: createAnalysisSnapshot(8192, 220),
+      structuralRequested: true,
     });
-    const patch = {
-      frameTimeMs: 2010,
-      analysisSessionKey: previousSnapshot.analysisSessionKey,
-      analysisInputsSignature: previousSnapshot.analysisInputsSignature,
-      fastSignalPatchCount: 1,
-      analysisResult: {
-        avgAmplitude: 48,
-        analyserRms: 0.42,
-        bandEnergies: new Float32Array([0.2, 0.7, 0.4, 0.1]),
-        transientEnergy: 0.91,
-        beatPulseId: (analysisResult.beatPulseId ?? 0) + 1,
+    const second = processFeatureWorkerFrame(state, {
+      ...base,
+      frameId: 2,
+      captureTimestampMs: 26,
+      fastPayload: createAnalysisSnapshot(2048, 240),
+      structuralPayload: null,
+      structuralRequested: false,
+    });
+
+    expect(second.drivePacket.modalCoefficients).toBe(
+      first.drivePacket.modalCoefficients,
+    );
+    expect(second.drivePacket.phaseSlots).toBe(first.drivePacket.phaseSlots);
+    expect(second.drivePacket.bandEnergies).toBe(
+      first.drivePacket.bandEnergies,
+    );
+    expect(second.drivePacket.spectralBandEnergies).toBe(
+      first.drivePacket.spectralBandEnergies,
+    );
+    expect(state.drivePacketBufferAllocationCount).toBe(1);
+  });
+
+  it("retains a render-authoritative committed topology across a same-source bandwidth-limited candidate", () => {
+    const state = createFeatureWorkerState();
+    state.sourceGeneration = 1;
+    state.workerGeneration = 1;
+    state.configuration = {
+      radius: 1,
+      includeSpectralLight: true,
+      auditSettings: {
+        injectTestTone: true,
+        testToneHz: 528,
+        testToneAmplitude: 0.8,
+      },
+    };
+    const status = createStatus({
+      audioInputMode: "idle",
+      analysisSource: "idle",
+      isAudioLoaded: false,
+      isPlaying: false,
+      hasAnalysisSource: false,
+      playbackSessionId: null,
+      sessionKey: "idle",
+    });
+    const first = processFeatureWorkerFrame(state, {
+      frameId: 1,
+      sourceGeneration: 1,
+      workerGeneration: 1,
+      captureTimestampMs: 10,
+      fastPayload: null,
+      structuralPayload: null,
+      structuralRequested: true,
+      status,
+    });
+    state.latestTopologyFrame = {
+      ...state.latestTopologyFrame,
+      modalDescriptor: {
+        ...state.latestTopologyFrame.modalDescriptor,
+        fieldAuthority: "capacity-limited",
+      },
+    };
+    const committedTopologyFrame = state.latestTopologyFrame;
+    const committedEstimator = state.fastEstimator;
+    const committedModeKeys = state.committedModes.map((mode) => mode.modeKey);
+    const committedTopologyRevision = state.topologyRevision;
+    expect(first.topologyPacket.modalDescriptor.fieldAuthority).toBe(
+      "complete",
+    );
+
+    // Remove continuity payload so the next structural result exposes the
+    // high-only candidate's own bandwidth authority instead of retaining the
+    // prior modes inside the structural compositor itself.
+    const continuityState =
+      state.featureState.analysis.modalFieldContinuityState;
+    continuityState.recordsByModeKey.clear();
+    continuityState.visibleModeKeys = [];
+    continuityState.lastBasisReassignAtSec = Number.NEGATIVE_INFINITY;
+    state.featureState.analysis.lastModalFieldContinuityFrameAtMs = undefined;
+    state.featureState.analysis.modalExcitationState = null;
+    state.configuration = {
+      ...state.configuration,
+      auditSettings: {
+        injectTestTone: true,
+        testToneHz: 6000,
+        testToneAmplitude: 0.8,
       },
     };
 
-    expect(typeof audioFeatureEngine.mergeFastSignalPatchIntoSnapshot).toBe(
-      "function",
-    );
-    const merged = audioFeatureEngine.mergeFastSignalPatchIntoSnapshot(
-      previousSnapshot,
-      patch,
-    );
-
-    expect(merged).not.toBe(previousSnapshot);
-    expect(merged.frameTimeMs).toBe(2010);
-    expect(merged.fastSignalPatchCount).toBe(1);
-    expect(merged.analysisResult.avgAmplitude).toBe(48);
-    expect(merged.analysisResult.transientEnergy).toBe(0.91);
-    expect(merged.analysisResult.bandEnergies).toEqual(
-      patch.analysisResult.bandEnergies,
-    );
-    expect(merged.analysisResult.bandEnergies).not.toBe(
-      patch.analysisResult.bandEnergies,
-    );
-    expect(merged.analysisResult.modeSlots).toBe(
-      previousSnapshot.analysisResult.modeSlots,
-    );
-    expect(merged.analysisResult.candidateForcingSlots).toBe(
-      previousSnapshot.analysisResult.candidateForcingSlots,
-    );
-    expect(merged.analysisResult.candidateResponseSlots).toBe(
-      previousSnapshot.analysisResult.candidateResponseSlots,
-    );
-  });
-
-  it("ignores stale fast-signal patches from a different analysis signature", () => {
-    const featureState = createAudioFeatureState();
-    const preparedInputs = createPreparedInputs(2000, { featureState });
-    const analysisResult = runHeavyAudioFeatureAnalysis(preparedInputs);
-    const previousSnapshot = buildAudioFeatureAnalysisSnapshot({
-      preparedInputs,
-      analysisResult,
-      publishCount: 1,
+    const second = processFeatureWorkerFrame(state, {
+      frameId: 2,
+      sourceGeneration: 1,
+      workerGeneration: 1,
+      captureTimestampMs: 76,
+      fastPayload: null,
+      structuralPayload: null,
+      structuralRequested: true,
+      status,
     });
 
-    const merged = audioFeatureEngine.mergeFastSignalPatchIntoSnapshot(
-      previousSnapshot,
-      {
-        frameTimeMs: 2010,
-        analysisSessionKey: previousSnapshot.analysisSessionKey,
-        analysisInputsSignature: '"stale"',
-        fastSignalPatchCount: 1,
-        analysisResult: {
-          transientEnergy: 1,
-        },
-      },
+    expect(second.topologyPacket).toBeNull();
+    expect(state.bandwidthLimitedTopologyRetentionCount).toBe(1);
+    expect(state.topologyRevision).toBe(committedTopologyRevision);
+    expect(state.latestTopologyFrame).toBe(committedTopologyFrame);
+    expect(state.fastEstimator).toBe(committedEstimator);
+    expect(state.committedModes.map((mode) => mode.modeKey)).toEqual(
+      committedModeKeys,
     );
-
-    expect(merged).toBe(previousSnapshot);
-  });
-
-  it("publishes an active structural snapshot for loopback live input", () => {
-    const featureState = createAudioFeatureState();
-    const preparedInputs = prepareAudioFeatureFrameInputs({
-      analysisSnapshot: createSnapshot({
-        sourceMode: "live",
-        avgAmplitude: 36,
-        rms: 0.27,
-        fftMagnitudes: makeToneFft([
-          [220, 0.82],
-          [440, 0.41],
-          [660, 0.22],
-          [880, 0.17],
-        ]),
-      }),
-      featureState,
-      radius: 3,
-      status: createLoopbackLiveStatus(),
-      frameTimeMs: 2000,
-      liveInputAnalysisSettings: { acousticIntent: "vocal" },
-    });
-    const fastSignalState = updateAudioFeatureFastSignalState(preparedInputs);
-    const structuralState = updateAudioFeatureStructuralState(
-      preparedInputs,
-      fastSignalState,
+    expect(second.drivePacket.activeModeCount).toBe(
+      first.topologyPacket.activeModeCount,
     );
-    const analysisResult = buildCurrentAudioFeatureAnalysisResult({
-      preparedInputs,
-      fastSignalState,
-      structuralState,
-      materializeStructuralProjection: true,
-    });
-    const snapshot = buildAudioFeatureAnalysisSnapshot({
-      preparedInputs,
-      analysisResult,
-      publishCount: 1,
-    });
-    const frame = composeAudioFeatureFrame({
-      preparedInputs,
-      analysisResult: snapshot.analysisResult,
-    });
-
-    expect(snapshot.analysisResult.sourceMode).toBe("line-feed");
-    expect(snapshot.analysisResult.activeModeCount).toBeGreaterThan(0);
-    expect(snapshot.analysisResult.dominantFrequency).toBeGreaterThan(0);
-    expect(frame.fieldState).not.toBe("idle");
-    expect(frame.sourceMode).toBe("line-feed");
-    expect(frame.structureSignal).toBeGreaterThan(0);
-  });
-
-  it("keeps worker snapshots free of analysis hint payloads", () => {
-    const featureState = createAudioFeatureState();
-    const preparedInputs = prepareAudioFeatureFrameInputs({
-      analysisSnapshot: createSnapshot({
-        sourceMode: "file",
-        avgAmplitude: 48,
-        rms: 0.28,
-        fftMagnitudes: new Float32Array([0, 0.9, 0.55, 0.2, 0.08]),
-      }),
-      featureState,
-      radius: 3,
-      status: createStatus(),
-      frameTimeMs: 2000,
-    });
-    const analysisResult = runHeavyAudioFeatureAnalysis(preparedInputs);
-    const snapshot = buildAudioFeatureAnalysisSnapshot({
-      preparedInputs,
-      analysisResult,
-      publishCount: 2,
-    });
-
-    expect(snapshot.analysisResult).not.toHaveProperty("analysisHints");
-    expect(snapshot.analysisResult).not.toHaveProperty("baseAnalysisHints");
-    expect(snapshot.analysisResult).not.toHaveProperty("lastAnalysisHints");
-  });
-
-  it("uses time-domain modal drive for both file and system-classified input", () => {
-    const fileFeatureState = createAudioFeatureState();
-    const systemFeatureState = createAudioFeatureState();
-    const timeData = new Float32Array(FFT_SIZE).map(
-      (_, index) => Math.sin((2 * Math.PI * 110 * index) / SAMPLE_RATE) * 0.4,
-    );
-    const analysisSnapshot = createSnapshot({
-      sourceMode: "file",
-      avgAmplitude: 48,
-      rms: 0.28,
-      fftMagnitudes: new Float32Array([0, 0.9, 0.55, 0.2, 0.08]),
-      timeData,
-    });
-    const filePreparedInputs = prepareAudioFeatureFrameInputs({
-      analysisSnapshot,
-      featureState: fileFeatureState,
-      radius: 3,
-      status: createStatus(),
-      frameTimeMs: 2000,
-    });
-    const systemPreparedInputs = prepareAudioFeatureFrameInputs({
-      analysisSnapshot: {
-        ...analysisSnapshot,
-        sourceMode: "system",
-      },
-      featureState: systemFeatureState,
-      radius: 3,
-      status: createSystemStatus(),
-      frameTimeMs: 2000,
-    });
-
-    const fileFastSignal =
-      updateAudioFeatureFastSignalState(filePreparedInputs);
-    const fileStructural = updateAudioFeatureStructuralState(
-      filePreparedInputs,
-      fileFastSignal,
-    );
-    const fileAnalysisResult = buildCurrentAudioFeatureAnalysisResult({
-      preparedInputs: filePreparedInputs,
-      fastSignalState: fileFastSignal,
-      structuralState: fileStructural,
-      materializeStructuralProjection: true,
-    });
-    const systemFastSignal =
-      updateAudioFeatureFastSignalState(systemPreparedInputs);
-    const systemStructural = updateAudioFeatureStructuralState(
-      systemPreparedInputs,
-      systemFastSignal,
-    );
-    const systemAnalysisResult = buildCurrentAudioFeatureAnalysisResult({
-      preparedInputs: systemPreparedInputs,
-      fastSignalState: systemFastSignal,
-      structuralState: systemStructural,
-      materializeStructuralProjection: true,
-    });
-
-    expect(fileAnalysisResult.structuralMetrics?.driveSource).toBe(
-      "time-domain",
-    );
-    expect(systemAnalysisResult.structuralMetrics?.driveSource).toBe(
-      "time-domain",
-    );
-    expect(fileAnalysisResult.activeModeCount).toBeGreaterThan(0);
-    expect(systemAnalysisResult.activeModeCount).toBeGreaterThan(0);
     expect(
-      Math.max(
-        maxColorWeight(fileAnalysisResult.sourceCoupledColorSlots),
-        maxColorWeight(fileAnalysisResult.resonantColorSlots),
+      Array.from(second.drivePacket.modalCoefficients).some(
+        (coefficient) => coefficient > 0,
       ),
-    ).toBeGreaterThan(0);
-    expect(
-      Math.max(
-        maxColorWeight(systemAnalysisResult.sourceCoupledColorSlots),
-        maxColorWeight(systemAnalysisResult.resonantColorSlots),
-      ),
-    ).toBeGreaterThan(0);
+    ).toBe(true);
+  });
+
+  it("keeps a fresh high-only bandwidth-limited bootstrap fail-closed", () => {
+    const state = createFeatureWorkerState();
+    state.sourceGeneration = 1;
+    state.workerGeneration = 1;
+    state.configuration = {
+      radius: 1,
+      includeSpectralLight: true,
+      auditSettings: {
+        injectTestTone: true,
+        testToneHz: 6000,
+        testToneAmplitude: 0.8,
+      },
+    };
+
+    const result = processFeatureWorkerFrame(state, {
+      frameId: 1,
+      sourceGeneration: 1,
+      workerGeneration: 1,
+      captureTimestampMs: 10,
+      fastPayload: null,
+      structuralPayload: null,
+      structuralRequested: true,
+      status: createStatus({
+        audioInputMode: "idle",
+        analysisSource: "idle",
+        isAudioLoaded: false,
+        isPlaying: false,
+        hasAnalysisSource: false,
+        playbackSessionId: null,
+        sessionKey: "idle",
+      }),
+    });
+
+    expect(result.topologyPacket.modalDescriptor.fieldAuthority).toBe(
+      "bandwidth-limited",
+    );
+    expect(result.topologyPacket.activeModeCount).toBe(0);
+    expect(result.drivePacket.renderState.renderAuthority).toBe(false);
+    expect(state.bandwidthLimitedTopologyRetentionCount).toBe(0);
   });
 });

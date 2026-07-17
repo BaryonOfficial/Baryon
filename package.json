@@ -1,7 +1,7 @@
 {
   "name": "baryon-monorepo",
   "private": true,
-  "version": "1.0.0-beta.9",
+  "version": "1.0.1",
   "license": "LicenseRef-PolyForm-Strict-1.0",
   "repository": {
     "type": "git",
@@ -90,11 +90,14 @@
     "husky": "^9.1.7",
     "knip": "^6.3.0",
     "lint-staged": "^16.4.0",
+    "osc": "^2.4.5",
     "prettier": "^3.8.1",
     "prettier-plugin-astro": "0.14.1",
     "syncpack": "^14.3.0",
     "turbo": "^2.9.3",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vite": "^8.1.0",
+    "vitest": "^4.1.9"
   },
   "packageManager": "pnpm@11.9.0+sha256.2b567aa66026238078ac2e0a33bec3febd60e962987aac697456f3180819b287",
   "dependencies": {

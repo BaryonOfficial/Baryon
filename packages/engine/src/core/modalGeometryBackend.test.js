@@ -15,9 +15,10 @@ describe("modal geometry backend", () => {
 
     expect(mode).toMatchObject({
       boundaryMode: "neumann",
-      acousticRadiusMeters: CAVITY_ACOUSTIC_DEFAULTS.radiusMeters,
+      acousticSideLengthMeters: CAVITY_ACOUSTIC_DEFAULTS.sideLengthMeters,
       subfloorProjectionActive: false,
     });
+    expect(mode).not.toHaveProperty("acousticRadiusMeters");
     expect(mode.naturalFrequencyHz).toBeLessThanOrEqual(61);
   });
 
@@ -37,9 +38,10 @@ describe("modal geometry backend", () => {
     expect(atlas).toHaveLength(1);
     expect(atlas[0].naturalFrequencyHz).toBeLessThanOrEqual(61);
     expect(atlas[0].candidate).toMatchObject({
-      acousticRadiusMeters: CAVITY_ACOUSTIC_DEFAULTS.radiusMeters,
+      acousticSideLengthMeters: CAVITY_ACOUSTIC_DEFAULTS.sideLengthMeters,
       subfloorProjectionActive: false,
     });
+    expect(atlas[0].candidate).not.toHaveProperty("acousticRadiusMeters");
   });
 
   it("owns modal shell and family topology for rectangular modes", () => {

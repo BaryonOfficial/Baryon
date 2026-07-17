@@ -59,6 +59,7 @@ const defaultStageCameraConfig = (() => {
 // The external output window is already sized to the selected framebuffer.
 // Keep the canvas pixel ratio fixed so display DPR cannot silently multiply it.
 const EXTERNAL_OUTPUT_FRAMEBUFFER_PIXEL_RATIO = 1;
+const IGNORE_ENGINE_READY_CHANGE = () => {};
 
 function resolveStageColor(value, fallback) {
   return typeof value === "string" && value.trim().length > 0
@@ -70,6 +71,7 @@ function resolveStageColor(value, fallback) {
  * @param {{
  *   controlsRef: import("react").MutableRefObject<Record<string, unknown>>,
  *   visualizationMethod: string,
+ *   audioFeatureAuthorityRole: "local-producer" | "external-consumer",
  *   renderQualityPreset?: string,
  *   resolvedRenderProfile?: import("@baryon/engine/render/outputPipeline").RenderQualityProfile | null,
  *   externalFrameRef?: import("react").MutableRefObject<any>,
@@ -98,6 +100,7 @@ function resolveStageColor(value, fallback) {
 export function OutputStageSurface({
   controlsRef,
   visualizationMethod,
+  audioFeatureAuthorityRole,
   renderQualityPreset = DEFAULT_PERFORMANCE_PROFILE,
   resolvedRenderProfile = null,
   externalFrameRef = null,
@@ -223,7 +226,7 @@ export function OutputStageSurface({
                 registerRenderRequester={registerRenderRequester}
               />
               <BaryonScene
-                setIsEngineReady={() => {}}
+                setIsEngineReady={IGNORE_ENGINE_READY_CHANGE}
                 setLiveInputRuntimeStatus={onLiveInputRuntimeStatusChange}
                 liveInputUiState="idle"
                 liveInputErrorCode="none"
@@ -235,6 +238,7 @@ export function OutputStageSurface({
                 resolvedRenderProfile={resolvedRenderProfile}
                 onPerformanceHudSnapshotChange={onPerformanceHudSnapshotChange}
                 onAuditSnapshotChange={onAuditSnapshotChange}
+                audioFeatureAuthorityRole={audioFeatureAuthorityRole}
                 externalFrameRef={externalFrameRef}
                 cameraPose={resolvedCameraPose}
                 basePixelRatio={EXTERNAL_OUTPUT_FRAMEBUFFER_PIXEL_RATIO}

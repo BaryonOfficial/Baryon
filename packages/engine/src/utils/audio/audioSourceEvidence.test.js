@@ -18,8 +18,8 @@ describe("audio source evidence", () => {
         metrics: {
           avgAmplitude: 84,
           analyserRms: 0.24,
-          preModalFftPeak: 0.42,
-          nonZeroFftBinCount: 8,
+          fftPeakAmplitude: 0.42,
+          spectralEffectiveBinCount: 8,
         },
       },
       {
@@ -39,8 +39,8 @@ describe("audio source evidence", () => {
         metrics: {
           avgAmplitude: 84,
           analyserRms: 0.24,
-          preModalFftPeak: 0.42,
-          nonZeroFftBinCount: 8,
+          fftPeakAmplitude: 0.42,
+          spectralEffectiveBinCount: 8,
         },
       },
       {
@@ -61,8 +61,8 @@ describe("audio source evidence", () => {
         metrics: {
           avgAmplitude: 0.2,
           analyserRms: 0.001,
-          preModalFftPeak: 0,
-          nonZeroFftBinCount: 0,
+          fftPeakAmplitude: 0,
+          spectralEffectiveBinCount: 0,
         },
       },
       {
@@ -83,8 +83,8 @@ describe("audio source evidence", () => {
         metrics: {
           avgAmplitude: 52,
           analyserRms: 0.08,
-          preModalFftPeak: 0.26,
-          nonZeroFftBinCount: 6,
+          fftPeakAmplitude: 0.26,
+          spectralEffectiveBinCount: 6,
         },
       },
       {
@@ -105,8 +105,8 @@ describe("audio source evidence", () => {
         metrics: {
           avgAmplitude: 1.2,
           analyserRms: 0.01,
-          preModalFftPeak: 0,
-          nonZeroFftBinCount: 0,
+          fftPeakAmplitude: 0,
+          spectralEffectiveBinCount: 0,
         },
       },
       {
@@ -124,8 +124,8 @@ describe("audio source evidence", () => {
         metrics: {
           avgAmplitude: 0,
           analyserRms: 0,
-          preModalFftPeak: 0,
-          nonZeroFftBinCount: 0,
+          fftPeakAmplitude: 0,
+          spectralEffectiveBinCount: 0,
         },
       },
       {
@@ -144,8 +144,8 @@ describe("audio source evidence", () => {
         metrics: {
           avgAmplitude: 0,
           analyserRms: 0,
-          preModalFftPeak: 0,
-          nonZeroFftBinCount: 0,
+          fftPeakAmplitude: 0,
+          spectralEffectiveBinCount: 0,
         },
       },
       {
@@ -177,8 +177,8 @@ describe("audio source evidence", () => {
       metrics: {
         avgAmplitude: 1.2,
         analyserRms: 0.01,
-        preModalFftPeak: 0,
-        nonZeroFftBinCount: 0,
+        fftPeakAmplitude: 0,
+        spectralEffectiveBinCount: 0,
       },
     });
 
@@ -209,8 +209,8 @@ describe("audio source evidence", () => {
           metrics: {
             avgAmplitude: 0,
             analyserRms: 0,
-            preModalFftPeak: 0,
-            nonZeroFftBinCount: 0,
+            fftPeakAmplitude: 0,
+            spectralEffectiveBinCount: 0,
           },
           transport: {
             playing: false,
@@ -239,8 +239,9 @@ describe("audio source evidence", () => {
       metrics: {
         avgAmplitude: 0.04,
         analyserRms: 0.001,
-        preModalFftPeak: 0.004,
-        nonZeroFftBinCount: 1,
+        fftPeakAmplitude: 0.004,
+        credibleSpectralPeakCount: 1,
+        spectralEffectiveBinCount: 1,
       },
     });
 
@@ -265,9 +266,9 @@ describe("audio source evidence", () => {
       metrics: {
         avgAmplitude: 2.5,
         analyserRms: 0.01,
-        preModalFftPeak: 0,
+        fftPeakAmplitude: 0,
         timeDomainPeakAmplitude: 0,
-        nonZeroFftBinCount: 0,
+        spectralEffectiveBinCount: 0,
       },
     });
 
@@ -301,9 +302,9 @@ describe("audio source evidence", () => {
       metrics: {
         avgAmplitude: 0.18,
         analyserRms: 0.0008,
-        preModalFftPeak: 0,
+        fftPeakAmplitude: 0,
         timeDomainPeakAmplitude: 0.006,
-        nonZeroFftBinCount: 0,
+        spectralEffectiveBinCount: 0,
       },
     });
 
@@ -322,9 +323,9 @@ describe("audio source evidence", () => {
       metrics: {
         avgAmplitude: 0,
         analyserRms: 0.002138553954931318,
-        preModalFftPeak: 0,
+        fftPeakAmplitude: 0,
         timeDomainPeakAmplitude: 0.003,
-        nonZeroFftBinCount: 0,
+        spectralEffectiveBinCount: 0,
       },
     });
 
@@ -343,8 +344,8 @@ describe("audio source evidence", () => {
       metrics: {
         avgAmplitude: 8,
         analyserRms: 0.018,
-        preModalFftPeak: 0.02,
-        nonZeroFftBinCount: 12,
+        fftPeakAmplitude: 0.02,
+        spectralEffectiveBinCount: 12,
       },
     });
     const strongFileEvidence = buildAudioSourceEvidenceFrame({
@@ -354,8 +355,8 @@ describe("audio source evidence", () => {
       metrics: {
         avgAmplitude: 18,
         analyserRms: 0.06,
-        preModalFftPeak: 0.2,
-        nonZeroFftBinCount: 12,
+        fftPeakAmplitude: 0.2,
+        spectralEffectiveBinCount: 12,
       },
     });
     const lineFeedEvidence = buildAudioSourceEvidenceFrame({
@@ -367,22 +368,19 @@ describe("audio source evidence", () => {
       metrics: {
         avgAmplitude: 8,
         analyserRms: 0.018,
-        preModalFftPeak: 0.02,
-        nonZeroFftBinCount: 12,
+        fftPeakAmplitude: 0.02,
+        spectralEffectiveBinCount: 12,
       },
     });
 
     expect(weakFileEvidence.modalObservationPolicy).toMatchObject({
       suppressWeakSpectralFallbackDrive: true,
-      suppressWeakResonantDrive: true,
     });
     expect(strongFileEvidence.modalObservationPolicy).toMatchObject({
       suppressWeakSpectralFallbackDrive: false,
-      suppressWeakResonantDrive: false,
     });
     expect(lineFeedEvidence.modalObservationPolicy).toMatchObject({
       suppressWeakSpectralFallbackDrive: false,
-      suppressWeakResonantDrive: false,
     });
   });
 
@@ -396,9 +394,9 @@ describe("audio source evidence", () => {
       metrics: {
         avgAmplitude: 0,
         analyserRms: 0.00001,
-        preModalFftPeak: 0,
+        fftPeakAmplitude: 0,
         timeDomainPeakAmplitude: 0,
-        nonZeroFftBinCount: 0,
+        spectralEffectiveBinCount: 0,
       },
     });
 
@@ -418,8 +416,8 @@ describe("audio source evidence", () => {
       metrics: {
         avgAmplitude: 0,
         analyserRms: 0,
-        preModalFftPeak: 0,
-        nonZeroFftBinCount: 0,
+        fftPeakAmplitude: 0,
+        spectralEffectiveBinCount: 0,
       },
     });
 
@@ -442,7 +440,7 @@ describe("audio source evidence", () => {
   });
 
   it("collects transport facts before semantic source evidence resolution", () => {
-    const fftMagnitudes = new Float32Array([0, 0.4, 0, 0.2]);
+    const fftLinearAmplitudes = new Float32Array([0, 0.4, 0, 0.2]);
     const collected = collectAudioSourceEvidenceInputs({
       inputMode: "system",
       status: {
@@ -450,15 +448,15 @@ describe("audio source evidence", () => {
         isPlaying: false,
         isLiveInputActive: true,
       },
-      analysisSnapshot: { fftMagnitudes },
+      analysisSnapshot: { fftLinearAmplitudes },
       includeSnapshotAsAnalysisSource: true,
       isLineFeedLiveInput: true,
       lineFeedProgramActive: false,
       metrics: {
         avgAmplitude: 18,
         analyserRms: 0.07,
-        preModalFftPeak: 0.4,
-        nonZeroFftBinCount: 2,
+        fftPeakAmplitude: 0.4,
+        spectralEffectiveBinCount: 2,
       },
     });
 
@@ -472,15 +470,15 @@ describe("audio source evidence", () => {
       metrics: {
         avgAmplitude: 18,
         analyserRms: 0.07,
-        preModalFftPeak: 0.4,
-        nonZeroFftBinCount: 2,
+        fftPeakAmplitude: 0.4,
+        spectralEffectiveBinCount: 2,
       },
     });
     expect(buildAudioSourceEvidenceFrame(collected)).toMatchObject({
       sourceKind: "system",
       analysisClass: "line-feed",
-      sourceBoundaryState: "live",
-      currentSourceEvidence: true,
+      sourceBoundaryState: "muted",
+      currentSourceEvidence: false,
     });
   });
 

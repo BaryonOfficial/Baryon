@@ -1,12 +1,16 @@
 import { frequencyToBinIndex } from "./binFrequency.js";
 import { clamp01, smoothstep } from "../math.js";
+import {
+  SPECTRAL_EVIDENCE_POLICY,
+  measureLocalSpectralEvidence,
+} from "./spectralEvidence.js";
 
 const HIGH_Q_OBSERVER_HARMONIC_DRIVER_MIN_HZ = 140;
 const HIGH_Q_OBSERVER_HARMONIC_DRIVER_MAX_HZ = 480;
 const HIGH_Q_OBSERVER_BASS_HARMONIC_DRIVER_MIN_HZ = 72;
 const HIGH_Q_OBSERVER_BASS_HARMONIC_DRIVER_MAX_HZ = 105;
-const HIGH_Q_OBSERVER_BASS_HARMONIC_DRIVER_MIN_SUPPORT = 0.002;
-const HIGH_Q_OBSERVER_NOISE_WINDOW_BINS = 9;
+const HIGH_Q_OBSERVER_BASS_HARMONIC_DRIVER_MIN_SUPPORT =
+  SPECTRAL_EVIDENCE_POLICY.analyserAmplitudeFloor;
 const HIGH_Q_OBSERVER_COHERENT_BACKGROUND_DRIVE_START = 0.00012;
 const HIGH_Q_OBSERVER_COHERENT_BACKGROUND_DRIVE_FULL = 0.0009;
 const HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MIN_PERIODICITY = 0.68;
@@ -72,14 +76,13 @@ export function classifyObservedModeRenderLayer({
 }
 
 export function computeModalObserverNoiseFloor({
-  fftMagnitudes,
+  fftLinearAmplitudes,
   sampleRate,
   frequencyHz,
-  profile,
 }) {
   if (
-    !(fftMagnitudes instanceof Float32Array) ||
-    fftMagnitudes.length === 0 ||
+    !(fftLinearAmplitudes instanceof Float32Array) ||
+    fftLinearAmplitudes.length === 0 ||
     frequencyHz <= 0
   ) {
     return 0;
@@ -87,32 +90,12 @@ export function computeModalObserverNoiseFloor({
 
   const centerBin = Math.max(
     1,
-    frequencyToBinIndex(frequencyHz, fftMagnitudes.length, sampleRate),
+    frequencyToBinIndex(frequencyHz, fftLinearAmplitudes.length, sampleRate),
   );
-  const noiseWindowBins =
-    profile?.noiseWindowBins ?? HIGH_Q_OBSERVER_NOISE_WINDOW_BINS;
-  const startBin = Math.max(1, centerBin - noiseWindowBins);
-  const endBin = Math.min(
-    fftMagnitudes.length - 1,
-    centerBin + noiseWindowBins,
+  return clamp01(
+    measureLocalSpectralEvidence(fftLinearAmplitudes, centerBin)
+      .localNoiseFloor,
   );
-  const samples = [];
-
-  for (let index = startBin; index <= endBin; index += 1) {
-    if (Math.abs(index - centerBin) <= 1) {
-      continue;
-    }
-    samples.push(fftMagnitudes[index] ?? 0);
-  }
-
-  if (samples.length === 0) {
-    return 0;
-  }
-
-  samples.sort((left, right) => left - right);
-  const median = samples[Math.floor(samples.length * 0.5)] ?? 0;
-  const upperQuartile = samples[Math.floor(samples.length * 0.75)] ?? median;
-  return clamp01((median + upperQuartile) * 0.5);
 }
 
 export function computeModalObservation({
@@ -155,10 +138,13 @@ export function computeModalObservation({
       observerCoherence: 0,
     };
   }
-  const spectralExcess = Math.max(0, spectralSupport - localNoiseFloor);
   const observedSnr =
     spectralSupport > 0
-      ? spectralSupport / Math.max(localNoiseFloor, 0.0005)
+      ? spectralSupport /
+        Math.max(
+          localNoiseFloor,
+          SPECTRAL_EVIDENCE_POLICY.analyserAmplitudeFloor,
+        )
       : 0;
   const responseGate = smoothstep(
     profile.responseStart,
@@ -170,12 +156,11 @@ export function computeModalObservation({
     profile.drivePeakFull,
     drivePeak,
   );
-  const spectralGate =
-    smoothstep(
-      profile.spectralExcessStart,
-      profile.spectralExcessFull,
-      spectralExcess,
-    ) * smoothstep(profile.snrStart, profile.snrFull, observedSnr);
+  const spectralGate = smoothstep(
+    profile.snrStart,
+    profile.snrFull,
+    observedSnr,
+  );
   const periodicityGate = smoothstep(
     profile.periodicityStart,
     profile.periodicityFull,

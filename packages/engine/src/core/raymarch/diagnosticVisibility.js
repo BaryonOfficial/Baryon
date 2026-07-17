@@ -11,8 +11,6 @@ export function deriveRaymarchDiagnosticVisibility({
   ridgeAnchor = observationAnchor,
   signedRadianceAuthority = 1,
   modalCoefficientEnergy = 0,
-  modalResponseEnergy = 0,
-  opacityGain = 1,
   stepBudget = 48,
   spectralFlux = 0,
   parameters = null,
@@ -28,21 +26,16 @@ export function deriveRaymarchDiagnosticVisibility({
     ridgeAnchor,
     signedRadianceAuthority: safeSignedRadianceAuthority,
     modalCoefficientEnergy,
-    modalResponseEnergy,
     parameters,
   });
   const avgDensity = clamp01(observationTransfer.observationDensity);
-  const safeOpacityGain = readPositiveFinite(opacityGain, 1);
   const safeStepBudget = readPositiveFinite(stepBudget, 48);
   const safeSpectralFlux = Math.max(
     0,
     Number.isFinite(spectralFlux) ? spectralFlux : 0,
   );
   const avgOpacity = clamp01(
-    avgDensity *
-      safeOpacityGain *
-      (safeStepBudget / 48) *
-      (0.8 + safeSpectralFlux * 0.12),
+    avgDensity * (safeStepBudget / 48) * (0.8 + safeSpectralFlux * 0.12),
   );
 
   return {

@@ -20,6 +20,7 @@ export function useSharedAudioLogic({
 }) {
   const audioSession = getDefaultAudioSession();
   const activeFileUrlRef = useRef(null);
+  const fileLoadRequestIdRef = useRef(0);
 
   const refreshAudioInputs = useCallback(async () => {
     const mediaDevices = navigator.mediaDevices;
@@ -53,6 +54,7 @@ export function useSharedAudioLogic({
 
   const clearLoadedFileState = useCallback(
     ({ resetLabel = true } = {}) => {
+      fileLoadRequestIdRef.current += 1;
       if (activeFileUrlRef.current) {
         URL.revokeObjectURL(activeFileUrlRef.current);
         activeFileUrlRef.current = null;
@@ -115,9 +117,14 @@ export function useSharedAudioLogic({
       setFileName(file.name);
       const fileURL = URL.createObjectURL(file);
       const previousFileUrl = activeFileUrlRef.current;
+      const requestId = ++fileLoadRequestIdRef.current;
 
       try {
-        await audioSession.loadAudio(fileURL);
+        const loaded = await audioSession.loadAudio(fileURL);
+        if (requestId !== fileLoadRequestIdRef.current || loaded === false) {
+          URL.revokeObjectURL(fileURL);
+          return false;
+        }
         if (previousFileUrl && previousFileUrl !== fileURL) {
           URL.revokeObjectURL(previousFileUrl);
         }
@@ -127,6 +134,9 @@ export function useSharedAudioLogic({
         return true;
       } catch (error) {
         URL.revokeObjectURL(fileURL);
+        if (requestId !== fileLoadRequestIdRef.current) {
+          return false;
+        }
         console.error("Error loading audio:", error);
         setIsAudioLoaded(false);
         return false;

@@ -27,268 +27,468 @@ const RAYMARCH_AUDIT_SOURCE_URL_BY_FILE = Object.freeze({
     import.meta.url,
   ),
   "fieldCache.js": new URL("./fieldCache.js", import.meta.url),
+  "carrierDensityNode.js": new URL("./carrierDensityNode.js", import.meta.url),
   "material.js": new URL("./material.js", import.meta.url),
+  "observationTransfer.js": new URL(
+    "./observationTransfer.js",
+    import.meta.url,
+  ),
+  "observationTransferNode.js": new URL(
+    "./observationTransferNode.js",
+    import.meta.url,
+  ),
   "runtime.js": new URL("./runtime.js", import.meta.url),
 });
 
+const CANONICAL_MATERIAL_QUANTITIES = Object.freeze([
+  "matchedFieldGradient",
+  "localZeroSetDistance",
+  "fixedWorldSpaceCarrierDensity",
+  "carrierNormalViewCosine",
+  "detectorIntegratedAcousticEnergy",
+  "materialChromaticity",
+  "surfaceChromaticity",
+  "materialDensityScale",
+  "holographicFresnelEmission",
+  "scatteringCoefficient",
+  "absorptionCoefficient",
+  "laserExcitedEmissionCoefficient",
+  "organizedCoreDensity",
+  "organizedSheathDensity",
+  "organizedDensity",
+  "sigmaS",
+  "sigmaA",
+  "extinction",
+  "emissionSourceStrength",
+  "coreEmissionSourceStrength",
+  "sheathEmissionSourceStrength",
+  "fresnelEmissionSourceStrength",
+  "incidentLaserIrradiance",
+  "holographicBaseRadianceGain",
+  "laserCausticAccentAuthority",
+  "baseSourceRadiance",
+  "accentSourceRadiance",
+  "sourceRadiance",
+  "laserTransportReady",
+  "volumeBaseRadiance",
+  "volumeAccentRadiance",
+  "volumeTransmittance",
+  "volumeCoverage",
+]);
+
+const RETIRED_MATERIAL_QUANTITIES = Object.freeze([
+  "observationDensity",
+  "structuralContourAuthority",
+  "modalStructureAnchor",
+  "observedDensityFloor",
+  "observedContourSupport",
+  "physicalRidgeDensity",
+  "causticVisibleDensity",
+  "projectedCausticRadianceDensity",
+  "supportVisibleDensity",
+  "adjustedBodyContribution",
+  "cancellationSuppression",
+  "whiteEmissionRidgeEvidence",
+  "whiteEmissionFieldAuthority",
+  "causticRadianceContribution",
+  "supportRevealContribution",
+  "supportExtinctionContribution",
+]);
+
+const VISIBILITY_COMPENSATION_CONSUMERS = Object.freeze([
+  "pitchVisibilityCompensation",
+  "beatVisibilityCompensation",
+  "radialVisibilityCompensation",
+  "centerVisibilityCompensation",
+  "edgeVisibilityCompensation",
+  "profileVisibilityCompensation",
+  "frameVisibilityCompensation",
+]);
+
 describe("raymarch quantity ownership ledger", () => {
-  it("declares stable lane ownership for structural, observation, caustic, support, body, and emission quantities", () => {
-    expect(RAYMARCH_QUANTITY_LEDGER_VERSION).toMatch(/^raymarch-/);
+  it("declares the canonical acoustic-carrier to emission-extinction quantity chain", () => {
+    expect(RAYMARCH_QUANTITY_LEDGER_VERSION).toBe(
+      "raymarch-render-quantity-v12",
+    );
     expect(RAYMARCH_RENDER_QUANTITY_LANES).toEqual(
       expect.objectContaining({
-        "audio-evidence": expect.arrayContaining([
-          "sourceEnergy",
-          "sourceBoundaryModalObservationPolicy",
+        field: expect.arrayContaining(["matchedFieldGradient"]),
+        carrier: expect.arrayContaining([
+          "localZeroSetDistance",
+          "fixedWorldSpaceCarrierDensity",
         ]),
-        "modal-response": expect.arrayContaining(["storedModalEnergy"]),
-        projection: expect.arrayContaining(["projectedRenderEnergy"]),
-        "canonical-descriptor": expect.arrayContaining([
-          "modalAmplitudeCoefficient",
-          "modalIdentityTopology",
+        energy: expect.arrayContaining(["detectorIntegratedAcousticEnergy"]),
+        "optical-material": expect.arrayContaining([
+          "materialChromaticity",
+          "surfaceChromaticity",
+          "materialDensityScale",
+          "carrierColumnDensityScale",
+          "scatteringCoefficient",
+          "absorptionCoefficient",
+          "laserExcitedEmissionCoefficient",
         ]),
-        "runtime-upload": expect.arrayContaining(["runtimeUploadAuthority"]),
-        phase: expect.arrayContaining([
-          "phaseState",
-          "phaseAuthorityCoherence",
-          "interferenceContrast",
+        "optical-detector": expect.arrayContaining([
+          "carrierNormalViewCosine",
+          "holographicFresnelEmission",
         ]),
-        field: expect.arrayContaining([
-          "signedField",
-          "normalizedPressure",
-          "normalizedVelocityProxy",
-          "normalizedRadiationPotential",
-          "cancellation",
+        "optical-transport": expect.arrayContaining([
+          "incidentLaserIrradiance",
+          "laserCausticAccentAuthority",
+          "laserTransportReady",
         ]),
-        display: expect.arrayContaining([
-          "displayCompression",
-          "displayProjectionAmplitude",
+        calibration: expect.arrayContaining(["holographicBaseRadianceGain"]),
+        "material-transfer": expect.arrayContaining([
+          "organizedCoreDensity",
+          "organizedSheathDensity",
+          "organizedDensity",
+          "sigmaS",
+          "sigmaA",
+          "extinction",
+          "emissionSourceStrength",
+          "coreEmissionSourceStrength",
+          "sheathEmissionSourceStrength",
+          "fresnelEmissionSourceStrength",
+          "baseSourceRadiance",
+          "accentSourceRadiance",
+          "sourceRadiance",
         ]),
-        material: expect.arrayContaining(["materialExcitationGate"]),
-        spectral: expect.arrayContaining([
-          "spectralLanePacket",
-          "spectralLaneRadiance",
-          "spectralDisplayProjection",
+        "volume-integration": expect.arrayContaining([
+          "volumeBaseRadiance",
+          "volumeAccentRadiance",
+          "volumeTransmittance",
+          "volumeCoverage",
         ]),
       }),
     );
     expect(RAYMARCH_MATERIAL_TRANSFER_LANES).toEqual(
       expect.objectContaining({
-        structural: expect.arrayContaining([
-          "structuralProjectionDrive",
-          "modalCoefficientEnergy",
+        carrier: expect.arrayContaining([
+          "localZeroSetDistance",
+          "fixedWorldSpaceCarrierDensity",
         ]),
-        observation: expect.arrayContaining([
-          "observationDensity",
-          "observedDensityFloor",
+        energy: expect.arrayContaining(["detectorIntegratedAcousticEnergy"]),
+        "optical-material": expect.arrayContaining([
+          "materialChromaticity",
+          "surfaceChromaticity",
+          "materialDensityScale",
+          "scatteringCoefficient",
+          "absorptionCoefficient",
+          "laserExcitedEmissionCoefficient",
         ]),
-        caustic: expect.arrayContaining([
-          "physicalCausticDensity",
-          "causticVisibleDensity",
-          "projectedCausticRadianceDensity",
+        "material-transfer": expect.arrayContaining([
+          "organizedCoreDensity",
+          "organizedSheathDensity",
+          "organizedDensity",
+          "sigmaS",
+          "sigmaA",
+          "extinction",
+          "emissionSourceStrength",
+          "coreEmissionSourceStrength",
+          "sheathEmissionSourceStrength",
+          "fresnelEmissionSourceStrength",
+          "baseSourceRadiance",
+          "accentSourceRadiance",
+          "sourceRadiance",
         ]),
-        support: expect.arrayContaining(["supportVisibleDensity"]),
-        body: expect.arrayContaining(["photographicBodyContribution"]),
-        emission: expect.arrayContaining(["whiteEmissionFieldAuthority"]),
-        spectral: expect.arrayContaining(["spectralDisplayProjection"]),
       }),
     );
 
-    for (const quantityName of [
-      "structuralProjectionDrive",
-      "sourceEnergy",
-      "sourceBoundaryModalObservationPolicy",
-      "storedModalEnergy",
-      "projectedRenderEnergy",
-      "modalAmplitudeCoefficient",
-      "modalIdentityTopology",
-      "runtimeUploadAuthority",
-      "phaseState",
-      "phaseAuthorityCoherence",
-      "signedField",
-      "normalizedPressure",
-      "normalizedVelocityProxy",
-      "normalizedRadiationPotential",
-      "unsignedSupport",
-      "cancellation",
-      "interferenceContrast",
-      "observationDensity",
-      "causticRidgeAuthority",
-      "displayCompression",
-      "displayProjectionAmplitude",
-      "diagnostics",
-      "modalCoefficientEnergy",
-      "materialExcitationGate",
-      "visibleDensity",
-      "observedDensityFloor",
-      "physicalCausticDensity",
-      "causticVisibleDensity",
-      "projectedCausticRadianceDensity",
-      "supportVisibleDensity",
-      "photographicBodyContribution",
-      "cancellationSuppression",
-      "photographicFocus",
-      "whiteEmissionFieldAuthority",
-      "spectralLanePacket",
-      "spectralLaneRadiance",
-      "spectralDisplayProjection",
-    ]) {
-      const contract = RAYMARCH_QUANTITY_LEDGER[quantityName];
+    for (const quantityName of CANONICAL_MATERIAL_QUANTITIES) {
+      const contract = getRaymarchQuantityContract(quantityName);
       expect(contract, quantityName).toBeTruthy();
       expect(contract.quantity).toBe(quantityName);
-      expect(contract.lane).toBeTypeOf("string");
       expect(contract.represents).toBeTypeOf("string");
       expect(contract.deepOwner).toBeTypeOf("string");
       expect(contract.allowedConsumerPath.length).toBeGreaterThan(0);
       expect(contract.allowedConsumers.length).toBeGreaterThan(0);
-      expect(contract.forbiddenConsumers).toBeInstanceOf(Array);
     }
   });
 
-  it("keeps Spectral packet quality metadata out of lane-radiance ownership", () => {
-    const contract = RAYMARCH_QUANTITY_LEDGER.spectralLaneRadiance;
-    const transforms = contract.transforms.join(" ");
+  it("hard-cuts obsolete visibility, caustic, highlight, and white-emission owners", () => {
+    for (const quantityName of RETIRED_MATERIAL_QUANTITIES) {
+      expect(
+        getRaymarchQuantityContract(quantityName),
+        quantityName,
+      ).toBeNull();
+    }
 
-    expect(contract.represents).toContain("modal structural support");
-    expect(contract.represents).toContain("not extinguishing radiance gates");
-    expect(transforms).not.toContain("display-energy scaling");
-    expect(transforms).not.toContain("spectral confidence gating");
-    expect(transforms).toContain(
-      "support-weighted spectral confidence diagnostics",
+    for (const auditName of [
+      "materialObservationCore",
+      "materialSolvedDensity",
+      "materialHighlightAuthority",
+      "materialHotCoreAuthority",
+      "materialWhiteEmissionAuthority",
+    ]) {
+      expect(
+        RAYMARCH_RENDER_SURFACE_AUDITS[auditName],
+        auditName,
+      ).toBeUndefined();
+    }
+  });
+
+  it("allows only the canonical physical transfer edges", () => {
+    const allowedEdges = [
+      ["matchedFieldGradient", "localZeroSetDistance"],
+      ["matchedFieldGradient", "carrierNormalViewCosine"],
+      ["localZeroSetDistance", "fixedWorldSpaceCarrierDensity"],
+      ["fixedWorldSpaceCarrierDensity", "organizedCoreDensity"],
+      ["fixedWorldSpaceCarrierDensity", "organizedSheathDensity"],
+      ["detectorIntegratedAcousticEnergy", "organizedCoreDensity"],
+      ["detectorIntegratedAcousticEnergy", "organizedSheathDensity"],
+      ["materialDensityScale", "organizedCoreDensity"],
+      ["materialDensityScale", "organizedSheathDensity"],
+      ["carrierColumnDensityScale", "organizedCoreDensity"],
+      ["carrierColumnDensityScale", "organizedSheathDensity"],
+      ["organizedCoreDensity", "organizedDensity"],
+      ["organizedSheathDensity", "organizedDensity"],
+      ["organizedCoreDensity", "coreEmissionSourceStrength"],
+      ["organizedSheathDensity", "sheathEmissionSourceStrength"],
+      ["organizedDensity", "sigmaS"],
+      ["organizedDensity", "sigmaA"],
+      ["organizedDensity", "emissionSourceStrength"],
+      ["scatteringCoefficient", "sigmaS"],
+      ["absorptionCoefficient", "sigmaA"],
+      ["laserExcitedEmissionCoefficient", "emissionSourceStrength"],
+      ["laserExcitedEmissionCoefficient", "coreEmissionSourceStrength"],
+      ["laserExcitedEmissionCoefficient", "sheathEmissionSourceStrength"],
+      ["sigmaS", "extinction"],
+      ["sigmaA", "extinction"],
+      ["carrierNormalViewCosine", "holographicFresnelEmission"],
+      ["holographicFresnelEmission", "fresnelEmissionSourceStrength"],
+      ["emissionSourceStrength", "fresnelEmissionSourceStrength"],
+      ["coreEmissionSourceStrength", "baseSourceRadiance"],
+      ["sheathEmissionSourceStrength", "baseSourceRadiance"],
+      ["fresnelEmissionSourceStrength", "baseSourceRadiance"],
+      ["materialChromaticity", "baseSourceRadiance"],
+      ["materialChromaticity", "accentSourceRadiance"],
+      ["surfaceChromaticity", "baseSourceRadiance"],
+      ["holographicBaseRadianceGain", "baseSourceRadiance"],
+      ["holographicBaseRadianceGain", "accentSourceRadiance"],
+      ["laserTransportReady", "laserCausticAccentAuthority"],
+      ["incidentLaserIrradiance", "laserCausticAccentAuthority"],
+      ["laserCausticAccentAuthority", "accentSourceRadiance"],
+      ["baseSourceRadiance", "accentSourceRadiance"],
+      ["baseSourceRadiance", "sourceRadiance"],
+      ["accentSourceRadiance", "sourceRadiance"],
+      ["baseSourceRadiance", "volumeBaseRadiance"],
+      ["accentSourceRadiance", "volumeAccentRadiance"],
+      ["volumeTransmittance", "coverage"],
+    ];
+
+    for (const [quantity, consumer] of allowedEdges) {
+      expect(
+        isRaymarchQuantityConsumerAllowed(quantity, consumer),
+        `${quantity} -> ${consumer}`,
+      ).toBe(true);
+    }
+
+    expect(
+      isRaymarchQuantityConsumerAllowed(
+        "absorptionCoefficient",
+        "sourceRadiance",
+      ),
+    ).toBe(false);
+    expect(
+      isRaymarchQuantityConsumerAllowed(
+        "incidentLaserIrradiance",
+        "baseSourceRadiance",
+      ),
+    ).toBe(false);
+    expect(() =>
+      assertRaymarchQuantityConsumerAllowed(
+        "incidentLaserIrradiance",
+        "baseSourceRadiance",
+      ),
+    ).toThrow(/incidentLaserIrradiance.*baseSourceRadiance/);
+  });
+
+  it("forbids pitch, beat, radial, profile, and frame visibility compensation", () => {
+    for (const quantityName of [
+      "fixedWorldSpaceCarrierDensity",
+      "organizedDensity",
+      "sourceRadiance",
+    ]) {
+      for (const consumerName of VISIBILITY_COMPENSATION_CONSUMERS) {
+        expect(
+          isRaymarchQuantityConsumerAllowed(quantityName, consumerName),
+          `${quantityName} -> ${consumerName}`,
+        ).toBe(false);
+      }
+    }
+
+    expect(RAYMARCH_FORBIDDEN_CONSUMER_SUMMARY.sourceRadiance).toEqual(
+      expect.arrayContaining(VISIBILITY_COMPENSATION_CONSUMERS),
     );
   });
 
-  it("declares executable source-surface audits for material and probe consumers", () => {
+  it("keeps spectral and static color in chromaticity ownership only", () => {
+    const spectralProjection = getRaymarchQuantityContract(
+      "spectralDisplayProjection",
+    );
+    expect(spectralProjection.represents).toContain("chromaticity");
+    expect(spectralProjection.transforms.join(" ")).not.toContain(
+      "density shaping",
+    );
+    expect(spectralProjection.allowedConsumers).toContain(
+      "materialChromaticity",
+    );
+    expect(
+      isRaymarchQuantityConsumerAllowed(
+        "materialChromaticity",
+        "incidentLaserIrradiance",
+      ),
+    ).toBe(false);
+  });
+
+  it("declares executable audits for every canonical owner seam", () => {
     expect(RAYMARCH_RENDER_SURFACE_AUDITS).toEqual(
       expect.objectContaining({
-        materialObservationCore: expect.objectContaining({
+        fieldCacheMatchedFieldGradient: expect.objectContaining({
+          file: "fieldCache.js",
+          owner: "matchedFieldGradient",
+        }),
+        materialMatchedFieldGradient: expect.objectContaining({
           file: "material.js",
-          requiredTokens: expect.arrayContaining([
-            "const { observationDensity } = observationTransfer;",
-          ]),
-          forbiddenTokens: expect.arrayContaining(["visibleDensity"]),
+          owner: "matchedFieldGradient",
         }),
-        materialHighlightAuthority: expect.objectContaining({
-          owner: "projectedCausticRadianceDensity",
-          forbiddenTokens: expect.arrayContaining([
-            "causticVisibleDensity",
-            "observedDensityFloor",
+        materialLocalZeroSetDistance: expect.objectContaining({
+          owner: "localZeroSetDistance",
+          requiredTokens: expect.arrayContaining([
+            "localFieldDistance",
+            "abs(fieldValue).div",
           ]),
         }),
-        materialWhiteEmissionAuthority: expect.objectContaining({
-          owner: "whiteEmissionFieldAuthority",
+        materialGaussianIntervalIntegration: expect.objectContaining({
+          owner: "fixedWorldSpaceCarrierDensity",
           requiredTokens: expect.arrayContaining([
-            "whiteEmissionRidgeEvidence",
-            "whiteEmissionFieldAuthority",
+            "intervalEnergy",
+            "pointProfile",
+          ]),
+        }),
+        materialFixedWorldSpaceCarrier: expect.objectContaining({
+          owner: "fixedWorldSpaceCarrierDensity",
+          requiredTokens: expect.arrayContaining([
+            "coreFwhmWorld",
+            "sheathFwhmWorld",
+            "coreEnergyFraction",
+            "sheathEnergyFraction",
+          ]),
+        }),
+        fieldCacheDetectorWindowedEnergy: expect.objectContaining({
+          owner: "detectorIntegratedAcousticEnergy",
+          requiredTokens: expect.arrayContaining([
+            "frequencySeparationHz",
+            "normalizedSinc",
+            "incoherentResidualEnergy",
+          ]),
+        }),
+        materialDetectorWindowedEnergy: expect.objectContaining({
+          owner: "detectorIntegratedAcousticEnergy",
+          requiredTokens: expect.arrayContaining([
+            "detectorIntegratedAcousticEnergy",
+            "phaseInterferenceCarrier.independentSpatialEnergy",
+            "phaseInterferenceCarrier.detectorIntegratedSpatialEnergy",
+          ]),
+        }),
+        acousticEnergyTransferCpuOwner: expect.objectContaining({
+          file: "observationTransfer.js",
+          requiredTokens: expect.arrayContaining([
+            "organizedDensity",
+            "organizedCoreDensity",
+            "organizedSheathDensity",
+            "sigmaS",
+            "sigmaA",
+            "extinction",
+            "laserExcitedEmissionCoefficient",
+            "emissionSourceStrength",
+            "coreEmissionSourceStrength",
+            "sheathEmissionSourceStrength",
+            "holographicFresnel",
+            "fresnelEmissionSourceStrength",
+            "holographicBaseRadianceGain",
+            "laserAccentAuthority",
+            "baseRadiance",
+            "accentRadiance",
+            "sourceRadiance",
+          ]),
+        }),
+        acousticEnergyTransferNodeOwner: expect.objectContaining({
+          file: "observationTransferNode.js",
+          requiredTokens: expect.arrayContaining([
+            "organizedDensity",
+            "organizedCoreDensity",
+            "organizedSheathDensity",
+            "sigmaS",
+            "sigmaA",
+            "extinction",
+            "laserExcitedEmissionCoefficient",
+            "emissionSourceStrength",
+            "coreEmissionSourceStrength",
+            "sheathEmissionSourceStrength",
+            "holographicFresnel",
+            "fresnelEmissionSourceStrength",
+            "holographicBaseRadianceGain",
+            "laserAccentAuthority",
+            "baseRadiance",
+            "accentRadiance",
+          ]),
+        }),
+        materialChromaticity: expect.objectContaining({
+          owner: "materialChromaticity",
+          requiredTokens: expect.arrayContaining([
+            "spectralChromaticity",
+            "fallbackChromaticity",
+          ]),
+        }),
+        materialEmissionExtinctionTransfer: expect.objectContaining({
+          requiredTokens: expect.arrayContaining([
+            "detectorIntegratedEnergy: detectorIntegratedAcousticEnergy",
+            "coreDensity,",
+            "sheathDensity,",
+            "materialDensityScale,",
+            "laserExcitedEmissionCoefficient",
+            "holographicIntensity: uHolographicIntensity",
+            "holographicFresnelPower: uHolographicFresnelPower",
+            "normalDotRay: carrier.normalDotRay",
+            "holographicBaseRadianceGain: uHolographicBaseRadianceGain",
+            "laserAccentAuthority,",
+            "baseRadiance",
+            "accentRadiance",
+            "extinction",
           ]),
         }),
         runtimeMaterialProbeTransfer: expect.objectContaining({
-          file: "runtime.js",
+          startToken: "const materialProbeCarrierDensity =",
           requiredTokens: expect.arrayContaining([
-            "materialProbeObservationDensity",
-          ]),
-          forbiddenTokens: expect.arrayContaining([
-            "materialProbeVisibleDensity",
+            "materialProbeDetectorIntegratedEnergy",
+            "materialProbeTransfer.extinction",
+            "materialProbeTransfer.sourceRadiance",
           ]),
         }),
-        sourceBoundaryModalObservationPolicy: expect.objectContaining({
-          file: "audioSourceEvidence.js",
-          owner: "audioSourceEvidence.js source boundary",
+        runtimeMaterialProbeDiagnostics: expect.objectContaining({
           requiredTokens: expect.arrayContaining([
-            "suppressWeakSpectralFallbackDrive",
-            "suppressWeakResonantDrive",
-          ]),
-        }),
-        modalObservationSourcePolicyConsumer: expect.objectContaining({
-          file: "modalObservedScoring.js",
-          owner: "sourceBoundaryModalObservationPolicy",
-          forbiddenTokens: expect.arrayContaining(['analysisClass === "file"']),
-        }),
-        modalProjectionDisplayScore: expect.objectContaining({
-          file: "modalExcitation.js",
-          owner: "displayProjectionAmplitude",
-          forbiddenTokens: expect.arrayContaining(["signalAmplitude"]),
-        }),
-        materialExcitationAuthority: expect.objectContaining({
-          file: "material.js",
-          owner: "materialExcitationGate",
-          forbiddenTokens: expect.arrayContaining(["uAverageAmplitude"]),
-        }),
-        spectralLanePacketPublisher: expect.objectContaining({
-          file: "modalExcitation.js",
-          owner: "spectralLanePacket",
-          requiredTokens: expect.arrayContaining([
-            "displayEnergy",
-            "spectralConfidence",
-            "spectralSpread",
-            "laneDistribution",
-          ]),
-          forbiddenTokens: expect.arrayContaining(["projectedRenderEnergy"]),
-        }),
-        spectralLaneRadianceCache: expect.objectContaining({
-          file: "fieldCache.js",
-          owner: "spectralLaneRadiance",
-          requiredTokens: expect.arrayContaining([
-            "modalFieldSpectralLaneABuffer",
-            "spectralLaneStatsTexture",
-            "dominance",
-            "entropy",
-          ]),
-          forbiddenTokens: expect.arrayContaining([
-            "colorSum.div",
-            "displayEnergy",
-          ]),
-        }),
-        fieldCachePressureRadiationCarrier: expect.objectContaining({
-          file: "fieldCache.js",
-          owner: "normalized pressure/velocity/radiation carrier",
-          requiredTokens: expect.arrayContaining([
-            "pressureRadiationTexture",
-            "normalizedPressure",
-            "normalizedVelocityProxy",
-            "normalizedRadiationPotential",
-          ]),
-          forbiddenTokens: expect.arrayContaining([
-            "modalFieldColorBuffer",
-            "spectralLightCacheTexture",
-          ]),
-        }),
-        materialPressureRadiationCarrier: expect.objectContaining({
-          file: "material.js",
-          owner: "normalized pressure/velocity/radiation carrier consumer",
-          requiredTokens: expect.arrayContaining([
-            "modalPressureRadiationTexture",
-            "pressureRadiationCarrier.pressure",
-            "velocityProxy",
-            "radiationPotential",
-          ]),
-          requiredPatterns: expect.arrayContaining([
-            "pressureRadiationSample\\s*=\\s*texture3D\\(\\s*modalPressureRadiationTexture,?\\s*\\)\\.sample\\(\\s*basisUv,?\\s*\\)",
-          ]),
-          forbiddenTokens: expect.arrayContaining([
-            "modalFieldColorBuffer",
-            "spectralLightCacheTexture",
-          ]),
-        }),
-        materialSpectralLaneProjection: expect.objectContaining({
-          file: "material.js",
-          owner: "spectralDisplayProjection",
-          requiredTokens: expect.arrayContaining([
-            "sampleSpectralLaneCacheNode",
-            "projectSpectralLaneRadianceToRgbNode",
-          ]),
-          forbiddenTokens: expect.arrayContaining([
-            "modalFieldColorBuffer",
-            "spectralLightCacheTexture",
+            "materialProbeMaterialDensityScale",
+            "materialProbeOrganizedDensity",
+            "materialProbeOrganizedCoreDensity",
+            "materialProbeOrganizedSheathDensity",
+            "materialProbeSigmaS",
+            "materialProbeSigmaA",
+            "materialProbeLaserExcitedEmissionCoefficient",
+            "materialProbeEmissionSourceStrength",
+            "materialProbeCoreEmissionSourceStrength",
+            "materialProbeSheathEmissionSourceStrength",
+            "materialProbeFresnelEmissionSourceStrength",
+            "materialProbeHolographicFresnel",
+            "materialProbeHolographicBaseRadianceGain",
+            "materialProbeBaseRadiance",
+            "materialProbeAccentRadiance",
           ]),
         }),
       }),
     );
-    expect(RAYMARCH_RENDER_SURFACE_AUDITS.materialHotCoreAuthority.owner).toBe(
-      "projectedCausticRadianceDensity plus caustic highlight evidence",
-    );
   });
 
-  it("executes declared source-surface audits against their source files", () => {
+  it("executes every declared source audit against the current owners", () => {
     const sourceByFile = new Map();
 
     for (const [surfaceName, audit] of Object.entries(
@@ -311,138 +511,30 @@ describe("raymarch quantity ownership ledger", () => {
     }
   });
 
-  it("prevents support and observation floors from authorizing caustic, highlight, hot-core, or white-emission consumers", () => {
-    for (const supportQuantity of [
-      "observationDensity",
-      "visibleDensity",
-      "observedDensityFloor",
-      "supportVisibleDensity",
-      "photographicBodyContribution",
-    ]) {
-      for (const consumer of [
-        "highlightMask",
-        "hotCoreInput",
-        "whiteEmissionFieldAuthority",
-        "causticRadianceContribution",
-      ]) {
-        expect(
-          isRaymarchQuantityConsumerAllowed(supportQuantity, consumer),
-          `${supportQuantity} -> ${consumer}`,
-        ).toBe(false);
-      }
-    }
+  it("fails a canonical owner audit when visibility compensation is inserted", () => {
+    const carrierSource = readFileSync(
+      RAYMARCH_AUDIT_SOURCE_URL_BY_FILE["carrierDensityNode.js"],
+      "utf8",
+    );
+    const injectedSource = carrierSource.replace(
+      "const carrierDensity = coreDensity.add(sheathDensity);",
+      "const carrierDensity = coreDensity.add(sheathDensity);\n  const radialDistance = 0;",
+    );
 
-    for (const consumer of [
-      "highlightMask",
-      "hotCoreInput",
-      "causticRadianceContribution",
-    ]) {
-      expect(
-        isRaymarchQuantityConsumerAllowed("causticVisibleDensity", consumer),
-        `causticVisibleDensity -> ${consumer}`,
-      ).toBe(false);
-      expect(
-        isRaymarchQuantityConsumerAllowed(
-          "projectedCausticRadianceDensity",
-          consumer,
-        ),
-        `projectedCausticRadianceDensity -> ${consumer}`,
-      ).toBe(true);
-    }
-
-    expect(
-      isRaymarchQuantityConsumerAllowed(
-        "supportVisibleDensity",
-        "supportRevealContribution",
-      ),
-    ).toBe(true);
-  });
-
-  it("keeps cancellation suppression and photographic focus out of standalone white-emission authority", () => {
-    expect(
-      isRaymarchQuantityConsumerAllowed(
-        "cancellationSuppression",
-        "whiteEmissionFieldAuthority",
-      ),
-    ).toBe(false);
-    expect(
-      isRaymarchQuantityConsumerAllowed(
-        "photographicFocus",
-        "whiteEmissionFieldAuthority",
-      ),
-    ).toBe(false);
-    expect(
-      getRaymarchQuantityContract("photographicFocus")
-        .requiredEvidenceByConsumer.whiteEmissionLocalEvidence,
-    ).toEqual(expect.arrayContaining(["whiteEmissionRidgeEvidence"]));
     expect(() =>
-      assertRaymarchQuantityConsumerAllowed(
-        "cancellationSuppression",
-        "whiteEmissionFieldAuthority",
+      auditRaymarchSourceSurface(
+        "materialFixedWorldSpaceCarrier",
+        injectedSource,
       ),
-    ).toThrow(/cancellationSuppression.*whiteEmissionFieldAuthority/);
+    ).toThrow(/radialDistance/);
   });
 
-  it("keeps phase state and phase authority out of topology, coefficients, and render authority", () => {
-    for (const phaseQuantity of [
-      "phaseState",
-      "phaseAuthorityCoherence",
-      "interferenceContrast",
-    ]) {
-      for (const consumer of [
-        "modalIdentityTopology",
-        "modalAmplitudeCoefficient",
-        "renderAuthority",
-      ]) {
-        expect(
-          isRaymarchQuantityConsumerAllowed(phaseQuantity, consumer),
-          `${phaseQuantity} -> ${consumer}`,
-        ).toBe(false);
-      }
-    }
-
-    expect(
-      getRaymarchQuantityContract("phaseState").allowedConsumers,
-    ).toContain("interferenceContrast");
-  });
-
-  it("keeps pressure and radiation fields downstream of modal topology", () => {
-    for (const pressureQuantity of [
-      "normalizedPressure",
-      "normalizedVelocityProxy",
-      "normalizedRadiationPotential",
-    ]) {
-      for (const consumer of [
-        "modalIdentityTopology",
-        "modalAmplitudeCoefficient",
-        "displayCompression",
-        "supportVisibleDensity",
-        "whiteEmissionFieldAuthority",
-      ]) {
-        expect(
-          isRaymarchQuantityConsumerAllowed(pressureQuantity, consumer),
-          `${pressureQuantity} -> ${consumer}`,
-        ).toBe(false);
-      }
-    }
-
-    expect(
-      getRaymarchQuantityContract("normalizedPressure").allowedConsumers,
-    ).toContain("normalizedRadiationPotential");
-    expect(
-      getRaymarchQuantityContract("normalizedVelocityProxy").allowedConsumers,
-    ).toContain("normalizedRadiationPotential");
-    expect(
-      getRaymarchQuantityContract("normalizedRadiationPotential")
-        .allowedConsumers,
-    ).toContain("radiationPotentialTransfer");
-  });
-
-  it("prevents diagnostics and runtime authority from creating energy or liveness", () => {
+  it("keeps diagnostics and display compression downstream of physics", () => {
     for (const consumer of [
       "renderAuthority",
       "runtimeUploadAuthority",
       "projectedRenderEnergy",
+      "sourceRadiance",
     ]) {
       expect(
         isRaymarchQuantityConsumerAllowed("diagnostics", consumer),
@@ -450,56 +542,15 @@ describe("raymarch quantity ownership ledger", () => {
       ).toBe(false);
     }
 
-    for (const energyQuantity of [
-      "sourceEnergy",
-      "storedModalEnergy",
-      "projectedRenderEnergy",
-    ]) {
-      expect(
-        isRaymarchQuantityConsumerAllowed(
-          "runtimeUploadAuthority",
-          energyQuantity,
-        ),
-        `runtimeUploadAuthority -> ${energyQuantity}`,
-      ).toBe(false);
-    }
-  });
-
-  it("keeps display compression downstream of modal semantics", () => {
     expect(
       getRaymarchQuantityContract("displayCompression").allowedConsumers,
     ).toEqual(["finalOutput", "displayDiagnostics"]);
-
-    for (const semanticConsumer of [
-      "sourceEnergy",
-      "storedModalEnergy",
-      "projectedRenderEnergy",
-      "modalAmplitudeCoefficient",
-      "modalIdentityTopology",
-      "runtimeUploadAuthority",
-    ]) {
-      expect(
-        isRaymarchQuantityConsumerAllowed(
-          "displayCompression",
-          semanticConsumer,
-        ),
-        `displayCompression -> ${semanticConsumer}`,
-      ).toBe(false);
-    }
-  });
-
-  it("summarizes forbidden consumers for runtime audit snapshots", () => {
-    expect(RAYMARCH_FORBIDDEN_CONSUMER_SUMMARY.observedDensityFloor).toEqual(
-      expect.arrayContaining(["highlightMask", "whiteEmissionFieldAuthority"]),
-    );
-    expect(RAYMARCH_FORBIDDEN_CONSUMER_SUMMARY.cancellationSuppression).toEqual(
-      expect.arrayContaining(["whiteEmissionFieldAuthority"]),
-    );
-    expect(RAYMARCH_FORBIDDEN_CONSUMER_SUMMARY.physicalCausticDensity).toEqual(
-      expect.arrayContaining(["highlightMask", "hotCoreInput"]),
-    );
     expect(
-      RAYMARCH_FORBIDDEN_CONSUMER_SUMMARY.normalizedRadiationPotential,
-    ).toEqual(expect.arrayContaining(["modalIdentityTopology"]));
+      isRaymarchQuantityConsumerAllowed(
+        "displayCompression",
+        "detectorIntegratedAcousticEnergy",
+      ),
+    ).toBe(false);
+    expect(Object.isFrozen(RAYMARCH_QUANTITY_LEDGER)).toBe(true);
   });
 });
