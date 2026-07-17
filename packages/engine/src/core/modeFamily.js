@@ -8,6 +8,8 @@ const BOUNDARY_MODE_VALUES = Object.freeze({
   [BOUNDARY_MODES.neumann]: 1,
 });
 
+const UNIT_MEAN_SQUARE_OSCILLATORY_BASIS_SCALE = Math.SQRT2;
+
 export const PERMUTATION_ORDERS = Object.freeze({
   allEqual: Object.freeze([[0, 1, 2]]),
   repeatedHead: Object.freeze([
@@ -111,18 +113,26 @@ function evaluateCenteredDirichletBasis(index, coordinate, scale) {
   const angularScale = index * scale;
   const centeredAngularScale = angularScale * 0.5;
   const centeredArgument = index * (coordinate * scale + Math.PI) * 0.5;
+  const energyNormalization = UNIT_MEAN_SQUARE_OSCILLATORY_BASIS_SCALE;
   return {
-    value: Math.sin(centeredArgument),
-    derivative: Math.cos(centeredArgument) * centeredAngularScale,
+    value: Math.sin(centeredArgument) * energyNormalization,
+    derivative:
+      Math.cos(centeredArgument) * centeredAngularScale * energyNormalization,
   };
 }
 
 function evaluateNeumannBasis(index, coordinate, scale) {
   const angularScale = index * scale;
   const argument = angularScale * coordinate;
+  // The zero-index Neumann eigenfunction is the constant 1 and already has
+  // unit mean-square energy. Every oscillatory cosine has mean square 1/2 on
+  // the cavity domain and therefore needs sqrt(2). Applying the same factor
+  // to the derivative preserves the analytic field-gradient relationship.
+  const energyNormalization =
+    index === 0 ? 1 : UNIT_MEAN_SQUARE_OSCILLATORY_BASIS_SCALE;
   return {
-    value: Math.cos(argument),
-    derivative: -Math.sin(argument) * angularScale,
+    value: Math.cos(argument) * energyNormalization,
+    derivative: -Math.sin(argument) * angularScale * energyNormalization,
   };
 }
 
@@ -173,6 +183,11 @@ export function evaluatePermutationFamilyMode({
 }) {
   const permutations = getPermutationFamily(u, v, w);
   const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
+  // Each separable permutation has unit mean-square basis energy after the
+  // one-dimensional normalization above. Distinct permutations are mutually
+  // orthogonal on the cavity domain, so 1/sqrt(N) gives their family sum unit
+  // mean-square energy as well. A modal coefficient squared can therefore be
+  // interpreted consistently as represented modal energy for every family.
   const normalization = 1 / Math.sqrt(permutations.length);
   let field = 0;
   let gradX = 0;

@@ -119,7 +119,6 @@ function getSelectStyle(disabled) {
     fontSize: "0.62rem",
     fontWeight: 700,
     letterSpacing: "var(--baryon-type-data-letter-spacing)",
-    outline: "none",
     appearance: "none",
     WebkitAppearance: "none",
     textTransform: "uppercase",
@@ -743,7 +742,7 @@ export default function LiveInputStatusPanel({
                             ? "inset 0 0 0 1px color-mix(in srgb, var(--nd-accent) 55%, #000), inset 0 1px 2px rgba(0, 0, 0, 0.18)"
                             : "inset 0 0 0 1px var(--nd-border-visible), inset 0 1px 2px rgba(0, 0, 0, 0.5)",
                         transition:
-                          "background 180ms cubic-bezier(0.34, 1.4, 0.64, 1), box-shadow 180ms ease",
+                          "background 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms ease",
                       }}
                     >
                       <span
@@ -764,7 +763,7 @@ export default function LiveInputStatusPanel({
                             ? "translate(0.81rem, -50%)"
                             : "translateY(-50%)",
                           transition:
-                            "transform 200ms cubic-bezier(0.34, 1.5, 0.64, 1), background 180ms ease",
+                            "transform 200ms cubic-bezier(0.16, 1, 0.3, 1), background 180ms ease",
                         }}
                       />
                     </span>

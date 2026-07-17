@@ -14,6 +14,7 @@ const {
   browserSupportState,
   audioSceneState,
   audioState,
+  fullscreenState,
 } = vi.hoisted(() => ({
   advancedControlsDockSpy: vi.fn(),
   baryonSceneSpy: vi.fn(),
@@ -32,6 +33,9 @@ const {
   },
   audioState: {
     selectedSource: "file",
+  },
+  fullscreenState: {
+    isFullscreen: false,
   },
 }));
 
@@ -89,7 +93,7 @@ vi.mock("./rendererDiagnostics.js", () => ({
 
 vi.mock("./hooks/useFullScreenToggle.jsx", () => ({
   useFullscreen: () => ({
-    isFullscreen: false,
+    isFullscreen: fullscreenState.isFullscreen,
     toggleFullscreen: () => {},
   }),
 }));
@@ -268,7 +272,7 @@ describe("authoritative performance HUD composition", () => {
           requested: false,
           rendering: false,
           omitLocalScene: false,
-          programOutputActive: true,
+          programOutputConfiguredActive: true,
           authorityMode: "output-stage-authoritative",
         },
         authoritativeStageTelemetry: {
@@ -291,7 +295,7 @@ describe("authoritative performance HUD composition", () => {
           requested: false,
           rendering: false,
           omitLocalScene: false,
-          programOutputActive: false,
+          programOutputConfiguredActive: false,
           authorityMode: "output-stage-authoritative",
         },
         authoritativeStageTelemetry: {
@@ -394,6 +398,7 @@ describe("ThreeScene render behavior", () => {
     browserSupportState.markRendererInitUnsupported.mockClear();
     audioSceneState.liveInputUiState = "active";
     audioState.selectedSource = "file";
+    fullscreenState.isFullscreen = false;
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -446,6 +451,31 @@ describe("ThreeScene render behavior", () => {
     }
   });
 
+  it("does not rerender the canvas for controls consumed by the live event lane", async () => {
+    const controlsStore = createControlsStore();
+
+    await act(async () => {
+      root.render(
+        React.createElement(
+          ControlsProvider,
+          { store: controlsStore },
+          React.createElement(ThreeScene),
+        ),
+      );
+    });
+    const initialCanvasRenderCount = canvasSpy.mock.calls.length;
+    const initialSceneRenderCount = baryonSceneSpy.mock.calls.length;
+
+    await act(async () => {
+      controlsStore.updateControl("densityGain", 1.25, {
+        persistMode: "none",
+      });
+    });
+
+    expect(canvasSpy).toHaveBeenCalledTimes(initialCanvasRenderCount);
+    expect(baryonSceneSpy).toHaveBeenCalledTimes(initialSceneRenderCount);
+  });
+
   it("forwards footer actions to the advanced controls dock", async () => {
     const controlsStore = createControlsStore();
     const footerActions = [{ label: "Terms", onSelect: vi.fn() }];
@@ -465,6 +495,61 @@ describe("ThreeScene render behavior", () => {
     expect(advancedControlsDockSpy.mock.calls.at(-1)?.[0]).toMatchObject({
       footerActions,
     });
+  });
+
+  it("hides listener chrome by default in fullscreen", async () => {
+    fullscreenState.isFullscreen = true;
+    const controlsStore = createControlsStore();
+
+    await act(async () => {
+      root.render(
+        React.createElement(
+          ControlsProvider,
+          { store: controlsStore },
+          React.createElement(ThreeScene, {
+            controlsOverlay: React.createElement("div", {
+              "data-testid": "listener-controls-overlay",
+            }),
+          }),
+        ),
+      );
+    });
+
+    expect(canvasSpy).toHaveBeenCalled();
+    expect(advancedControlsDockSpy).not.toHaveBeenCalled();
+    expect(
+      container.querySelector('[data-testid="listener-controls-overlay"]'),
+    ).toBeNull();
+  });
+
+  it("shows listener chrome in fullscreen when the preference is enabled", async () => {
+    fullscreenState.isFullscreen = true;
+    const controlsStore = createControlsStore();
+    const onShowUiInFullscreenChange = vi.fn();
+
+    await act(async () => {
+      root.render(
+        React.createElement(
+          ControlsProvider,
+          { store: controlsStore },
+          React.createElement(ThreeScene, {
+            showUiInFullscreen: true,
+            onShowUiInFullscreenChange,
+            controlsOverlay: React.createElement("div", {
+              "data-testid": "listener-controls-overlay",
+            }),
+          }),
+        ),
+      );
+    });
+
+    expect(advancedControlsDockSpy.mock.calls.at(-1)?.[0]).toMatchObject({
+      showUiInFullscreen: true,
+      onShowUiInFullscreenChange,
+    });
+    expect(
+      container.querySelector('[data-testid="listener-controls-overlay"]'),
+    ).toBeInstanceOf(HTMLElement);
   });
 
   it("keeps the blocking unsupported warning as the default unsupported fallback", async () => {
@@ -582,6 +667,7 @@ describe("ThreeScene render behavior", () => {
     expect(baryonSceneSpy.mock.calls.at(-1)?.[0]).toMatchObject({
       performanceProfile: "custom",
       customTargetFps: 72,
+      audioFeatureAuthorityRole: "local-producer",
     });
   });
 

@@ -10,7 +10,7 @@ import {
 import { normalizeVisualizationMethod } from "../visualization/types.js";
 import { clamp } from "../utils/math.js";
 
-const CONTROL_SETTINGS_VERSION = 2;
+export const CONTROL_SETTINGS_VERSION = 6;
 const LEGACY_OLD_DEFAULT_CONTROL_SETTING_VALUES = Object.freeze({
   bloomStrength: 1.02,
   bloomRadius: 0.04,
@@ -19,6 +19,10 @@ const LEGACY_OLD_DEFAULT_CONTROL_SETTING_VALUES = Object.freeze({
 
 function hasOwn(record, key) {
   return Object.prototype.hasOwnProperty.call(record, key);
+}
+
+function isPreviousControlSettingsVersion(value) {
+  return value === 2 || value === 3 || value === 4 || value === 5;
 }
 
 /**
@@ -74,14 +78,6 @@ function normalizeLegacyReactivity(raw) {
     next.motionAmount = clamp(legacyRotation, 0, 3);
   }
 
-  const pulseAmount = raw.pulseAmount;
-  if (
-    !Object.prototype.hasOwnProperty.call(next, "reactivity") &&
-    typeof pulseAmount === "number"
-  ) {
-    next.reactivity = clamp(pulseAmount / 0.055, 0, 3);
-  }
-
   const beatSensitivity = raw.beatSensitivity;
   if (
     !Object.prototype.hasOwnProperty.call(next, "motionAmount") &&
@@ -91,9 +87,6 @@ function normalizeLegacyReactivity(raw) {
   }
 
   if (raw.pulseEnabled === false) {
-    if (!Object.prototype.hasOwnProperty.call(raw, "reactivity")) {
-      next.reactivity = 0;
-    }
     if (!hasMotionAmount && !hasLegacyRotation) {
       next.motionAmount = 0;
     }
@@ -172,12 +165,67 @@ function normalizeLegacySpectralLight(raw) {
   return next;
 }
 
+function normalizeLegacyBloomResponse(raw) {
+  if (!isPlainRecord(raw)) {
+    return raw;
+  }
+
+  const hasLegacyBias = hasOwn(raw, "bloomResponseBias");
+  const hasLegacyBloomValue = [
+    "bloomStrength",
+    "bloomRadius",
+    "bloomThreshold",
+  ].some((key) => hasOwn(raw, key));
+  if (!hasLegacyBias && !hasLegacyBloomValue) {
+    return raw;
+  }
+
+  const next = { ...raw };
+  const bias = Math.max(
+    0,
+    typeof raw.bloomResponseBias === "number" &&
+      Number.isFinite(raw.bloomResponseBias)
+      ? raw.bloomResponseBias
+      : 1,
+  );
+  const strength =
+    typeof raw.bloomStrength === "number" && Number.isFinite(raw.bloomStrength)
+      ? raw.bloomStrength
+      : 1.05;
+  const radius =
+    typeof raw.bloomRadius === "number" && Number.isFinite(raw.bloomRadius)
+      ? raw.bloomRadius
+      : 0.18;
+  const threshold =
+    typeof raw.bloomThreshold === "number" &&
+    Number.isFinite(raw.bloomThreshold)
+      ? raw.bloomThreshold
+      : 0.25;
+
+  if (hasLegacyBias || hasOwn(raw, "bloomStrength")) {
+    next.bloomStrength = Math.max(0, strength * (1 - bias * 0.2));
+  }
+  if (hasLegacyBias || hasOwn(raw, "bloomRadius")) {
+    next.bloomRadius = Math.max(0, radius * (1 - bias * 0.16));
+  }
+  if (hasLegacyBias || hasOwn(raw, "bloomThreshold")) {
+    next.bloomThreshold = Math.min(1, threshold + bias * 0.1);
+  }
+  delete next.bloomResponseBias;
+  return next;
+}
+
 function normalizeLegacyRaymarchPresentation(raw) {
   if (!isPlainRecord(raw)) {
     return raw;
   }
 
   const next = { ...raw };
+  // Both legacy node threshold and the interim core-width setting changed
+  // apparent sheet thickness. Sharpness is now fixed apparatus calibration,
+  // so neither value crosses into the canonical control state.
+  delete next.zeroPointPrecision;
+  delete next.carrierCoreFwhmWorld;
   delete next.contourSharpness;
   return next;
 }
@@ -209,7 +257,15 @@ function normalizeLegacyControls(raw) {
   );
 }
 
-function readNormalizedControlSettingValue(rawControls, definition, definitions) {
+function normalizePreV6ControlSettings(raw) {
+  return normalizeLegacyBloomResponse(normalizeLegacyControls(raw));
+}
+
+function readNormalizedControlSettingValue(
+  rawControls,
+  definition,
+  definitions,
+) {
   const value = rawControls[definition.key];
   if (!isControlSettingValueTypeValid(definition, value)) {
     return { ok: false, value: undefined };
@@ -318,12 +374,12 @@ export function isDefaultControlSettingValue(key, value, definitions) {
 }
 
 /**
- * Serialize explicit settings into the v2 sparse settings envelope.
+ * Serialize explicit settings into the v6 sparse settings envelope.
  *
  * @param {Record<string, unknown>} controls
  * @param {ReadonlyArray<{ key: string, defaultValue: unknown, status: string }>} definitions
  * @param {{ explicitKeys: ReadonlySet<string> }} options
- * @returns {{ version: 2, controls: Record<string, unknown> }}
+ * @returns {{ version: 6, controls: Record<string, unknown> }}
  */
 export function serializeControlSettings(
   controls,
@@ -375,21 +431,29 @@ export function deserializeControlSettings(raw, definitions) {
     return { controls, explicitKeys, migratedLegacy: false };
   }
 
-  if (raw.version === CONTROL_SETTINGS_VERSION) {
+  if (
+    raw.version === CONTROL_SETTINGS_VERSION ||
+    isPreviousControlSettingsVersion(raw.version)
+  ) {
+    const migratedLegacy = raw.version !== CONTROL_SETTINGS_VERSION;
     if (!isPlainRecord(raw.controls)) {
-      return { controls, explicitKeys, migratedLegacy: false };
+      return { controls, explicitKeys, migratedLegacy };
     }
+
+    const normalizedSettingsControls = migratedLegacy
+      ? normalizePreV6ControlSettings(raw.controls)
+      : raw.controls;
 
     for (const definition of definitions) {
       if (
         definition.status !== CONTROL_STATUSES.live ||
-        !hasOwn(raw.controls, definition.key)
+        !hasOwn(normalizedSettingsControls, definition.key)
       ) {
         continue;
       }
 
       const normalized = readNormalizedControlSettingValue(
-        raw.controls,
+        normalizedSettingsControls,
         definition,
         definitions,
       );
@@ -401,7 +465,11 @@ export function deserializeControlSettings(raw, definitions) {
       explicitKeys.add(definition.key);
     }
 
-    return { controls, explicitKeys, migratedLegacy: false };
+    return {
+      controls,
+      explicitKeys,
+      migratedLegacy,
+    };
   }
 
   const normalizedLegacyControls = normalizeSpectralLightActivationControls(
@@ -427,7 +495,11 @@ export function deserializeControlSettings(raw, definitions) {
     );
     if (
       !normalized.ok ||
-      isDefaultControlSettingValue(definition.key, normalized.value, definitions) ||
+      isDefaultControlSettingValue(
+        definition.key,
+        normalized.value,
+        definitions,
+      ) ||
       isLegacyOldDefaultControlSettingValue(definition.key, normalized.value)
     ) {
       continue;

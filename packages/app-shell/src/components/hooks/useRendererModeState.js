@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { clearRendererDiagnostics } from "../rendererDiagnostics.js";
+import { subscribeControlsChanged } from "../../controls/controlsEvents.js";
 
 const CANVAS_SWAP_DELAY_MS = 650;
 
@@ -30,12 +31,7 @@ export function useRendererModeState({
       );
     };
 
-    window.addEventListener("__baryon-controls-change", handleControlsChange);
-    return () =>
-      window.removeEventListener(
-        "__baryon-controls-change",
-        handleControlsChange,
-      );
+    return subscribeControlsChanged(handleControlsChange);
   }, []);
 
   useEffect(() => {

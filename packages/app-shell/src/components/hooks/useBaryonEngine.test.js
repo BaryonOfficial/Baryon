@@ -16,6 +16,8 @@ const frameState = vi.hoisted(() => ({
   callbacks: [],
 }));
 
+const visualizationLifecycleCalls = vi.hoisted(() => ({ args: [] }));
+
 const renderLoopSpies = vi.hoisted(() => ({
   applyCachedControlSnapshotsSpy: vi.fn(() => ({})),
   consumeRenderFramePacerSlotSpy: vi.fn(() => true),
@@ -40,10 +42,11 @@ const runtimeStateSpies = vi.hoisted(() => {
 
 const visualizationLifecycleState = vi.hoisted(() => ({
   points: null,
-  runtimeRef: { current: { method: "raymarch", tick: () => {} } },
+  runtimeRef: {
+    current: { method: "raymarch", tick: vi.fn(), failClosed: vi.fn() },
+  },
   runtimeStateRef: { current: {} },
-  audioFeatureRef: { current: {} },
-  audioFeatureEngineRef: { current: null },
+  audioFeatureRuntimeRef: { current: null },
   runtimeDiagnosticsRef: { current: {} },
   frameCacheRefs: {
     lastActiveFrameRef: { current: null },
@@ -90,15 +93,12 @@ vi.mock("@baryon/engine/audio", () => ({
 
 vi.mock("../../devtools/config.js", () => ({
   DEVTOOLS_ENABLED: false,
+  RAYMARCH_AUDIT_FIXTURE_ENABLED: false,
 }));
 
 vi.mock("../../devtools/testReady.js", () => ({
   markBaryonTestRuntimeReady: () => {},
   resetBaryonTestReady: () => {},
-}));
-
-vi.mock("./controlInvalidation.js", () => ({
-  shouldSkipSpectralStaticColorInvalidation: () => false,
 }));
 
 vi.mock("./baryonEngineRuntimeState.js", () => ({
@@ -130,7 +130,6 @@ vi.mock("@baryon/engine/render/outputPipeline", async () => {
 vi.mock("./baryonEngineRenderLoop.js", () => ({
   applyCachedControlSnapshots: (...args) =>
     renderLoopSpies.applyCachedControlSnapshotsSpy(...args),
-  applyReactiveBloomState: () => ({}),
   consumeRenderFramePacerSlot: (...args) =>
     renderLoopSpies.consumeRenderFramePacerSlotSpy(...args),
   createAuditSnapshotNotifier: (onAuditSnapshotChange) =>
@@ -141,7 +140,6 @@ vi.mock("./baryonEngineRenderLoop.js", () => ({
   getDevicePixelRatio: () => 1,
   publishPerformanceHudSnapshot: () => {},
   publishDevtoolsSnapshots: () => {},
-  applyLiveInputRenderIntent: (frame) => frame,
   finalizeTerminalVisualIdleState: () => ({
     terminalVisualIdle: false,
     resumedFromVisualIdle: false,
@@ -163,7 +161,10 @@ vi.mock("./baryonEngineRenderLoop.js", () => ({
 }));
 
 vi.mock("./useVisualizationRuntimeLifecycle.js", () => ({
-  useVisualizationRuntimeLifecycle: () => visualizationLifecycleState,
+  useVisualizationRuntimeLifecycle: (args) => {
+    visualizationLifecycleCalls.args.push(args);
+    return visualizationLifecycleState;
+  },
 }));
 
 vi.mock("./externalFrameClock.js", () => ({
@@ -178,6 +179,7 @@ vi.mock("./externalFrameClock.js", () => ({
 }));
 
 import { useBaryonEngine } from "./useBaryonEngine.js";
+import { AUDIO_FEATURE_AUTHORITY_ROLES } from "@baryon/engine/audio-features";
 
 function HookHarness({
   controlsRef = { current: {} },
@@ -186,10 +188,12 @@ function HookHarness({
   renderProfile,
   ensurePipeline = () => null,
   postNodesRef = { current: null },
+  audioFeatureAuthorityRole = AUDIO_FEATURE_AUTHORITY_ROLES.localProducer,
   externalFrameRef = null,
   cameraRenderKey = null,
   framePacingFps = null,
   onPerformanceHudSnapshotChange,
+  onStageRender,
   gl = {
     setClearColor: () => {},
     setPixelRatio: () => {},
@@ -211,6 +215,7 @@ function HookHarness({
     visualizationMethod: "raymarch",
     ensurePipeline,
     postNodesRef,
+    audioFeatureAuthorityRole,
     externalFrameRef,
     liveControlSignalRef,
     localCameraRenderSignalRef,
@@ -218,6 +223,7 @@ function HookHarness({
     cameraRenderKey,
     framePacingFps,
     onPerformanceHudSnapshotChange,
+    onStageRender,
   });
   return null;
 }
@@ -247,6 +253,9 @@ describe("useBaryonEngine", () => {
     renderLoopSpies.consumeRenderFramePacerSlotSpy.mockReset();
     renderLoopSpies.consumeRenderFramePacerSlotSpy.mockReturnValue(true);
     frameState.callbacks.length = 0;
+    visualizationLifecycleCalls.args.length = 0;
+    visualizationLifecycleState.runtimeRef.current.tick.mockClear();
+    visualizationLifecycleState.runtimeRef.current.failClosed.mockClear();
     visualizationLifecycleState.controlCacheRefs.controlVersionRef.current = 0;
     visualizationLifecycleState.controlCacheRefs.appliedControlVersionRef.current = 0;
     visualizationLifecycleState.controlCacheRefs.cachedControlSnapshotsRef.current =
@@ -254,7 +263,7 @@ describe("useBaryonEngine", () => {
     visualizationLifecycleState.runtimeDiagnosticsRef.current = {
       diagnosticsId: "initial",
     };
-    visualizationLifecycleState.audioFeatureEngineRef.current = null;
+    visualizationLifecycleState.audioFeatureRuntimeRef.current = null;
     visualizationLifecycleState.lastAudioIssueSignatureRef.current = null;
     visualizationLifecycleState.frameCacheRefs.lastActiveFrameRef.current =
       null;
@@ -281,11 +290,7 @@ describe("useBaryonEngine", () => {
   });
 
   it("resets probe performance metrics through the hook", async () => {
-    const resetMetrics = vi.fn();
     const onPerformanceHudSnapshotChange = vi.fn();
-    visualizationLifecycleState.audioFeatureEngineRef.current = {
-      resetMetrics,
-    };
     visualizationLifecycleState.lastAudioIssueSignatureRef.current =
       "audio-issue";
     window.__baryonPerfMetrics = { fps: 12 };
@@ -313,9 +318,52 @@ describe("useBaryonEngine", () => {
     expect(runtimeStateSpies.clearFrameCacheSpy).toHaveBeenCalledWith(
       visualizationLifecycleState.frameCacheRefs,
     );
-    expect(resetMetrics).toHaveBeenCalledWith("dev-perf-probe-reset");
     expect(onPerformanceHudSnapshotChange).toHaveBeenCalledWith(null);
     expect(window.__baryonPerfMetrics).toBeUndefined();
+  });
+
+  it("commands feature authority only from explicit role transitions", async () => {
+    const externalFrameRef = { current: null };
+
+    await act(async () => {
+      root.render(
+        React.createElement(HookHarness, {
+          audioFeatureAuthorityRole:
+            AUDIO_FEATURE_AUTHORITY_ROLES.localProducer,
+          externalFrameRef,
+        }),
+      );
+    });
+    expect(
+      visualizationLifecycleCalls.args.at(-1).audioFeatureAuthorityRole,
+    ).toBe(AUDIO_FEATURE_AUTHORITY_ROLES.localProducer);
+
+    externalFrameRef.current = { featureFrame: { fieldState: "active" } };
+    await act(async () => {
+      root.render(
+        React.createElement(HookHarness, {
+          audioFeatureAuthorityRole:
+            AUDIO_FEATURE_AUTHORITY_ROLES.localProducer,
+          externalFrameRef,
+        }),
+      );
+    });
+    expect(
+      visualizationLifecycleCalls.args.at(-1).audioFeatureAuthorityRole,
+    ).toBe(AUDIO_FEATURE_AUTHORITY_ROLES.localProducer);
+
+    await act(async () => {
+      root.render(
+        React.createElement(HookHarness, {
+          audioFeatureAuthorityRole:
+            AUDIO_FEATURE_AUTHORITY_ROLES.externalConsumer,
+          externalFrameRef,
+        }),
+      );
+    });
+    expect(
+      visualizationLifecycleCalls.args.at(-1).audioFeatureAuthorityRole,
+    ).toBe(AUDIO_FEATURE_AUTHORITY_ROLES.externalConsumer);
   });
 
   it("forces a redraw when the render profile key changes", async () => {
@@ -574,6 +622,123 @@ describe("useBaryonEngine", () => {
     expect(renderSpy).toHaveBeenCalledTimes(1);
   });
 
+  it("completes a transparent local stage render while its first feature model is pending", async () => {
+    const renderSpy = vi.fn();
+    const onStageRender = vi.fn();
+    const postNodesRef = {
+      current: {
+        composeOutputNode: vi.fn(() => "transparent-output"),
+      },
+    };
+    renderLoopSpies.applyCachedControlSnapshotsSpy.mockReturnValue({
+      output: {
+        bloomEnabled: true,
+        outputMode: "transparent",
+        outputBackgroundColor: "#000000",
+        smaaEnabled: true,
+      },
+      controlsChanged: true,
+    });
+    renderLoopSpies.shouldRenderExternalFrameSpy.mockReturnValue(true);
+    renderLoopSpies.resolveFeatureFrameSpy.mockReturnValue({
+      featureFrame: null,
+      effectiveFrame: null,
+    });
+
+    await act(async () => {
+      root.render(
+        React.createElement(HookHarness, {
+          controlsRef: { current: { outputMode: "transparent" } },
+          ensurePipeline: () => ({ render: renderSpy }),
+          postNodesRef,
+          onStageRender,
+        }),
+      );
+    });
+
+    const frameCallback = frameState.callbacks.at(-1);
+    frameCallback(
+      {
+        clock: { getElapsedTime: () => 0 },
+        camera: {},
+        scene: {},
+      },
+      1 / 60,
+    );
+
+    expect(
+      visualizationLifecycleState.runtimeRef.current.failClosed,
+    ).toHaveBeenCalledTimes(1);
+    expect(postNodesRef.current.composeOutputNode).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outputMode: "transparent",
+        temporalHistoryEnabled: false,
+      }),
+    );
+    expect(renderSpy).toHaveBeenCalledTimes(1);
+    expect(onStageRender).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders active preview frames with the resolved opaque monitor output", async () => {
+    const renderSpy = vi.fn();
+    const postNodesRef = {
+      current: {
+        composeOutputNode: vi.fn(() => "opaque-preview-output"),
+      },
+    };
+    const activeFrame = {
+      fieldState: "active",
+      activeModeCount: 4,
+      energySignal: 0.4,
+    };
+    renderLoopSpies.applyCachedControlSnapshotsSpy.mockReturnValue({
+      output: {
+        bloomEnabled: true,
+        outputMode: "opaque",
+        outputBackgroundColor: "#000000",
+        smaaEnabled: true,
+      },
+      controlsChanged: true,
+    });
+    renderLoopSpies.shouldRenderExternalFrameSpy.mockReturnValue(true);
+    renderLoopSpies.resolveFeatureFrameSpy.mockReturnValue({
+      featureFrame: activeFrame,
+      effectiveFrame: activeFrame,
+    });
+
+    await act(async () => {
+      root.render(
+        React.createElement(HookHarness, {
+          controlsRef: {
+            current: {
+              outputMode: "transparent",
+              smaaEnabled: true,
+            },
+          },
+          ensurePipeline: () => ({ render: renderSpy }),
+          postNodesRef,
+        }),
+      );
+    });
+
+    frameState.callbacks.at(-1)(
+      {
+        clock: { getElapsedTime: () => 0 },
+        camera: {},
+        scene: {},
+      },
+      1 / 60,
+    );
+
+    expect(postNodesRef.current.composeOutputNode).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outputMode: "opaque",
+        smaaEnabled: true,
+      }),
+    );
+    expect(renderSpy).toHaveBeenCalledTimes(1);
+  });
+
   it("advances output temporal camera cuts after rendering", async () => {
     const renderSpy = vi.fn();
     const setRenderTargetSpy = vi.fn();
@@ -749,6 +914,8 @@ describe("useBaryonEngine", () => {
       root.render(
         React.createElement(HookHarness, {
           ensurePipeline: () => ({ render: renderSpy }),
+          audioFeatureAuthorityRole:
+            AUDIO_FEATURE_AUTHORITY_ROLES.externalConsumer,
           externalFrameRef,
           cameraRenderKey: "side",
         }),
@@ -771,6 +938,8 @@ describe("useBaryonEngine", () => {
       root.render(
         React.createElement(HookHarness, {
           ensurePipeline: () => ({ render: renderSpy }),
+          audioFeatureAuthorityRole:
+            AUDIO_FEATURE_AUTHORITY_ROLES.externalConsumer,
           externalFrameRef,
           cameraRenderKey: "top-down",
         }),
@@ -816,6 +985,8 @@ describe("useBaryonEngine", () => {
         root.render(
           React.createElement(HookHarness, {
             ensurePipeline: () => ({ render: renderSpy }),
+            audioFeatureAuthorityRole:
+              AUDIO_FEATURE_AUTHORITY_ROLES.externalConsumer,
             externalFrameRef,
             localCameraRenderSignalRef,
           }),
@@ -971,9 +1142,8 @@ describe("useBaryonEngine", () => {
     const controlsRef = {
       current: {
         backgroundColor: "#000000",
-        fieldExtent: "unbounded",
+        volumeShape: "sphere",
         boundaryMode: "dirichlet",
-        zeroPointPrecision: 0.12,
       },
     };
     renderLoopSpies.shouldRenderExternalFrameSpy.mockReturnValue(true);
@@ -993,9 +1163,8 @@ describe("useBaryonEngine", () => {
       );
     });
 
-    controlsRef.current.fieldExtent = "sphere";
+    controlsRef.current.volumeShape = "cube";
     controlsRef.current.boundaryMode = "neumann";
-    controlsRef.current.zeroPointPrecision = 0.072;
     await act(async () => {
       window.dispatchEvent(
         new CustomEvent("__baryon-controls-change", {
@@ -1029,9 +1198,8 @@ describe("useBaryonEngine", () => {
       renderLoopSpies.applyCachedControlSnapshotsSpy.mock.calls.at(-1)[0]
         .controls,
     ).toMatchObject({
-      fieldExtent: "sphere",
+      volumeShape: "cube",
       boundaryMode: "neumann",
-      zeroPointPrecision: 0.072,
     });
   });
 
@@ -1049,6 +1217,8 @@ describe("useBaryonEngine", () => {
       root.render(
         React.createElement(HookHarness, {
           ensurePipeline: () => ({ render: renderSpy }),
+          audioFeatureAuthorityRole:
+            AUDIO_FEATURE_AUTHORITY_ROLES.externalConsumer,
           externalFrameRef,
           framePacingFps: 60,
         }),
@@ -1069,5 +1239,126 @@ describe("useBaryonEngine", () => {
       renderLoopSpies.consumeRenderFramePacerSlotSpy,
     ).not.toHaveBeenCalled();
     expect(renderSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("never falls back to local feature analysis while external authority has no frame", async () => {
+    const externalFrameRef = {
+      current: {
+        status: { isPlaying: true },
+        frameSequence: 42,
+        featureFrame: null,
+      },
+    };
+    renderLoopSpies.shouldRenderExternalFrameSpy.mockReturnValue(true);
+
+    await act(async () => {
+      root.render(
+        React.createElement(HookHarness, {
+          audioFeatureAuthorityRole:
+            AUDIO_FEATURE_AUTHORITY_ROLES.externalConsumer,
+          externalFrameRef,
+        }),
+      );
+    });
+
+    const frameCallback = frameState.callbacks.at(-1);
+    expect(frameCallback).toBeTypeOf("function");
+
+    frameCallback(
+      {
+        clock: { getElapsedTime: () => 0 },
+        camera: {},
+        scene: {},
+      },
+      1 / 60,
+    );
+
+    expect(renderLoopSpies.resolveFeatureFrameSpy).not.toHaveBeenCalled();
+    expect(
+      visualizationLifecycleState.runtimeRef.current.failClosed,
+    ).not.toHaveBeenCalled();
+    expect(
+      renderLoopSpies.shouldRenderExternalFrameSpy,
+    ).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        externalFeatureAuthorityActive: true,
+        externalFrameState: null,
+      }),
+    );
+  });
+
+  it("revokes renderer authority when the local feature model is unavailable", async () => {
+    renderLoopSpies.shouldRenderExternalFrameSpy.mockReturnValue(true);
+    renderLoopSpies.resolveFeatureFrameSpy.mockReturnValue({
+      featureFrame: null,
+      effectiveFrame: null,
+    });
+
+    await act(async () => {
+      root.render(
+        React.createElement(HookHarness, {
+          audioFeatureAuthorityRole:
+            AUDIO_FEATURE_AUTHORITY_ROLES.localProducer,
+        }),
+      );
+    });
+
+    const frameCallback = frameState.callbacks.at(-1);
+    frameCallback(
+      {
+        clock: { getElapsedTime: () => 0 },
+        camera: {},
+        scene: {},
+      },
+      1 / 60,
+    );
+
+    expect(
+      visualizationLifecycleState.runtimeRef.current.failClosed,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtimeState: visualizationLifecycleState.runtimeStateRef.current,
+      }),
+    );
+    expect(
+      visualizationLifecycleState.runtimeRef.current.tick,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("uses local feature analysis even when a stray external frame is present", async () => {
+    const externalFrameRef = {
+      current: { featureFrame: { fieldState: "active" } },
+    };
+    renderLoopSpies.shouldRenderExternalFrameSpy.mockReturnValue(true);
+
+    await act(async () => {
+      root.render(
+        React.createElement(HookHarness, {
+          audioFeatureAuthorityRole:
+            AUDIO_FEATURE_AUTHORITY_ROLES.localProducer,
+          externalFrameRef,
+        }),
+      );
+    });
+
+    const frameCallback = frameState.callbacks.at(-1);
+    frameCallback(
+      {
+        clock: { getElapsedTime: () => 0 },
+        camera: {},
+        scene: {},
+      },
+      1 / 60,
+    );
+
+    expect(renderLoopSpies.resolveFeatureFrameSpy).toHaveBeenCalledTimes(1);
+    expect(
+      renderLoopSpies.shouldRenderExternalFrameSpy,
+    ).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        externalFeatureAuthorityActive: false,
+        externalFrameState: null,
+      }),
+    );
   });
 });

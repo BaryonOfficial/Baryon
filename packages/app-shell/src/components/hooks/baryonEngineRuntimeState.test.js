@@ -36,6 +36,26 @@ test("renders duplicate external frames when a render is explicitly forced", () 
   ).toBe(true);
 });
 
+test("missing external frames render only for explicit external hold updates", () => {
+  expect(
+    shouldRenderExternalFrame({
+      externalFeatureAuthorityActive: true,
+      externalFrameState: null,
+      shouldAdvance: false,
+      controlsChanged: false,
+    }),
+  ).toBe(false);
+  expect(
+    shouldRenderExternalFrame({
+      externalFeatureAuthorityActive: true,
+      externalFrameState: null,
+      shouldAdvance: false,
+      controlsChanged: false,
+      forceRender: true,
+    }),
+  ).toBe(true);
+});
+
 test("publishes sanitized modal freshness diagnostics in runtime perf snapshots", () => {
   const previousWindow = globalThis.window;
   globalThis.window = {};
@@ -61,8 +81,8 @@ test("publishes sanitized modal freshness diagnostics in runtime perf snapshots"
       metrics: {
         avgAmplitude: 16,
         analyserRms: 0.04,
-        preModalFftPeak: 0.36,
-        nonZeroFftBinCount: 192,
+        fftPeakAmplitude: 0.36,
+        spectralEffectiveBinCount: 192,
       },
       transport: {
         playing: false,
@@ -113,8 +133,8 @@ test("publishes sanitized modal freshness diagnostics in runtime perf snapshots"
         metrics: {
           avgAmplitude: 16,
           analyserRms: 0.04,
-          preModalFftPeak: 0.36,
-          nonZeroFftBinCount: 192,
+          fftPeakAmplitude: 0.36,
+          spectralEffectiveBinCount: 192,
         },
         transport: {
           playing: false,
@@ -311,6 +331,7 @@ test("publishes modal basis cache diagnostics in render perf snapshots", () => {
         modalBasisCacheModeCount: 6,
         modalBasisCachePhaseAuthority: 0.42,
         modalBasisCacheModeIdentityRetentionRatio: 0.73,
+        modalBasisCacheMinSamplesPerCycle: 4,
         modalBasisCacheMaxRepresentableModeIndex: 27,
         modalBasisCacheContributingModeCount: 5,
         modalBasisCacheZeroAmplitudeSkippedModeCount: 1,
@@ -379,6 +400,7 @@ test("publishes modal basis cache diagnostics in render perf snapshots", () => {
     expect(snapshot.render.modalBasisCacheModeIdentityRetentionRatio).toBe(
       0.73,
     );
+    expect(snapshot.render.modalBasisCacheMinSamplesPerCycle).toBe(4);
     expect(snapshot.render.modalBasisCacheMaxRepresentableModeIndex).toBe(27);
     expect(snapshot.render.modalBasisCacheContributingModeCount).toBe(5);
     expect(snapshot.render.modalBasisCacheZeroAmplitudeSkippedModeCount).toBe(
@@ -454,6 +476,7 @@ test("publishes modal basis cache diagnostics from runtime state when audit is d
         activeBasisPageModeCount: 6,
         modalBasisCachePhaseAuthority: 0.37,
         modeIdentityRetentionRatio: 0.61,
+        modalBasisCacheMinSamplesPerCycle: 4,
         modalBasisCacheMaxRepresentableModeIndex: 31,
         contributingBasisPageModeCount: 4,
         zeroAmplitudeSkippedModeCount: 2,
@@ -531,6 +554,7 @@ test("publishes modal basis cache diagnostics from runtime state when audit is d
     expect(snapshot.render.modalBasisCacheModeIdentityRetentionRatio).toBe(
       0.61,
     );
+    expect(snapshot.render.modalBasisCacheMinSamplesPerCycle).toBe(4);
     expect(snapshot.render.modalBasisCacheMaxRepresentableModeIndex).toBe(31);
     expect(snapshot.render.modalBasisCacheContributingModeCount).toBe(4);
     expect(snapshot.render.modalBasisCacheZeroAmplitudeSkippedModeCount).toBe(

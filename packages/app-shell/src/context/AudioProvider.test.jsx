@@ -61,11 +61,22 @@ vi.mock("../components/hooks/useAudioLogic", () => ({
 }));
 
 import { AudioProvider } from "./AudioProvider.jsx";
-import { useAudio } from "./AudioContext.jsx";
+import { useAudio, useAudioScene } from "./AudioContext.jsx";
 import { useAudioTransportClock } from "./audioTransportClock.js";
 import * as audioTransportClockModule from "./audioTransportClock.js";
+import { CONTROL_SETTINGS_VERSION } from "@baryon/engine/controls/persistence";
 import { SETTINGS_KEY } from "../components/hooks/baryonControlsState.js";
 import { installLocalStorageMock } from "../test/installLocalStorageMock.js";
+
+function createDeferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
 
 function AudioHarness({ onValue }) {
   const audio = useAudio();
@@ -73,6 +84,16 @@ function AudioHarness({ onValue }) {
   useEffect(() => {
     onValue(audio);
   }, [audio, onValue]);
+
+  return null;
+}
+
+function AudioSceneHarness({ onValue }) {
+  const audioScene = useAudioScene();
+
+  useEffect(() => {
+    onValue(audioScene);
+  }, [audioScene, onValue]);
 
   return null;
 }
@@ -177,7 +198,11 @@ describe("AudioProvider source transport gating", () => {
 
   function renderProvider(
     onValue,
-    { platform = "desktop", demoAudioFileLoader = null } = {},
+    {
+      platform = "desktop",
+      demoAudioFileLoader = null,
+      onSceneValue = null,
+    } = {},
   ) {
     let sessionAcousticIntent = "ambient";
     session = {
@@ -224,6 +249,7 @@ describe("AudioProvider source transport gating", () => {
           demoAudioFileLoader={demoAudioFileLoader}
         >
           <AudioHarness onValue={onValue} />
+          {onSceneValue ? <AudioSceneHarness onValue={onSceneValue} /> : null}
         </AudioProvider>,
       );
     });
@@ -265,7 +291,7 @@ describe("AudioProvider source transport gating", () => {
     expect(onValue.mock.lastCall[0].liveInputAcousticIntent).toBe("vocal");
   });
 
-  it("persists acoustic intent inside v2 control settings", async () => {
+  it("migrates acoustic intent persistence to current control settings", async () => {
     window.localStorage.setItem(
       SETTINGS_KEY,
       JSON.stringify({
@@ -289,7 +315,7 @@ describe("AudioProvider source transport gating", () => {
 
     const settings = JSON.parse(window.localStorage.getItem(SETTINGS_KEY));
     expect(settings).toEqual({
-      version: 2,
+      version: CONTROL_SETTINGS_VERSION,
       liveInputAnalysisOverrides: {
         "device-1": "line-feed",
       },
@@ -346,7 +372,7 @@ describe("AudioProvider source transport gating", () => {
 
     const settings = JSON.parse(window.localStorage.getItem(SETTINGS_KEY));
     expect(settings).toEqual({
-      version: 2,
+      version: CONTROL_SETTINGS_VERSION,
       liveInputAnalysisOverrides: {
         "device-1": "line-feed",
       },
@@ -444,6 +470,62 @@ describe("AudioProvider source transport gating", () => {
     );
   });
 
+  it("cancels a pending Go Live request when the source switches to File", async () => {
+    Object.defineProperty(window, "isSecureContext", {
+      configurable: true,
+      value: true,
+    });
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => ({
+          getTracks: () => [{ stop: vi.fn() }],
+        })),
+        enumerateDevices: vi.fn(async () => []),
+      },
+    });
+    refreshAudioInputsMock.mockResolvedValue([
+      {
+        kind: "audioinput",
+        deviceId: "main-window-device-9",
+        label: "BlackHole 2ch (Virtual)",
+      },
+    ]);
+    const onValue = vi.fn();
+    renderProvider(onValue, { platform: "web" });
+
+    let audio = onValue.mock.lastCall[0];
+    await act(async () => {
+      await audio.requestLiveInputPermission();
+    });
+
+    const pendingStart = createDeferred();
+    session.startLiveInputStream.mockReturnValue(pendingStart.promise);
+    let startRequest;
+    audio = onValue.mock.lastCall[0];
+    await act(async () => {
+      startRequest = audio.handleLiveInputAction();
+      await Promise.resolve();
+    });
+
+    audio = onValue.mock.lastCall[0];
+    expect(audio.selectedSource).toBe("system");
+    expect(session.startLiveInputStream).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await audio.handleSourceChange("file");
+    });
+    pendingStart.resolve();
+    await act(async () => {
+      await startRequest;
+    });
+
+    audio = onValue.mock.lastCall[0];
+    expect(session.stopLiveInputStream).toHaveBeenCalledTimes(1);
+    expect(audio.selectedSource).toBe("file");
+    expect(audio.liveInputUiState).not.toBe("active");
+  });
+
   it("keeps a selected live endpoint by label when the browser device id changes", async () => {
     Object.defineProperty(window, "isSecureContext", {
       configurable: true,
@@ -508,13 +590,14 @@ describe("AudioProvider source transport gating", () => {
 
   it("uses runtime-selected live endpoint semantics when local devices are unavailable", async () => {
     const onValue = vi.fn();
-    renderProvider(onValue);
+    const onSceneValue = vi.fn();
+    renderProvider(onValue, { onSceneValue });
 
     let audio = onValue.mock.lastCall[0];
     expect(audio.selectedLiveDeviceId).toBeNull();
 
     await act(async () => {
-      audio.setLiveInputRuntimeStatus({
+      onSceneValue.mock.lastCall[0].setLiveInputRuntimeStatus({
         active: true,
         phase: "listening",
         liveInputDeviceKind: "system",
@@ -553,7 +636,8 @@ describe("AudioProvider source transport gating", () => {
 
   it("keeps frame-owned line-feed status across control refreshes", async () => {
     const onValue = vi.fn();
-    renderProvider(onValue);
+    const onSceneValue = vi.fn();
+    renderProvider(onValue, { onSceneValue });
 
     session.getStatus = () => ({
       isAudioLoaded: true,
@@ -572,7 +656,7 @@ describe("AudioProvider source transport gating", () => {
 
     let audio = onValue.mock.lastCall[0];
     await act(async () => {
-      audio.setLiveInputRuntimeStatus({
+      onSceneValue.mock.lastCall[0].setLiveInputRuntimeStatus({
         active: true,
         phase: "listening",
         liveInputDeviceKind: "system",
@@ -596,7 +680,7 @@ describe("AudioProvider source transport gating", () => {
     await act(async () => {
       window.dispatchEvent(
         new CustomEvent("__baryon-controls-change", {
-          detail: { fieldExtent: "unbounded" },
+          detail: { boundaryMode: "dirichlet" },
         }),
       );
     });
@@ -694,7 +778,9 @@ describe("AudioProvider source transport gating", () => {
     let audio = onValue.mock.lastCall[0];
 
     await act(async () => {
-      audio.setIsAudioLoaded(true);
+      await audio.handleFileChange({
+        target: { files: [new File(["audio"], "track.wav")], value: "" },
+      });
     });
 
     audio = onValue.mock.lastCall[0];
@@ -719,13 +805,9 @@ describe("AudioProvider source transport gating", () => {
     const onValue = vi.fn();
     renderProvider(onValue);
 
-    const audio = onValue.mock.lastCall[0];
-
-    await act(async () => {
-      audio.setIsAudioLoaded(true);
-    });
-
     expect(onValue.mock.lastCall[0].transportState).toBeUndefined();
+    expect(onValue.mock.lastCall[0].setIsAudioLoaded).toBeUndefined();
+    expect(onValue.mock.lastCall[0].setSelectedSource).toBeUndefined();
   });
 
   it("loads the desktop preloaded demo audio from the bundled renderer asset", async () => {
@@ -747,7 +829,6 @@ describe("AudioProvider source transport gating", () => {
         "file:///Applications/Baryon.app/Contents/Resources/app/.vite/renderer/main_window/audio/baryon-demo.mp3",
       );
       expect(audio.displayName).toBe("baryon-demo.mp3");
-      expect(audio.playbackSource).toBe("local-file");
       expect(audio.selectedSource).toBe("file");
       expect(session.playPauseAudio).toHaveBeenCalledTimes(1);
     } finally {
@@ -807,7 +888,6 @@ describe("AudioProvider source transport gating", () => {
       expect(demoAudioFileLoader).toHaveBeenCalledTimes(1);
       expect(session.loadAudio).toHaveBeenCalledWith("blob:desktop-demo-audio");
       expect(audio.displayName).toBe("baryon-demo.mp3");
-      expect(audio.playbackSource).toBe("local-file");
       expect(audio.selectedSource).toBe("file");
       expect(session.playPauseAudio).toHaveBeenCalledTimes(1);
     } finally {
@@ -860,7 +940,6 @@ describe("AudioProvider source transport gating", () => {
     expect(session.loadAudio).toHaveBeenCalledWith("/audio/baryon-demo.mp3");
     expect(session.playPauseAudio).not.toHaveBeenCalled();
     expect(audio.displayName).toBe("baryon-demo.mp3");
-    expect(audio.playbackSource).toBe("local-file");
     expect(audio.selectedSource).toBe("file");
   });
 
@@ -891,6 +970,7 @@ describe("AudioProvider source transport gating", () => {
       setAudioEndedCallback: () => {},
       stopAudio: () => {},
       stopLiveInputStream: () => {},
+      loadAudio: async () => {},
       playPauseAudio: async () => {},
       startLiveInputStream: async () => {},
       dispose: () => Promise.resolve(),
@@ -916,7 +996,9 @@ describe("AudioProvider source transport gating", () => {
     const audio = onAudioRender.mock.lastCall[0];
 
     await act(async () => {
-      audio.setIsAudioLoaded(true);
+      await audio.handleFileChange({
+        target: { files: [new File(["audio"], "track.wav")], value: "" },
+      });
       await Promise.resolve();
     });
 

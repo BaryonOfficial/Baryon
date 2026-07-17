@@ -24,6 +24,37 @@ declare global {
     };
     __baryonControlState?: Record<string, unknown>;
     __baryonAuditSnapshot?: Record<string, unknown>;
+    __baryonAuditFixture?: {
+      snapshotDescriptor(options?: {
+        descriptorId?: string;
+        viewPreset?: string;
+        deterministicSeed?: number;
+        output?: Record<string, unknown> | null;
+        checkpointMode?: "base" | "current";
+        decisionManifestSha256?: string | null;
+      }): Promise<Record<string, unknown>>;
+      install(descriptor: Record<string, unknown>): Promise<unknown>;
+      status(): Record<string, unknown>;
+      assertSealed(): Promise<unknown>;
+      exportBuffers(): Promise<unknown>;
+      teardown(): Promise<unknown>;
+    };
+    __baryonRaymarchAuditFixtureRuntimeAdapter?: {
+      snapshotCanonicalState(input?: unknown): Promise<unknown>;
+      suspendProducers(input?: unknown): Promise<unknown>;
+      installDescriptor(input?: unknown): Promise<unknown>;
+      awaitCheckpointReady(input?: unknown): Promise<unknown>;
+      readSeal(input?: unknown): Promise<unknown>;
+      readCurrentSeal(input?: unknown): Promise<unknown>;
+      exportBuffers(input?: unknown): Promise<unknown>;
+      clearFixtureState(input?: unknown): Promise<unknown>;
+      restoreCanonicalState(input?: unknown): Promise<unknown>;
+      awaitFreshAuthoritativePacket(input?: unknown): Promise<unknown>;
+      readFrozenDescriptorSources(): Promise<{
+        output: Record<string, unknown>;
+        [key: string]: unknown;
+      }>;
+    };
     __baryonTailDiagnostics?: {
       start(): Record<string, unknown>;
       stop(): Record<string, unknown>;

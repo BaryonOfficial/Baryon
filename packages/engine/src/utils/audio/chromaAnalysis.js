@@ -1,8 +1,8 @@
 import { getPitchClassForFrequency } from "./pitch.js";
+import { findCredibleSpectralPeaks } from "./spectralEvidence.js";
 
 const CHROMA_MIN_HZ = 65; // C2 — ignore sub-bass rumble
-const CHROMA_MAX_HZ = 2100; // matches MAX_SPECTRAL_FREQUENCY
-const CHROMA_NOISE_FLOOR = 0.03; // skip near-silent FFT bins
+const CHROMA_MAX_HZ = 2100;
 
 // Krumhansl-Kessler key profiles (relative magnitudes matter for correlation)
 const MAJOR_PROFILE = Object.freeze([
@@ -22,35 +22,33 @@ const MINOR_MEAN =
  * Build a 12-bin chromagram from FFT magnitude data.
  * Bins are accumulated by pitch class across all octaves, then normalized to sum=1.
  *
- * @param {Float32Array} fftMagnitudes
+ * @param {Float32Array} fftLinearAmplitudes
  * @param {number} sampleRate
  * @param {number} fftSize
  * @returns {Float32Array} 12-element chroma vector, sum-to-1 normalized
  */
-export function buildChromaVector(fftMagnitudes, sampleRate, fftSize) {
+export function buildChromaVector(fftLinearAmplitudes, sampleRate, fftSize) {
   const chroma = new Float32Array(12);
 
-  if (!fftMagnitudes?.length || !sampleRate || !fftSize) {
+  if (!fftLinearAmplitudes?.length || !sampleRate || !fftSize) {
     return chroma;
   }
 
-  const binCount = fftSize / 2;
-  const binHz = sampleRate / fftSize;
+  const peaks = findCredibleSpectralPeaks(
+    fftLinearAmplitudes,
+    sampleRate,
+    fftLinearAmplitudes.length,
+  );
   let total = 0;
 
-  for (let b = 0; b < binCount && b < fftMagnitudes.length; b++) {
-    const f = b * binHz;
-    if (f < CHROMA_MIN_HZ) continue;
-    if (f > CHROMA_MAX_HZ) break;
-
-    const magnitude = fftMagnitudes[b];
-    if (magnitude < CHROMA_NOISE_FLOOR) continue;
-
-    const pitchClass = getPitchClassForFrequency(f);
+  for (const peak of peaks) {
+    if (peak.frequency < CHROMA_MIN_HZ) continue;
+    if (peak.frequency > CHROMA_MAX_HZ) continue;
+    const pitchClass = getPitchClassForFrequency(peak.frequency);
     if (pitchClass == null) continue;
 
-    chroma[pitchClass] += magnitude;
-    total += magnitude;
+    chroma[pitchClass] += peak.amplitude;
+    total += peak.amplitude;
   }
 
   if (total > 0) {

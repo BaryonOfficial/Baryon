@@ -59,8 +59,8 @@ Controls for live-input analysis and browser microphone processing.
 
 Controls for render cadence, adaptive quality, and the performance HUD.
 
-| Label                   | Description                                                                                                                |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Label          | Description                                                                                                               |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | **Profile**    | `Auto` adapts raymarch steps toward 60 FPS, `Custom` uses Target FPS, and `Max Quality` leaves raymarch steps ungoverned. |
 | **Target FPS** | Performer cadence and adaptive raymarch target used when Profile is `Custom`.                                             |
 | **HUD**        | Shows FPS and render resolution on screen.                                                                                |
@@ -71,72 +71,55 @@ Controls for render cadence, adaptive quality, and the performance HUD.
 
 Controls for the published output mode and opaque output fill.
 
-| Label            | Description                                                                  |
-| ---------------- | ---------------------------------------------------------------------------- |
-| **Mode**          | `Transparent` composites over other content. `Opaque` renders solid output.  |
-| **Output Color** | Background fill color used in Opaque output mode.                            |
+| Label            | Description                                                                 |
+| ---------------- | --------------------------------------------------------------------------- |
+| **Output Mode**  | `Transparent` composites over other content. `Opaque` renders solid output. |
+| **Output Color** | Background fill color used in Opaque output mode.                           |
 
 ---
 
-## Shape
+## Volume
 
 Controls for the raymarched modal volume.
 
-| Label              | Description                                                                                            |
-| ------------------ | ------------------------------------------------------------------------------------------------------ |
-| **Extent**         | Keep the field contained in the flagship sphere, or let the waves radiate past it and fade into space. |
-| **Boundary**       | Choose whether the modal family behaves like a reflective boundary (`Neumann`) or a fixed node.        |
-| **Node Threshold** | How sharp the bright ring structures appear — lower values create crisper, more defined rings.         |
-| **Density**        | How thick and bright the overall volume body appears — raise for a bolder, denser orb.                 |
-| **Absorption**     | Depth contrast inside the orb — raise for crisper internal layers and less haze.                       |
-| **Refraction**     | How strongly the laser bends through the acoustic pressure field — higher values focus tighter webs.   |
-| **Opacity**        | How solid the orb appears — raise for a stronger presence, especially when compositing over video.     |
-| **Steps**          | Rendering quality versus speed — higher values look smoother but may reduce frame rate on slower GPUs. |
+| Label                | Description                                                                                                                 |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **Shape**            | Show the rectangular cymatic field through a spherical clip or across its full cubic domain.                                |
+| **Boundary**         | Choose whether the modal family behaves like a reflective boundary (`Neumann`) or a fixed node.                             |
+| **Material Density** | Scale the organized cymatic material before its fixed scattering, absorption, and laser-emission response.                  |
+| **Laser Bending**    | Change how strongly laser rays bend through the acoustic pressure field, affecting caustic placement and concentration.      |
+| **Max Steps**        | Set the maximum raymarch quality budget. `Auto` and `Custom` performance profiles may use fewer steps to hold their target. |
 
 ---
 
-## Color
+## Appearance
 
-Controls for the orb color and Spectral Light transfer.
+Controls for volume color, Spectral Light transfer, surface sheen, and bloom.
 
-| Label           | Description                                                                               |
-| --------------- | ----------------------------------------------------------------------------------------- |
-| **Color Mode**  | `Static` uses the chosen colors. `Spectral` colors promoted cymatic modes from the audio spectrum. |
-| **Volume**      | Main volume color of the orb interior.                                                    |
-| **Contour**     | Color of the sharpest ring edges and contour highlights.                                  |
-| **Color Mix**   | Strength of Spectral Light coloring when Color Mode is `Spectral`.                        |
-| **Sheen**       | Adds a holographic sheen to the orb's surface edges.                                      |
-| **Sheen Color** | How far the sheen color shifts toward cool blue-green tones.                              |
-| **Sheen Edge**  | How tightly the sheen stays to the very edge — higher values confine it to a thinner rim. |
+| Label                 | Description                                                                                                    |
+| --------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **Color Mode**        | `Static` uses the chosen colors. `Spectral` colors promoted cymatic modes from the audio spectrum.             |
+| **Volume**            | Main color of the volume interior.                                                                             |
+| **Fresnel Color**     | Color of the grazing-angle laser energy emitted at field edges.                                                |
+| **Color Mix**         | Continuous static-to-Spectral-Light color blend when Color Mode is `Spectral`.                                 |
+| **Fresnel Strength**  | Strength of the grazing-angle laser energy emitted at field edges.                                             |
+| **Fresnel Tightness** | How tightly Fresnel energy hugs the edge — higher values confine it to a thinner rim.                          |
+| **Bloom**             | Toggle the optional soft optical halo around bright parts of the volume.                                       |
+| **Bloom Strength**    | How bright the bloom halo is.                                                                                  |
+| **Bloom Radius**      | How far the bloom spreads from bright areas.                                                                   |
+| **Bloom Threshold**   | Minimum brightness before a region contributes to bloom — raise to limit it to the brightest highlights.       |
 
 ---
 
 ## Motion
 
-Controls for scene movement and audio reactivity.
+Controls for scene movement.
 
-| Label               | Description                                                                                  |
-| ------------------- | -------------------------------------------------------------------------------------------- |
-| **Rotation Mode**   | `Audio` rotates the orb with music, `Manual` uses Manual Rotation, and `Off` keeps it still. |
-| **Manual Rotation** | Spin speed in Manual rotation mode — negative values reverse direction.                      |
-| **Motion Scale**    | Scales the auto-calibrated rotation in Audio mode. It has no effect in Manual rotation mode. |
-| **Reactivity**      | How strongly the visuals respond to the audio — raise for more dramatic reactions.           |
-
----
-
-## Bloom
-
-Controls for bloom and fine-grained bloom shaping.
-
-| Label               | Description                                                                                             |
-| ------------------- | ------------------------------------------------------------------------------------------------------- |
-| **Bloom**           | Toggle the bloom or halo effect around bright parts of the orb.                                         |
-| **Bloom Strength**  | How bright the bloom halo is.                                                                           |
-| **Bloom Radius**    | How far the bloom spreads from bright areas.                                                            |
-| **Bloom Threshold** | Minimum brightness before a region contributes to bloom — raise to limit it to the brightest highlights. |
-| **Bloom Response**  | Makes the bloom smaller and more stable by trimming how easily bloom reacts during crowded frames.      |
-| **Rim Bloom**       | Pushes more brightness toward the outer rim before bloom is applied.                                    |
-| **Rim Compression** | Tames sharp edge spikes before they reach the bloom pass.                                               |
+| Label               | Description                                                                                    |
+| ------------------- | ---------------------------------------------------------------------------------------------- |
+| **Rotation Mode**   | `Audio` rotates the shape with music, `Manual` uses Manual Rotation, and `Off` keeps it still. |
+| **Manual Rotation** | Spin speed in Manual rotation mode — negative values reverse direction.                        |
+| **Motion Scale**    | Scales the auto-calibrated rotation in Audio mode. It has no effect in Manual rotation mode.   |
 
 ---
 
@@ -144,10 +127,10 @@ Controls for bloom and fine-grained bloom shaping.
 
 Idle-state overlay controls.
 
-| Label              | Description                                                   |
-| ------------------ | ------------------------------------------------------------- |
-| **Logo Intensity** | Brightness of the idle logo shown when no audio is playing.   |
-| **Logo Size**      | Size of the idle logo overlay shown when no audio is playing. |
+| Label              | Description                                                    |
+| ------------------ | -------------------------------------------------------------- |
+| **Logo Intensity** | Brightness of the idle logo shown when no audio is playing.    |
+| **Logo Size**      | Size of the idle logo overlay shown when no audio is playing.  |
 | **Logo Color**     | Color of the idle logo overlay shown when no audio is playing. |
 
 ## Diagnostics
@@ -161,7 +144,6 @@ Diagnostic controls help isolate render, audio, and analysis behavior. Debug-onl
 | **Freeze Pattern**     | Hold the current modal pattern in place instead of updating it from live audio.                                                      |
 | **Force WebGL2**       | Restart the renderer on the WebGL2 fallback path for compatibility testing. This remounts the canvas.                                |
 | **Low-load Playback**  | Reduce render overhead during playback diagnostics so you can inspect behavior on slower systems or heavier songs.                   |
-| **Cavity Geometry**    | Choose which cavity geometry to request for diagnostics. Spherical requests still fall back to the rectangular basis today.          |
 | **Inject Tone**        | Replace live audio with a synthetic test tone so you can inspect a known, repeatable input.                                          |
 | **Tone Hz**            | Frequency of the injected test tone in Hz. Low values inspect renderable patterns; high values exercise bandwidth-limit diagnostics. |
 | **Tone Signal**        | Choose whether the injected test signal is a pure sine or an explicit harmonic series.                                               |

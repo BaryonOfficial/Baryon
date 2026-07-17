@@ -153,6 +153,34 @@ describe("AdvancedControlsSidebar info links", () => {
     expect(closeButton?.getAttribute("title")).toBe("Close advanced controls");
   });
 
+  it("renders the fullscreen UI opt-in directly below presets", () => {
+    const onChange = vi.fn();
+    renderSidebar({
+      showUiInFullscreen: false,
+      onShowUiInFullscreenChange: onChange,
+    });
+
+    const toggle = container.querySelector(
+      '[data-testid="show-ui-in-fullscreen-toggle"]',
+    );
+    const input = toggle?.querySelector('input[type="checkbox"]');
+    const presets = container.querySelector(".baryon-controls-presets");
+
+    expect(toggle).not.toBeNull();
+    expect(toggle?.textContent).toContain("Show UI in fullscreen");
+    expect(toggle?.textContent).toContain("Press F to enter/exit fullscreen.");
+    expect(input).toBeInstanceOf(HTMLInputElement);
+    expect(input?.getAttribute("aria-label")).toBe("Show UI in fullscreen");
+    expect(input?.checked).toBe(false);
+    expect(presets?.nextElementSibling).toBe(toggle);
+
+    act(() => {
+      input?.click();
+    });
+
+    expect(onChange).toHaveBeenCalledWith(true);
+  });
+
   it("does not offer deletion when no user preset is selected", () => {
     const deletePreset = vi.fn();
 
@@ -204,6 +232,13 @@ describe("AdvancedControlsSidebar info links", () => {
                 },
               },
             },
+            {
+              key: "performanceHudEnabled",
+              label: "HUD",
+              title: "Shows FPS and render resolution on screen",
+              defaultValue: false,
+              pinnedPlacement: "section-header",
+            },
           ],
         },
         {
@@ -212,8 +247,8 @@ describe("AdvancedControlsSidebar info links", () => {
           controls: [
             {
               key: "outputMode",
-              label: "Mode",
-              title: "Mode",
+              label: "Output Mode",
+              title: "Output Mode",
               defaultValue: "transparent",
               binding: {
                 view: "segmented",
@@ -228,13 +263,16 @@ describe("AdvancedControlsSidebar info links", () => {
       ],
       controlsState: {
         renderQualityPreset: PERFORMANCE_PROFILES.auto,
+        performanceHudEnabled: false,
         outputMode: "transparent",
       },
       updateControl,
     });
 
     expect(container.querySelector('select[aria-label="Profile"]')).toBeNull();
-    expect(container.querySelector('select[aria-label="Mode"]')).toBeNull();
+    expect(
+      container.querySelector('select[aria-label="Output Mode"]'),
+    ).toBeNull();
 
     const groups = Array.from(
       container.querySelectorAll(".baryon-controls-segmented"),
@@ -254,7 +292,48 @@ describe("AdvancedControlsSidebar info links", () => {
             ?.textContent?.trim(),
         )
         .filter(Boolean),
-    ).toEqual(["Performance", "Output"]);
+    ).toEqual(["Performance"]);
+
+    const performanceSection = Array.from(
+      container.querySelectorAll(".baryon-controls-pinned-section"),
+    ).find((section) =>
+      section
+        .querySelector(".baryon-controls-section-label")
+        ?.textContent?.includes("Performance"),
+    );
+    const performanceHeader = performanceSection?.querySelector(
+      ".baryon-controls-pinned-header",
+    );
+    const hudToggle = performanceHeader?.querySelector(
+      'input[aria-label="HUD"]',
+    );
+    const profileCard = Array.from(
+      performanceSection?.querySelectorAll(".baryon-controls-card") ?? [],
+    ).find((card) => card.textContent?.includes("Profile"));
+    expect(performanceHeader?.textContent).toContain("Performance");
+    expect(performanceHeader?.textContent).toContain("HUD");
+    expect(hudToggle).toBeInstanceOf(HTMLInputElement);
+    expect(
+      performanceHeader?.compareDocumentPosition(profileCard) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+
+    hudToggle?.click();
+    expect(updateControl).toHaveBeenCalledWith("performanceHudEnabled", true);
+
+    const outputModeLabel = Array.from(
+      container.querySelectorAll(".baryon-controls-card-label"),
+    ).find((label) => label.textContent === "Output Mode");
+    const outputModeCard = outputModeLabel?.closest(".baryon-controls-card");
+    expect(outputModeLabel?.classList).toContain(
+      "baryon-controls-segmented-label",
+    );
+    expect(outputModeCard?.children[0]).toContain(outputModeLabel);
+    expect(
+      outputModeCard?.children[1]?.classList.contains(
+        "baryon-controls-segmented",
+      ),
+    ).toBe(true);
     expect(
       Array.from(container.querySelectorAll(".baryon-controls-group-toggle"))
         .map((button) => button.textContent)
@@ -287,7 +366,7 @@ describe("AdvancedControlsSidebar info links", () => {
     renderSidebar({
       folderGroups: [
         {
-          title: "Shape",
+          title: "Volume",
           expanded: true,
           controls: [
             {
@@ -332,7 +411,7 @@ describe("AdvancedControlsSidebar info links", () => {
       renderSidebar({
         folderGroups: [
           {
-            title: "Shape",
+            title: "Volume",
             expanded: true,
             controls: [
               {
@@ -377,7 +456,7 @@ describe("AdvancedControlsSidebar info links", () => {
       renderSidebar({
         folderGroups: [
           {
-            title: "Shape",
+            title: "Volume",
             expanded: true,
             controls: [
               {
@@ -426,7 +505,7 @@ describe("AdvancedControlsSidebar info links", () => {
       renderSidebar({
         folderGroups: [
           {
-            title: "Shape",
+            title: "Volume",
             expanded: true,
             controls: [
               {
@@ -470,7 +549,7 @@ describe("AdvancedControlsSidebar info links", () => {
     renderSidebar({
       folderGroups: [
         {
-          title: "Shape",
+          title: "Volume",
           expanded: true,
           controls: [
             {

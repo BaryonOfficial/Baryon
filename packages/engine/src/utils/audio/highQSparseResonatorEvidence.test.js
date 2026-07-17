@@ -1,21 +1,6 @@
 import { expect, test } from "vitest";
 
-import {
-  countNonZeroFftBins,
-  deriveHighQSparseResonatorEvidence,
-} from "./highQSparseResonatorEvidence.js";
-
-test("countNonZeroFftBins returns zero for missing or empty FFT data", () => {
-  expect(countNonZeroFftBins(null)).toBe(0);
-  expect(countNonZeroFftBins(new Float32Array())).toBe(0);
-});
-
-test("countNonZeroFftBins counts only bins above the threshold", () => {
-  const fftMagnitudes = Float32Array.from([0, 0.0009, 0.0011, 0.5]);
-
-  expect(countNonZeroFftBins(fftMagnitudes)).toBe(2);
-  expect(countNonZeroFftBins(fftMagnitudes, 0.1)).toBe(1);
-});
+import { deriveHighQSparseResonatorEvidence } from "./highQSparseResonatorEvidence.js";
 
 test("high-Q sparse resonator evidence clamps invalid inputs without producing NaN", () => {
   const result = deriveHighQSparseResonatorEvidence({
@@ -26,7 +11,7 @@ test("high-Q sparse resonator evidence clamps invalid inputs without producing N
     highQResonantEnergy: Number.NaN,
     distributedExcitation: -0.5,
     periodicity: Number.NaN,
-    nonZeroFFTBinCount: -20,
+    spectralEffectiveBinCount: -20,
     modeCoherence: Number.NaN,
   });
 
@@ -44,7 +29,7 @@ test("high-Q sparse resonator evidence reports supported retained resonators", (
     highQResonantEnergy: 0.08,
     distributedExcitation: 0.12,
     periodicity: 0.82,
-    nonZeroFFTBinCount: 48,
+    spectralEffectiveBinCount: 4,
     modeCoherence: 0.8,
   });
 
@@ -61,7 +46,7 @@ test("high-Q sparse resonator evidence stays gated by retained energy", () => {
     highQResonantEnergy: 0.0002,
     distributedExcitation: 0.12,
     periodicity: 0.82,
-    nonZeroFFTBinCount: 48,
+    spectralEffectiveBinCount: 4,
     modeCoherence: 0.8,
   });
 
@@ -77,7 +62,7 @@ test("reports dense projection load without capping supported retained evidence"
     highQResonantEnergy: 0.035,
     distributedExcitation: 0.62,
     periodicity: 0.44,
-    nonZeroFFTBinCount: 920,
+    spectralEffectiveBinCount: 24,
     modeCoherence: 0.86,
   });
 
@@ -94,7 +79,7 @@ test("high-Q sparse resonator evidence survives dense spectra with strong eviden
     highQResonantEnergy: 0.08,
     distributedExcitation: 0.62,
     periodicity: 0.72,
-    nonZeroFFTBinCount: 920,
+    spectralEffectiveBinCount: 24,
     modeCoherence: 0.9,
   });
 
@@ -110,7 +95,7 @@ test("high-Q sparse resonator evidence reports sparse retained tails from ring s
     highQResonantEnergy: 0.04,
     distributedExcitation: 0.16,
     periodicity: 0.86,
-    nonZeroFFTBinCount: 120,
+    spectralEffectiveBinCount: 5,
     modeCoherence: 0.76,
   });
 

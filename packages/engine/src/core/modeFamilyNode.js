@@ -1,4 +1,4 @@
-import { abs, clamp, cos, float, sin, smoothstep, sqrt } from "three/tsl";
+import { abs, cos, float, sin, smoothstep, sqrt } from "three/tsl";
 import {
   BOUNDARY_MODES,
   PERMUTATION_ORDERS,
@@ -7,12 +7,27 @@ import {
 
 const FAMILY_EPSILON = 1e-4;
 
+function createDirichletBasisEnergyNormalizationNode() {
+  return float(Math.SQRT2);
+}
+
+function createNeumannBasisEnergyNormalizationNode(index) {
+  const nonzeroIndex = smoothstep(
+    float(0.0),
+    float(FAMILY_EPSILON),
+    abs(index),
+  );
+  return float(1.0).add(nonzeroIndex.mul(float(Math.SQRT2 - 1.0)));
+}
+
 function createCenteredDirichletArgumentNode(index, coordinate, scale) {
   return index.mul(coordinate.mul(scale).add(float(Math.PI)).mul(float(0.5)));
 }
 
 function createDirichletBasisValueNode(index, coordinate, scale) {
-  return sin(createCenteredDirichletArgumentNode(index, coordinate, scale));
+  return sin(createCenteredDirichletArgumentNode(index, coordinate, scale)).mul(
+    createDirichletBasisEnergyNormalizationNode(),
+  );
 }
 
 function createDirichletBasisNode(index, coordinate, scale) {
@@ -23,39 +38,33 @@ function createDirichletBasisNode(index, coordinate, scale) {
     coordinate,
     scale,
   );
+  const energyNormalization = createDirichletBasisEnergyNormalizationNode();
 
   return {
-    value: sin(centeredArgument),
-    derivative: cos(centeredArgument).mul(centeredAngularScale),
+    value: sin(centeredArgument).mul(energyNormalization),
+    derivative: cos(centeredArgument)
+      .mul(centeredAngularScale)
+      .mul(energyNormalization),
   };
 }
 
 function createNeumannBasisValueNode(index, coordinate, scale) {
-  return cos(index.mul(scale).mul(coordinate));
+  return cos(index.mul(scale).mul(coordinate)).mul(
+    createNeumannBasisEnergyNormalizationNode(index),
+  );
 }
 
 function createNeumannBasisNode(index, coordinate, scale) {
   const angularScale = index.mul(scale);
   const argument = angularScale.mul(coordinate);
+  const energyNormalization = createNeumannBasisEnergyNormalizationNode(index);
 
   return {
-    value: cos(argument),
-    derivative: sin(argument).mul(angularScale).negate(),
-  };
-}
-
-function createBoundaryBasisNode(index, coordinate, scale, boundaryBlend) {
-  const boundaryComplement = float(1.0).sub(boundaryBlend);
-  const dirichletBasis = createDirichletBasisNode(index, coordinate, scale);
-  const neumannBasis = createNeumannBasisNode(index, coordinate, scale);
-
-  return {
-    value: dirichletBasis.value
-      .mul(boundaryComplement)
-      .add(neumannBasis.value.mul(boundaryBlend)),
-    derivative: dirichletBasis.derivative
-      .mul(boundaryComplement)
-      .add(neumannBasis.derivative.mul(boundaryBlend)),
+    value: cos(argument).mul(energyNormalization),
+    derivative: sin(argument)
+      .mul(angularScale)
+      .negate()
+      .mul(energyNormalization),
   };
 }
 
@@ -279,32 +288,6 @@ function evaluatePermutationFamilyFieldFromBasisGrid({
     field: fieldSum.mul(normalization),
     permutationCount: uniquePermutationCount,
   };
-}
-
-export function evaluatePermutationFamilyNode({
-  u,
-  v,
-  w,
-  xCoord,
-  yCoord,
-  zCoord,
-  scale,
-  boundaryMode,
-}) {
-  const boundaryBlend = clamp(boundaryMode, float(0.0), float(1.0));
-  const family = createPermutationFamilyTerms({
-    u,
-    v,
-    w,
-    xCoord,
-    yCoord,
-    zCoord,
-    scale,
-    createBasisNode: (index, coordinate, basisScale) =>
-      createBoundaryBasisNode(index, coordinate, basisScale, boundaryBlend),
-  });
-
-  return evaluatePermutationFamilyFromBasisGrid(family);
 }
 
 export function evaluatePermutationFamilyNodeForBoundary({

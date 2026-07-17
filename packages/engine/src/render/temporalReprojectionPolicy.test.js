@@ -28,7 +28,7 @@ describe("temporal reprojection policy", () => {
     });
   });
 
-  it("accumulates history only for authorized raymarch frames with scene motion", () => {
+  it("accumulates history for authorized raymarch frames with scene motion", () => {
     expect(
       resolveTemporalReprojectionPolicy({
         visualizationMethod: RAYMARCH_METHOD,
@@ -46,6 +46,30 @@ describe("temporal reprojection policy", () => {
       accumulateHistory: true,
       shouldBypassHistory: false,
       reason: "reprojectable-scene-motion",
+    });
+  });
+
+  it("accumulates history for stable authorized raymarch frames", () => {
+    expect(
+      resolveTemporalReprojectionPolicy({
+        visualizationMethod: RAYMARCH_METHOD,
+        featureFrame: {
+          energyLedger: {
+            projectedRenderEnergy: 0.05,
+            renderEnergyEpsilon: 1e-6,
+          },
+        },
+        sceneSnapshot: {
+          angularVelocity: 0,
+          pitchVelocity: 0,
+          rollVelocity: 0,
+        },
+      }),
+    ).toMatchObject({
+      traaEnabled: true,
+      accumulateHistory: true,
+      shouldBypassHistory: false,
+      reason: "stable-raymarch-frame",
     });
   });
 

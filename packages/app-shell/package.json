@@ -1,6 +1,6 @@
 {
   "name": "@baryon/app-shell",
-  "version": "1.0.0-beta.9",
+  "version": "1.0.1",
   "private": true,
   "license": "LicenseRef-PolyForm-Strict-1.0",
   "type": "module",
@@ -19,7 +19,6 @@
   },
   "dependencies": {
     "@baryon/engine": "workspace:*",
-    "hls.js": "^1.6.15",
     "tailwindcss-animate": "^1.0.7"
   },
   "peerDependencies": {

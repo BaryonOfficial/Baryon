@@ -1,3 +1,6 @@
+import { AUDIO_FEATURE_AUTHORITY_ROLES } from "@baryon/engine/audio-features";
+import { assertAudioFeatureAuthorityRole } from "../audioFeatureAuthorityRole.js";
+
 function resolveExternalFrameIdentity(externalFrameState) {
   const frameSequence = externalFrameState?.frameSequence ?? null;
   if (frameSequence != null) {
@@ -11,15 +14,33 @@ function resolveExternalFrameIdentity(externalFrameState) {
 }
 
 export function getSourceAuthoritativeClock({
+  audioFeatureAuthorityRole,
   externalFrameState,
   lastAppliedFrameSequence,
   fallbackClockSnapshot,
 }) {
-  if (!externalFrameState) {
+  assertAudioFeatureAuthorityRole(audioFeatureAuthorityRole);
+
+  if (
+    audioFeatureAuthorityRole === AUDIO_FEATURE_AUTHORITY_ROLES.localProducer
+  ) {
     return {
       ...fallbackClockSnapshot,
       frameSequence: null,
+      frameIdentity: null,
       shouldAdvance: true,
+    };
+  }
+
+  if (!externalFrameState) {
+    return {
+      status: null,
+      clockMode: "external-hold",
+      time: 0,
+      deltaTime: 0,
+      frameSequence: null,
+      frameIdentity: null,
+      shouldAdvance: false,
     };
   }
 

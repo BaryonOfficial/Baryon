@@ -73,12 +73,13 @@ describe("defaults compatibility surface", () => {
 
   it("keeps promoted live raymarch defaults on the initialized app baseline", () => {
     expect(DEFAULTS.raymarchSteps).toBe(RAYMARCH_DEFAULTS.raymarchSteps);
-    expect(DEFAULTS.zeroPointPrecision).toBe(
-      SIMULATION_DEFAULTS.zeroPointPrecision,
+    expect(SIMULATION_DEFAULTS.carrierCoreFwhmWorld).toBe(0.024);
+    expect(DEFAULTS.carrierCoreFwhmWorld).toBe(
+      SIMULATION_DEFAULTS.carrierCoreFwhmWorld,
     );
     expect(DEFAULTS.densityGain).toBe(RAYMARCH_DEFAULTS.densityGain);
-    expect(DEFAULTS.absorption).toBe(RAYMARCH_DEFAULTS.absorption);
-    expect(DEFAULTS.opacityGain).toBe(RAYMARCH_DEFAULTS.opacityGain);
+    expect(DEFAULTS).not.toHaveProperty("absorption");
+    expect(DEFAULTS).not.toHaveProperty("opacityGain");
     expect(DEFAULTS.holographicIntensity).toBe(
       RAYMARCH_DEFAULTS.holographicIntensity,
     );
@@ -86,7 +87,18 @@ describe("defaults compatibility surface", () => {
     expect(DEFAULTS.bloomThreshold).toBe(RENDER_DEFAULTS.bloomThreshold);
     expect(DEFAULTS.colorMode).toBe(RENDER_DEFAULTS.colorMode);
     expect(RENDER_DEFAULTS.performanceHudEnabled).toBe(false);
+    expect(RENDER_DEFAULTS.traaEnabled).toBe(true);
     expect(DEFAULTS.cavityGeometry).toBe(SIMULATION_DEFAULTS.cavityGeometry);
+    expect(DEFAULTS.volumeShape).toBe("sphere");
+    expect(DEFAULTS).toMatchObject({
+      laserDeflectionGain: 1.2,
+      surfaceColor: "#5be3f4",
+      holographicIntensity: 1,
+      holographicFresnelPower: 2.4,
+      bloomStrength: 1.18,
+      bloomRadius: 0,
+      bloomThreshold: 0.5,
+    });
   });
 
   it("keeps acoustic cavity scale explicit and separate from visual radius", () => {
@@ -95,12 +107,15 @@ describe("defaults compatibility surface", () => {
       CAVITY_ACOUSTIC_DEFAULTS,
     );
     expect(SIMULATION_DEFAULTS.cavityAcousticScale).toMatchObject({
-      radiusMeters: expect.any(Number),
+      sideLengthMeters: expect.any(Number),
       soundSpeedMetersPerSecond: 1480,
       subfloorPolicy: "project-subfundamental",
     });
+    expect(SIMULATION_DEFAULTS.cavityAcousticScale).not.toHaveProperty(
+      "radiusMeters",
+    );
     expect(
-      SIMULATION_DEFAULTS.cavityAcousticScale.radiusMeters,
+      SIMULATION_DEFAULTS.cavityAcousticScale.sideLengthMeters,
     ).toBeGreaterThan(SIMULATION_DEFAULTS.radius);
   });
 });

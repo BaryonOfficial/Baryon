@@ -1,26 +1,8 @@
-export {
-  createAudioFeatureState,
-  buildAudioFeatureFrame,
-  buildAudioFeatureAnalysisSnapshot,
-  buildCurrentAudioFeatureAnalysisResult,
-  buildFastSignalPatchedAudioFeatureAnalysisResult,
-  composeAudioFeatureFrame,
-  prepareAudioFeatureFrameInputs,
-  runHeavyAudioFeatureAnalysis,
-  updateAudioFeatureFastSignalState,
-  updateAudioFeatureStructuralState,
-  updateAudioFeatureChromaState,
-  updateAudioFeatureTempoState,
-} from "./audio/buildFeatureFrame.js";
 export { buildAnalysisSessionKey } from "./audio/analysisSession.js";
 export {
-  reviveSerializedReplayFrame,
-  reviveSerializedReplayFrames,
-} from "./audio/replayFixture.js";
-export {
-  buildAudioFeatureTransportFrame,
-  createAudioFeatureEngine,
-  createNoopAudioFeatureEngine,
-  DEFAULT_AUDIO_FEATURE_ENGINE_SETTINGS,
-  normalizeAudioFeatureEngineSettings,
+  AUDIO_FEATURE_AUTHORITY_ROLES,
+  createAudioFeatureRuntime,
+  DEFAULT_AUDIO_FEATURE_RUNTIME_SETTINGS,
+  normalizeAudioFeatureRuntimeSettings,
 } from "./audio/audioFeatureEngine.js";
+export { createRendererFeatureView } from "./audio/audioFeaturePacketCodec.js";

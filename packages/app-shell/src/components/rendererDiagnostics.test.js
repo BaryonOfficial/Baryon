@@ -189,6 +189,21 @@ describe("renderer diagnostics", () => {
     });
   });
 
+  it("supports opaque preview canvases without changing transparent output defaults", async () => {
+    const defaultRenderer = await createBaryonRenderer(
+      { canvas: createCanvas() },
+      false,
+    );
+    const previewRenderer = await createBaryonRenderer(
+      { canvas: createCanvas() },
+      false,
+      { alpha: false },
+    );
+
+    expect(defaultRenderer.parameters.alpha).toBe(true);
+    expect(previewRenderer.parameters.alpha).toBe(false);
+  });
+
   it("rejects WebGL backends in xrMode with the renderer init error name", async () => {
     await expect(
       createBaryonRenderer({ canvas: createCanvas() }, true, { xrMode: true }),

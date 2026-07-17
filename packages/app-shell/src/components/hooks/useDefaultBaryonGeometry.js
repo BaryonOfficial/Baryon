@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { setupLoaders } from "@baryon/engine/three/loaders";
 import { prepareBaryonGeometryFromScene } from "./defaultBaryonGeometry";
 
-export const DEFAULT_BARYON_GEOMETRY_URL = "/glb/Baryon_v2.glb";
+export const DEFAULT_BARYON_GEOMETRY_URL = "./glb/Baryon_v2.glb";
 
 export function useDefaultBaryonGeometry() {
   const [baryonGeometry, setBaryonGeometry] = useState(null);

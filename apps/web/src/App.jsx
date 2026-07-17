@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import {
   AppFrame,
   AudioProvider,
@@ -6,31 +6,32 @@ import {
   ListenerControls,
   SceneSurface,
   createControlsStore,
+  useFullscreenUiPreference,
 } from "@baryon/app-shell";
 import ArLabLaunchButton from "./ar-lab/ArLabLaunchButton.jsx";
 
 export default function App() {
-  const controlsStoreRef = useRef(null);
-
-  if (!controlsStoreRef.current) {
-    controlsStoreRef.current = createControlsStore();
-  }
+  const [controlsStore] = useState(createControlsStore);
+  const { showUiInFullscreen, setShowUiInFullscreen } =
+    useFullscreenUiPreference();
 
   useEffect(
     () => () => {
-      controlsStoreRef.current?.dispose();
+      controlsStore.dispose();
     },
-    [],
+    [controlsStore],
   );
 
   return (
     <AudioProvider platform="web">
-      <ControlsProvider store={controlsStoreRef.current}>
+      <ControlsProvider store={controlsStore}>
         <AppFrame>
           <SceneSurface
             controlsOverlay={<ListenerControls showSourceLiveButton={false} />}
             liveInputPanel={{ showAction: true }}
             controlsBrandAccessory={<ArLabLaunchButton />}
+            showUiInFullscreen={showUiInFullscreen}
+            onShowUiInFullscreenChange={setShowUiInFullscreen}
           />
         </AppFrame>
       </ControlsProvider>

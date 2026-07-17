@@ -1,6 +1,8 @@
 import { useContext, useMemo, useSyncExternalStore } from "react";
 import { ControlsContext } from "./ControlsContext.js";
 
+const SELECT_CONTROLS_SNAPSHOT = (snapshot) => snapshot;
+
 export function useControlsStore() {
   const store = useContext(ControlsContext);
   if (!store) {
@@ -9,12 +11,31 @@ export function useControlsStore() {
   return store;
 }
 
-export function useControlsSnapshot(selector = (snapshot) => snapshot) {
+export function useControlsSnapshot(
+  selector = SELECT_CONTROLS_SNAPSHOT,
+  isEqual = Object.is,
+) {
   const store = useControlsStore();
+  const getSelectedSnapshot = useMemo(() => {
+    let initialized = false;
+    let cachedValue = null;
+
+    return () => {
+      const nextValue = selector(store.getSnapshot());
+      if (initialized && isEqual(cachedValue, nextValue)) {
+        return cachedValue;
+      }
+
+      initialized = true;
+      cachedValue = nextValue;
+      return nextValue;
+    };
+  }, [isEqual, selector, store]);
+
   return useSyncExternalStore(
     store.subscribe,
-    () => selector(store.getSnapshot()),
-    () => selector(store.getSnapshot()),
+    getSelectedSnapshot,
+    getSelectedSnapshot,
   );
 }
 

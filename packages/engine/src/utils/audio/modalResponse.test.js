@@ -91,7 +91,7 @@ describe("modal response model", () => {
 
     const response = updateModalResponseFrame({
       modes,
-      fftMagnitudes: makeFft([
+      fftLinearAmplitudes: makeFft([
         [110, 0.82],
         [427, 0.48],
       ]),
@@ -140,7 +140,7 @@ describe("modal response model", () => {
           qualityFactor: 40,
         },
       ],
-      fftMagnitudes: new Float32Array(BIN_COUNT),
+      fftLinearAmplitudes: new Float32Array(BIN_COUNT),
       sampleRate: SAMPLE_RATE,
       deltaMs: 20,
       inputRms: 0.02,
@@ -176,7 +176,7 @@ describe("modal response model", () => {
           qualityFactor,
         },
       ],
-      fftMagnitudes: new Float32Array(BIN_COUNT),
+      fftLinearAmplitudes: new Float32Array(BIN_COUNT),
       sampleRate: SAMPLE_RATE,
       deltaMs: energyTauMs,
       inputRms: 0,
@@ -187,6 +187,85 @@ describe("modal response model", () => {
     expect(response.entries[0]?.modalResponseEnergy).toBeCloseTo(
       previousEnergy / Math.E,
       5,
+    );
+  });
+
+  it("interprets legacy amplitude state as amplitude rather than energy", async () => {
+    const { updateModalResponseFrame } = await loadModalResponseModule();
+    const qualityFactor = 12;
+    const naturalFrequencyHz = 120;
+    const energyTauMs =
+      (qualityFactor / (2 * Math.PI * naturalFrequencyHz)) * 1000;
+
+    const response = updateModalResponseFrame({
+      modes: [
+        {
+          modeKey: "legacy-amplitude",
+          u: 1,
+          v: 2,
+          w: 3,
+          naturalFrequencyHz,
+          qualityFactor,
+        },
+      ],
+      fftLinearAmplitudes: new Float32Array(BIN_COUNT),
+      sampleRate: SAMPLE_RATE,
+      deltaMs: energyTauMs,
+      inputRms: 0,
+      previousEnergies: new Map([["legacy-amplitude", { amplitude: 0.5 }]]),
+      minimumEnergy: 0,
+    });
+
+    expect(response.entries[0]?.modalResponseEnergy).toBeCloseTo(
+      0.5 ** 2 / Math.E,
+      5,
+    );
+  });
+
+  it("keeps projection budget out of the next frame's oscillator energy", async () => {
+    const { updateModalResponseFrame } = await loadModalResponseModule();
+    const mode = {
+      modeKey: "projection-independent-ringdown",
+      u: 1,
+      v: 2,
+      w: 3,
+      naturalFrequencyHz: 120,
+      qualityFactor: 12,
+    };
+    const advance = (previousEnergies, responseBudget, driven = false) =>
+      updateModalResponseFrame({
+        modes: [mode],
+        fftLinearAmplitudes: driven
+          ? makeFft([[mode.naturalFrequencyHz, 1]])
+          : new Float32Array(BIN_COUNT),
+        sampleRate: SAMPLE_RATE,
+        deltaMs: 1,
+        inputRms: driven ? 0.12 : 0,
+        previousEnergies,
+        responseBudget,
+        minimumEnergy: 0,
+      });
+
+    const budgeted = advance(new Map([[mode.modeKey, 0.8]]), 0);
+    const unbudgeted = advance(new Map([[mode.modeKey, 0.8]]), 1);
+    expect(budgeted.entries[0]?.modalResponseEnergy).toBeLessThan(
+      unbudgeted.entries[0]?.modalResponseEnergy ?? 0,
+    );
+
+    const budgetedNext = advance(
+      new Map([[mode.modeKey, budgeted.entries[0]]]),
+      1,
+      true,
+    );
+    const unbudgetedNext = advance(
+      new Map([[mode.modeKey, unbudgeted.entries[0]]]),
+      1,
+      true,
+    );
+
+    expect(budgetedNext.entries[0]?.modalResponseEnergy).toBeCloseTo(
+      unbudgetedNext.entries[0]?.modalResponseEnergy ?? 0,
+      6,
     );
   });
 
@@ -204,7 +283,7 @@ describe("modal response model", () => {
             qualityFactor,
           },
         ],
-        fftMagnitudes: new Float32Array(BIN_COUNT),
+        fftLinearAmplitudes: new Float32Array(BIN_COUNT),
         sampleRate: SAMPLE_RATE,
         deltaMs: 80,
         inputRms: 0,
@@ -236,7 +315,7 @@ describe("modal response model", () => {
           qualityFactor: 32,
         },
       ],
-      fftMagnitudes: makeFft([[110, 1]]),
+      fftLinearAmplitudes: makeFft([[110, 1]]),
       sampleRate: SAMPLE_RATE,
       deltaMs: 70,
       inputRms: 0.25,
@@ -272,7 +351,7 @@ describe("modal response model", () => {
     ];
     const tonal = updateModalResponseFrame({
       modes,
-      fftMagnitudes: makeFft([[4270, 1]]),
+      fftLinearAmplitudes: makeFft([[4270, 1]]),
       sampleRate: SAMPLE_RATE,
       deltaMs: 33,
       inputRms: 0.12,
@@ -280,7 +359,7 @@ describe("modal response model", () => {
     });
     const broadband = updateModalResponseFrame({
       modes,
-      fftMagnitudes: makeBroadbandFft({ totalEnergy: 1 }),
+      fftLinearAmplitudes: makeBroadbandFft({ totalEnergy: 1 }),
       sampleRate: SAMPLE_RATE,
       deltaMs: 33,
       inputRms: 0.12,
@@ -309,7 +388,7 @@ describe("modal response model", () => {
 
     const asSourceCoupled = updateModalResponseFrame({
       modes: [{ ...baseMode, layer: "source-coupled" }],
-      fftMagnitudes: makeFft([[880, 1]]),
+      fftLinearAmplitudes: makeFft([[880, 1]]),
       sampleRate: SAMPLE_RATE,
       deltaMs: 33,
       inputRms: 0.12,
@@ -317,7 +396,7 @@ describe("modal response model", () => {
     });
     const asResonant = updateModalResponseFrame({
       modes: [{ ...baseMode, layer: "resonant" }],
-      fftMagnitudes: makeFft([[880, 1]]),
+      fftLinearAmplitudes: makeFft([[880, 1]]),
       sampleRate: SAMPLE_RATE,
       deltaMs: 33,
       inputRms: 0.12,
@@ -334,8 +413,9 @@ describe("modal response model", () => {
     );
   });
 
-  it("damps high-frequency high-order modes under equal drive", async () => {
-    const { updateModalResponseFrame } = await loadModalResponseModule();
+  it("does not infer apparatus Q or transfer from mode frequency and order", async () => {
+    const { DEFAULT_MODAL_RESPONSE_REFERENCE, updateModalResponseFrame } =
+      await loadModalResponseModule();
     const response = updateModalResponseFrame({
       modes: [
         {
@@ -344,7 +424,7 @@ describe("modal response model", () => {
           v: 1,
           w: 2,
           naturalFrequencyHz: 220,
-          qualityFactor: 4,
+          layer: "source-coupled",
         },
         {
           modeKey: "high",
@@ -352,25 +432,66 @@ describe("modal response model", () => {
           v: 21,
           w: 22,
           naturalFrequencyHz: 6600,
-          qualityFactor: 32,
+          layer: "source-coupled",
         },
       ],
-      fftMagnitudes: makeFft([
-        [220, 1],
-        [6600, 1],
-      ]),
+      fftLinearAmplitudes: new Float32Array(BIN_COUNT),
       sampleRate: SAMPLE_RATE,
-      deltaMs: 33,
-      inputRms: 0.2,
-      previousEnergies: new Map(),
+      deltaMs: 0,
+      inputRms: 0,
+      previousEnergies: new Map([
+        ["low", 0.5],
+        ["high", 0.5],
+      ]),
+      minimumEnergy: 0,
     });
 
     const low = response.entries.find((entry) => entry.modeKey === "low");
     const high = response.entries.find((entry) => entry.modeKey === "high");
-    expect(high?.dampingEnvelope).toBeLessThan(low?.dampingEnvelope ?? 0);
-    expect(high?.modalResponseEnergy).toBeLessThan(
-      (low?.modalResponseEnergy ?? 0) * 0.5,
+
+    expect(DEFAULT_MODAL_RESPONSE_REFERENCE.qualityFactor).toBe(10);
+    expect(DEFAULT_MODAL_RESPONSE_REFERENCE.apparatusTransfer).toBe(1);
+    expect(low?.qualityFactor).toBe(
+      DEFAULT_MODAL_RESPONSE_REFERENCE.qualityFactor,
     );
+    expect(high?.qualityFactor).toBe(
+      DEFAULT_MODAL_RESPONSE_REFERENCE.qualityFactor,
+    );
+    expect(low?.dampingEnvelope).toBe(
+      DEFAULT_MODAL_RESPONSE_REFERENCE.apparatusTransfer,
+    );
+    expect(high?.dampingEnvelope).toBe(low?.dampingEnvelope);
+    expect(high?.physicalTransfer).toBeCloseTo(low?.physicalTransfer ?? 0, 6);
+  });
+
+  it("honors a measured per-mode apparatus profile", async () => {
+    const { updateModalResponseFrame } = await loadModalResponseModule();
+    const response = updateModalResponseFrame({
+      modes: [
+        {
+          modeKey: "measured",
+          u: 8,
+          v: 13,
+          w: 21,
+          naturalFrequencyHz: 6200,
+          layer: "source-coupled",
+          modalResponseProfile: {
+            qualityFactor: 24,
+            apparatusTransfer: 0.63,
+          },
+        },
+      ],
+      fftLinearAmplitudes: new Float32Array(BIN_COUNT),
+      sampleRate: SAMPLE_RATE,
+      deltaMs: 0,
+      inputRms: 0,
+      previousEnergies: new Map([["measured", 0.5]]),
+      minimumEnergy: 0,
+    });
+    const measured = response.entries[0];
+
+    expect(measured?.qualityFactor).toBe(24);
+    expect(measured?.dampingEnvelope).toBeCloseTo(0.63);
   });
 
   it("gates zero input and conserves dense modal energy by unified budget", async () => {
@@ -387,7 +508,7 @@ describe("modal response model", () => {
 
     const silent = updateModalResponseFrame({
       modes: denseModes,
-      fftMagnitudes: new Float32Array(BIN_COUNT),
+      fftLinearAmplitudes: new Float32Array(BIN_COUNT),
       sampleRate: SAMPLE_RATE,
       deltaMs: 33,
       inputRms: 0,
@@ -395,7 +516,7 @@ describe("modal response model", () => {
     });
     const dense = updateModalResponseFrame({
       modes: denseModes,
-      fftMagnitudes: makeBroadbandFft({
+      fftLinearAmplitudes: makeBroadbandFft({
         startFrequency: 180,
         binCount: 24,
         totalEnergy: 4,
@@ -450,7 +571,7 @@ describe("modal response model", () => {
       [resonantMode.modeKey, 0.16],
     ]);
     const commonOptions = {
-      fftMagnitudes: new Float32Array(BIN_COUNT),
+      fftLinearAmplitudes: new Float32Array(BIN_COUNT),
       sampleRate: SAMPLE_RATE,
       deltaMs: 1,
       inputRms: 0,
@@ -511,7 +632,7 @@ describe("modal response model", () => {
       [resonantMode.modeKey, 0.01],
     ]);
     const commonOptions = {
-      fftMagnitudes: new Float32Array(BIN_COUNT),
+      fftLinearAmplitudes: new Float32Array(BIN_COUNT),
       sampleRate: SAMPLE_RATE,
       deltaMs: 1,
       inputRms: 0,
@@ -565,7 +686,7 @@ describe("modal response model", () => {
 
     const response = updateModalResponseFrame({
       modes,
-      fftMagnitudes: makeFft([[4270, 1]]),
+      fftLinearAmplitudes: makeFft([[4270, 1]]),
       sampleRate: SAMPLE_RATE,
       deltaMs: 33,
       inputRms: 0.18,
@@ -603,7 +724,7 @@ describe("modal response model", () => {
           qualityFactor: 32,
         },
       ],
-      fftMagnitudes: makeFft([[4270, 1]]),
+      fftLinearAmplitudes: makeFft([[4270, 1]]),
       sampleRate: SAMPLE_RATE,
       deltaMs: 33,
       inputRms: 0.18,
@@ -614,7 +735,7 @@ describe("modal response model", () => {
     expect(response.modalResponseModeCount).toBe(response.entries.length);
   });
 
-  it("seeds fresh resonant energy with physical high-order damping", async () => {
+  it("seeds fresh resonant energy through the fixed apparatus transfer", async () => {
     const { updateModalResponseFrame } = await loadModalResponseModule();
     const response = updateModalResponseFrame({
       modes: [
@@ -628,7 +749,7 @@ describe("modal response model", () => {
           qualityFactor: 32,
         },
       ],
-      fftMagnitudes: makeFft([[6200, 1]]),
+      fftLinearAmplitudes: makeFft([[6200, 1]]),
       sampleRate: SAMPLE_RATE,
       deltaMs: 16,
       inputRms: 0.18,
@@ -636,7 +757,7 @@ describe("modal response model", () => {
     });
 
     expect(response.entries[0]?.modalResponseEnergy).toBeGreaterThan(0.2);
-    expect(response.entries[0]?.dampingEnvelope).toBeLessThan(0.35);
+    expect(response.entries[0]?.dampingEnvelope).toBe(1);
     expect(response.entries[0]?.displayAmplitude).toBeGreaterThan(0.5);
   });
 
@@ -659,7 +780,7 @@ describe("modal response model", () => {
             qualityFactor,
           },
         ],
-        fftMagnitudes: makeFft([[naturalFrequencyHz, 0.9]]),
+        fftLinearAmplitudes: makeFft([[naturalFrequencyHz, 0.9]]),
         sampleRate: SAMPLE_RATE,
         deltaMs,
         inputRms: 0.12,
@@ -669,7 +790,8 @@ describe("modal response model", () => {
 
     // Energy ratio between one-τ_a ring-up and saturation eliminates the
     // drive-dependent steady-state level: (1 − e^{−1})² ≈ 0.3996.
-    const ratio = energyAfter(amplitudeTauMs) / energyAfter(100 * amplitudeTauMs);
+    const ratio =
+      energyAfter(amplitudeTauMs) / energyAfter(100 * amplitudeTauMs);
     expect(ratio).toBeCloseTo((1 - Math.exp(-1)) ** 2, 3);
   });
 
@@ -707,7 +829,7 @@ describe("modal response model", () => {
             qualityFactor: 8,
           },
         ],
-        fftMagnitudes: makeFft([
+        fftLinearAmplitudes: makeFft([
           [f1, 0.8],
           [f2, 0.4],
         ]),
@@ -804,7 +926,7 @@ describe("modal response model", () => {
           qualityFactor: 8,
         },
       ],
-      fftMagnitudes: makeFft([
+      fftLinearAmplitudes: makeFft([
         [f1, 0.8],
         [f2, 0.5],
       ]),
@@ -838,7 +960,7 @@ describe("modal response model", () => {
     };
     const first = updateModalResponseFrame({
       modes: [mode],
-      fftMagnitudes: makeFft([[110, 1]]),
+      fftLinearAmplitudes: makeFft([[110, 1]]),
       sampleRate: SAMPLE_RATE,
       deltaMs: 33,
       inputRms: 0.12,
@@ -848,7 +970,7 @@ describe("modal response model", () => {
     const halfPeriodMs = 1000 / (mode.naturalFrequencyHz * 2);
     const second = updateModalResponseFrame({
       modes: [mode],
-      fftMagnitudes: new Float32Array(BIN_COUNT),
+      fftLinearAmplitudes: new Float32Array(BIN_COUNT),
       sampleRate: SAMPLE_RATE,
       deltaMs: halfPeriodMs,
       inputRms: 0,

@@ -1,12 +1,11 @@
 import { expect, test, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   clearAdaptiveRaymarchResumeState,
   createRuntimeDiagnostics,
 } from "./baryonEngineRuntimeState.js";
 import { syncLiveInputRuntimeStatus } from "./liveInputRuntimeSync.js";
 import {
-  applyLiveInputRenderIntent,
-  applyReactiveBloomState,
   buildPerformanceHudSnapshot,
   consumeRenderFramePacerSlot,
   createAuditSnapshotNotifier,
@@ -15,6 +14,7 @@ import {
   getRenderTargetPixelRatio,
   publishDevtoolsSnapshots,
   resolveFeatureFrame,
+  resolveRenderSurfaceOutputControls,
   shouldBypassTemporalHistoryForRaymarchFrame,
   updateModalEnvelopeDiagnostics,
   updateModalFreshnessDiagnostics,
@@ -25,11 +25,43 @@ import {
   syncUploadedRenderQuantities,
 } from "./baryonEngineRenderLoop.js";
 import { RENDER_CONTEXTS } from "@baryon/engine/render/outputPipeline";
-import { CAVITY_ACOUSTIC_DEFAULTS } from "@baryon/engine/defaults";
 import {
   LIVE_INPUT_ERROR_CODES,
   LIVE_INPUT_PHASES,
 } from "../../context/liveInputRuntimeStatus.js";
+
+test("preview surfaces composite transparent output onto black before SMAA", () => {
+  const controls = {
+    outputMode: "transparent",
+    outputBackgroundColor: "#ffffff",
+    smaaEnabled: true,
+  };
+
+  expect(
+    resolveRenderSurfaceOutputControls(controls, {
+      renderContext: RENDER_CONTEXTS.preview,
+    }),
+  ).toEqual({
+    outputMode: "opaque",
+    outputBackgroundColor: "#000000",
+    smaaEnabled: true,
+  });
+  expect(controls.outputMode).toBe("transparent");
+});
+
+test("external output retains the requested transparent compositor path", () => {
+  const controls = {
+    outputMode: "transparent",
+    outputBackgroundColor: "#ffffff",
+    smaaEnabled: true,
+  };
+
+  expect(
+    resolveRenderSurfaceOutputControls(controls, {
+      renderContext: RENDER_CONTEXTS.externalOutput,
+    }),
+  ).toBe(controls);
+});
 
 function createSetterCapture() {
   let currentValue = null;
@@ -156,75 +188,60 @@ function assertAdaptiveRecoveryBlocked(runtimeDiagnostics, blockedReason) {
   );
 }
 
-test("marks idle frames as live while live start is pending", () => {
-  const featureFrame = {
-    fieldState: "idle",
-    isLiveInputActive: false,
-    sourceMode: "silent",
-  };
-
-  const resolvedFrame = applyLiveInputRenderIntent(featureFrame, {
-    status: { isLiveInputActive: false },
-    liveInputUiState: "idle",
-    liveControlSignal: { desiredActive: true },
-  });
-
-  expect(resolvedFrame).not.toBe(featureFrame);
-  expect(resolvedFrame).toMatchObject({
-    fieldState: "idle",
-    isLiveInputActive: true,
-    sourceMode: "silent",
-  });
-});
-
-test("marks frames as not live after live stop intent", () => {
-  const featureFrame = {
-    fieldState: "idle",
-    isLiveInputActive: true,
-    sourceMode: "live",
-  };
-
-  const resolvedFrame = applyLiveInputRenderIntent(featureFrame, {
-    status: { isLiveInputActive: false },
-    liveInputUiState: "idle",
-    liveControlSignal: { desiredActive: false },
-  });
-
-  expect(resolvedFrame).not.toBe(featureFrame);
-  expect(resolvedFrame).toMatchObject({
-    fieldState: "idle",
-    isLiveInputActive: false,
-    sourceMode: "live",
-  });
-});
-
 function createResolveFeatureFrameHarness(overrides = {}) {
+  const featureFrame = {
+    fieldState: "active",
+    frameTimeMs: 1000,
+    sourceMode: "file",
+    ...createLiveRenderFrameEvidence(),
+  };
+  const featureModel = {
+    topology: {
+      topologyRevision: 1,
+      basisIdentityHash: 11,
+      modalIdentitySlots: new Float32Array([1, 1, 1]),
+      modalFieldColorSlots: new Float32Array([0.1, 0.8, 1, 0.9]),
+      modalFieldSpectralLaneA: new Float32Array(4),
+      modalFieldSpectralLaneB: new Float32Array(4),
+      modalFieldSpectralMeta: new Float32Array(4),
+      modalFieldMetadataSlots: new Float32Array(4),
+      modalDescriptor: null,
+    },
+    drive: {
+      renderState: featureFrame,
+      activeModeCount: 1,
+      modalCoefficients: new Float32Array([0.5]),
+      phaseSlots: new Float32Array(4),
+      bandEnergies: new Float32Array(4),
+      spectralBandEnergies: new Float32Array(4),
+    },
+  };
   return {
     args: {
-      audio: {
-        readAnalysisSnapshot() {
-          return {
-            sourceMode: "file",
-            avgAmplitude: 24,
-            fftMagnitudes: new Float32Array([0, 0.9, 0.4]),
-            timeData: new Float32Array([0, 0.1, -0.1]),
-            rms: 0.2,
-            spectralCentroid: 0.3,
-            spectralFlux: 0.1,
-          };
-        },
+      featureRuntime: {
+        readLatestFeatureModel: vi.fn(() => featureModel),
+        getStatus: vi.fn(() => ({
+          state: "ready",
+          sourceGeneration: 2,
+          workerGeneration: 3,
+          topologyRevision: 1,
+          latestAcceptedFrameId: 7,
+          latestDriveAgeMs: 4,
+          processedFrameCount: 9,
+          topologyPublishCount: 2,
+          drivePublishCount: 7,
+          inputReplacementCount: 1,
+          rejectedPacketCount: 3,
+          staleAcknowledgementCount: 5,
+          queueDepth: 1,
+          workerFastLaneMs: 0.4,
+          workerStructuralLaneMs: 1.2,
+          workerGoertzelMs: 0.2,
+          workerCompositionMs: 0.7,
+        })),
       },
-      featureState: {
-        capacity: 16,
-        audit: { settings: {} },
-      },
-      featureEngine: null,
       runtimeDiagnostics: createRuntimeDiagnostics(),
-      runtimeState: {
-        uniforms: {
-          uRadius: { value: 3 },
-        },
-      },
+      runtimeState: {},
       controls: {
         cavityGeometry: "spherical",
         boundaryMode: "dirichlet",
@@ -235,18 +252,13 @@ function createResolveFeatureFrameHarness(overrides = {}) {
         isLiveInputActive: false,
         playbackSessionId: "song-1",
       },
-      time: 1,
       clockMode: "running",
       renderLoopRefs: {
         frameCacheRefs: {
-          lastLiveFrameRef: { current: { fieldState: "idle" } },
-          lastActiveFrameRef: { current: null },
           lastIdleFrameRef: { current: null },
           pausedFileFrameRef: { current: null },
-          analysisSchedulerRef: { current: null },
         },
       },
-      spectralLightEnabled: true,
       ...overrides,
     },
   };
@@ -448,6 +460,66 @@ test("updateRendererDiagnostics records the backing-pixel cost for high-DPR canv
   });
 });
 
+test("updateRendererDiagnostics tolerates an external-authority hold without source status", () => {
+  const runtimeDiagnosticsRef = {
+    current: createRuntimeDiagnostics(),
+  };
+  const renderLoopRefs = {
+    runtimeDiagnosticsRef,
+    pixelRatioRef: { current: 1 },
+    renderSurfaceSizeRef: { current: null },
+    lastAudioIssueSignatureRef: { current: null },
+  };
+  const gl = {
+    backend: { isWebGLBackend: false },
+    setPixelRatio() {},
+    setSize() {},
+  };
+  const baseArgs = {
+    state: {
+      size: {
+        width: 1920,
+        height: 1080,
+      },
+    },
+    controls: {
+      lowLoadPlaybackDiagnostics: false,
+    },
+    status: null,
+    time: 0,
+    deltaTime: 1 / 60,
+    gl,
+    renderLoopRefs,
+  };
+
+  const firstResult = updateRendererDiagnostics(
+    {
+      ...baseArgs,
+      rfDelta: 1 / 60,
+    },
+    {
+      getRequestedPixelRatio: () => 1,
+    },
+  );
+  updateRendererDiagnostics(
+    {
+      ...baseArgs,
+      time: 1,
+      rfDelta: 0.1,
+    },
+    {
+      getRequestedPixelRatio: () => 1,
+    },
+  );
+
+  expect(firstResult.lowLoadPlaybackDiagnosticsActive).toBe(false);
+  expect(runtimeDiagnosticsRef.current.activeFrameCount).toBe(0);
+  expect(runtimeDiagnosticsRef.current.lastLongFrame).toMatchObject({
+    playbackSessionId: null,
+  });
+  expect(runtimeDiagnosticsRef.current.lastPlaybackIssue).toBeNull();
+});
+
 test("updateRendererDiagnostics keeps low-load diagnostics from lowering DPR", () => {
   const runtimeDiagnosticsRef = {
     current: createRuntimeDiagnostics(),
@@ -531,9 +603,8 @@ test("render target DPR follows the selected output resolution", () => {
 // `true` means flush temporal history (show the crisp scene color); `false`
 // means let TRAA accumulate.
 test("shouldBypassTemporalHistoryForRaymarchFrame is method-aware", () => {
-  // raymarch accumulates while the field is driven and scene-root motion gives
-  // TRAA a real velocity to reproject, and flushes when the field is idle so a
-  // paused 3D volume cannot freeze stale history.
+  // Authorized raymarch frames accumulate while the field is driven and flush
+  // when the field is idle so a paused 3D volume cannot freeze stale history.
   for (const drivenState of ["active", "decay", "test"]) {
     expect(
       shouldBypassTemporalHistoryForRaymarchFrame({
@@ -565,7 +636,7 @@ test("shouldBypassTemporalHistoryForRaymarchFrame is method-aware", () => {
   ).toBe(false);
 });
 
-test("shouldBypassTemporalHistoryForRaymarchFrame requires reprojectable raymarch motion", () => {
+test("shouldBypassTemporalHistoryForRaymarchFrame accumulates stable and moving raymarch frames", () => {
   expect(
     shouldBypassTemporalHistoryForRaymarchFrame({
       runtimeMethod: "raymarch",
@@ -576,7 +647,7 @@ test("shouldBypassTemporalHistoryForRaymarchFrame requires reprojectable raymarc
       },
       sceneSnapshot: { angularVelocity: 0, pitchVelocity: 0, rollVelocity: 0 },
     }),
-  ).toBe(true);
+  ).toBe(false);
 
   expect(
     shouldBypassTemporalHistoryForRaymarchFrame({
@@ -702,54 +773,6 @@ test("finalizeTerminalVisualIdleState reports resumed active frames without clea
   expect(postNodes.visualIdleFinalized).toBe(true);
 });
 
-test("applyReactiveBloomState disables bloom compose after terminal visual idle", () => {
-  const rawSceneBloomPass = {
-    strength: { value: 0 },
-    radius: { value: 0 },
-    threshold: { value: 0 },
-  };
-  const postNodesRef = {
-    current: {
-      bloomPass: {
-        strength: { value: 0 },
-        radius: { value: 0 },
-        threshold: { value: 0 },
-      },
-      rawSceneBloomPass,
-    },
-  };
-  postNodesRef.current.bloomPasses = [
-    postNodesRef.current.bloomPass,
-    rawSceneBloomPass,
-  ];
-
-  applyReactiveBloomState({
-    controls: { bloomEnabled: true },
-    runtimeState: {
-      bloomTuning: {
-        bloomAllowed: false,
-        effectiveStrength: 0.4,
-        effectiveRadius: 0.2,
-        effectiveThreshold: 0.1,
-      },
-      raymarchFieldAnalysis: null,
-    },
-    postNodesRef,
-    bloom: {
-      strength: 0.4,
-      radius: 0.2,
-      threshold: 0.1,
-    },
-  });
-
-  expect(postNodesRef.current.bloomPass.strength.value).toBe(0.4);
-  expect(postNodesRef.current.bloomPass.radius.value).toBe(0.2);
-  expect(postNodesRef.current.bloomPass.threshold.value).toBe(999);
-  expect(rawSceneBloomPass.strength.value).toBe(0.4);
-  expect(rawSceneBloomPass.radius.value).toBe(0.2);
-  expect(rawSceneBloomPass.threshold.value).toBe(999);
-});
-
 test("buildPerformanceHudSnapshot exports stage attribution, engine counters, and raw perf breakdown", () => {
   const runtimeDiagnostics = createRuntimeDiagnostics();
   runtimeDiagnostics.smoothedFrameTimeMs = 20;
@@ -760,47 +783,40 @@ test("buildPerformanceHudSnapshot exports stage attribution, engine counters, an
   runtimeDiagnostics.modalFreshness._previousModeSlots = new Float32Array([
     0.1, 0.2, 0.3,
   ]);
-  runtimeDiagnostics.perfBreakdown.readAnalysisSnapshotMs.averageMs = 1;
-  runtimeDiagnostics.perfBreakdown.buildFeatureFrameMs.averageMs = 4;
-  runtimeDiagnostics.perfBreakdown.heavyAnalysisMs.averageMs = 5;
-  runtimeDiagnostics.perfBreakdown.fastComposeMs.averageMs = 6;
-  runtimeDiagnostics.perfBreakdown.engineEnqueueMs.averageMs = 7;
-  runtimeDiagnostics.perfBreakdown.readEngineSnapshotMs.averageMs = 8;
+  runtimeDiagnostics.perfBreakdown.readFeatureModelMs.averageMs = 1;
+  runtimeDiagnostics.perfBreakdown.createRendererFeatureViewMs.averageMs = 4;
   runtimeDiagnostics.perfBreakdown.applyCachedControlSnapshotsMs.averageMs = 9;
   runtimeDiagnostics.perfBreakdown.syncLiveInputRuntimeStatusMs.averageMs = 10;
   runtimeDiagnostics.perfBreakdown.runtimeTickMs.averageMs = 11;
-  runtimeDiagnostics.perfBreakdown.applyReactiveBloomMs.averageMs = 12;
   runtimeDiagnostics.perfBreakdown.applySceneControlsMs.averageMs = 13;
   runtimeDiagnostics.perfBreakdown.pipelineRenderMs.averageMs = 14;
   runtimeDiagnostics.perfBreakdown.pipelineRenderMs.lastMs = 99;
-  runtimeDiagnostics.engine.publishCount = 101;
-  runtimeDiagnostics.engine.publishSkipCount = 7;
-  runtimeDiagnostics.engine.fastSignalPatchCount = 11;
-  runtimeDiagnostics.engine.fastSignalUpdateCount = 17;
-  runtimeDiagnostics.engine.structuralUpdateCount = 19;
-  runtimeDiagnostics.engine.chromaUpdateCount = 23;
-  runtimeDiagnostics.engine.tempoUpdateCount = 29;
-  runtimeDiagnostics.engine.workerFastSignalMs = 1.25;
-  runtimeDiagnostics.engine.workerFastSignalLastMs = 1.5;
-  runtimeDiagnostics.engine.workerFastSignalMaxMs = 2.25;
-  runtimeDiagnostics.engine.workerStructuralMs = 2.5;
-  runtimeDiagnostics.engine.workerStructuralLastMs = 3.25;
-  runtimeDiagnostics.engine.workerStructuralMaxMs = 4.5;
-  runtimeDiagnostics.engine.workerPeakScanMs = 0.75;
-  runtimeDiagnostics.engine.workerPeakScanLastMs = 0.9;
-  runtimeDiagnostics.engine.workerPeakScanMaxMs = 1.1;
-  runtimeDiagnostics.engine.workerModalResolveMs = 1.5;
-  runtimeDiagnostics.engine.workerModalResolveLastMs = 1.8;
-  runtimeDiagnostics.engine.workerModalResolveMaxMs = 2.2;
-  runtimeDiagnostics.engine.workerProjectionMs = 3.5;
-  runtimeDiagnostics.engine.workerProjectionLastMs = 4.25;
-  runtimeDiagnostics.engine.workerProjectionMaxMs = 5.5;
-  runtimeDiagnostics.engine.workerChromaMs = 0.5;
-  runtimeDiagnostics.engine.workerChromaLastMs = 0.6;
-  runtimeDiagnostics.engine.workerChromaMaxMs = 0.9;
-  runtimeDiagnostics.engine.workerTempoMs = 0.25;
-  runtimeDiagnostics.engine.workerTempoLastMs = 0.3;
-  runtimeDiagnostics.engine.workerTempoMaxMs = 0.45;
+  runtimeDiagnostics.engine.latestAcceptedFrameId = 101;
+  runtimeDiagnostics.engine.latestDriveAgeMs = 8;
+  runtimeDiagnostics.engine.sourceGeneration = 3;
+  runtimeDiagnostics.engine.workerGeneration = 5;
+  runtimeDiagnostics.engine.topologyRevision = 7;
+  runtimeDiagnostics.engine.processedFrameCount = 103;
+  runtimeDiagnostics.engine.topologyPublishCount = 11;
+  runtimeDiagnostics.engine.drivePublishCount = 101;
+  runtimeDiagnostics.engine.inputReplacementCount = 7;
+  runtimeDiagnostics.engine.rejectedPacketCount = 11;
+  runtimeDiagnostics.engine.staleAcknowledgementCount = 13;
+  runtimeDiagnostics.engine.queueDepth = 1;
+  runtimeDiagnostics.engine.state = "ready";
+  runtimeDiagnostics.engine.reason = "frame-processed";
+  runtimeDiagnostics.engine.workerFastLaneMs = 1.25;
+  runtimeDiagnostics.engine.workerFastLaneLastMs = 1.5;
+  runtimeDiagnostics.engine.workerFastLaneMaxMs = 2.25;
+  runtimeDiagnostics.engine.workerStructuralLaneMs = 2.5;
+  runtimeDiagnostics.engine.workerStructuralLaneLastMs = 3.25;
+  runtimeDiagnostics.engine.workerStructuralLaneMaxMs = 4.5;
+  runtimeDiagnostics.engine.workerGoertzelMs = 0.75;
+  runtimeDiagnostics.engine.workerGoertzelLastMs = 0.9;
+  runtimeDiagnostics.engine.workerGoertzelMaxMs = 1.1;
+  runtimeDiagnostics.engine.workerCompositionMs = 1.5;
+  runtimeDiagnostics.engine.workerCompositionLastMs = 1.8;
+  runtimeDiagnostics.engine.workerCompositionMaxMs = 2.2;
   runtimeDiagnostics.renderSurface.cssWidth = 1504;
   runtimeDiagnostics.renderSurface.cssHeight = 830;
   runtimeDiagnostics.renderSurface.backingWidth = 3008;
@@ -823,7 +839,7 @@ test("buildPerformanceHudSnapshot exports stage attribution, engine counters, an
   const snapshot = buildPerformanceHudSnapshot(runtimeDiagnostics);
 
   expect(snapshot.targetFps).toBe(60);
-  expect(snapshot.perfBreakdown.heavyAnalysisMs.averageMs).toBe(5);
+  expect(snapshot.perfBreakdown.readFeatureModelMs.averageMs).toBe(1);
   expect(snapshot.perfBreakdown.pipelineRenderMs.lastMs).toBe(99);
   expect(snapshot.frameDrops).toEqual({
     framesOver16_7Ms: 13,
@@ -831,42 +847,41 @@ test("buildPerformanceHudSnapshot exports stage attribution, engine counters, an
     framesOver33_3Ms: 5,
     framesOver50Ms: 2,
   });
-  expect(snapshot.stageAttribution.analysisCpuMs).toBe(16);
-  expect(snapshot.stageAttribution.engineCpuMs).toBe(15);
-  expect(snapshot.stageAttribution.controlCpuMs).toBe(55);
+  expect(snapshot.stageAttribution.analysisCpuMs).toBe(0);
+  expect(snapshot.stageAttribution.engineCpuMs).toBe(5);
+  expect(snapshot.stageAttribution.controlCpuMs).toBe(43);
   expect(snapshot.stageAttribution.renderCpuMs).toBe(14);
-  expect(snapshot.stageAttribution.measuredCpuMs).toBe(100);
+  expect(snapshot.stageAttribution.measuredCpuMs).toBe(62);
   expect(snapshot.stageAttribution.unattributedFrameMs).toBe(0);
   expect(snapshot.stageAttribution.dominantBucket).toBe("control");
   expect(snapshot.engineCounters).toEqual({
-    publishCount: 101,
-    publishSkipCount: 7,
-    fastSignalPatchCount: 11,
-    fastSignalUpdateCount: 17,
-    structuralUpdateCount: 19,
-    chromaUpdateCount: 23,
-    tempoUpdateCount: 29,
-    workerFastSignalMs: 1.25,
-    workerFastSignalLastMs: 1.5,
-    workerFastSignalMaxMs: 2.25,
-    workerStructuralMs: 2.5,
-    workerStructuralLastMs: 3.25,
-    workerStructuralMaxMs: 4.5,
-    workerPeakScanMs: 0.75,
-    workerPeakScanLastMs: 0.9,
-    workerPeakScanMaxMs: 1.1,
-    workerModalResolveMs: 1.5,
-    workerModalResolveLastMs: 1.8,
-    workerModalResolveMaxMs: 2.2,
-    workerProjectionMs: 3.5,
-    workerProjectionLastMs: 4.25,
-    workerProjectionMaxMs: 5.5,
-    workerChromaMs: 0.5,
-    workerChromaLastMs: 0.6,
-    workerChromaMaxMs: 0.9,
-    workerTempoMs: 0.25,
-    workerTempoLastMs: 0.3,
-    workerTempoMaxMs: 0.45,
+    latestDriveAgeMs: 8,
+    latestAcceptedFrameId: 101,
+    sourceGeneration: 3,
+    workerGeneration: 5,
+    topologyRevision: 7,
+    processedFrameCount: 103,
+    topologyPublishCount: 11,
+    drivePublishCount: 101,
+    inputReplacementCount: 7,
+    rejectedPacketCount: 11,
+    staleAcknowledgementCount: 13,
+    renderAuthorityRevoked: false,
+    queueDepth: 1,
+    state: "ready",
+    reason: "frame-processed",
+    workerFastLaneMs: 1.25,
+    workerFastLaneLastMs: 1.5,
+    workerFastLaneMaxMs: 2.25,
+    workerStructuralLaneMs: 2.5,
+    workerStructuralLaneLastMs: 3.25,
+    workerStructuralLaneMaxMs: 4.5,
+    workerGoertzelMs: 0.75,
+    workerGoertzelLastMs: 0.9,
+    workerGoertzelMaxMs: 1.1,
+    workerCompositionMs: 1.5,
+    workerCompositionLastMs: 1.8,
+    workerCompositionMaxMs: 2.2,
   });
   expect(snapshot.renderSurface).toEqual({
     cssWidth: 1504,
@@ -896,13 +911,12 @@ test("buildPerformanceHudSnapshot uses deterministic dominant-bucket tie breaks"
   const runtimeDiagnostics = createRuntimeDiagnostics();
   runtimeDiagnostics.smoothedFrameTimeMs = 10;
   runtimeDiagnostics.perfBreakdown.pipelineRenderMs.averageMs = 4;
-  runtimeDiagnostics.perfBreakdown.heavyAnalysisMs.averageMs = 4;
-  runtimeDiagnostics.perfBreakdown.engineEnqueueMs.averageMs = 4;
+  runtimeDiagnostics.perfBreakdown.readFeatureModelMs.averageMs = 4;
   runtimeDiagnostics.perfBreakdown.runtimeTickMs.averageMs = 4;
 
   const snapshot = buildPerformanceHudSnapshot(runtimeDiagnostics);
 
-  expect(snapshot.stageAttribution.analysisCpuMs).toBe(4);
+  expect(snapshot.stageAttribution.analysisCpuMs).toBe(0);
   expect(snapshot.stageAttribution.engineCpuMs).toBe(4);
   expect(snapshot.stageAttribution.controlCpuMs).toBe(4);
   expect(snapshot.stageAttribution.renderCpuMs).toBe(4);
@@ -922,7 +936,7 @@ test("buildPerformanceHudSnapshot preserves precise fps from smoothed frame time
 
 test("updateModalFreshnessDiagnostics records modal signals and slot turnover without publishing structural arrays", () => {
   const runtimeDiagnostics = createRuntimeDiagnostics();
-  runtimeDiagnostics.engine.snapshotAgeMs = 41;
+  runtimeDiagnostics.engine.latestDriveAgeMs = 41;
 
   updateModalFreshnessDiagnostics(
     runtimeDiagnostics,
@@ -957,8 +971,8 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
         metrics: {
           avgAmplitude: 13.25,
           analyserRms: 0.044,
-          preModalFftPeak: 0.31,
-          nonZeroFftBinCount: 128,
+          fftPeakAmplitude: 0.31,
+          spectralEffectiveBinCount: 128,
         },
         transport: {
           playing: false,
@@ -1032,8 +1046,8 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
       metrics: {
         avgAmplitude: 13.25,
         analyserRms: 0.044,
-        preModalFftPeak: 0.31,
-        nonZeroFftBinCount: 128,
+        fftPeakAmplitude: 0.31,
+        spectralEffectiveBinCount: 128,
       },
       transport: {
         playing: false,
@@ -1347,11 +1361,6 @@ test("publishes authoritative audit callbacks without devtools globals", () => {
         },
         status: {
           isPlaying: true,
-        },
-        featureState: {
-          audit: {
-            frame: 1,
-          },
         },
         lowLoadPlaybackDiagnosticsActive: false,
         runtimeDiagnostics: createRuntimeDiagnostics(),
@@ -1894,1017 +1903,252 @@ test("preview custom 120 starts from profile startup raymarch steps", () => {
   );
 });
 
-test("active playback bootstrap builds a fresh Spectral Light frame when the feature engine has no matching snapshot", () => {
-  const heavyAnalysis = {
+test("resolveFeatureFrame consumes one immutable feature model mechanically", () => {
+  const { args } = createResolveFeatureFrameHarness();
+  const featureModel = args.featureRuntime.readLatestFeatureModel();
+  const rendererView = {
     fieldState: "active",
-    activeModeCount: 2,
-    sourceCoupledColorSlots: new Float32Array([0.1, 0.8, 1, 0.9]),
-    resonantColorSlots: new Float32Array([1, 0.3, 0.2, 0.7]),
+    topologyRevision: 1,
+    ...createLiveRenderFrameEvidence(),
   };
-  const frameCacheRefs = {
-    lastLiveFrameRef: { current: null },
-    lastActiveFrameRef: { current: null },
-    lastIdleFrameRef: { current: null },
-    analysisSchedulerRef: { current: {} },
-  };
-  const runHeavyFeatureAnalysis = vi.fn(() => heavyAnalysis);
-  const composeFeatureFrame = vi.fn(({ analysisResult }) => ({
-    fieldState: analysisResult.fieldState,
-    activeModeCount: analysisResult.activeModeCount,
-    sourceCoupledColorSlots: analysisResult.sourceCoupledColorSlots,
-    resonantColorSlots: analysisResult.resonantColorSlots,
-  }));
+  args.featureRuntime.readLatestFeatureModel.mockClear();
+  const createFeatureView = vi.fn(() => rendererView);
+
+  const result = resolveFeatureFrame(args, { createFeatureView });
+
+  expect(args.featureRuntime.readLatestFeatureModel).toHaveBeenCalledTimes(1);
+  expect(createFeatureView).toHaveBeenCalledWith(featureModel);
+  expect(result.featureFrame).toBe(rendererView);
+  expect(result.effectiveFrame).toBe(rendererView);
+  expect(args.runtimeDiagnostics.modalFreshness).toMatchObject({
+    frameSemanticSource: "feature-model",
+    frameSemanticFresh: true,
+    frameSemanticReused: false,
+  });
+  expect(args.runtimeDiagnostics.engine).toMatchObject({
+    state: "ready",
+    sourceGeneration: 2,
+    workerGeneration: 3,
+    topologyRevision: 1,
+    latestAcceptedFrameId: 7,
+    latestDriveAgeMs: 4,
+    processedFrameCount: 9,
+    topologyPublishCount: 2,
+    drivePublishCount: 7,
+    inputReplacementCount: 1,
+    rejectedPacketCount: 3,
+    staleAcknowledgementCount: 5,
+    queueDepth: 1,
+    workerFastLaneMs: 0.4,
+    workerStructuralLaneMs: 1.2,
+    workerGoertzelMs: 0.2,
+    workerCompositionMs: 0.7,
+  });
+});
+
+test("resolveFeatureFrame fails closed when the local runtime has no model", () => {
   const { args } = createResolveFeatureFrameHarness({
-    featureEngine: {
-      enqueueTransportFrame: vi.fn(),
-      readLatestSnapshot: vi.fn(() => ({
-        analysisSessionKey: "previous-session",
-        analysisInputsSignature: "previous-inputs",
+    featureRuntime: {
+      readLatestFeatureModel: vi.fn(() => null),
+      getStatus: vi.fn(() => ({
+        state: "ready",
+        renderAuthorityRevoked: true,
       })),
-      getStatus: vi.fn(() => ({})),
     },
-    renderLoopRefs: {
-      frameCacheRefs,
-    },
-  });
-
-  const { effectiveFrame } = resolveFeatureFrame(
-    {
-      ...args,
-      spectralLightEnabled: true,
-    },
-    {
-      prepareFeatureFrame: vi.fn(() => ({
-        currentFrameAtMs: 1000,
-        analysisSessionKey: "song-1",
-        analysisInputsSignature: "spectral-on",
-        silentFeatureFrame: null,
-      })),
-      runHeavyFeatureAnalysis,
-      composeFeatureFrame,
-    },
-  );
-
-  expect(effectiveFrame.fieldState).toBe("active");
-  expect(effectiveFrame.sourceCoupledColorSlots[3]).toBeGreaterThan(0);
-  expect(runHeavyFeatureAnalysis).toHaveBeenCalledTimes(1);
-  expect(composeFeatureFrame).toHaveBeenCalledTimes(1);
-  expect(frameCacheRefs.analysisSchedulerRef.current).toMatchObject({
-    lastHeavyAnalysisResult: heavyAnalysis,
-    lastComposedFeatureFrame: effectiveFrame,
-  });
-  expect(
-    frameCacheRefs.analysisSchedulerRef.current.lastComposedFeatureFrame,
-  ).toBe(effectiveFrame);
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
-    "bootstrap-fallback",
-  );
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticFresh).toBe(true);
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticReused).toBe(
-    false,
-  );
-});
-
-test("resolveFeatureFrame records matching worker snapshots as fresh semantic frames", () => {
-  const workerAnalysis = {
-    fieldState: "active",
-    activeModeCount: 4,
-  };
-  const featureEngine = {
-    enqueueTransportFrame: vi.fn(),
-    readLatestSnapshot: vi.fn(() => ({
-      analysisSessionKey: "song-1",
-      analysisInputsSignature: '"worker-sig"',
-      analysisResult: workerAnalysis,
-    })),
-    getStatus: vi.fn(() => ({})),
-  };
-  const composeFeatureFrame = vi.fn(({ analysisResult }) => ({
-    fieldState: analysisResult.fieldState,
-    activeModeCount: analysisResult.activeModeCount,
-  }));
-  const { args } = createResolveFeatureFrameHarness({
-    featureEngine,
-  });
-
-  const result = resolveFeatureFrame(args, {
-    prepareFeatureFrame: vi.fn(() => ({
-      currentFrameAtMs: 1000,
-      analysisSessionKey: "song-1",
-      analysisInputsSignature: '"worker-sig"',
-      silentFeatureFrame: null,
-    })),
-    composeFeatureFrame,
-  });
-
-  expect(result.effectiveFrame.activeModeCount).toBe(4);
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
-    "worker-snapshot",
-  );
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticFresh).toBe(true);
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticReused).toBe(
-    false,
-  );
-  expect(
-    buildPerformanceHudSnapshot(args.runtimeDiagnostics).modalFreshness
-      .frameSemanticSource,
-  ).toBe("worker-snapshot");
-});
-
-test("resolveFeatureFrame patches current fast audio signals onto stale worker snapshots", () => {
-  const workerAnalysis = {
-    fieldState: "active",
-    activeModeCount: 4,
-    avgAmplitude: 12,
-    transientEnergy: 0.1,
-  };
-  const currentAnalysis = {
-    ...workerAnalysis,
-    avgAmplitude: 72,
-    transientEnergy: 0.9,
-  };
-  const featureEngine = {
-    enqueueTransportFrame: vi.fn(),
-    readLatestSnapshot: vi.fn(() => ({
-      frameTimeMs: 1000,
-      analysisSessionKey: "song-1",
-      analysisInputsSignature: '"worker-sig"',
-      analysisResult: workerAnalysis,
-    })),
-    getStatus: vi.fn(() => ({})),
-  };
-  const composeFeatureFrame = vi.fn(({ analysisResult }) => ({
-    fieldState: analysisResult.fieldState,
-    activeModeCount: analysisResult.activeModeCount,
-    averageAmplitude: analysisResult.avgAmplitude,
-    transientEnergy: analysisResult.transientEnergy,
-  }));
-  const buildFastSignalAnalysisResult = vi.fn(() => currentAnalysis);
-  const { args } = createResolveFeatureFrameHarness({
-    featureEngine,
-  });
-
-  const result = resolveFeatureFrame(args, {
-    prepareFeatureFrame: vi.fn(() => ({
-      currentFrameAtMs: 1033,
-      analysisSessionKey: "song-1",
-      analysisInputsSignature: '"worker-sig"',
-      silentFeatureFrame: null,
-    })),
-    composeFeatureFrame,
-    buildFastSignalAnalysisResult,
-  });
-
-  expect(buildFastSignalAnalysisResult).toHaveBeenCalledWith({
-    preparedInputs: expect.objectContaining({
-      currentFrameAtMs: 1033,
-    }),
-    previousAnalysisResult: workerAnalysis,
-  });
-  expect(result.effectiveFrame).toMatchObject({
-    activeModeCount: 4,
-    averageAmplitude: 72,
-    transientEnergy: 0.9,
-  });
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
-    "worker-fast-signal",
-  );
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticFresh).toBe(true);
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticReused).toBe(
-    false,
-  );
-});
-
-test("resolveFeatureFrame refreshes active program audio when the worker structural snapshot is stale", () => {
-  const cases = [
-    {
-      label: "file playback",
-      status: {
-        audioInputMode: "file",
-        isPlaying: true,
-        isLiveInputActive: false,
-        playbackSessionId: "song-1",
-      },
-      preparedInputs: {
-        inputMode: "file",
-        currentFrameAtMs: 1016,
-        analysisSessionKey: "file:song-1",
-        analysisInputsSignature: '"worker-sig"',
-        silentFeatureFrame: null,
-      },
-    },
-    {
-      label: "system line-feed",
-      status: {
-        audioInputMode: "system",
-        isPlaying: false,
-        isLiveInputActive: true,
-        liveInputDeviceKind: "system",
-      },
-      preparedInputs: {
-        inputMode: "system",
-        currentFrameAtMs: 1016,
-        analysisSessionKey: "system",
-        analysisInputsSignature: '"worker-sig"',
-        silentFeatureFrame: null,
-      },
-    },
-  ];
-
-  for (const { label, status, preparedInputs } of cases) {
-    const workerAnalysis = {
-      fieldState: "active",
-      activeModeCount: 2,
-      avgAmplitude: 12,
-      staleWorker: true,
-    };
-    const localAnalysis = {
-      fieldState: "active",
-      activeModeCount: 5,
-      avgAmplitude: 84,
-      localCurrent: true,
-    };
-    const currentFrame = {
-      fieldState: "active",
-      activeModeCount: 5,
-      localCurrent: true,
-    };
-    const featureEngine = {
-      enqueueTransportFrame: vi.fn(),
-      readLatestSnapshot: vi.fn(() => ({
-        frameTimeMs: 1000,
-        analysisSessionKey: preparedInputs.analysisSessionKey,
-        analysisInputsSignature: preparedInputs.analysisInputsSignature,
-        analysisResult: workerAnalysis,
-      })),
-      getStatus: vi.fn(() => ({})),
-    };
-    const runHeavyFeatureAnalysis = vi.fn(() => localAnalysis);
-    const buildFastSignalAnalysisResult = vi.fn(() => ({
-      ...workerAnalysis,
-      avgAmplitude: 84,
-    }));
-    const composeFeatureFrame = vi.fn(({ analysisResult }) =>
-      analysisResult.localCurrent ? currentFrame : workerAnalysis,
-    );
-    const { args } = createResolveFeatureFrameHarness({
-      featureEngine,
-      status,
-      clockMode: status.audioInputMode === "file" ? "playback" : "realtime",
-      renderLoopRefs: {
-        frameCacheRefs: {
-          lastLiveFrameRef: {
-            current: {
-              fieldState: "active",
-              renderAuthority: true,
-            },
-          },
-          lastActiveFrameRef: {
-            current: {
-              fieldState: "active",
-              renderAuthority: true,
-            },
-          },
-          lastIdleFrameRef: { current: null },
-          analysisSchedulerRef: { current: null },
-        },
-      },
-    });
-
-    const result = resolveFeatureFrame(args, {
-      prepareFeatureFrame: vi.fn(() => preparedInputs),
-      runHeavyFeatureAnalysis,
-      composeFeatureFrame,
-      buildFastSignalAnalysisResult,
-    });
-
-    expect(runHeavyFeatureAnalysis, label).toHaveBeenCalledTimes(1);
-    expect(buildFastSignalAnalysisResult, label).not.toHaveBeenCalled();
-    expect(result.effectiveFrame, label).toBe(currentFrame);
-    expect(
-      args.runtimeDiagnostics.modalFreshness.frameSemanticSource,
-      label,
-    ).toBe("local-heavy-analysis");
-    expect(
-      args.runtimeDiagnostics.modalFreshness.frameSemanticFresh,
-      label,
-    ).toBe(true);
-    expect(
-      args.runtimeDiagnostics.modalFreshness.frameSemanticReused,
-      label,
-    ).toBe(false);
-  }
-});
-
-test("resolveFeatureFrame records scheduled analysis reuse as reused semantics", () => {
-  const reusedAnalysis = { fieldState: "active", reusedAnalysis: true };
-  const reusedFrame = { fieldState: "active", reusedFrame: true };
-  const { args } = createResolveFeatureFrameHarness({
     renderLoopRefs: {
       frameCacheRefs: {
-        lastLiveFrameRef: { current: null },
-        lastActiveFrameRef: { current: null },
         lastIdleFrameRef: { current: null },
-        analysisSchedulerRef: {
-          current: {
-            lastHeavyAnalysisAtMs: 1000,
-            lastAnalysisSessionKey: "song-1",
-            lastAnalysisInputsSignature: '"same"',
-            lastHeavyAnalysisResult: reusedAnalysis,
-            lastComposedFeatureFrame: reusedFrame,
-          },
+        pausedFileFrameRef: { current: null },
+        lastLiveFrameRef: {
+          current: { fieldState: "active", renderAuthority: true },
         },
       },
     },
   });
+  const createFeatureView = vi.fn();
 
-  const result = resolveFeatureFrame(args, {
-    prepareFeatureFrame: vi.fn(() => ({
-      currentFrameAtMs: 1010,
-      analysisSessionKey: "song-1",
-      analysisInputsSignature: '"same"',
-      silentFeatureFrame: null,
-    })),
-    composeFeatureFrame: vi.fn(() => reusedFrame),
-  });
+  const result = resolveFeatureFrame(args, { createFeatureView });
 
-  expect(result.effectiveFrame).toBe(reusedFrame);
+  expect(result).toEqual({ featureFrame: null, effectiveFrame: null });
+  expect(createFeatureView).not.toHaveBeenCalled();
+  expect(args.runtimeDiagnostics.engine.renderAuthorityRevoked).toBe(true);
   expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
-    "scheduled-reuse",
+    "feature-model-unavailable",
   );
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticFresh).toBe(false);
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticReused).toBe(true);
 });
 
-test("resolveFeatureFrame holds the last file modal frame during paused playback", () => {
-  const frameCacheRefs = {
-    lastLiveFrameRef: { current: null },
-    lastActiveFrameRef: { current: null },
-    lastIdleFrameRef: { current: null },
-    pausedFileFrameRef: { current: null },
-    analysisSchedulerRef: { current: null },
+test("resolveFeatureFrame rejects a retained live model after transport stops", () => {
+  const { args } = createResolveFeatureFrameHarness({
+    status: {
+      isPlaying: false,
+      isLiveInputActive: false,
+      playbackSessionId: null,
+    },
+  });
+
+  const stopped = resolveFeatureFrame(args);
+
+  expect(stopped).toEqual({ featureFrame: null, effectiveFrame: null });
+  expect(
+    args.renderLoopRefs.frameCacheRefs.lastIdleFrameRef.current,
+  ).toBeNull();
+  expect(args.featureRuntime.readLatestFeatureModel).toHaveBeenCalledTimes(1);
+
+  args.featureRuntime.readLatestFeatureModel.mockReturnValue(null);
+  resolveFeatureFrame(args);
+
+  expect(args.featureRuntime.readLatestFeatureModel).toHaveBeenCalledTimes(2);
+});
+
+test("resolveFeatureFrame caches a canonical static idle model", () => {
+  const idleFrame = {
+    fieldState: "idle",
+    renderAuthority: false,
+    sourceEvidence: {
+      sourceBoundaryState: "absent",
+      currentSourceEvidence: false,
+    },
+  };
+  const { args } = createResolveFeatureFrameHarness({
+    status: {
+      isPlaying: false,
+      isLiveInputActive: false,
+      playbackSessionId: null,
+    },
+  });
+  const createFeatureView = vi.fn(() => idleFrame);
+
+  const first = resolveFeatureFrame(args, { createFeatureView });
+  const second = resolveFeatureFrame(args, { createFeatureView });
+
+  expect(first.effectiveFrame).toBe(idleFrame);
+  expect(second.effectiveFrame).toBe(idleFrame);
+  expect(args.renderLoopRefs.frameCacheRefs.lastIdleFrameRef.current).toBe(
+    idleFrame,
+  );
+  expect(args.featureRuntime.readLatestFeatureModel).toHaveBeenCalledTimes(1);
+});
+
+test("resolveFeatureFrame reuses only the explicit static-idle cache", () => {
+  const idleFrame = { fieldState: "idle", renderAuthority: false };
+  const readLatestFeatureModel = vi.fn();
+  const { args } = createResolveFeatureFrameHarness({
+    featureRuntime: {
+      readLatestFeatureModel,
+      getStatus: vi.fn(),
+    },
+    status: {
+      isPlaying: false,
+      isLiveInputActive: false,
+    },
+    renderLoopRefs: {
+      frameCacheRefs: {
+        lastIdleFrameRef: { current: idleFrame },
+        pausedFileFrameRef: { current: null },
+      },
+    },
+  });
+
+  const result = resolveFeatureFrame(args);
+
+  expect(result.effectiveFrame).toBe(idleFrame);
+  expect(readLatestFeatureModel).not.toHaveBeenCalled();
+  expect(args.runtimeDiagnostics.modalFreshness).toMatchObject({
+    frameSemanticSource: "static-idle-cache",
+    frameSemanticFresh: false,
+    frameSemanticReused: true,
+  });
+});
+
+test("resolveFeatureFrame holds the static idle frame while file analysis activates", () => {
+  const idleFrame = {
+    fieldState: "idle",
+    renderAuthority: false,
+    sourceEvidence: {
+      sourceBoundaryState: "absent",
+      currentSourceEvidence: false,
+    },
   };
   const activeFrame = {
     fieldState: "active",
     renderAuthority: true,
-    energyLedger: {
-      projectedRenderEnergy: 0.42,
-      renderEnergyEpsilon: 1e-6,
-      sourceBoundaryState: "live",
-      sourceEnergy: 0.42,
-    },
-    sourceEvidence: {
-      sourceBoundaryState: "live",
-      currentSourceEvidence: true,
-      sourceEnergy: 0.42,
-      transport: {
-        playing: true,
-        fileMuted: false,
-      },
-    },
-    modalFieldSlots: new Float32Array([1, 2, 3, 0.4]),
-    modalFieldPhaseSlots: new Float32Array([0.25, 0.5, 0.75, 1]),
-    modalFieldColorSlots: new Float32Array([0.1, 0.2, 0.3, 1]),
-    bandEnergies: new Float32Array([0.1, 0.2, 0.3, 0.4]),
-    modalResponseCurrentRenderSourceEvidence: true,
-    structureSignal: 0.7,
-    energySignal: 0.8,
-    changeSignal: 0.2,
-    pulseSignal: 0.1,
-    debug: {
-      sourceBoundaryState: "live",
-    },
+    ...createLiveRenderFrameEvidence(),
   };
-  const activeHarness = createResolveFeatureFrameHarness({
-    status: {
-      isPlaying: true,
-      isLiveInputActive: false,
-      playbackSessionId: "song-1",
+  const readLatestFeatureModel = vi.fn(() => ({ current: true }));
+  let playbackAnalysisPending = true;
+  const getStatus = vi.fn(() => ({
+    state: "ready",
+    playbackAnalysisPending,
+  }));
+  const { args } = createResolveFeatureFrameHarness({
+    featureRuntime: {
+      readLatestFeatureModel,
+      getStatus,
     },
     renderLoopRefs: {
-      frameCacheRefs,
+      frameCacheRefs: {
+        lastIdleFrameRef: { current: idleFrame },
+        pausedFileFrameRef: { current: null },
+      },
     },
   });
+  const createFeatureView = vi.fn(() => activeFrame);
 
-  resolveFeatureFrame(activeHarness.args, {
-    buildFeatureFrame: vi.fn(() => activeFrame),
+  const pending = resolveFeatureFrame(args, { createFeatureView });
+
+  expect(pending.effectiveFrame).toBe(idleFrame);
+  expect(readLatestFeatureModel).not.toHaveBeenCalled();
+  expect(args.renderLoopRefs.frameCacheRefs.lastIdleFrameRef.current).toBe(
+    idleFrame,
+  );
+  expect(args.runtimeDiagnostics.modalFreshness).toMatchObject({
+    frameSemanticSource: "file-playback-activation-hold",
+    frameSemanticFresh: false,
+    frameSemanticReused: true,
   });
 
-  expect(frameCacheRefs.pausedFileFrameRef.current).toMatchObject({
+  playbackAnalysisPending = false;
+  const ready = resolveFeatureFrame(args, { createFeatureView });
+
+  expect(ready.effectiveFrame).toBe(activeFrame);
+  expect(readLatestFeatureModel).toHaveBeenCalledTimes(1);
+  expect(
+    args.renderLoopRefs.frameCacheRefs.lastIdleFrameRef.current,
+  ).toBeNull();
+});
+
+test("resolveFeatureFrame retains an explicit paused-file hold", () => {
+  const activeHarness = createResolveFeatureFrameHarness();
+  resolveFeatureFrame(activeHarness.args);
+
+  const held =
+    activeHarness.args.renderLoopRefs.frameCacheRefs.pausedFileFrameRef.current;
+  expect(held).toMatchObject({ playbackSessionId: "song-1" });
+  expect(held.frame).toMatchObject({
+    audioMotionAuthority: false,
+    modalResponseCurrentRenderSourceEvidence: false,
+  });
+
+  activeHarness.args.status = {
+    isPlaying: false,
+    isLiveInputActive: false,
+    isAudioLoaded: true,
     playbackSessionId: "song-1",
-  });
-  expect(frameCacheRefs.pausedFileFrameRef.current.frame).not.toBe(activeFrame);
+  };
+  activeHarness.args.clockMode = "paused-playback";
+  activeHarness.args.featureRuntime.readLatestFeatureModel.mockReturnValue(
+    null,
+  );
+
+  const paused = resolveFeatureFrame(activeHarness.args);
+
+  expect(paused.effectiveFrame).toBe(held.frame);
+  expect(
+    activeHarness.args.featureRuntime.readLatestFeatureModel,
+  ).toHaveBeenCalledTimes(1);
   expect(
     activeHarness.args.runtimeDiagnostics.modalFreshness.frameSemanticSource,
-  ).toBe("direct-feature-build");
-  expect(
-    activeHarness.args.runtimeDiagnostics.modalFreshness.frameSemanticFresh,
-  ).toBe(true);
-
-  activeFrame.modalFieldSlots[3] = 0;
-  activeFrame.sourceEvidence.currentSourceEvidence = true;
-
-  const featureEngine = {
-    enqueueTransportFrame: vi.fn(),
-    readLatestSnapshot: vi.fn(),
-    getStatus: vi.fn(),
-    reset: vi.fn(),
-  };
-  const audio = {
-    readAnalysisSnapshot: vi.fn(),
-  };
-  const prepareFeatureFrame = vi.fn();
-  const runHeavyFeatureAnalysis = vi.fn();
-  const composeFeatureFrame = vi.fn();
-  const pausedHarness = createResolveFeatureFrameHarness({
-    audio,
-    featureEngine,
-    status: {
-      isPlaying: false,
-      isLiveInputActive: false,
-      playbackSessionId: "song-1",
-    },
-    clockMode: "paused-playback",
-    renderLoopRefs: {
-      frameCacheRefs,
-    },
-  });
-
-  const result = resolveFeatureFrame(pausedHarness.args, {
-    prepareFeatureFrame,
-    runHeavyFeatureAnalysis,
-    composeFeatureFrame,
-  });
-
-  expect(audio.readAnalysisSnapshot).not.toHaveBeenCalled();
-  expect(featureEngine.enqueueTransportFrame).not.toHaveBeenCalled();
-  expect(featureEngine.readLatestSnapshot).not.toHaveBeenCalled();
-  expect(featureEngine.reset).not.toHaveBeenCalled();
-  expect(prepareFeatureFrame).not.toHaveBeenCalled();
-  expect(runHeavyFeatureAnalysis).not.toHaveBeenCalled();
-  expect(composeFeatureFrame).not.toHaveBeenCalled();
-  expect(result.effectiveFrame).toBe(
-    frameCacheRefs.pausedFileFrameRef.current.frame,
-  );
-  expect(result.effectiveFrame.audioMotionAuthority).toBe(false);
-  expect(result.effectiveFrame.modalFieldSlots[3]).toBeCloseTo(0.4);
-  expect(result.effectiveFrame.sourceEvidence).toMatchObject({
-    sourceBoundaryState: "muted",
-    currentSourceEvidence: false,
-    sourceEnergy: 0,
-    transport: {
-      playing: false,
-      fileMuted: true,
-    },
-  });
-  expect(result.effectiveFrame.energyLedger).toMatchObject({
-    projectedRenderEnergy: 0.42,
-    sourceBoundaryState: "muted",
-    sourceEnergy: 0,
-  });
-  expect(result.effectiveFrame.debug).toMatchObject({
-    pausedFileHold: true,
-    sourceBoundaryState: "muted",
-    currentSourceEvidence: false,
-  });
-  expect(
-    pausedHarness.args.runtimeDiagnostics.modalFreshness.frameSemanticSource,
   ).toBe("paused-file-hold");
-  expect(
-    pausedHarness.args.runtimeDiagnostics.modalFreshness.frameSemanticFresh,
-  ).toBe(false);
-  expect(
-    pausedHarness.args.runtimeDiagnostics.modalFreshness.frameSemanticReused,
-  ).toBe(true);
-});
-
-test.each(["natural", "premature", "interrupted", "stopped"])(
-  "resolveFeatureFrame clears paused file holds after %s playback end",
-  (lastPlaybackEndReason) => {
-    const heldFrame = {
-      fieldState: "active",
-      audioMotionAuthority: false,
-      energyLedger: {
-        projectedRenderEnergy: 0.6,
-        renderEnergyEpsilon: 1e-6,
-        sourceBoundaryState: "muted",
-        sourceEnergy: 0,
-      },
-      sourceEvidence: {
-        sourceBoundaryState: "muted",
-        currentSourceEvidence: false,
-        sourceEnergy: 0,
-      },
-      modalFieldSlots: new Float32Array([1, 1, 1, 0.6]),
-    };
-    const silentFrame = {
-      fieldState: "idle",
-      renderAuthority: false,
-      energyLedger: {
-        projectedRenderEnergy: 0,
-        renderEnergyEpsilon: 1e-6,
-      },
-      sourceEvidence: {
-        sourceBoundaryState: "muted",
-        currentSourceEvidence: false,
-      },
-    };
-    const frameCacheRefs = {
-      lastLiveFrameRef: { current: null },
-      lastActiveFrameRef: { current: null },
-      lastIdleFrameRef: { current: null },
-      pausedFileFrameRef: {
-        current: {
-          playbackSessionId: "song-1",
-          frame: heldFrame,
-        },
-      },
-      analysisSchedulerRef: { current: null },
-    };
-    const audio = {
-      readAnalysisSnapshot: vi.fn(() => null),
-    };
-    const prepareFeatureFrame = vi.fn(() => ({
-      silentFeatureFrame: silentFrame,
-    }));
-    const { args } = createResolveFeatureFrameHarness({
-      audio,
-      status: {
-        isPlaying: false,
-        isLiveInputActive: false,
-        playbackSessionId: "song-1",
-        lastPlaybackEndReason,
-        lastPlaybackDiagnostics: {
-          playbackSessionId: "song-1",
-          endedAtContextTimeSeconds: 32,
-        },
-      },
-      clockMode: "paused-playback",
-      renderLoopRefs: {
-        frameCacheRefs,
-      },
-    });
-
-    const result = resolveFeatureFrame(args, {
-      prepareFeatureFrame,
-    });
-
-    expect(audio.readAnalysisSnapshot).toHaveBeenCalled();
-    expect(prepareFeatureFrame).toHaveBeenCalled();
-    expect(result.effectiveFrame).toBe(silentFrame);
-    expect(frameCacheRefs.pausedFileFrameRef.current).toBeNull();
-    expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
-      "silent-frame",
-    );
-  },
-);
-
-test("resolveFeatureFrame clears a paused file hold when playback stops", () => {
-  const heldFrame = {
-    fieldState: "active",
-    audioMotionAuthority: false,
-    energyLedger: {
-      projectedRenderEnergy: 0.3,
-      renderEnergyEpsilon: 1e-6,
-    },
-  };
-  const silentFrame = {
-    fieldState: "idle",
-    renderAuthority: false,
-    energyLedger: {
-      projectedRenderEnergy: 0,
-      renderEnergyEpsilon: 1e-6,
-    },
-  };
-  const frameCacheRefs = {
-    lastLiveFrameRef: { current: null },
-    lastActiveFrameRef: { current: null },
-    lastIdleFrameRef: { current: null },
-    pausedFileFrameRef: {
-      current: {
-        playbackSessionId: "song-1",
-        frame: heldFrame,
-      },
-    },
-    analysisSchedulerRef: { current: null },
-  };
-  const featureEngine = {
-    enqueueTransportFrame: vi.fn(),
-    readLatestSnapshot: vi.fn(),
-    getStatus: vi.fn(),
-    reset: vi.fn(),
-  };
-  const { args } = createResolveFeatureFrameHarness({
-    featureEngine,
-    status: {
-      isPlaying: false,
-      isLiveInputActive: false,
-      playbackSessionId: "song-1",
-    },
-    clockMode: "running",
-    renderLoopRefs: {
-      frameCacheRefs,
-    },
-  });
-
-  const result = resolveFeatureFrame(args, {
-    prepareFeatureFrame: vi.fn(() => ({
-      silentFeatureFrame: silentFrame,
-    })),
-  });
-
-  expect(result.effectiveFrame).toBe(silentFrame);
-  expect(frameCacheRefs.pausedFileFrameRef.current).toBeNull();
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
-    "silent-frame",
-  );
-});
-
-test("resolveFeatureFrame ignores paused file holds for live input", () => {
-  const silentFrame = {
-    fieldState: "idle",
-    renderAuthority: false,
-    isLiveInputActive: true,
-  };
-  const frameCacheRefs = {
-    lastLiveFrameRef: { current: null },
-    lastActiveFrameRef: { current: null },
-    lastIdleFrameRef: { current: null },
-    pausedFileFrameRef: {
-      current: {
-        playbackSessionId: "song-1",
-        frame: {
-          fieldState: "active",
-          audioMotionAuthority: false,
-          energyLedger: {
-            projectedRenderEnergy: 0.4,
-            renderEnergyEpsilon: 1e-6,
-          },
-        },
-      },
-    },
-    analysisSchedulerRef: { current: null },
-  };
-  const audio = {
-    readAnalysisSnapshot: vi.fn(() => null),
-  };
-  const prepareFeatureFrame = vi.fn(() => ({
-    silentFeatureFrame: silentFrame,
-  }));
-  const { args } = createResolveFeatureFrameHarness({
-    audio,
-    status: {
-      isPlaying: false,
-      isLiveInputActive: true,
-      playbackSessionId: "song-1",
-    },
-    clockMode: "paused-playback",
-    renderLoopRefs: {
-      frameCacheRefs,
-    },
-  });
-
-  const result = resolveFeatureFrame(args, {
-    prepareFeatureFrame,
-  });
-
-  expect(audio.readAnalysisSnapshot).toHaveBeenCalled();
-  expect(prepareFeatureFrame).toHaveBeenCalled();
-  expect(result.effectiveFrame).toBe(silentFrame);
-  expect(frameCacheRefs.pausedFileFrameRef.current).toBeNull();
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
-    "silent-frame",
-  );
-});
-
-test("resolveFeatureFrame composes an inactive-source frame during paused playback", () => {
-  const cachedActiveFrame = {
-    fieldState: "active",
-    renderAuthority: true,
-    stale: true,
-  };
-  const inactiveSourceFrame = {
-    fieldState: "idle",
-    renderAuthority: false,
-    energyLedger: {
-      projectedRenderEnergy: 0,
-      renderEnergyEpsilon: 1e-6,
-    },
-    sourceEvidence: {
-      sourceBoundaryState: "muted",
-      currentSourceEvidence: false,
-    },
-  };
-  const featureEngine = {
-    enqueueTransportFrame: vi.fn(),
-    readLatestSnapshot: vi.fn(() => ({
-      analysisSessionKey: "file:song-1",
-      analysisInputsSignature: '"active-before-pause"',
-      analysisResult: cachedActiveFrame,
-    })),
-    getStatus: vi.fn(() => ({})),
-  };
-  const prepareFeatureFrame = vi.fn(() => ({
-    currentFrameAtMs: 1000,
-    analysisSessionKey: "file:song-1",
-    analysisInputsSignature: '"paused-inactive-source"',
-    snapshot: {
-      fftMagnitudes: new Float32Array(4),
-      timeData: new Float32Array(4),
-    },
-    silentFeatureFrame: null,
-  }));
-  const runHeavyFeatureAnalysis = vi.fn(() => ({
-    fieldState: "idle",
-    renderAuthority: false,
-  }));
-  const composeFeatureFrame = vi.fn(() => inactiveSourceFrame);
-  const { args } = createResolveFeatureFrameHarness({
-    featureEngine,
-    status: {
-      isPlaying: false,
-      isLiveInputActive: false,
-      playbackSessionId: "song-1",
-    },
-    clockMode: "paused-playback",
-    renderLoopRefs: {
-      frameCacheRefs: {
-        lastLiveFrameRef: { current: cachedActiveFrame },
-        lastActiveFrameRef: { current: cachedActiveFrame },
-        lastIdleFrameRef: { current: null },
-        analysisSchedulerRef: { current: null },
-      },
-    },
-  });
-
-  const result = resolveFeatureFrame(args, {
-    prepareFeatureFrame,
-    runHeavyFeatureAnalysis,
-    composeFeatureFrame,
-  });
-
-  expect(prepareFeatureFrame).toHaveBeenCalled();
-  expect(featureEngine.enqueueTransportFrame).not.toHaveBeenCalled();
-  expect(featureEngine.readLatestSnapshot).not.toHaveBeenCalled();
-  expect(runHeavyFeatureAnalysis).toHaveBeenCalled();
-  expect(composeFeatureFrame).toHaveBeenCalled();
-  expect(result.featureFrame).toBe(inactiveSourceFrame);
-  expect(result.effectiveFrame).toBe(inactiveSourceFrame);
-  expect(result.effectiveFrame).toMatchObject({
-    fieldState: "idle",
-    renderAuthority: false,
-    energyLedger: {
-      projectedRenderEnergy: 0,
-    },
-    sourceEvidence: {
-      sourceBoundaryState: "muted",
-      currentSourceEvidence: false,
-    },
-  });
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
-    "local-heavy-analysis",
-  );
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticFresh).toBe(true);
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticReused).toBe(
-    false,
-  );
-  expect(
-    args.renderLoopRefs.frameCacheRefs.lastActiveFrameRef.current,
-  ).toBeNull();
-  expect(
-    args.renderLoopRefs.frameCacheRefs.lastLiveFrameRef.current,
-  ).toBeNull();
-});
-
-test("resolveFeatureFrame does not reuse last-live cache after system source evidence closes", () => {
-  const cachedActiveFrame = {
-    fieldState: "active",
-    renderAuthority: true,
-    stale: true,
-    energyLedger: {
-      projectedRenderEnergy: 0.48,
-      renderEnergyEpsilon: 1e-6,
-      sourceBoundaryState: "live",
-    },
-    sourceEvidence: {
-      sourceKind: "system",
-      analysisClass: "line-feed",
-      sourceBoundaryState: "live",
-      currentSourceEvidence: true,
-    },
-  };
-  const inactiveSourceFrame = {
-    fieldState: "idle",
-    renderAuthority: false,
-    energyLedger: {
-      projectedRenderEnergy: 0,
-      renderEnergyEpsilon: 1e-6,
-      sourceBoundaryState: "muted",
-    },
-    sourceEvidence: {
-      sourceKind: "system",
-      analysisClass: "line-feed",
-      sourceBoundaryState: "muted",
-      currentSourceEvidence: false,
-    },
-  };
-  const featureEngine = {
-    enqueueTransportFrame: vi.fn(),
-    readLatestSnapshot: vi.fn(() => null),
-    getStatus: vi.fn(() => ({})),
-  };
-  const prepareFeatureFrame = vi.fn(() => ({
-    currentFrameAtMs: 1000,
-    inputMode: "system",
-    analysisSessionKey: "system",
-    analysisInputsSignature: '"system-inactive-source"',
-    snapshot: {
-      fftMagnitudes: new Float32Array(4),
-      timeData: new Float32Array(4),
-    },
-    sourceEvidence: {
-      sourceKind: "system",
-      analysisClass: "line-feed",
-      sourceBoundaryState: "muted",
-      currentSourceEvidence: false,
-    },
-    silentFeatureFrame: null,
-  }));
-  const runHeavyFeatureAnalysis = vi.fn(() => ({
-    fieldState: "idle",
-    renderAuthority: false,
-  }));
-  const composeFeatureFrame = vi.fn(() => inactiveSourceFrame);
-  const { args } = createResolveFeatureFrameHarness({
-    featureEngine,
-    status: {
-      audioInputMode: "system",
-      isPlaying: false,
-      isLiveInputActive: true,
-      liveInputDeviceKind: "system",
-      resolvedLiveInputAnalysisClass: "line-feed",
-    },
-    clockMode: "realtime",
-    renderLoopRefs: {
-      frameCacheRefs: {
-        lastLiveFrameRef: { current: cachedActiveFrame },
-        lastActiveFrameRef: { current: cachedActiveFrame },
-        lastIdleFrameRef: { current: null },
-        pausedFileFrameRef: { current: null },
-        analysisSchedulerRef: { current: null },
-      },
-    },
-  });
-
-  const result = resolveFeatureFrame(args, {
-    prepareFeatureFrame,
-    runHeavyFeatureAnalysis,
-    composeFeatureFrame,
-  });
-
-  expect(featureEngine.enqueueTransportFrame).not.toHaveBeenCalled();
-  expect(featureEngine.readLatestSnapshot).not.toHaveBeenCalled();
-  expect(runHeavyFeatureAnalysis).toHaveBeenCalled();
-  expect(composeFeatureFrame).toHaveBeenCalled();
-  expect(result.effectiveFrame).toBe(inactiveSourceFrame);
-  expect(result.effectiveFrame).not.toBe(cachedActiveFrame);
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
-    "local-heavy-analysis",
-  );
-  expect(
-    args.renderLoopRefs.frameCacheRefs.lastLiveFrameRef.current,
-  ).toBeNull();
-});
-
-test("resolveFeatureFrame keeps closed live-source frames out of the worker queue", () => {
-  const inactiveSourceFrame = {
-    fieldState: "idle",
-    renderAuthority: false,
-    sourceEvidence: {
-      sourceKind: "live",
-      sourceBoundaryState: "muted",
-      currentSourceEvidence: false,
-    },
-  };
-  const featureEngine = {
-    enqueueTransportFrame: vi.fn(),
-    readLatestSnapshot: vi.fn(() => null),
-    getStatus: vi.fn(() => ({})),
-  };
-  const frameCacheRefs = {
-    lastLiveFrameRef: { current: null },
-    lastActiveFrameRef: { current: null },
-    lastIdleFrameRef: { current: null },
-    analysisSchedulerRef: { current: {} },
-  };
-  let currentFrameAtMs = 1000;
-  const prepareFeatureFrame = vi.fn(() => ({
-    currentFrameAtMs,
-    inputMode: "live",
-    analysisSessionKey: "live:device-1",
-    analysisInputsSignature: '"muted-live-source"',
-    snapshot: {
-      fftMagnitudes: new Float32Array(4),
-      timeData: new Float32Array(8),
-    },
-    sourceEvidence: {
-      sourceKind: "live",
-      sourceBoundaryState: "muted",
-      currentSourceEvidence: false,
-    },
-    silentFeatureFrame: null,
-  }));
-  const runHeavyFeatureAnalysis = vi.fn(() => ({
-    fieldState: "idle",
-    renderAuthority: false,
-  }));
-  const composeFeatureFrame = vi.fn(() => inactiveSourceFrame);
-  const { args } = createResolveFeatureFrameHarness({
-    featureEngine,
-    status: {
-      audioInputMode: "live",
-      isPlaying: false,
-      isLiveInputActive: true,
-      liveInputDeviceKind: "live",
-      resolvedLiveInputAnalysisClass: "acoustic-mic",
-    },
-    clockMode: "realtime",
-    renderLoopRefs: {
-      frameCacheRefs,
-    },
-  });
-
-  const result = resolveFeatureFrame(args, {
-    prepareFeatureFrame,
-    runHeavyFeatureAnalysis,
-    composeFeatureFrame,
-  });
-
-  expect(featureEngine.enqueueTransportFrame).not.toHaveBeenCalled();
-  expect(featureEngine.readLatestSnapshot).not.toHaveBeenCalled();
-  expect(runHeavyFeatureAnalysis).toHaveBeenCalledTimes(1);
-  expect(composeFeatureFrame).toHaveBeenCalledTimes(1);
-  expect(result.effectiveFrame).toBe(inactiveSourceFrame);
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
-    "local-heavy-analysis",
-  );
-
-  currentFrameAtMs = 1010;
-  const secondResult = resolveFeatureFrame(args, {
-    prepareFeatureFrame,
-    runHeavyFeatureAnalysis,
-    composeFeatureFrame,
-  });
-
-  expect(featureEngine.enqueueTransportFrame).not.toHaveBeenCalled();
-  expect(featureEngine.readLatestSnapshot).not.toHaveBeenCalled();
-  expect(runHeavyFeatureAnalysis).toHaveBeenCalledTimes(1);
-  expect(composeFeatureFrame).toHaveBeenCalledTimes(2);
-  expect(secondResult.effectiveFrame).toBe(inactiveSourceFrame);
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
-    "scheduled-reuse",
-  );
-});
-
-test("resolveFeatureFrame does not fall back to cached active frames for inactive sources", () => {
-  const cachedActiveFrame = {
-    fieldState: "active",
-    renderAuthority: true,
-    stale: true,
-  };
-  const { args } = createResolveFeatureFrameHarness({
-    featureEngine: {
-      enqueueTransportFrame: vi.fn(),
-      readLatestSnapshot: vi.fn(() => null),
-      getStatus: vi.fn(() => ({})),
-    },
-    status: {
-      isPlaying: false,
-      isLiveInputActive: false,
-      playbackSessionId: "song-1",
-    },
-    clockMode: "paused-playback",
-    renderLoopRefs: {
-      frameCacheRefs: {
-        lastLiveFrameRef: { current: cachedActiveFrame },
-        lastActiveFrameRef: { current: cachedActiveFrame },
-        lastIdleFrameRef: { current: null },
-        analysisSchedulerRef: { current: null },
-      },
-    },
-  });
-
-  const result = resolveFeatureFrame(args, {
-    prepareFeatureFrame: vi.fn(() => ({
-      currentFrameAtMs: 1000,
-      analysisSessionKey: "file:song-1",
-      analysisInputsSignature: '"paused-inactive-source"',
-      silentFeatureFrame: null,
-    })),
-  });
-
-  expect(result.featureFrame).toBeNull();
-  expect(result.effectiveFrame).toBeNull();
 });
 
 test("clearing adaptive resume state forces the next authoritative session to restart from calibrated base rungs", () => {
@@ -3057,617 +2301,68 @@ test("inject test tone bypasses the recovery gate", () => {
   );
 });
 
-test("resolveFeatureFrame passes cavity geometry into prepared inputs", () => {
-  const { args } = createResolveFeatureFrameHarness();
-  let preparedArgs = null;
+test("render-loop source cannot capture, enqueue, or compose audio analysis", () => {
+  const source = readFileSync(
+    new URL("./baryonEngineRenderLoop.js", import.meta.url),
+    "utf8",
+  );
 
-  resolveFeatureFrame(args, {
-    prepareFeatureFrame(nextArgs) {
-      preparedArgs = nextArgs;
-      return {
-        currentFrameAtMs: 1000,
-        analysisSessionKey: "file:song-1",
-        analysisInputsSignature: '"sig"',
-        silentFeatureFrame: { fieldState: "idle" },
-      };
-    },
-  });
-
-  expect(preparedArgs.cavityGeometry).toBe("spherical");
-  expect(preparedArgs.boundaryMode).toBe("dirichlet");
-  expect(preparedArgs.cavityAcousticScale).toEqual(CAVITY_ACOUSTIC_DEFAULTS);
+  for (const forbiddenOwner of [
+    "readAnalysisSnapshot",
+    "enqueueTransportFrame",
+    "readLatestSnapshot",
+    "prepareAudioFeatureFrameInputs",
+    "runHeavyAudioFeatureAnalysis",
+    "composeAudioFeatureFrame",
+    "createAudioFeatureState",
+    "audioFeatureRef",
+    "analysisScheduler",
+    "lastLiveFrameRef",
+  ]) {
+    expect(source).not.toContain(forbiddenOwner);
+  }
+  expect(source).toContain("readLatestFeatureModel");
+  expect(source).toContain("createRendererFeatureView");
 });
 
-test("resolveFeatureFrame forwards Spectral Light as a presentation request", () => {
+test("resolveFeatureFrame clears retained caches and response after interruption", () => {
   const { args } = createResolveFeatureFrameHarness({
-    spectralLightEnabled: false,
-  });
-  let preparedArgs = null;
-
-  resolveFeatureFrame(args, {
-    prepareFeatureFrame(nextArgs) {
-      preparedArgs = nextArgs;
-      return {
-        currentFrameAtMs: 1000,
-        analysisSessionKey: "file:song-1",
-        analysisInputsSignature: '"sig"',
-        silentFeatureFrame: { fieldState: "idle" },
-      };
-    },
-  });
-
-  expect(preparedArgs.includeSpectralLight).toBe(false);
-});
-
-test("resolveFeatureFrame forwards cavity geometry into the worker transport payload", () => {
-  const featureEngine = {
-    lastFrame: null,
-    enqueueTransportFrame(frame) {
-      this.lastFrame = frame;
-    },
-    readLatestSnapshot() {
-      return null;
-    },
-    getStatus() {
-      return null;
-    },
-  };
-  const { args } = createResolveFeatureFrameHarness({
-    featureEngine,
     status: {
       isPlaying: false,
       isLiveInputActive: false,
-      playbackSessionId: null,
+      lastLiveInputInterruption: { reason: "device-lost" },
     },
-  });
-
-  resolveFeatureFrame(args, {
-    prepareFeatureFrame() {
-      return {
-        currentFrameAtMs: 1000,
-        analysisSessionKey: "file:song-1",
-        analysisInputsSignature: '"sig"',
-        silentFeatureFrame: null,
-      };
-    },
-  });
-
-  expect(featureEngine.lastFrame.cavityGeometry).toBe("spherical");
-  expect(featureEngine.lastFrame.boundaryMode).toBe("dirichlet");
-  expect(featureEngine.lastFrame.cavityAcousticScale).toEqual(
-    CAVITY_ACOUSTIC_DEFAULTS,
-  );
-});
-
-test("resolveFeatureFrame forwards Spectral Light into the worker transport payload", () => {
-  const featureEngine = {
-    lastFrame: null,
-    enqueueTransportFrame(frame) {
-      this.lastFrame = frame;
-    },
-    readLatestSnapshot() {
-      return null;
-    },
-    getStatus() {
-      return null;
-    },
-  };
-  const { args } = createResolveFeatureFrameHarness({
-    featureEngine,
-    spectralLightEnabled: false,
-    status: {
-      isPlaying: false,
-      isLiveInputActive: false,
-      playbackSessionId: null,
-    },
-  });
-
-  resolveFeatureFrame(args, {
-    prepareFeatureFrame() {
-      return {
-        currentFrameAtMs: 1000,
-        analysisSessionKey: "file:song-1",
-        analysisInputsSignature: '"sig"',
-        silentFeatureFrame: null,
-      };
-    },
-  });
-
-  expect(featureEngine.lastFrame.includeSpectralLight).toBe(false);
-});
-
-test("resolveFeatureFrame seeds the first live frame locally while worker analysis warms", () => {
-  const featureEngine = {
-    enqueueTransportFrame() {},
-    readLatestSnapshot() {
-      return null;
-    },
-    getStatus() {
-      return null;
-    },
-  };
-  const { args } = createResolveFeatureFrameHarness({
-    featureEngine,
-    spectralLightEnabled: false,
-    status: {
-      isPlaying: false,
-      isLiveInputActive: true,
-      playbackSessionId: null,
+    runtimeState: {
+      responseEnvelope: 1,
+      accentEnvelope: 1,
+      motionSignal: 1,
+      scaleSignal: 1,
+      bloomResponseSignal: 1,
+      beatPulseEnvelope: 1,
     },
     renderLoopRefs: {
       frameCacheRefs: {
-        lastLiveFrameRef: { current: null },
-        lastActiveFrameRef: { current: null },
-        lastIdleFrameRef: { current: null },
-        analysisSchedulerRef: { current: null },
-      },
-    },
-  });
-  let heavyAnalysisCallCount = 0;
-  let composeCallCount = 0;
-
-  const result = resolveFeatureFrame(args, {
-    prepareFeatureFrame() {
-      return {
-        currentFrameAtMs: 1000,
-        analysisSessionKey: "live:device-1",
-        analysisInputsSignature: '"sig"',
-        silentFeatureFrame: null,
-      };
-    },
-    runHeavyFeatureAnalysis(preparedInputs) {
-      heavyAnalysisCallCount += 1;
-      return {
-        preparedInputs,
-      };
-    },
-    composeFeatureFrame({ analysisResult }) {
-      composeCallCount += 1;
-      return {
-        fieldState: "active",
-        renderAuthority: true,
-        energyLedger: {
-          projectedRenderEnergy: 0.08,
-          renderEnergyEpsilon: 1e-6,
+        lastIdleFrameRef: { current: { fieldState: "idle" } },
+        pausedFileFrameRef: {
+          current: {
+            playbackSessionId: "song-1",
+            frame: { fieldState: "active" },
+          },
         },
-        sourceEvidence: {
-          sourceBoundaryState: "live",
-          currentSourceEvidence: true,
-        },
-        seededFromAnalysis: analysisResult.preparedInputs.analysisSessionKey,
-      };
+      },
     },
   });
 
-  expect(heavyAnalysisCallCount).toBe(1);
-  expect(composeCallCount).toBe(1);
-  expect(result.effectiveFrame.fieldState).toBe("active");
+  const result = resolveFeatureFrame(args);
+
+  expect(result).toEqual({ featureFrame: null, effectiveFrame: null });
   expect(
-    args.renderLoopRefs.frameCacheRefs.lastLiveFrameRef.current,
-  ).toMatchObject({
-    fieldState: "active",
-    seededFromAnalysis: "live:device-1",
-  });
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
-    "live-warmup",
-  );
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticFresh).toBe(true);
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticReused).toBe(
-    false,
-  );
-});
-
-test("resolveFeatureFrame preserves the last active live frame during worker warmup", () => {
-  const featureEngine = {
-    enqueueTransportFrame() {},
-    readLatestSnapshot() {
-      return null;
-    },
-    getStatus() {
-      return null;
-    },
-  };
-  const lastLiveFrame = {
-    fieldState: "active",
-    renderAuthority: true,
-    energyLedger: {
-      projectedRenderEnergy: 0.08,
-      renderEnergyEpsilon: 1e-6,
-    },
-    sourceEvidence: {
-      sourceBoundaryState: "live",
-      currentSourceEvidence: true,
-    },
-    preserved: true,
-  };
-  const { args } = createResolveFeatureFrameHarness({
-    featureEngine,
-    spectralLightEnabled: false,
-    status: {
-      isPlaying: false,
-      isLiveInputActive: true,
-      playbackSessionId: null,
-    },
-    renderLoopRefs: {
-      frameCacheRefs: {
-        lastLiveFrameRef: { current: lastLiveFrame },
-        lastActiveFrameRef: { current: null },
-        lastIdleFrameRef: { current: null },
-        analysisSchedulerRef: { current: null },
-      },
-    },
-  });
-
-  const result = resolveFeatureFrame(args, {
-    prepareFeatureFrame() {
-      return {
-        currentFrameAtMs: 1000,
-        analysisSessionKey: "live:device-1",
-        analysisInputsSignature: '"sig"',
-        silentFeatureFrame: null,
-      };
-    },
-    runHeavyFeatureAnalysis() {
-      throw new Error("worker warmup should reuse the preserved live frame");
-    },
-  });
-
-  expect(result.effectiveFrame).toBe(lastLiveFrame);
-  expect(args.renderLoopRefs.frameCacheRefs.lastLiveFrameRef.current).toBe(
-    lastLiveFrame,
-  );
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
-    "last-live-cache",
-  );
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticFresh).toBe(false);
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticReused).toBe(true);
-});
-
-test("resolveFeatureFrame refreshes a preserved live frame when Spectral Light turns on", () => {
-  const featureEngine = {
-    enqueueTransportFrame() {},
-    readLatestSnapshot() {
-      return null;
-    },
-    getStatus() {
-      return null;
-    },
-  };
-  const staticLiveFrame = {
-    fieldState: "active",
-    renderAuthority: true,
-    spectralLightRequested: false,
-    modalFieldColorSlots: new Float32Array([0, 0, 0, 0]),
-    modalFieldSpectralLaneA: new Float32Array([0, 0, 0, 0]),
-    modalFieldSpectralLaneB: new Float32Array([0, 0, 0, 0]),
-    modalFieldSpectralMeta: new Float32Array([0, 0, 0, 0]),
-    energyLedger: {
-      projectedRenderEnergy: 0.08,
-      renderEnergyEpsilon: 1e-6,
-    },
-    sourceEvidence: {
-      sourceBoundaryState: "live",
-      currentSourceEvidence: true,
-    },
-  };
-  const spectralLiveFrame = {
-    fieldState: "active",
-    renderAuthority: true,
-    spectralLightRequested: true,
-    modalFieldColorSlots: new Float32Array([0.1, 0.8, 1, 0.9]),
-    modalFieldSpectralLaneA: new Float32Array([0.1, 0.7, 0.2, 0]),
-    modalFieldSpectralLaneB: new Float32Array([0, 0, 0, 0]),
-    modalFieldSpectralMeta: new Float32Array([0.2, 0.05, 0.9, 0.6]),
-    energyLedger: {
-      projectedRenderEnergy: 0.08,
-      renderEnergyEpsilon: 1e-6,
-    },
-    sourceEvidence: {
-      sourceBoundaryState: "live",
-      currentSourceEvidence: true,
-    },
-  };
-  const { args } = createResolveFeatureFrameHarness({
-    featureEngine,
-    spectralLightEnabled: true,
-    status: {
-      isPlaying: false,
-      isLiveInputActive: true,
-      playbackSessionId: null,
-    },
-    renderLoopRefs: {
-      frameCacheRefs: {
-        lastLiveFrameRef: { current: staticLiveFrame },
-        lastActiveFrameRef: { current: null },
-        lastIdleFrameRef: { current: null },
-        analysisSchedulerRef: { current: null },
-      },
-    },
-  });
-  const runHeavyFeatureAnalysis = vi.fn(() => ({
-    spectralLightRequested: true,
-  }));
-  const composeFeatureFrame = vi.fn(() => spectralLiveFrame);
-
-  const result = resolveFeatureFrame(args, {
-    prepareFeatureFrame() {
-      return {
-        currentFrameAtMs: 1000,
-        analysisSessionKey: "live:device-1",
-        analysisInputsSignature: '"spectral-on"',
-        shouldBuildSpectralLight: true,
-        silentFeatureFrame: null,
-      };
-    },
-    runHeavyFeatureAnalysis,
-    composeFeatureFrame,
-  });
-
-  expect(result.effectiveFrame).toBe(spectralLiveFrame);
-  expect(result.effectiveFrame.modalFieldSpectralLaneA[1]).toBeGreaterThan(0);
-  expect(result.effectiveFrame.modalFieldSpectralMeta[3]).toBeGreaterThan(0);
-  expect(runHeavyFeatureAnalysis).toHaveBeenCalledTimes(1);
-  expect(composeFeatureFrame).toHaveBeenCalledTimes(1);
-  expect(args.renderLoopRefs.frameCacheRefs.lastLiveFrameRef.current).toBe(
-    spectralLiveFrame,
-  );
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
-    "local-heavy-analysis",
-  );
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticFresh).toBe(true);
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticReused).toBe(
-    false,
-  );
-});
-
-test("resolveFeatureFrame refreshes matching live Spectral snapshots with empty lanes", () => {
-  const deadSpectralFrame = {
-    fieldState: "idle",
-    renderAuthority: false,
-    spectralLightRequested: true,
-    modalFieldColorSlots: new Float32Array([0, 0, 0, 0]),
-    modalFieldSpectralLaneA: new Float32Array([0, 0, 0, 0]),
-    modalFieldSpectralLaneB: new Float32Array([0, 0, 0, 0]),
-    modalFieldSpectralMeta: new Float32Array([0, 0, 0, 0]),
-  };
-  const liveSpectralFrame = {
-    fieldState: "active",
-    renderAuthority: true,
-    spectralLightRequested: true,
-    modalFieldColorSlots: new Float32Array([0.1, 0.8, 1, 0.9]),
-    modalFieldSpectralLaneA: new Float32Array([0.1, 0.7, 0.2, 0]),
-    modalFieldSpectralLaneB: new Float32Array([0, 0, 0, 0]),
-    modalFieldSpectralMeta: new Float32Array([0.2, 0.05, 0.9, 0.6]),
-    ...createLiveRenderFrameEvidence(),
-  };
-  const staleAnalysisResult = {
-    activeModeCount: 0,
-    activeSourceCoupledModeCount: 0,
-    activeResonantModeCount: 0,
-    sourceCoupledSpectralLaneA: new Float32Array([0, 0, 0, 0]),
-    sourceCoupledSpectralLaneB: new Float32Array([0, 0, 0, 0]),
-    resonantSpectralLaneA: new Float32Array([0, 0, 0, 0]),
-    resonantSpectralLaneB: new Float32Array([0, 0, 0, 0]),
-  };
-  const liveAnalysisResult = {
-    activeModeCount: 1,
-    activeSourceCoupledModeCount: 1,
-    activeResonantModeCount: 0,
-    sourceCoupledSpectralLaneA: new Float32Array([0.1, 0.7, 0.2, 0]),
-    sourceCoupledSpectralLaneB: new Float32Array([0, 0, 0, 0]),
-    resonantSpectralLaneA: new Float32Array([0, 0, 0, 0]),
-    resonantSpectralLaneB: new Float32Array([0, 0, 0, 0]),
-  };
-  const featureEngine = {
-    enqueueTransportFrame: vi.fn(),
-    readLatestSnapshot: vi.fn(() => ({
-      analysisSessionKey: "live:device-1",
-      analysisInputsSignature: '"spectral-on"',
-      frameTimeMs: 1000,
-      analysisResult: staleAnalysisResult,
-    })),
-    getStatus: vi.fn(() => ({})),
-  };
-  const { args } = createResolveFeatureFrameHarness({
-    featureEngine,
-    spectralLightEnabled: true,
-    status: {
-      audioInputMode: "live",
-      isPlaying: false,
-      isLiveInputActive: true,
-      playbackSessionId: null,
-    },
-    renderLoopRefs: {
-      frameCacheRefs: {
-        lastLiveFrameRef: { current: null },
-        lastActiveFrameRef: { current: null },
-        lastIdleFrameRef: { current: null },
-        analysisSchedulerRef: { current: null },
-      },
-    },
-  });
-  const runHeavyFeatureAnalysis = vi.fn(() => liveAnalysisResult);
-  const buildFastSignalAnalysisResult = vi.fn(() => staleAnalysisResult);
-  const composeFeatureFrame = vi.fn(({ reuseHeavyAnalysis }) =>
-    reuseHeavyAnalysis ? deadSpectralFrame : liveSpectralFrame,
-  );
-
-  const result = resolveFeatureFrame(args, {
-    prepareFeatureFrame() {
-      return {
-        currentFrameAtMs: 1000,
-        analysisSessionKey: "live:device-1",
-        analysisInputsSignature: '"spectral-on"',
-        inputMode: "live",
-        resolvedLiveInputAnalysisClass: "acoustic-mic",
-        shouldBuildSpectralLight: true,
-        soundActive: true,
-        micActive: true,
-        silentFeatureFrame: null,
-      };
-    },
-    runHeavyFeatureAnalysis,
-    buildFastSignalAnalysisResult,
-    composeFeatureFrame,
-  });
-
-  expect(result.effectiveFrame).toBe(liveSpectralFrame);
-  expect(result.effectiveFrame.modalFieldSpectralLaneA[1]).toBeGreaterThan(0);
-  expect(runHeavyFeatureAnalysis).toHaveBeenCalledTimes(1);
-  expect(buildFastSignalAnalysisResult).not.toHaveBeenCalled();
-  expect(composeFeatureFrame).toHaveBeenCalledWith(
-    expect.objectContaining({
-      analysisResult: liveAnalysisResult,
-      reuseHeavyAnalysis: false,
-    }),
-  );
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
-    "live-warmup",
-  );
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticFresh).toBe(true);
-});
-
-test("resolveFeatureFrame does not reuse stale live cache without current source evidence", () => {
-  const silentFeatureFrame = {
-    fieldState: "idle",
-    renderAuthority: false,
-    energyLedger: {
-      projectedRenderEnergy: 0,
-      renderEnergyEpsilon: 1e-6,
-    },
-    sourceEvidence: {
-      sourceBoundaryState: "muted",
-      currentSourceEvidence: false,
-    },
-  };
-  const staleActiveFrame = {
-    fieldState: "active",
-    renderAuthority: true,
-    energyLedger: {
-      projectedRenderEnergy: 0.08,
-      renderEnergyEpsilon: 1e-6,
-    },
-    sourceEvidence: {
-      sourceBoundaryState: "muted",
-      currentSourceEvidence: false,
-    },
-  };
-  const featureEngine = {
-    enqueueTransportFrame() {},
-    readLatestSnapshot() {
-      return null;
-    },
-    getStatus() {
-      return null;
-    },
-  };
-  const { args } = createResolveFeatureFrameHarness({
-    featureEngine,
-    status: {
-      isPlaying: false,
-      isLiveInputActive: true,
-      playbackSessionId: null,
-    },
-    renderLoopRefs: {
-      frameCacheRefs: {
-        lastLiveFrameRef: { current: staleActiveFrame },
-        lastActiveFrameRef: { current: null },
-        lastIdleFrameRef: { current: null },
-        analysisSchedulerRef: { current: null },
-      },
-    },
-  });
-
-  const result = resolveFeatureFrame(args, {
-    prepareFeatureFrame() {
-      return {
-        currentFrameAtMs: 1000,
-        analysisSessionKey: "live:device-1",
-        analysisInputsSignature: '"sig"',
-        silentFeatureFrame,
-      };
-    },
-    runHeavyFeatureAnalysis() {
-      throw new Error("stale live cache should not require heavy analysis");
-    },
-  });
-
-  expect(result.effectiveFrame).toBe(silentFeatureFrame);
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
-    "silent-frame",
-  );
-  expect(
-    args.renderLoopRefs.frameCacheRefs.lastLiveFrameRef.current,
+    args.renderLoopRefs.frameCacheRefs.lastIdleFrameRef.current,
   ).toBeNull();
-});
-
-test("resolveFeatureFrame clears cached live frames and reactive response after live input interruption", () => {
-  const featureEngine = {
-    reset: vi.fn(),
-  };
-  const runtimeState = {
-    responseEnvelope: 0.7,
-    accentEnvelope: 0.6,
-    motionSignal: 0.5,
-    scaleSignal: 0.4,
-    bloomResponseSignal: 0.8,
-    beatPulseEnvelope: 0.3,
-    uniforms: {
-      uRadius: { value: 3 },
-    },
-  };
-  const frameCacheRefs = {
-    lastLiveFrameRef: { current: { fieldState: "active" } },
-    lastActiveFrameRef: { current: { fieldState: "active" } },
-    lastIdleFrameRef: { current: { fieldState: "idle" } },
-    analysisSchedulerRef: {
-      current: {
-        lastHeavyAnalysisAtMs: 900,
-        lastHeavyAnalysisResult: { stale: true },
-        lastComposedFeatureFrame: { fieldState: "active" },
-        lastAnalysisSessionKey: "live:device-1",
-        lastAnalysisInputsSignature: '"sig"',
-      },
-    },
-  };
-  const { args } = createResolveFeatureFrameHarness({
-    featureEngine,
-    runtimeState,
-    status: {
-      isPlaying: false,
-      isLiveInputActive: false,
-      playbackSessionId: null,
-      lastLiveInputInterruption: {
-        reason: "track-ended",
-      },
-    },
-    renderLoopRefs: {
-      frameCacheRefs,
-    },
-  });
-
-  const result = resolveFeatureFrame(args, {
-    prepareFeatureFrame() {
-      return {
-        currentFrameAtMs: 1000,
-        analysisSessionKey: "idle",
-        analysisInputsSignature: '"idle"',
-        silentFeatureFrame: { fieldState: "idle" },
-      };
-    },
-  });
-
-  expect(result.effectiveFrame).toMatchObject({ fieldState: "idle" });
-  expect(frameCacheRefs.lastLiveFrameRef.current).toBeNull();
-  expect(frameCacheRefs.lastActiveFrameRef.current).toBeNull();
-  expect(frameCacheRefs.lastIdleFrameRef.current).toBeNull();
-  expect(frameCacheRefs.analysisSchedulerRef.current).toMatchObject({
-    lastHeavyAnalysisAtMs: Number.NEGATIVE_INFINITY,
-    lastHeavyAnalysisResult: null,
-    lastComposedFeatureFrame: null,
-  });
-  expect(featureEngine.reset).toHaveBeenCalledWith("live-input-interrupted");
-  expect(runtimeState).toMatchObject({
+  expect(
+    args.renderLoopRefs.frameCacheRefs.pausedFileFrameRef.current,
+  ).toBeNull();
+  expect(args.runtimeState).toMatchObject({
     responseEnvelope: 0,
     accentEnvelope: 0,
     motionSignal: 0,
@@ -3677,53 +2372,24 @@ test("resolveFeatureFrame clears cached live frames and reactive response after 
   });
 });
 
-test("resolveFeatureFrame keeps weak active live input out of the interruption reset path", () => {
-  const featureEngine = {
-    reset: vi.fn(),
-  };
-  const runtimeState = {
-    responseEnvelope: 0.7,
-    bloomResponseSignal: 0.8,
-    uniforms: {
-      uRadius: { value: 3 },
-    },
-  };
-  const frameCacheRefs = {
-    lastLiveFrameRef: { current: { fieldState: "active" } },
-    lastActiveFrameRef: { current: null },
-    lastIdleFrameRef: { current: null },
-    analysisSchedulerRef: { current: null },
-  };
+test("active live input consumes the runtime model without interruption reset", () => {
   const { args } = createResolveFeatureFrameHarness({
-    featureEngine,
-    runtimeState,
     status: {
       isPlaying: false,
       isLiveInputActive: true,
-      playbackSessionId: null,
       lastLiveInputInterruption: null,
     },
-    renderLoopRefs: {
-      frameCacheRefs,
+    runtimeState: {
+      responseEnvelope: 0.4,
+      accentEnvelope: 0.3,
     },
   });
 
-  resolveFeatureFrame(args, {
-    prepareFeatureFrame() {
-      return {
-        currentFrameAtMs: 1000,
-        analysisSessionKey: "live:device-1",
-        analysisInputsSignature: '"weak"',
-        silentFeatureFrame: { fieldState: "idle" },
-      };
-    },
-  });
+  const result = resolveFeatureFrame(args);
 
-  expect(featureEngine.reset).not.toHaveBeenCalledWith(
-    "live-input-interrupted",
-  );
-  expect(runtimeState.responseEnvelope).toBe(0.7);
-  expect(runtimeState.bloomResponseSignal).toBe(0.8);
+  expect(result.effectiveFrame).toMatchObject({ fieldState: "active" });
+  expect(args.runtimeState.responseEnvelope).toBe(0.4);
+  expect(args.runtimeState.accentEnvelope).toBe(0.3);
 });
 
 test("resolveRaymarchFieldAnalysisFrameInputs prefers uploaded mode count over descriptor span", () => {

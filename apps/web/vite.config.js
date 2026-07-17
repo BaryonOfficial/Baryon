@@ -32,6 +32,12 @@ export default defineConfig(() => {
 
   return {
     ...base,
+    define: {
+      ...base.define,
+      "import.meta.env.VITE_BARYON_RAYMARCH_AUDIT_FIXTURE": JSON.stringify(
+        process.env.BARYON_RAYMARCH_AUDIT_FIXTURE === "1" ? "1" : "0",
+      ),
+    },
     plugins,
     server: {
       host: true,

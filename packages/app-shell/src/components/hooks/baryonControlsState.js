@@ -144,10 +144,6 @@ export function createInitialControlsSettingsState(storage) {
   };
 }
 
-export function createInitialControlState(storage) {
-  return createInitialControlsSettingsState(storage).controls;
-}
-
 function sanitizeStoredPreset(preset) {
   if (!preset || typeof preset !== "object" || Array.isArray(preset)) {
     return null;

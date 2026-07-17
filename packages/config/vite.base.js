@@ -17,7 +17,6 @@ export const baryonCommonOptimizeDepsInclude = [
   "react/jsx-dev-runtime",
   "@react-three/drei",
   "@react-three/fiber",
-  "hls.js",
   "scheduler",
   "stats.js",
   "three",
@@ -109,6 +108,10 @@ export function createBaryonWorkspaceAliases({ workspaceRoot }) {
     {
       find: /^@baryon\/engine\/styles\.css$/,
       replacement: path.join(engineRoot, "styles.css"),
+    },
+    {
+      find: /^@baryon\/engine\/testing\/raymarchAuditFixture$/,
+      replacement: path.join(engineRoot, "testing/raymarchAuditFixture.js"),
     },
   ];
 }

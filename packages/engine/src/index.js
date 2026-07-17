@@ -21,7 +21,7 @@ export {
   getLiveInputSettings,
   getLiveInputAnalysisSettings,
   readClockSnapshot,
-  readAnalysisSnapshot,
+  readFeatureAnalysisCapture,
   disposeAudio,
 } from "./core/audio/audioSetup.js";
 export {
@@ -49,10 +49,9 @@ export * from "./three/loaders/setupLoaders.js";
 
 // Utils
 export {
-  createAudioFeatureState,
-  buildAudioFeatureFrame,
-  createAudioFeatureEngine,
-  createNoopAudioFeatureEngine,
+  createAudioFeatureRuntime,
+  createRendererFeatureView,
+  AUDIO_FEATURE_AUTHORITY_ROLES,
 } from "./utils/audioFeatures.js";
 export { AudioControlsView } from "./react/AudioControlsView.jsx";
 export { useSharedAudioLogic } from "./react/useSharedAudioLogic.js";

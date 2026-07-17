@@ -24,13 +24,15 @@ Most controls are either analysis controls, field controls, render controls, or 
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | **Audio Input Profile**            | How Baryon interprets the source before it becomes a modal field.                                      |
 | **Boundary**                       | The modal family. `Neumann` behaves like a reflective boundary; `Dirichlet` behaves like a fixed node. |
-| **Reactivity**                     | How strongly audio features drive the field.                                                           |
-| **Node Threshold**                 | How sharply the visible structures resolve into rings and contours.                                    |
-| **Density / Absorption / Opacity** | How thick, deep, and solid the raymarched volume appears.                                              |
+| **Material Density**               | Scales organized material before its fixed scattering, absorption, and laser-emission response.        |
+| **Laser Bending**                  | Changes caustic placement and concentration without becoming a general brightness control.             |
+| **Fresnel controls**               | Set the color, strength, and edge tightness of grazing-angle laser energy.                              |
 | **Color Mode**                     | Whether color is manually chosen or promoted from the audio spectrum.                                  |
 | **Rotation Mode**                  | Whether the cymatic volume is stationary, audio-driven, or manually spun.                              |
-| **Performance Profile**            | How Baryon adapts raymarch steps against the frame budget without changing resolution or DPR.           |
+| **Performance Profile**            | How Baryon adapts raymarch steps against the frame budget without changing resolution or DPR.          |
 | **Camera controls**                | Your viewpoint only. They do not change the underlying modal field.                                    |
+
+The carrier core's world-space FWHM is fixed by Baryon's internal reference-apparatus profile. It is not a user control or an automation target.
 
 ## Camera versus rotation
 
@@ -53,7 +55,7 @@ For the most faithful result:
 
 - Use a clean recording or a direct feed when possible.
 - Keep echo cancellation, noise suppression, and auto gain off for line feeds or clean files; turn them on only when a noisy room makes capture difficult.
-- Start with lower **Reactivity** and increase it until the field breathes with the audio.
+- Start with lower **Material Density** and **Fresnel Strength**, then raise them until the field reads clearly without flattening into a bright sheet.
 - Save a preset per source so you can return to a look instantly.
 
 ## What coordinates would mean

@@ -120,23 +120,6 @@ function VolumeIcon({ muted }) {
   );
 }
 
-function SoundCloudIcon() {
-  return (
-    <svg
-      width="16"
-      height="10"
-      viewBox="0 0 64 40"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M25.2 15.1A11.3 11.3 0 0 0 14 26.4V28H9.6A9.6 9.6 0 0 0 0 37.6 2.4 2.4 0 0 0 2.4 40h50a11.6 11.6 0 0 0 0-23.1 15 15 0 0 0-27.2-1.8Z" />
-    </svg>
-  );
-}
-
 function HistoryIcon() {
   return (
     <svg
@@ -454,6 +437,12 @@ const CSS = `
   );
 }
 
+.am-progress:focus-visible,
+.am-slider:focus-visible {
+  outline: 2px solid var(--nd-info);
+  outline-offset: 4px;
+}
+
 .am-progress::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
@@ -563,25 +552,6 @@ const CSS = `
   opacity: 1;
   visibility: visible;
   transform: translateX(-50%) translateY(0);
-}
-
-/* ── Source buttons — Nothing: ghost/outline, no fills ── */
-.am-btn--soundcloud {
-  width: 30px;
-  height: 30px;
-  background: transparent;
-  border: 1px solid var(--nd-border-visible);
-  color: var(--nd-text-secondary);
-}
-
-.am-btn--soundcloud:hover {
-  border-color: var(--nd-text-display);
-  color: var(--nd-text-display);
-}
-
-.am-btn--soundcloud-active {
-  border-color: var(--nd-text-display);
-  color: var(--nd-text-display);
 }
 
 /* ── Status — Nothing: dot + instrument-panel label ── */
@@ -1112,33 +1082,6 @@ const CSS = `
   overflow: hidden;
 }
 
-/* ── Panels — Nothing: flat surfaces ── */
-.am-soundcloud-panel {
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 12px);
-  transform: translateX(-50%);
-  width: min(30rem, calc(100vw - 1.5rem));
-  padding: 16px;
-  border: none;
-  border-radius: 12px;
-  background: var(--nd-surface);
-  z-index: 70;
-  opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
-  white-space: normal;
-  transition:
-    opacity 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
-    visibility 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
-}
-
-.am-soundcloud-hidden {
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-}
-
 .am-recent-panel {
   position: absolute;
   left: 50%;
@@ -1283,190 +1226,6 @@ const CSS = `
 
 .am-recent-item-action--pending {
   color: var(--nd-accent);
-}
-
-/* ── SoundCloud panel — Nothing style ── */
-.am-soundcloud-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-  color: var(--nd-text-primary);
-  font-family: var(--baryon-type-mono-family);
-  font-size: 11px;
-  font-weight: 400;
-  letter-spacing: var(--baryon-type-action-letter-spacing);
-  text-transform: uppercase;
-}
-
-.am-soundcloud-form {
-  display: flex;
-  gap: 8px;
-}
-
-.am-soundcloud-input {
-  flex: 1;
-  min-width: 0;
-  height: 40px;
-  padding: 0 12px;
-  border: none;
-  border-bottom: 1px solid var(--nd-border-visible);
-  border-radius: 0;
-  background: transparent;
-  color: var(--nd-text-primary);
-  font-family: var(--baryon-type-mono-family);
-  font-size: 13px;
-  outline: none;
-}
-
-.am-soundcloud-input::placeholder {
-  color: var(--nd-text-disabled);
-}
-
-.am-soundcloud-input:focus {
-  border-bottom-color: var(--nd-text-display);
-}
-
-.am-soundcloud-submit {
-  height: 40px;
-  padding: 0 24px;
-  border: 1px solid var(--nd-border-visible);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--nd-text-primary);
-  font-family: var(--baryon-type-mono-family);
-  font-size: 11px;
-  font-weight: 400;
-  letter-spacing: var(--baryon-type-control-letter-spacing);
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: border-color 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
-              color 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
-}
-
-.am-soundcloud-submit:hover {
-  border-color: var(--nd-text-display);
-  color: var(--nd-text-display);
-}
-
-.am-soundcloud-helper,
-.am-soundcloud-error {
-  margin: 8px 0 0;
-  font-size: 12px;
-  line-height: 1.4;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-
-.am-soundcloud-helper {
-  color: var(--nd-text-disabled);
-}
-
-.am-soundcloud-error {
-  color: var(--nd-accent);
-  font-family: var(--baryon-type-mono-family);
-  font-size: 11px;
-  letter-spacing: var(--baryon-type-data-letter-spacing);
-}
-
-.am-soundcloud-meta {
-  margin-top: 12px;
-  padding: 12px 16px;
-  border-radius: 0;
-  background: var(--nd-surface-raised);
-  border: 1px solid var(--nd-border);
-}
-
-.am-soundcloud-title {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  margin: 0;
-  color: var(--nd-text-primary);
-  font-family: var(--baryon-type-interface-family);
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.am-soundcloud-index {
-  color: var(--nd-text-disabled);
-  font-family: var(--baryon-type-mono-family);
-  font-size: 11px;
-  font-weight: 400;
-  letter-spacing: var(--baryon-type-data-letter-spacing);
-}
-
-.am-soundcloud-subtitle {
-  margin: 4px 0 0;
-  color: var(--nd-text-secondary);
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.am-soundcloud-list {
-  margin: 12px 0 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-.am-soundcloud-item {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-  padding: 8px 0;
-  border-radius: 0;
-  background: transparent;
-  border-bottom: 1px solid var(--nd-border);
-}
-
-.am-soundcloud-item:last-child {
-  border-bottom: none;
-}
-
-.am-soundcloud-item-current {
-  padding-left: 8px;
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 10px;
-}
-
-.am-soundcloud-item-title {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--baryon-type-interface-family);
-  font-size: 13px;
-  color: var(--nd-text-primary);
-}
-
-.am-soundcloud-item-current .am-soundcloud-item-title {
-  color: var(--nd-text-display);
-}
-
-.am-soundcloud-item-artist {
-  flex-shrink: 0;
-  font-family: var(--baryon-type-mono-family);
-  font-size: 11px;
-  color: var(--nd-text-disabled);
-  letter-spacing: var(--baryon-type-data-letter-spacing);
-}
-
-.am-soundcloud-empty {
-  margin: 12px 0 0;
-  padding: 16px;
-  border-radius: 0;
-  background: var(--nd-surface-raised);
-  border: 1px solid var(--nd-border);
-  color: var(--nd-text-disabled);
-  font-size: 12px;
-  line-height: 1.4;
 }
 
 .am-device-empty {
@@ -1819,12 +1578,6 @@ const CSS = `
     height: 42px;
   }
 
-  .am-btn--soundcloud {
-    width: 56px;
-    height: 40px;
-    border-radius: 999px;
-  }
-
   .am-btn--recent {
     width: 40px;
     height: 40px;
@@ -1848,6 +1601,14 @@ const CSS = `
   .am-timeline-time {
     min-width: 2rem;
     font-size: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .am-filename,
+  .am-status-dot,
+  .am-btn--live-input-active {
+    animation: none !important;
   }
 }
 
@@ -1894,8 +1655,6 @@ export function ListenerControls({
   allowSystemSource = true,
 } = {}) {
   const {
-    soundCloudEnabled,
-    playbackSource,
     selectedSource,
     displayName,
     liveReturnLocalFile,
@@ -1918,18 +1677,6 @@ export function ListenerControls({
     handleVolumeChange,
     handleMuteToggle,
     setShowDeviceMenu,
-    showSoundCloudPanel,
-    setShowSoundCloudPanel,
-    soundCloudInput,
-    setSoundCloudInput,
-    soundCloudError,
-    soundCloudInfo,
-    soundCloudQueue,
-    soundCloudCollectionTitle,
-    soundCloudCurrentTrack,
-    soundCloudCurrentIndex,
-    isSoundCloudLoading,
-    loadSoundCloudTrack,
     scrubPreviewSeconds,
     isScrubbing,
     beginScrub,
@@ -1965,11 +1712,6 @@ export function ListenerControls({
     liveInputRuntimeStatus,
   );
   const volumePercent = Math.round(volume * 100);
-  const soundCloudListStart = Math.max(0, soundCloudCurrentIndex - 1);
-  const soundCloudVisibleTracks = soundCloudQueue.slice(
-    soundCloudListStart,
-    soundCloudListStart + 4,
-  );
   const timelineValue =
     isScrubbing && scrubPreviewSeconds != null
       ? scrubPreviewSeconds
@@ -2005,11 +1747,7 @@ export function ListenerControls({
     ? "Queued local file"
     : "Source";
   const sourceSummary =
-    playbackSource === "soundcloud"
-      ? "SoundCloud"
-      : displayName === "Upload Audio"
-        ? "Upload Audio File"
-        : displayName;
+    displayName === "Upload Audio" ? "Upload Audio File" : displayName;
   /** @type {import("react").CSSProperties} */
   const playerShellStyle = {
     transform: `translate(calc(-50% + ${playerDragOffset.x}px), ${playerDragOffset.y}px)`,
@@ -2022,7 +1760,6 @@ export function ListenerControls({
   const handleSourceModeInteraction = () => {
     setShowRecentUploadsPanel(false);
     setShowDeviceMenu(false);
-    setShowSoundCloudPanel(false);
   };
 
   useEffect(() => {
@@ -2030,8 +1767,7 @@ export function ListenerControls({
       return;
     }
     setShowRecentUploadsPanel(false);
-    setShowSoundCloudPanel(false);
-  }, [fileTransportEnabled, setShowSoundCloudPanel]);
+  }, [fileTransportEnabled]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -2260,11 +1996,11 @@ export function ListenerControls({
                   <div className="am-compact-unified-actions">
                     <div className="am-compact-source-actions">
                       <button
+                        type="button"
                         className="am-btn am-compact-header-button"
                         onClick={() => {
                           setShowRecentUploadsPanel(false);
                           setShowDeviceMenu(false);
-                          setShowSoundCloudPanel(false);
                           fileInputRef.current?.click();
                         }}
                         title={trackTitle}
@@ -2273,11 +2009,11 @@ export function ListenerControls({
                         <UploadIcon />
                       </button>
                       <button
+                        type="button"
                         className="am-btn am-compact-header-button am-compact-header-button--demo"
                         onClick={() => {
                           setShowRecentUploadsPanel(false);
                           setShowDeviceMenu(false);
-                          setShowSoundCloudPanel(false);
                           void loadDemoAudioFile?.();
                         }}
                         title="Play demo audio"
@@ -2290,6 +2026,7 @@ export function ListenerControls({
                     <div className="am-compact-transport-right">
                       {hasRecentUploads ? (
                         <button
+                          type="button"
                           ref={recentUploadsButtonRef}
                           className={`am-btn am-compact-utility${
                             showRecentUploadsPanel
@@ -2298,7 +2035,6 @@ export function ListenerControls({
                           }`}
                           onClick={() => {
                             setShowDeviceMenu(false);
-                            setShowSoundCloudPanel(false);
                             setShowRecentUploadsPanel(!showRecentUploadsPanel);
                           }}
                           title="Recent uploads"
@@ -2308,27 +2044,7 @@ export function ListenerControls({
                         </button>
                       ) : null}
 
-                      {soundCloudEnabled ? (
-                        <button
-                          className={`am-btn am-compact-utility${
-                            showSoundCloudPanel ||
-                            playbackSource === "soundcloud"
-                              ? " am-compact-utility--active"
-                              : ""
-                          }`}
-                          onClick={() => {
-                            setShowRecentUploadsPanel(false);
-                            setShowDeviceMenu(false);
-                            setShowSoundCloudPanel(!showSoundCloudPanel);
-                          }}
-                          title="Load SoundCloud track or playlist"
-                          aria-label="SoundCloud"
-                        >
-                          <SoundCloudIcon />
-                        </button>
-                      ) : null}
-
-                      {hasRecentUploads || soundCloudEnabled ? (
+                      {hasRecentUploads ? (
                         <span
                           className="am-compact-row-divider"
                           aria-hidden="true"
@@ -2337,6 +2053,7 @@ export function ListenerControls({
 
                       <div className="am-compact-action-group am-compact-action-group--playback">
                         <button
+                          type="button"
                           className={`am-btn am-compact-action am-compact-action--primary${
                             isPlaying ? " am-compact-action--active" : ""
                           }`}
@@ -2349,6 +2066,7 @@ export function ListenerControls({
                         </button>
 
                         <button
+                          type="button"
                           className="am-btn am-compact-action"
                           onClick={handleStop}
                           disabled={stopDisabled}
@@ -2364,8 +2082,12 @@ export function ListenerControls({
                   <div className="am-compact-volume-row">
                     <div className="am-volume">
                       <button
+                        type="button"
                         className="am-btn am-btn--volume"
                         onClick={handleMuteToggle}
+                        aria-label={
+                          isMuted ? "Unmute app playback" : "Mute app playback"
+                        }
                         title={
                           isMuted ? "Unmute app playback" : "Mute app playback"
                         }
@@ -2409,7 +2131,6 @@ export function ListenerControls({
                     onClick={() => {
                       setShowRecentUploadsPanel(false);
                       setShowDeviceMenu(false);
-                      setShowSoundCloudPanel(false);
                       fileInputRef.current?.click();
                     }}
                     onMouseEnter={() => {
@@ -2442,11 +2163,11 @@ export function ListenerControls({
 
                   <div className="am-source-tools">
                     <button
+                      type="button"
                       className="am-btn am-btn--demo"
                       onClick={() => {
                         setShowRecentUploadsPanel(false);
                         setShowDeviceMenu(false);
-                        setShowSoundCloudPanel(false);
                         void loadDemoAudioFile?.();
                       }}
                       title="Play demo audio"
@@ -2457,38 +2178,19 @@ export function ListenerControls({
 
                     {hasRecentUploads ? (
                       <button
+                        type="button"
                         ref={recentUploadsButtonRef}
                         className={`am-btn am-btn--recent${
                           showRecentUploadsPanel ? " am-btn--recent-active" : ""
                         }`}
                         onClick={() => {
                           setShowDeviceMenu(false);
-                          setShowSoundCloudPanel(false);
                           setShowRecentUploadsPanel(!showRecentUploadsPanel);
                         }}
                         title="Recent uploads"
                         aria-label="Recent uploads"
                       >
                         <HistoryIcon />
-                      </button>
-                    ) : null}
-
-                    {soundCloudEnabled ? (
-                      <button
-                        className={`am-btn am-btn--soundcloud${
-                          showSoundCloudPanel || playbackSource === "soundcloud"
-                            ? " am-btn--soundcloud-active"
-                            : ""
-                        }`}
-                        onClick={() => {
-                          setShowRecentUploadsPanel(false);
-                          setShowDeviceMenu(false);
-                          setShowSoundCloudPanel(!showSoundCloudPanel);
-                        }}
-                        title="Load SoundCloud track or playlist"
-                        aria-label="SoundCloud"
-                      >
-                        <SoundCloudIcon />
                       </button>
                     ) : null}
                   </div>
@@ -2499,6 +2201,7 @@ export function ListenerControls({
                 <div className="am-actions-row">
                   <div className="am-transport">
                     <button
+                      type="button"
                       className={`am-btn am-btn--play${
                         isPlaying ? " am-btn--play-active" : ""
                       }`}
@@ -2510,6 +2213,7 @@ export function ListenerControls({
                       {isPlaying ? <PauseIcon /> : <PlayIcon />}
                     </button>
                     <button
+                      type="button"
                       className="am-btn am-btn--stop"
                       onClick={handleStop}
                       disabled={stopDisabled}
@@ -2530,8 +2234,12 @@ export function ListenerControls({
                   </div>
                   <div className="am-volume">
                     <button
+                      type="button"
                       className="am-btn am-btn--volume"
                       onClick={handleMuteToggle}
+                      aria-label={
+                        isMuted ? "Unmute app playback" : "Mute app playback"
+                      }
                       title={
                         isMuted ? "Unmute app playback" : "Mute app playback"
                       }
@@ -2587,6 +2295,7 @@ export function ListenerControls({
                   return (
                     <li key={upload.id}>
                       <button
+                        type="button"
                         className={`am-recent-item${
                           isQueuedUpload ? " am-recent-item--pending" : ""
                         }`}
@@ -2624,83 +2333,6 @@ export function ListenerControls({
                   );
                 })}
               </ul>
-            </div>
-          ) : null}
-
-          {soundCloudEnabled ? (
-            <div
-              className={`am-soundcloud-panel${showSoundCloudPanel ? "" : " am-soundcloud-hidden"}`}
-            >
-              <div className="am-soundcloud-header">
-                <SoundCloudIcon />
-                <span>SoundCloud</span>
-              </div>
-              <div className="am-soundcloud-form">
-                <input
-                  className="am-soundcloud-input"
-                  type="url"
-                  value={soundCloudInput}
-                  onChange={(event) => setSoundCloudInput(event.target.value)}
-                  placeholder="Paste a SoundCloud track or playlist URL"
-                  aria-label="SoundCloud URL"
-                />
-                <button
-                  className="am-soundcloud-submit"
-                  onClick={loadSoundCloudTrack}
-                  disabled={isSoundCloudLoading}
-                >
-                  {isSoundCloudLoading ? "Loading" : "Load"}
-                </button>
-              </div>
-              {soundCloudError ? (
-                <p className="am-soundcloud-error">{soundCloudError}</p>
-              ) : (
-                <p className="am-soundcloud-helper">{soundCloudInfo}</p>
-              )}
-              {soundCloudQueue.length > 0 ? (
-                <div className="am-soundcloud-meta">
-                  <p className="am-soundcloud-title">
-                    <span>
-                      {soundCloudCurrentTrack?.title ||
-                        soundCloudCollectionTitle}
-                    </span>
-                    <span className="am-soundcloud-index">
-                      {soundCloudQueue.length > 1
-                        ? `${Math.max(soundCloudCurrentIndex + 1, 1)} / ${soundCloudQueue.length}`
-                        : "Track"}
-                    </span>
-                  </p>
-                  <p className="am-soundcloud-subtitle">
-                    {soundCloudCurrentTrack?.artistName ||
-                      soundCloudCollectionTitle}
-                  </p>
-                  <ul className="am-soundcloud-list">
-                    {soundCloudVisibleTracks.map((track, index) => {
-                      const trackIndex = soundCloudListStart + index;
-                      const isCurrent = trackIndex === soundCloudCurrentIndex;
-                      return (
-                        <li
-                          key={track.id || `${track.title}-${trackIndex}`}
-                          className={`am-soundcloud-item${isCurrent ? " am-soundcloud-item-current" : ""}`}
-                        >
-                          <span className="am-soundcloud-item-title">
-                            {track.title}
-                          </span>
-                          <span className="am-soundcloud-item-artist">
-                            {track.artistName || "SoundCloud"}
-                          </span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              ) : (
-                <div className="am-soundcloud-empty">
-                  Public SoundCloud links now stream through Baryon&apos;s own
-                  audio graph, so the same cymatic analysis path works without a
-                  local file.
-                </div>
-              )}
             </div>
           ) : null}
         </div>

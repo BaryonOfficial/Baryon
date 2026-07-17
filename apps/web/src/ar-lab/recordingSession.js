@@ -29,7 +29,7 @@ export const RECORDING_ERROR_CODES = Object.freeze({
 
 // Preference order favors quality-per-byte in desktop browsers, with MP4/H.264
 // retained as the compatibility fallback for browsers that cannot record WebM.
-export const RECORDING_MIME_TYPE_CANDIDATES = Object.freeze([
+const RECORDING_MIME_TYPE_CANDIDATES = Object.freeze([
   "video/webm;codecs=vp9,opus",
   "video/webm;codecs=vp8,opus",
   "video/webm",

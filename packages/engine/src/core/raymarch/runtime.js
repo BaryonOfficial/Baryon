@@ -1,12 +1,11 @@
 import * as THREE from "three";
-import { REACTIVITY_DEFAULTS } from "../../defaults.js";
+import { AUDIO_RESPONSE_GAIN, RAYMARCH_DEFAULTS } from "../../defaults.js";
 import {
   DEFAULT_EFFECTIVE_CAVITY_GEOMETRY,
   normalizeCavityGeometry,
 } from "../cavityGeometry.js";
-import { buildCanonicalFullModalDescriptor } from "../modalDescriptor.js";
 import {
-  MODAL_BASIS_ATLAS_PAGE_CAPACITY,
+  MODAL_BASIS_CACHE_PAGE_CAPACITY,
   MODAL_BASIS_CACHE_RESOLUTION,
   getModalBasisCacheMaxRepresentableModeIndex,
 } from "../modalBudgets.js";
@@ -34,6 +33,7 @@ import {
   shouldRebuildRaymarchModalBasisCache,
   sumLiveSynthesisRepresentableUploadWeight,
   RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
+  RAYMARCH_MODAL_BASIS_MIN_SAMPLES_PER_CYCLE,
   RAYMARCH_PRESSURE_RADIATION_SEMANTIC,
 } from "./fieldCache.js";
 import {
@@ -47,15 +47,17 @@ import {
   copyCanonicalRaymarchPhaseSlots,
 } from "./phaseSlotSemantics.js";
 import {
+  CYMATIC_CARRIER_REFERENCE_PROFILE,
   deriveLiveSynthesisCancellationSuppression,
-  deriveMaterialRadianceTransfer,
-  deriveProjectedCausticRadianceDensity,
-  deriveHolographicColorMix,
   deriveHolographicFresnel,
 } from "./fieldShaping.js";
 import {
+  REFERENCE_ABSORPTION_COEFFICIENT,
+  REFERENCE_LASER_EXCITED_EMISSION_COEFFICIENT,
+  REFERENCE_SCATTERING_COEFFICIENT,
+  deriveAcousticEnergyMaterialTransfer,
+  deriveCarrierColumnDensityScale,
   deriveObservationTransfer,
-  deriveObservationVisibilityDrive,
   deriveObservationTransferParameters,
 } from "./observationTransfer.js";
 import { deriveRaymarchDiagnosticVisibility } from "./diagnosticVisibility.js";
@@ -90,22 +92,17 @@ const DECAY_RELEASE_TARGET_REDUCTION = 0.55;
 const DECAY_RELEASE_RATE_GAIN = 1.9;
 const ACCENT_ATTACK = 15;
 const ACCENT_RELEASE = 11;
-const DENSITY_RESPONSE_AMOUNT = 0.08;
-const THRESHOLD_RESPONSE_REDUCTION = 0.42;
-const BLOOM_STRENGTH_RESPONSE_GAIN = 0.18;
-const BLOOM_RADIUS_RESPONSE_GAIN = 0.16;
-const BLOOM_THRESHOLD_RESPONSE_GAIN = 0.08;
 const STRUCTURAL_BODY_BLOOM_STRENGTH_SUPPRESSION_MAX = 0.55;
 const STRUCTURAL_BODY_BLOOM_THRESHOLD_LIFT_MAX = 0.08;
-// Smoothing for the loudness-aware visibility drive that feeds the observation
-// transfer's exposure compensation. Slow enough that the gate does not pump on
-// beats, fast enough to follow quiet/loud passages.
-const VISIBILITY_DRIVE_DAMP_LAMBDA = 3;
 const BEAT_PHASE_CORRECTION_RATE_CYCLES_PER_SEC = 2.4;
 const EARLY_EXIT_TRANSMITTANCE_EPSILON = 5e-3;
 const MATERIAL_OUTPUT_VISIBLE_EPSILON = 1e-5;
 const RENDER_AUTHORITY_DISPLAY_HOLD_SEC = 0.12;
 const PHASE_EVALUATION_CLOCK_REBASE_INTERVAL_SEC = 30;
+const STATIC_OUTPUT_CHROMATICITY_SEMANTIC =
+  "derived-from-static-uColor-linear-rgb;expected-not-gpu-readback";
+const SPECTRAL_OUTPUT_CHROMATICITY_SEMANTIC =
+  "spectral-lane-spatial-rgb;not-derivable-without-gpu-readback";
 const FNV_OFFSET_BASIS = 2166136261;
 const FNV_PRIME = 16777619;
 const HASH_FLOAT_VIEW = new Float32Array(1);
@@ -256,6 +253,16 @@ function computeLinearLuminance(rgb) {
   );
 }
 
+function normalizeLinearRgbChromaticity(rgb) {
+  const nonnegativeRgb = [
+    Math.max(0, readFiniteNumber(rgb?.[0], 0)),
+    Math.max(0, readFiniteNumber(rgb?.[1], 0)),
+    Math.max(0, readFiniteNumber(rgb?.[2], 0)),
+  ];
+  const luminance = Math.max(computeLinearLuminance(nonnegativeRgb), 1e-6);
+  return nonnegativeRgb.map((channel) => channel / luminance);
+}
+
 function readFirstString(...values) {
   for (const value of values) {
     if (typeof value === "string" && value) {
@@ -276,7 +283,10 @@ function isExplicitStoppedTransport(featureFrame) {
 }
 
 function resolveRenderAuthorityDisplayHold(runtimeState, featureFrame, time) {
-  if (isExplicitStoppedTransport(featureFrame)) {
+  if (
+    featureFrame?.renderAuthorityRevoked === true ||
+    isExplicitStoppedTransport(featureFrame)
+  ) {
     runtimeState.renderAuthorityLastVisibleAtSec = null;
     clearRenderAuthorityDisplayHold(runtimeState);
     return false;
@@ -315,13 +325,13 @@ function deriveRaymarchVisibilityGate({
   spectralLightLaneDrawable,
   spectralLaneCache,
   volumeVisible,
-  materialProbeSupportVisibleDensity,
+  materialProbeExtinction,
   materialProbePreBloomRadiance,
   materialProbePostBloomRisk,
 }) {
   const materialOutputVisible =
     Math.max(
-      readFiniteNumber(materialProbeSupportVisibleDensity, 0),
+      readFiniteNumber(materialProbeExtinction, 0),
       readFiniteNumber(materialProbePreBloomRadiance, 0),
       readFiniteNumber(materialProbePostBloomRisk, 0),
     ) > MATERIAL_OUTPUT_VISIBLE_EPSILON;
@@ -679,6 +689,20 @@ function suspendModalBasisCacheRebuilds(modalBasisCache, reason) {
   modalBasisCache.lastRebuildReason = reason ?? "suspended";
 }
 
+function deactivateRuntimeLaserTransportCache(
+  runtimeState,
+  reason = "inactive",
+) {
+  if (runtimeState) {
+    runtimeState.raymarchLaserTransportInputPacket = null;
+  }
+  deactivateRaymarchLaserTransportCache(
+    runtimeState?.laserTransportCache,
+    reason,
+  );
+  setIfChanged(runtimeState?.uniforms?.uLaserCausticActive, 0);
+}
+
 function deactivateLiveFieldProjectionCache(runtimeState, reason = "inactive") {
   const liveFieldProjectionCache = runtimeState?.liveFieldProjectionCache;
   if (liveFieldProjectionCache) {
@@ -686,13 +710,9 @@ function deactivateLiveFieldProjectionCache(runtimeState, reason = "inactive") {
     liveFieldProjectionCache.lastComputeReason = reason;
   }
   setIfChanged(runtimeState?.uniforms?.uLiveFieldCacheActive, 0);
-  // The laser transport refracts through this frame's pressure field; it
-  // fails closed with the projection cache that provides it.
-  deactivateRaymarchLaserTransportCache(
-    runtimeState?.laserTransportCache,
-    reason,
-  );
-  setIfChanged(runtimeState?.uniforms?.uLaserCausticActive, 0);
+  // Laser transport is valid only while its authoritative pressure-field
+  // packet remains drawable; it fails closed with the providing cache.
+  deactivateRuntimeLaserTransportCache(runtimeState, reason);
 }
 
 const LIVE_FIELD_PROJECTION_STALE_RETAINED_REASON =
@@ -784,13 +804,13 @@ function resetRenderAuthorityState(runtimeState) {
   clearBufferNode(runtimeState.modalFieldSpectralLaneABuffer);
   clearBufferNode(runtimeState.modalFieldSpectralLaneBBuffer);
   clearBufferNode(runtimeState.modalFieldSpectralMetaBuffer);
+  clearBufferNode(runtimeState.modalFieldMetadataBuffer);
   clearBufferNode(runtimeState.modalFieldPhaseBuffer);
   clearBufferNode(runtimeState.modalFieldCoefficientBuffer);
   runtimeState.raymarchFieldAnalysis = null;
   if (runtimeState.bloomTuning) {
     runtimeState.bloomTuning.bloomAllowed = false;
   }
-  runtimeState.visibilityDriveEnvelope = 0;
   runtimeState.shaderBeatPhase = null;
   runtimeState.renderAuthorityLastVisibleAtSec = null;
   clearRenderAuthorityDisplayHold(runtimeState);
@@ -838,51 +858,38 @@ function readRuntimeFieldNoiseFloor(runtimeState) {
 
 function deriveRuntimeObservationTransferParameters(runtimeState) {
   return deriveObservationTransferParameters({
-    opacityGain: runtimeState?.uniforms?.uOpacityGain?.value,
     stepCompensation: runtimeState?.bloomTuning?.stepCompensation,
     contourSharpness: runtimeState?.uniforms?.uContourSharpness?.value,
     fieldNoiseFloor: readRuntimeFieldNoiseFloor(runtimeState),
-    visibilityDrive: runtimeState?.visibilityDriveEnvelope ?? 1,
   });
 }
 
-function syncObservationTransferUniforms(runtimeState, visibilityDrive = 1) {
+function syncObservationTransferUniforms(runtimeState) {
   const uniforms = runtimeState?.uniforms ?? {};
-  const opacityGain = uniforms.uOpacityGain?.value;
   const stepCompensation = runtimeState?.bloomTuning?.stepCompensation;
   const contourSharpness = uniforms.uContourSharpness?.value;
   const fieldNoiseFloor = readRuntimeFieldNoiseFloor(runtimeState);
-  // Quantize so a steady drive keeps the cache warm; only ~0.5% changes recompute.
-  const quantizedVisibilityDrive =
-    Math.round((Number.isFinite(visibilityDrive) ? visibilityDrive : 1) * 200) /
-    200;
   const inputCache =
     runtimeState.observationTransferInputCache ??
     (runtimeState.observationTransferInputCache = {});
 
   if (
     runtimeState.observationTransferParameters &&
-    inputCache.opacityGain === opacityGain &&
     inputCache.stepCompensation === stepCompensation &&
     inputCache.contourSharpness === contourSharpness &&
-    inputCache.fieldNoiseFloor === fieldNoiseFloor &&
-    inputCache.visibilityDrive === quantizedVisibilityDrive
+    inputCache.fieldNoiseFloor === fieldNoiseFloor
   ) {
     return runtimeState.observationTransferParameters;
   }
 
-  inputCache.opacityGain = opacityGain;
   inputCache.stepCompensation = stepCompensation;
   inputCache.contourSharpness = contourSharpness;
   inputCache.fieldNoiseFloor = fieldNoiseFloor;
-  inputCache.visibilityDrive = quantizedVisibilityDrive;
 
   const parameters = deriveObservationTransferParameters({
-    opacityGain,
     stepCompensation,
     contourSharpness,
     fieldNoiseFloor,
-    visibilityDrive: quantizedVisibilityDrive,
   });
   setIfChanged(
     uniforms.uObservationDensityFadeStart,
@@ -920,21 +927,24 @@ export function resolveRaymarchTotalSlotAmplitude(runtimeState, activeCount) {
   return uploadedFromBuffer;
 }
 
-export function resolveRaymarchStructuralProjectionDrive(
-  runtimeState,
-  activeCount,
-) {
+function resolveRaymarchStructuralProjectionDrive(runtimeState, activeCount) {
   const resolution =
     runtimeState?.modalBasisCache?.resolution ??
     RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION;
   return deriveStructuralProjectionDrive({
-    modalFieldSlots: runtimeState?.modalFieldModeBuffer?.value?.array,
+    modalFieldSlots:
+      runtimeState?.rendererFeatureModalSlots ??
+      runtimeState?.modalFieldModeBuffer?.value?.array,
     activeCount: Math.max(0, Math.floor(activeCount ?? 0)),
     resolution,
   });
 }
 
 function setRaymarchStructuralProjectionUniforms(uniforms, projectionDrive) {
+  setIfChanged(
+    uniforms.uModalEnergyAmplitude,
+    Math.sqrt(Math.max(0, projectionDrive?.structuralEnergy ?? 0)),
+  );
   setIfChanged(
     uniforms.uStructuralProjectionDrive,
     projectionDrive?.projectionEnergyDrive ?? 0,
@@ -943,9 +953,32 @@ function setRaymarchStructuralProjectionUniforms(uniforms, projectionDrive) {
     uniforms.uStructuralProjectionConcentration,
     projectionDrive?.structuralConcentration ?? 0,
   );
+  setIfChanged(
+    uniforms.uCarrierColumnDensityScale,
+    deriveCarrierColumnDensityScale(projectionDrive?.rmsSpatialWavenumber),
+  );
 }
 
 function estimateModalFieldAmplitude(featureFrame) {
+  if (featureFrame?.modalCoefficientSlots) {
+    const count = Math.max(
+      0,
+      Math.min(
+        featureFrame.activeModalFieldModeCount ??
+          featureFrame.activeModeCount ??
+          featureFrame.modalCoefficientSlots.length,
+        featureFrame.modalCoefficientSlots.length,
+      ),
+    );
+    if (count === 0) {
+      return 0;
+    }
+    let total = 0;
+    for (let index = 0; index < count; index += 1) {
+      total += Math.max(0, featureFrame.modalCoefficientSlots[index] ?? 0);
+    }
+    return total / count;
+  }
   return estimateAverageModeAmplitude(
     featureFrame?.modalDescriptor?.slotViews?.modalFieldSlots ??
       featureFrame?.modalFieldSlots,
@@ -1008,7 +1041,7 @@ function resolveProductBasisAtlasPageCapacity(runtimeState) {
     1,
     Math.round(
       runtimeState.modalBasisCache?.basisCapacity ??
-        MODAL_BASIS_ATLAS_PAGE_CAPACITY,
+        MODAL_BASIS_CACHE_PAGE_CAPACITY,
     ),
   );
 }
@@ -1019,66 +1052,87 @@ function buildRuntimeModalDescriptor(
   { modalFieldCapacity },
 ) {
   const sourceDescriptor = featureFrame?.modalDescriptor ?? null;
+  if (!sourceDescriptor) {
+    return null;
+  }
   const slotViews = sourceDescriptor?.slotViews ?? {};
-  const basisAtlasPageCapacity =
-    resolveProductBasisAtlasPageCapacity(runtimeState);
-  if (sourceDescriptor && sourceDescriptor.fieldAuthority !== "complete") {
+  if (slotViews.modalFieldSlots) {
     return sourceDescriptor;
   }
 
-  if (slotViews.modalFieldSlots) {
-    if (
-      sourceDescriptor?.diagnostics?.basisAtlasPageCapacity ===
-      basisAtlasPageCapacity
-    ) {
-      return sourceDescriptor;
+  let modalFieldSlots = featureFrame?.modalFieldSlots;
+  if (featureFrame?.modalIdentitySlots && featureFrame?.modalCoefficientSlots) {
+    const capacity = Math.max(0, Math.floor(modalFieldCapacity ?? 0));
+    const slotLength = capacity * 4;
+    if (runtimeState.rendererFeatureModalSlots?.length !== slotLength) {
+      runtimeState.rendererFeatureModalSlots = new Float32Array(slotLength);
+      runtimeState.rendererFeatureTopologyRevision = null;
     }
+    const joinedSlots = runtimeState.rendererFeatureModalSlots;
+    const activeModeCount = Math.min(
+      capacity,
+      Math.max(
+        0,
+        Math.floor(
+          featureFrame.activeModalFieldModeCount ??
+            featureFrame.activeModeCount ??
+            0,
+        ),
+      ),
+      Math.floor(featureFrame.modalIdentitySlots.length / 3),
+      featureFrame.modalCoefficientSlots.length,
+    );
+    if (
+      runtimeState.rendererFeatureTopologyRevision !==
+      featureFrame.topologyRevision
+    ) {
+      joinedSlots.fill(0);
+      for (let modeIndex = 0; modeIndex < activeModeCount; modeIndex += 1) {
+        const identityOffset = modeIndex * 3;
+        const slotOffset = modeIndex * 4;
+        joinedSlots[slotOffset] =
+          featureFrame.modalIdentitySlots[identityOffset] ?? 0;
+        joinedSlots[slotOffset + 1] =
+          featureFrame.modalIdentitySlots[identityOffset + 1] ?? 0;
+        joinedSlots[slotOffset + 2] =
+          featureFrame.modalIdentitySlots[identityOffset + 2] ?? 0;
+      }
+      runtimeState.rendererFeatureTopologyRevision =
+        featureFrame.topologyRevision;
+    }
+    for (let modeIndex = 0; modeIndex < activeModeCount; modeIndex += 1) {
+      joinedSlots[modeIndex * 4 + 3] =
+        featureFrame.modalCoefficientSlots[modeIndex] ?? 0;
+    }
+    for (
+      let modeIndex = activeModeCount;
+      modeIndex < capacity;
+      modeIndex += 1
+    ) {
+      joinedSlots[modeIndex * 4 + 3] = 0;
+    }
+    modalFieldSlots = joinedSlots;
+
+    // Packet topology is the canonical semantic descriptor. The renderer only
+    // rejoins its static identities with live coefficients and phase for GPU
+    // upload; rebuilding the descriptor here would rerun bandwidth authority
+    // without the worker's retained-projection history and can falsely turn a
+    // complete descriptor into a fatal bandwidth-limited one.
+    return {
+      ...sourceDescriptor,
+      slotViews: {
+        modalFieldSlots,
+        modalFieldPhaseSlots: featureFrame?.modalFieldPhaseSlots,
+        modalFieldColorSlots: featureFrame?.modalFieldColorSlots,
+        modalFieldSpectralLaneA: featureFrame?.modalFieldSpectralLaneA,
+        modalFieldSpectralLaneB: featureFrame?.modalFieldSpectralLaneB,
+        modalFieldSpectralMeta: featureFrame?.modalFieldSpectralMeta,
+        modalFieldMetadataSlots: featureFrame?.modalFieldMetadataSlots,
+      },
+    };
   }
 
-  return buildCanonicalFullModalDescriptor({
-    generation:
-      sourceDescriptor?.generation ??
-      runtimeState.modalDescriptorGeneration ??
-      0,
-    maxTotalModes: modalFieldCapacity,
-    basisAtlasPageCapacity,
-    basisCacheResolution:
-      runtimeState.modalBasisCache?.resolution ?? MODAL_BASIS_CACHE_RESOLUTION,
-    cavityGeometry: getRuntimeEffectiveCavityGeometry(runtimeState),
-    modalFieldSlots: featureFrame?.modalFieldSlots,
-    modalFieldPhaseSlots: featureFrame?.modalFieldPhaseSlots,
-    modalFieldColorSlots: featureFrame?.modalFieldColorSlots,
-    modalFieldSpectralLaneA: featureFrame?.modalFieldSpectralLaneA,
-    modalFieldSpectralLaneB: featureFrame?.modalFieldSpectralLaneB,
-    modalFieldSpectralMeta: featureFrame?.modalFieldSpectralMeta,
-    modalFieldMetadataSlots: featureFrame?.modalFieldMetadataSlots,
-    activeModalFieldModeCount:
-      sourceDescriptor?.counts?.validModeCount ?? featureFrame?.activeModeCount,
-    observerCandidateModeCount:
-      sourceDescriptor?.diagnostics?.observerCandidateModeCount ??
-      featureFrame?.debug?.excitedModeCount ??
-      featureFrame?.debug?.structuralMetrics?.excitedModeCount,
-    observedModalModeCount:
-      sourceDescriptor?.diagnostics?.observedModalModeCount ??
-      featureFrame?.debug?.observedModalModeCount ??
-      featureFrame?.debug?.structuralMetrics?.observedModalModeCount,
-    phaseAuthorityModeCount:
-      sourceDescriptor?.diagnostics?.phaseAuthorityModeCount ??
-      featureFrame?.debug?.modalPhaseCoherentFieldModeCount ??
-      featureFrame?.debug?.structuralMetrics?.modalPhaseCoherentFieldModeCount,
-    overBandwidthRejectedModeCount:
-      sourceDescriptor?.diagnostics?.overBandwidthRejectedModeCount,
-    overBandwidthRejectedModalEnergy:
-      sourceDescriptor?.diagnostics?.overBandwidthRejectedModalEnergy,
-    overBandwidthMaxRequestedModeIndex:
-      sourceDescriptor?.diagnostics?.overBandwidthMaxRequestedModeIndex,
-    overBandwidthMaxRequestedMode:
-      sourceDescriptor?.diagnostics?.overBandwidthMaxRequestedMode,
-    modeIdentityRetentionRatio:
-      sourceDescriptor?.diagnostics?.modeIdentityRetentionRatio ??
-      featureFrame?.debug?.modalPersistence ??
-      featureFrame?.debug?.structuralMetrics?.modalPersistence,
-  });
+  return null;
 }
 
 function resolveFatalModalDescriptorBlockReason(fieldAuthority) {
@@ -1110,7 +1164,6 @@ function blockNonAuthoritativeModalDescriptor(
   if (runtimeState.bloomTuning) {
     runtimeState.bloomTuning.bloomAllowed = false;
   }
-  runtimeState.visibilityDriveEnvelope = 0;
   runtimeState.renderAuthorityLastVisibleAtSec = null;
   clearRenderAuthorityDisplayHold(runtimeState);
   runtimeState.spectralLightBuffersUploaded = false;
@@ -1237,17 +1290,11 @@ function buildRaymarchDebugSnapshot(
   const fieldExcitation = deriveFieldExcitation(featureFrame);
   const raymarchFieldAnalysis = runtimeState.raymarchFieldAnalysis ?? null;
   const densityGain = runtimeState.uniforms.uDensityGain.value;
-  const absorption = runtimeState.uniforms.uAbsorption.value;
-  const opacityGain = runtimeState.uniforms.uOpacityGain?.value ?? 1;
   const stepBudget = Math.round(runtimeState.volumeMesh.material.steps);
-  const rimBloomBias = runtimeState.uniforms.uRimBloomBias?.value ?? 0;
-  const rimCompression = runtimeState.uniforms.uRimCompression?.value ?? 0;
   const holographicIntensity =
     runtimeState.uniforms.uHolographicIntensity?.value ?? 0;
-  const holographicShift = runtimeState.uniforms.uHolographicShift?.value ?? 0;
   const holographicFresnelPower =
     runtimeState.uniforms.uHolographicFresnelPower?.value ?? 0;
-  const bloomResponseBias = runtimeState.bloomTuning?.bloomResponseBias ?? 0;
   const stepReference = runtimeState.bloomTuning?.stepReference ?? stepBudget;
   const stepCompensation = runtimeState.bloomTuning?.stepCompensation ?? 1;
   const lowStepBloomGuard = runtimeState.bloomTuning?.lowStepBloomGuard ?? 0;
@@ -1312,12 +1359,13 @@ function buildRaymarchDebugSnapshot(
     modalStructureAnchor: 1,
     ridgeAnchor: 1,
     modalCoefficientEnergy,
-    modalResponseEnergy,
     parameters: observationParameters,
   });
   const rawDiagnosticDensity = Math.min(
     1,
-    avgAmplitude * densityGain * absorption * (0.75 + transientEnergy * 0.2),
+    avgAmplitude *
+      (densityGain / RAYMARCH_DEFAULTS.densityGain) *
+      (0.75 + transientEnergy * 0.2),
   );
   const { avgRaySegmentLength = 0, missRatio = 0 } =
     runtimeState.stabilityStats ?? {};
@@ -1330,15 +1378,7 @@ function buildRaymarchDebugSnapshot(
     holographicIntensity,
     holographicFresnelPower,
   });
-  const { colorMix: holographicColorMix, emissiveLift } =
-    deriveHolographicColorMix({
-      baseColor: [0.34, 0.62, 0.9],
-      surfaceColor: [0.66, 0.86, 1.0],
-      holographicShift,
-      holographicFresnel,
-    });
-  const holographicReferenceStrength =
-    holographicFresnel * (0.7 + holographicColorMix * 0.3) + emissiveLift * 0.2;
+  const holographicReferenceStrength = holographicFresnel;
   const boundaryMode = getRuntimeBoundaryMode(runtimeState);
   const requestedCavityGeometry = normalizeCavityGeometry(
     runtimeState?.requestedCavityGeometry,
@@ -1415,6 +1455,11 @@ function buildRaymarchDebugSnapshot(
     modalBasisCacheDiagnosticDescriptor?.modalBasisCacheMaxRepresentableModeIndex ??
       modalBasisCache?.modalBasisCacheMaxRepresentableModeIndex,
     0,
+  );
+  const modalBasisCacheMinSamplesPerCycle = readFiniteNumber(
+    modalBasisCacheDiagnosticDescriptor?.modalBasisCacheMinSamplesPerCycle ??
+      modalBasisCache?.modalBasisCacheMinSamplesPerCycle,
+    RAYMARCH_MODAL_BASIS_MIN_SAMPLES_PER_CYCLE,
   );
   const modalBasisCacheContributingModeCount = readFiniteNumber(
     modalBasisCacheDiagnosticDescriptor?.contributingBasisPageModeCount ??
@@ -1532,7 +1577,6 @@ function buildRaymarchDebugSnapshot(
     ridgeAnchor: sampledObservationAnchor,
     signedRadianceAuthority: sampledObservationSignedAuthority,
     modalCoefficientEnergy,
-    modalResponseEnergy,
     parameters: observationParameters,
   });
   const diagnosticUsesSampledSupport = hasLiveSynthesisSupportMetrics;
@@ -1548,8 +1592,6 @@ function buildRaymarchDebugSnapshot(
     ridgeAnchor: diagnosticObservationAnchor,
     signedRadianceAuthority: diagnosticSignedRadianceAuthority,
     modalCoefficientEnergy,
-    modalResponseEnergy,
-    opacityGain,
     stepBudget,
     spectralFlux,
     parameters: observationParameters,
@@ -1560,46 +1602,96 @@ function buildRaymarchDebugSnapshot(
   const bloomRisk = Math.min(
     1,
     avgDensity *
-      (1 + rimBloomBias * 0.22) *
-      (1 - rimCompression * 0.12) *
       (0.7 + effectiveBloomStrength * 1.6) *
-      (1.1 - effectiveBloomThreshold * 0.4) *
-      (1 - bloomResponseBias * 0.18),
+      (1.1 - effectiveBloomThreshold * 0.4),
   );
-  const materialProbePhysicalDensity = clamp01(
+  const materialProbeCarrierDensity = clamp01(
     diagnosticVisibility.supportedPhysicalDensity,
   );
-  const materialProbeCausticVisibleDensity = clamp01(
-    diagnosticVisibility.observationTransfer?.physicalVisibleDensity,
+  const materialProbeCarrierEnergyWeight =
+    CYMATIC_CARRIER_REFERENCE_PROFILE.coreEnergyWeight +
+    CYMATIC_CARRIER_REFERENCE_PROFILE.sheathEnergyWeight;
+  const materialProbeCoreDensity =
+    materialProbeCarrierDensity *
+    (CYMATIC_CARRIER_REFERENCE_PROFILE.coreEnergyWeight /
+      materialProbeCarrierEnergyWeight);
+  const materialProbeSheathDensity =
+    materialProbeCarrierDensity *
+    (CYMATIC_CARRIER_REFERENCE_PROFILE.sheathEnergyWeight /
+      materialProbeCarrierEnergyWeight);
+  const materialProbeDetectorIntegratedEnergy = Math.max(
+    0,
+    modalCoefficientEnergy,
   );
-  const materialProbeObservationDensity = clamp01(
-    diagnosticVisibility.observationTransfer?.observationDensity ?? avgDensity,
+  const materialProbeLaserTransportReady = Boolean(
+    runtimeState.laserTransportCache?.active === true &&
+    runtimeState.laserTransportCache?.ready === true,
   );
-  const materialProbeProjectedCausticRadiance =
-    deriveProjectedCausticRadianceDensity({
-      causticVisibleDensity: materialProbeCausticVisibleDensity,
-      ridgeConcentration: diagnosticObservationAnchor,
-      causticRidgeAuthority: diagnosticObservationAnchor,
-      photographicFocus: diagnosticObservationAnchor,
-      structuralConcentration: structuralProjection.structuralConcentration,
-      modalCoefficientEnergy,
-    });
-  const materialProbeTransfer = deriveMaterialRadianceTransfer({
-    stabilizedDensity: materialProbeObservationDensity,
-    causticVisibleDensity: materialProbeCausticVisibleDensity,
-    projectedCausticRadianceDensity:
-      materialProbeProjectedCausticRadiance.projectedCausticRadianceDensity,
-    volumeColor: readUniformColorRgb(
-      runtimeState.uniforms.uColor,
-      [0.34, 0.62, 0.9],
+  const materialProbeCarrierColumnDensityScale = clamp01(
+    readFiniteNumber(
+      runtimeState.uniforms.uCarrierColumnDensityScale?.value,
+      1,
     ),
-    structureAwareEmissionGain: 1,
+  );
+  const materialProbeHolographicBaseRadianceGain = Math.max(
+    0,
+    readFiniteNumber(
+      runtimeState.uniforms.uHolographicBaseRadianceGain?.value,
+      0,
+    ),
+  );
+  const materialAbsorptionCoefficient = Math.max(
+    0,
+    readFiniteNumber(
+      runtimeState.uniforms.uMaterialAbsorptionCoefficient?.value,
+      REFERENCE_ABSORPTION_COEFFICIENT,
+    ),
+  );
+  const staticMaterialColorLinearRgb = readUniformColorRgb(
+    runtimeState.uniforms.uColor,
+    [0.34, 0.62, 0.9],
+  );
+  const staticSurfaceColorLinearRgb = readUniformColorRgb(
+    runtimeState.uniforms.uSurfaceColor,
+    [0.36, 0.89, 0.96],
+  );
+  const configuredColorMode =
+    runtimeState.spectralLight?.colorMode === "spectral" ||
+    (runtimeState.spectralLight?.colorMode !== "static" &&
+      (runtimeState.uniforms.uSpectralMix?.value ?? 0) > 0)
+      ? "spectral"
+      : "static";
+  const staticColorActive = configuredColorMode === "static";
+  const expectedOutputChromaticityLinearRgb = staticColorActive
+    ? normalizeLinearRgbChromaticity(staticMaterialColorLinearRgb)
+    : null;
+  const outputChromaticitySemantic = staticColorActive
+    ? STATIC_OUTPUT_CHROMATICITY_SEMANTIC
+    : SPECTRAL_OUTPUT_CHROMATICITY_SEMANTIC;
+  const materialProbeTransfer = deriveAcousticEnergyMaterialTransfer({
+    detectorIntegratedEnergy: materialProbeDetectorIntegratedEnergy,
+    coreDensity: materialProbeCoreDensity,
+    sheathDensity: materialProbeSheathDensity,
+    materialDensityScale: densityGain / RAYMARCH_DEFAULTS.densityGain,
+    carrierColumnDensityScale: materialProbeCarrierColumnDensityScale,
+    materialColor: staticMaterialColorLinearRgb,
+    surfaceColor: staticSurfaceColorLinearRgb,
+    scatteringCoefficient: REFERENCE_SCATTERING_COEFFICIENT,
+    absorptionCoefficient: materialAbsorptionCoefficient,
+    laserExcitedEmissionCoefficient:
+      REFERENCE_LASER_EXCITED_EMISSION_COEFFICIENT,
+    holographicIntensity,
+    holographicFresnelPower,
+    normalDotRay: 1,
+    holographicBaseRadianceGain: materialProbeHolographicBaseRadianceGain,
+    laserAccentAuthority: 0,
   });
-  const materialProbeSupportVisibleDensity = clamp01(
-    readFiniteNumber(materialProbeTransfer.supportVisibleDensity, 0),
+  const materialProbeExtinction = Math.max(
+    0,
+    readFiniteNumber(materialProbeTransfer.extinction, 0),
   );
   const materialProbePreBloomRadiance = computeLinearLuminance(
-    materialProbeTransfer.finalRadiance,
+    materialProbeTransfer.sourceRadiance,
   );
   const materialProbeBloomAmplification =
     1 + bloomRisk * Math.max(0, effectiveBloomStrength);
@@ -1645,7 +1737,7 @@ function buildRaymarchDebugSnapshot(
     spectralLightLaneDrawable,
     spectralLaneCache,
     volumeVisible: runtimeState.volumeMesh.visible,
-    materialProbeSupportVisibleDensity,
+    materialProbeExtinction,
     materialProbePreBloomRadiance,
     materialProbePostBloomRisk,
   });
@@ -1679,6 +1771,8 @@ function buildRaymarchDebugSnapshot(
     structuralProjectionDrive: structuralProjection.projectionEnergyDrive,
     structuralProjectionConcentration:
       structuralProjection.structuralConcentration,
+    structuralProjectionRmsSpatialWavenumber:
+      structuralProjection.rmsSpatialWavenumber,
     structuralProjectionReferenceEnergy: structuralProjection.referenceEnergy,
     modalDescriptorFieldAuthority:
       modalDescriptor?.fieldAuthority ?? "unavailable",
@@ -1728,18 +1822,52 @@ function buildRaymarchDebugSnapshot(
     peakModalFieldAmplitude,
     avgOpacity,
     avgDensity,
-    materialProbePhysicalDensity,
-    materialProbeCausticVisibleDensity,
-    materialProbeProjectedCausticRadianceDensity:
-      materialProbeProjectedCausticRadiance.projectedCausticRadianceDensity,
-    materialProbeSupportVisibleDensity,
+    materialProbeDetectorIntegratedEnergy,
+    materialProbeCarrierDensity,
+    materialProbeCoreDensity,
+    materialProbeSheathDensity,
+    materialProbeMaterialDensityScale:
+      materialProbeTransfer.materialDensityScale,
+    materialProbeCarrierColumnDensityScale:
+      materialProbeTransfer.carrierColumnDensityScale,
+    materialProbeOrganizedCoreDensity:
+      materialProbeTransfer.organizedCoreDensity,
+    materialProbeOrganizedSheathDensity:
+      materialProbeTransfer.organizedSheathDensity,
+    materialProbeOrganizedDensity: materialProbeTransfer.organizedDensity,
+    materialProbeScatteringCoefficient:
+      materialProbeTransfer.scatteringCoefficient,
+    materialProbeAbsorptionCoefficient:
+      materialProbeTransfer.absorptionCoefficient,
+    materialProbeLaserExcitedEmissionCoefficient:
+      materialProbeTransfer.laserExcitedEmissionCoefficient,
+    materialProbeEmissionSourceStrength:
+      materialProbeTransfer.emissionSourceStrength,
+    materialProbeCoreEmissionSourceStrength:
+      materialProbeTransfer.coreEmissionSourceStrength,
+    materialProbeSheathEmissionSourceStrength:
+      materialProbeTransfer.sheathEmissionSourceStrength,
+    materialProbeFresnelEmissionSourceStrength:
+      materialProbeTransfer.fresnelEmissionSourceStrength,
+    materialProbeFresnelBase: materialProbeTransfer.fresnelBase,
+    materialProbeHolographicFresnel: materialProbeTransfer.holographicFresnel,
+    materialProbeSigmaS: materialProbeTransfer.sigmaS,
+    materialProbeSigmaA: materialProbeTransfer.sigmaA,
+    materialProbeExtinction,
+    materialProbeHolographicBaseRadianceGain,
+    materialProbeBaseRadiance: materialProbeTransfer.baseRadiance,
+    materialProbeAccentRadiance: materialProbeTransfer.accentRadiance,
+    materialProbeLaserTransportReady,
     materialProbePreBloomRadiance,
     materialProbePostBloomRisk,
     materialProbeBloomAmplification,
+    staticColorActive,
+    staticMaterialColorLinearRgb,
+    expectedOutputChromaticityLinearRgb,
+    outputChromaticitySemantic,
     visibilityGateState: visibilityGate.state,
     visibilityGateBlockedReason: visibilityGate.blockedReason,
     materialOutputVisible: visibilityGate.materialOutputVisible,
-    opacityGain,
     earlyExitEnabled: true,
     earlyExitThreshold: EARLY_EXIT_TRANSMITTANCE_EPSILON,
     earlyExitRatio,
@@ -1840,17 +1968,14 @@ function buildRaymarchDebugSnapshot(
     stepReference,
     stepCompensation,
     lowStepBloomGuard,
-    rimBloomBias,
-    rimCompression,
     holographicIntensity,
-    holographicShift,
     holographicFresnelPower,
-    bloomResponseBias,
     effectiveBloomStrength,
     effectiveBloomRadius,
     effectiveBloomThreshold,
     bloomRisk,
-    effectiveThreshold: runtimeState.uniforms.uThreshold?.value ?? 0,
+    carrierCoreFwhmWorld:
+      runtimeState.uniforms.uCarrierCoreFwhmWorld?.value ?? 0,
     effectiveContourSharpness:
       runtimeState.uniforms.uContourSharpness?.value ?? 0,
     boundaryMode,
@@ -1861,6 +1986,15 @@ function buildRaymarchDebugSnapshot(
     materialCavityGeometry:
       runtimeState.volumeMesh?.userData?.raymarchCavityGeometry ??
       effectiveCavityGeometry,
+    auditFixtureBaseOnly: runtimeState.auditFixtureBaseOnly === true,
+    laserTransportActive: runtimeState.laserTransportCache?.active === true,
+    laserTransportReady: runtimeState.laserTransportCache?.ready === true,
+    laserTransportDispatchCount: Math.max(
+      0,
+      Math.floor(runtimeState.laserTransportCache?.dispatchCount ?? 0),
+    ),
+    laserTransportLastComputeReason:
+      runtimeState.laserTransportCache?.lastComputeReason ?? "uninitialized",
     spectralLightEnabled,
     spectralLightLaneDrawable,
     spectralLightEvaluationMode,
@@ -1951,6 +2085,7 @@ function buildRaymarchDebugSnapshot(
     modalBasisCachePhaseAuthority,
     modalBasisCacheModeIdentityRetentionRatio:
       basisIdentity.modeIdentityRetentionRatio,
+    modalBasisCacheMinSamplesPerCycle,
     modalBasisCacheMaxRepresentableModeIndex,
     modalBasisCacheContributingModeCount,
     modalBasisCacheZeroAmplitudeSkippedModeCount,
@@ -1994,7 +2129,6 @@ function updateReactiveResponse(
   renderAuthority,
   deltaTime,
 ) {
-  const rt = runtimeState.reactivityTuning;
   const structureSignal = clamp01(featureFrame?.structureSignal ?? 0);
   const energySignal = clamp01(featureFrame?.energySignal ?? 0);
   const changeSignal = clamp01(featureFrame?.changeSignal ?? 0);
@@ -2013,36 +2147,32 @@ function updateReactiveResponse(
       structuralProjection.projectionEnergyDrive,
     ),
   );
-  const reactivity = Math.max(
-    0,
-    rt?.reactivity ?? REACTIVITY_DEFAULTS.reactivity,
-  );
+  const audioResponseGain = AUDIO_RESPONSE_GAIN;
   if (!renderAuthority) {
     runtimeState.responseEnvelope = 0;
     runtimeState.accentEnvelope = 0;
     runtimeState.motionSignal = 0;
     runtimeState.scaleSignal = 0;
     runtimeState.bloomResponseSignal = 0;
-    runtimeState.visibilityDriveEnvelope = 0;
     runtimeState.visualRoot?.scale?.setScalar?.(1);
     return;
   }
 
   const presentationSignalScale = 1;
   const gatedStructureSignal = clamp01(
-    structureSignal * reactivity * presentationSignalScale,
+    structureSignal * audioResponseGain * presentationSignalScale,
   );
   const gatedEnergySignal = clamp01(
-    energySignal * reactivity * presentationSignalScale,
+    energySignal * audioResponseGain * presentationSignalScale,
   );
   const gatedChangeSignal = clamp01(
-    changeSignal * reactivity * presentationSignalScale,
+    changeSignal * audioResponseGain * presentationSignalScale,
   );
   const gatedPulseSignal = clamp01(
-    pulseSignal * reactivity * presentationSignalScale,
+    pulseSignal * audioResponseGain * presentationSignalScale,
   );
   const gatedModalResponseEnergy = clamp01(
-    modalResponseEnergy * reactivity * presentationSignalScale,
+    modalResponseEnergy * audioResponseGain * presentationSignalScale,
   );
   const decayReleaseMask = deriveDecayReleaseMask({
     fieldState,
@@ -2107,8 +2237,6 @@ function updateReactiveResponse(
 
 function updateLaserResponse(runtimeState, featureFrame) {
   const uniforms = runtimeState.uniforms;
-  const baseThreshold =
-    runtimeState.baseThreshold ?? uniforms.uThreshold?.value ?? 0.001;
   const baseContourSharpness =
     runtimeState.baseContourSharpness ?? uniforms.uContourSharpness?.value ?? 1;
   const baseBloomStrength =
@@ -2123,62 +2251,17 @@ function updateLaserResponse(runtimeState, featureFrame) {
     runtimeState.bloomTuning?.baseThreshold ??
     runtimeState.bloomTuning?.effectiveThreshold ??
     0;
-  const reactiveGate = clamp01(runtimeState.reactivityTuning?.reactivity ?? 1);
-  const transientEnergy =
-    clamp01(featureFrame?.transientEnergy ?? 0) * reactiveGate;
-  const rawChangeSignal =
-    clamp01(featureFrame?.changeSignal ?? 0) * reactiveGate;
-  const rawPulseSignal = clamp01(featureFrame?.pulseSignal ?? 0) * reactiveGate;
-  const responseEnvelope = clamp01(runtimeState.responseEnvelope ?? 0);
-  const accentEnvelope = clamp01(runtimeState.accentEnvelope ?? 0);
-  const bloomResponseSignal = clamp01(runtimeState.bloomResponseSignal ?? 0);
-  const thresholdResponse = clamp01(
-    responseEnvelope * 0.24 +
-      accentEnvelope * 0.58 +
-      bloomResponseSignal * 0.22 +
-      transientEnergy * 0.18,
-  );
-  const bloomStrengthPulse = clamp01(
-    accentEnvelope * 0.84 + transientEnergy * 0.4,
-  );
-  const bloomThresholdPulse = clamp01(
-    accentEnvelope * 0.2 +
-      rawChangeSignal * 0.34 +
-      rawPulseSignal * 0.24 +
-      transientEnergy * 0.18 +
-      bloomResponseSignal * 0.04,
-  );
-  const bloomStrengthTransientGate = 0.94 + transientEnergy * 0.06;
+  const transientEnergy = clamp01(featureFrame?.transientEnergy ?? 0);
   const structuralBodyBloomControls = deriveStructuralBodyBloomControls(
     runtimeState,
     transientEnergy,
   );
 
-  setIfChanged(
-    uniforms.uThreshold,
-    Math.max(
-      0.001,
-      baseThreshold * (1 - thresholdResponse * THRESHOLD_RESPONSE_REDUCTION),
-    ),
-  );
   setIfChanged(uniforms.uContourSharpness, clamp(baseContourSharpness, 1, 8));
   const bt = runtimeState.bloomTuning;
-  bt.effectiveStrength =
-    baseBloomStrength *
-    (1 + bloomStrengthPulse * BLOOM_STRENGTH_RESPONSE_GAIN) *
-    bloomStrengthTransientGate *
-    structuralBodyBloomControls.bloomStrengthScale;
-  bt.effectiveRadius = Math.max(
-    0,
-    baseBloomRadius * (1 - bloomStrengthPulse * BLOOM_RADIUS_RESPONSE_GAIN),
-  );
-  bt.effectiveThreshold = clamp(
-    baseBloomThreshold +
-      bloomThresholdPulse * BLOOM_THRESHOLD_RESPONSE_GAIN +
-      structuralBodyBloomControls.bloomThresholdLift,
-    0,
-    1,
-  );
+  bt.effectiveStrength = baseBloomStrength;
+  bt.effectiveRadius = Math.max(0, baseBloomRadius);
+  bt.effectiveThreshold = clamp(baseBloomThreshold, 0, 1);
   bt.bloomAllowed = true;
   bt.modalStructuralDetailAuthority =
     structuralBodyBloomControls.modalStructuralDetailAuthority;
@@ -2195,6 +2278,7 @@ function getRaymarchUploadState(runtimeState) {
       modalFieldSpectralLaneA: null,
       modalFieldSpectralLaneB: null,
       modalFieldSpectralMeta: null,
+      modalFieldMetadata: null,
       modalFieldRole: null,
     };
   }
@@ -2208,9 +2292,11 @@ function buildLayerUploadSignature({
   spectralLaneA,
   spectralLaneB,
   spectralMeta,
+  metadataSlots,
   layer,
   includeColors,
   includeSpectral,
+  identityOnly = false,
 }) {
   const capacity = Math.max(0, Math.floor(layer?.capacity ?? 0));
   const activeCount = Math.min(
@@ -2220,11 +2306,18 @@ function buildLayerUploadSignature({
   let slotHash = FNV_OFFSET_BASIS;
   let colorHash = includeColors ? FNV_OFFSET_BASIS : 0;
   let spectralHash = includeSpectral ? FNV_OFFSET_BASIS : 0;
+  let metadataHash = FNV_OFFSET_BASIS;
 
   for (let slotIndex = 0; slotIndex < activeCount; slotIndex += 1) {
     const sourceOffset = slotIndex * 4;
     slotHash = hashUint32(slotIndex, slotHash);
-    slotHash = hashSlot4(slots, sourceOffset, slotHash);
+    if (identityOnly) {
+      slotHash = hashFloat32(slots?.[sourceOffset] ?? 0, slotHash);
+      slotHash = hashFloat32(slots?.[sourceOffset + 1] ?? 0, slotHash);
+      slotHash = hashFloat32(slots?.[sourceOffset + 2] ?? 0, slotHash);
+    } else {
+      slotHash = hashSlot4(slots, sourceOffset, slotHash);
+    }
     if (includeColors) {
       colorHash = hashUint32(slotIndex, colorHash);
       colorHash = hashSlot4(colorSlots, sourceOffset, colorHash);
@@ -2235,6 +2328,8 @@ function buildLayerUploadSignature({
       spectralHash = hashSlot4(spectralLaneB, sourceOffset, spectralHash);
       spectralHash = hashSlot4(spectralMeta, sourceOffset, spectralHash);
     }
+    metadataHash = hashUint32(slotIndex, metadataHash);
+    metadataHash = hashSlot4(metadataSlots, sourceOffset, metadataHash);
   }
 
   return {
@@ -2245,6 +2340,7 @@ function buildLayerUploadSignature({
     slotHash: slotHash >>> 0,
     colorHash: colorHash >>> 0,
     spectralHash: spectralHash >>> 0,
+    metadataHash: metadataHash >>> 0,
   };
 }
 
@@ -2277,6 +2373,15 @@ function layerSpectralUploadSignatureChanged(previous, next) {
   );
 }
 
+function layerMetadataUploadSignatureChanged(previous, next) {
+  return (
+    !previous ||
+    previous.capacity !== next.capacity ||
+    previous.activeCount !== next.activeCount ||
+    previous.metadataHash !== next.metadataHash
+  );
+}
+
 function applyLayerUploadIfChanged({
   uploadState,
   key,
@@ -2285,19 +2390,23 @@ function applyLayerUploadIfChanged({
   spectralLaneA,
   spectralLaneB,
   spectralMeta,
+  metadataSlots,
   targetSlots,
   targetColorSlots,
   targetSpectralLaneA,
   targetSpectralLaneB,
   targetSpectralMeta,
+  targetMetadataSlots,
   modeBufferNode,
   colorBufferNode,
   spectralLaneABufferNode,
   spectralLaneBBufferNode,
   spectralMetaBufferNode,
+  metadataBufferNode,
   layer,
   includeColors,
   includeSpectral,
+  identityOnly = false,
 }) {
   const signature = buildLayerUploadSignature({
     slots,
@@ -2305,9 +2414,11 @@ function applyLayerUploadIfChanged({
     spectralLaneA,
     spectralLaneB,
     spectralMeta,
+    metadataSlots,
     layer,
     includeColors,
     includeSpectral,
+    identityOnly,
   });
   const previous = uploadState[key]?.signature ?? null;
   const modeChanged = layerModeUploadSignatureChanged(previous, signature);
@@ -2316,8 +2427,12 @@ function applyLayerUploadIfChanged({
     previous,
     signature,
   );
+  const metadataChanged = layerMetadataUploadSignatureChanged(
+    previous,
+    signature,
+  );
 
-  if (modeChanged || colorChanged || spectralChanged) {
+  if (modeChanged || colorChanged || spectralChanged || metadataChanged) {
     copyLayerUpload({
       slots,
       colorSlots,
@@ -2325,6 +2440,7 @@ function applyLayerUploadIfChanged({
       targetColorSlots,
       layer,
       includeColors,
+      identityOnly,
     });
     copyLayerSpectralUpload({
       spectralLaneA,
@@ -2335,6 +2451,11 @@ function applyLayerUploadIfChanged({
       targetSpectralMeta,
       layer,
       includeSpectral,
+    });
+    copyLayerMetadataUpload({
+      metadataSlots,
+      targetMetadataSlots,
+      layer,
     });
     if (modeChanged) {
       modeBufferNode.value.needsUpdate = true;
@@ -2356,6 +2477,9 @@ function applyLayerUploadIfChanged({
       if (spectralMetaBufferNode?.value) {
         spectralMetaBufferNode.value.needsUpdate = true;
       }
+    }
+    if (metadataBufferNode?.value && (metadataChanged || modeChanged)) {
+      metadataBufferNode.value.needsUpdate = true;
     }
     uploadState[key] = { signature };
   }
@@ -2479,6 +2603,7 @@ function copyLayerUpload({
   targetColorSlots,
   layer,
   includeColors,
+  identityOnly = false,
 }) {
   copyModalField({
     sourceSlots: slots,
@@ -2488,6 +2613,15 @@ function copyLayerUpload({
     capacity: layer.capacity,
     includeColors,
   });
+  if (identityOnly) {
+    const activeCount = Math.min(
+      Math.max(0, Math.floor(layer?.uploadedActiveCount ?? 0)),
+      Math.floor((targetSlots?.length ?? 0) / 4),
+    );
+    for (let slotIndex = 0; slotIndex < activeCount; slotIndex += 1) {
+      targetSlots[slotIndex * 4 + 3] = 1;
+    }
+  }
 }
 
 function copyLayerSpectralUpload({
@@ -2534,6 +2668,26 @@ function copyLayerSpectralUpload({
   }
 }
 
+function copyLayerMetadataUpload({
+  metadataSlots,
+  targetMetadataSlots,
+  layer,
+}) {
+  if (!targetMetadataSlots) {
+    return;
+  }
+  const capacity = Math.max(0, Math.floor(layer?.capacity ?? 0));
+  const targetLength = capacity * 4;
+  targetMetadataSlots.fill(0, 0, targetLength);
+  for (let slotIndex = 0; slotIndex < capacity; slotIndex += 1) {
+    const offset = slotIndex * 4;
+    targetMetadataSlots[offset] = metadataSlots?.[offset] ?? 0;
+    targetMetadataSlots[offset + 1] = metadataSlots?.[offset + 1] ?? 0;
+    targetMetadataSlots[offset + 2] = metadataSlots?.[offset + 2] ?? 0;
+    targetMetadataSlots[offset + 3] = metadataSlots?.[offset + 3] ?? 0;
+  }
+}
+
 function copyLayerPhaseUpload({
   phaseSlots,
   targetPhaseSlots,
@@ -2554,6 +2708,7 @@ function copyLayerPhaseUpload({
 
 function applyLayerCoefficientUpload({
   modeSlots,
+  coefficients,
   targetCoefficientSlots,
   coefficientBufferNode,
   layer,
@@ -2563,12 +2718,26 @@ function applyLayerCoefficientUpload({
     return 0;
   }
 
-  const activeCount = copyCanonicalRaymarchStructuralCoefficients({
-    modeSlots,
-    targetSlots: targetCoefficientSlots,
-    capacity,
-    activeCount: layer.uploadedActiveCount,
-  });
+  let activeCount;
+  if (coefficients) {
+    targetCoefficientSlots.fill(0);
+    activeCount = Math.min(
+      Math.max(0, Math.floor(layer.uploadedActiveCount ?? 0)),
+      Math.max(0, Math.floor(capacity ?? 0)),
+      coefficients.length,
+      Math.floor(targetCoefficientSlots.length / 4),
+    );
+    for (let slotIndex = 0; slotIndex < activeCount; slotIndex += 1) {
+      targetCoefficientSlots[slotIndex * 4] = coefficients[slotIndex] ?? 0;
+    }
+  } else {
+    activeCount = copyCanonicalRaymarchStructuralCoefficients({
+      modeSlots,
+      targetSlots: targetCoefficientSlots,
+      capacity,
+      activeCount: layer.uploadedActiveCount,
+    });
+  }
   if (coefficientBufferNode?.value) {
     coefficientBufferNode.value.needsUpdate = activeCount > 0;
   }
@@ -3029,10 +3198,123 @@ function updateRaymarchEvaluationModes(
   );
 }
 
+function buildRaymarchLaserTransportInputPacket(runtimeState, fieldTexture) {
+  // Producer-owned upload signatures define transport cadence. The display
+  // clock (uPhaseEvaluationTime) is deliberately excluded: it animates the
+  // projection but does not constitute a new authoritative field packet.
+  const uploadState = runtimeState?.raymarchUploadState;
+  const modalFieldSignature = uploadState?.modalField?.signature;
+  const phaseSignature = uploadState?.modalFieldPhase?.signature;
+  const coefficientSlots =
+    runtimeState?.modalFieldCoefficientBuffer?.value?.array;
+  const modalBasisAtlasTexture =
+    runtimeState?.volumeMesh?.userData?.raymarchModalBasisAtlasTexture ?? null;
+  if (
+    !modalFieldSignature ||
+    !phaseSignature ||
+    !coefficientSlots ||
+    !modalBasisAtlasTexture ||
+    !fieldTexture
+  ) {
+    return null;
+  }
+
+  const activeCount = Math.min(
+    Math.max(0, Math.floor(modalFieldSignature.activeCount ?? 0)),
+    Math.floor(coefficientSlots.length / 4),
+  );
+  let packetHash = FNV_OFFSET_BASIS;
+  packetHash = hashUint32(modalFieldSignature.capacity ?? 0, packetHash);
+  packetHash = hashUint32(activeCount, packetHash);
+  packetHash = hashUint32(modalFieldSignature.slotHash ?? 0, packetHash);
+  packetHash = hashUint32(modalFieldSignature.metadataHash ?? 0, packetHash);
+  packetHash = hashUint32(phaseSignature.capacity ?? 0, packetHash);
+  packetHash = hashUint32(phaseSignature.activeCount ?? 0, packetHash);
+  packetHash = hashUint32(phaseSignature.activePhaseCount ?? 0, packetHash);
+  packetHash = hashUint32(phaseSignature.slotHash ?? 0, packetHash);
+  for (let slotIndex = 0; slotIndex < activeCount; slotIndex += 1) {
+    packetHash = hashUint32(slotIndex, packetHash);
+    packetHash = hashFloat32(coefficientSlots[slotIndex * 4] ?? 0, packetHash);
+  }
+  packetHash = hashFloat32(
+    runtimeState?.uniforms?.uModalEnergyAmplitude?.value ?? 0,
+    packetHash,
+  );
+  packetHash = hashFloat32(
+    runtimeState?.uniforms?.uRadius?.value ?? 1,
+    packetHash,
+  );
+  packetHash = hashFloat32(
+    runtimeState?.uniforms?.uLaserDeflectionGain?.value ?? 0,
+    packetHash,
+  );
+  packetHash = hashUint32(
+    runtimeState?.modalBasisCache?.rebuildCount ?? 0,
+    packetHash,
+  );
+
+  return {
+    packetHash: packetHash >>> 0,
+    modalBasisAtlasTexture,
+    fieldTexture,
+  };
+}
+
+function raymarchLaserTransportInputPacketsEqual(previous, next) {
+  return Boolean(
+    previous &&
+    next &&
+    previous.packetHash === next.packetHash &&
+    previous.modalBasisAtlasTexture === next.modalBasisAtlasTexture &&
+    previous.fieldTexture === next.fieldTexture,
+  );
+}
+
+function updateRaymarchLaserTransportCache(
+  runtimeState,
+  renderer,
+  fieldTexture,
+) {
+  const laserTransportCache = runtimeState?.laserTransportCache;
+  const inputPacket = buildRaymarchLaserTransportInputPacket(
+    runtimeState,
+    fieldTexture,
+  );
+  const inputPacketCurrent = raymarchLaserTransportInputPacketsEqual(
+    runtimeState?.raymarchLaserTransportInputPacket,
+    inputPacket,
+  );
+  if (
+    inputPacketCurrent &&
+    laserTransportCache?.active === true &&
+    laserTransportCache?.ready === true
+  ) {
+    laserTransportCache.lastComputeReason = "packet-current-reused";
+    return {
+      computed: false,
+      reused: true,
+      reason: "packet-current-reused",
+    };
+  }
+
+  const result = computeRaymarchLaserTransportCache(
+    laserTransportCache,
+    renderer,
+    {
+      fieldTexture,
+      uniforms: runtimeState?.uniforms,
+    },
+  );
+  runtimeState.raymarchLaserTransportInputPacket = result.computed
+    ? inputPacket
+    : null;
+  return { ...result, reused: false };
+}
+
 function updateLiveFieldProjectionCache(
   runtimeState,
   renderer,
-  { modalFieldCapacity, time },
+  { modalFieldCapacity, time, laserTransportEnabled = true },
 ) {
   const liveFieldProjectionCache = runtimeState.liveFieldProjectionCache;
   const modalBasisCache = runtimeState.modalBasisCache;
@@ -3065,7 +3347,8 @@ function updateLiveFieldProjectionCache(
     modalBasisCache?.ready !== true ||
     !runtimeState.volumeMesh?.userData?.raymarchModalBasisAtlasTexture ||
     !runtimeState.modalFieldModeBuffer ||
-    !runtimeState.modalFieldCoefficientBuffer
+    !runtimeState.modalFieldCoefficientBuffer ||
+    !runtimeState.modalFieldMetadataBuffer
   ) {
     deactivateLiveFieldProjectionCache(
       runtimeState,
@@ -3083,6 +3366,7 @@ function updateLiveFieldProjectionCache(
       modalFieldModeBuffer: runtimeState.modalFieldModeBuffer,
       modalFieldCoefficientBuffer: runtimeState.modalFieldCoefficientBuffer,
       modalFieldPhaseBuffer: runtimeState.modalFieldPhaseBuffer,
+      modalFieldMetadataBuffer: runtimeState.modalFieldMetadataBuffer,
       modalFieldCapacity,
       uniforms: runtimeState.uniforms,
       schedulerTimeSec: time,
@@ -3092,29 +3376,26 @@ function updateLiveFieldProjectionCache(
     runtimeState.uniforms.uLiveFieldCacheActive,
     result.computed ? 1 : 0,
   );
-  if (result.computed) {
-    // Refract the collimated laser through this frame's pressure field. The
-    // irradiance volume is what the material substitutes for the heuristic
-    // fold-caustic focal law.
-    const laserResult = computeRaymarchLaserTransportCache(
-      runtimeState.laserTransportCache,
+  if (result.computed && laserTransportEnabled) {
+    // Refract the collimated laser once per authoritative pressure-field
+    // packet. Display-time phase evaluation may refresh the live field, but
+    // does not replace the packet that owns this expensive transport result.
+    const laserResult = updateRaymarchLaserTransportCache(
+      runtimeState,
       renderer,
-      {
-        fieldTexture: liveFieldProjectionCache.fieldTexture,
-        supportTexture: liveFieldProjectionCache.supportTexture,
-        uniforms: runtimeState.uniforms,
-      },
+      liveFieldProjectionCache.fieldTexture,
     );
     setIfChanged(
       runtimeState.uniforms.uLaserCausticActive,
-      laserResult.computed ? 1 : 0,
+      laserResult.computed || laserResult.reused ? 1 : 0,
+    );
+  } else if (result.computed) {
+    deactivateRuntimeLaserTransportCache(
+      runtimeState,
+      "audit-fixture-base-only",
     );
   } else if (result.retained !== true) {
-    deactivateRaymarchLaserTransportCache(
-      runtimeState.laserTransportCache,
-      result.reason,
-    );
-    setIfChanged(runtimeState.uniforms.uLaserCausticActive, 0);
+    deactivateRuntimeLaserTransportCache(runtimeState, result.reason);
   }
   return result;
 }
@@ -3144,13 +3425,6 @@ function readRuntimeModalResponseEnergy(runtimeState, featureFrame) {
   const retainedModalResponseEnergy =
     readRetainedModalRenderPacket(runtimeState)?.modalResponseEnergy ?? 0;
   return Math.max(currentModalResponseEnergy, retainedModalResponseEnergy);
-}
-
-function deriveRuntimeObservationVisibilityDrive(runtimeState, featureFrame) {
-  const currentVisibilityDrive = deriveObservationVisibilityDrive(featureFrame);
-  const retainedVisibilityDrive =
-    readRetainedModalRenderPacket(runtimeState)?.visibilityDrive ?? 0;
-  return Math.max(currentVisibilityDrive, retainedVisibilityDrive);
 }
 
 function snapshotActiveModalRenderPacket(runtimeState, featureFrame) {
@@ -3191,6 +3465,10 @@ function snapshotActiveModalRenderPacket(runtimeState, featureFrame) {
       runtimeState.modalFieldSpectralMetaBuffer,
       displacedPacket?.modalFieldSpectralMetaBuffer,
     ),
+    modalFieldMetadataBuffer: snapshotBufferArray(
+      runtimeState.modalFieldMetadataBuffer,
+      displacedPacket?.modalFieldMetadataBuffer,
+    ),
     modalFieldPhaseBuffer: snapshotBufferArray(
       runtimeState.modalFieldPhaseBuffer,
       displacedPacket?.modalFieldPhaseBuffer,
@@ -3203,12 +3481,15 @@ function snapshotActiveModalRenderPacket(runtimeState, featureFrame) {
     modalBasisPhaseAuthorityModeCount:
       runtimeState.modalBasisPhaseAuthorityModeCount ?? 0,
     totalSlotAmplitude: runtimeState.uniforms?.uTotalSlotAmplitude?.value ?? 0,
+    modalEnergyAmplitude:
+      runtimeState.uniforms?.uModalEnergyAmplitude?.value ?? 0,
     structuralProjectionDrive:
       runtimeState.uniforms?.uStructuralProjectionDrive?.value ?? 0,
     structuralProjectionConcentration:
       runtimeState.uniforms?.uStructuralProjectionConcentration?.value ?? 0,
+    carrierColumnDensityScale:
+      runtimeState.uniforms?.uCarrierColumnDensityScale?.value ?? 1,
     modalResponseEnergy: readModalResponseEnergy(featureFrame),
-    visibilityDrive: deriveObservationVisibilityDrive(featureFrame),
     raymarchFieldAnalysis: runtimeState.raymarchFieldAnalysis ?? null,
     spectralLightBuffersUploaded:
       runtimeState.spectralLightBuffersUploaded === true,
@@ -3244,6 +3525,10 @@ function restoreActiveModalRenderPacket(runtimeState, packet) {
     packet.modalFieldSpectralMetaBuffer,
   );
   restoreBufferArray(
+    runtimeState.modalFieldMetadataBuffer,
+    packet.modalFieldMetadataBuffer,
+  );
+  restoreBufferArray(
     runtimeState.modalFieldPhaseBuffer,
     packet.modalFieldPhaseBuffer,
   );
@@ -3271,12 +3556,20 @@ function restoreActiveModalRenderPacket(runtimeState, packet) {
     packet.totalSlotAmplitude ?? 0,
   );
   setIfChanged(
+    runtimeState.uniforms.uModalEnergyAmplitude,
+    packet.modalEnergyAmplitude ?? 0,
+  );
+  setIfChanged(
     runtimeState.uniforms.uStructuralProjectionDrive,
     packet.structuralProjectionDrive ?? 0,
   );
   setIfChanged(
     runtimeState.uniforms.uStructuralProjectionConcentration,
     packet.structuralProjectionConcentration ?? 0,
+  );
+  setIfChanged(
+    runtimeState.uniforms.uCarrierColumnDensityScale,
+    packet.carrierColumnDensityScale ?? 1,
   );
   setIfChanged(
     runtimeState.uniforms.uModalResponseEnergy,
@@ -3385,6 +3678,7 @@ function applyRaymarchRuntimeUploadAuthority({
   modalFieldSpectralLaneABuffer,
   modalFieldSpectralLaneBBuffer,
   modalFieldSpectralMetaBuffer,
+  modalFieldMetadataBuffer,
   modalFieldPhaseBuffer,
   modalFieldCoefficientBuffer,
   spectralLightEnabled,
@@ -3407,6 +3701,22 @@ function applyRaymarchRuntimeUploadAuthority({
     cavityGeometry: effectiveCavityGeometry,
   });
   const modalFieldLayer = raymarchFieldAnalysis.modalField;
+  const packetActiveModeCount = Math.min(
+    productUploadCapacity,
+    Math.max(
+      0,
+      Math.floor(
+        featureFrame?.activeModalFieldModeCount ??
+          featureFrame?.activeModeCount ??
+          modalFieldLayer.uploadedActiveCount,
+      ),
+    ),
+  );
+  if (featureFrame?.modalIdentitySlots) {
+    modalFieldLayer.originalActiveCount = packetActiveModeCount;
+    modalFieldLayer.uploadedActiveCount = packetActiveModeCount;
+    modalFieldLayer.occupiedSlotSpan = packetActiveModeCount;
+  }
   runtimeState.raymarchFieldAnalysis = raymarchFieldAnalysis;
 
   const uploadState = getRaymarchUploadState(runtimeState);
@@ -3418,19 +3728,23 @@ function applyRaymarchRuntimeUploadAuthority({
     spectralLaneA: descriptorSlots.modalFieldSpectralLaneA,
     spectralLaneB: descriptorSlots.modalFieldSpectralLaneB,
     spectralMeta: descriptorSlots.modalFieldSpectralMeta,
+    metadataSlots: descriptorSlots.modalFieldMetadataSlots,
     targetSlots: modalFieldModeBuffer.value.array,
     targetColorSlots: modalFieldColorBuffer.value.array,
     targetSpectralLaneA: modalFieldSpectralLaneABuffer?.value?.array ?? null,
     targetSpectralLaneB: modalFieldSpectralLaneBBuffer?.value?.array ?? null,
     targetSpectralMeta: modalFieldSpectralMetaBuffer?.value?.array ?? null,
+    targetMetadataSlots: modalFieldMetadataBuffer?.value?.array ?? null,
     modeBufferNode: modalFieldModeBuffer,
     colorBufferNode: modalFieldColorBuffer,
     spectralLaneABufferNode: modalFieldSpectralLaneABuffer,
     spectralLaneBBufferNode: modalFieldSpectralLaneBBuffer,
     spectralMetaBufferNode: modalFieldSpectralMetaBuffer,
+    metadataBufferNode: modalFieldMetadataBuffer,
     layer: modalFieldLayer,
     includeColors: spectralLightEnabled,
     includeSpectral: spectralLightEnabled,
+    identityOnly: Boolean(featureFrame?.modalIdentitySlots),
   });
 
   const modalFieldPhaseAuthorityModeCount = applyLayerPhaseUploadIfChanged({
@@ -3451,7 +3765,8 @@ function applyRaymarchRuntimeUploadAuthority({
   runtimeState.modalBasisPhaseAuthorityModeCount =
     modalFieldPhaseAuthorityModeCount;
   applyLayerCoefficientUpload({
-    modeSlots: modalFieldModeBuffer?.value?.array,
+    modeSlots: descriptorSlots.modalFieldSlots,
+    coefficients: featureFrame?.modalCoefficientSlots ?? null,
     targetCoefficientSlots: modalFieldCoefficientBuffer?.value?.array ?? null,
     coefficientBufferNode: modalFieldCoefficientBuffer,
     layer: modalFieldLayer,
@@ -3536,6 +3851,7 @@ function applyRaymarchRuntimeUploadAuthority({
   updateLiveFieldProjectionCache(runtimeState, renderer, {
     modalFieldCapacity: productUploadCapacity,
     time,
+    laserTransportEnabled: runtimeState.auditFixtureBaseOnly !== true,
   });
   syncModalRenderPacketState(runtimeState, featureFrame);
 }
@@ -3556,6 +3872,7 @@ export function tickRaymarchRuntime(
     runtimeState.modalFieldSpectralLaneBBuffer;
   const modalFieldSpectralMetaBuffer =
     runtimeState.modalFieldSpectralMetaBuffer;
+  const modalFieldMetadataBuffer = runtimeState.modalFieldMetadataBuffer;
   const modalFieldPhaseBuffer = runtimeState.modalFieldPhaseBuffer;
   const modalFieldCoefficientBuffer = runtimeState.modalFieldCoefficientBuffer;
   const modalFieldCapacity = inferModalFieldCapacity(
@@ -3653,14 +3970,7 @@ export function tickRaymarchRuntime(
     const idleDensityGain =
       runtimeState.baseDensityGain ?? uniforms.uDensityGain.value;
     setIfChanged(uniforms.uDensityGain, idleDensityGain);
-    setIfChanged(
-      uniforms.uDensityAbsorption,
-      idleDensityGain * uniforms.uAbsorption.value,
-    );
-    syncObservationTransferUniforms(
-      runtimeState,
-      runtimeState.visibilityDriveEnvelope,
-    );
+    syncObservationTransferUniforms(runtimeState);
     volumeMesh.visible = false;
     idleOverlay.visible = resolveIdleOverlayVisible(
       runtimeState,
@@ -3688,6 +3998,16 @@ export function tickRaymarchRuntime(
       modalFieldCapacity,
     },
   );
+  if (!modalDescriptor) {
+    blockNonAuthoritativeModalDescriptor(
+      runtimeState,
+      featureFrame,
+      fieldState,
+      renderAuthority,
+      "descriptor-missing",
+    );
+    return;
+  }
   runtimeState.currentModalDescriptor = modalDescriptor;
   const rebuiltFatalModalDescriptorBlockReason =
     resolveFatalModalDescriptorBlockReason(modalDescriptor.fieldAuthority);
@@ -3715,6 +4035,7 @@ export function tickRaymarchRuntime(
     modalFieldSpectralLaneABuffer,
     modalFieldSpectralLaneBBuffer,
     modalFieldSpectralMetaBuffer,
+    modalFieldMetadataBuffer,
     modalFieldPhaseBuffer,
     modalFieldCoefficientBuffer,
     spectralLightEnabled,
@@ -3797,24 +4118,10 @@ export function tickRaymarchRuntime(
   setIfChanged(uniforms.uKeyMode, runtimeState.keyModeSmooth);
 
   updateLaserResponse(runtimeState, featureFrame);
-  runtimeState.visibilityDriveEnvelope = damp(
-    runtimeState.visibilityDriveEnvelope ?? 0,
-    deriveRuntimeObservationVisibilityDrive(runtimeState, featureFrame),
-    VISIBILITY_DRIVE_DAMP_LAMBDA,
-    deltaTime,
-  );
-  syncObservationTransferUniforms(
-    runtimeState,
-    runtimeState.visibilityDriveEnvelope,
-  );
+  syncObservationTransferUniforms(runtimeState);
   const nextDensityGain =
-    (runtimeState.baseDensityGain ?? uniforms.uDensityGain.value) *
-    (1 + (runtimeState.scaleSignal ?? 0) * DENSITY_RESPONSE_AMOUNT);
+    runtimeState.baseDensityGain ?? uniforms.uDensityGain.value;
   setIfChanged(uniforms.uDensityGain, nextDensityGain);
-  setIfChanged(
-    uniforms.uDensityAbsorption,
-    nextDensityGain * uniforms.uAbsorption.value,
-  );
   const bandEnergies = featureFrame?.bandEnergies ?? EMPTY_BAND_ENERGIES;
   const bandEnergyValues = uniforms.uBandEnergies.value;
   const nextBandEnergy0 = bandEnergies[0] ?? 0;
@@ -3894,14 +4201,14 @@ export function createRaymarchSceneRoot({ volumeMesh, idleOverlay, radius }) {
   visualRoot.add(idleOverlay);
   root.add(visualRoot);
 
-  // Keep the orb primarily self-emissive, but retain a very weak symmetric fill
-  // rig so the volume stays readable across backends that expect direct lights.
-  const primaryLight = new THREE.PointLight(0xe6f7ff, 0.9, radius * 6, 2);
+  // Fixed illumination: the acoustic field owns structure while this
+  // symmetric optical rig owns the direct-light response.
+  const primaryLight = new THREE.PointLight(0xe6f7ff, 1.25, radius * 6, 2);
   primaryLight.position.set(radius * 1.15, radius * 0.85, radius * 1.8);
   primaryLight.castShadow = false;
   root.add(primaryLight);
 
-  const secondaryLight = new THREE.PointLight(0xe6f7ff, 0.9, radius * 6, 2);
+  const secondaryLight = new THREE.PointLight(0xe6f7ff, 1.25, radius * 6, 2);
   secondaryLight.position.set(-radius * 1.15, radius * 0.85, radius * 1.8);
   secondaryLight.castShadow = false;
   root.add(secondaryLight);

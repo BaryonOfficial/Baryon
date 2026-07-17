@@ -19,6 +19,7 @@ import {
 } from "three";
 import {
   AdvancedControlsDock,
+  AUDIO_FEATURE_AUTHORITY_ROLES,
   AudioProvider,
   BaryonScene,
   CAMERA_CONTROL_MODES,
@@ -528,6 +529,9 @@ function ArOrbExperience({ xrStore, canEnterAr }) {
                 customTargetFps={controlsState.customTargetFps}
                 traaEnabled={controlsState.traaEnabled !== false}
                 onPerformanceHudSnapshotChange={null}
+                audioFeatureAuthorityRole={
+                  AUDIO_FEATURE_AUTHORITY_ROLES.localProducer
+                }
                 cameraControlMode={CAMERA_CONTROL_MODES.spatialSession}
               />
             </Suspense>
