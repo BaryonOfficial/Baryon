@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import {
   analyzeModalField,
   buildRaymarchFieldAnalysis,
-  copyModalField,
   deriveFieldExcitation,
   deriveRaymarchFieldComplexity,
 } from "./fieldAnalysis.js";
@@ -23,6 +22,23 @@ function combineSlots(...slotArrays) {
   return new Float32Array(slotArrays.flatMap((slots) => Array.from(slots)));
 }
 
+function splitModalFieldSlots(modalFieldSlots) {
+  const modeCount = Math.floor((modalFieldSlots?.length ?? 0) / 4);
+  const modalIdentitySlots = new Float32Array(modeCount * 3);
+  const modalCoefficientSlots = new Float32Array(modeCount);
+
+  for (let slotIndex = 0; slotIndex < modeCount; slotIndex += 1) {
+    const sourceOffset = slotIndex * 4;
+    const identityOffset = slotIndex * 3;
+    modalIdentitySlots[identityOffset] = modalFieldSlots[sourceOffset];
+    modalIdentitySlots[identityOffset + 1] = modalFieldSlots[sourceOffset + 1];
+    modalIdentitySlots[identityOffset + 2] = modalFieldSlots[sourceOffset + 2];
+    modalCoefficientSlots[slotIndex] = modalFieldSlots[sourceOffset + 3];
+  }
+
+  return { modalIdentitySlots, modalCoefficientSlots };
+}
+
 describe("raymarchFieldAnalysis", () => {
   it("preserves every active descriptor mode without modal-retention selectors", () => {
     const structuralSlots = new Float32Array([
@@ -36,7 +52,7 @@ describe("raymarchFieldAnalysis", () => {
     const modalFieldSlots = combineSlots(structuralSlots, supportedDetailSlots);
 
     const analysis = buildRaymarchFieldAnalysis({
-      modalFieldSlots,
+      ...splitModalFieldSlots(modalFieldSlots),
       modalFieldCapacity: 12,
       featureFrame: {
         averageAmplitude: 96,
@@ -61,6 +77,7 @@ describe("raymarchFieldAnalysis", () => {
     expect(source).not.toContain("energyRetention");
     expect(source).not.toContain("analyzeBudgetedModeLayer");
     expect(source).not.toContain("copyBudgetedModeLayer");
+    expect(source).not.toContain("modalFieldSlots");
   });
 
   it("counts every active slot in the modal field", () => {
@@ -70,7 +87,7 @@ describe("raymarchFieldAnalysis", () => {
     ]);
 
     const modalField = analyzeModalField({
-      slots,
+      ...splitModalFieldSlots(slots),
       capacity: 6,
     });
 
@@ -83,13 +100,27 @@ describe("raymarchFieldAnalysis", () => {
     );
   });
 
+  it("ignores committed coefficients beyond the active descriptor prefix", () => {
+    const modalField = analyzeModalField({
+      modalIdentitySlots: new Float32Array([1, 1, 1, 2, 2, 2]),
+      modalCoefficientSlots: new Float32Array([0.6, 0.4, 8, 8]),
+      activeModeCount: 2,
+      capacity: 4,
+    });
+
+    expect(modalField.capacity).toBe(4);
+    expect(modalField.originalActiveCount).toBe(2);
+    expect(modalField.uploadedActiveCount).toBe(2);
+    expect(modalField.totalAmplitude).toBeCloseTo(1, 5);
+  });
+
   it("uploads through the last occupied slot when stable modal slots are sparse", () => {
     const slots = new Float32Array([
       0, 0, 0, 0, 2, 2, 2, 0.7, 0, 0, 0, 0, 4, 4, 4, 0.2,
     ]);
 
     const modalField = analyzeModalField({
-      slots,
+      ...splitModalFieldSlots(slots),
       capacity: 4,
     });
 
@@ -98,59 +129,17 @@ describe("raymarchFieldAnalysis", () => {
     expect(modalField.totalAmplitude).toBeCloseTo(0.9, 5);
   });
 
-  it("copies the full modal field into the upload buffer", () => {
-    const sourceSlots = new Float32Array([
-      1, 1, 1, 0.9, 2, 2, 2, 0.7, 3, 3, 3, 0.2, 4, 4, 4, 0,
-    ]);
-    const sourceColors = new Float32Array([
-      1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0,
-    ]);
-    const targetSlots = new Float32Array(16);
-    const targetColors = new Float32Array(16);
-
-    copyModalField({
-      sourceSlots,
-      sourceColorSlots: sourceColors,
-      targetSlots,
-      targetColorSlots: targetColors,
-      capacity: 4,
-      includeColors: true,
-    });
-
-    expect(Array.from(targetSlots)).toEqual([
-      1,
-      1,
-      1,
-      expect.closeTo(0.9, 5),
-      2,
-      2,
-      2,
-      expect.closeTo(0.7, 5),
-      3,
-      3,
-      3,
-      expect.closeTo(0.2, 5),
-      4,
-      4,
-      4,
-      0,
-    ]);
-    expect(Array.from(targetColors.slice(0, 12))).toEqual([
-      1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1,
-    ]);
-  });
-
   it("ignores color slots when analyzing field complexity", () => {
     const slots = new Float32Array([
       1, 1, 1, 0.5, 2, 2, 2, 0.4, 3, 3, 3, 0.3, 4, 4, 4, 0.09,
     ]);
 
     const baseline = analyzeModalField({
-      slots,
+      ...splitModalFieldSlots(slots),
       capacity: 4,
     });
     const staticMode = analyzeModalField({
-      slots,
+      ...splitModalFieldSlots(slots),
       colorSlots: new Float32Array([
         0, 0, 0, 0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1, 0, 1, 0, 1,
       ]),
@@ -172,7 +161,7 @@ describe("raymarchFieldAnalysis", () => {
     const originalModalField = Array.from(modalFieldSlots);
 
     const analysis = buildRaymarchFieldAnalysis({
-      modalFieldSlots,
+      ...splitModalFieldSlots(modalFieldSlots),
       modalFieldCapacity: 6,
       featureFrame: {
         averageAmplitude: 80,
@@ -205,9 +194,9 @@ describe("raymarchFieldAnalysis", () => {
 
   it("raises complexity when mode load and excitation increase", () => {
     const low = buildRaymarchFieldAnalysis({
-      modalFieldSlots: new Float32Array([
-        1, 1, 1, 0.4, 2, 2, 2, 0.3, 1, 1, 2, 0.1,
-      ]),
+      ...splitModalFieldSlots(
+        new Float32Array([1, 1, 1, 0.4, 2, 2, 2, 0.3, 1, 1, 2, 0.1]),
+      ),
       modalFieldCapacity: 16,
       featureFrame: {
         averageAmplitude: 20,
@@ -215,12 +204,14 @@ describe("raymarchFieldAnalysis", () => {
       },
     });
     const high = buildRaymarchFieldAnalysis({
-      modalFieldSlots: new Float32Array([
-        1, 2, 3, 1.0, 1, 3, 4, 0.9, 2, 3, 4, 0.85, 2, 4, 5, 0.8, 3, 4, 5, 0.75,
-        3, 5, 6, 0.7, 4, 5, 6, 0.65, 4, 6, 7, 0.6, 2, 2, 3, 0.7, 2, 3, 3, 0.65,
-        3, 3, 4, 0.6, 3, 4, 4, 0.55, 4, 4, 5, 0.5, 4, 5, 5, 0.45, 5, 5, 6, 0.4,
-        5, 6, 6, 0.35,
-      ]),
+      ...splitModalFieldSlots(
+        new Float32Array([
+          1, 2, 3, 1.0, 1, 3, 4, 0.9, 2, 3, 4, 0.85, 2, 4, 5, 0.8, 3, 4, 5,
+          0.75, 3, 5, 6, 0.7, 4, 5, 6, 0.65, 4, 6, 7, 0.6, 2, 2, 3, 0.7, 2, 3,
+          3, 0.65, 3, 3, 4, 0.6, 3, 4, 4, 0.55, 4, 4, 5, 0.5, 4, 5, 5, 0.45, 5,
+          5, 6, 0.4, 5, 6, 6, 0.35,
+        ]),
+      ),
       modalFieldCapacity: 16,
       featureFrame: {
         averageAmplitude: 160,
@@ -242,7 +233,7 @@ describe("raymarchFieldAnalysis", () => {
       0.35,
     ]);
     const analysis = buildRaymarchFieldAnalysis({
-      modalFieldSlots,
+      ...splitModalFieldSlots(modalFieldSlots),
       modalFieldCapacity: 16,
       featureFrame: {
         averageAmplitude: 255,

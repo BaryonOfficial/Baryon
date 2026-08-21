@@ -6,19 +6,18 @@ import {
   createCameraControlCommand,
   dispatchCameraControlCommand,
 } from "./cameraControlEvents.js";
+import {
+  CAMERA_VIEW_PRESETS,
+  resolvePresetCameraPose,
+} from "./cameraPosePresets.js";
 
 test("camera control command normalizes preset and default distance", () => {
   expect(
     createCameraControlCommand({
       cameraViewPreset: "side",
     }),
-  ).toMatchObject({
-    cameraPose: {
-      position: { x: 0, y: 0, z: 9 },
-      target: { x: 0, y: 0, z: 0 },
-      up: { x: 0, y: 1, z: 0 },
-      fov: 65,
-    },
+  ).toStrictEqual({
+    cameraPose: resolvePresetCameraPose(CAMERA_VIEW_PRESETS.side),
   });
 });
 
@@ -30,8 +29,26 @@ test("camera control command rejects invalid presets", () => {
   ).toBeNull();
 });
 
+test("camera control command accepts a semantic orbit axis", () => {
+  expect(
+    createCameraControlCommand({
+      cameraOrbit: { axis: "elevation", value: 120, transport: "midi" },
+    }),
+  ).toEqual({
+    cameraOrbit: { axis: "elevation", value: 85, transport: "midi" },
+  });
+  expect(
+    createCameraControlCommand({
+      cameraOrbit: { axis: "roll", value: 10 },
+    }),
+  ).toBeNull();
+});
+
 test("dispatchCameraControlCommand emits the normalized camera detail", () => {
   const received = [];
+  const expectedDetail = {
+    cameraPose: resolvePresetCameraPose(CAMERA_VIEW_PRESETS.topDown),
+  };
   const listener = (event) => {
     received.push(event.detail);
   };
@@ -41,33 +58,11 @@ test("dispatchCameraControlCommand emits the normalized camera detail", () => {
     const detail = dispatchCameraControlCommand({
       cameraViewPreset: "top-down",
     });
-    expect(detail).toMatchObject({
-      cameraPose: {
-        position: {
-          x: 0,
-          y: 9,
-          z: 0,
-        },
-        target: { x: 0, y: 0, z: 0 },
-        up: { x: 0, y: 0, z: -1 },
-        fov: 65,
-      },
-    });
+    expect(detail).toStrictEqual(expectedDetail);
   } finally {
     window.removeEventListener(CAMERA_CONTROL_COMMAND_EVENT, listener);
   }
 
   expect(received).toHaveLength(1);
-  expect(received[0]).toMatchObject({
-    cameraPose: {
-      position: {
-        x: 0,
-        y: 9,
-        z: 0,
-      },
-      target: { x: 0, y: 0, z: 0 },
-      up: { x: 0, y: 0, z: -1 },
-      fov: 65,
-    },
-  });
+  expect(received[0]).toStrictEqual(expectedDetail);
 });

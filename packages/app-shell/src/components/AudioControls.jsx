@@ -1,13 +1,21 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { AUDIO_SOURCE_KINDS } from "@baryon/engine/audio";
 import { useAudio } from "../context/AudioContext";
-import { useAudioTransportClock } from "../context/audioTransportClock.js";
+import { observeAudioTransportClock } from "../context/audioTransportClock.js";
 import {
   createLiveInputRuntimeStatus,
   LIVE_INPUT_PHASES,
   LIVE_INPUT_SIGNAL_STATES,
 } from "../context/liveInputRuntimeStatus.js";
 import { SourceSelector } from "./controls/SourceSelector";
-import { useDraggableFloatingUi } from "./hooks/useDraggableFloatingUi.js";
+import DemoAudioIcon from "./DemoAudioIcon.jsx";
 
 // ─── SVG Icons (Nothing: monoline, 1.5px stroke, no fill, round caps) ───────
 
@@ -65,19 +73,32 @@ function PauseIcon() {
   );
 }
 
-function StopIcon() {
+function PreviousTrackIcon() {
   return (
     <svg
-      width="12"
-      height="12"
+      width="18"
+      height="18"
       viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
+      fill="currentColor"
+      aria-hidden="true"
     >
-      <rect x="4" y="4" width="16" height="16" />
+      <rect x="5" y="5" width="2" height="14" rx="1" />
+      <path d="M18.5 5.8a1 1 0 0 1 1.5.87v10.66a1 1 0 0 1-1.5.87l-8.9-5.33a1 1 0 0 1 0-1.74l8.9-5.33Z" />
+    </svg>
+  );
+}
+
+function NextTrackIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <rect x="17" y="5" width="2" height="14" rx="1" />
+      <path d="M5.5 5.8A1 1 0 0 0 4 6.67v10.66a1 1 0 0 0 1.5.87l8.9-5.33a1 1 0 0 0 0-1.74L5.5 5.8Z" />
     </svg>
   );
 }
@@ -120,7 +141,7 @@ function VolumeIcon({ muted }) {
   );
 }
 
-function HistoryIcon() {
+function VolumeLowIcon() {
   return (
     <svg
       width="14"
@@ -131,10 +152,52 @@ function HistoryIcon() {
       strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
+      aria-hidden="true"
     >
-      <path d="M3 12a9 9 0 1 0 3-6.7" />
-      <path d="M3 4v5h5" />
-      <path d="M12 7v5l3 2" />
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+    </svg>
+  );
+}
+
+function QueueIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="4" cy="6" r="1" />
+      <circle cx="4" cy="12" r="1" />
+      <circle cx="4" cy="18" r="1" />
+      <path d="M8 6h12M8 12h12M8 18h12" />
+    </svg>
+  );
+}
+
+function AutoplayIcon() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 8.5A7 7 0 0 1 17 6l2 2" />
+      <path d="M19 4v4h-4" />
+      <path d="M19 15.5A7 7 0 0 1 7 18l-2-2" />
+      <path d="M5 20v-4h4" />
+      <path d="m10 9 5 3-5 3Z" fill="currentColor" stroke="none" />
     </svg>
   );
 }
@@ -155,58 +218,6 @@ function UploadIcon() {
       <path d="m7 9 5-5 5 5" />
       <path d="M5 20h14" />
     </svg>
-  );
-}
-
-function DemoAudioIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M4 12h2l2-5 4 10 4-10 2 5h2" />
-      <circle cx="12" cy="12" r="9" />
-    </svg>
-  );
-}
-
-// ─── Scrolling filename ───────────────────────────────────────────────────────
-
-function ScrollingText({ text }) {
-  const containerRef = useRef(null);
-  const textRef = useRef(null);
-  const [scrollDistance, setScrollDistance] = useState(0);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    const textEl = textRef.current;
-    if (!container || !textEl) return;
-    const overflow = textEl.scrollWidth - container.clientWidth;
-    setScrollDistance(overflow > 0 ? overflow : 0);
-  }, [text]);
-
-  /** @type {import("react").CSSProperties & { "--scroll-distance": string }} */
-  const scrollingStyle = {
-    "--scroll-distance": `-${scrollDistance}px`,
-    animation: "am-scroll 9s ease-in-out infinite",
-  };
-
-  return (
-    <span ref={containerRef} className="am-filename-wrap">
-      <span
-        ref={textRef}
-        className="am-filename"
-        style={scrollDistance > 0 ? scrollingStyle : undefined}
-      >
-        {text}
-      </span>
-    </span>
   );
 }
 
@@ -239,12 +250,14 @@ function getStatusConfig(
       return { color: "#5B9BF6", pulse: true, label: "Calibrating mic" };
     }
     if (status.phase === LIVE_INPUT_PHASES.weakSignal) {
+      const isSilent = status.signalState === LIVE_INPUT_SIGNAL_STATES.silent;
       return {
         color: "#D4A843",
-        pulse: true,
-        label:
-          isLineFeed && status.signalState === LIVE_INPUT_SIGNAL_STATES.silent
-            ? "Line feed silent"
+        pulse: !isSilent,
+        label: isSilent
+          ? "Live input connected — waiting for audio"
+          : isLineFeed
+            ? "Line feed weak"
             : "Input weak",
       };
     }
@@ -309,9 +322,11 @@ const CSS = `
 }
 
 .am-source-mode-shell {
+  --baryon-source-selector-radius: 10px;
+  --baryon-source-selector-segment-radius: 7px;
   position: fixed;
   right: 0.9rem;
-  bottom: 1.75rem;
+  bottom: 16px;
   z-index: 52;
   display: inline-flex;
   align-items: center;
@@ -345,10 +360,10 @@ const CSS = `
 }
 
 .am-player-shell--compact {
-  align-items: flex-start;
+  align-items: center;
   bottom: 16px;
-  width: min(100%, var(--baryon-compact-dock-min-width));
-  max-width: min(calc(100vw - 1.5rem), var(--baryon-compact-dock-min-width));
+  width: min(32rem, calc(100vw - 1.5rem));
+  max-width: min(32rem, calc(100vw - 1.5rem));
 }
 
 .am-player {
@@ -377,20 +392,6 @@ const CSS = `
   background: transparent;
   border: none;
   box-shadow: none;
-}
-
-.am-controls-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  width: 100%;
-}
-
-.am-source-row,
-.am-actions-row,
-.am-volume-row {
-  display: contents;
 }
 
 /* ── Timeline — Nothing: flat surface, square-ended track ── */
@@ -468,141 +469,12 @@ const CSS = `
   background: var(--nd-border);
 }
 
-/* ── Track section — Nothing: minimal, typographic ── */
-.am-track {
-  appearance: none;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 4px 10px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: border-color 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
-  max-width: 200px;
-  min-width: 0;
-  border: 1px solid transparent;
-}
-.am-track:hover { border-color: var(--nd-border-visible); }
-
-.am-source-tools {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.am-source-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  color: var(--nd-text-secondary);
-}
-
-.am-track-label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.am-track-popup {
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 8px);
-  transform: translateX(-50%) translateY(2px);
-  min-width: 13rem;
-  max-width: min(18rem, calc(100vw - 2rem));
-  padding: 8px 12px;
-  border: 1px solid var(--nd-border-visible);
-  border-radius: 8px;
-  background: var(--nd-surface);
-  color: var(--nd-text-primary);
-  font-family: var(--baryon-type-interface-family);
-  font-size: 12px;
-  line-height: 1.4;
-  white-space: normal;
-  pointer-events: none;
-  opacity: 0;
-  visibility: hidden;
-  transition:
-    opacity 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
-    visibility 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
-  z-index: 75;
-}
-
-.am-track-popup::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 100%;
-  width: 8px;
-  height: 8px;
-  background: var(--nd-surface);
-  border-right: 1px solid var(--nd-border-visible);
-  border-bottom: 1px solid var(--nd-border-visible);
-  transform: translateX(-50%) translateY(-50%) rotate(45deg);
-}
-
-.am-track-popup--visible {
-  opacity: 1;
-  visibility: visible;
-  transform: translateX(-50%) translateY(0);
-}
-
 /* ── Status — Nothing: dot + instrument-panel label ── */
 .am-status-dot {
   flex-shrink: 0;
   width: 6px;
   height: 6px;
   border-radius: 50%;
-}
-
-.am-filename-wrap {
-  overflow: hidden;
-  max-width: 150px;
-  display: block;
-  min-width: 0;
-}
-
-.am-filename {
-  font-family: var(--baryon-type-interface-family);
-  font-size: 14px;
-  font-weight: 400;
-  color: var(--nd-text-primary);
-  white-space: nowrap;
-  display: inline-block;
-}
-
-@keyframes am-scroll {
-  0%   { transform: translateX(0); }
-  15%  { transform: translateX(0); }
-  75%  { transform: translateX(var(--scroll-distance)); }
-  90%  { transform: translateX(var(--scroll-distance)); }
-  100% { transform: translateX(0); }
-}
-
-/* ── Divider — Nothing: structural border ── */
-.am-divider {
-  width: 1px;
-  height: 18px;
-  background: var(--nd-border);
-  margin: 0 8px;
-  flex-shrink: 0;
-}
-.am-divider--terminal {
-  margin-right: 0;
-}
-
-/* ── Transport ── */
-.am-transport {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 /* ── Shared button base — Nothing: outlined, no fill, mechanical ── */
@@ -629,77 +501,6 @@ const CSS = `
   cursor: default;
   border-color: var(--nd-border);
   color: var(--nd-text-disabled);
-}
-
-/* Recent uploads — bare icon */
-.am-btn--recent {
-  width: 30px;
-  height: 30px;
-  background: transparent;
-  border-color: transparent;
-  color: var(--nd-text-secondary);
-}
-.am-btn--recent:hover {
-  border-color: transparent;
-  color: var(--nd-text-display);
-}
-.am-btn--recent-active {
-  border-color: transparent;
-  color: var(--nd-text-display);
-}
-
-/* Play/Pause — bare icon; accent while playing signals the engaged state */
-.am-btn--play {
-  width: 36px;
-  height: 36px;
-  background: transparent;
-  border-color: transparent;
-  color: var(--nd-text-primary);
-}
-.am-btn--play:not(:disabled):hover {
-  background: transparent;
-  border-color: transparent;
-  color: var(--nd-text-display);
-}
-.am-btn--play:not(:disabled):active { opacity: 0.6; }
-.am-btn--play-active {
-  color: var(--nd-accent);
-}
-.am-btn--play:disabled {
-  background: transparent;
-  border-color: transparent;
-  color: var(--nd-text-disabled);
-}
-
-/* Stop — bare icon */
-.am-btn--stop {
-  width: 30px;
-  height: 30px;
-  border-color: transparent;
-  color: var(--nd-text-secondary);
-}
-.am-btn--stop:disabled {
-  background: transparent;
-  border-color: transparent;
-  color: var(--nd-text-disabled);
-}
-.am-btn--stop:not(:disabled):hover {
-  border-color: transparent;
-  color: var(--nd-text-display);
-}
-.am-btn--stop:not(:disabled):active { opacity: 0.6; }
-
-.am-btn.am-btn--demo {
-  width: 30px;
-  height: 30px;
-  background: transparent;
-  border-color: transparent;
-  color: var(--nd-text-secondary);
-}
-
-.am-btn.am-btn--demo:hover {
-  border-color: transparent;
-  color: var(--nd-text-display);
 }
 
 /* ── Mic ── */
@@ -739,35 +540,41 @@ const CSS = `
   gap: 10px;
 }
 
-.am-volume-meta {
-  display: none;
-}
-
 .am-compact-shell {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  align-items: center;
-  width: min(100%, var(--baryon-compact-dock-min-width));
-  min-width: min(100%, var(--baryon-compact-dock-min-width));
-  max-width: var(--baryon-compact-dock-min-width);
+  width: 100%;
+  min-width: 0;
+  max-width: none;
 }
 
 .am-compact-card {
-  display: flex;
-  flex-direction: column;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 12px;
   width: 100%;
-  gap: 10px;
-  padding: 14px 12px 12px;
-  border-radius: 16px;
-  border: none;
-  background: var(--nd-surface);
-  box-shadow: var(--nd-shell-shadow);
+  padding: 8px 10px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--nd-text-primary) 7%, transparent);
+  background: color-mix(in srgb, var(--nd-surface) 94%, transparent);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--nd-text-primary) 5%, transparent) inset,
+    var(--nd-shell-shadow);
+  backdrop-filter: blur(18px) saturate(125%);
+  -webkit-backdrop-filter: blur(18px) saturate(125%);
   box-sizing: border-box;
 }
 
+.am-compact-track-section {
+  display: contents;
+}
+
 .am-compact-card .am-timeline-shell {
+  grid-column: 1 / -1;
+  grid-row: 1;
   width: 100%;
+  margin: 0 0 2px;
   padding: 0;
   background: transparent;
   border: none;
@@ -775,32 +582,76 @@ const CSS = `
 }
 
 .am-compact-card .am-timeline-row {
-  gap: 10px;
-  padding: 8px 12px;
-  border: 1px solid var(--nd-border);
-  border-radius: 999px;
-  background: var(--nd-surface-raised);
+  gap: 6px;
+  padding: 1px 0 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
   box-sizing: border-box;
 }
 
 .am-compact-card .am-timeline-time {
-  min-width: 2.25rem;
+  min-width: 1.75rem;
+  font-size: 8px;
 }
 
 .am-compact-identity {
+  grid-column: 1;
+  grid-row: 2;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  align-items: start;
+  align-items: center;
+  gap: 0;
   width: 100%;
   min-width: 0;
-  padding: 2px 8px 6px;
+  min-height: 34px;
+  padding: 0;
   box-sizing: border-box;
 }
 
-.am-compact-source-actions {
+.am-compact-source-trigger {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.am-compact-source-trigger:focus-visible {
+  outline: 2px solid var(--nd-info);
+  outline-offset: 3px;
+  border-radius: 9px;
+}
+
+.am-compact-source-trigger:hover .am-compact-track-title {
+  color: var(--nd-text-display);
+}
+
+.am-compact-source-mark {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border: 1px solid var(--nd-border-visible);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--nd-surface-raised) 72%, transparent);
+  color: var(--nd-text-primary);
+}
+
+.am-compact-source-actions {
+  display: none;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -817,24 +668,46 @@ const CSS = `
   display: flex;
   flex-direction: column;
   flex: 1 1 0;
-  gap: 3px;
+  gap: 2px;
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
-  padding-top: 1px;
+  padding-top: 0;
 }
 
 .am-compact-track-meta {
-  display: block;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--nd-text-disabled);
+  color: var(--nd-text-secondary);
   font-family: var(--baryon-type-mono-family);
-  font-size: 10px;
+  font-size: 9px;
   letter-spacing: var(--baryon-type-dense-label-letter-spacing);
   text-transform: uppercase;
+}
+
+.am-compact-track-meta-upload {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  color: var(--nd-text-secondary);
+  transition: color 160ms ease;
+}
+
+.am-compact-track-meta-upload svg {
+  width: 10px;
+  height: 10px;
+}
+
+.am-compact-source-trigger:hover .am-compact-track-meta-upload {
+  color: var(--nd-text-primary);
 }
 
 .am-compact-track-title {
@@ -844,17 +717,21 @@ const CSS = `
   white-space: nowrap;
   color: var(--nd-text-primary);
   font-family: var(--baryon-type-interface-family);
-  font-size: 14px;
-  font-weight: 400;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .am-compact-action {
   width: 36px;
   height: 36px;
-  border: 1px solid transparent;
-  border-radius: 12px;
+  border: none;
+  border-radius: 999px;
   background: transparent;
   color: var(--nd-text-secondary);
+  transition:
+    transform 120ms cubic-bezier(0.23, 1, 0.32, 1),
+    color 160ms ease,
+    background-color 160ms ease;
 }
 
 .am-compact-action:hover {
@@ -862,17 +739,18 @@ const CSS = `
   color: var(--nd-text-display);
 }
 
-.am-compact-action:not(:disabled):active { opacity: 0.6; }
+.am-compact-action:not(:disabled):active {
+  transform: scale(0.96);
+  opacity: 1;
+}
 
 .am-compact-action--primary {
   background: transparent;
-  border-color: transparent;
   color: var(--nd-text-primary);
 }
 
 .am-compact-action--primary:hover {
   background: transparent;
-  border-color: transparent;
   color: var(--nd-text-display);
 }
 
@@ -896,25 +774,45 @@ const CSS = `
 }
 
 .am-compact-action-group--playback {
-  flex: 0 0 auto;
-  gap: 5px;
+  display: grid;
+  grid-template-columns: 36px 40px 36px;
+  justify-content: center;
+  gap: 4px;
+  width: auto;
 }
 
 .am-compact-action-group--playback .am-compact-action--primary {
   width: 40px;
   height: 40px;
-  border-radius: 14px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--nd-text-primary);
 }
 
-.am-compact-shell .am-volume-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.am-compact-action-group--playback .am-compact-action--primary svg {
+  width: 18px;
+  height: 18px;
+}
+
+.am-compact-action--seek:not(:disabled) {
+  color: var(--nd-text-primary);
+}
+
+.am-compact-action-group--playback
+  .am-compact-action--primary:not(:disabled):hover {
+  background: transparent;
+  color: var(--nd-text-display);
+}
+
+.am-compact-action-group--playback .am-compact-action--primary:disabled {
+  background: transparent;
   color: var(--nd-text-disabled);
-  font-family: var(--baryon-type-mono-family);
-  font-size: 11px;
-  letter-spacing: var(--baryon-type-action-letter-spacing);
-  text-transform: uppercase;
+}
+
+.am-compact-action-group--playback
+  .am-compact-action--primary.am-compact-action--active {
+  background: transparent;
+  color: var(--nd-accent);
 }
 
 .am-compact-shell .am-volume {
@@ -932,28 +830,27 @@ const CSS = `
   min-width: 0;
 }
 
-.am-compact-header-button,
 .am-compact-utility {
-  width: 36px;
-  height: 36px;
-  border-radius: 9px;
+  min-width: 32px;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  transition:
+    transform 120ms cubic-bezier(0.23, 1, 0.32, 1),
+    border-color 160ms ease,
+    color 160ms ease,
+    background-color 160ms ease;
 }
 
-.am-compact-header-button {
-  border: 1px solid var(--nd-border-visible);
+.am-compact-utility:not(:disabled):active {
+  transform: scale(0.96);
+}
+
+.am-compact-utility--bare,
+.am-compact-utility--bare:hover {
+  border: none;
+  border-radius: 0;
   background: transparent;
-  color: var(--nd-text-secondary);
-}
-
-.am-compact-header-button:hover {
-  border-color: var(--nd-text-display);
-  color: var(--nd-text-display);
-}
-
-.am-compact-header-button.am-compact-header-button--demo,
-.am-compact-header-button.am-compact-header-button--demo:hover {
-  border-color: transparent;
-  color: var(--nd-text-secondary);
 }
 
 .am-compact-utility--active {
@@ -962,33 +859,40 @@ const CSS = `
 }
 
 .am-compact-volume-row {
+  grid-column: 3;
+  grid-row: 2;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
-  align-self: center;
-  justify-content: center;
-  width: 100%;
+  gap: 6px;
+  justify-content: stretch;
+  width: 8.5rem;
   max-width: 100%;
-  padding: 0 8px 0;
+  justify-self: end;
+  margin-top: 0;
+  padding: 0;
+  border-top: none;
   box-sizing: border-box;
 }
 
-.am-compact-volume-value {
-  min-width: 2.7rem;
+.am-compact-volume-end {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 24px;
+  height: 24px;
+  padding: 0;
   color: var(--nd-text-secondary);
-  font-family: var(--baryon-type-mono-family);
-  font-size: 10px;
-  letter-spacing: var(--baryon-type-dense-label-letter-spacing);
-  text-transform: uppercase;
-  white-space: nowrap;
-  text-align: right;
-  justify-self: end;
+  box-sizing: border-box;
+}
+
+.am-compact-volume-end svg {
+  width: 17px;
+  height: 17px;
 }
 
 .am-compact-volume-row .am-volume {
-  align-items: center;
-  gap: 8px;
+  display: contents;
   padding: 0;
   border: none;
   border-radius: 0;
@@ -998,8 +902,9 @@ const CSS = `
 }
 
 .am-compact-volume-row .am-btn--volume {
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
+  justify-content: flex-end;
   border: none;
   border-radius: 0;
   background: transparent;
@@ -1010,7 +915,128 @@ const CSS = `
 .am-compact-volume-row .am-slider {
   flex: 1 1 auto;
   min-width: 0;
-  height: 5px;
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+}
+
+.am-compact-volume-row .am-slider::-webkit-slider-thumb {
+  width: 0;
+  height: 0;
+  border: none;
+  opacity: 0;
+}
+
+.am-compact-volume-row .am-slider::-moz-range-thumb {
+  width: 0;
+  height: 0;
+  border: none;
+  opacity: 0;
+}
+
+.am-compact-hover-actions {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% - 1px);
+  z-index: 2;
+  padding-bottom: 7px;
+  opacity: 0;
+  transform: translate(-50%, 0.25rem);
+  pointer-events: none;
+  transition:
+    opacity var(--nd-transition),
+    transform var(--nd-transition);
+}
+
+.am-compact-hover-actions--expanded {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+}
+
+.am-compact-hover-actions-panel {
+  display: grid;
+  grid-template-columns: repeat(3, 44px);
+  align-items: center;
+  justify-content: space-around;
+  min-height: 28px;
+  margin: 0;
+  padding: 2px 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--nd-surface) 94%, transparent);
+  box-shadow: var(--nd-shell-shadow);
+  backdrop-filter: blur(18px) saturate(125%);
+  -webkit-backdrop-filter: blur(18px) saturate(125%);
+  box-sizing: border-box;
+}
+
+.am-compact-hover-action {
+  position: relative;
+  min-width: 44px;
+  width: 44px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--nd-text-secondary);
+  transition:
+    transform 120ms cubic-bezier(0.23, 1, 0.32, 1),
+    color 160ms ease;
+}
+
+.am-compact-hover-action::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 7px);
+  z-index: 4;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--nd-text-primary);
+  font-family: var(--baryon-type-mono-family);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: var(--baryon-type-data-letter-spacing);
+  line-height: 1;
+  text-shadow: 0 1px 3px var(--nd-bg);
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-50%, 3px);
+  pointer-events: none;
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+}
+
+.am-compact-hover-action:hover::after,
+.am-compact-hover-action:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.am-compact-hover-action:hover {
+  border-color: transparent;
+  background: transparent;
+  color: var(--nd-text-display);
+}
+
+.am-compact-hover-action:disabled {
+  border-color: transparent;
+  background: transparent;
+  color: var(--nd-text-disabled);
+  opacity: 1;
+}
+
+.am-compact-hover-action:not(:disabled):active {
+  transform: scale(0.94);
+  opacity: 1;
+}
+
+.am-compact-hover-action--active,
+.am-compact-hover-action--active:hover {
+  color: var(--nd-accent);
 }
 
 .am-btn--volume {
@@ -1082,16 +1108,20 @@ const CSS = `
   overflow: hidden;
 }
 
-.am-recent-panel {
+.am-file-list-panel {
   position: absolute;
   left: 50%;
-  bottom: calc(100% + 12px);
+  bottom: calc(100% + 8px);
   transform: translateX(-50%);
-  width: min(24rem, calc(100vw - 1.5rem));
-  padding: 16px;
-  border: none;
-  border-radius: 12px;
-  background: var(--nd-surface);
+  width: min(20rem, calc(100vw - 1rem));
+  padding: 10px;
+  border: 1px solid
+    color-mix(in srgb, var(--nd-text-primary) 7%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--nd-surface) 96%, transparent);
+  box-shadow: var(--nd-shell-shadow);
+  backdrop-filter: blur(18px) saturate(120%);
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
   z-index: 70;
   opacity: 1;
   visibility: visible;
@@ -1102,130 +1132,172 @@ const CSS = `
     visibility 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
-.am-recent-hidden {
+.am-file-list-hidden {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
 }
 
-.am-recent-header {
+.am-file-list-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 4px;
+  gap: 6px;
+  margin-bottom: 2px;
   color: var(--nd-text-primary);
   font-family: var(--baryon-type-interface-family);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
 }
 
-.am-recent-header span:first-child {
+.am-file-list-header span:first-child {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
-.am-recent-header span:last-child {
+.am-file-list-header svg {
+  width: 14px;
+  height: 14px;
+}
+
+.am-file-list-header span:last-child {
   color: var(--nd-text-disabled);
   font-family: var(--baryon-type-mono-family);
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 400;
   letter-spacing: var(--baryon-type-action-letter-spacing);
   text-transform: uppercase;
 }
 
-.am-recent-helper {
-  margin: 0 0 12px;
-  color: var(--nd-text-secondary);
-  font-size: 12px;
-  line-height: 1.4;
+.am-file-list-helper {
+  margin: 0 0 8px;
+  color: var(--nd-text-disabled);
+  font-family: var(--baryon-type-mono-family);
+  font-size: 9px;
+  line-height: 1.3;
+  letter-spacing: var(--baryon-type-data-letter-spacing);
 }
 
-.am-recent-list {
+.am-file-list-items {
   margin: 0;
-  padding: 0;
+  padding: 0 2px 0 0;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
+  max-height: min(14rem, 40vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--nd-border-visible) transparent;
 }
 
-.am-recent-item {
+.am-file-list-items::-webkit-scrollbar {
+  width: 4px;
+}
+
+.am-file-list-items::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--nd-border-visible);
+}
+
+.am-file-list-item {
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px 16px;
+  gap: 8px;
+  padding: 8px;
   border: none;
-  border-radius: 0;
+  border-radius: 7px;
   background: transparent;
   color: var(--nd-text-primary);
   text-align: left;
   cursor: pointer;
   font-family: var(--baryon-type-interface-family);
-  border-bottom: 1px solid var(--nd-border);
-  transition: background 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
 }
 
-.am-recent-item:last-child {
-  border-bottom: none;
+.am-file-list-item--active {
+  background: color-mix(
+    in srgb,
+    var(--nd-surface-raised) 88%,
+    var(--nd-accent) 12%
+  );
 }
 
-.am-recent-item--pending {
-  background: rgba(255, 59, 48, 0.08);
-  border-color: color-mix(in srgb, var(--nd-accent) 45%, var(--nd-border));
-}
-
-.am-recent-item:hover {
+.am-file-list-item:hover {
   background: var(--nd-surface-raised);
 }
 
-.am-recent-item--pending:hover {
-  background: rgba(255, 59, 48, 0.12);
+.am-file-list-item:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
-.am-recent-item:active {
+.am-file-list-item:active {
   opacity: 0.8;
 }
 
-.am-recent-item-main {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.am-file-list-item:focus-visible {
+  outline: 2px solid var(--nd-info);
+  outline-offset: -2px;
 }
 
-.am-recent-item-title {
+.am-file-list-item-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.am-file-list-item-title {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 400;
   color: var(--nd-text-primary);
 }
 
-.am-recent-item-meta {
+.am-file-list-item-meta {
+  flex: 0 0 auto;
   font-family: var(--baryon-type-mono-family);
-  font-size: 11px;
+  font-size: 9px;
   color: var(--nd-text-disabled);
   letter-spacing: var(--baryon-type-data-letter-spacing);
 }
 
-.am-recent-item-action {
+.am-file-list-item-action {
   flex-shrink: 0;
   color: var(--nd-text-secondary);
   font-family: var(--baryon-type-mono-family);
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 400;
   letter-spacing: var(--baryon-type-action-letter-spacing);
   text-transform: uppercase;
+  opacity: 0;
+  transition:
+    opacity 160ms ease,
+    color 160ms ease;
 }
 
-.am-recent-item-action--pending {
+.am-file-list-item-action--active {
   color: var(--nd-accent);
+}
+
+.am-file-list-item:hover .am-file-list-item-action,
+.am-file-list-item:focus-visible .am-file-list-item-action,
+.am-file-list-item:disabled .am-file-list-item-action,
+.am-file-list-item--active .am-file-list-item-action {
+  opacity: 1;
 }
 
 .am-device-empty {
@@ -1289,28 +1361,23 @@ const CSS = `
 /* ── Responsive — Nothing: same rules, tighter spacing ── */
 /* ── Unified actions row (compact dock) ── */
 .am-compact-unified-actions {
+  grid-column: 2;
+  grid-row: 2;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  width: 100%;
-  padding: 0 8px;
+  justify-content: center;
+  width: auto;
+  margin-top: 0;
+  padding: 0;
+  border-top: none;
   box-sizing: border-box;
 }
 
 .am-compact-transport-right {
   display: flex;
   align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-}
-
-.am-compact-row-divider {
-  width: 1px;
-  height: 16px;
-  background: var(--nd-border-visible);
-  margin: 0 2px;
-  flex-shrink: 0;
+  justify-content: center;
+  width: auto;
 }
 
 @media (max-width: 1024px) {
@@ -1323,8 +1390,8 @@ const CSS = `
   }
 
   .am-player-shell--compact {
-    width: min(100%, var(--baryon-compact-dock-min-width));
-    max-width: calc(100vw - 1.5rem);
+    width: min(32rem, calc(100vw - 1.5rem));
+    max-width: min(32rem, calc(100vw - 1.5rem));
   }
 
   .am-player--compact {
@@ -1335,18 +1402,6 @@ const CSS = `
 @media (max-width: 960px) {
   .am-player-shell {
     gap: 6px;
-  }
-
-  .am-player:not(.am-player--compact) {
-    padding: var(--baryon-audio-pill-padding);
-  }
-
-  .am-track {
-    max-width: 150px;
-  }
-
-  .am-filename-wrap {
-    max-width: 112px;
   }
 
   .am-slider {
@@ -1372,6 +1427,102 @@ const CSS = `
 
   .am-player-shell--compact {
     bottom: 82px;
+    width: min(19rem, calc(100vw - 1.5rem));
+    max-width: calc(100vw - 1.5rem);
+  }
+
+  .am-compact-card {
+    display: flex;
+    flex-direction: column;
+    padding: 6px 8px;
+    border-radius: 16px;
+  }
+
+  .am-compact-card .am-timeline-shell {
+    order: 2;
+    grid-column: auto;
+    grid-row: auto;
+    margin-top: 2px;
+  }
+
+  .am-compact-card .am-timeline-row {
+    gap: 7px;
+    padding: 3px 2px;
+  }
+
+  .am-compact-card .am-timeline-time {
+    min-width: 1.9rem;
+    font-size: 9px;
+  }
+
+  .am-compact-identity {
+    order: 1;
+    grid-column: auto;
+    grid-row: auto;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .am-compact-source-mark {
+    width: 32px;
+    height: 32px;
+  }
+
+  .am-compact-source-trigger {
+    gap: 8px;
+  }
+
+  .am-compact-source-actions {
+    display: inline-flex;
+  }
+
+  .am-compact-track-meta-upload {
+    display: none;
+  }
+
+  .am-compact-track-title {
+    font-size: 13px;
+  }
+
+  .am-compact-unified-actions {
+    order: 3;
+    grid-column: auto;
+    grid-row: auto;
+    width: 100%;
+  }
+
+  .am-compact-transport-right {
+    width: 100%;
+  }
+
+  .am-compact-action {
+    min-width: 44px;
+    height: 44px;
+  }
+
+  .am-compact-action-group--playback {
+    grid-template-columns: 44px 48px 44px;
+    gap: 20px;
+    width: 100%;
+  }
+
+  .am-compact-action-group--playback .am-compact-action--primary {
+    width: 48px;
+    height: 44px;
+  }
+
+  .am-compact-volume-row {
+    order: 4;
+    grid-column: auto;
+    grid-row: auto;
+    width: 100%;
+    justify-self: stretch;
+    padding: 0 12px;
+  }
+
+  .am-compact-volume-end,
+  .am-compact-volume-row .am-btn--volume {
+    justify-content: center;
   }
 }
 
@@ -1392,49 +1543,20 @@ const CSS = `
   .am-player-shell--compact {
     align-items: center;
     bottom: 82px;
-    width: min(100%, var(--baryon-compact-dock-min-width));
+    width: min(19rem, calc(100vw - 16px));
     max-width: calc(100vw - 16px);
   }
 
   .am-compact-shell {
     margin: 0 auto;
-    max-width: 100%;
-    min-width: var(--baryon-compact-dock-min-width);
-  }
-
-  .am-source-row,
-  .am-actions-row,
-  .am-volume-row {
-    display: flex;
-    align-items: center;
     width: 100%;
     min-width: 0;
-  }
-
-  .am-source-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-    align-items: center;
-    gap: 8px;
-  }
-
-  .am-actions-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-    gap: 8px;
+    max-width: none;
   }
 
   .am-live-input-wrap {
     flex-wrap: wrap;
     justify-content: flex-end;
-  }
-
-  .am-volume-row {
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    padding: 0 4px;
-    gap: 4px;
   }
 
   .am-timeline-shell {
@@ -1445,67 +1567,6 @@ const CSS = `
     width: 100%;
     min-width: 0;
     gap: 8px;
-  }
-
-  .am-track {
-    grid-column: 2;
-    justify-self: center;
-    flex: 0 1 auto;
-    width: min(15rem, calc(100vw - 8rem));
-    max-width: none;
-    padding: 4px 16px;
-  }
-
-  .am-source-row .am-track {
-    justify-content: center;
-  }
-
-  .am-source-tools {
-    grid-column: 3;
-    justify-self: end;
-  }
-
-  .am-filename-wrap {
-    flex: 0 1 auto;
-    max-width: none;
-  }
-
-  .am-filename {
-    font-size: 13px;
-  }
-
-  .am-divider {
-    display: none;
-  }
-
-  .am-transport {
-    grid-column: 2;
-    justify-self: center;
-    gap: 4px;
-  }
-
-  .am-volume {
-    width: min(100%, 20rem);
-    min-width: 0;
-    gap: 4px;
-    padding: 8px;
-    border-radius: 4px;
-    background: var(--nd-surface-raised);
-    border: 1px solid var(--nd-border);
-  }
-
-  .am-volume-meta {
-    width: min(100%, 20rem);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 4px;
-    color: var(--nd-text-disabled);
-    font-family: var(--baryon-type-mono-family);
-    font-size: 11px;
-    font-weight: 400;
-    letter-spacing: var(--baryon-type-action-letter-spacing);
-    text-transform: uppercase;
   }
 
   .am-slider {
@@ -1534,43 +1595,27 @@ const CSS = `
   }
 
   .am-player-shell--compact {
-    width: min(100%, var(--baryon-compact-dock-min-width));
+    width: min(19rem, calc(100vw - 12px));
     max-width: calc(100vw - 12px);
   }
 
-  .am-track {
-    gap: 4px;
-    width: min(14rem, calc(100vw - 7.2rem));
-    padding: 4px 12px;
-  }
-
   .am-compact-shell {
-    min-width: var(--baryon-compact-dock-min-width);
+    min-width: 0;
   }
 
-  .am-source-row,
-  .am-actions-row,
-  .am-volume-row {
-    gap: 4px;
+  .am-compact-volume-row .am-btn--volume {
+    min-width: 24px;
+    width: 24px;
+    height: 24px;
   }
 
-  .am-volume-row {
-    padding: 0 4px;
+  .am-compact-volume-end {
+    width: 24px;
+    height: 24px;
   }
 
   .am-timeline-shell {
     padding: 8px 12px;
-  }
-
-  .am-btn--play {
-    width: 42px;
-    height: 42px;
-  }
-
-  .am-btn--stop,
-  .am-btn--volume {
-    width: 36px;
-    height: 36px;
   }
 
   .am-btn--live-input {
@@ -1578,37 +1623,70 @@ const CSS = `
     height: 42px;
   }
 
-  .am-btn--recent {
-    width: 40px;
-    height: 40px;
-    border-radius: 999px;
-  }
-
   .am-slider {
     min-width: 2.8rem;
-  }
-
-  .am-volume {
-    width: 100%;
-    padding: 6px 8px;
-  }
-
-  .am-volume-meta {
-    width: 100%;
-    font-size: 10px;
   }
 
   .am-timeline-time {
     min-width: 2rem;
     font-size: 10px;
   }
+
+  .am-compact-card {
+    padding: 6px 8px;
+  }
+
+  .am-compact-source-mark {
+    width: 32px;
+    height: 32px;
+  }
+
+  .am-compact-source-trigger {
+    gap: 8px;
+  }
+
+  .am-compact-track-meta {
+    display: block;
+  }
+
+  .am-compact-track-title {
+    font-size: 13px;
+  }
+
+  .am-compact-volume-row {
+    width: 100%;
+    gap: 6px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .am-filename,
   .am-status-dot,
-  .am-btn--live-input-active {
+  .am-btn--live-input-active,
+  .am-compact-hover-actions,
+  .am-compact-hover-action::after {
     animation: none !important;
+    transition: none !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .am-compact-card {
+    background: var(--nd-surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .am-compact-hover-actions-panel {
+    background: var(--nd-surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .am-compact-card {
+    border-color: var(--nd-text-secondary);
+    background: var(--nd-surface);
   }
 }
 
@@ -1648,6 +1726,302 @@ function SourceModeControl({
   );
 }
 
+const TIMELINE_INTERACTION_PHASES = Object.freeze({
+  idle: "idle",
+  scrubbing: "scrubbing",
+  committing: "committing",
+});
+
+/** @typedef {"idle" | "scrubbing" | "committing"} TimelineInteractionPhase */
+/** @typedef {{ durationSeconds: number, canSeek: boolean }} TimelineStructure */
+/**
+ * @typedef {object} PlaybackTimelineProps
+ * @property {boolean} isAudioLoaded
+ * @property {(nextTimeSeconds: number) => Promise<void>} beginScrub
+ * @property {(nextTimeSeconds: number) => void} previewScrub
+ * @property {(nextTimeSeconds: number) => Promise<void>} commitScrub
+ * @property {() => Promise<void>} cancelScrub
+ */
+
+/** @type {Readonly<TimelineStructure>} */
+const DEFAULT_TIMELINE_STRUCTURE = Object.freeze({
+  durationSeconds: 0,
+  canSeek: false,
+});
+
+function createTimelineStructure(snapshot) {
+  return {
+    durationSeconds: Math.max(0, Number(snapshot?.durationSeconds) || 0),
+    canSeek: snapshot?.canSeek === true,
+  };
+}
+
+function areTimelineStructuresEqual(current, next) {
+  return (
+    current.durationSeconds === next.durationSeconds &&
+    current.canSeek === next.canSeek
+  );
+}
+
+function clampTimelineValue(value, durationSeconds) {
+  const safeValue = Math.max(0, Number(value) || 0);
+  return durationSeconds > 0 ? Math.min(safeValue, durationSeconds) : safeValue;
+}
+
+/** @param {PlaybackTimelineProps} props */
+function PlaybackTimelineView({
+  isAudioLoaded,
+  beginScrub,
+  previewScrub,
+  commitScrub,
+  cancelScrub,
+}) {
+  const inputRef = useRef(null);
+  const currentTimeRef = useRef(null);
+  const pointerActiveRef = useRef(false);
+  const interactionPhaseRef = useRef(
+    /** @type {TimelineInteractionPhase} */ (TIMELINE_INTERACTION_PHASES.idle),
+  );
+  const interactionGenerationRef = useRef(0);
+  const scrubStartRef = useRef({
+    generation: 0,
+    promise: Promise.resolve(),
+  });
+  const latestSnapshotRef = useRef({
+    currentTimeSeconds: 0,
+    durationSeconds: 0,
+    canSeek: false,
+  });
+  const structureRef = useRef(
+    /** @type {TimelineStructure} */ (DEFAULT_TIMELINE_STRUCTURE),
+  );
+  const [structure, setStructure] = useState(
+    /** @type {TimelineStructure} */ (DEFAULT_TIMELINE_STRUCTURE),
+  );
+
+  const applyTimelineSnapshot = useCallback((snapshot) => {
+    const durationSeconds = Math.max(0, Number(snapshot?.durationSeconds) || 0);
+    const currentTimeSeconds = clampTimelineValue(
+      snapshot?.currentTimeSeconds,
+      durationSeconds,
+    );
+    const progressPercent =
+      durationSeconds > 0
+        ? Math.max(
+            0,
+            Math.min(100, (currentTimeSeconds / durationSeconds) * 100),
+          )
+        : 0;
+    const input = inputRef.current;
+    if (input) {
+      input.value = String(currentTimeSeconds);
+      input.style.setProperty("--am-progress-percent", `${progressPercent}%`);
+      input.title = `Playback position ${formatClockTime(currentTimeSeconds)} of ${formatClockTime(durationSeconds)}`;
+    }
+    if (currentTimeRef.current) {
+      currentTimeRef.current.textContent = formatClockTime(currentTimeSeconds);
+    }
+  }, []);
+
+  const applyLatestAuthoritativeSnapshot = useCallback(() => {
+    const latestSnapshot = latestSnapshotRef.current;
+    if (
+      interactionPhaseRef.current !== TIMELINE_INTERACTION_PHASES.idle ||
+      latestSnapshot.canSeek !== true
+    ) {
+      return;
+    }
+    applyTimelineSnapshot(latestSnapshot);
+  }, [applyTimelineSnapshot]);
+
+  useEffect(() => {
+    return observeAudioTransportClock((snapshot) => {
+      latestSnapshotRef.current = snapshot;
+      const nextStructure = createTimelineStructure(snapshot);
+      if (!areTimelineStructuresEqual(structureRef.current, nextStructure)) {
+        structureRef.current = nextStructure;
+        setStructure(nextStructure);
+      }
+
+      if (!nextStructure.canSeek) {
+        interactionGenerationRef.current += 1;
+        interactionPhaseRef.current = TIMELINE_INTERACTION_PHASES.idle;
+        pointerActiveRef.current = false;
+        scrubStartRef.current = {
+          generation: interactionGenerationRef.current,
+          promise: Promise.resolve(),
+        };
+        return;
+      }
+
+      if (interactionPhaseRef.current === TIMELINE_INTERACTION_PHASES.idle) {
+        applyTimelineSnapshot(snapshot);
+      }
+    });
+  }, [applyTimelineSnapshot]);
+
+  useLayoutEffect(() => {
+    if (isAudioLoaded && structure.canSeek) {
+      applyLatestAuthoritativeSnapshot();
+    }
+  }, [
+    applyLatestAuthoritativeSnapshot,
+    isAudioLoaded,
+    structure.canSeek,
+    structure.durationSeconds,
+  ]);
+
+  const applyScrubPreview = useCallback(
+    (nextTimeSeconds) => {
+      applyTimelineSnapshot({
+        ...latestSnapshotRef.current,
+        currentTimeSeconds: nextTimeSeconds,
+      });
+    },
+    [applyTimelineSnapshot],
+  );
+
+  const settleInteraction = useCallback(
+    async (generation, operation) => {
+      interactionPhaseRef.current = TIMELINE_INTERACTION_PHASES.committing;
+      pointerActiveRef.current = false;
+      try {
+        const scrubStart = scrubStartRef.current;
+        if (scrubStart.generation === generation) {
+          await scrubStart.promise;
+        }
+        await operation();
+      } catch (error) {
+        console.error("Playback scrub interaction failed.", error);
+      } finally {
+        if (interactionGenerationRef.current === generation) {
+          interactionPhaseRef.current = TIMELINE_INTERACTION_PHASES.idle;
+          scrubStartRef.current = {
+            generation,
+            promise: Promise.resolve(),
+          };
+          applyLatestAuthoritativeSnapshot();
+        }
+      }
+    },
+    [applyLatestAuthoritativeSnapshot],
+  );
+
+  const beginPointerScrub = useCallback(
+    (nextTimeSeconds) => {
+      const generation = interactionGenerationRef.current + 1;
+      interactionGenerationRef.current = generation;
+      interactionPhaseRef.current = TIMELINE_INTERACTION_PHASES.scrubbing;
+      pointerActiveRef.current = true;
+      applyScrubPreview(nextTimeSeconds);
+      const startPromise = Promise.resolve().then(() =>
+        beginScrub(nextTimeSeconds),
+      );
+      scrubStartRef.current = { generation, promise: startPromise };
+      void startPromise.catch((error) => {
+        if (interactionGenerationRef.current !== generation) {
+          return;
+        }
+        pointerActiveRef.current = false;
+        interactionPhaseRef.current = TIMELINE_INTERACTION_PHASES.idle;
+        applyLatestAuthoritativeSnapshot();
+        console.error("Playback scrub interaction failed.", error);
+      });
+    },
+    [applyLatestAuthoritativeSnapshot, applyScrubPreview, beginScrub],
+  );
+
+  const commitCurrentInteraction = useCallback(
+    (nextTimeSeconds) => {
+      const generation = interactionGenerationRef.current;
+      void settleInteraction(generation, () => commitScrub(nextTimeSeconds));
+    },
+    [commitScrub, settleInteraction],
+  );
+
+  const cancelCurrentInteraction = useCallback(() => {
+    const generation = interactionGenerationRef.current;
+    void settleInteraction(generation, cancelScrub);
+  }, [cancelScrub, settleInteraction]);
+
+  const commitDirectly = useCallback(
+    (nextTimeSeconds) => {
+      const generation = interactionGenerationRef.current + 1;
+      interactionGenerationRef.current = generation;
+      interactionPhaseRef.current = TIMELINE_INTERACTION_PHASES.committing;
+      scrubStartRef.current = {
+        generation,
+        promise: Promise.resolve(),
+      };
+      applyScrubPreview(nextTimeSeconds);
+      void settleInteraction(generation, () => commitScrub(nextTimeSeconds));
+    },
+    [applyScrubPreview, commitScrub, settleInteraction],
+  );
+
+  if (!isAudioLoaded || !structure.canSeek) {
+    return null;
+  }
+
+  return (
+    <div className="am-timeline-shell">
+      <div className="am-timeline-row">
+        <span
+          ref={currentTimeRef}
+          className="am-timeline-time"
+          aria-hidden="true"
+        />
+        <input
+          ref={inputRef}
+          className="am-progress"
+          data-testid="playback-timeline"
+          type="range"
+          min="0"
+          max={structure.durationSeconds || 0}
+          step="0.01"
+          defaultValue="0"
+          onPointerDown={(event) => {
+            beginPointerScrub(Number(event.currentTarget.value));
+          }}
+          onPointerUp={(event) => {
+            if (!pointerActiveRef.current) {
+              return;
+            }
+            commitCurrentInteraction(Number(event.currentTarget.value));
+          }}
+          onPointerCancel={() => {
+            if (!pointerActiveRef.current) {
+              return;
+            }
+            cancelCurrentInteraction();
+          }}
+          onBlur={(event) => {
+            if (!pointerActiveRef.current) {
+              return;
+            }
+            commitCurrentInteraction(Number(event.currentTarget.value));
+          }}
+          onChange={(event) => {
+            const nextValue = Number(event.currentTarget.value);
+            applyScrubPreview(nextValue);
+            if (pointerActiveRef.current) {
+              previewScrub(nextValue);
+              return;
+            }
+            commitDirectly(nextValue);
+          }}
+          aria-label="Playback position"
+        />
+        <span className="am-timeline-time" aria-hidden="true">
+          {formatClockTime(structure.durationSeconds)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+const PlaybackTimeline = memo(PlaybackTimelineView);
+
 // ─── Listener Controls ───────────────────────────────────────────────────────
 
 export function ListenerControls({
@@ -1655,11 +2029,13 @@ export function ListenerControls({
   allowSystemSource = true,
 } = {}) {
   const {
-    selectedSource,
+    sourceSession,
     displayName,
-    liveReturnLocalFile,
-    queuedNextLocalFile,
-    hasQueuedNextLocalFile,
+    localFileQueue,
+    activeLocalFileQueueIndex,
+    hasPreviousLocalFile,
+    hasNextLocalFile,
+    isLocalFileQueueAutoplayEnabled,
     recentUploads,
     isPlaying,
     isLiveInputActive,
@@ -1673,36 +2049,28 @@ export function ListenerControls({
     handleRecentUploadSelect,
     loadDemoAudioFile,
     handlePlayPause,
-    handleStop,
     handleVolumeChange,
     handleMuteToggle,
     setShowDeviceMenu,
-    scrubPreviewSeconds,
-    isScrubbing,
     beginScrub,
     previewScrub,
     commitScrub,
+    restartOrLoadPreviousLocalFile,
+    playLocalFileAtQueueIndex,
+    playNextLocalFile,
+    toggleLocalFileQueueAutoplay,
     cancelScrub,
   } = useAudio();
-  const transportClock = useAudioTransportClock();
-
   const fileInputRef = useRef(null);
-  const queuedPopupTimeoutRef = useRef(0);
-  const recentUploadsButtonRef = useRef(null);
-  const recentUploadsPanelRef = useRef(null);
-  const timelinePointerActiveRef = useRef(false);
-  const [viewportWidth, setViewportWidth] = useState(() =>
-    typeof window === "undefined" ? 1280 : window.innerWidth,
-  );
-  const [showRecentUploadsPanel, setShowRecentUploadsPanel] = useState(false);
-  const [showQueuedPopup, setShowQueuedPopup] = useState(false);
-  const {
-    dragOffset: playerDragOffset,
-    isDragging: isPlayerDragging,
-    handlePointerDown: handlePlayerPointerDown,
-    handlePointerUp: handlePlayerPointerUp,
-    handleDoubleClick: handlePlayerDoubleClick,
-  } = useDraggableFloatingUi();
+  const fileListButtonRef = useRef(null);
+  const fileListPanelRef = useRef(null);
+  const [showFileListPanel, setShowFileListPanel] = useState(false);
+  const [showCompactUtilities, setShowCompactUtilities] = useState(false);
+  const openFilePicker = () => {
+    setShowFileListPanel(false);
+    setShowDeviceMenu(false);
+    fileInputRef.current?.click();
+  };
   const { color, pulse, label } = getStatusConfig(
     isEngineReady,
     isAudioLoaded,
@@ -1712,53 +2080,44 @@ export function ListenerControls({
     liveInputRuntimeStatus,
   );
   const volumePercent = Math.round(volume * 100);
-  const timelineValue =
-    isScrubbing && scrubPreviewSeconds != null
-      ? scrubPreviewSeconds
-      : transportClock.currentTimeSeconds;
-  const timelineDuration = transportClock.durationSeconds;
-  const timelineProgressPercent =
-    timelineDuration > 0
-      ? Math.max(0, Math.min(100, (timelineValue / timelineDuration) * 100))
-      : 0;
-  /** @type {import("react").CSSProperties & { "--am-progress-percent": string }} */
-  const timelineStyle = {
-    "--am-progress-percent": `${timelineProgressPercent}%`,
-  };
   /** @type {import("react").CSSProperties & { "--am-slider-percent": string }} */
   const volumeSliderStyle = {
     "--am-slider-percent": `${volumePercent}%`,
   };
-  const hasRecentUploads = recentUploads.length > 0;
-  const isQueuedNextUnderLive = hasQueuedNextLocalFile && isLiveInputActive;
-  const trackTitle = isQueuedNextUnderLive
-    ? "Queued local file"
-    : "Upload audio";
-  const recentUploadsHelper = isQueuedNextUnderLive
-    ? "Selecting a local file while LIVE is active queues one next file."
-    : hasQueuedNextLocalFile
-      ? "The queued next local file stays highlighted here until you load it."
-      : "Reload a recent local file without reopening the picker.";
-  const fileTransportEnabled = selectedSource === "file";
+  const hasLocalFileQueue = localFileQueue.length > 0;
+  const hasFileListItems = hasLocalFileQueue || recentUploads.length > 0;
+  const queuedLocalFiles = localFileQueue.slice(
+    Math.max(activeLocalFileQueueIndex + 1, 0),
+  );
+  const hasQueuedLocalFiles = queuedLocalFiles.length > 0;
+  const isQueueingFilesUnderLive = hasQueuedLocalFiles && isLiveInputActive;
+  const trackTitle = isQueueingFilesUnderLive
+    ? `${queuedLocalFiles.length} file${queuedLocalFiles.length === 1 ? "" : "s"} queued`
+    : "Upload audio files";
+  const fileListShowsQueue = hasLocalFileQueue;
+  const fileListTitle = fileListShowsQueue ? "Queue" : "Recent uploads";
+  const fileListMeta = fileListShowsQueue
+    ? `${localFileQueue.length} track${localFileQueue.length === 1 ? "" : "s"}`
+    : "This session";
+  const fileListHelper = isQueueingFilesUnderLive
+    ? "Queued until LIVE ends"
+    : fileListShowsQueue
+      ? `Select a track · Autoplay ${
+          isLocalFileQueueAutoplayEnabled ? "on" : "off"
+        }`
+      : "Select to play again";
+  const fileTransportEnabled = sourceSession.kind === AUDIO_SOURCE_KINDS.file;
   const playDisabled = !isAudioLoaded;
-  const stopDisabled = !isAudioLoaded;
-  const isCompactDock = viewportWidth <= 1024;
-  const compactTrackTitle = isQueuedNextUnderLive
-    ? "Queued local file"
-    : "Source";
+  const previousDisabled = !isAudioLoaded && !hasPreviousLocalFile;
+  const compactTrackTitle = isQueueingFilesUnderLive
+    ? `${queuedLocalFiles.length} queued`
+    : activeLocalFileQueueIndex >= 0 && localFileQueue.length > 0
+      ? `Queue ${activeLocalFileQueueIndex + 1}/${localFileQueue.length}`
+      : "Source";
   const sourceSummary =
     displayName === "Upload Audio" ? "Upload Audio File" : displayName;
-  /** @type {import("react").CSSProperties} */
-  const playerShellStyle = {
-    transform: `translate(calc(-50% + ${playerDragOffset.x}px), ${playerDragOffset.y}px)`,
-    willChange: isPlayerDragging ? "transform" : "auto",
-    cursor: isPlayerDragging ? "grabbing" : "grab",
-  };
-  const queuedPopupMessage = liveReturnLocalFile?.name
-    ? `${queuedNextLocalFile?.name || "This file"} is queued next. ${liveReturnLocalFile.name} will be restored first when LIVE stops.`
-    : `${queuedNextLocalFile?.name || "This file"} is queued and will load when LIVE stops.`;
   const handleSourceModeInteraction = () => {
-    setShowRecentUploadsPanel(false);
+    setShowFileListPanel(false);
     setShowDeviceMenu(false);
   };
 
@@ -1766,37 +2125,27 @@ export function ListenerControls({
     if (fileTransportEnabled) {
       return;
     }
-    setShowRecentUploadsPanel(false);
+    setShowFileListPanel(false);
   }, [fileTransportEnabled]);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return undefined;
-    }
-
-    const handleResize = () => setViewportWidth(window.innerWidth);
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  useEffect(() => {
-    if (!showRecentUploadsPanel) {
+    if (!showFileListPanel) {
       return undefined;
     }
 
     const handlePointerDown = (event) => {
       if (
-        recentUploadsPanelRef.current?.contains(event.target) ||
-        recentUploadsButtonRef.current?.contains(event.target)
+        fileListPanelRef.current?.contains(event.target) ||
+        fileListButtonRef.current?.contains(event.target)
       ) {
         return;
       }
-      setShowRecentUploadsPanel(false);
+      setShowFileListPanel(false);
     };
 
     const handleKeyDown = (event) => {
       if (event.key === "Escape") {
-        setShowRecentUploadsPanel(false);
+        setShowFileListPanel(false);
       }
     };
 
@@ -1806,27 +2155,7 @@ export function ListenerControls({
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [showRecentUploadsPanel]);
-
-  useEffect(() => {
-    window.clearTimeout(queuedPopupTimeoutRef.current);
-
-    if (!isQueuedNextUnderLive || !queuedNextLocalFile?.id) {
-      setShowQueuedPopup(false);
-      return undefined;
-    }
-
-    setShowQueuedPopup(true);
-    queuedPopupTimeoutRef.current = window.setTimeout(() => {
-      setShowQueuedPopup(false);
-      queuedPopupTimeoutRef.current = 0;
-    }, 2600);
-
-    return () => {
-      window.clearTimeout(queuedPopupTimeoutRef.current);
-      queuedPopupTimeoutRef.current = 0;
-    };
-  }, [isQueuedNextUnderLive, queuedNextLocalFile?.id]);
+  }, [showFileListPanel]);
 
   return (
     <>
@@ -1842,396 +2171,141 @@ export function ListenerControls({
       />
 
       {fileTransportEnabled ? (
-        <div
-          className={`am-player-shell${isCompactDock ? " am-player-shell--compact" : ""}`}
-          style={playerShellStyle}
-          onPointerDown={handlePlayerPointerDown}
-          onPointerUp={handlePlayerPointerUp}
-          onDoubleClick={handlePlayerDoubleClick}
-          title="Drag to move. Double-click or double-tap to reset."
-        >
-          {!isCompactDock && isAudioLoaded && transportClock.canSeek ? (
-            <div className="am-timeline-shell">
-              <div className="am-timeline-row">
-                <span className="am-timeline-time" aria-hidden="true">
-                  {formatClockTime(timelineValue)}
-                </span>
-                <input
-                  className="am-progress"
-                  data-testid="playback-timeline"
-                  type="range"
-                  min="0"
-                  max={timelineDuration || 0}
-                  step="0.01"
-                  value={timelineValue}
-                  onPointerDown={(event) => {
-                    timelinePointerActiveRef.current = true;
-                    void beginScrub(Number(event.currentTarget.value));
-                  }}
-                  onPointerUp={(event) => {
-                    if (!timelinePointerActiveRef.current) {
-                      return;
-                    }
-                    timelinePointerActiveRef.current = false;
-                    void commitScrub(Number(event.currentTarget.value));
-                  }}
-                  onPointerCancel={() => {
-                    timelinePointerActiveRef.current = false;
-                    void cancelScrub();
-                  }}
-                  onBlur={(event) => {
-                    if (!timelinePointerActiveRef.current) {
-                      return;
-                    }
-                    timelinePointerActiveRef.current = false;
-                    void commitScrub(Number(event.currentTarget.value));
-                  }}
-                  onChange={(event) => {
-                    const nextValue = Number(event.target.value);
-                    if (timelinePointerActiveRef.current) {
-                      previewScrub(nextValue);
-                      return;
-                    }
-                    void commitScrub(nextValue);
-                  }}
-                  aria-label="Playback position"
-                  title={`Playback position ${formatClockTime(timelineValue)} of ${formatClockTime(timelineDuration)}`}
-                  style={timelineStyle}
-                />
-                <span className="am-timeline-time" aria-hidden="true">
-                  {formatClockTime(timelineDuration)}
-                </span>
-              </div>
-            </div>
-          ) : null}
-
-          <div
-            className={`am-player${isCompactDock ? " am-player--compact" : ""}`}
-          >
+        <div className="am-player-shell am-player-shell--compact">
+          <div className="am-player am-player--compact">
             <input
               ref={fileInputRef}
               type="file"
               accept="audio/*"
+              multiple
               hidden
               onChange={(event) => {
-                setShowRecentUploadsPanel(false);
+                setShowFileListPanel(false);
                 handleFileChange(event);
               }}
             />
 
-            {isCompactDock ? (
-              <div className="am-compact-shell">
-                <div className="am-compact-card">
-                  {isAudioLoaded && transportClock.canSeek ? (
-                    <div className="am-timeline-shell">
-                      <div className="am-timeline-row">
-                        <span className="am-timeline-time" aria-hidden="true">
-                          {formatClockTime(timelineValue)}
-                        </span>
-                        <input
-                          className="am-progress"
-                          data-testid="playback-timeline"
-                          type="range"
-                          min="0"
-                          max={timelineDuration || 0}
-                          step="0.01"
-                          value={timelineValue}
-                          onPointerDown={(event) => {
-                            timelinePointerActiveRef.current = true;
-                            void beginScrub(Number(event.currentTarget.value));
-                          }}
-                          onPointerUp={(event) => {
-                            if (!timelinePointerActiveRef.current) {
-                              return;
-                            }
-                            timelinePointerActiveRef.current = false;
-                            void commitScrub(Number(event.currentTarget.value));
-                          }}
-                          onPointerCancel={() => {
-                            timelinePointerActiveRef.current = false;
-                            void cancelScrub();
-                          }}
-                          onBlur={(event) => {
-                            if (!timelinePointerActiveRef.current) {
-                              return;
-                            }
-                            timelinePointerActiveRef.current = false;
-                            void commitScrub(Number(event.currentTarget.value));
-                          }}
-                          onChange={(event) => {
-                            const nextValue = Number(event.target.value);
-                            if (timelinePointerActiveRef.current) {
-                              previewScrub(nextValue);
-                              return;
-                            }
-                            void commitScrub(nextValue);
-                          }}
-                          aria-label="Playback position"
-                          title={`Playback position ${formatClockTime(timelineValue)} of ${formatClockTime(timelineDuration)}`}
-                          style={timelineStyle}
-                        />
-                        <span className="am-timeline-time" aria-hidden="true">
-                          {formatClockTime(timelineDuration)}
-                        </span>
-                      </div>
-                    </div>
-                  ) : null}
-
+            <div className="am-compact-shell">
+              <div
+                className="am-compact-card"
+                data-utility-state={
+                  showCompactUtilities ? "expanded" : "collapsed"
+                }
+                onMouseEnter={() => setShowCompactUtilities(true)}
+                onMouseLeave={() => setShowCompactUtilities(false)}
+                onFocusCapture={() => setShowCompactUtilities(true)}
+                onBlurCapture={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget)) {
+                    setShowCompactUtilities(false);
+                  }
+                }}
+              >
+                <div className="am-compact-track-section">
                   <div className="am-compact-identity">
-                    <div className="am-compact-source-cluster">
-                      <div className="am-compact-track-copy">
-                        <span className="am-compact-track-meta">
-                          {compactTrackTitle}
-                        </span>
-                        <span
-                          className="am-compact-track-title"
-                          title={sourceSummary}
-                        >
-                          {sourceSummary}
-                        </span>
+                    <button
+                      type="button"
+                      className="am-compact-source-trigger"
+                      data-testid="compact-source-trigger"
+                      onClick={openFilePicker}
+                      title={trackTitle}
+                      aria-label={trackTitle}
+                    >
+                      <span
+                        className="am-compact-source-mark"
+                        aria-hidden="true"
+                      >
+                        <MusicNoteIcon />
+                      </span>
+                      <div className="am-compact-source-cluster">
+                        <div className="am-compact-track-copy">
+                          <span className="am-compact-track-meta">
+                            {compactTrackTitle}
+                            <span
+                              className="am-compact-track-meta-upload"
+                              aria-hidden="true"
+                            >
+                              <UploadIcon />
+                            </span>
+                          </span>
+                          <span
+                            className="am-compact-track-title"
+                            data-testid="file-track-title"
+                            title={sourceSummary}
+                          >
+                            {sourceSummary}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-
-                  <div className="am-compact-unified-actions">
+                    </button>
                     <div className="am-compact-source-actions">
                       <button
                         type="button"
-                        className="am-btn am-compact-header-button"
-                        onClick={() => {
-                          setShowRecentUploadsPanel(false);
-                          setShowDeviceMenu(false);
-                          fileInputRef.current?.click();
-                        }}
+                        className="am-btn am-compact-utility am-compact-utility--bare"
+                        onClick={openFilePicker}
                         title={trackTitle}
                         aria-label={trackTitle}
                       >
                         <UploadIcon />
                       </button>
-                      <button
-                        type="button"
-                        className="am-btn am-compact-header-button am-compact-header-button--demo"
-                        onClick={() => {
-                          setShowRecentUploadsPanel(false);
-                          setShowDeviceMenu(false);
-                          void loadDemoAudioFile?.();
-                        }}
-                        title="Play demo audio"
-                        aria-label="Play demo audio"
-                      >
-                        <DemoAudioIcon />
-                      </button>
-                    </div>
-
-                    <div className="am-compact-transport-right">
-                      {hasRecentUploads ? (
-                        <button
-                          type="button"
-                          ref={recentUploadsButtonRef}
-                          className={`am-btn am-compact-utility${
-                            showRecentUploadsPanel
-                              ? " am-compact-utility--active"
-                              : ""
-                          }`}
-                          onClick={() => {
-                            setShowDeviceMenu(false);
-                            setShowRecentUploadsPanel(!showRecentUploadsPanel);
-                          }}
-                          title="Recent uploads"
-                          aria-label="Recent uploads"
-                        >
-                          <HistoryIcon />
-                        </button>
-                      ) : null}
-
-                      {hasRecentUploads ? (
-                        <span
-                          className="am-compact-row-divider"
-                          aria-hidden="true"
-                        />
-                      ) : null}
-
-                      <div className="am-compact-action-group am-compact-action-group--playback">
-                        <button
-                          type="button"
-                          className={`am-btn am-compact-action am-compact-action--primary${
-                            isPlaying ? " am-compact-action--active" : ""
-                          }`}
-                          onClick={handlePlayPause}
-                          disabled={playDisabled}
-                          title={isPlaying ? "Pause" : "Play"}
-                          aria-label={isPlaying ? "Pause" : "Play"}
-                        >
-                          {isPlaying ? <PauseIcon /> : <PlayIcon />}
-                        </button>
-
-                        <button
-                          type="button"
-                          className="am-btn am-compact-action"
-                          onClick={handleStop}
-                          disabled={stopDisabled}
-                          title="Stop"
-                          aria-label="Stop"
-                        >
-                          <StopIcon />
-                        </button>
-                      </div>
                     </div>
                   </div>
 
-                  <div className="am-compact-volume-row">
-                    <div className="am-volume">
-                      <button
-                        type="button"
-                        className="am-btn am-btn--volume"
-                        onClick={handleMuteToggle}
-                        aria-label={
-                          isMuted ? "Unmute app playback" : "Mute app playback"
-                        }
-                        title={
-                          isMuted ? "Unmute app playback" : "Mute app playback"
-                        }
-                      >
-                        <VolumeIcon muted={isMuted || volume <= 0.001} />
-                      </button>
-                      <input
-                        className="am-slider"
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.01"
-                        value={volume}
-                        onChange={(event) => {
-                          handleVolumeChange(Number(event.target.value));
-                        }}
-                        style={volumeSliderStyle}
-                        aria-label="App playback volume"
-                        title={`App playback volume ${volumePercent}%`}
-                      />
-                    </div>
-                    <span
-                      className="am-compact-volume-value"
-                      aria-hidden="true"
-                    >
-                      {volumePercent}%
-                    </span>
-                  </div>
+                  <PlaybackTimeline
+                    isAudioLoaded={isAudioLoaded}
+                    beginScrub={beginScrub}
+                    previewScrub={previewScrub}
+                    commitScrub={commitScrub}
+                    cancelScrub={cancelScrub}
+                  />
                 </div>
-              </div>
-            ) : (
-              <>
-                <div className="am-source-row">
-                  <span className="am-source-icon" aria-hidden="true">
-                    <MusicNoteIcon />
-                  </span>
 
-                  <button
-                    type="button"
-                    className="am-track"
-                    onClick={() => {
-                      setShowRecentUploadsPanel(false);
-                      setShowDeviceMenu(false);
-                      fileInputRef.current?.click();
-                    }}
-                    onMouseEnter={() => {
-                      if (isQueuedNextUnderLive) {
-                        setShowQueuedPopup(true);
-                      }
-                    }}
-                    onMouseLeave={() => {
-                      window.clearTimeout(queuedPopupTimeoutRef.current);
-                      queuedPopupTimeoutRef.current = 0;
-                      setShowQueuedPopup(false);
-                    }}
-                    title={trackTitle}
-                  >
-                    <span
-                      className={`am-track-popup${
-                        isQueuedNextUnderLive && showQueuedPopup
-                          ? " am-track-popup--visible"
-                          : ""
-                      }`}
-                      role="status"
-                      aria-live="polite"
-                    >
-                      {queuedPopupMessage}
-                    </span>
-                    <span className="am-track-label">
-                      <ScrollingText text={displayName} />
-                    </span>
-                  </button>
-
-                  <div className="am-source-tools">
-                    <button
-                      type="button"
-                      className="am-btn am-btn--demo"
-                      onClick={() => {
-                        setShowRecentUploadsPanel(false);
-                        setShowDeviceMenu(false);
-                        void loadDemoAudioFile?.();
-                      }}
-                      title="Play demo audio"
-                      aria-label="Play demo audio"
-                    >
-                      <DemoAudioIcon />
-                    </button>
-
-                    {hasRecentUploads ? (
+                <div className="am-compact-unified-actions">
+                  <div className="am-compact-transport-right">
+                    <div className="am-compact-action-group am-compact-action-group--playback">
                       <button
                         type="button"
-                        ref={recentUploadsButtonRef}
-                        className={`am-btn am-btn--recent${
-                          showRecentUploadsPanel ? " am-btn--recent-active" : ""
+                        className="am-btn am-compact-action am-compact-action--seek"
+                        onClick={() => {
+                          void restartOrLoadPreviousLocalFile();
+                        }}
+                        disabled={previousDisabled}
+                        title="Restart or load previous track"
+                        aria-label="Previous track"
+                      >
+                        <PreviousTrackIcon />
+                      </button>
+
+                      <button
+                        type="button"
+                        data-testid="file-playback-toggle"
+                        className={`am-btn am-compact-action am-compact-action--primary${
+                          isPlaying ? " am-compact-action--active" : ""
                         }`}
-                        onClick={() => {
-                          setShowDeviceMenu(false);
-                          setShowRecentUploadsPanel(!showRecentUploadsPanel);
-                        }}
-                        title="Recent uploads"
-                        aria-label="Recent uploads"
+                        onClick={handlePlayPause}
+                        disabled={playDisabled}
+                        title={isPlaying ? "Pause" : "Play"}
+                        aria-label={isPlaying ? "Pause" : "Play"}
                       >
-                        <HistoryIcon />
+                        {isPlaying ? <PauseIcon /> : <PlayIcon />}
                       </button>
-                    ) : null}
-                  </div>
 
-                  <div className="am-divider" aria-hidden="true" />
+                      <button
+                        type="button"
+                        className="am-btn am-compact-action am-compact-action--seek"
+                        onClick={() => {
+                          void playNextLocalFile();
+                        }}
+                        disabled={!hasNextLocalFile}
+                        title="Next track"
+                        aria-label="Next track"
+                      >
+                        <NextTrackIcon />
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="am-actions-row">
-                  <div className="am-transport">
-                    <button
-                      type="button"
-                      className={`am-btn am-btn--play${
-                        isPlaying ? " am-btn--play-active" : ""
-                      }`}
-                      onClick={handlePlayPause}
-                      disabled={playDisabled}
-                      title={isPlaying ? "Pause" : "Play"}
-                      aria-label={isPlaying ? "Pause" : "Play"}
-                    >
-                      {isPlaying ? <PauseIcon /> : <PlayIcon />}
-                    </button>
-                    <button
-                      type="button"
-                      className="am-btn am-btn--stop"
-                      onClick={handleStop}
-                      disabled={stopDisabled}
-                      title="Stop"
-                      aria-label="Stop"
-                    >
-                      <StopIcon />
-                    </button>
-                  </div>
-
-                  <div className="am-divider" aria-hidden="true" />
-                </div>
-
-                <div className="am-volume-row">
-                  <div className="am-volume-meta" aria-hidden="true">
-                    <span>App Volume</span>
-                    <span>{volumePercent}%</span>
-                  </div>
+                <div className="am-compact-volume-row">
                   <div className="am-volume">
                     <button
                       type="button"
@@ -2244,7 +2318,11 @@ export function ListenerControls({
                         isMuted ? "Unmute app playback" : "Mute app playback"
                       }
                     >
-                      <VolumeIcon muted={isMuted || volume <= 0.001} />
+                      {isMuted || volume <= 0.001 ? (
+                        <VolumeIcon muted />
+                      ) : (
+                        <VolumeLowIcon />
+                      )}
                     </button>
                     <input
                       className="am-slider"
@@ -2256,82 +2334,184 @@ export function ListenerControls({
                       onChange={(event) => {
                         handleVolumeChange(Number(event.target.value));
                       }}
+                      style={volumeSliderStyle}
                       aria-label="App playback volume"
                       title={`App playback volume ${volumePercent}%`}
                     />
                   </div>
-
-                  <div className="am-divider am-divider--terminal" />
+                  <span className="am-compact-volume-end" aria-hidden="true">
+                    <VolumeIcon muted={false} />
+                  </span>
                 </div>
-              </>
-            )}
+
+                <div
+                  className={`am-compact-hover-actions${
+                    showCompactUtilities
+                      ? " am-compact-hover-actions--expanded"
+                      : ""
+                  }`}
+                >
+                  <div className="am-compact-hover-actions-panel">
+                    <button
+                      type="button"
+                      ref={fileListButtonRef}
+                      className={`am-btn am-compact-hover-action${
+                        showFileListPanel
+                          ? " am-compact-hover-action--active"
+                          : ""
+                      }`}
+                      onClick={() => {
+                        setShowDeviceMenu(false);
+                        setShowFileListPanel(!showFileListPanel);
+                      }}
+                      disabled={!hasFileListItems}
+                      title={hasFileListItems ? fileListTitle : "Queue"}
+                      data-tooltip={hasFileListItems ? fileListTitle : "Queue"}
+                      aria-label={hasFileListItems ? fileListTitle : "Queue"}
+                    >
+                      <QueueIcon />
+                    </button>
+                    <button
+                      type="button"
+                      className="am-btn am-compact-hover-action"
+                      onClick={() => {
+                        setShowFileListPanel(false);
+                        setShowDeviceMenu(false);
+                        void loadDemoAudioFile?.();
+                      }}
+                      title="Play demo audio"
+                      data-tooltip="Demo audio"
+                      aria-label="Play demo audio"
+                    >
+                      <DemoAudioIcon />
+                    </button>
+                    <button
+                      type="button"
+                      className={`am-btn am-compact-hover-action${
+                        isLocalFileQueueAutoplayEnabled
+                          ? " am-compact-hover-action--active"
+                          : ""
+                      }`}
+                      onClick={toggleLocalFileQueueAutoplay}
+                      title={`Autoplay ${
+                        isLocalFileQueueAutoplayEnabled ? "on" : "off"
+                      }`}
+                      data-tooltip={`Autoplay ${
+                        isLocalFileQueueAutoplayEnabled ? "on" : "off"
+                      }`}
+                      aria-label="Autoplay"
+                      aria-pressed={isLocalFileQueueAutoplayEnabled}
+                    >
+                      <AutoplayIcon />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
-          {hasRecentUploads ? (
+          {hasFileListItems ? (
             <div
-              ref={recentUploadsPanelRef}
-              className={`am-recent-panel${
-                showRecentUploadsPanel ? "" : " am-recent-hidden"
+              ref={fileListPanelRef}
+              className={`am-file-list-panel${
+                showFileListPanel ? "" : " am-file-list-hidden"
               }`}
-              data-testid="recent-uploads-panel"
+              data-testid={
+                fileListShowsQueue
+                  ? "local-file-queue-panel"
+                  : "recent-uploads-panel"
+              }
             >
-              <div className="am-recent-header">
+              <div className="am-file-list-header">
                 <span>
-                  <HistoryIcon /> Recent uploads
+                  <QueueIcon /> {fileListTitle}
                 </span>
-                <span>This tab only</span>
+                <span>{fileListMeta}</span>
               </div>
-              <p className="am-recent-helper">{recentUploadsHelper}</p>
-              <ul className="am-recent-list">
-                {recentUploads.map((upload) => {
-                  const isQueuedUpload = queuedNextLocalFile?.id === upload.id;
-                  const actionLabel = isLiveInputActive
-                    ? isQueuedUpload
-                      ? "Queued"
-                      : "Queue"
-                    : isQueuedUpload
-                      ? "Next"
-                      : "Reload";
-                  return (
-                    <li key={upload.id}>
-                      <button
-                        type="button"
-                        className={`am-recent-item${
-                          isQueuedUpload ? " am-recent-item--pending" : ""
-                        }`}
-                        onClick={async () => {
-                          setShowRecentUploadsPanel(false);
-                          await handleRecentUploadSelect(upload.id);
-                        }}
-                        title={
-                          isLiveInputActive
-                            ? "Queue this file until LIVE stops"
-                            : isQueuedUpload
-                              ? "Load the queued next local file"
-                              : "Reload this local file"
-                        }
-                      >
-                        <span className="am-recent-item-main">
-                          <span className="am-recent-item-title">
-                            {upload.name}
-                          </span>
-                          <span className="am-recent-item-meta">
-                            {formatFileSize(upload.size)}
-                          </span>
-                        </span>
-                        <span
-                          className={`am-recent-item-action${
-                            isQueuedUpload
-                              ? " am-recent-item-action--pending"
-                              : ""
-                          }`}
-                        >
-                          {actionLabel}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
+              <p className="am-file-list-helper">{fileListHelper}</p>
+              <ul className="am-file-list-items">
+                {fileListShowsQueue
+                  ? localFileQueue.map((queueEntry, queueIndex) => {
+                      const isActive = queueIndex === activeLocalFileQueueIndex;
+                      const actionLabel = isLiveInputActive
+                        ? "Queued"
+                        : isActive && isPlaying
+                          ? "Playing"
+                          : "Play";
+                      return (
+                        <li key={`${queueEntry.id}:${queueIndex}`}>
+                          <button
+                            type="button"
+                            className={`am-file-list-item${
+                              isActive ? " am-file-list-item--active" : ""
+                            }`}
+                            onClick={async () => {
+                              setShowFileListPanel(false);
+                              await playLocalFileAtQueueIndex(queueIndex);
+                            }}
+                            disabled={isLiveInputActive}
+                            title={
+                              isLiveInputActive
+                                ? "Queued until live input stops"
+                                : `Play ${queueEntry.name}`
+                            }
+                            aria-label={
+                              isLiveInputActive
+                                ? `Queued ${queueEntry.name}`
+                                : `Play ${queueEntry.name}`
+                            }
+                          >
+                            <span className="am-file-list-item-main">
+                              <span className="am-file-list-item-title">
+                                {queueEntry.name}
+                              </span>
+                              <span className="am-file-list-item-meta">
+                                {queueIndex + 1} / {localFileQueue.length} ·{" "}
+                                {formatFileSize(queueEntry.size)}
+                              </span>
+                            </span>
+                            <span
+                              className={`am-file-list-item-action${
+                                isActive
+                                  ? " am-file-list-item-action--active"
+                                  : ""
+                              }`}
+                            >
+                              {actionLabel}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })
+                  : recentUploads.map((upload) => {
+                      const actionLabel = isLiveInputActive ? "Queue" : "Play";
+                      return (
+                        <li key={upload.id}>
+                          <button
+                            type="button"
+                            className="am-file-list-item"
+                            onClick={async () => {
+                              setShowFileListPanel(false);
+                              await handleRecentUploadSelect(upload.id);
+                            }}
+                            title={`${actionLabel} ${upload.name}`}
+                            aria-label={`${actionLabel} ${upload.name}`}
+                          >
+                            <span className="am-file-list-item-main">
+                              <span className="am-file-list-item-title">
+                                {upload.name}
+                              </span>
+                              <span className="am-file-list-item-meta">
+                                {formatFileSize(upload.size)}
+                              </span>
+                            </span>
+                            <span className="am-file-list-item-action">
+                              {actionLabel}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
               </ul>
             </div>
           ) : null}

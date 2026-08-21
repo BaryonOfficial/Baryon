@@ -1,5 +1,5 @@
 import { REACTIVITY_DEFAULTS, RENDER_DEFAULTS } from "../defaults.js";
-import { clamp, clamp01 } from "../utils/math.js";
+import { clamp, clamp01, damp } from "../utils/math.js";
 
 const MANUAL_ROTATION_RATE_SCALE = -0.5;
 const AUDIO_ROTATION_MIN_SPEED = 0.03;
@@ -26,11 +26,6 @@ const AUTO_MOTION_ENVELOPE_ATTACK = 3.0;
 const AUTO_MOTION_ENVELOPE_RELEASE = 0.22;
 const AUTO_MOTION_AMOUNT_MIN = 0.6;
 const AUTO_MOTION_AMOUNT_MAX = 2.0;
-
-function damp(current, target, smoothing, deltaTime) {
-  const factor = 1 - Math.exp(-Math.max(0, smoothing) * Math.max(0, deltaTime));
-  return current + (target - current) * factor;
-}
 
 function wrapAngle(angle) {
   const turn = Math.PI * 2;
@@ -132,6 +127,10 @@ export function normalizeRotationMode(mode) {
   return "audio";
 }
 
+export function normalizeIdleLogoRotationMode(mode) {
+  return mode === "off" ? "off" : "manual";
+}
+
 export function createSceneMotionState(initialYaw = 0) {
   return {
     yaw: initialYaw,
@@ -143,8 +142,15 @@ export function createSceneMotionState(initialYaw = 0) {
     rollVelocity: 0,
     lastMotionSignal: 0,
     lastBeatPulseId: 0,
-    idleLogoYaw: initialYaw,
     motionAmountEnvelope: 0.5,
+  };
+}
+
+export function createIdleLogoMotionState(initialYaw = 0) {
+  return {
+    yaw: finiteOr(initialYaw, 0),
+    angularVelocity: 0,
+    targetAngularVelocity: 0,
   };
 }
 
@@ -177,6 +183,13 @@ export function getMotionAmount(controls, runtimeState) {
 export function getManualVelocity(controls) {
   return (
     (controls.rotationSpeed ?? RENDER_DEFAULTS.rotationSpeed) *
+    MANUAL_ROTATION_RATE_SCALE
+  );
+}
+
+export function getIdleLogoManualVelocity(controls) {
+  return (
+    (controls.idleLogoRotationSpeed ?? RENDER_DEFAULTS.idleLogoRotationSpeed) *
     MANUAL_ROTATION_RATE_SCALE
   );
 }
@@ -257,6 +270,27 @@ export function stepManualSceneMotion(sceneMotion, manualVelocity, deltaTime) {
   sceneMotion.angularVelocity = manualVelocity;
   sceneMotion.yaw = wrapAngle(sceneMotion.yaw + manualVelocity * deltaTime);
   settleAttitude(sceneMotion, deltaTime);
+}
+
+export function stepIdleLogoMotion(
+  idleLogoMotion,
+  rotationMode,
+  manualVelocity,
+  deltaTime,
+) {
+  if (rotationMode === "manual") {
+    idleLogoMotion.targetAngularVelocity = manualVelocity;
+    idleLogoMotion.angularVelocity = manualVelocity;
+    idleLogoMotion.yaw = wrapAngle(
+      finiteOr(idleLogoMotion.yaw, 0) + manualVelocity * deltaTime,
+    );
+  } else {
+    idleLogoMotion.targetAngularVelocity = 0;
+    idleLogoMotion.angularVelocity = 0;
+    idleLogoMotion.yaw = finiteOr(idleLogoMotion.yaw, 0);
+  }
+
+  return idleLogoMotion;
 }
 
 export function stepAudioSceneMotion(
@@ -388,25 +422,6 @@ export function stopAudioSceneMotion(sceneMotion) {
   sceneMotion.rollVelocity = 0;
 }
 
-export function syncIdleOverlayRotation(
-  runtimeState,
-  sceneMotion,
-  manualVelocity,
-  deltaTime,
-) {
-  if (!runtimeState?.idleOverlay?.rotation) {
-    return;
-  }
-
-  sceneMotion.idleLogoYaw = wrapAngle(
-    (sceneMotion.idleLogoYaw ?? sceneMotion.yaw ?? 0) +
-      manualVelocity * deltaTime,
-  );
-  runtimeState.idleOverlay.rotation.y = wrapAngle(
-    sceneMotion.idleLogoYaw - sceneMotion.yaw,
-  );
-}
-
 export function buildSceneSnapshot({
   rotationMode,
   rotationSpeed,
@@ -416,7 +431,10 @@ export function buildSceneSnapshot({
   rotationX,
   rotationY,
   rotationZ,
-  idleOverlayRotationY,
+  idleLogoRotationMode,
+  idleLogoRotationSpeed,
+  idleLogoMotion,
+  idleLogoRotationY,
 }) {
   return {
     rotationMode,
@@ -432,11 +450,12 @@ export function buildSceneSnapshot({
     targetAngularVelocity: sceneMotion.targetAngularVelocity,
     pitchVelocity: sceneMotion.pitchVelocity,
     rollVelocity: sceneMotion.rollVelocity,
-    idleLogoYaw: sceneMotion.idleLogoYaw,
-    idleOverlayRotationY:
-      idleOverlayRotationY ?? sceneMotion.idleLogoYaw - (rotationY ?? 0),
     rotationX: rotationX ?? sceneMotion.pitch ?? 0,
     rotationY,
     rotationZ: rotationZ ?? sceneMotion.roll ?? 0,
+    idleLogoRotationMode,
+    idleLogoRotationSpeed,
+    idleLogoAngularVelocity: idleLogoMotion?.angularVelocity ?? 0,
+    idleLogoRotationY: idleLogoRotationY ?? idleLogoMotion?.yaw ?? 0,
   };
 }

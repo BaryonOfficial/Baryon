@@ -1,6 +1,6 @@
 {
   "name": "@baryon/engine",
-  "version": "1.0.1",
+  "version": "1.2.0",
   "private": true,
   "license": "LicenseRef-PolyForm-Strict-1.0",
   "type": "module",
@@ -8,12 +8,10 @@
     "bench:audio-feature-worker": "node scripts/benchmarkAudioFeatureWorker.mjs",
     "bench:fast-modal-drive": "node scripts/benchmarkFastModalDriveEstimator.mjs",
     "lint": "eslint src --report-unused-disable-directives --max-warnings 0",
-    "typecheck": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.contracts.json && tsc -p tsconfig.json",
     "test": "vitest run"
   },
-  "main": "./src/index.js",
   "exports": {
-    ".": "./src/index.js",
     "./audio": "./src/core/audio/audioSetup.js",
     "./audio/inputDeviceSemantics": "./src/core/audio/inputDeviceSemantics.js",
     "./audio/liveInputAnalysis": "./src/core/audio/liveInputAnalysis.js",
@@ -22,11 +20,13 @@
     "./controls/persistence": "./src/controls/persistence.js",
     "./controls/runtime": "./src/controls/runtime.js",
     "./controls/schema": "./src/controls/schema.js",
+    "./core/modalBudgets": "./src/core/modalBudgets.js",
     "./core/renderAuthorityContract": "./src/core/renderAuthorityContract.js",
-    "./core/raymarch/fieldCache": "./src/core/raymarch/fieldCache.js",
+    "./core/raymarch/fieldObservation": "./src/core/raymarch/fieldObservation.js",
     "./core/raymarch/fieldAnalysis": "./src/core/raymarch/fieldAnalysis.js",
-    "./core/raymarch/observationCalibration": "./src/core/raymarch/observationCalibration.js",
-    "./core/raymarch/observationTransfer": "./src/core/raymarch/observationTransfer.js",
+    "./core/raymarch/fieldCachePassband": "./src/core/raymarch/fieldCachePassband.js",
+    "./core/raymarch/cymaticObserverReference": "./src/core/raymarch/cymaticObserverReference.js",
+    "./core/raymarch/cymaticPlasmaTransfer": "./src/core/raymarch/cymaticPlasmaTransfer.js",
     "./core/raymarch/quantityLedger": "./src/core/raymarch/quantityLedger.js",
     "./defaults": "./src/defaults.js",
     "./export/structureFrame": "./src/export/structureFrame.js",
@@ -35,15 +35,13 @@
     "./render/outputPipeline": "./src/render/outputPipeline.js",
     "./render/temporalReprojectionPolicy": "./src/render/temporalReprojectionPolicy.js",
     "./testing/raymarchAuditFixture": "./src/testing/raymarchAuditFixture.js",
-    "./react/useSharedAudioLogic": "./src/react/useSharedAudioLogic.js",
+    "./utils/audio/spectralPhase": "./src/utils/audio/spectralPhase.js",
     "./three/loaders": "./src/three/loaders/setupLoaders.js",
     "./visualization/runtime": "./src/visualization/runtimeFactory.js",
-    "./visualization/types": "./src/visualization/types.js",
-    "./styles.css": "./src/styles.css"
+    "./visualization/types": "./src/visualization/types.js"
   },
   "peerDependencies": {
-    "react": "^19.2.4",
-    "three": "^0.185.0"
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

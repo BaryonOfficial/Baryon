@@ -1,6 +1,7 @@
 import {
   setupRaymarch,
   tickRaymarch,
+  prepareRaymarch,
   failClosedRaymarch,
   disposeRaymarch,
 } from "../core/raymarchSetup.js";
@@ -12,12 +13,20 @@ export function createRaymarchVisualizationRuntime() {
     setup({ baryonGeometry, parameters, audioConfig }) {
       return setupRaymarch(baryonGeometry, parameters, audioConfig);
     },
+    // The renderer is required again: the modal field cache is filled by a
+    // render pass inside the tick, between the packet upload that feeds it and
+    // the frame that reads it.
     tick({ renderer, runtimeState, featureFrame, time, deltaTime }) {
-      tickRaymarch(renderer, runtimeState, featureFrame, time, deltaTime);
+      tickRaymarch(runtimeState, featureFrame, time, deltaTime, renderer);
     },
-    failClosed({ renderer, runtimeState, status, time, deltaTime }) {
+    prepare({ renderer, scene, camera, runtimeState, featureFrame }) {
+      return prepareRaymarch(runtimeState, featureFrame, renderer, {
+        scene,
+        camera,
+      });
+    },
+    failClosed({ runtimeState, status, time, deltaTime }) {
       failClosedRaymarch(runtimeState, {
-        renderer,
         status,
         time,
         deltaTime,

@@ -32,7 +32,7 @@ const {
     liveInputUiState: "active",
   },
   audioState: {
-    selectedSource: "file",
+    sourceSession: { kind: "file" },
   },
   fullscreenState: {
     isFullscreen: false,
@@ -119,13 +119,19 @@ vi.mock("./hooks/useDraggableFloatingUi.js", () => ({
   }),
 }));
 
-vi.mock("./hooks/useRendererModeState.js", () => ({
-  useRendererModeState: () => ({
+vi.mock("./hooks/useRuntimeSessionController.js", () => ({
+  useRuntimeSessionController: () => ({
+    generation: 0,
+    phase: "ready",
+    requestedBackend: "webgpu",
+    activeBackend: "webgpu",
+    observedBackend: "webgpu",
     forceWebGLFallbackTest: false,
+    rendererRequiredWebGL: false,
     activeRendererFallback: false,
-    canvasEpoch: 0,
     showCanvas: true,
-    setShowCanvas: () => {},
+    markRendererReady: () => {},
+    markRendererFailed: () => {},
   }),
 }));
 
@@ -138,7 +144,7 @@ vi.mock("../context/AudioContext", () => ({
     resetAudioSession: () => {},
   }),
   useAudio: () => ({
-    selectedSource: audioState.selectedSource,
+    sourceSession: audioState.sourceSession,
   }),
 }));
 
@@ -154,6 +160,7 @@ import {
 } from "./cameraPosePresets.js";
 import { ControlsProvider } from "../controls/ControlsProvider.jsx";
 import { createControlsStore } from "../controls/controlsStore.js";
+import { CONTROL_SURFACES } from "@baryon/engine/controls/schema";
 import ThreeScene from "./ThreeScene.jsx";
 
 describe("resolvePreviewOverlayState", () => {
@@ -272,7 +279,7 @@ describe("authoritative performance HUD composition", () => {
           requested: false,
           rendering: false,
           omitLocalScene: false,
-          programOutputConfiguredActive: true,
+          committedProgramOutputConfigured: true,
           authorityMode: "output-stage-authoritative",
         },
         authoritativeStageTelemetry: {
@@ -295,7 +302,7 @@ describe("authoritative performance HUD composition", () => {
           requested: false,
           rendering: false,
           omitLocalScene: false,
-          programOutputConfiguredActive: false,
+          committedProgramOutputConfigured: false,
           authorityMode: "output-stage-authoritative",
         },
         authoritativeStageTelemetry: {
@@ -382,8 +389,11 @@ describe("ThreeScene render behavior", () => {
   let container = null;
   /** @type {import('react-dom/client').Root | null} */
   let root = null;
+  let originalActEnvironment;
 
   beforeEach(() => {
+    originalActEnvironment = globalThis.IS_REACT_ACT_ENVIRONMENT;
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
     baryonSceneSpy.mockClear();
     advancedControlsDockSpy.mockClear();
     canvasSpy.mockClear();
@@ -397,7 +407,7 @@ describe("ThreeScene render behavior", () => {
     });
     browserSupportState.markRendererInitUnsupported.mockClear();
     audioSceneState.liveInputUiState = "active";
-    audioState.selectedSource = "file";
+    audioState.sourceSession.kind = "file";
     fullscreenState.isFullscreen = false;
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -413,6 +423,11 @@ describe("ThreeScene render behavior", () => {
     container?.remove();
     root = null;
     container = null;
+    if (originalActEnvironment === undefined) {
+      delete globalThis.IS_REACT_ACT_ENVIRONMENT;
+    } else {
+      globalThis.IS_REACT_ACT_ENVIRONMENT = originalActEnvironment;
+    }
   });
 
   it("passes the device DPR through without the default R3F two-x cap", async () => {
@@ -494,6 +509,75 @@ describe("ThreeScene render behavior", () => {
 
     expect(advancedControlsDockSpy.mock.calls.at(-1)?.[0]).toMatchObject({
       footerActions,
+      surface: CONTROL_SURFACES.listener,
+    });
+  });
+
+  it("forwards a host footer accessory to the advanced controls dock", async () => {
+    const controlsStore = createControlsStore();
+    const controlsFooterAccessory = React.createElement("div", {
+      "data-testid": "host-footer-accessory",
+    });
+
+    await act(async () => {
+      root.render(
+        React.createElement(
+          ControlsProvider,
+          { store: controlsStore },
+          React.createElement(ThreeScene, { controlsFooterAccessory }),
+        ),
+      );
+    });
+
+    expect(advancedControlsDockSpy.mock.calls.at(-1)?.[0]).toMatchObject({
+      footerAccessory: controlsFooterAccessory,
+    });
+  });
+
+  it("forwards current-generation diagnostic application evidence to controls", async () => {
+    const controlsStore = createControlsStore();
+    controlsStore.updateControl("injectTestTone", true, {
+      persistMode: "none",
+    });
+
+    await act(async () => {
+      root.render(
+        React.createElement(
+          ControlsProvider,
+          { store: controlsStore },
+          React.createElement(ThreeScene),
+        ),
+      );
+    });
+
+    await act(async () => {
+      baryonSceneSpy.mock.calls.at(-1)?.[0]?.onFrameState?.({
+        runtimeGeneration: 0,
+        controls: {
+          injectTestTone: true,
+          suppressPlaybackTelemetry: false,
+        },
+        status: { isPlaying: false },
+        featureFrame: {
+          fieldState: "test",
+          diagnosticControlState: {
+            auditEnabled: false,
+            freezeModeSlots: false,
+            injectTestTone: true,
+            suppressPlaybackTelemetry: false,
+          },
+        },
+      });
+    });
+
+    expect(
+      advancedControlsDockSpy.mock.calls.at(-1)?.[0]?.controlStatuses
+        ?.injectTestTone,
+    ).toMatchObject({
+      requested: true,
+      applied: true,
+      generation: 0,
+      state: "active",
     });
   });
 
@@ -550,6 +634,34 @@ describe("ThreeScene render behavior", () => {
     expect(
       container.querySelector('[data-testid="listener-controls-overlay"]'),
     ).toBeInstanceOf(HTMLElement);
+  });
+
+  it("keeps the demo transport while withholding the full control surfaces", async () => {
+    const controlsStore = createControlsStore();
+
+    await act(async () => {
+      root.render(
+        React.createElement(
+          ControlsProvider,
+          { store: controlsStore },
+          React.createElement(ThreeScene, {
+            controlsDockVisible: false,
+            cameraControlsVisible: false,
+            controlsOverlay: React.createElement("div", {
+              "data-testid": "mobile-demo-controls",
+            }),
+          }),
+        ),
+      );
+    });
+
+    expect(advancedControlsDockSpy).not.toHaveBeenCalled();
+    expect(
+      container.querySelector('[data-testid="mobile-demo-controls"]'),
+    ).toBeInstanceOf(HTMLElement);
+    expect(
+      container.querySelector('[data-testid="camera-controls"]'),
+    ).toBeNull();
   });
 
   it("keeps the blocking unsupported warning as the default unsupported fallback", async () => {
@@ -676,9 +788,6 @@ describe("ThreeScene render behavior", () => {
     controlsStore.updateControl("backgroundColor", "#112233", {
       persistMode: "none",
     });
-    controlsStore.updateControl("outputMode", "opaque", {
-      persistMode: "none",
-    });
     controlsStore.updateControl("outputBackgroundColor", "#445566", {
       persistMode: "none",
     });
@@ -698,35 +807,6 @@ describe("ThreeScene render behavior", () => {
     );
 
     expect(sceneRoot?.style.background).toBe("rgb(68, 85, 102)");
-  });
-
-  it("keeps the transparent preview backdrop black", async () => {
-    const controlsStore = createControlsStore();
-    controlsStore.updateControl("backgroundColor", "#112233", {
-      persistMode: "none",
-    });
-    controlsStore.updateControl("outputMode", "transparent", {
-      persistMode: "none",
-    });
-    controlsStore.updateControl("outputBackgroundColor", "#445566", {
-      persistMode: "none",
-    });
-
-    await act(async () => {
-      root.render(
-        React.createElement(
-          ControlsProvider,
-          { store: controlsStore },
-          React.createElement(ThreeScene),
-        ),
-      );
-    });
-
-    const sceneRoot = container.querySelector(
-      '[data-testid="baryon-scene-root"]',
-    );
-
-    expect(sceneRoot?.style.background).toBe("rgb(0, 0, 0)");
   });
 
   it("resets an active preset back to the default camera view", async () => {
@@ -794,6 +874,33 @@ describe("ThreeScene render behavior", () => {
     );
     expect(topButton.getAttribute("aria-pressed")).toBe("false");
     expect(sideButton.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("uses caller-owned active camera framing without changing the shared default", async () => {
+    const controlsStore = createControlsStore();
+    const activeCameraPose = {
+      ...DEFAULT_ACTIVE_CAMERA_POSE,
+      position: { x: 7, y: 7, z: 7 },
+    };
+
+    await act(async () => {
+      root.render(
+        React.createElement(
+          ControlsProvider,
+          { store: controlsStore },
+          React.createElement(ThreeScene, { activeCameraPose }),
+        ),
+      );
+    });
+
+    expect(baryonSceneSpy.mock.calls.at(-1)?.[0]?.cameraPose).toStrictEqual(
+      activeCameraPose,
+    );
+    expect(DEFAULT_ACTIVE_CAMERA_POSE.position).toStrictEqual({
+      x: 4.5,
+      y: 4.5,
+      z: 4.5,
+    });
   });
 
   it("hides camera controls while idle and keeps the idle camera default", async () => {

@@ -6,4 +6,7 @@ export default createWorkspaceVitestConfig({
       dedupe: ["react", "react-dom", "three", "@react-three/fiber"],
     },
   },
+  test: {
+    setupFiles: ["./src/test/setupReactActEnvironment.js"],
+  },
 });

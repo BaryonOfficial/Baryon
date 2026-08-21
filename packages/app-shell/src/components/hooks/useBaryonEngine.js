@@ -7,7 +7,6 @@ import {
   useState,
 } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import * as THREE from "three";
 import {
   advanceRenderOutputTemporalHistoryBypass,
   consumeRenderOutputVisualIdle,
@@ -23,10 +22,7 @@ import {
   applyAudioControls,
   applySceneControls,
 } from "@baryon/engine/controls/runtime";
-import {
-  DEFAULT_VISUALIZATION_METHOD,
-  usesRaymarchVolumePipeline,
-} from "@baryon/engine/visualization/types";
+import { usesRaymarchVolumePipeline } from "@baryon/engine/visualization/types";
 import { getDefaultAudioSession } from "@baryon/engine/audio";
 import {
   DEVTOOLS_ENABLED,
@@ -47,28 +43,28 @@ import {
   recordTailDiagnosticsSample,
 } from "./tailDiagnostics.js";
 import {
-  clearAdaptiveRaymarchResumeState,
+  resetAdaptiveRaymarchControllerState,
   maybePublishRuntimePerfSnapshot,
   clearFrameCache,
   createRuntimeDiagnostics,
   recordRuntimePerfSample,
   shouldRenderExternalFrame,
-  updateObservationTransferRenderDiagnostics,
+  updateCymaticObserverRenderDiagnostics,
 } from "./baryonEngineRuntimeState.js";
 import { createLiveInputRuntimeStatus } from "../../context/liveInputRuntimeStatus.js";
 import { subscribeControlsChanged } from "../../controls/controlsEvents.js";
-import { createCaptureOutputSession } from "@baryon/engine/render/outputPipeline";
+import { createProgramFrameProducer } from "../programFrameProducer.js";
 import {
   applyCachedControlSnapshots,
   consumeRenderFramePacerSlot,
   createAuditSnapshotNotifier,
+  createFeatureFrameResolver,
   createRenderFramePacerState,
   getDevicePixelRatio,
   getRenderTargetPixelRatio,
   publishPerformanceHudSnapshot,
   publishDevtoolsSnapshots,
   finalizeTerminalVisualIdleState,
-  resolveFeatureFrame,
   shouldBypassTemporalHistoryForRaymarchFrame,
   syncLiveInputRuntimeStatus,
   updateModalEnvelopeDiagnostics,
@@ -141,7 +137,10 @@ function applyExternalSceneSnapshot(runtimeState, sceneSnapshot) {
     return null;
   }
 
-  const rotation = runtimeState.points?.rotation ?? null;
+  const rotation =
+    runtimeState.cymaticRoot?.rotation ??
+    runtimeState.volumeMesh?.rotation ??
+    null;
   const sceneMotion = runtimeState.sceneMotion ?? {};
   runtimeState.sceneMotion = sceneMotion;
 
@@ -184,22 +183,22 @@ function applyExternalSceneSnapshot(runtimeState, sceneSnapshot) {
   assignFiniteNumber(sceneMotion, "pitchVelocity", sceneSnapshot.pitchVelocity);
   assignFiniteNumber(sceneMotion, "rollVelocity", sceneSnapshot.rollVelocity);
 
-  const idleLogoYaw = assignFiniteNumber(
-    sceneMotion,
-    "idleLogoYaw",
-    sceneSnapshot.idleLogoYaw,
+  const idleLogoRotationY = readFiniteNumber(sceneSnapshot.idleLogoRotationY);
+  const idleLogoAngularVelocity = readFiniteNumber(
+    sceneSnapshot.idleLogoAngularVelocity,
   );
-  const idleOverlayRotationY = readFiniteNumber(
-    sceneSnapshot.idleOverlayRotationY,
-  );
-  if (runtimeState.idleOverlay?.rotation && idleOverlayRotationY !== null) {
-    runtimeState.idleOverlay.rotation.y = idleOverlayRotationY;
-  } else if (
-    runtimeState.idleOverlay?.rotation &&
-    idleLogoYaw !== null &&
-    rotationY !== null
-  ) {
-    runtimeState.idleOverlay.rotation.y = idleLogoYaw - rotationY;
+  const idleLogoMotion = runtimeState.idleLogoMotion ?? {};
+  runtimeState.idleLogoMotion = idleLogoMotion;
+
+  if (idleLogoRotationY !== null) {
+    if (runtimeState.idleOverlay?.rotation) {
+      runtimeState.idleOverlay.rotation.y = idleLogoRotationY;
+    }
+    idleLogoMotion.yaw = idleLogoRotationY;
+  }
+  if (idleLogoAngularVelocity !== null) {
+    idleLogoMotion.angularVelocity = idleLogoAngularVelocity;
+    idleLogoMotion.targetAngularVelocity = idleLogoAngularVelocity;
   }
 
   return sceneSnapshot;
@@ -222,6 +221,21 @@ function renderPipelineFrame(renderLoopContext, pipeline) {
   );
 }
 
+function isAttachedToScene(root, scene) {
+  let ancestor = root;
+  while (ancestor) {
+    if (ancestor === scene) {
+      return true;
+    }
+    ancestor = ancestor.parent ?? null;
+  }
+  return false;
+}
+
+function isProgramRootAttached(scene, programRoot) {
+  return !programRoot || isAttachedToScene(programRoot, scene);
+}
+
 export function useBaryonEngine({
   baryonGeometry,
   camera,
@@ -232,14 +246,14 @@ export function useBaryonEngine({
   liveInputUiState,
   liveInputErrorCode,
   controlsRef,
-  visualizationMethod = DEFAULT_VISUALIZATION_METHOD,
   ensurePipeline,
   postNodesRef,
   onPerformanceHudSnapshotChange,
   onAuditSnapshotChange,
-  outputFrameConfig = null,
-  onOutputFrame = null,
+  outputCompositorFrameTransfer = false,
+  onOutputCompositorFrame = null,
   onFrameState = null,
+  registerStructureExportSampleReader = null,
   audioFeatureAuthorityRole,
   externalFrameRef = null,
   structuralControlVersion = 0,
@@ -253,6 +267,7 @@ export function useBaryonEngine({
   suppressRender = false,
   enableControlEventSync = true,
   cameraRenderKey = null,
+  outputMode = null,
 }) {
   assertAudioFeatureAuthorityRole(audioFeatureAuthorityRole);
   const externalFeatureAuthorityActive =
@@ -264,8 +279,10 @@ export function useBaryonEngine({
     controlsRef?.current ? { ...controlsRef.current } : {},
   );
   const renderCommandQueueRef = useLazyRef(createRenderCommandQueue);
-  const outputSessionRef = useRef(null);
-  const outputCaptureInFlightRef = useRef(false);
+  const outputCompositorFrameErrorRef = useRef(null);
+  const programFrameProducerRef = useLazyRef(createProgramFrameProducer);
+  const featureFrameResolverRef = useLazyRef(createFeatureFrameResolver);
+  const latestFeatureResolverInputsRef = useRef(null);
   const tailDiagnosticsRef = useLazyRef(createTailDiagnosticsRecorder);
   const lastAppliedExternalFrameSequenceRef = useRef(null);
   const lastObservedLocalCameraRenderSignalVersionRef = useRef(0);
@@ -295,7 +312,6 @@ export function useBaryonEngine({
     audioRef,
     baryonGeometry,
     controlsRef,
-    visualizationMethod,
     audioFeatureAuthorityRole,
     audioFeatureConfigurationVersion: structuralControlVersion,
     setIsEngineReady,
@@ -306,6 +322,57 @@ export function useBaryonEngine({
     appliedControlVersionRef,
     cachedControlSnapshotsRef,
   } = controlCacheRefs;
+
+  useEffect(() => {
+    if (
+      externalFeatureAuthorityActive ||
+      typeof registerStructureExportSampleReader !== "function"
+    ) {
+      registerStructureExportSampleReader?.(null);
+      return undefined;
+    }
+
+    const reader = () => {
+      const inputs = latestFeatureResolverInputsRef.current;
+      if (!inputs) {
+        return null;
+      }
+      const resolved = featureFrameResolverRef.current.resolve({
+        ...inputs,
+        runtimeDiagnostics: null,
+        controls: renderControlsRef.current,
+      });
+      if (!resolved?.effectiveFrame) {
+        return null;
+      }
+      const appliedControlsSnapshot =
+        cachedControlSnapshotsRef.current?.controlsSnapshot ??
+        renderControlsRef.current;
+      return {
+        featureFrame: resolved.effectiveFrame,
+        resolvedSemanticRevision: resolved.resolvedSemanticRevision,
+        appliedControls: {
+          colorMode: appliedControlsSnapshot?.colorMode,
+          volumeColorRgb: appliedControlsSnapshot?.volumeColor,
+          surfaceColorRgb: appliedControlsSnapshot?.surfaceColor,
+          effectiveGeometry:
+            inputs.runtimeState?.effectiveCavityGeometry ?? "rectangular",
+        },
+        appliedControlRevision: appliedControlVersionRef.current,
+      };
+    };
+    registerStructureExportSampleReader(reader);
+    return () => {
+      registerStructureExportSampleReader(null);
+    };
+  }, [
+    appliedControlVersionRef,
+    cachedControlSnapshotsRef,
+    externalFeatureAuthorityActive,
+    featureFrameResolverRef,
+    registerStructureExportSampleReader,
+    renderControlsRef,
+  ]);
   const renderLoopRefs = {
     runtimeDiagnosticsRef,
     pixelRatioRef,
@@ -317,6 +384,8 @@ export function useBaryonEngine({
   };
   const renderLoopContext = {
     gl,
+    scene,
+    camera,
     ensurePipeline,
     postNodesRef,
     audioRef,
@@ -337,6 +406,7 @@ export function useBaryonEngine({
   const forcedExternalRenderPendingRef = useRef(false);
   const framePacerStateRef = useLazyRef(createRenderFramePacerState);
   const framePacingFpsRef = useRef(framePacingFps);
+  const pendingPacedLocalDeltaTimeRef = useRef(0);
   const fixtureRuntimeDriverRef = useLazyRef(() =>
     createRaymarchAuditFixtureRuntimeDriver({
       camera,
@@ -384,16 +454,9 @@ export function useBaryonEngine({
   }, [fixtureRuntimeDriverRef]);
 
   useEffect(() => {
-    const audio = audioRef.current;
     const renderCommandQueue = renderCommandQueueRef.current;
 
-    audio.attach(camera);
-    gl.setClearColor(new THREE.Color(0x000000), 0);
-
     return () => {
-      outputSessionRef.current?.dispose?.();
-      outputSessionRef.current = null;
-      outputCaptureInFlightRef.current = false;
       lastAppliedExternalFrameSequenceRef.current = null;
       clearFrameCache(frameCacheRefs);
       lastLiveInputRuntimeStatusRef.current = null;
@@ -440,7 +503,7 @@ export function useBaryonEngine({
   ]);
 
   useEffect(() => {
-    clearAdaptiveRaymarchResumeState(runtimeStateRef.current);
+    resetAdaptiveRaymarchControllerState(runtimeStateRef.current);
     forcedExternalRenderPendingRef.current = true;
     invalidate();
   }, [adaptiveResetNonce, invalidate, runtimeStateRef]);
@@ -512,21 +575,9 @@ export function useBaryonEngine({
     renderProfileKeyRef.current = nextRenderProfileKey;
     // Profile-only output changes still need one forced draw so the external
     // frame path emits a fresh rendered frame and downstream sinks can republish.
-    clearAdaptiveRaymarchResumeState(runtimeStateRef.current);
     forcedExternalRenderPendingRef.current = true;
     invalidate();
-  }, [invalidate, renderProfile, renderProfileKeyRef, runtimeStateRef]);
-
-  useEffect(() => {
-    if (outputFrameConfig?.enabled) {
-      return undefined;
-    }
-
-    outputSessionRef.current?.dispose?.();
-    outputSessionRef.current = null;
-    outputCaptureInFlightRef.current = false;
-    return undefined;
-  }, [outputFrameConfig?.enabled]);
+  }, [invalidate, renderProfile, renderProfileKeyRef]);
 
   useEffect(() => {
     if (typeof document === "undefined") {
@@ -650,7 +701,9 @@ export function useBaryonEngine({
       renderCommandQueueRef.current.enqueueControlsChanged(
         event?.detail ?? controlsRef.current,
         {
-          clearPausedFrameCache: true,
+          // Live presentation controls redraw the current observation. They do
+          // not revoke the audio-owned frame held while file playback is paused.
+          clearPausedFrameCache: false,
           source: "controls-change",
         },
       );
@@ -660,10 +713,26 @@ export function useBaryonEngine({
     return subscribeControlsChanged(handleControlsChange);
   }, [controlsRef, invalidate, renderCommandQueueRef]);
 
+  useEffect(
+    () => () => {
+      programFrameProducerRef.current.detach();
+    },
+    [programFrameProducerRef],
+  );
+
   useFrame((state, rfDelta) => {
     const runtime = renderLoopContext.runtimeRef.current;
     const runtimeState = renderLoopContext.runtimeStateRef.current;
     if (!runtime || !runtimeState) {
+      return;
+    }
+    // Runtime setup and React scene attachment are separate commits. Building
+    // or compiling the PassNode graph in the gap can permanently cache an
+    // empty WebGPU scene on Windows. The React commit that attaches the root
+    // schedules the next demand frame, so wait for the canonical scene graph
+    // before creating or preparing any output pipeline.
+    if (!isProgramRootAttached(state.scene, runtimeState.points)) {
+      programFrameProducerRef.current.detach();
       return;
     }
     if (fixtureRuntimeDriverRef.current.renderFixtureFrame()) {
@@ -681,6 +750,9 @@ export function useBaryonEngine({
     }
 
     const pipeline = renderLoopContext.ensurePipeline();
+    programFrameProducerRef.current.bindRenderer(
+      pipeline ?? renderLoopContext.gl,
+    );
 
     let controls = renderLoopContext.controlsRef.current;
     const nextLiveControlSignalVersion =
@@ -742,7 +814,58 @@ export function useBaryonEngine({
       lastAppliedFrameSequence: lastAppliedExternalFrameSequenceRef.current,
       fallbackClockSnapshot,
     });
-    const { lowLoadPlaybackDiagnosticsActive, runtimeDiagnostics } =
+    const pacedLocalFrame =
+      externalFeatureAuthorityActive === false &&
+      Number.isFinite(framePacingFpsRef.current) &&
+      framePacingFpsRef.current > 0;
+    // The source clock is sampled before the frame pacer can skip this tick.
+    // Carry skipped elapsed time into the next rendered frame so motion stays
+    // wall-clock consistent with an unpaced Listener surface.
+    if (pacedLocalFrame) {
+      if (Number.isFinite(deltaTime) && deltaTime > 0) {
+        pendingPacedLocalDeltaTimeRef.current += deltaTime;
+      }
+    } else {
+      pendingPacedLocalDeltaTimeRef.current = 0;
+    }
+    const stageRenderReceipt = {
+      frameSequence: externalFrameSequence,
+      qualityPreset: renderProfileRef.current?.qualityPreset ?? null,
+    };
+    const completeProgramFrame = (render) => {
+      void programFrameProducerRef.current.produce({
+        render,
+        renderCanvas: renderLoopContext.gl.domElement,
+        transferRequired: outputCompositorFrameTransfer === true,
+        onFrame: onOutputCompositorFrame,
+        receipt: stageRenderReceipt,
+        onStageRender(receipt) {
+          outputCompositorFrameErrorRef.current = null;
+          onStageRender?.(receipt);
+        },
+        onError(error) {
+          const errorSignature =
+            error instanceof Error
+              ? `${error.name}:${error.message}`
+              : String(error);
+          if (outputCompositorFrameErrorRef.current !== errorSignature) {
+            outputCompositorFrameErrorRef.current = errorSignature;
+            console.error(
+              "[Baryon output] GPU compositor frame transfer failed:",
+              error,
+            );
+          }
+        },
+      });
+    };
+    const completePipelineFreeStageRender = () => {
+      completeProgramFrame(() => {
+        renderLoopContext.gl.setRenderTarget?.(null);
+        renderLoopContext.gl.setMRT?.(null);
+        renderLoopContext.gl.render(state.scene, state.camera);
+      });
+    };
+    const { suppressPlaybackTelemetryActive, runtimeDiagnostics } =
       updateRendererDiagnostics(
         {
           state,
@@ -794,6 +917,7 @@ export function useBaryonEngine({
       postNodesRef: renderLoopContext.postNodesRef,
       renderProfileRef,
       renderLoopRefs,
+      surfaceOutputMode: outputMode,
     });
     recordMeasuredRuntimePerf(
       runtimeDiagnostics,
@@ -850,6 +974,20 @@ export function useBaryonEngine({
       pendingLocalCameraRenderSignalRef.current = null;
       lastLocalCameraRenderAtMsRef.current = getWallTimeMs();
     }
+    const renderedDeltaTime = pacedLocalFrame
+      ? pendingPacedLocalDeltaTimeRef.current
+      : deltaTime;
+    pendingPacedLocalDeltaTimeRef.current = 0;
+    if (!externalFeatureAuthorityActive) {
+      latestFeatureResolverInputsRef.current = {
+        featureRuntime: renderLoopContext.audioFeatureRuntimeRef.current,
+        runtimeState,
+        controls,
+        status,
+        clockMode,
+        renderLoopRefs,
+      };
+    }
     const resolvedFrame = externalFeatureAuthorityActive
       ? externalFrameState?.featureFrame
         ? {
@@ -860,7 +998,7 @@ export function useBaryonEngine({
             featureFrame: null,
             effectiveFrame: null,
           }
-      : resolveFeatureFrame({
+      : featureFrameResolverRef.current.resolve({
           featureRuntime: renderLoopContext.audioFeatureRuntimeRef.current,
           runtimeDiagnostics,
           runtimeState,
@@ -869,56 +1007,78 @@ export function useBaryonEngine({
           clockMode,
           renderLoopRefs,
         });
-    const { featureFrame, effectiveFrame } = resolvedFrame;
+    const {
+      featureFrame,
+      effectiveFrame,
+      preparationFrame = null,
+    } = resolvedFrame;
 
     fixtureRuntimeDriverRef.current.observeAuthoritativeFrame(effectiveFrame);
 
     if (!featureFrame || !effectiveFrame) {
-      if (!externalFeatureAuthorityActive) {
-        const runtimeTickStartedAt = getWallTimeMs();
+      const runtimeTickStartedAt = getWallTimeMs();
+      const preparationResult = preparationFrame
+        ? runtime.prepare?.({
+            renderer: renderLoopContext.gl,
+            scene: renderLoopContext.scene,
+            camera: renderLoopContext.camera,
+            runtimeState,
+            featureFrame: preparationFrame,
+          })
+        : null;
+      if (preparationResult?.prepared !== true) {
         runtime.failClosed?.({
           renderer: renderLoopContext.gl,
           runtimeState,
           status,
           time,
-          deltaTime,
+          deltaTime: renderedDeltaTime,
         });
-        syncUploadedRenderQuantities(runtimeDiagnostics, runtimeState);
-        updateObservationTransferRenderDiagnostics(
-          runtimeDiagnostics,
-          runtimeState?.debugSnapshot,
-          runtimeState,
-        );
-        recordMeasuredRuntimePerf(
-          runtimeDiagnostics,
-          "runtimeTickMs",
-          runtimeTickStartedAt,
-        );
       }
-      const shouldCompleteFailClosedStageRender =
-        !externalFeatureAuthorityActive || output?.outputMode === "opaque";
-      if (!suppressRender && pipeline && shouldCompleteFailClosedStageRender) {
+      // Fail-closed revokes field authority, while scene controls still own
+      // the idle overlay's continuous motion.
+      applySceneControls(runtimeState, controls, renderedDeltaTime, null);
+      syncUploadedRenderQuantities(runtimeDiagnostics, runtimeState);
+      updateCymaticObserverRenderDiagnostics(
+        runtimeDiagnostics,
+        runtimeState?.debugSnapshot,
+        runtimeState,
+      );
+      recordMeasuredRuntimePerf(
+        runtimeDiagnostics,
+        "runtimeTickMs",
+        runtimeTickStartedAt,
+      );
+      // A missing first feature frame is still an authoritative program state:
+      // publish the idle layer for transparent and opaque sinks alike. Waiting
+      // for live pixels here deadlocks native bootstrap because Screen/Spout
+      // are consumers and cannot be allowed to trigger a render themselves.
+      if (!suppressRender) {
         const pipelineRenderStartedAt = getWallTimeMs();
-        syncRenderOutputNodeTopology(
-          pipeline,
-          renderLoopContext.postNodesRef.current,
-          {
-            bloomEnabled: output?.bloomEnabled === true,
-            outputMode: output.outputMode,
-            temporalHistoryEnabled: false,
-            smaaEnabled: output?.smaaEnabled !== false,
-          },
-        );
-        renderPipelineFrame(renderLoopContext, pipeline);
+        if (pipeline) {
+          syncRenderOutputNodeTopology(
+            pipeline,
+            renderLoopContext.postNodesRef.current,
+            {
+              outputMode: output.outputMode,
+              temporalHistoryEnabled: false,
+              smaaEnabled: output?.smaaEnabled !== false,
+            },
+          );
+          completeProgramFrame(() =>
+            renderPipelineFrame(renderLoopContext, pipeline),
+          );
+        } else {
+          // WebGL intentionally has no post-process pipeline. It must still
+          // draw and acknowledge the fail-closed idle frame so a native sink
+          // can complete bootstrap before live input exists.
+          completePipelineFreeStageRender();
+        }
         recordMeasuredRuntimePerf(
           runtimeDiagnostics,
           "pipelineRenderMs",
           pipelineRenderStartedAt,
         );
-        onStageRender?.({
-          frameSequence: externalFrameSequence,
-          qualityPreset: renderProfileRef.current?.qualityPreset ?? null,
-        });
       }
       if (externalFeatureAuthorityActive) {
         forcedExternalRenderPendingRef.current = false;
@@ -1042,7 +1202,7 @@ export function useBaryonEngine({
       runtimeState,
       featureFrame: effectiveFrame,
       time,
-      deltaTime,
+      deltaTime: renderedDeltaTime,
     });
     const visualIdleFinalizer = finalizeTerminalVisualIdleState({
       featureFrame: effectiveFrame,
@@ -1050,7 +1210,7 @@ export function useBaryonEngine({
       postNodes: renderLoopContext.postNodesRef.current,
     });
     syncUploadedRenderQuantities(runtimeDiagnostics, runtimeState);
-    updateObservationTransferRenderDiagnostics(
+    updateCymaticObserverRenderDiagnostics(
       runtimeDiagnostics,
       runtimeState?.debugSnapshot,
       runtimeState,
@@ -1075,7 +1235,12 @@ export function useBaryonEngine({
     const sceneSnapshot =
       externalFrameState?.featureFrame && externalSceneSnapshot
         ? applyExternalSceneSnapshot(runtimeState, externalSceneSnapshot)
-        : applySceneControls(runtimeState, controls, deltaTime, featureFrame);
+        : applySceneControls(
+            runtimeState,
+            controls,
+            renderedDeltaTime,
+            featureFrame,
+          );
     recordMeasuredRuntimePerf(
       runtimeDiagnostics,
       "applySceneControlsMs",
@@ -1088,7 +1253,7 @@ export function useBaryonEngine({
         runtime,
         runtimeState,
         status,
-        lowLoadPlaybackDiagnosticsActive,
+        suppressPlaybackTelemetryActive,
         runtimeDiagnostics,
         shared,
         output,
@@ -1111,7 +1276,7 @@ export function useBaryonEngine({
       resolvedRenderProfile: renderProfileRef.current,
       status,
       time,
-      deltaTime,
+      deltaTime: renderedDeltaTime,
       clockMode,
       featureFrame: effectiveFrame,
       sceneSnapshot,
@@ -1123,13 +1288,10 @@ export function useBaryonEngine({
         runtimeMethod: runtime.method,
         featureFrame: effectiveFrame,
         sceneSnapshot,
+        traaRequested: renderProfileRef.current?.traaEnabled === true,
       });
 
-    if (suppressRender) {
-      outputSessionRef.current?.dispose?.();
-      outputSessionRef.current = null;
-      outputCaptureInFlightRef.current = false;
-    } else if (pipeline) {
+    if (!suppressRender && pipeline) {
       const pipelineRenderStartedAt = getWallTimeMs();
       const temporalHistoryBypassRequested =
         shouldBypassTemporalHistory ||
@@ -1144,7 +1306,6 @@ export function useBaryonEngine({
         pipeline,
         renderLoopContext.postNodesRef.current,
         {
-          bloomEnabled: effectiveBloomEnabled,
           outputMode: output?.outputMode ?? controls.outputMode,
           temporalHistoryEnabled: !temporalHistoryBypassRequested,
           smaaEnabled: output?.smaaEnabled ?? controls.smaaEnabled !== false,
@@ -1157,76 +1318,26 @@ export function useBaryonEngine({
         runtimeDiagnostics.postProcess.temporalHistoryGraphEnabled =
           getRenderOutputTemporalHistoryGraphEnabled(postNodes);
       }
-      renderPipelineFrame(renderLoopContext, pipeline);
+      completeProgramFrame(() =>
+        renderPipelineFrame(renderLoopContext, pipeline),
+      );
       recordMeasuredRuntimePerf(
         runtimeDiagnostics,
         "pipelineRenderMs",
         pipelineRenderStartedAt,
       );
-      onStageRender?.({
-        frameSequence: externalFrameSequence,
-        qualityPreset: renderProfileRef.current?.qualityPreset ?? null,
-      });
-      if (outputFrameConfig?.enabled && onOutputFrame) {
-        const { width, height } = outputFrameConfig;
-        const currentSession = outputSessionRef.current;
-        const needsNewSession =
-          !currentSession ||
-          currentSession.width !== width ||
-          currentSession.height !== height;
-
-        if (needsNewSession) {
-          currentSession?.dispose?.();
-          outputSessionRef.current = createCaptureOutputSession(
-            renderLoopContext.gl,
-            scene,
-            state.camera,
-            width,
-            height,
-            { renderProfile: renderProfileRef.current },
-          );
-          outputCaptureInFlightRef.current = false;
-        }
-
-        const outputSession = outputSessionRef.current;
-        if (outputSession && !outputCaptureInFlightRef.current) {
-          outputCaptureInFlightRef.current = true;
-          outputSession.renderFrame();
-          void outputSession
-            .readPixelsAsync()
-            .then((rgba) => onOutputFrame({ width, height, rgba }))
-            .catch((error) => {
-              console.error(
-                "[Baryon output] Production output capture failed:",
-                error,
-              );
-            })
-            .finally(() => {
-              outputCaptureInFlightRef.current = false;
-            });
-        }
-      }
-    } else {
-      outputSessionRef.current?.dispose?.();
-      outputSessionRef.current = null;
-      outputCaptureInFlightRef.current = false;
+    } else if (!suppressRender) {
       const pipelineRenderStartedAt = getWallTimeMs();
-      renderLoopContext.gl.setRenderTarget?.(null);
-      renderLoopContext.gl.setMRT?.(null);
-      renderLoopContext.gl.render(state.scene, state.camera);
+      completePipelineFreeStageRender();
       recordMeasuredRuntimePerf(
         runtimeDiagnostics,
         "pipelineRenderMs",
         pipelineRenderStartedAt,
       );
-      onStageRender?.({
-        frameSequence: externalFrameSequence,
-        qualityPreset: renderProfileRef.current?.qualityPreset ?? null,
-      });
     }
 
     maybePublishRuntimePerfSnapshot(runtimeDiagnostics);
   }, 1);
 
-  return points;
+  return { points };
 }

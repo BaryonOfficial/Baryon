@@ -28,6 +28,12 @@ Use the floating camera controls to set the view before adjusting the pattern it
 
 Camera movement and cymatic rotation are separate concepts. Camera controls change your point of view. **Rotation Mode** changes whether the rendered cymatic volume rotates.
 
+<Tip>
+  Version 1.2.0 starts with the **Max Quality** performance profile. If the
+  scene does not hold the cadence you need, switch **Performance → Profile** to
+  **Auto**, or choose **Custom** and set a target frame rate.
+</Tip>
+
 ## Set rotation
 
 Open the GUI in the top-right corner and use **Mode** and **Motion**:
@@ -51,12 +57,13 @@ Start with these controls before fine-tuning color or diagnostics:
 
 | Control              | Use it for                                                                                          |
 | -------------------- | --------------------------------------------------------------------------------------------------- |
-| **Material Density** | Overall material concentration, thickness, and radiance.                                            |
-| **Laser Bending**    | Placement and concentration of laser caustics within the acoustic field.                             |
-| **Fresnel Strength** | Amount of grazing-angle laser energy along the field edges.                                         |
+| **Material Density** | Uniform tracer concentration; changes scattering and absorption without changing pattern topology.  |
+| **Laser Bending**    | Placement and concentration of laser caustics within the acoustic field.                            |
+| **Caustic Strength** | Camera-visible gain applied only to focused laser energy.                                           |
+| **Laser Focus**      | Finite-source focus; higher values produce narrower caustic folds.                                  |
 | **Color Mode**       | `Static` for controlled color, `Spectral` when you want the audio spectrum to color promoted modes. |
 
-For quiet or sparse material, start lower on **Material Density** and **Fresnel Strength**. Audio-to-field response is calibrated automatically; **Motion Scale** only changes audio-driven rotation.
+For quiet or sparse material, start lower on **Material Density** and **Caustic Strength**. Audio-to-field response is calibrated automatically; **Motion Scale** only changes audio-driven rotation.
 
 ## Save a repeatable setup
 
@@ -72,7 +79,8 @@ For cleaner captures:
 
 - Set **Rotation Mode** to `Off` for stills or `Manual` for a controlled spin.
 - Lock the camera after framing.
-- Choose **Output Mode** based on the destination: `Transparent` for compositing, `Opaque` for a filled background.
+- Baryon output is opaque. Use a black background with Add or Screen blending in
+  the receiving tool when black should disappear.
 - Save a preset once the look is stable.
 
 For 3D printing, mesh export, point clouds, and coordinate questions, see [Creative workflows](/public/guides/creative-workflows).

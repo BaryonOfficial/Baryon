@@ -1,7 +1,9 @@
 import React, { useState } from "react";
+import { AUDIO_SOURCE_KINDS } from "@baryon/engine/audio";
 import { useAudio } from "../context/AudioContext.jsx";
 import {
   createLiveInputRuntimeStatus,
+  LIVE_INPUT_ERROR_CODES,
   LIVE_INPUT_PHASES,
   LIVE_INPUT_SIGNAL_STATES,
   isLiveInputTransitionLocked,
@@ -54,18 +56,56 @@ function resolveSignalLabel(status) {
   if (status.phase === LIVE_INPUT_PHASES.starting) return "Starting";
   if (status.phase === LIVE_INPUT_PHASES.stopping) return "Stopping";
   if (status.phase === LIVE_INPUT_PHASES.calibrating) return "Calibrating";
-  if (
-    status.phase === LIVE_INPUT_PHASES.error ||
-    status.signalState === LIVE_INPUT_SIGNAL_STATES.clipped
-  ) {
+  if (status.signalState === LIVE_INPUT_SIGNAL_STATES.clipped) {
     return "Clipped";
+  }
+  if (status.phase === LIVE_INPUT_PHASES.error) {
+    return status.errorCode === LIVE_INPUT_ERROR_CODES.deviceUnavailable
+      ? "Unavailable"
+      : "Input Error";
   }
   if (status.phase === LIVE_INPUT_PHASES.weakSignal) {
     return status.signalState === LIVE_INPUT_SIGNAL_STATES.silent
-      ? "Silent"
+      ? "Live · No Signal"
       : "Weak";
   }
   return "Listening";
+}
+
+function resolveLiveInputSignalGuidance(status) {
+  if (
+    status.active !== true ||
+    status.phase !== LIVE_INPUT_PHASES.weakSignal ||
+    status.signalState !== LIVE_INPUT_SIGNAL_STATES.silent
+  ) {
+    return null;
+  }
+
+  if (status.resolvedAnalysisClass === "line-feed") {
+    return "Live input is connected. No audio is reaching this device yet. Route the source app to the selected loopback or line input.";
+  }
+
+  return "Live input is connected. No microphone signal is reaching Baryon yet.";
+}
+
+function resolveLiveInputErrorGuidance(status) {
+  if (status.phase !== LIVE_INPUT_PHASES.error) {
+    return null;
+  }
+  switch (status.errorCode) {
+    case LIVE_INPUT_ERROR_CODES.deviceUnavailable:
+      return "Baryon couldn't open this input. Check its routing and make sure another app isn't using it in exclusive mode, then retry.";
+    case LIVE_INPUT_ERROR_CODES.deviceMissing:
+      return "The selected input is no longer available. Reconnect it or choose another device.";
+    case LIVE_INPUT_ERROR_CODES.deviceDisconnected:
+      return "The input disconnected. Reconnect it, then retry.";
+    case LIVE_INPUT_ERROR_CODES.calibrationInvalid:
+      return "The input level is clipping. Lower it before retrying calibration.";
+    case LIVE_INPUT_ERROR_CODES.startFailed:
+      return "Baryon could not start this input. Check the device, then retry.";
+    default:
+      return null;
+  }
 }
 
 function resolveDisplayStatus(status, isLiveInputActive) {
@@ -140,7 +180,7 @@ export default function LiveInputStatusPanel({
 }) {
   const [micSettingsOpen, setMicSettingsOpen] = useState(false);
   const {
-    selectedSource,
+    sourceSession,
     isLiveInputActive,
     liveInputRuntimeStatus,
     liveInputPermissionState,
@@ -212,6 +252,8 @@ export default function LiveInputStatusPanel({
           color: "var(--nd-text-secondary)",
         }
       : getSignalBadgeStyle(status);
+  const liveInputErrorGuidance = resolveLiveInputErrorGuidance(status);
+  const liveInputSignalGuidance = resolveLiveInputSignalGuidance(status);
 
   const micProcessingDisabled = selectedLiveInputDeviceKind !== "live";
   const showAcousticIntent = selectedLiveInputDeviceKind === "live";
@@ -256,20 +298,30 @@ export default function LiveInputStatusPanel({
         permissionRequesting ||
         permissionDenied ||
         permissionUnsupported));
-  const liveActionLabel = isLiveInputActive ? "Stop Live" : "Go Live";
+  const liveActionLabel = isLiveInputActive
+    ? "Stop Live"
+    : status.phase === LIVE_INPUT_PHASES.error &&
+        status.errorCode !== LIVE_INPUT_ERROR_CODES.permissionDenied
+      ? "Retry Input"
+      : "Go Live";
   const liveActionState = liveButtonDisabled
     ? "disabled"
     : isLiveInputActive
       ? "live"
-      : "idle";
+      : status.phase === LIVE_INPUT_PHASES.error
+        ? "error"
+        : "idle";
   const handleLiveAction = async () => {
     if (liveButtonDisabled) return;
     if (typeof handleLiveInputAction === "function") {
       await handleLiveInputAction();
       return;
     }
-    if (!isLiveInputActive && selectedSource !== "system") {
-      await handleSourceChange("system");
+    if (
+      !isLiveInputActive &&
+      sourceSession.kind !== AUDIO_SOURCE_KINDS.system
+    ) {
+      await handleSourceChange(AUDIO_SOURCE_KINDS.system);
     }
     if (!isLiveInputActive && !selectedSystemDevice && selectedLiveDeviceId) {
       await setSelectedSystemDevice(selectedLiveDeviceId);
@@ -562,6 +614,42 @@ export default function LiveInputStatusPanel({
             ) : null}
           </>
         )}
+
+        {liveInputErrorGuidance ? (
+          <div
+            data-testid="live-input-error-guidance"
+            role="status"
+            style={{
+              padding: "0.42rem 0.48rem",
+              borderRadius: "0.58rem",
+              border: "1px solid rgba(255, 59, 48, 0.28)",
+              background: "rgba(255, 59, 48, 0.08)",
+              color: "var(--nd-text-secondary)",
+              fontSize: "0.62rem",
+              lineHeight: 1.42,
+            }}
+          >
+            {liveInputErrorGuidance}
+          </div>
+        ) : null}
+
+        {liveInputSignalGuidance ? (
+          <div
+            data-testid="live-input-signal-guidance"
+            role="status"
+            style={{
+              padding: "0.42rem 0.48rem",
+              borderRadius: "0.58rem",
+              border: "1px solid rgba(255, 204, 102, 0.24)",
+              background: "rgba(255, 204, 102, 0.06)",
+              color: "var(--nd-text-secondary)",
+              fontSize: "0.62rem",
+              lineHeight: 1.42,
+            }}
+          >
+            {liveInputSignalGuidance}
+          </div>
+        ) : null}
 
         {/* Mic Settings */}
         <div style={{ display: "grid", gap: "0.18rem" }}>

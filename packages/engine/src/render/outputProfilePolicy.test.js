@@ -18,6 +18,7 @@ import {
 
 describe("render performance profiles", () => {
   it("normalizes performance profile controls", () => {
+    expect(DEFAULT_PERFORMANCE_PROFILE).toBe("max-quality");
     expect(normalizePerformanceProfile("auto")).toBe("auto");
     expect(normalizePerformanceProfile("custom")).toBe("custom");
     expect(normalizePerformanceProfile("max-quality")).toBe("max-quality");
@@ -33,7 +34,7 @@ describe("render performance profiles", () => {
     expect(isAdaptivePerformanceProfile("auto")).toBe(true);
     expect(isAdaptivePerformanceProfile("custom")).toBe(true);
     expect(isAdaptivePerformanceProfile("max-quality")).toBe(false);
-    expect(isAdaptivePerformanceProfile("unexpected")).toBe(true);
+    expect(isAdaptivePerformanceProfile("unexpected")).toBe(false);
 
     expect(normalizePerformanceTargetFps(48)).toBe(48);
     expect(normalizePerformanceTargetFps(5)).toBe(24);
@@ -50,7 +51,7 @@ describe("render performance profiles", () => {
     expect(formatPerformanceProfileLabel("custom", 48)).toBe(
       "Custom 48 FPS target",
     );
-    expect(formatPerformanceProfileLabel("unexpected")).toBe("Auto");
+    expect(formatPerformanceProfileLabel("unexpected")).toBe("Max Quality");
   });
 
   it("keeps post-process overrides scoped to diagnostics toggles", () => {
@@ -89,9 +90,9 @@ describe("render performance profiles", () => {
 
     expect(normalProfile.carrierTruthEnabled).toBe(false);
     expect(carrierTruthProfile.carrierTruthEnabled).toBe(true);
-    expect(
-      getRenderQualityProfileKey(carrierTruthProfile),
-    ).not.toBe(getRenderQualityProfileKey(normalProfile));
+    expect(getRenderQualityProfileKey(carrierTruthProfile)).not.toBe(
+      getRenderQualityProfileKey(normalProfile),
+    );
   });
 
   it("normalizes resolved profiles without accepting render-scale ownership", () => {
@@ -183,10 +184,10 @@ describe("render performance profiles", () => {
         qualityPreset: "none",
       }),
     ).toEqual({
-      qualityPreset: "auto",
-      targetFps: 60,
-      startupRaymarchSteps: 32,
-      traaEnabled: true,
+      qualityPreset: "max-quality",
+      targetFps: 240,
+      startupRaymarchSteps: null,
+      traaEnabled: false,
       bloomAllowed: true,
       carrierTruthEnabled: false,
       renderContext: RENDER_CONTEXTS.preview,
@@ -201,8 +202,8 @@ describe("render performance profiles", () => {
     ).toEqual({
       qualityPreset: "auto",
       targetFps: 60,
-      startupRaymarchSteps: 16,
-      traaEnabled: true,
+      startupRaymarchSteps: 32,
+      traaEnabled: false,
       bloomAllowed: true,
       carrierTruthEnabled: false,
       renderContext: RENDER_CONTEXTS.preview,
@@ -218,8 +219,8 @@ describe("render performance profiles", () => {
     ).toEqual({
       qualityPreset: "custom",
       targetFps: 120,
-      startupRaymarchSteps: 16,
-      traaEnabled: true,
+      startupRaymarchSteps: 32,
+      traaEnabled: false,
       bloomAllowed: true,
       carrierTruthEnabled: false,
       renderContext: RENDER_CONTEXTS.preview,
@@ -238,7 +239,7 @@ describe("render performance profiles", () => {
       qualityPreset: "auto",
       targetFps: 60,
       startupRaymarchSteps: 32,
-      traaEnabled: true,
+      traaEnabled: false,
       bloomAllowed: true,
       carrierTruthEnabled: false,
       renderContext: RENDER_CONTEXTS.externalOutput,
@@ -253,7 +254,7 @@ describe("render performance profiles", () => {
       }),
     ).toMatchObject({
       targetFps: 60,
-      startupRaymarchSteps: 24,
+      startupRaymarchSteps: 32,
       renderContext: RENDER_CONTEXTS.externalOutput,
     });
 
@@ -266,7 +267,7 @@ describe("render performance profiles", () => {
       }),
     ).toMatchObject({
       targetFps: 60,
-      startupRaymarchSteps: 16,
+      startupRaymarchSteps: 32,
       renderContext: RENDER_CONTEXTS.externalOutput,
     });
   });
@@ -283,8 +284,8 @@ describe("render performance profiles", () => {
     ).toEqual({
       qualityPreset: "custom",
       targetFps: 97,
-      startupRaymarchSteps: 16,
-      traaEnabled: true,
+      startupRaymarchSteps: 32,
+      traaEnabled: false,
       bloomAllowed: true,
       carrierTruthEnabled: false,
       renderContext: RENDER_CONTEXTS.externalOutput,
@@ -301,7 +302,7 @@ describe("render performance profiles", () => {
       qualityPreset: "max-quality",
       targetFps: 240,
       startupRaymarchSteps: null,
-      traaEnabled: true,
+      traaEnabled: false,
       bloomAllowed: true,
       carrierTruthEnabled: false,
       renderContext: RENDER_CONTEXTS.externalOutput,
@@ -335,7 +336,7 @@ describe("render performance profiles", () => {
     ).toMatchObject({
       qualityPreset: "custom",
       targetFps: 240,
-      startupRaymarchSteps: 16,
+      startupRaymarchSteps: 32,
       renderContext: RENDER_CONTEXTS.externalOutput,
     });
   });
@@ -430,7 +431,7 @@ describe("render performance profiles", () => {
       getRenderQualityProfileKey({
         qualityPreset: "custom",
         targetFps: 120,
-        startupRaymarchSteps: 16,
+        startupRaymarchSteps: 32,
         traaEnabled: true,
         bloomAllowed: true,
         renderContext: RENDER_CONTEXTS.preview,
@@ -439,7 +440,7 @@ describe("render performance profiles", () => {
       getRenderQualityProfileKey({
         qualityPreset: "custom",
         targetFps: 120,
-        startupRaymarchSteps: 16,
+        startupRaymarchSteps: 32,
         traaEnabled: true,
         bloomAllowed: true,
         renderContext: RENDER_CONTEXTS.externalOutput,
@@ -458,7 +459,7 @@ describe("render performance profiles", () => {
       getRenderQualityProfileKey({
         qualityPreset: "auto",
         targetFps: 60,
-        startupRaymarchSteps: 16,
+        startupRaymarchSteps: 48,
         traaEnabled: true,
         bloomAllowed: true,
       }),

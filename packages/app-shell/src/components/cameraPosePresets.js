@@ -3,6 +3,23 @@ export const CAMERA_VIEW_PRESETS = Object.freeze({
   side: "side",
 });
 
+const CAMERA_COORDINATE_DISPLAY_ZERO_THRESHOLD = 0.005;
+const DEFAULT_ACTIVE_CAMERA_COORDINATE = 4.5;
+const DEFAULT_CAMERA_FOV = 65;
+const DEFAULT_CAMERA_DISTANCE = Math.hypot(
+  DEFAULT_ACTIVE_CAMERA_COORDINATE,
+  DEFAULT_ACTIVE_CAMERA_COORDINATE,
+  DEFAULT_ACTIVE_CAMERA_COORDINATE,
+);
+const MOBILE_DEMO_CALIBRATED_CAMERA_DISTANCE = Math.hypot(7, 7, 7);
+
+export function normalizeCameraCoordinateForDisplay(value) {
+  const coordinate = Number.isFinite(value) ? Number(value) : 0;
+  return Math.abs(coordinate) < CAMERA_COORDINATE_DISPLAY_ZERO_THRESHOLD
+    ? 0
+    : coordinate;
+}
+
 function normalizeDirection([x, y, z]) {
   const length = Math.hypot(x, y, z);
   if (!Number.isFinite(length) || length <= 0) {
@@ -19,20 +36,20 @@ const CAMERA_PRESET_DEFINITIONS = Object.freeze({
   [CAMERA_VIEW_PRESETS.topDown]: {
     direction: Object.freeze([0, 1, 0]),
     up: Object.freeze([0, 0, -1]),
-    distance: 9,
+    distance: DEFAULT_CAMERA_DISTANCE,
   },
   [CAMERA_VIEW_PRESETS.side]: {
     direction: Object.freeze([0, 0, 1]),
     up: Object.freeze([0, 1, 0]),
-    distance: 9,
+    distance: DEFAULT_CAMERA_DISTANCE,
   },
 });
 
 export const DEFAULT_ACTIVE_CAMERA_POSE = Object.freeze({
   position: Object.freeze({
-    x: 5,
-    y: 5,
-    z: 5,
+    x: DEFAULT_ACTIVE_CAMERA_COORDINATE,
+    y: DEFAULT_ACTIVE_CAMERA_COORDINATE,
+    z: DEFAULT_ACTIVE_CAMERA_COORDINATE,
   }),
   target: Object.freeze({
     x: 0,
@@ -44,8 +61,13 @@ export const DEFAULT_ACTIVE_CAMERA_POSE = Object.freeze({
     y: 1,
     z: 0,
   }),
-  fov: 65,
+  fov: DEFAULT_CAMERA_FOV,
 });
+
+// Mobile uses the same camera directions as every other surface, pulled back
+// just enough to preserve its calibrated compact-viewport composition.
+export const MOBILE_DEMO_CAMERA_DISTANCE_SCALE =
+  MOBILE_DEMO_CALIBRATED_CAMERA_DISTANCE / DEFAULT_CAMERA_DISTANCE;
 
 function getCameraPresetDefinition(preset) {
   return (
@@ -73,7 +95,31 @@ function createCanonicalCameraPose(preset) {
       y: definition.up[1],
       z: definition.up[2],
     },
-    fov: 65,
+    fov: DEFAULT_CAMERA_FOV,
+  };
+}
+
+/**
+ * Pulls a pose along its own view direction without rotating it. A surface too
+ * small to frame the field at the canonical distance scales every pose it
+ * resolves by one factor, so idle, active, and preset views stay a consistent
+ * framing of the same scene.
+ *
+ * @param {any} cameraPose
+ * @param {number} scale
+ */
+export function scaleCameraPoseDistance(cameraPose, scale) {
+  if (!cameraPose || !Number.isFinite(scale) || scale === 1) {
+    return cameraPose;
+  }
+
+  return {
+    ...cameraPose,
+    position: {
+      x: cameraPose.position.x * scale,
+      y: cameraPose.position.y * scale,
+      z: cameraPose.position.z * scale,
+    },
   };
 }
 
@@ -81,16 +127,6 @@ export function resolvePresetCameraPose(preset) {
   return preset === CAMERA_VIEW_PRESETS.topDown
     ? createCanonicalCameraPose(CAMERA_VIEW_PRESETS.topDown)
     : createCanonicalCameraPose(CAMERA_VIEW_PRESETS.side);
-}
-
-/**
- * @param {unknown} preset
- * @returns {"top-down" | "side"}
- */
-function normalizePreset(preset) {
-  return preset === CAMERA_VIEW_PRESETS.topDown
-    ? CAMERA_VIEW_PRESETS.topDown
-    : CAMERA_VIEW_PRESETS.side;
 }
 
 function vectorFromPose(value, fallback) {
@@ -153,38 +189,6 @@ function measurePoseAgainstPreset(cameraPose, preset) {
     directionDot: dot3(poseDirection, canonicalDirection),
     upDot: dot3(up, canonicalUp),
   };
-}
-
-function scorePoseAgainstPreset(cameraPose, preset) {
-  const alignment = measurePoseAgainstPreset(cameraPose, preset);
-  return alignment.directionDot + alignment.upDot;
-}
-
-/**
- * @param {any} cameraPose
- * @param {"top-down" | "side"} [fallbackPreset]
- * @returns {"top-down" | "side"}
- */
-export function resolveCameraPresetFromPose(
-  cameraPose,
-  fallbackPreset = CAMERA_VIEW_PRESETS.side,
-) {
-  if (!cameraPose || typeof cameraPose !== "object") {
-    return normalizePreset(fallbackPreset);
-  }
-
-  const topDownScore = scorePoseAgainstPreset(
-    cameraPose,
-    CAMERA_VIEW_PRESETS.topDown,
-  );
-  const sideScore = scorePoseAgainstPreset(
-    cameraPose,
-    CAMERA_VIEW_PRESETS.side,
-  );
-
-  return topDownScore > sideScore
-    ? CAMERA_VIEW_PRESETS.topDown
-    : CAMERA_VIEW_PRESETS.side;
 }
 
 const CAMERA_PRESET_MATCH_DOT_THRESHOLD = 0.995;

@@ -32,7 +32,7 @@ describe("LiveInputStatusPanel", () => {
 
   function renderPanel(audioOverrides = {}, componentProps = {}) {
     useAudioMock.mockReturnValue({
-      selectedSource: "system",
+      sourceSession: { kind: "system" },
       isLiveInputActive: false,
       liveInputRuntimeStatus: {
         active: true,
@@ -185,7 +185,7 @@ describe("LiveInputStatusPanel", () => {
     const handleSystemToggle = vi.fn();
     renderPanel(
       {
-        selectedSource: "file",
+        sourceSession: { kind: "file" },
         selectedSystemDevice: null,
         handleLiveInputAction,
         setSelectedSystemDevice,
@@ -213,10 +213,70 @@ describe("LiveInputStatusPanel", () => {
     expect(handleSystemToggle).not.toHaveBeenCalled();
   });
 
+  it("reports a contended input truthfully and retries through the canonical action", async () => {
+    const handleLiveInputAction = vi.fn(async () => {});
+    renderPanel(
+      {
+        isLiveInputActive: false,
+        handleLiveInputAction,
+        liveInputRuntimeStatus: {
+          active: false,
+          phase: "error",
+          signalState: "ok",
+          errorCode: "device-unavailable",
+          selectedDeviceId: "loopback-1",
+          selectedDeviceLabel: "Audio Interface",
+          liveInputKind: "system",
+        },
+      },
+      { showLiveAction: true },
+    );
+
+    expect(container.textContent).toContain("Unavailable");
+    expect(container.textContent).not.toContain("Clipped");
+    expect(container.textContent).toContain(
+      "Check its routing and make sure another app isn't using it in exclusive mode",
+    );
+    const liveButton = /** @type {HTMLButtonElement | null} */ (
+      container.querySelector('[data-testid="source-live-button"]')
+    );
+    expect(liveButton?.textContent).toContain("Retry Input");
+    expect(liveButton?.disabled).toBe(false);
+
+    await act(async () => {
+      liveButton?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+      await Promise.resolve();
+    });
+
+    expect(handleLiveInputAction).toHaveBeenCalledTimes(1);
+  });
+
+  it("distinguishes connected silence from a failed or pending live start", () => {
+    renderPanel({
+      isLiveInputActive: true,
+      liveInputRuntimeStatus: {
+        active: true,
+        phase: "weak-signal",
+        resolvedAnalysisClass: "line-feed",
+        signalState: "silent",
+        sourceBoundaryState: "muted",
+      },
+    });
+
+    expect(container.textContent).toContain("Live · No Signal");
+    expect(container.textContent).toContain(
+      "Live input is connected. No audio is reaching this device yet.",
+    );
+    expect(container.textContent).not.toContain("Starting");
+    expect(container.textContent).not.toContain("Input Error");
+  });
+
   it("keeps the live button label canonical during a source-switch go-live path", () => {
     renderPanel(
       {
-        selectedSource: "live",
+        sourceSession: { kind: "system" },
         isLiveInputActive: false,
         liveInputRuntimeStatus: {
           active: false,

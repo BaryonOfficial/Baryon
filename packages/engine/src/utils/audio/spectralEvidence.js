@@ -1,4 +1,8 @@
-import { binIndexToFrequencyHz, frequencyToBin } from "./binFrequency.js";
+import {
+  binIndexToFrequencyHz,
+  frequencyToBin,
+  frequencyToBinIndex,
+} from "./binFrequency.js";
 
 const RAYLEIGH_ROBUST_STATISTIC_SCALE =
   (Math.sqrt(2 * Math.log(2)) + Math.sqrt(2 * Math.log(4))) / 2;
@@ -66,9 +70,10 @@ function resolveEvidenceBinRange(binCount, sampleRate) {
     1,
     Math.ceil(frequencyToBin(minFrequency, binCount, sampleRate)),
   );
+  // Keep the continuous upper boundary inclusive on the discrete FFT lattice.
   const endBin = Math.min(
     binCount - 2,
-    Math.floor(frequencyToBin(maxFrequency, binCount, sampleRate)),
+    frequencyToBinIndex(maxFrequency, binCount, sampleRate),
   );
   return {
     startBin,
@@ -202,10 +207,13 @@ export function findCredibleSpectralPeaks(
         : 0;
     const interpolatedBin = bin + Math.max(-0.5, Math.min(0.5, delta));
     const interpolatedAmplitude = amplitude - 0.25 * delta * (previous - next);
-    const frequency = binIndexToFrequencyHz(
-      interpolatedBin,
-      fftLinearAmplitudes.length,
-      sampleRate,
+    const frequency = Math.min(
+      SPECTRAL_EVIDENCE_POLICY.maxFrequencyHz,
+      binIndexToFrequencyHz(
+        interpolatedBin,
+        fftLinearAmplitudes.length,
+        sampleRate,
+      ),
     );
     const singleBinTailProbability = Math.exp(
       -(amplitude ** 2) / (2 * rayleighSigma ** 2),

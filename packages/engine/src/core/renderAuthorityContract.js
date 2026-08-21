@@ -1,3 +1,5 @@
+import { isRenderAuthorityFrame } from "../contracts/audioFeatureProtocol.js";
+
 function hasLedgerData(featureFrame) {
   return featureFrame?.energyLedger != null;
 }
@@ -25,7 +27,21 @@ function hasCurrentLiveSourceEvidence(featureFrame) {
   );
 }
 
+function hasPreparedFileEvidence(featureFrame) {
+  const evidence = featureFrame?.sourceEvidence;
+  return (
+    evidence?.sourceKind === "file" &&
+    evidence?.sourceBoundaryState === "prepared" &&
+    evidence?.currentSourceEvidence === false &&
+    evidence?.transport?.preparationOnly === true &&
+    evidence?.transport?.playing === false
+  );
+}
+
 export function allowsModalDescriptorRenderAuthority(featureFrame) {
+  if (!isRenderAuthorityFrame(featureFrame)) {
+    return false;
+  }
   const fieldAuthority = featureFrame?.modalDescriptor?.fieldAuthority;
   return (
     fieldAuthority == null ||
@@ -35,7 +51,11 @@ export function allowsModalDescriptorRenderAuthority(featureFrame) {
 }
 
 export function hasRenderAuthority(featureFrame) {
-  if (!featureFrame) {
+  if (!isRenderAuthorityFrame(featureFrame)) {
+    return false;
+  }
+
+  if (hasPreparedFileEvidence(featureFrame)) {
     return false;
   }
 
@@ -45,7 +65,22 @@ export function hasRenderAuthority(featureFrame) {
   );
 }
 
+export function hasPreparationAuthority(featureFrame) {
+  if (!isRenderAuthorityFrame(featureFrame)) {
+    return false;
+  }
+
+  return (
+    hasPreparedFileEvidence(featureFrame) &&
+    hasLedgerAuthority(featureFrame) &&
+    allowsModalDescriptorRenderAuthority(featureFrame)
+  );
+}
+
 export function allowsAudioMotion(featureFrame) {
+  if (!isRenderAuthorityFrame(featureFrame)) {
+    return false;
+  }
   return (
     featureFrame?.audioMotionAuthority !== false &&
     hasRenderAuthority(featureFrame)
@@ -53,6 +88,9 @@ export function allowsAudioMotion(featureFrame) {
 }
 
 export function allowsCurrentLiveRenderFrame(featureFrame) {
+  if (!isRenderAuthorityFrame(featureFrame)) {
+    return false;
+  }
   return (
     hasLedgerData(featureFrame) &&
     hasRenderAuthority(featureFrame) &&

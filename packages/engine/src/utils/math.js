@@ -8,6 +8,8 @@
 //   evidence carries no authority.
 // - `smoothstep` degenerates to a step at `edge1` when the edges are equal
 //   (or inverted, which no call site uses).
+// - `damp` is a frame-rate-independent exponential approach whose smoothing
+//   rate and time step both fail closed at zero.
 //
 // TSL/shader code uses the `three/tsl` node equivalents, not these.
 
@@ -30,6 +32,7 @@ export function smoothstep(edge0, edge1, value) {
   return t * t * (3 - 2 * t);
 }
 
-export function mix(a, b, t) {
-  return a * (1 - t) + b * t;
+export function damp(current, target, smoothing, deltaTime) {
+  const factor = 1 - Math.exp(-Math.max(0, smoothing) * Math.max(0, deltaTime));
+  return current + (target - current) * factor;
 }

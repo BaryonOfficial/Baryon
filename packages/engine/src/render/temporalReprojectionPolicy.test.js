@@ -5,10 +5,30 @@ import { resolveTemporalReprojectionPolicy } from "./temporalReprojectionPolicy.
 const RAYMARCH_METHOD = "raymarch";
 
 describe("temporal reprojection policy", () => {
+  it("keeps temporal accumulation disabled unless explicitly requested", () => {
+    expect(
+      resolveTemporalReprojectionPolicy({
+        visualizationMethod: RAYMARCH_METHOD,
+        featureFrame: {
+          energyLedger: {
+            projectedRenderEnergy: 0.05,
+            renderEnergyEpsilon: 1e-6,
+          },
+        },
+      }),
+    ).toEqual({
+      traaEnabled: false,
+      accumulateHistory: false,
+      shouldBypassHistory: false,
+      reason: "traa-disabled",
+    });
+  });
+
   it("does not accumulate history from stale field-shaped frames without render authority", () => {
     expect(
       resolveTemporalReprojectionPolicy({
         visualizationMethod: RAYMARCH_METHOD,
+        traaRequested: true,
         featureFrame: {
           fieldState: "active",
           renderAuthority: true,
@@ -32,6 +52,7 @@ describe("temporal reprojection policy", () => {
     expect(
       resolveTemporalReprojectionPolicy({
         visualizationMethod: RAYMARCH_METHOD,
+        traaRequested: true,
         featureFrame: {
           energyLedger: {
             projectedRenderEnergy: 0.05,
@@ -53,6 +74,7 @@ describe("temporal reprojection policy", () => {
     expect(
       resolveTemporalReprojectionPolicy({
         visualizationMethod: RAYMARCH_METHOD,
+        traaRequested: true,
         featureFrame: {
           energyLedger: {
             projectedRenderEnergy: 0.05,
@@ -77,6 +99,7 @@ describe("temporal reprojection policy", () => {
     expect(
       resolveTemporalReprojectionPolicy({
         visualizationMethod: RAYMARCH_METHOD,
+        traaRequested: true,
         featureFrame: {
           energyLedger: {
             projectedRenderEnergy: 0.05,
@@ -102,6 +125,7 @@ describe("temporal reprojection policy", () => {
       expect(
         resolveTemporalReprojectionPolicy({
           visualizationMethod: RAYMARCH_METHOD,
+          traaRequested: true,
           featureFrame: {
             energyLedger: {
               projectedRenderEnergy: 0.05,

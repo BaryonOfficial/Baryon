@@ -1,33 +1,24 @@
+import { MODAL_SEMANTIC_DESCRIPTOR_CAPACITY } from "./modalBudgets.js";
 import {
-  MODAL_BASIS_ATLAS_PAGE_CAPACITY,
-  MODAL_BASIS_CACHE_RESOLUTION,
-  getModalBasisCacheMaxRepresentableModeIndex,
-} from "./modalBudgets.js";
-import {
-  normalizeSpectralLanePacket,
-  readPackedQuad,
-} from "../utils/audio/spectralLanePacket.js";
+  analyzeModalRepresentation,
+  analyzeStructuralAdmission,
+  measureModalEntryEnergy,
+  resolveCandidateConfidenceDiagnostics,
+} from "./modalRepresentationAnalysis.js";
 import { DEFAULT_EFFECTIVE_CAVITY_GEOMETRY } from "./cavityGeometry.js";
 import { getModalGeometryBackend } from "./modalGeometryBackend.js";
+import { buildModalTopologyModeKey } from "./modalTopology.js";
+import {
+  getModalResponseFrequencyKey,
+  getRectangularResponseShellKey,
+} from "./modalShell.js";
 import { clamp01 } from "../utils/math.js";
-
-const FNV_OFFSET_BASIS = 2166136261;
-const FNV_PRIME = 16777619;
-const FLOAT32_BITS_VALUE = new Float32Array(1);
-const FLOAT32_BITS_VIEW = new Uint32Array(FLOAT32_BITS_VALUE.buffer);
-const OVER_BANDWIDTH_DOMINANCE_EPSILON = 1e-9;
-const OVER_BANDWIDTH_SEMANTIC_DOMINANCE_RATIO = 0.85;
-const OVER_BANDWIDTH_AUTHORITY_ENTER_RATIO = 1.05;
-const OVER_BANDWIDTH_AUTHORITY_EXIT_RATIO = 0.9;
-
-function hashUint32(value, hash) {
-  return Math.imul(hash ^ (value >>> 0), FNV_PRIME) >>> 0;
-}
-
-function hashFloat32(value, hash) {
-  FLOAT32_BITS_VALUE[0] = Math.fround(Number.isFinite(value) ? value : 0);
-  return hashUint32(FLOAT32_BITS_VIEW[0], hash);
-}
+import {
+  HASH32_OFFSET_BASIS,
+  hashFloat32,
+  hashUint32,
+} from "../utils/hash32.js";
+import { assertCanonicalModalDescriptor } from "../contracts/audioFeatureProtocol.js";
 
 function hashPackedQuad(values, hash) {
   let nextHash = hash;
@@ -35,62 +26,6 @@ function hashPackedQuad(values, hash) {
   nextHash = hashFloat32(values?.[1] ?? 0, nextHash);
   nextHash = hashFloat32(values?.[2] ?? 0, nextHash);
   return hashFloat32(values?.[3] ?? 0, nextHash);
-}
-
-function deriveStructuralAdmissionDiagnostics(
-  slotAssignments,
-  {
-    basisAtlasPageCapacity = MODAL_BASIS_ATLAS_PAGE_CAPACITY,
-    basisCacheResolution = MODAL_BASIS_CACHE_RESOLUTION,
-  } = {},
-) {
-  const normalizedBasisCapacity = Math.max(
-    0,
-    Math.floor(basisAtlasPageCapacity),
-  );
-  const maxRepresentableModeIndex =
-    getModalBasisCacheMaxRepresentableModeIndex(basisCacheResolution);
-  let basisAtlasCapacityRejectedCount = 0;
-  let basisAtlasCapacityRejectedEnergy = 0;
-  let spatialBandwidthRejectedCount = 0;
-  let spatialBandwidthRejectedEnergy = 0;
-
-  for (let slotIndex = 0; slotIndex < slotAssignments.length; slotIndex += 1) {
-    const entry = slotAssignments[slotIndex];
-    if (!entry) {
-      continue;
-    }
-
-    const modalEnergy = Math.max(0, entry.coefficient) ** 2;
-    const maxModeIndex = Math.max(
-      Math.abs(entry.u),
-      Math.abs(entry.v),
-      Math.abs(entry.w),
-    );
-
-    if (maxModeIndex > maxRepresentableModeIndex) {
-      spatialBandwidthRejectedCount += 1;
-      spatialBandwidthRejectedEnergy += modalEnergy;
-      continue;
-    }
-
-    if (slotIndex >= normalizedBasisCapacity) {
-      basisAtlasCapacityRejectedCount += 1;
-      basisAtlasCapacityRejectedEnergy += modalEnergy;
-    }
-  }
-
-  return {
-    basisAtlasPageCapacity: normalizedBasisCapacity,
-    maxRepresentableModeIndex,
-    basisAtlasCapacityRejectedCount,
-    basisAtlasCapacityRejectedEnergy,
-    spatialBandwidthRejectedCount,
-    spatialBandwidthRejectedEnergy,
-    structuralCoverageSatisfied:
-      basisAtlasCapacityRejectedCount === 0 &&
-      spatialBandwidthRejectedCount === 0,
-  };
 }
 
 function readFiniteNonNegative(value, fallback = 0) {
@@ -129,10 +64,6 @@ function resolveTotalCapacity({ maxTotalModes, fallbackCapacity }) {
   return Math.max(0, Math.floor(fallbackCapacity || 0));
 }
 
-function getEntryModalEnergy(entry) {
-  return Math.max(0, entry?.coefficient ?? 0) ** 2;
-}
-
 function countPhaseAuthorityModes(phaseSlots, maxCount) {
   const slotCount = Math.min(
     Math.max(0, Math.floor(maxCount ?? 0)),
@@ -150,642 +81,10 @@ function countPhaseAuthorityModes(phaseSlots, maxCount) {
   return activeCount;
 }
 
-function getEntryModeOrder(entry) {
-  return Math.max(Math.abs(entry.u), Math.abs(entry.v), Math.abs(entry.w));
-}
-
-function getSpatialFamilyKey(entry, modalGeometryBackend) {
-  return modalGeometryBackend.getModeFamilyKey(entry);
-}
-
-function getSpatialShellKey(entry, modalGeometryBackend) {
-  return modalGeometryBackend.getModeShellKey(entry);
-}
-
-function divideOrFallback(numerator, denominator, fallback = 0) {
-  return denominator > 0 ? numerator / denominator : fallback;
-}
-
-function normalizeFieldAuthority(value) {
-  return value === "bandwidth-limited" ||
-    value === "capacity-limited" ||
-    value === "blocked" ||
-    value === "complete"
-    ? value
-    : null;
-}
-
-function resolveOverBandwidthAuthorityDominant({
-  rejectedModalEnergy,
-  representedModalEnergy,
-  representedEnergyRatio,
-  semanticEnergyRatio,
-  previousFieldAuthority,
-}) {
-  if (!(rejectedModalEnergy > OVER_BANDWIDTH_DOMINANCE_EPSILON)) {
-    return false;
-  }
-
-  if (representedModalEnergy <= OVER_BANDWIDTH_DOMINANCE_EPSILON) {
-    return true;
-  }
-
-  if (semanticEnergyRatio < OVER_BANDWIDTH_SEMANTIC_DOMINANCE_RATIO) {
-    return false;
-  }
-
-  const previousAuthority = normalizeFieldAuthority(previousFieldAuthority);
-  const threshold =
-    previousAuthority === "bandwidth-limited"
-      ? OVER_BANDWIDTH_AUTHORITY_EXIT_RATIO
-      : OVER_BANDWIDTH_AUTHORITY_ENTER_RATIO;
-  return representedEnergyRatio >= threshold;
-}
-
-function shouldRetainOverBandwidthProjection({
-  allowOverBandwidthProjectionRetention,
-  overBandwidthDominant,
-  modalVarietyAudit,
-}) {
-  if (!allowOverBandwidthProjectionRetention || !overBandwidthDominant) {
-    return false;
-  }
-
-  return (
-    (modalVarietyAudit?.representedBasisPageModeCount ?? 0) > 0 &&
-    (modalVarietyAudit?.representedModalEnergy ?? 0) >
-      OVER_BANDWIDTH_DOMINANCE_EPSILON
-  );
-}
-
-function coverageRatio(numerator, denominator, fallback = 0) {
-  return clamp01(divideOrFallback(numerator, denominator, fallback));
-}
-
-function resolveNonNegativeInteger(value, fallback = 0) {
-  if (Number.isFinite(value)) {
-    return Math.max(0, Math.floor(value));
-  }
-  return Math.max(0, Math.floor(fallback ?? 0));
-}
-
-function resolveNonNegativeNumber(value, fallback = 0) {
-  if (Number.isFinite(value)) {
-    return Math.max(0, value);
-  }
-  return Math.max(0, fallback ?? 0);
-}
-
-/**
- * @param {{
- *   overBandwidthRejectedModeCount?: number,
- *   overBandwidthRejectedModalEnergy?: number,
- *   overBandwidthMaxRequestedModeIndex?: number,
- *   overBandwidthMaxRequestedMode?: [number, number, number] | number[],
- * }} [diagnostics]
- */
-function resolveOverBandwidthDiagnostics({
-  overBandwidthRejectedModeCount,
-  overBandwidthRejectedModalEnergy,
-  overBandwidthMaxRequestedModeIndex,
-  overBandwidthMaxRequestedMode,
-} = {}) {
-  return {
-    overBandwidthRejectedModeCount: resolveNonNegativeInteger(
-      overBandwidthRejectedModeCount,
-    ),
-    overBandwidthRejectedModalEnergy: resolveNonNegativeNumber(
-      overBandwidthRejectedModalEnergy,
-    ),
-    overBandwidthMaxRequestedModeIndex: resolveNonNegativeInteger(
-      overBandwidthMaxRequestedModeIndex,
-    ),
-    overBandwidthMaxRequestedMode: Array.isArray(overBandwidthMaxRequestedMode)
-      ? [
-          overBandwidthMaxRequestedMode[0] ?? 0,
-          overBandwidthMaxRequestedMode[1] ?? 0,
-          overBandwidthMaxRequestedMode[2] ?? 0,
-        ].map((coordinate) =>
-          Number.isFinite(coordinate) ? Math.trunc(coordinate) : 0,
-        )
-      : [0, 0, 0],
-  };
-}
-
-function resolveCandidateConfidenceDiagnostics({
-  rawCandidateModeCount,
-  confidenceQualifiedCandidateModeCount,
-  lowConfidenceCandidateModeCount,
-  rawCandidateModalEnergy,
-  confidenceWeightedCandidateEnergy,
-  modalObservationCoherence,
-  modalObservationConfidence,
-  fallbackRawCandidateModeCount = 0,
-  fallbackConfidenceQualifiedCandidateModeCount = 0,
-  fallbackRawCandidateModalEnergy = 0,
-  fallbackConfidenceWeightedCandidateEnergy = 0,
-}) {
-  const resolvedRawCandidateModeCount = Math.max(
-    resolveNonNegativeInteger(rawCandidateModeCount),
-    resolveNonNegativeInteger(fallbackRawCandidateModeCount),
-  );
-  const resolvedConfidenceQualifiedCandidateModeCount = Math.min(
-    resolvedRawCandidateModeCount,
-    resolveNonNegativeInteger(
-      confidenceQualifiedCandidateModeCount,
-      fallbackConfidenceQualifiedCandidateModeCount,
-    ),
-  );
-  const resolvedLowConfidenceCandidateModeCount = Math.min(
-    resolvedRawCandidateModeCount,
-    resolveNonNegativeInteger(
-      lowConfidenceCandidateModeCount,
-      Math.max(
-        0,
-        resolvedRawCandidateModeCount -
-          resolvedConfidenceQualifiedCandidateModeCount,
-      ),
-    ),
-  );
-
-  return {
-    rawCandidateModeCount: resolvedRawCandidateModeCount,
-    confidenceQualifiedCandidateModeCount:
-      resolvedConfidenceQualifiedCandidateModeCount,
-    lowConfidenceCandidateModeCount: resolvedLowConfidenceCandidateModeCount,
-    rawCandidateModalEnergy: Math.max(
-      resolveNonNegativeNumber(rawCandidateModalEnergy),
-      resolveNonNegativeNumber(fallbackRawCandidateModalEnergy),
-    ),
-    confidenceWeightedCandidateEnergy: resolveNonNegativeNumber(
-      confidenceWeightedCandidateEnergy,
-      fallbackConfidenceWeightedCandidateEnergy,
-    ),
-    modalObservationCoherence: clamp01(
-      Number.isFinite(modalObservationCoherence)
-        ? modalObservationCoherence
-        : 1,
-    ),
-    modalObservationConfidence: clamp01(
-      Number.isFinite(modalObservationConfidence)
-        ? modalObservationConfidence
-        : 1,
-    ),
-  };
-}
-
-function getSpectralLanePacketMass(laneA, laneB) {
-  let mass = 0;
-  for (let laneIndex = 0; laneIndex < 4; laneIndex += 1) {
-    mass += Math.max(0, laneA?.[laneIndex] ?? 0);
-    mass += Math.max(0, laneB?.[laneIndex] ?? 0);
-  }
-  return mass;
-}
-
-function buildModalVarietyAudit({
-  slotAssignments,
-  rejectedEntries,
-  structuralAdmission,
-  observerCandidateModeCount,
-  observedModalModeCount,
-  phaseAuthorityModeCount,
-  rawCandidateModeCount,
-  confidenceQualifiedCandidateModeCount,
-  lowConfidenceCandidateModeCount,
-  rawCandidateModalEnergy,
-  confidenceWeightedCandidateEnergy,
-  modalObservationCoherence,
-  modalObservationConfidence,
-  modeIdentityRetentionRatio,
-  upstreamSourceCoupledModeCount,
-  upstreamResonantModeCount,
-  upstreamCandidateModeCount,
-  upstreamSourceCoupledShellCount,
-  upstreamResonantShellCount,
-  upstreamCandidateShellCount,
-  upstreamSourceCoupledModalEnergy,
-  upstreamResonantModalEnergy,
-  upstreamCandidateModalEnergy,
-  overBandwidthRejectedModeCount,
-  overBandwidthRejectedModalEnergy,
-  overBandwidthMaxRequestedModeIndex,
-  overBandwidthMaxRequestedMode,
-  previousFieldAuthority,
-  modalGeometryBackend,
-}) {
-  const acceptedEntries = slotAssignments.filter(Boolean);
-  const representedEntries = [];
-  const shellKeys = new Set();
-  const representedShellKeys = new Set();
-  const familyKeys = new Set();
-  const representedFamilyKeys = new Set();
-  let acceptedModalEnergy = 0;
-  let representedModalEnergy = 0;
-  let modalEnergySquaredSum = 0;
-  let minModeOrder = Infinity;
-  let maxModeOrder = 0;
-  let weightedModeOrderSum = 0;
-
-  for (let slotIndex = 0; slotIndex < slotAssignments.length; slotIndex += 1) {
-    const entry = slotAssignments[slotIndex];
-    if (!entry) {
-      continue;
-    }
-
-    const modalEnergy = Math.max(0, entry.coefficient) ** 2;
-    const modeOrder = getEntryModeOrder(entry);
-    acceptedModalEnergy += modalEnergy;
-    modalEnergySquaredSum += modalEnergy * modalEnergy;
-    minModeOrder = Math.min(minModeOrder, modeOrder);
-    maxModeOrder = Math.max(maxModeOrder, modeOrder);
-    weightedModeOrderSum += modalEnergy * modeOrder;
-    shellKeys.add(getSpatialShellKey(entry, modalGeometryBackend));
-    familyKeys.add(getSpatialFamilyKey(entry, modalGeometryBackend));
-
-    if (
-      modeOrder <= structuralAdmission.maxRepresentableModeIndex &&
-      slotIndex < structuralAdmission.basisAtlasPageCapacity
-    ) {
-      representedEntries.push(entry);
-      representedShellKeys.add(getSpatialShellKey(entry, modalGeometryBackend));
-      representedFamilyKeys.add(
-        getSpatialFamilyKey(entry, modalGeometryBackend),
-      );
-      representedModalEnergy += modalEnergy;
-    }
-  }
-
-  const descriptorRejectedModalEnergy = rejectedEntries.reduce(
-    (total, entry) => total + Math.max(0, entry.coefficient) ** 2,
-    0,
-  );
-  const overBandwidthDiagnostics = resolveOverBandwidthDiagnostics({
-    overBandwidthRejectedModeCount,
-    overBandwidthRejectedModalEnergy,
-    overBandwidthMaxRequestedModeIndex,
-    overBandwidthMaxRequestedMode,
-  });
-  const {
-    overBandwidthRejectedModeCount: resolvedOverBandwidthRejectedModeCount,
-    overBandwidthRejectedModalEnergy: resolvedOverBandwidthRejectedModalEnergy,
-    overBandwidthMaxRequestedModeIndex:
-      resolvedOverBandwidthMaxRequestedModeIndex,
-    overBandwidthMaxRequestedMode: resolvedOverBandwidthMaxRequestedMode,
-  } = overBandwidthDiagnostics;
-  const semanticModalEnergy =
-    acceptedModalEnergy +
-    descriptorRejectedModalEnergy +
-    resolvedOverBandwidthRejectedModalEnergy;
-  const resolvedObserverCandidateModeCount = resolveNonNegativeInteger(
-    observerCandidateModeCount,
-    acceptedEntries.length,
-  );
-  const resolvedObservedModalModeCount = resolveNonNegativeInteger(
-    observedModalModeCount,
-    acceptedEntries.length,
-  );
-  const resolvedPhaseAuthorityModeCount = resolveNonNegativeInteger(
-    phaseAuthorityModeCount,
-    acceptedEntries.length,
-  );
-  const resolvedUpstreamSourceCoupledModeCount = resolveNonNegativeInteger(
-    upstreamSourceCoupledModeCount,
-  );
-  const resolvedUpstreamResonantModeCount = resolveNonNegativeInteger(
-    upstreamResonantModeCount,
-  );
-  const summedUpstreamCandidateModeCount =
-    resolvedUpstreamSourceCoupledModeCount + resolvedUpstreamResonantModeCount;
-  const resolvedUpstreamCandidateModeCount = Math.max(
-    resolveNonNegativeInteger(upstreamCandidateModeCount),
-    summedUpstreamCandidateModeCount,
-    acceptedEntries.length,
-  );
-  const resolvedUpstreamSourceCoupledShellCount = resolveNonNegativeInteger(
-    upstreamSourceCoupledShellCount,
-  );
-  const resolvedUpstreamResonantShellCount = resolveNonNegativeInteger(
-    upstreamResonantShellCount,
-  );
-  const summedUpstreamCandidateShellCount =
-    resolvedUpstreamSourceCoupledShellCount +
-    resolvedUpstreamResonantShellCount;
-  const fallbackUpstreamCandidateShellCount = Math.max(
-    summedUpstreamCandidateShellCount,
-    shellKeys.size,
-  );
-  const resolvedUpstreamCandidateShellCount = Math.max(
-    resolveNonNegativeInteger(
-      upstreamCandidateShellCount,
-      fallbackUpstreamCandidateShellCount,
-    ),
-    shellKeys.size,
-  );
-  const resolvedUpstreamSourceCoupledModalEnergy = resolveNonNegativeNumber(
-    upstreamSourceCoupledModalEnergy,
-  );
-  const resolvedUpstreamResonantModalEnergy = resolveNonNegativeNumber(
-    upstreamResonantModalEnergy,
-  );
-  const summedUpstreamCandidateModalEnergy =
-    resolvedUpstreamSourceCoupledModalEnergy +
-    resolvedUpstreamResonantModalEnergy;
-  const resolvedUpstreamCandidateModalEnergy = Math.max(
-    resolveNonNegativeNumber(upstreamCandidateModalEnergy),
-    summedUpstreamCandidateModalEnergy,
-    semanticModalEnergy,
-  );
-  const candidateConfidenceDiagnostics = resolveCandidateConfidenceDiagnostics({
-    rawCandidateModeCount,
-    confidenceQualifiedCandidateModeCount,
-    lowConfidenceCandidateModeCount,
-    rawCandidateModalEnergy,
-    confidenceWeightedCandidateEnergy,
-    modalObservationCoherence,
-    modalObservationConfidence,
-    fallbackRawCandidateModeCount: Math.max(
-      resolvedUpstreamCandidateModeCount,
-      acceptedEntries.length,
-    ),
-    fallbackConfidenceQualifiedCandidateModeCount: acceptedEntries.length,
-    fallbackRawCandidateModalEnergy: resolvedUpstreamCandidateModalEnergy,
-    fallbackConfidenceWeightedCandidateEnergy: acceptedModalEnergy,
-  });
-  const energyEffectiveModeCount =
-    modalEnergySquaredSum > 0
-      ? (acceptedModalEnergy * acceptedModalEnergy) / modalEnergySquaredSum
-      : 0;
-  const overBandwidthRejectedRepresentedEnergyRatio =
-    representedModalEnergy > OVER_BANDWIDTH_DOMINANCE_EPSILON
-      ? resolvedOverBandwidthRejectedModalEnergy / representedModalEnergy
-      : resolvedOverBandwidthRejectedModalEnergy >
-          OVER_BANDWIDTH_DOMINANCE_EPSILON
-        ? Number.MAX_SAFE_INTEGER
-        : 0;
-  const overBandwidthRejectedEnergyRatio = divideOrFallback(
-    resolvedOverBandwidthRejectedModalEnergy,
-    semanticModalEnergy,
-  );
-  const overBandwidthDominant = resolveOverBandwidthAuthorityDominant({
-    rejectedModalEnergy: resolvedOverBandwidthRejectedModalEnergy,
-    representedModalEnergy,
-    representedEnergyRatio: overBandwidthRejectedRepresentedEnergyRatio,
-    semanticEnergyRatio: overBandwidthRejectedEnergyRatio,
-    previousFieldAuthority,
-  });
-
-  return {
-    modalTopologyGeometry: modalGeometryBackend.cavityGeometry,
-    semanticModeCount: acceptedEntries.length,
-    representedBasisPageModeCount: representedEntries.length,
-    observerCandidateModeCount: resolvedObserverCandidateModeCount,
-    observedModalModeCount: resolvedObservedModalModeCount,
-    phaseAuthorityModeCount: resolvedPhaseAuthorityModeCount,
-    ...candidateConfidenceDiagnostics,
-    upstreamSourceCoupledModeCount: resolvedUpstreamSourceCoupledModeCount,
-    upstreamResonantModeCount: resolvedUpstreamResonantModeCount,
-    upstreamCandidateModeCount: resolvedUpstreamCandidateModeCount,
-    upstreamSourceCoupledShellCount: resolvedUpstreamSourceCoupledShellCount,
-    upstreamResonantShellCount: resolvedUpstreamResonantShellCount,
-    upstreamCandidateShellCount: resolvedUpstreamCandidateShellCount,
-    upstreamSourceCoupledModalEnergy: resolvedUpstreamSourceCoupledModalEnergy,
-    upstreamResonantModalEnergy: resolvedUpstreamResonantModalEnergy,
-    upstreamCandidateModalEnergy: resolvedUpstreamCandidateModalEnergy,
-    publishedModeCoverageRatio: coverageRatio(
-      acceptedEntries.length,
-      resolvedUpstreamCandidateModeCount,
-      resolvedUpstreamCandidateModeCount > 0 ? 0 : 1,
-    ),
-    publishedShellCoverageRatio: coverageRatio(
-      shellKeys.size,
-      resolvedUpstreamCandidateShellCount,
-      resolvedUpstreamCandidateShellCount > 0 ? 0 : 1,
-    ),
-    publishedModalEnergyCoverageRatio: coverageRatio(
-      semanticModalEnergy,
-      resolvedUpstreamCandidateModalEnergy,
-      resolvedUpstreamCandidateModalEnergy > 0 ? 0 : 1,
-    ),
-    observerCandidatePublishedModeCoverageRatio: coverageRatio(
-      acceptedEntries.length,
-      resolvedObserverCandidateModeCount,
-      resolvedObserverCandidateModeCount > 0 ? 0 : 1,
-    ),
-    observedModalPublishedModeCoverageRatio: coverageRatio(
-      acceptedEntries.length,
-      resolvedObservedModalModeCount,
-      resolvedObservedModalModeCount > 0 ? 0 : 1,
-    ),
-    phaseAuthorityPublishedModeCoverageRatio: coverageRatio(
-      acceptedEntries.length,
-      resolvedPhaseAuthorityModeCount,
-      resolvedPhaseAuthorityModeCount > 0 ? 0 : 1,
-    ),
-    basisRepresentedUpstreamModeCoverageRatio: coverageRatio(
-      representedEntries.length,
-      resolvedUpstreamCandidateModeCount,
-      resolvedUpstreamCandidateModeCount > 0 ? 0 : 1,
-    ),
-    basisRepresentedShellCoverageRatio: coverageRatio(
-      representedShellKeys.size,
-      resolvedUpstreamCandidateShellCount,
-      resolvedUpstreamCandidateShellCount > 0 ? 0 : 1,
-    ),
-    basisRepresentedObservedModeCoverageRatio: coverageRatio(
-      representedEntries.length,
-      resolvedObservedModalModeCount,
-      resolvedObservedModalModeCount > 0 ? 0 : 1,
-    ),
-    basisRepresentedPhaseAuthorityModeCoverageRatio: coverageRatio(
-      representedEntries.length,
-      resolvedPhaseAuthorityModeCount,
-      resolvedPhaseAuthorityModeCount > 0 ? 0 : 1,
-    ),
-    basisAtlasPageCapacity: structuralAdmission.basisAtlasPageCapacity,
-    basisAtlasPressure: divideOrFallback(
-      representedEntries.length,
-      structuralAdmission.basisAtlasPageCapacity,
-    ),
-    semanticShellCount: shellKeys.size,
-    representedShellCount: representedShellKeys.size,
-    duplicateShellPressure: divideOrFallback(
-      acceptedEntries.length - shellKeys.size,
-      acceptedEntries.length,
-    ),
-    representedDuplicateShellPressure: divideOrFallback(
-      representedEntries.length - representedShellKeys.size,
-      representedEntries.length,
-    ),
-    spatialFamilyCount: familyKeys.size,
-    representedSpatialFamilyCount: representedFamilyKeys.size,
-    energyEffectiveModeCount,
-    modeOrderMin: Number.isFinite(minModeOrder) ? minModeOrder : 0,
-    modeOrderMax: maxModeOrder,
-    energyWeightedModeOrderMean: divideOrFallback(
-      weightedModeOrderSum,
-      acceptedModalEnergy,
-    ),
-    phaseAuthorityCoverage: divideOrFallback(
-      phaseAuthorityModeCount,
-      acceptedEntries.length,
-    ),
-    modeIdentityRetentionRatio: clamp01(modeIdentityRetentionRatio ?? 1),
-    semanticModalEnergy,
-    representedModalEnergy,
-    renderRepresentedEnergyRatio: divideOrFallback(
-      representedModalEnergy,
-      semanticModalEnergy,
-      semanticModalEnergy > 0 ? 0 : 1,
-    ),
-    descriptorRejectedModeCount: rejectedEntries.length,
-    descriptorRejectedEnergyRatio: divideOrFallback(
-      descriptorRejectedModalEnergy,
-      semanticModalEnergy,
-    ),
-    basisAtlasCapacityRejectedCount:
-      structuralAdmission.basisAtlasCapacityRejectedCount,
-    basisAtlasCapacityRejectedEnergyRatio: divideOrFallback(
-      structuralAdmission.basisAtlasCapacityRejectedEnergy,
-      semanticModalEnergy,
-    ),
-    spatialBandwidthRejectedCount:
-      structuralAdmission.spatialBandwidthRejectedCount,
-    spatialBandwidthRejectedEnergyRatio: divideOrFallback(
-      structuralAdmission.spatialBandwidthRejectedEnergy,
-      semanticModalEnergy,
-    ),
-    overBandwidthRejectedModeCount: resolvedOverBandwidthRejectedModeCount,
-    overBandwidthRejectedModalEnergy: resolvedOverBandwidthRejectedModalEnergy,
-    overBandwidthRejectedEnergyRatio,
-    overBandwidthRejectedRepresentedEnergyRatio,
-    overBandwidthDominant,
-    overBandwidthSemanticDominanceRatio:
-      OVER_BANDWIDTH_SEMANTIC_DOMINANCE_RATIO,
-    overBandwidthAuthorityEnterRatio: OVER_BANDWIDTH_AUTHORITY_ENTER_RATIO,
-    overBandwidthAuthorityExitRatio: OVER_BANDWIDTH_AUTHORITY_EXIT_RATIO,
-    overBandwidthMaxRequestedModeIndex:
-      resolvedOverBandwidthMaxRequestedModeIndex,
-    overBandwidthMaxRequestedMode: resolvedOverBandwidthMaxRequestedMode,
-    basisAtlasCapacitySweep: buildBasisAtlasCapacitySweep({
-      slotAssignments,
-      semanticModalEnergy,
-      maxRepresentableModeIndex: structuralAdmission.maxRepresentableModeIndex,
-      basisAtlasPageCapacity: structuralAdmission.basisAtlasPageCapacity,
-      modalGeometryBackend,
-    }),
-  };
-}
-
-function resolveBasisAtlasSweepCapacities({
-  basisAtlasPageCapacity,
-  modalFieldCount,
-}) {
-  const capacities = new Set([
-    basisAtlasPageCapacity,
-    8,
-    12,
-    16,
-    20,
-    24,
-    modalFieldCount,
-  ]);
-  return [...capacities]
-    .filter((capacity) => Number.isFinite(capacity) && capacity > 0)
-    .map((capacity) => Math.floor(capacity))
-    .filter((capacity) => capacity <= Math.max(1, modalFieldCount))
-    .sort((left, right) => left - right);
-}
-
-function buildBasisAtlasCapacitySweep({
-  slotAssignments,
-  semanticModalEnergy,
-  maxRepresentableModeIndex,
-  basisAtlasPageCapacity,
-  modalGeometryBackend,
-}) {
-  return resolveBasisAtlasSweepCapacities({
-    basisAtlasPageCapacity,
-    modalFieldCount: slotAssignments.filter(Boolean).length,
-  }).map((capacity) => {
-    const representedShellKeys = new Set();
-    const representedFamilyKeys = new Set();
-    let representedModeCount = 0;
-    let representedModalEnergy = 0;
-    let basisAtlasCapacityRejectedCount = 0;
-    let basisAtlasCapacityRejectedEnergy = 0;
-    let spatialBandwidthRejectedCount = 0;
-    let spatialBandwidthRejectedEnergy = 0;
-
-    for (
-      let slotIndex = 0;
-      slotIndex < slotAssignments.length;
-      slotIndex += 1
-    ) {
-      const entry = slotAssignments[slotIndex];
-      if (!entry) {
-        continue;
-      }
-      const modalEnergy = getEntryModalEnergy(entry);
-      if (getEntryModeOrder(entry) > maxRepresentableModeIndex) {
-        spatialBandwidthRejectedCount += 1;
-        spatialBandwidthRejectedEnergy += modalEnergy;
-        continue;
-      }
-      if (slotIndex >= capacity) {
-        basisAtlasCapacityRejectedCount += 1;
-        basisAtlasCapacityRejectedEnergy += modalEnergy;
-        continue;
-      }
-
-      representedModeCount += 1;
-      representedShellKeys.add(getSpatialShellKey(entry, modalGeometryBackend));
-      representedFamilyKeys.add(
-        getSpatialFamilyKey(entry, modalGeometryBackend),
-      );
-      representedModalEnergy += modalEnergy;
-    }
-
-    const rejectedEnergy = Math.max(
-      0,
-      semanticModalEnergy - representedModalEnergy,
-    );
-    return {
-      basisAtlasPageCapacity: capacity,
-      representedBasisPageModeCount: representedModeCount,
-      representedShellCount: representedShellKeys.size,
-      representedSpatialFamilyCount: representedFamilyKeys.size,
-      representedModalEnergy,
-      renderRepresentedEnergyRatio: divideOrFallback(
-        representedModalEnergy,
-        semanticModalEnergy,
-        semanticModalEnergy > 0 ? 0 : 1,
-      ),
-      basisAtlasCapacityRejectedCount,
-      basisAtlasCapacityRejectedEnergyRatio: divideOrFallback(
-        basisAtlasCapacityRejectedEnergy,
-        semanticModalEnergy,
-      ),
-      spatialBandwidthRejectedCount,
-      spatialBandwidthRejectedEnergyRatio: divideOrFallback(
-        spatialBandwidthRejectedEnergy,
-        semanticModalEnergy,
-      ),
-      unrepresentedModalEnergyRatio: divideOrFallback(
-        rejectedEnergy,
-        semanticModalEnergy,
-      ),
-    };
-  });
-}
-
 function buildAdmissionEntries({
   slots,
   phaseSlots,
-  colorSlots,
-  spectralLaneA,
-  spectralLaneB,
-  spectralMeta,
+  spectralMomentSlots,
   metadataSlots,
   validCount,
 }) {
@@ -800,7 +99,7 @@ function buildAdmissionEntries({
     const v = slots?.[offset + 1] ?? 0;
     const w = slots?.[offset + 2] ?? 0;
     entries.push({
-      modeKey: `${u}:${v}:${w}`,
+      modeKey: buildModalTopologyModeKey(u, v, w),
       u,
       v,
       w,
@@ -809,16 +108,13 @@ function buildAdmissionEntries({
       phaseVelocityRadPerSec: phaseSlots?.[offset + 1] ?? 0,
       phaseCoherence: phaseSlots?.[offset + 2] ?? 0,
       phaseAuthority: phaseSlots?.[offset + 3] ?? 0,
-      colorR: colorSlots?.[offset] ?? 0,
-      colorG: colorSlots?.[offset + 1] ?? 0,
-      colorB: colorSlots?.[offset + 2] ?? 0,
-      colorWeight: colorSlots?.[offset + 3] ?? 0,
-      spectralLaneA: readPackedQuad(spectralLaneA, offset),
-      spectralLaneB: readPackedQuad(spectralLaneB, offset),
-      spectralMeta: readPackedQuad(spectralMeta, offset),
+      spectralMomentX: spectralMomentSlots?.[offset] ?? 0,
+      spectralMomentY: spectralMomentSlots?.[offset + 1] ?? 0,
+      spectralSecondMomentX: spectralMomentSlots?.[offset + 2] ?? 0,
+      spectralSecondMomentY: spectralMomentSlots?.[offset + 3] ?? 0,
       naturalFrequencyHz: readFiniteNonNegative(metadataSlots?.[offset]),
       qualityFactor: readFiniteNonNegative(metadataSlots?.[offset + 1]),
-      dampingRatio: readFiniteNonNegative(metadataSlots?.[offset + 2]),
+      responseFrequencyHz: readFiniteNonNegative(metadataSlots?.[offset + 2]),
       observedSupport: clamp01(metadataSlots?.[offset + 3] ?? 0),
     });
   }
@@ -826,118 +122,232 @@ function buildAdmissionEntries({
   return entries;
 }
 
+const MODAL_METADATA_ABSOLUTE_TOLERANCE = 1e-4;
+const MODAL_METADATA_RELATIVE_TOLERANCE = 1e-4;
+const MODAL_PHASE_VELOCITY_TOLERANCE = 1e-6;
+
+function mergeCanonicalModeMetric(existing, next, label, modeKey) {
+  if (!(existing > 0)) {
+    return next;
+  }
+  if (!(next > 0)) {
+    return existing;
+  }
+  const tolerance = Math.max(
+    MODAL_METADATA_ABSOLUTE_TOLERANCE,
+    Math.max(existing, next) * MODAL_METADATA_RELATIVE_TOLERANCE,
+  );
+  if (Math.abs(existing - next) > tolerance) {
+    throw new TypeError(
+      `Duplicate modal identity ${modeKey} has conflicting ${label}`,
+    );
+  }
+  return existing;
+}
+
+function resolveCanonicalMetadataByMode(entries) {
+  const metadataByMode = new Map();
+  for (const entry of entries) {
+    const existing = metadataByMode.get(entry.modeKey) ?? {
+      naturalFrequencyHz: 0,
+      qualityFactor: 0,
+      responseFrequencyHz: 0,
+    };
+    metadataByMode.set(entry.modeKey, {
+      naturalFrequencyHz: mergeCanonicalModeMetric(
+        existing.naturalFrequencyHz,
+        entry.naturalFrequencyHz,
+        "naturalFrequencyHz",
+        entry.modeKey,
+      ),
+      qualityFactor: mergeCanonicalModeMetric(
+        existing.qualityFactor,
+        entry.qualityFactor,
+        "qualityFactor",
+        entry.modeKey,
+      ),
+      responseFrequencyHz: mergeCanonicalModeMetric(
+        existing.responseFrequencyHz,
+        entry.responseFrequencyHz,
+        "responseFrequencyHz",
+        entry.modeKey,
+      ),
+    });
+  }
+  return metadataByMode;
+}
+
 function mergeAdmissionEntries(entries) {
-  const merged = new Map();
+  const canonicalMetadataByMode = resolveCanonicalMetadataByMode(entries);
+  const groupsByMode = new Map();
+  const merged = [];
 
   for (const entry of entries) {
-    const existing = merged.get(entry.modeKey);
-    const spectralInfluence =
-      Math.max(0, entry.colorWeight) * entry.coefficient;
-    const spectralPacketInfluence =
-      Math.max(0, entry.coefficient) *
-      getSpectralLanePacketMass(entry.spectralLaneA, entry.spectralLaneB);
+    const modeGroups = groupsByMode.get(entry.modeKey) ?? [];
+    const existing = modeGroups.find(
+      (candidate) =>
+        Math.abs(
+          candidate.phaseVelocityRadPerSec - entry.phaseVelocityRadPerSec,
+        ) <= MODAL_PHASE_VELOCITY_TOLERANCE,
+    );
+    const spectralMomentInfluence = Math.max(0, entry.coefficient);
+    // Physical complex phase is part of the acoustic coefficient. Confidence
+    // controls diagnostics only; multiplying the phasor by confidence would
+    // silently rotate every low-authority response onto the positive real axis.
+    const phaseCoefficient = entry.coefficient;
     if (!existing) {
-      merged.set(entry.modeKey, {
+      const canonicalMetadata = canonicalMetadataByMode.get(entry.modeKey);
+      const created = {
         ...entry,
-        coefficient: entry.coefficient,
-        colorWeightNumerator: entry.colorWeight * entry.coefficient,
-        spectralColorNumeratorR: entry.colorR * spectralInfluence,
-        spectralColorNumeratorG: entry.colorG * spectralInfluence,
-        spectralColorNumeratorB: entry.colorB * spectralInfluence,
-        spectralColorInfluence: spectralInfluence,
-        spectralOwnerInfluence: spectralInfluence,
-        spectralOwnerColorR: entry.colorR,
-        spectralOwnerColorG: entry.colorG,
-        spectralOwnerColorB: entry.colorB,
-        spectralPacketInfluence,
-        spectralLaneNumeratorA: entry.spectralLaneA.map(
-          (value) => value * spectralPacketInfluence,
-        ),
-        spectralLaneNumeratorB: entry.spectralLaneB.map(
-          (value) => value * spectralPacketInfluence,
-        ),
-        spectralMetaOwnerInfluence: spectralPacketInfluence,
-        spectralOwnerMeta: entry.spectralMeta,
-        naturalFrequencyNumerator: entry.naturalFrequencyHz * entry.coefficient,
-        qualityFactorNumerator: entry.qualityFactor * entry.coefficient,
-        dampingRatioNumerator: entry.dampingRatio * entry.coefficient,
-      });
+        coefficientInputTotal: entry.coefficient,
+        phasePhasorRe: phaseCoefficient * Math.cos(entry.phaseOffsetRad),
+        phasePhasorIm: phaseCoefficient * Math.sin(entry.phaseOffsetRad),
+        phaseAuthorityMax: clamp01(entry.phaseAuthority),
+        spectralMomentNumeratorX:
+          entry.spectralMomentX * spectralMomentInfluence,
+        spectralMomentNumeratorY:
+          entry.spectralMomentY * spectralMomentInfluence,
+        spectralSecondMomentNumeratorX:
+          entry.spectralSecondMomentX * spectralMomentInfluence,
+        spectralSecondMomentNumeratorY:
+          entry.spectralSecondMomentY * spectralMomentInfluence,
+        spectralMomentInfluence,
+        naturalFrequencyHz: canonicalMetadata.naturalFrequencyHz,
+        qualityFactor: canonicalMetadata.qualityFactor,
+        responseFrequencyHz: canonicalMetadata.responseFrequencyHz,
+      };
+      modeGroups.push(created);
+      groupsByMode.set(entry.modeKey, modeGroups);
+      merged.push(created);
       continue;
     }
 
-    existing.coefficient += entry.coefficient;
-    if (entry.phaseAuthority >= existing.phaseAuthority) {
-      existing.phaseAuthority = entry.phaseAuthority;
-      existing.phaseOffsetRad = entry.phaseOffsetRad;
-      existing.phaseVelocityRadPerSec = entry.phaseVelocityRadPerSec;
-      existing.phaseCoherence = entry.phaseCoherence;
-    }
-    existing.colorWeightNumerator += entry.colorWeight * entry.coefficient;
-    existing.spectralColorNumeratorR += entry.colorR * spectralInfluence;
-    existing.spectralColorNumeratorG += entry.colorG * spectralInfluence;
-    existing.spectralColorNumeratorB += entry.colorB * spectralInfluence;
-    existing.spectralColorInfluence += spectralInfluence;
-    existing.spectralPacketInfluence += spectralPacketInfluence;
-    for (let laneIndex = 0; laneIndex < 4; laneIndex += 1) {
-      existing.spectralLaneNumeratorA[laneIndex] +=
-        entry.spectralLaneA[laneIndex] * spectralPacketInfluence;
-      existing.spectralLaneNumeratorB[laneIndex] +=
-        entry.spectralLaneB[laneIndex] * spectralPacketInfluence;
-    }
-    if (spectralInfluence > existing.spectralOwnerInfluence) {
-      existing.spectralOwnerInfluence = spectralInfluence;
-      existing.spectralOwnerColorR = entry.colorR;
-      existing.spectralOwnerColorG = entry.colorG;
-      existing.spectralOwnerColorB = entry.colorB;
-    }
-    if (spectralPacketInfluence > existing.spectralMetaOwnerInfluence) {
-      existing.spectralMetaOwnerInfluence = spectralPacketInfluence;
-      existing.spectralOwnerMeta = entry.spectralMeta;
-    }
-    existing.naturalFrequencyNumerator +=
-      entry.naturalFrequencyHz * entry.coefficient;
-    existing.qualityFactorNumerator += entry.qualityFactor * entry.coefficient;
-    existing.dampingRatioNumerator += entry.dampingRatio * entry.coefficient;
+    existing.coefficientInputTotal += entry.coefficient;
+    existing.phasePhasorRe += phaseCoefficient * Math.cos(entry.phaseOffsetRad);
+    existing.phasePhasorIm += phaseCoefficient * Math.sin(entry.phaseOffsetRad);
+    existing.phaseAuthorityMax = Math.max(
+      existing.phaseAuthorityMax,
+      clamp01(entry.phaseAuthority),
+    );
+    existing.spectralMomentNumeratorX +=
+      entry.spectralMomentX * spectralMomentInfluence;
+    existing.spectralMomentNumeratorY +=
+      entry.spectralMomentY * spectralMomentInfluence;
+    existing.spectralSecondMomentNumeratorX +=
+      entry.spectralSecondMomentX * spectralMomentInfluence;
+    existing.spectralSecondMomentNumeratorY +=
+      entry.spectralSecondMomentY * spectralMomentInfluence;
+    existing.spectralMomentInfluence += spectralMomentInfluence;
     existing.observedSupport = Math.max(
       existing.observedSupport,
       entry.observedSupport,
     );
   }
 
-  return Array.from(merged.values()).map((entry) => {
-    const coefficientDenom = Math.max(entry.coefficient, 1e-9);
-    const colorWeight = entry.colorWeightNumerator / coefficientDenom;
-    const spectralColorDenom = Math.max(entry.spectralColorInfluence, 1e-9);
-    const spectralPacketDenom = Math.max(entry.spectralPacketInfluence, 1e-9);
-    const normalizedLanes =
-      entry.spectralPacketInfluence > 0
-        ? normalizeSpectralLanePacket(
-            entry.spectralLaneNumeratorA.map(
-              (value) => value / spectralPacketDenom,
-            ),
-            entry.spectralLaneNumeratorB.map(
-              (value) => value / spectralPacketDenom,
-            ),
-          )
-        : {
-            laneA: [0, 0, 0, 0],
-            laneB: [0, 0, 0, 0],
-          };
+  return merged.map((entry) => {
+    const {
+      coefficientInputTotal,
+      phasePhasorRe,
+      phasePhasorIm,
+      phaseAuthorityMax,
+      spectralMomentNumeratorX,
+      spectralMomentNumeratorY,
+      spectralSecondMomentNumeratorX,
+      spectralSecondMomentNumeratorY,
+      spectralMomentInfluence,
+      ...canonicalEntry
+    } = entry;
+    const phaseCoefficient = Math.hypot(phasePhasorRe, phasePhasorIm);
+    // Duplicate contributions to one physical response mode add as complex
+    // amplitudes. The descriptor stores their magnitude plus phase so the
+    // renderer can reconstruct the same phasor without duplicate identities.
+    const coefficient = phaseCoefficient;
+    const effectivePhaseWeight =
+      coefficientInputTotal > 1e-9
+        ? phaseCoefficient / coefficientInputTotal
+        : 0;
+    const spectralMomentDenominator = Math.max(spectralMomentInfluence, 1e-9);
+    return {
+      ...canonicalEntry,
+      coefficient,
+      phaseOffsetRad:
+        phaseCoefficient > 1e-9 ? Math.atan2(phasePhasorIm, phasePhasorRe) : 0,
+      phaseCoherence:
+        phaseAuthorityMax > 0
+          ? clamp01(effectivePhaseWeight / phaseAuthorityMax)
+          : 0,
+      phaseAuthority: phaseAuthorityMax,
+      spectralMomentX: spectralMomentNumeratorX / spectralMomentDenominator,
+      spectralMomentY: spectralMomentNumeratorY / spectralMomentDenominator,
+      spectralSecondMomentX:
+        spectralSecondMomentNumeratorX / spectralMomentDenominator,
+      spectralSecondMomentY:
+        spectralSecondMomentNumeratorY / spectralMomentDenominator,
+    };
+  });
+}
+
+function groupCoherentShellEntries(entries) {
+  const groups = new Map();
+  for (const entry of entries) {
+    const key = getRectangularResponseShellKey(entry);
+    const group = groups.get(key) ?? [];
+    group.push(entry);
+    groups.set(key, group);
+  }
+  return Array.from(groups.values(), (group) =>
+    group.sort(
+      (left, right) => left.u - right.u || left.v - right.v || left.w - right.w,
+    ),
+  );
+}
+
+function admitCoherentShellEntries(entries, capacity) {
+  const groups = groupCoherentShellEntries(entries);
+  const admittedEntries = [];
+  const rejectedEntries = [];
+  for (const group of groups) {
+    if (admittedEntries.length + group.length <= capacity) {
+      admittedEntries.push(...group);
+    } else {
+      rejectedEntries.push(...group);
+    }
+  }
+  return { admittedEntries, rejectedEntries };
+}
+
+function canonicalizeResponseShellSpectralMoments(entries) {
+  // One response shell is squared coherently by the renderer, so all shell
+  // members must carry the same pitch basis. This makes slot order irrelevant
+  // without turning confidence or presentation state into spectral authority.
+  const momentsByShell = new Map();
+  for (const entry of entries) {
+    const key = getModalResponseFrequencyKey(entry);
+    const weight = Math.max(0, entry.coefficient);
+    const moment = momentsByShell.get(key) ?? {
+      m1x: 0,
+      m1y: 0,
+      m2x: 0,
+      m2y: 0,
+      weight: 0,
+    };
+    moment.m1x += entry.spectralMomentX * weight;
+    moment.m1y += entry.spectralMomentY * weight;
+    moment.m2x += entry.spectralSecondMomentX * weight;
+    moment.m2y += entry.spectralSecondMomentY * weight;
+    moment.weight += weight;
+    momentsByShell.set(key, moment);
+  }
+
+  return entries.map((entry) => {
+    const moment = momentsByShell.get(getModalResponseFrequencyKey(entry));
+    const inverseWeight = moment.weight > 1e-9 ? 1 / moment.weight : 0;
     return {
       ...entry,
-      colorR: entry.spectralColorNumeratorR / spectralColorDenom,
-      colorG: entry.spectralColorNumeratorG / spectralColorDenom,
-      colorB: entry.spectralColorNumeratorB / spectralColorDenom,
-      colorWeight,
-      spectralLaneA: normalizedLanes.laneA,
-      spectralLaneB: normalizedLanes.laneB,
-      spectralMeta:
-        entry.spectralPacketInfluence > 0
-          ? entry.spectralOwnerMeta
-          : [0, 0, 0, 0],
-      naturalFrequencyHz: entry.naturalFrequencyNumerator / coefficientDenom,
-      qualityFactor: entry.qualityFactorNumerator / coefficientDenom,
-      dampingRatio: entry.dampingRatioNumerator / coefficientDenom,
+      spectralMomentX: moment.m1x * inverseWeight,
+      spectralMomentY: moment.m1y * inverseWeight,
+      spectralSecondMomentX: moment.m2x * inverseWeight,
+      spectralSecondMomentY: moment.m2y * inverseWeight,
     };
   });
 }
@@ -960,10 +370,7 @@ function assignEntriesToStableSlotIndices(entries, totalCapacity) {
 function writeUnifiedModalSlotViewsFromAssignments(assignments, capacity) {
   const slots = new Float32Array(capacity * 4);
   const phaseSlots = new Float32Array(capacity * 4);
-  const colorSlots = new Float32Array(capacity * 4);
-  const spectralLaneA = new Float32Array(capacity * 4);
-  const spectralLaneB = new Float32Array(capacity * 4);
-  const spectralMeta = new Float32Array(capacity * 4);
+  const spectralMomentSlots = new Float32Array(capacity * 4);
   const metadataSlots = new Float32Array(capacity * 4);
 
   for (let slotIndex = 0; slotIndex < capacity; slotIndex += 1) {
@@ -982,39 +389,21 @@ function writeUnifiedModalSlotViewsFromAssignments(assignments, capacity) {
     phaseSlots[offset + 2] = entry.phaseCoherence;
     phaseSlots[offset + 3] = entry.phaseAuthority;
 
-    colorSlots[offset] = entry.colorR;
-    colorSlots[offset + 1] = entry.colorG;
-    colorSlots[offset + 2] = entry.colorB;
-    colorSlots[offset + 3] = entry.colorWeight;
-
-    spectralLaneA[offset] = entry.spectralLaneA?.[0] ?? 0;
-    spectralLaneA[offset + 1] = entry.spectralLaneA?.[1] ?? 0;
-    spectralLaneA[offset + 2] = entry.spectralLaneA?.[2] ?? 0;
-    spectralLaneA[offset + 3] = entry.spectralLaneA?.[3] ?? 0;
-
-    spectralLaneB[offset] = entry.spectralLaneB?.[0] ?? 0;
-    spectralLaneB[offset + 1] = entry.spectralLaneB?.[1] ?? 0;
-    spectralLaneB[offset + 2] = entry.spectralLaneB?.[2] ?? 0;
-    spectralLaneB[offset + 3] = entry.spectralLaneB?.[3] ?? 0;
-
-    spectralMeta[offset] = entry.spectralMeta?.[0] ?? 0;
-    spectralMeta[offset + 1] = entry.spectralMeta?.[1] ?? 0;
-    spectralMeta[offset + 2] = entry.spectralMeta?.[2] ?? 0;
-    spectralMeta[offset + 3] = entry.spectralMeta?.[3] ?? 0;
+    spectralMomentSlots[offset] = entry.spectralMomentX;
+    spectralMomentSlots[offset + 1] = entry.spectralMomentY;
+    spectralMomentSlots[offset + 2] = entry.spectralSecondMomentX;
+    spectralMomentSlots[offset + 3] = entry.spectralSecondMomentY;
 
     metadataSlots[offset] = entry.naturalFrequencyHz;
     metadataSlots[offset + 1] = entry.qualityFactor;
-    metadataSlots[offset + 2] = entry.dampingRatio;
+    metadataSlots[offset + 2] = entry.responseFrequencyHz;
     metadataSlots[offset + 3] = entry.observedSupport;
   }
 
   return {
     modalFieldSlots: slots,
     modalFieldPhaseSlots: phaseSlots,
-    modalFieldColorSlots: colorSlots,
-    modalFieldSpectralLaneA: spectralLaneA,
-    modalFieldSpectralLaneB: spectralLaneB,
-    modalFieldSpectralMeta: spectralMeta,
+    modalFieldSpectralMomentSlots: spectralMomentSlots,
     modalFieldMetadataSlots: metadataSlots,
   };
 }
@@ -1025,10 +414,7 @@ function buildZeroedModalSlotViews(capacity) {
   return {
     modalFieldSlots: new Float32Array(length),
     modalFieldPhaseSlots: new Float32Array(length),
-    modalFieldColorSlots: new Float32Array(length),
-    modalFieldSpectralLaneA: new Float32Array(length),
-    modalFieldSpectralLaneB: new Float32Array(length),
-    modalFieldSpectralMeta: new Float32Array(length),
+    modalFieldSpectralMomentSlots: new Float32Array(length),
     modalFieldMetadataSlots: new Float32Array(length),
   };
 }
@@ -1042,8 +428,8 @@ function countOccupiedSlotSpan(assignments) {
   return 0;
 }
 
-function buildSpectralLaneDescriptorHash(slotAssignments) {
-  let hash = FNV_OFFSET_BASIS;
+function buildSpectralMomentDescriptorHash(slotAssignments) {
+  let hash = HASH32_OFFSET_BASIS;
   hash = hashUint32(slotAssignments.length, hash);
   for (let slotIndex = 0; slotIndex < slotAssignments.length; slotIndex += 1) {
     const entry = slotAssignments[slotIndex];
@@ -1056,9 +442,15 @@ function buildSpectralLaneDescriptorHash(slotAssignments) {
     hash = hashFloat32(entry.u, hash);
     hash = hashFloat32(entry.v, hash);
     hash = hashFloat32(entry.w, hash);
-    hash = hashPackedQuad(entry.spectralLaneA, hash);
-    hash = hashPackedQuad(entry.spectralLaneB, hash);
-    hash = hashPackedQuad(entry.spectralMeta, hash);
+    hash = hashPackedQuad(
+      [
+        entry.spectralMomentX,
+        entry.spectralMomentY,
+        entry.spectralSecondMomentX,
+        entry.spectralSecondMomentY,
+      ],
+      hash,
+    );
   }
   return hash >>> 0;
 }
@@ -1069,10 +461,7 @@ function buildSpectralLaneDescriptorHash(slotAssignments) {
  *   maxTotalModes?: number,
  *   modalFieldSlots?: Float32Array | number[],
  *   modalFieldPhaseSlots?: Float32Array | number[],
- *   modalFieldColorSlots?: Float32Array | number[] | null,
- *   modalFieldSpectralLaneA?: Float32Array | number[] | null,
- *   modalFieldSpectralLaneB?: Float32Array | number[] | null,
- *   modalFieldSpectralMeta?: Float32Array | number[] | null,
+ *   modalFieldSpectralMomentSlots?: Float32Array | number[] | null,
  *   modalFieldMetadataSlots?: Float32Array | number[] | null,
  *   activeModalFieldModeCount?: number,
  *   observerCandidateModeCount?: number,
@@ -1095,14 +484,8 @@ function buildSpectralLaneDescriptorHash(slotAssignments) {
  *   upstreamSourceCoupledModalEnergy?: number,
  *   upstreamResonantModalEnergy?: number,
  *   upstreamCandidateModalEnergy?: number,
- *   overBandwidthRejectedModeCount?: number,
- *   overBandwidthRejectedModalEnergy?: number,
- *   overBandwidthMaxRequestedModeIndex?: number,
- *   overBandwidthMaxRequestedMode?: [number, number, number],
  *   previousFieldAuthority?: string | null,
- *   allowOverBandwidthProjectionRetention?: boolean,
- *   basisAtlasPageCapacity?: number,
- *   basisCacheResolution?: number,
+ *   directOpticalModeCapacity?: number,
  *   cavityGeometry?: import("./cavityGeometry.js").CavityGeometry,
  * }} [options]
  */
@@ -1111,10 +494,7 @@ export function buildCanonicalFullModalDescriptor({
   maxTotalModes,
   modalFieldSlots,
   modalFieldPhaseSlots,
-  modalFieldColorSlots = null,
-  modalFieldSpectralLaneA = null,
-  modalFieldSpectralLaneB = null,
-  modalFieldSpectralMeta = null,
+  modalFieldSpectralMomentSlots = null,
   modalFieldMetadataSlots = null,
   activeModalFieldModeCount,
   observerCandidateModeCount,
@@ -1137,14 +517,7 @@ export function buildCanonicalFullModalDescriptor({
   upstreamSourceCoupledModalEnergy,
   upstreamResonantModalEnergy,
   upstreamCandidateModalEnergy,
-  overBandwidthRejectedModeCount,
-  overBandwidthRejectedModalEnergy,
-  overBandwidthMaxRequestedModeIndex,
-  overBandwidthMaxRequestedMode,
-  previousFieldAuthority,
-  allowOverBandwidthProjectionRetention = false,
-  basisAtlasPageCapacity = MODAL_BASIS_ATLAS_PAGE_CAPACITY,
-  basisCacheResolution = MODAL_BASIS_CACHE_RESOLUTION,
+  directOpticalModeCapacity = MODAL_SEMANTIC_DESCRIPTOR_CAPACITY,
   cavityGeometry = DEFAULT_EFFECTIVE_CAVITY_GEOMETRY,
 } = {}) {
   const modalGeometryBackend = getModalGeometryBackend(cavityGeometry);
@@ -1160,23 +533,17 @@ export function buildCanonicalFullModalDescriptor({
   const admissionEntries = buildAdmissionEntries({
     slots: modalFieldSlots,
     phaseSlots: modalFieldPhaseSlots,
-    colorSlots: modalFieldColorSlots,
-    spectralLaneA: modalFieldSpectralLaneA,
-    spectralLaneB: modalFieldSpectralLaneB,
-    spectralMeta: modalFieldSpectralMeta,
+    spectralMomentSlots: modalFieldSpectralMomentSlots,
     metadataSlots: modalFieldMetadataSlots,
     validCount: validModeCount,
   });
-  const mergedEntries = mergeAdmissionEntries(admissionEntries);
-  let admittedEntries;
-  let rejectedEntries;
-  if (mergedEntries.length <= totalCapacity) {
-    admittedEntries = mergedEntries;
-    rejectedEntries = [];
-  } else {
-    admittedEntries = mergedEntries.slice(0, totalCapacity);
-    rejectedEntries = mergedEntries.slice(totalCapacity);
-  }
+  const mergedEntries = canonicalizeResponseShellSpectralMoments(
+    mergeAdmissionEntries(admissionEntries),
+  );
+  const { admittedEntries, rejectedEntries } = admitCoherentShellEntries(
+    mergedEntries,
+    totalCapacity,
+  );
   const slotAssignments = assignEntriesToStableSlotIndices(
     admittedEntries,
     totalCapacity,
@@ -1189,46 +556,23 @@ export function buildCanonicalFullModalDescriptor({
     0,
   );
   const descriptorOverflow = overflowModeCount > 0;
-  const structuralAdmission = deriveStructuralAdmissionDiagnostics(
-    slotAssignments,
-    {
-      basisAtlasPageCapacity,
-      basisCacheResolution,
-    },
-  );
+  const structuralAdmission = analyzeStructuralAdmission(slotAssignments, {
+    directOpticalModeCapacity,
+  });
   const rejectionReasons = {};
   if (overflowModeCount > 0) {
     rejectionReasons.descriptorCapacity = overflowModeCount;
   }
-  if (structuralAdmission.basisAtlasCapacityRejectedCount > 0) {
-    rejectionReasons.basisAtlasCapacity =
-      structuralAdmission.basisAtlasCapacityRejectedCount;
-  }
-  if (structuralAdmission.spatialBandwidthRejectedCount > 0) {
-    rejectionReasons.spatialBandwidth =
-      structuralAdmission.spatialBandwidthRejectedCount;
-  }
-  const overBandwidthDiagnostics = resolveOverBandwidthDiagnostics({
-    overBandwidthRejectedModeCount,
-    overBandwidthRejectedModalEnergy,
-    overBandwidthMaxRequestedModeIndex,
-    overBandwidthMaxRequestedMode,
-  });
-  const {
-    overBandwidthRejectedModeCount: resolvedOverBandwidthRejectedModeCount,
-    overBandwidthRejectedModalEnergy: resolvedOverBandwidthRejectedModalEnergy,
-    overBandwidthMaxRequestedModeIndex:
-      resolvedOverBandwidthMaxRequestedModeIndex,
-    overBandwidthMaxRequestedMode: resolvedOverBandwidthMaxRequestedMode,
-  } = overBandwidthDiagnostics;
-  if (resolvedOverBandwidthRejectedModeCount > 0) {
-    rejectionReasons.overBandwidth = resolvedOverBandwidthRejectedModeCount;
+  if (structuralAdmission.directOpticalCapacityRejectedCount > 0) {
+    rejectionReasons.directOpticalCapacity =
+      structuralAdmission.directOpticalCapacityRejectedCount;
   }
   const unifiedSlotViews = writeUnifiedModalSlotViewsFromAssignments(
     slotAssignments,
     totalCapacity,
   );
-  const spectralLaneHash = buildSpectralLaneDescriptorHash(slotAssignments);
+  const spectralMomentHash =
+    buildSpectralMomentDescriptorHash(slotAssignments);
   const resolvedPhaseAuthorityModeCount = Number.isFinite(
     phaseAuthorityModeCount,
   )
@@ -1236,7 +580,7 @@ export function buildCanonicalFullModalDescriptor({
     : countPhaseAuthorityModes(modalFieldPhaseSlots, validModeCount);
   const fallbackRawCandidateModalEnergy =
     acceptedEntries.reduce(
-      (total, entry) => total + getEntryModalEnergy(entry),
+      (total, entry) => total + measureModalEntryEnergy(entry),
       0,
     ) + rejectedModalEnergy;
   const fallbackConfidenceWeightedCandidateEnergy = acceptedEntries.reduce(
@@ -1259,7 +603,7 @@ export function buildCanonicalFullModalDescriptor({
     fallbackRawCandidateModalEnergy,
     fallbackConfidenceWeightedCandidateEnergy,
   });
-  const modalVarietyAudit = buildModalVarietyAudit({
+  const representationAnalysis = analyzeModalRepresentation({
     slotAssignments,
     rejectedEntries,
     structuralAdmission,
@@ -1277,24 +621,13 @@ export function buildCanonicalFullModalDescriptor({
     upstreamSourceCoupledModalEnergy,
     upstreamResonantModalEnergy,
     upstreamCandidateModalEnergy,
-    ...overBandwidthDiagnostics,
-    previousFieldAuthority,
     modalGeometryBackend,
   });
-  const overBandwidthDominant =
-    modalVarietyAudit.overBandwidthDominant === true;
-  const overBandwidthProjectionRetained = shouldRetainOverBandwidthProjection({
-    allowOverBandwidthProjectionRetention,
-    overBandwidthDominant,
-    modalVarietyAudit,
-  });
-  const overBandwidthFieldBlocked =
-    overBandwidthDominant && !overBandwidthProjectionRetained;
-  const fieldAuthority = overBandwidthFieldBlocked
-    ? "bandwidth-limited"
-    : descriptorOverflow || overBandwidthProjectionRetained
-      ? "capacity-limited"
-      : "complete";
+  // Spatial support is already decided by the apparatus-derived atlas before
+  // a mode reaches this descriptor. The descriptor must not reinterpret that
+  // physical boundary; only its own finite packet capacity can still limit the
+  // admitted field.
+  const fieldAuthority = descriptorOverflow ? "capacity-limited" : "complete";
   const renderAuthoritative =
     fieldAuthority === "complete" || fieldAuthority === "capacity-limited";
   const renderSlotViews = renderAuthoritative
@@ -1304,7 +637,7 @@ export function buildCanonicalFullModalDescriptor({
   const renderedValidModeCount = renderAuthoritative ? validModeCount : 0;
   const renderedOccupiedSlotSpan = renderAuthoritative ? occupiedSlotSpan : 0;
 
-  return {
+  const descriptor = {
     generation: Math.max(0, Math.floor(generation ?? 0)),
     fieldAuthority,
     capacity: {
@@ -1326,11 +659,17 @@ export function buildCanonicalFullModalDescriptor({
         persistence: entry.phaseAuthority,
         naturalFrequencyHz: entry.naturalFrequencyHz,
         qualityFactor: entry.qualityFactor,
-        dampingRatio: entry.dampingRatio,
+        dampingRatio:
+          entry.qualityFactor > 0 ? 1 / (2 * entry.qualityFactor) : 0,
+        responseFrequencyHz: entry.responseFrequencyHz,
         observedSupport: entry.observedSupport,
         material: {
-          colorRgb: [entry.colorR, entry.colorG, entry.colorB],
-          colorWeight: entry.colorWeight,
+          spectralMoment: [
+            entry.spectralMomentX,
+            entry.spectralMomentY,
+            entry.spectralSecondMomentX,
+            entry.spectralSecondMomentY,
+          ],
         },
       })),
     },
@@ -1351,44 +690,24 @@ export function buildCanonicalFullModalDescriptor({
       modeIdentityRetentionRatio: clamp01(modeIdentityRetentionRatio ?? 1),
       descriptorOverflow,
       structuralCoverageSatisfied:
-        !descriptorOverflow &&
-        structuralAdmission.structuralCoverageSatisfied &&
-        resolvedOverBandwidthRejectedModeCount === 0,
+        !descriptorOverflow && structuralAdmission.structuralCoverageSatisfied,
       rejectedModalEnergy:
         rejectedModalEnergy +
-        structuralAdmission.basisAtlasCapacityRejectedEnergy +
-        structuralAdmission.spatialBandwidthRejectedEnergy +
-        resolvedOverBandwidthRejectedModalEnergy,
+        structuralAdmission.directOpticalCapacityRejectedEnergy,
       descriptorRejectedModalEnergy: rejectedModalEnergy,
-      basisAtlasRejectedModalEnergy:
-        structuralAdmission.basisAtlasCapacityRejectedEnergy,
-      spatialBandwidthRejectedModalEnergy:
-        structuralAdmission.spatialBandwidthRejectedEnergy,
-      overBandwidthRejectedModalEnergy:
-        resolvedOverBandwidthRejectedModalEnergy,
-      overBandwidthRejectedEnergyRatio:
-        modalVarietyAudit.overBandwidthRejectedEnergyRatio,
-      overBandwidthRejectedRepresentedEnergyRatio:
-        modalVarietyAudit.overBandwidthRejectedRepresentedEnergyRatio,
-      overBandwidthDominant,
-      overBandwidthProjectionRetained,
-      overBandwidthFieldBlocked,
-      basisAtlasCapacityRejectedCount:
-        structuralAdmission.basisAtlasCapacityRejectedCount,
-      spatialBandwidthRejectedCount:
-        structuralAdmission.spatialBandwidthRejectedCount,
-      overBandwidthRejectedModeCount: resolvedOverBandwidthRejectedModeCount,
-      overBandwidthMaxRequestedModeIndex:
-        resolvedOverBandwidthMaxRequestedModeIndex,
-      overBandwidthMaxRequestedMode: resolvedOverBandwidthMaxRequestedMode,
-      basisAtlasPageCapacity: structuralAdmission.basisAtlasPageCapacity,
-      maxRepresentableModeIndex: structuralAdmission.maxRepresentableModeIndex,
-      spectralLaneHash,
-      modalVarietyAudit,
+      directOpticalCapacityRejectedModalEnergy:
+        structuralAdmission.directOpticalCapacityRejectedEnergy,
+      directOpticalCapacityRejectedCount:
+        structuralAdmission.directOpticalCapacityRejectedCount,
+      directOpticalModeCapacity: structuralAdmission.directOpticalModeCapacity,
+      spectralMomentHash,
+      modalVarietyAudit: representationAnalysis,
       rejectionReasons,
     },
     slotViews: {
       ...renderSlotViews,
     },
   };
+  assertCanonicalModalDescriptor(descriptor);
+  return descriptor;
 }

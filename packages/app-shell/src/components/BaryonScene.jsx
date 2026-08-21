@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useThree } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { useBaryonPipeline } from "./hooks/useBaryonPipeline";
 import { useBaryonEngine } from "./hooks/useBaryonEngine";
@@ -21,6 +21,7 @@ import {
 export { CAMERA_CONTROL_MODES } from "./baryonSceneCameraSync.js";
 import {
   RENDER_CONTEXTS,
+  DEFAULT_TRAA_ENABLED,
   markRenderOutputCameraCut,
 } from "@baryon/engine/render/outputPipeline";
 import { resolveTemporalReprojectionPolicy } from "@baryon/engine/render/temporalReprojectionPolicy";
@@ -65,6 +66,7 @@ function bumpLocalCameraRenderSignal(signalRef, phase) {
 
 export function BaryonScene({
   setIsEngineReady,
+  runtimeGeneration = 0,
   setLiveInputRuntimeStatus,
   liveInputUiState,
   liveInputErrorCode,
@@ -72,17 +74,19 @@ export function BaryonScene({
   visualizationMethod,
   performanceProfile,
   customTargetFps = null,
-  traaEnabled = true,
+  traaEnabled = DEFAULT_TRAA_ENABLED,
   resolvedRenderProfile = null,
   onPerformanceHudSnapshotChange,
   onAuditSnapshotChange = null,
-  outputFrameConfig = null,
-  onOutputFrame = null,
+  outputCompositorFrameTransfer = false,
+  onOutputCompositorFrame = null,
   onFrameState = null,
+  registerStructureExportSampleReader = null,
   onCameraPoseChange = null,
   audioFeatureAuthorityRole,
   externalFrameRef = null,
   cameraPose = null,
+  streamedCameraPoseRef = null,
   structuralControlVersion = 0,
   liveControlSignalRef = null,
   adaptiveResetNonce = 0,
@@ -92,7 +96,9 @@ export function BaryonScene({
   suppressRender = false,
   enableControlEventSync = true,
   cameraResetNonce = 0,
+  cameraCutNonce = null,
   cameraLocked = false,
+  outputMode = null,
   cameraControlMode = /** @type {import("./baryonSceneCameraSync.js").CameraControlMode} */ (
     CAMERA_CONTROL_MODES.previewLocal
   ),
@@ -105,6 +111,9 @@ export function BaryonScene({
   const warnedMissingExternalCameraPoseRef = useRef(false);
   const lastPreviewLocalCameraPoseEventKeyRef = useRef(null);
   const lastPreviewLocalAppliedResetNonceRef = useRef(null);
+  const lastExternalCameraCutNonceRef = useRef(null);
+  const lastStreamedCameraPoseKeyRef = useRef(null);
+  const applyingStreamedCameraPoseRef = useRef(false);
   const localCameraRenderSignalRef = useRef({ version: 0, phase: null });
   const [localPostProcessOverrides, setLocalPostProcessOverrides] =
     useState(null);
@@ -191,15 +200,16 @@ export function BaryonScene({
         return;
       }
 
-      onFrameState(
-        augmentFrameStateWithCameraSync(frameState, {
+      onFrameState({
+        ...augmentFrameStateWithCameraSync(frameState, {
           orbitControls: orbitControlsRef.current,
           camera,
           cameraControlMode,
         }),
-      );
+        runtimeGeneration,
+      });
     },
-    [camera, cameraControlMode, onFrameState],
+    [camera, cameraControlMode, onFrameState, runtimeGeneration],
   );
 
   const emitCameraPoseChange = useCallback(
@@ -230,6 +240,9 @@ export function BaryonScene({
     [camera, cameraControlMode, onCameraPoseChange],
   );
   const handleOrbitControlsChange = useCallback(() => {
+    if (applyingStreamedCameraPoseRef.current) {
+      return;
+    }
     bumpLocalCameraRenderSignal(localCameraRenderSignalRef, "change");
     invalidate();
     emitCameraPoseChange("change");
@@ -273,6 +286,40 @@ export function BaryonScene({
     postNodesRef,
   ]);
 
+  useFrame(() => {
+    if (cameraControlMode !== CAMERA_CONTROL_MODES.previewLocal) {
+      return;
+    }
+
+    const streamedCameraPose = streamedCameraPoseRef?.current ?? null;
+    if (!streamedCameraPose) {
+      lastStreamedCameraPoseKeyRef.current = null;
+      return;
+    }
+
+    const streamedCameraPoseKey = createCameraPoseMirrorKey(
+      streamedCameraPose,
+    );
+    if (lastStreamedCameraPoseKeyRef.current === streamedCameraPoseKey) {
+      return;
+    }
+
+    const orbitControls = orbitControlsRef.current;
+    if (!orbitControls) {
+      return;
+    }
+
+    applyingStreamedCameraPoseRef.current = true;
+    try {
+      if (applyExternalCameraPose(streamedCameraPose, camera, orbitControls)) {
+        lastStreamedCameraPoseKeyRef.current = streamedCameraPoseKey;
+        bumpLocalCameraRenderSignal(localCameraRenderSignalRef, "change");
+      }
+    } finally {
+      applyingStreamedCameraPoseRef.current = false;
+    }
+  });
+
   useLayoutEffect(() => {
     if (cameraControlMode !== CAMERA_CONTROL_MODES.externalSynced) {
       return;
@@ -293,12 +340,25 @@ export function BaryonScene({
     }
     warnedMissingExternalCameraPoseRef.current = false;
     if (applyExternalCameraPose(cameraPose, camera)) {
-      markRenderOutputCameraCut(postNodesRef.current);
+      const cameraCutRequested =
+        cameraCutNonce == null ||
+        lastExternalCameraCutNonceRef.current !== cameraCutNonce;
+      lastExternalCameraCutNonceRef.current = cameraCutNonce;
+      if (cameraCutRequested) {
+        markRenderOutputCameraCut(postNodesRef.current);
+      }
       invalidate();
     }
-  }, [camera, cameraControlMode, cameraPose, invalidate, postNodesRef]);
+  }, [
+    camera,
+    cameraControlMode,
+    cameraCutNonce,
+    cameraPose,
+    invalidate,
+    postNodesRef,
+  ]);
 
-  const points = useBaryonEngine({
+  const { points } = useBaryonEngine({
     baryonGeometry,
     camera,
     gl,
@@ -307,15 +367,15 @@ export function BaryonScene({
     liveInputUiState,
     liveInputErrorCode,
     controlsRef,
-    visualizationMethod,
     scene,
     ensurePipeline,
     postNodesRef,
     onPerformanceHudSnapshotChange,
     onAuditSnapshotChange,
-    outputFrameConfig,
-    onOutputFrame,
+    outputCompositorFrameTransfer,
+    onOutputCompositorFrame,
     onFrameState: handleFrameState,
+    registerStructureExportSampleReader,
     audioFeatureAuthorityRole,
     externalFrameRef,
     structuralControlVersion,
@@ -329,6 +389,7 @@ export function BaryonScene({
     onStageRender,
     suppressRender,
     enableControlEventSync,
+    outputMode,
   });
 
   return (

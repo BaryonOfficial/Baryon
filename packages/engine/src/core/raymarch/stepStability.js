@@ -2,8 +2,27 @@ import { clamp01 } from "../../utils/math.js";
 
 export const STEP_REFERENCE = 96;
 export const MIN_ADAPTIVE_STEPS = 16;
-const LOW_STEP_BLOOM_GUARD_START = 64;
-const LOW_STEP_BLOOM_GUARD_RANGE = 48;
+// What bloom over-responds to at a small budget is camera-integration error,
+// not the field: the emission profile is integrated analytically over each step
+// interval, but a sparse quadrature can still leave isolated bright samples for
+// the threshold to latch onto. The guard reaches full strength at the adaptive
+// floor and is zero at any budget dense enough for that not to happen.
+//
+// This used to mirror RAYMARCH_DEFAULTS.raymarchSteps, because the shipped
+// budget and the budget where sparsity starts to show were the same number.
+// Raising the shipped budget to clear Nyquist along the ray separated them: the
+// threshold is a property of the quadrature, not of whatever the current
+// default happens to be, and moving it upward would newly suppress bloom at
+// every adaptive rung between here and the new default without any measurement
+// saying it should. The invariant a test still pins is the one that matters —
+// the guard must be zero at the shipped budget, so it never silently rescales
+// hand-measured bloom values.
+export const QUADRATURE_SPARSITY_STEP_THRESHOLD = 40;
+const LOW_STEP_BLOOM_GUARD_START = QUADRATURE_SPARSITY_STEP_THRESHOLD;
+const LOW_STEP_BLOOM_GUARD_RANGE = Math.max(
+  1,
+  LOW_STEP_BLOOM_GUARD_START - MIN_ADAPTIVE_STEPS,
+);
 const MAX_STEP_COMPENSATION = 1.08;
 const STEP_COMPENSATION_EXPONENT = 0.18;
 const STABLE_STEP_JITTER_DIRECTION_WEIGHT = 0.61;

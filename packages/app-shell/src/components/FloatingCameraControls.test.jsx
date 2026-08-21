@@ -109,6 +109,33 @@ describe("FloatingCameraControls camera lock", () => {
     expect(onPresetSelect).toHaveBeenCalledTimes(1);
   });
 
+  it("stays responsive after a touch is cancelled before its click", () => {
+    const onToggleLock = vi.fn();
+    render({ cameraLocked: false, onToggleLock });
+
+    const lockButton = container.querySelector(
+      '[data-testid="camera-lock-button"]',
+    );
+
+    // A drifted touch: pointerdown lands and acts, then the gesture cancels and
+    // the browser never delivers the click that would clear the dedupe.
+    act(() => {
+      lockButton.dispatchEvent(
+        new window.MouseEvent("pointerdown", { bubbles: true, button: 0 }),
+      );
+      window.dispatchEvent(new window.Event("pointercancel"));
+    });
+    expect(onToggleLock).toHaveBeenCalledTimes(1);
+
+    // The next press must act instead of being swallowed by the stale dedupe.
+    act(() => {
+      lockButton.dispatchEvent(
+        new window.MouseEvent("click", { bubbles: true, button: 0 }),
+      );
+    });
+    expect(onToggleLock).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps the preset and reset buttons present while locked", () => {
     render({ cameraLocked: true, onToggleLock: vi.fn() });
 
@@ -232,6 +259,20 @@ describe("FloatingCameraControls camera lock", () => {
     expect(panel.style.borderRadius).toBe("999px");
     expect(panel.style.background).toBe("var(--nd-surface)");
     expect(panel.style.boxShadow).toBe("var(--nd-shell-shadow)");
+  });
+
+  it("keeps near-zero camera coordinates from flipping sign", () => {
+    render({
+      cameraPose: {
+        position: { x: 0, y: 7.794, z: -0.00001 },
+      },
+    });
+
+    const readout = container.querySelector(
+      '[data-testid="camera-view-readout"]',
+    );
+    expect(readout.textContent).toContain("z+0.00");
+    expect(readout.textContent).not.toContain("-0.00");
   });
 
   it("samples a live camera pose ref into the readout while the panel is expanded", () => {

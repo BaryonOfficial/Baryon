@@ -1,14 +1,15 @@
 import { expect, test, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import {
-  clearAdaptiveRaymarchResumeState,
   createRuntimeDiagnostics,
+  resetAdaptiveRaymarchControllerState,
 } from "./baryonEngineRuntimeState.js";
 import { syncLiveInputRuntimeStatus } from "./liveInputRuntimeSync.js";
 import {
   buildPerformanceHudSnapshot,
   consumeRenderFramePacerSlot,
   createAuditSnapshotNotifier,
+  createFeatureFrameResolver,
   createRenderFramePacerState,
   finalizeTerminalVisualIdleState,
   getRenderTargetPixelRatio,
@@ -24,7 +25,17 @@ import {
   syncRenderSurfacePixelRatio,
   syncUploadedRenderQuantities,
 } from "./baryonEngineRenderLoop.js";
-import { RENDER_CONTEXTS } from "@baryon/engine/render/outputPipeline";
+import {
+  DEFAULT_ADAPTIVE_STARTUP_RAYMARCH_STEPS,
+  DEFAULT_PERFORMANCE_TARGET_FPS,
+  isAdaptivePerformanceProfile,
+  MIN_PRESENTATION_RAYMARCH_STEPS,
+  RENDER_CONTEXTS,
+} from "@baryon/engine/render/outputPipeline";
+import {
+  AUDIO_FEATURE_PROTOCOL_VERSION,
+  createRendererFeatureView,
+} from "@baryon/engine/audio-features";
 import {
   LIVE_INPUT_ERROR_CODES,
   LIVE_INPUT_PHASES,
@@ -61,6 +72,26 @@ test("external output retains the requested transparent compositor path", () => 
       renderContext: RENDER_CONTEXTS.externalOutput,
     }),
   ).toBe(controls);
+});
+
+test("surface-owned transparency remains transparent in a preview context", () => {
+  const controls = {
+    outputBackgroundColor: "#ffffff",
+    smaaEnabled: true,
+  };
+
+  expect(
+    resolveRenderSurfaceOutputControls(
+      controls,
+      { renderContext: RENDER_CONTEXTS.preview },
+      { outputMode: "transparent" },
+    ),
+  ).toEqual({
+    outputMode: "transparent",
+    outputBackgroundColor: "#ffffff",
+    smaaEnabled: true,
+  });
+  expect(Object.hasOwn(controls, "outputMode")).toBe(false);
 });
 
 function createSetterCapture() {
@@ -115,17 +146,41 @@ function createAdaptiveRaymarchHarness({
     injectTestTone: false,
     ...controls,
   };
+  const resolvedRenderProfile = {
+    qualityPreset: "auto",
+    ...renderProfile,
+  };
   const runtimeDiagnostics = createRuntimeDiagnostics();
   runtimeDiagnostics.lastFrameTimeMs = 14;
   runtimeDiagnostics.smoothedFrameTimeMs = 14;
-  runtimeDiagnostics.adaptiveRaymarch.adaptiveRaymarchActive = true;
-  runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 64;
-  runtimeDiagnostics.adaptiveRaymarch.currentRung = 3;
+  const adaptiveRaymarchController = {
+    ...runtimeDiagnostics.adaptiveRaymarch,
+    adaptiveRaymarchActive: true,
+    requestedRaymarchSteps: 64,
+    currentRung: 3,
+    controllerLastFrameTimeMs: 14,
+    controllerSmoothedFrameTimeMs: 14,
+  };
+  const profileAllowsAdaptiveRaymarch = isAdaptivePerformanceProfile(
+    resolvedRenderProfile.qualityPreset,
+  );
 
   const runtimeState = {
     requestedRaymarchSteps: 64,
     effectiveRaymarchSteps: 64,
-    adaptiveRaymarchResumeRung: null,
+    adaptiveRaymarchController,
+    adaptiveRaymarchInitializationInputs: {
+      requestedStepBudget: resolvedControls.raymarchSteps,
+      profileAllowsAdaptiveRaymarch,
+      targetFps:
+        resolvedRenderProfile.targetFps ??
+        resolvedControls.customTargetFps ??
+        DEFAULT_PERFORMANCE_TARGET_FPS,
+      startupStepBudget: profileAllowsAdaptiveRaymarch
+        ? (resolvedRenderProfile.startupRaymarchSteps ??
+          DEFAULT_ADAPTIVE_STARTUP_RAYMARCH_STEPS)
+        : null,
+    },
     uniforms: {
       uRaymarchSteps: {
         value: 64,
@@ -141,6 +196,7 @@ function createAdaptiveRaymarchHarness({
   return {
     runtimeDiagnostics,
     runtimeState,
+    adaptiveRaymarchController,
     args: {
       controls: resolvedControls,
       runtime: {
@@ -148,10 +204,7 @@ function createAdaptiveRaymarchHarness({
         ...runtime,
       },
       runtimeState,
-      renderProfile: {
-        qualityPreset: "auto",
-        ...renderProfile,
-      },
+      renderProfile: resolvedRenderProfile,
       effectiveFrame: {
         activeModeCount: 16,
         fieldState: "active",
@@ -165,6 +218,7 @@ function createAdaptiveRaymarchHarness({
       status: {
         isPlaying: true,
         isLiveInputActive: false,
+        sourceSession: createFileSourceSession(),
         playbackSessionId: "song-1",
         ...status,
       },
@@ -173,13 +227,39 @@ function createAdaptiveRaymarchHarness({
   };
 }
 
-function primeAdaptiveRecoveryAttempt(runtimeDiagnostics) {
-  runtimeDiagnostics.adaptiveRaymarch.decisionFrameCount = 29;
-  runtimeDiagnostics.adaptiveRaymarch.stableWindowCount = 3;
+function createFileSourceSession(overrides = {}) {
+  return {
+    kind: "file",
+    phase: "active",
+    sessionId: "source-1",
+    timelineRevision: 0,
+    ...overrides,
+  };
+}
+
+function createCompiledModalFrame(joinedSlots) {
+  const count = Math.floor(joinedSlots.length / 4);
+  const modalIdentitySlots = new Float32Array(count * 3);
+  const modalCoefficientSlots = new Float32Array(count);
+  for (let index = 0; index < count; index += 1) {
+    const sourceOffset = index * 4;
+    const identityOffset = index * 3;
+    modalIdentitySlots[identityOffset] = joinedSlots[sourceOffset];
+    modalIdentitySlots[identityOffset + 1] = joinedSlots[sourceOffset + 1];
+    modalIdentitySlots[identityOffset + 2] = joinedSlots[sourceOffset + 2];
+    modalCoefficientSlots[index] = joinedSlots[sourceOffset + 3];
+  }
+  return { modalIdentitySlots, modalCoefficientSlots };
+}
+
+function primeAdaptiveRecoveryAttempt(adaptiveRaymarchController) {
+  adaptiveRaymarchController.currentRung = 0;
+  adaptiveRaymarchController.decisionFrameCount = 29;
+  adaptiveRaymarchController.stableWindowCount = 3;
 }
 
 function assertAdaptiveRecoveryBlocked(runtimeDiagnostics, blockedReason) {
-  expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(3);
+  expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(0);
   expect(runtimeDiagnostics.adaptiveRaymarch.stepUpCount).toBe(0);
   expect(runtimeDiagnostics.adaptiveRaymarch.stableWindowCount).toBe(0);
   expect(runtimeDiagnostics.adaptiveRaymarch.recoveryEligible).toBe(false);
@@ -197,19 +277,36 @@ function createResolveFeatureFrameHarness(overrides = {}) {
   };
   const featureModel = {
     topology: {
+      protocolVersion: AUDIO_FEATURE_PROTOCOL_VERSION,
+      sourceGeneration: 2,
+      workerGeneration: 3,
       topologyRevision: 1,
+      activeModeCount: 1,
+      committedModeCount: 1,
       basisIdentityHash: 11,
       modalIdentitySlots: new Float32Array([1, 1, 1]),
-      modalFieldColorSlots: new Float32Array([0.1, 0.8, 1, 0.9]),
-      modalFieldSpectralLaneA: new Float32Array(4),
-      modalFieldSpectralLaneB: new Float32Array(4),
-      modalFieldSpectralMeta: new Float32Array(4),
+      committedModeIdentitySlots: new Float32Array([1, 1, 1]),
+      committedModeFrequenciesHz: new Float32Array([528]),
+      modalRoleMetadata: new Uint8Array([1]),
+      committedModeRoleMetadata: new Uint8Array([1]),
+      fastProbeModeIndices: new Uint16Array([0]),
+      modalFieldSpectralMomentSlots: new Float32Array([1, 0, 1, 0]),
+      modalFieldSpectralSeedDirection: new Float32Array([1, 0]),
       modalFieldMetadataSlots: new Float32Array(4),
-      modalDescriptor: null,
+      modalDescriptor: {
+        fieldAuthority: "complete",
+        counts: { modalFieldModeCount: 1 },
+      },
     },
     drive: {
+      protocolVersion: AUDIO_FEATURE_PROTOCOL_VERSION,
+      sourceGeneration: 2,
+      workerGeneration: 3,
+      topologyRevision: 1,
+      frameId: 7,
       renderState: featureFrame,
       activeModeCount: 1,
+      committedModeCount: 1,
       modalCoefficients: new Float32Array([0.5]),
       phaseSlots: new Float32Array(4),
       bandEnergies: new Float32Array(4),
@@ -227,6 +324,7 @@ function createResolveFeatureFrameHarness(overrides = {}) {
           topologyRevision: 1,
           latestAcceptedFrameId: 7,
           latestDriveAgeMs: 4,
+          latestDriveStale: true,
           processedFrameCount: 9,
           topologyPublishCount: 2,
           drivePublishCount: 7,
@@ -250,6 +348,7 @@ function createResolveFeatureFrameHarness(overrides = {}) {
       status: {
         isPlaying: true,
         isLiveInputActive: false,
+        sourceSession: createFileSourceSession(),
         playbackSessionId: "song-1",
       },
       clockMode: "running",
@@ -357,7 +456,7 @@ test("updateRendererDiagnostics resizes the renderer when canvas size changes wi
         },
       },
       controls: {
-        lowLoadPlaybackDiagnostics: false,
+        suppressPlaybackTelemetry: false,
       },
       status: {
         isPlaying: false,
@@ -428,7 +527,7 @@ test("updateRendererDiagnostics records the backing-pixel cost for high-DPR canv
         },
       },
       controls: {
-        lowLoadPlaybackDiagnostics: false,
+        suppressPlaybackTelemetry: false,
       },
       status: {
         isPlaying: false,
@@ -483,7 +582,7 @@ test("updateRendererDiagnostics tolerates an external-authority hold without sou
       },
     },
     controls: {
-      lowLoadPlaybackDiagnostics: false,
+      suppressPlaybackTelemetry: false,
     },
     status: null,
     time: 0,
@@ -512,7 +611,7 @@ test("updateRendererDiagnostics tolerates an external-authority hold without sou
     },
   );
 
-  expect(firstResult.lowLoadPlaybackDiagnosticsActive).toBe(false);
+  expect(firstResult.suppressPlaybackTelemetryActive).toBe(false);
   expect(runtimeDiagnosticsRef.current.activeFrameCount).toBe(0);
   expect(runtimeDiagnosticsRef.current.lastLongFrame).toMatchObject({
     playbackSessionId: null,
@@ -520,7 +619,7 @@ test("updateRendererDiagnostics tolerates an external-authority hold without sou
   expect(runtimeDiagnosticsRef.current.lastPlaybackIssue).toBeNull();
 });
 
-test("updateRendererDiagnostics keeps low-load diagnostics from lowering DPR", () => {
+test("updateRendererDiagnostics keeps telemetry suppression from lowering DPR", () => {
   const runtimeDiagnosticsRef = {
     current: createRuntimeDiagnostics(),
   };
@@ -548,7 +647,7 @@ test("updateRendererDiagnostics keeps low-load diagnostics from lowering DPR", (
         },
       },
       controls: {
-        lowLoadPlaybackDiagnostics: true,
+        suppressPlaybackTelemetry: true,
       },
       status: {
         isPlaying: true,
@@ -569,7 +668,7 @@ test("updateRendererDiagnostics keeps low-load diagnostics from lowering DPR", (
     },
   );
 
-  expect(result.lowLoadPlaybackDiagnosticsActive).toBe(true);
+  expect(result.suppressPlaybackTelemetryActive).toBe(true);
   expect(gl.setPixelRatioCalls).toEqual([2]);
   expect(pixelRatioRef.current).toBe(2);
   expect(runtimeDiagnosticsRef.current.currentPixelRatio).toBe(2);
@@ -603,6 +702,13 @@ test("render target DPR follows the selected output resolution", () => {
 // `true` means flush temporal history (show the crisp scene color); `false`
 // means let TRAA accumulate.
 test("shouldBypassTemporalHistoryForRaymarchFrame is method-aware", () => {
+  expect(
+    shouldBypassTemporalHistoryForRaymarchFrame({
+      runtimeMethod: "raymarch",
+      featureFrame: { fieldState: "idle", energySignal: 0 },
+    }),
+  ).toBe(false);
+
   // Authorized raymarch frames accumulate while the field is driven and flush
   // when the field is idle so a paused 3D volume cannot freeze stale history.
   for (const drivenState of ["active", "decay", "test"]) {
@@ -617,6 +723,7 @@ test("shouldBypassTemporalHistoryForRaymarchFrame is method-aware", () => {
           energySignal: 0.6,
         },
         sceneSnapshot: { angularVelocity: 0.25 },
+        traaRequested: true,
       }),
     ).toBe(false);
   }
@@ -624,6 +731,7 @@ test("shouldBypassTemporalHistoryForRaymarchFrame is method-aware", () => {
     shouldBypassTemporalHistoryForRaymarchFrame({
       runtimeMethod: "raymarch",
       featureFrame: { fieldState: "idle", energySignal: 0 },
+      traaRequested: true,
     }),
   ).toBe(true);
 
@@ -632,6 +740,7 @@ test("shouldBypassTemporalHistoryForRaymarchFrame is method-aware", () => {
     shouldBypassTemporalHistoryForRaymarchFrame({
       runtimeMethod: "cymatics-2d",
       featureFrame: { fieldState: "active" },
+      traaRequested: true,
     }),
   ).toBe(false);
 });
@@ -646,6 +755,7 @@ test("shouldBypassTemporalHistoryForRaymarchFrame accumulates stable and moving 
         energySignal: 0.8,
       },
       sceneSnapshot: { angularVelocity: 0, pitchVelocity: 0, rollVelocity: 0 },
+      traaRequested: true,
     }),
   ).toBe(false);
 
@@ -662,6 +772,7 @@ test("shouldBypassTemporalHistoryForRaymarchFrame accumulates stable and moving 
         pitchVelocity: 0.02,
         rollVelocity: 0,
       },
+      traaRequested: true,
     }),
   ).toBe(false);
 });
@@ -679,12 +790,14 @@ test("shouldBypassTemporalHistoryForRaymarchFrame ignores audio energy", () => {
           energySignal,
         },
         sceneSnapshot: { angularVelocity: 0.25 },
+        traaRequested: true,
       }),
     ).toBe(false);
     expect(
       shouldBypassTemporalHistoryForRaymarchFrame({
         runtimeMethod: "raymarch",
         featureFrame: { fieldState: "idle", energySignal },
+        traaRequested: true,
       }),
     ).toBe(true);
   }
@@ -824,12 +937,11 @@ test("buildPerformanceHudSnapshot exports stage attribution, engine counters, an
   runtimeDiagnostics.renderSurface.backingMegapixels = 4.99328;
   runtimeDiagnostics.renderSurface.pixelRatio = 2;
   runtimeDiagnostics.render.modalVarietyAudit = {
-    semanticModeCount: 52,
-    representedBasisPageModeCount: 12,
-    basisAtlasPageCapacity: 12,
-    basisAtlasPressure: 1,
+    publishedModeCount: 52,
+    modalDescriptorModeCapacity: 160,
+    modalDescriptorCapacityPressure: 52 / 160,
     energyEffectiveModeCount: 7.4,
-    renderRepresentedEnergyRatio: 0.91,
+    publishedModalEnergyRatio: 0.91,
   };
   runtimeDiagnostics.frameDrops.framesOver16_7Ms = 13;
   runtimeDiagnostics.frameDrops.framesOver25Ms = 8;
@@ -856,6 +968,8 @@ test("buildPerformanceHudSnapshot exports stage attribution, engine counters, an
   expect(snapshot.stageAttribution.dominantBucket).toBe("control");
   expect(snapshot.engineCounters).toEqual({
     latestDriveAgeMs: 8,
+    latestObservationTimeSeconds: null,
+    latestCaptureRms: null,
     latestAcceptedFrameId: 101,
     sourceGeneration: 3,
     workerGeneration: 5,
@@ -892,12 +1006,11 @@ test("buildPerformanceHudSnapshot exports stage attribution, engine counters, an
     pixelRatio: 2,
   });
   expect(snapshot.modalVarietyAudit).toEqual({
-    semanticModeCount: 52,
-    representedBasisPageModeCount: 12,
-    basisAtlasPageCapacity: 12,
-    basisAtlasPressure: 1,
+    publishedModeCount: 52,
+    modalDescriptorModeCapacity: 160,
+    modalDescriptorCapacityPressure: 52 / 160,
     energyEffectiveModeCount: 7.4,
-    renderRepresentedEnergyRatio: 0.91,
+    publishedModalEnergyRatio: 0.91,
   });
   expect(snapshot.modalFreshness).toMatchObject({
     structureSignal: 0.72,
@@ -951,7 +1064,7 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
       modeCoherence: 0.84,
       activeModeCount: 9,
       activeModalFieldModeCount: 9,
-      modalFieldSlots: new Float32Array([0.2, 0.3, 0.4, 0.5]),
+      modalIdentitySlots: new Float32Array([0.2, 0.3, 0.4]),
     },
     { getWallTimeMs: () => 1234 },
   );
@@ -988,14 +1101,11 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
       pulseSignal: 0.64,
       modalVisibilityEnergy: 0.76,
       modalObserverVisibilityEnergy: 0.29,
-      modalVisibilityRetainedHighQEnergy: 0.33,
       modalResponseEnergy: 0.04,
       modalResponseRenderEnergy: 0.31,
       modalResponseRenderSourceCoupledEnergy: 0.24,
       modalResponseRenderResonantEnergy: 0.19,
       modalPhaseAuthority: 0.24,
-      highQPhaseAuthority: 0.31,
-      lowQPhaseAuthority: 0.08,
       modalPhaseCoherentFieldModeCount: 4,
       modeCoherence: 0.88,
       activeModeCount: 9,
@@ -1005,22 +1115,16 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
         avgAmplitude: 13.25,
         analyserRms: 0.044,
         periodicity: 0.73,
-        highQResonantModeCount: 5,
-        highQResonantEnergy: 0.39,
-        highQRingSupport: 0.66,
+        resonantPhaseAuthority: 0.31,
+        sourceCoupledPhaseAuthority: 0.08,
+        resonantObservedModeCount: 5,
+        resonantObservedEnergy: 0.39,
+        resonantRingSupport: 0.66,
         liveInputNoiseGateActive: false,
         liveInputHardSilenceActive: false,
-        resonantSignalAuthoritative: true,
-        resonantSignalAuthoritativeReason: "fresh-signal",
-        resonantSignalAuthoritativeCoverage: false,
-        resonantSignalAuthoritativeFreshSignal: true,
-        resonantSignalAuthoritativeFastAssist: false,
-        resonantSignalAuthoritativeHighQ: true,
-        resonantShiftReleaseOverrideCount: 2,
-        resonantShiftTrackingOverrideCount: 3,
         modalResponseEnergy: 0.05,
       },
-      modalFieldSlots: new Float32Array([0.2, 0.45, 0.4, 0.5]),
+      modalIdentitySlots: new Float32Array([0.2, 0.45, 0.4]),
     },
     { getWallTimeMs: () => 1250 },
   );
@@ -1067,11 +1171,10 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
     pulseSignal: 0.64,
     modalVisibilityEnergy: 0.76,
     modalObserverVisibilityEnergy: 0.29,
-    modalVisibilityRetainedHighQEnergy: 0.33,
     modalResponseEnergy: 0.31,
     modalPhaseAuthority: 0.24,
-    highQPhaseAuthority: 0.31,
-    lowQPhaseAuthority: 0.08,
+    resonantPhaseAuthority: 0.31,
+    sourceCoupledPhaseAuthority: 0.08,
     modalPhaseCoherentFieldModeCount: 4,
     modeCoherence: 0.88,
     activeModeCount: 9,
@@ -1080,19 +1183,13 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
     avgAmplitude: 13.25,
     analyserRms: 0.044,
     periodicity: 0.73,
-    observedResonanceModeCount: 5,
-    observedResonanceEnergy: 0.39,
-    highQRingSupport: 0.66,
+    resonantObservedModeCount: 5,
+    resonantObservedEnergy: 0.39,
+    resonantRingSupport: 0.66,
     liveInputNoiseGateActive: false,
     liveInputHardSilenceActive: false,
-    resonantSignalAuthoritative: true,
-    resonantSignalAuthoritativeReason: "fresh-signal",
-    resonantSignalAuthoritativeHighQ: true,
-    resonantSignalAuthoritativeFreshSignal: true,
-    resonantShiftReleaseOverrideCount: 2,
-    resonantShiftTrackingOverrideCount: 3,
     modeSlotChangeCount: 0,
-    modalFieldSlotChangeCount: 1,
+    modalIdentitySlotChangeCount: 1,
     responseEnvelope: 0.31,
     accentEnvelope: 0.42,
     motionSignal: 0.53,
@@ -1101,33 +1198,29 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
   });
   expect(runtimeDiagnostics.modalFreshness.modeSlotMeanAbsDelta).toBeCloseTo(0);
   expect(
-    runtimeDiagnostics.modalFreshness.modalFieldSlotMeanAbsDelta,
-  ).toBeCloseTo(0.0375);
+    runtimeDiagnostics.modalFreshness.modalIdentitySlotMeanAbsDelta,
+  ).toBeCloseTo(0.05);
 
   const hudSnapshot = buildPerformanceHudSnapshot(runtimeDiagnostics);
   expect(hudSnapshot.modalFreshness).toMatchObject({
     structureSignal: 0.28,
     modalObserverVisibilityEnergy: 0.29,
-    modalVisibilityRetainedHighQEnergy: 0.33,
     modalResponseEnergy: 0.31,
     modalPhaseAuthority: 0.24,
-    highQPhaseAuthority: 0.31,
-    lowQPhaseAuthority: 0.08,
+    resonantPhaseAuthority: 0.31,
+    sourceCoupledPhaseAuthority: 0.08,
     modalPhaseCoherentFieldModeCount: 4,
     featureFrameAgeAtRenderMs: 234,
     renderSubmittedAtMs: 1250,
     responseEnvelope: 0.31,
-    observedResonanceModeCount: 5,
-    observedResonanceEnergy: 0.39,
-    highQRingSupport: 0.66,
-    resonantSignalAuthoritative: true,
-    resonantSignalAuthoritativeReason: "fresh-signal",
-    resonantSignalAuthoritativeHighQ: true,
+    resonantObservedModeCount: 5,
+    resonantObservedEnergy: 0.39,
+    resonantRingSupport: 0.66,
     modeSlotChangeCount: 0,
   });
   expect(hudSnapshot.modalFreshness).not.toHaveProperty("_previousModeSlots");
   expect(hudSnapshot.modalFreshness).not.toHaveProperty(
-    "_previousModalFieldSlots",
+    "_previousModalIdentitySlots",
   );
 });
 
@@ -1145,7 +1238,7 @@ test("updateModalFreshnessDiagnostics uses render-authoritative descriptor count
         fieldAuthority: "bandwidth-limited",
         counts: { modalFieldModeCount: 48 },
       },
-      modalFieldSlots: new Float32Array(48 * 4),
+      modalIdentitySlots: new Float32Array(48 * 3),
     },
     { getWallTimeMs: () => 1100 },
   );
@@ -1164,7 +1257,7 @@ test("updateModalFreshnessDiagnostics uses render-authoritative descriptor count
         fieldAuthority: "complete",
         counts: { modalFieldModeCount: 12 },
       },
-      modalFieldSlots: new Float32Array(48 * 4),
+      modalIdentitySlots: new Float32Array(48 * 3),
     },
     { getWallTimeMs: () => 1116 },
   );
@@ -1181,11 +1274,12 @@ test("updateModalFreshnessDiagnostics reuses the slot turnover buffer across sam
     {
       frameTimeMs: 1000,
       sourceMode: "live",
-      modalFieldSlots: new Float32Array([0.2, 0.3, 0.4, 0.5]),
+      modalIdentitySlots: new Float32Array([0.2, 0.3, 0.4]),
     },
     { getWallTimeMs: () => 1100 },
   );
-  const firstCopy = runtimeDiagnostics.modalFreshness._previousModalFieldSlots;
+  const firstCopy =
+    runtimeDiagnostics.modalFreshness._previousModalIdentitySlots;
   expect(firstCopy).toBeInstanceOf(Float32Array);
 
   updateModalFreshnessDiagnostics(
@@ -1193,42 +1287,45 @@ test("updateModalFreshnessDiagnostics reuses the slot turnover buffer across sam
     {
       frameTimeMs: 1016,
       sourceMode: "live",
-      modalFieldSlots: new Float32Array([0.2, 0.45, 0.4, 0.5]),
+      modalIdentitySlots: new Float32Array([0.2, 0.45, 0.4]),
     },
     { getWallTimeMs: () => 1116 },
   );
 
-  expect(runtimeDiagnostics.modalFreshness._previousModalFieldSlots).toBe(
+  expect(runtimeDiagnostics.modalFreshness._previousModalIdentitySlots).toBe(
     firstCopy,
   );
   expect(Array.from(firstCopy)).toEqual([
     Math.fround(0.2),
     Math.fround(0.45),
     Math.fround(0.4),
-    Math.fround(0.5),
   ]);
   expect(
-    runtimeDiagnostics.modalFreshness.modalFieldSlotMeanAbsDelta,
-  ).toBeCloseTo(0.0375);
-  expect(runtimeDiagnostics.modalFreshness.modalFieldSlotChangeCount).toBe(1);
+    runtimeDiagnostics.modalFreshness.modalIdentitySlotMeanAbsDelta,
+  ).toBeCloseTo(0.05);
+  expect(runtimeDiagnostics.modalFreshness.modalIdentitySlotChangeCount).toBe(
+    1,
+  );
 
   updateModalFreshnessDiagnostics(
     runtimeDiagnostics,
     {
       frameTimeMs: 1032,
       sourceMode: "live",
-      modalFieldSlots: new Float32Array([0.2, 0.45, 0.4, 0.5, 0.6, 0, 0, 0]),
+      modalIdentitySlots: new Float32Array([0.2, 0.45, 0.4, 0.6, 0, 0]),
     },
     { getWallTimeMs: () => 1132 },
   );
 
-  expect(runtimeDiagnostics.modalFreshness._previousModalFieldSlots).not.toBe(
-    firstCopy,
-  );
   expect(
-    runtimeDiagnostics.modalFreshness._previousModalFieldSlots,
-  ).toHaveLength(8);
-  expect(runtimeDiagnostics.modalFreshness.modalFieldSlotChangeCount).toBe(1);
+    runtimeDiagnostics.modalFreshness._previousModalIdentitySlots,
+  ).not.toBe(firstCopy);
+  expect(
+    runtimeDiagnostics.modalFreshness._previousModalIdentitySlots,
+  ).toHaveLength(6);
+  expect(runtimeDiagnostics.modalFreshness.modalIdentitySlotChangeCount).toBe(
+    1,
+  );
 });
 
 test("createAuditSnapshotNotifier collapses repeated disabled notifications", () => {
@@ -1362,7 +1459,7 @@ test("publishes authoritative audit callbacks without devtools globals", () => {
         status: {
           isPlaying: true,
         },
-        lowLoadPlaybackDiagnosticsActive: false,
+        suppressPlaybackTelemetryActive: false,
         runtimeDiagnostics: createRuntimeDiagnostics(),
         shared: {},
         output: {},
@@ -1404,14 +1501,13 @@ test("publishes authoritative audit callbacks without devtools globals", () => {
   }
 });
 
-test("auto raymarch preserves surface resolution before crossing the cymatic sampling floor", () => {
+test("auto raymarch steps down presentation integration before changing any upstream field", () => {
   const runtimeDiagnostics = createRuntimeDiagnostics();
   runtimeDiagnostics.lastFrameTimeMs = 19.2;
   runtimeDiagnostics.smoothedFrameTimeMs = 19.2;
   const runtimeState = {
     requestedRaymarchSteps: 64,
     effectiveRaymarchSteps: 64,
-    adaptiveRaymarchResumeRung: null,
     uniforms: {
       uRaymarchSteps: {
         value: 64,
@@ -1468,20 +1564,20 @@ test("max-quality keeps the requested raymarch budget under modal complexity", (
         averageAmplitude: 255,
         structureSignal: 1,
         modalVisibilityEnergy: 1,
-        modalFieldSlots: new Float32Array([
-          1, 2, 3, 1.0, 1, 3, 4, 0.9, 2, 3, 4, 0.85, 2, 4, 5, 0.8, 3, 4, 5,
-          0.75, 3, 5, 6, 0.7, 4, 5, 6, 0.65, 4, 6, 7, 0.6, 2, 2, 3, 0.7, 2, 3,
-          3, 0.65, 3, 3, 4, 0.6, 3, 4, 4, 0.55, 4, 4, 5, 0.5, 4, 5, 5, 0.45, 5,
-          5, 6, 0.4, 5, 6, 6, 0.35,
-        ]),
+        ...createCompiledModalFrame(
+          new Float32Array([
+            1, 2, 3, 1.0, 1, 3, 4, 0.9, 2, 3, 4, 0.85, 2, 4, 5, 0.8, 3, 4, 5,
+            0.75, 3, 5, 6, 0.7, 4, 5, 6, 0.65, 4, 6, 7, 0.6, 2, 2, 3, 0.7, 2, 3,
+            3, 0.65, 3, 3, 4, 0.6, 3, 4, 4, 0.55, 4, 4, 5, 0.5, 4, 5, 5, 0.45,
+            5, 5, 6, 0.4, 5, 6, 6, 0.35,
+          ]),
+        ),
       },
     });
   runtimeState.modalFieldCapacity = 16;
   runtimeState.modalFieldModeBuffer = {
     value: { array: new Float32Array(16 * 4) },
   };
-  runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
-
   updateAdaptiveRaymarchStepBudget(args);
 
   expect(runtimeDiagnostics.adaptiveRaymarch.adaptiveRaymarchActive).toBe(
@@ -1521,8 +1617,6 @@ test("max-quality keeps user raymarch budget under frame pressure", () => {
     });
   runtimeDiagnostics.lastFrameTimeMs = 120;
   runtimeDiagnostics.smoothedFrameTimeMs = 120;
-  runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
-
   for (let index = 0; index < 31; index += 1) {
     updateAdaptiveRaymarchStepBudget(args);
   }
@@ -1542,12 +1636,13 @@ test("max-quality keeps user raymarch budget under frame pressure", () => {
 });
 
 test("auto raymarch lowers steps without publishing adaptive render-scale state", () => {
-  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness();
+  const { args, runtimeState, runtimeDiagnostics } =
+    createAdaptiveRaymarchHarness();
   runtimeDiagnostics.lastFrameTimeMs = 120;
   runtimeDiagnostics.smoothedFrameTimeMs = 120;
-  runtimeDiagnostics.adaptiveRaymarch.currentRung = 3;
-  runtimeDiagnostics.adaptiveRaymarch.decisionFrameCount = 29;
-  runtimeDiagnostics.adaptiveRaymarch.longFrameCountInWindow = 3;
+  runtimeState.adaptiveRaymarchController.currentRung = 3;
+  runtimeState.adaptiveRaymarchController.decisionFrameCount = 29;
+  runtimeState.adaptiveRaymarchController.longFrameCountInWindow = 3;
 
   updateAdaptiveRaymarchStepBudget(args);
 
@@ -1560,17 +1655,20 @@ test("auto raymarch lowers steps without publishing adaptive render-scale state"
   ).toBe(false);
 });
 
-test("auto raymarch holds the step floor without render-scale stepdown state", () => {
-  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness();
+test("auto raymarch holds the numerical presentation floor without render-scale stepdown state", () => {
+  const { args, runtimeState, runtimeDiagnostics } =
+    createAdaptiveRaymarchHarness();
   runtimeDiagnostics.lastFrameTimeMs = 120;
   runtimeDiagnostics.smoothedFrameTimeMs = 120;
-  runtimeDiagnostics.adaptiveRaymarch.currentRung = 0;
-  runtimeDiagnostics.adaptiveRaymarch.decisionFrameCount = 29;
-  runtimeDiagnostics.adaptiveRaymarch.longFrameCountInWindow = 3;
+  runtimeState.adaptiveRaymarchController.currentRung = 0;
+  runtimeState.adaptiveRaymarchController.decisionFrameCount = 29;
+  runtimeState.adaptiveRaymarchController.longFrameCountInWindow = 3;
 
   updateAdaptiveRaymarchStepBudget(args);
 
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(16);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(
+    MIN_PRESENTATION_RAYMARCH_STEPS,
+  );
   expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(0);
   expect(runtimeDiagnostics.adaptiveRaymarch).not.toHaveProperty(
     "effectiveRenderScale",
@@ -1580,16 +1678,16 @@ test("auto raymarch holds the step floor without render-scale stepdown state", (
   ).toBe(false);
 });
 
-test("auto raymarch holds throttled steps without scale ladder state across inactive frames", () => {
+test("auto raymarch normalizes stale throttled steps to the observation floor across inactive frames", () => {
   const { args, runtimeState, runtimeDiagnostics } =
     createAdaptiveRaymarchHarness({
       controls: {
         raymarchSteps: 72,
       },
     });
-  runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 72;
-  runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps = 16;
-  runtimeDiagnostics.adaptiveRaymarch.currentRung = 0;
+  runtimeState.adaptiveRaymarchController.requestedRaymarchSteps = 72;
+  runtimeState.adaptiveRaymarchController.effectiveRaymarchSteps = 16;
+  runtimeState.adaptiveRaymarchController.currentRung = 0;
   runtimeState.effectiveRaymarchSteps = 16;
   runtimeState.uniforms.uRaymarchSteps.value = 16;
   runtimeState.volumeMesh.material.steps = 16;
@@ -1606,18 +1704,26 @@ test("auto raymarch holds throttled steps without scale ladder state across inac
   expect(runtimeDiagnostics.adaptiveRaymarch.adaptiveRaymarchActive).toBe(
     false,
   );
-  expect(effectiveStepBudget).toBe(16);
+  expect(effectiveStepBudget).toBe(MIN_PRESENTATION_RAYMARCH_STEPS);
   expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(0);
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(16);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(
+    MIN_PRESENTATION_RAYMARCH_STEPS,
+  );
   expect("currentRenderScaleRung" in runtimeDiagnostics.adaptiveRaymarch).toBe(
     false,
   );
   expect(runtimeDiagnostics.adaptiveRaymarch).not.toHaveProperty(
     "effectiveRenderScale",
   );
-  expect(runtimeState.effectiveRaymarchSteps).toBe(16);
-  expect(runtimeState.uniforms.uRaymarchSteps.value).toBe(16);
-  expect(runtimeState.volumeMesh.material.steps).toBe(16);
+  expect(runtimeState.effectiveRaymarchSteps).toBe(
+    MIN_PRESENTATION_RAYMARCH_STEPS,
+  );
+  expect(runtimeState.uniforms.uRaymarchSteps.value).toBe(
+    MIN_PRESENTATION_RAYMARCH_STEPS,
+  );
+  expect(runtimeState.volumeMesh.material.steps).toBe(
+    MIN_PRESENTATION_RAYMARCH_STEPS,
+  );
   expect(runtimeState.raymarchFieldAnalysis).not.toHaveProperty(
     "effectiveStepBudget",
   );
@@ -1627,12 +1733,13 @@ test("auto raymarch holds throttled steps without scale ladder state across inac
 });
 
 test("auto raymarch recovers steps without scale ladder state", () => {
-  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness();
+  const { args, runtimeState, runtimeDiagnostics } =
+    createAdaptiveRaymarchHarness();
   runtimeDiagnostics.lastFrameTimeMs = 10;
   runtimeDiagnostics.smoothedFrameTimeMs = 10;
-  runtimeDiagnostics.adaptiveRaymarch.currentRung = 0;
-  runtimeDiagnostics.adaptiveRaymarch.decisionFrameCount = 29;
-  runtimeDiagnostics.adaptiveRaymarch.stableWindowCount = 3;
+  runtimeState.adaptiveRaymarchController.currentRung = 0;
+  runtimeState.adaptiveRaymarchController.decisionFrameCount = 29;
+  runtimeState.adaptiveRaymarchController.stableWindowCount = 3;
 
   updateAdaptiveRaymarchStepBudget(args);
 
@@ -1650,11 +1757,12 @@ test("auto raymarch recovers steps without scale ladder state", () => {
 });
 
 test("auto raymarch ignores long frames caused by active UI interaction", () => {
-  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness();
+  const { args, runtimeState, runtimeDiagnostics } =
+    createAdaptiveRaymarchHarness();
   runtimeDiagnostics.lastFrameTimeMs = 200;
   runtimeDiagnostics.smoothedFrameTimeMs = 200;
-  runtimeDiagnostics.adaptiveRaymarch.decisionFrameCount = 29;
-  runtimeDiagnostics.adaptiveRaymarch.longFrameCountInWindow = 3;
+  runtimeState.adaptiveRaymarchController.decisionFrameCount = 29;
+  runtimeState.adaptiveRaymarchController.longFrameCountInWindow = 3;
   runtimeDiagnostics.uiInteraction = {
     active: true,
     suppressedAdaptivePressureFrameCount: 0,
@@ -1689,7 +1797,6 @@ test("custom profile uses the selected target FPS for adaptive tuning", () => {
   const runtimeState = {
     requestedRaymarchSteps: 64,
     effectiveRaymarchSteps: 64,
-    adaptiveRaymarchResumeRung: null,
     uniforms: {
       uRaymarchSteps: {
         value: 64,
@@ -1730,22 +1837,25 @@ test("custom profile uses the selected target FPS for adaptive tuning", () => {
 });
 
 test("custom controls fallback owns adaptive tuning when profile target is absent", () => {
-  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness({
-    controls: {
-      customTargetFps: 48,
-    },
-    renderProfile: {
-      qualityPreset: "custom",
-      renderContext: RENDER_CONTEXTS.externalOutput,
-    },
-  });
+  const { args, runtimeState, runtimeDiagnostics } =
+    createAdaptiveRaymarchHarness({
+      controls: {
+        customTargetFps: 48,
+      },
+      renderProfile: {
+        qualityPreset: "custom",
+        renderContext: RENDER_CONTEXTS.externalOutput,
+      },
+    });
 
-  runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
+  resetAdaptiveRaymarchControllerState(runtimeState);
 
   updateAdaptiveRaymarchStepBudget(args);
 
   expect(runtimeDiagnostics.adaptiveRaymarch.targetFps).toBe(48);
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(32);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(
+    DEFAULT_ADAPTIVE_STARTUP_RAYMARCH_STEPS,
+  );
 });
 
 test("custom render profile owns adaptive tuning before controls fallback", () => {
@@ -1773,9 +1883,9 @@ test("adaptive raymarch keeps committed step state outside field-analysis diagno
     createAdaptiveRaymarchHarness({
       effectiveFrame: {
         activeModeCount: 3,
-        modalFieldSlots: new Float32Array([
-          1, 1, 1, 0.8, 2, 2, 2, 0.6, 3, 3, 3, 0.4,
-        ]),
+        ...createCompiledModalFrame(
+          new Float32Array([1, 1, 1, 0.8, 2, 2, 2, 0.6, 3, 3, 3, 0.4]),
+        ),
         averageAmplitude: 90,
         structureSignal: 0.55,
       },
@@ -1804,7 +1914,7 @@ test("adaptive raymarch keeps committed step state outside field-analysis diagno
   ).toBe(3);
 });
 
-test("external-output custom 120 starts from the user-tunable step minimum", () => {
+test("external-output custom 120 cannot start below the presentation integration floor", () => {
   const { args, runtimeState, runtimeDiagnostics } =
     createAdaptiveRaymarchHarness({
       controls: {
@@ -1818,31 +1928,36 @@ test("external-output custom 120 starts from the user-tunable step minimum", () 
       },
     });
 
-  runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
+  resetAdaptiveRaymarchControllerState(runtimeState);
 
   updateAdaptiveRaymarchStepBudget(args);
 
-  expect(runtimeState.effectiveRaymarchSteps).toBe(16);
+  expect(runtimeState.effectiveRaymarchSteps).toBe(
+    MIN_PRESENTATION_RAYMARCH_STEPS,
+  );
   expect(runtimeDiagnostics.adaptiveRaymarch).not.toHaveProperty(
     "effectiveRenderScale",
   );
 });
 
-test("external-output auto starts from profile startup raymarch steps", () => {
-  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness({
-    renderProfile: {
-      qualityPreset: "auto",
-      targetFps: 60,
-      startupRaymarchSteps: 32,
-      renderContext: RENDER_CONTEXTS.externalOutput,
-    },
-  });
+test("external-output auto honors its presentation-only startup budget", () => {
+  const { args, runtimeState, runtimeDiagnostics } =
+    createAdaptiveRaymarchHarness({
+      renderProfile: {
+        qualityPreset: "auto",
+        targetFps: 60,
+        startupRaymarchSteps: 32,
+        renderContext: RENDER_CONTEXTS.externalOutput,
+      },
+    });
 
-  runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
+  resetAdaptiveRaymarchControllerState(runtimeState);
 
   updateAdaptiveRaymarchStepBudget(args);
 
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(32);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(
+    DEFAULT_ADAPTIVE_STARTUP_RAYMARCH_STEPS,
+  );
   expect(runtimeDiagnostics.adaptiveRaymarch).not.toHaveProperty(
     "effectiveRenderScale",
   );
@@ -1863,41 +1978,47 @@ test("external-output auto uses the resolved profile target FPS for adaptive tun
   expect(runtimeDiagnostics.adaptiveRaymarch.targetFrameTimeMs).toBe(1000 / 60);
 });
 
-test("external-output auto startup raymarch steps own the startup rung", () => {
-  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness({
-    renderProfile: {
-      qualityPreset: "auto",
-      targetFps: 60,
-      startupRaymarchSteps: 16,
-      renderContext: RENDER_CONTEXTS.externalOutput,
-    },
-  });
+test("external-output auto startup steps cannot under-sample the observed field", () => {
+  const { args, runtimeState, runtimeDiagnostics } =
+    createAdaptiveRaymarchHarness({
+      renderProfile: {
+        qualityPreset: "auto",
+        targetFps: 60,
+        startupRaymarchSteps: 16,
+        renderContext: RENDER_CONTEXTS.externalOutput,
+      },
+    });
 
-  runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
+  resetAdaptiveRaymarchControllerState(runtimeState);
 
   updateAdaptiveRaymarchStepBudget(args);
 
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(16);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(
+    MIN_PRESENTATION_RAYMARCH_STEPS,
+  );
 });
 
-test("preview custom 120 starts from profile startup raymarch steps", () => {
-  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness({
-    controls: {
-      customTargetFps: 120,
-    },
-    renderProfile: {
-      qualityPreset: "custom",
-      targetFps: 120,
-      startupRaymarchSteps: 16,
-      renderContext: RENDER_CONTEXTS.preview,
-    },
-  });
+test("preview custom 120 cannot start below the presentation integration floor", () => {
+  const { args, runtimeState, runtimeDiagnostics } =
+    createAdaptiveRaymarchHarness({
+      controls: {
+        customTargetFps: 120,
+      },
+      renderProfile: {
+        qualityPreset: "custom",
+        targetFps: 120,
+        startupRaymarchSteps: 16,
+        renderContext: RENDER_CONTEXTS.preview,
+      },
+    });
 
-  runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
+  resetAdaptiveRaymarchControllerState(runtimeState);
 
   updateAdaptiveRaymarchStepBudget(args);
 
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(16);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(
+    MIN_PRESENTATION_RAYMARCH_STEPS,
+  );
   expect(runtimeDiagnostics.adaptiveRaymarch).not.toHaveProperty(
     "effectiveRenderScale",
   );
@@ -1932,6 +2053,7 @@ test("resolveFeatureFrame consumes one immutable feature model mechanically", ()
     topologyRevision: 1,
     latestAcceptedFrameId: 7,
     latestDriveAgeMs: 4,
+    latestDriveStale: true,
     processedFrameCount: 9,
     topologyPublishCount: 2,
     drivePublishCount: 7,
@@ -1969,7 +2091,11 @@ test("resolveFeatureFrame fails closed when the local runtime has no model", () 
 
   const result = resolveFeatureFrame(args, { createFeatureView });
 
-  expect(result).toEqual({ featureFrame: null, effectiveFrame: null });
+  expect(result).toEqual({
+    featureFrame: null,
+    effectiveFrame: null,
+    preparationFrame: null,
+  });
   expect(createFeatureView).not.toHaveBeenCalled();
   expect(args.runtimeDiagnostics.engine.renderAuthorityRevoked).toBe(true);
   expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
@@ -1988,7 +2114,11 @@ test("resolveFeatureFrame rejects a retained live model after transport stops", 
 
   const stopped = resolveFeatureFrame(args);
 
-  expect(stopped).toEqual({ featureFrame: null, effectiveFrame: null });
+  expect(stopped).toEqual({
+    featureFrame: null,
+    effectiveFrame: null,
+    preparationFrame: null,
+  });
   expect(
     args.renderLoopRefs.frameCacheRefs.lastIdleFrameRef.current,
   ).toBeNull();
@@ -2029,6 +2159,51 @@ test("resolveFeatureFrame caches a canonical static idle model", () => {
   expect(args.featureRuntime.readLatestFeatureModel).toHaveBeenCalledTimes(1);
 });
 
+test("resolveFeatureFrame rejects a stale playing frame as terminal idle", () => {
+  const stalePlayingIdleFrame = {
+    fieldState: "idle",
+    renderAuthority: false,
+    sourceEvidence: {
+      sourceBoundaryState: "zero",
+      currentSourceEvidence: false,
+      transport: {
+        playing: true,
+        liveInputActive: false,
+      },
+    },
+  };
+  const playbackSessionId = "song-1";
+  const { args } = createResolveFeatureFrameHarness({
+    status: {
+      isAudioLoaded: true,
+      hasPreparedFileAnalysisSource: true,
+      isPlaying: false,
+      isPlaybackPaused: false,
+      isLiveInputActive: false,
+      playbackSessionId,
+      lastPlaybackEndReason: "natural",
+      lastPlaybackDiagnostics: {
+        playbackSessionId,
+      },
+    },
+  });
+  const createFeatureView = vi.fn(() => stalePlayingIdleFrame);
+
+  const result = resolveFeatureFrame(args, { createFeatureView });
+
+  expect(result).toEqual({
+    featureFrame: null,
+    effectiveFrame: null,
+    preparationFrame: null,
+  });
+  expect(
+    args.renderLoopRefs.frameCacheRefs.lastIdleFrameRef.current,
+  ).toBeNull();
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
+    "stale-source-model-rejected",
+  );
+});
+
 test("resolveFeatureFrame reuses only the explicit static-idle cache", () => {
   const idleFrame = { fieldState: "idle", renderAuthority: false };
   const readLatestFeatureModel = vi.fn();
@@ -2060,7 +2235,7 @@ test("resolveFeatureFrame reuses only the explicit static-idle cache", () => {
   });
 });
 
-test("resolveFeatureFrame holds the static idle frame while file analysis activates", () => {
+test("resolveFeatureFrame uses the prepared file model immediately on playback", () => {
   const idleFrame = {
     fieldState: "idle",
     renderAuthority: false,
@@ -2075,10 +2250,8 @@ test("resolveFeatureFrame holds the static idle frame while file analysis activa
     ...createLiveRenderFrameEvidence(),
   };
   const readLatestFeatureModel = vi.fn(() => ({ current: true }));
-  let playbackAnalysisPending = true;
   const getStatus = vi.fn(() => ({
     state: "ready",
-    playbackAnalysisPending,
   }));
   const { args } = createResolveFeatureFrameHarness({
     featureRuntime: {
@@ -2094,20 +2267,6 @@ test("resolveFeatureFrame holds the static idle frame while file analysis activa
   });
   const createFeatureView = vi.fn(() => activeFrame);
 
-  const pending = resolveFeatureFrame(args, { createFeatureView });
-
-  expect(pending.effectiveFrame).toBe(idleFrame);
-  expect(readLatestFeatureModel).not.toHaveBeenCalled();
-  expect(args.renderLoopRefs.frameCacheRefs.lastIdleFrameRef.current).toBe(
-    idleFrame,
-  );
-  expect(args.runtimeDiagnostics.modalFreshness).toMatchObject({
-    frameSemanticSource: "file-playback-activation-hold",
-    frameSemanticFresh: false,
-    frameSemanticReused: true,
-  });
-
-  playbackAnalysisPending = false;
   const ready = resolveFeatureFrame(args, { createFeatureView });
 
   expect(ready.effectiveFrame).toBe(activeFrame);
@@ -2117,22 +2276,171 @@ test("resolveFeatureFrame holds the static idle frame while file analysis activa
   ).toBeNull();
 });
 
+test("resolveFeatureFrame exposes a loaded file model only to idle preparation", () => {
+  const preparedFrame = {
+    fieldState: "active",
+    renderAuthority: false,
+    energyLedger: {
+      projectedRenderEnergy: 0.08,
+      renderEnergyEpsilon: 1e-6,
+    },
+    sourceEvidence: {
+      sourceKind: "file",
+      sourceBoundaryState: "prepared",
+      currentSourceEvidence: false,
+      transport: {
+        playing: false,
+        preparationOnly: true,
+      },
+    },
+    modalDescriptor: {
+      fieldAuthority: "complete",
+    },
+  };
+  const readLatestFeatureModel = vi.fn(() => ({ prepared: true }));
+  const { args } = createResolveFeatureFrameHarness({
+    featureRuntime: {
+      readLatestFeatureModel,
+      getStatus: vi.fn(() => ({ state: "ready" })),
+    },
+    status: {
+      isAudioLoaded: true,
+      hasPreparedFileAnalysisSource: true,
+      isPlaying: false,
+      isPlaybackPaused: false,
+      isLiveInputActive: false,
+      sourceSession: createFileSourceSession({
+        phase: "ready",
+        sessionId: "prepared-demo",
+      }),
+    },
+  });
+  const createFeatureView = vi.fn(() => preparedFrame);
+
+  const result = resolveFeatureFrame(args, { createFeatureView });
+
+  expect(result).toEqual({
+    featureFrame: null,
+    effectiveFrame: null,
+    preparationFrame: preparedFrame,
+  });
+  expect(readLatestFeatureModel).toHaveBeenCalledTimes(1);
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
+    "prepared-file-model",
+  );
+});
+
+test("resolveFeatureFrame returns a naturally completed file to visual idle", () => {
+  const completedFrame = {
+    fieldState: "active",
+    renderAuthority: true,
+    modalDescriptor: {
+      fieldAuthority: "complete",
+    },
+    ...createLiveRenderFrameEvidence(),
+  };
+  const playbackSessionId = "song-1";
+  const { args } = createResolveFeatureFrameHarness({
+    status: {
+      isAudioLoaded: true,
+      hasPreparedFileAnalysisSource: true,
+      isPlaying: false,
+      isPlaybackPaused: false,
+      isLiveInputActive: false,
+      sourceSession: createFileSourceSession({ phase: "ended" }),
+      playbackSessionId,
+      lastPlaybackEndReason: "natural",
+      lastPlaybackDiagnostics: {
+        playbackSessionId,
+      },
+    },
+  });
+
+  const result = resolveFeatureFrame(args, {
+    createFeatureView: vi.fn(() => completedFrame),
+  });
+
+  expect(result).toEqual({
+    featureFrame: null,
+    effectiveFrame: null,
+    preparationFrame: null,
+  });
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
+    "stale-source-model-rejected",
+  );
+});
+
+test("resolveFeatureFrame renders a naturally completed file while modal ring-down advances", () => {
+  const ringdownFrame = {
+    fieldState: "active",
+    renderAuthority: true,
+    modalDescriptor: {
+      fieldAuthority: "complete",
+    },
+    ...createLiveRenderFrameEvidence(),
+  };
+  const playbackSessionId = "song-1";
+  const { args } = createResolveFeatureFrameHarness({
+    featureRuntime: {
+      readLatestFeatureModel: vi.fn(() => ({ ringdown: true })),
+      getStatus: vi.fn(() => ({
+        state: "ready",
+        naturalRingdownActive: true,
+        naturalRingdownSessionId: playbackSessionId,
+      })),
+    },
+    status: {
+      isAudioLoaded: true,
+      hasPreparedFileAnalysisSource: true,
+      isPlaying: false,
+      isPlaybackPaused: false,
+      isLiveInputActive: false,
+      sourceSession: createFileSourceSession({ phase: "ended" }),
+      playbackSessionId,
+      lastPlaybackEndReason: "natural",
+      lastPlaybackDiagnostics: {
+        playbackSessionId,
+      },
+    },
+  });
+
+  const result = resolveFeatureFrame(args, {
+    createFeatureView: vi.fn(() => ringdownFrame),
+  });
+
+  expect(result).toEqual({
+    featureFrame: ringdownFrame,
+    effectiveFrame: ringdownFrame,
+    preparationFrame: null,
+  });
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
+    "feature-model",
+  );
+});
+
 test("resolveFeatureFrame retains an explicit paused-file hold", () => {
   const activeHarness = createResolveFeatureFrameHarness();
   resolveFeatureFrame(activeHarness.args);
 
   const held =
     activeHarness.args.renderLoopRefs.frameCacheRefs.pausedFileFrameRef.current;
-  expect(held).toMatchObject({ playbackSessionId: "song-1" });
+  expect(held).toMatchObject({
+    playbackSessionId: "song-1",
+    fileSourceSessionId: "source-1",
+    fileTimelineRevision: 0,
+  });
   expect(held.frame).toMatchObject({
     audioMotionAuthority: false,
     modalResponseCurrentRenderSourceEvidence: false,
+    observationAdvancing: false,
+    observationPaused: true,
   });
 
   activeHarness.args.status = {
     isPlaying: false,
     isLiveInputActive: false,
     isAudioLoaded: true,
+    sourceSession: createFileSourceSession({ phase: "paused" }),
     playbackSessionId: "song-1",
   };
   activeHarness.args.clockMode = "paused-playback";
@@ -2143,6 +2451,10 @@ test("resolveFeatureFrame retains an explicit paused-file hold", () => {
   const paused = resolveFeatureFrame(activeHarness.args);
 
   expect(paused.effectiveFrame).toBe(held.frame);
+  expect(paused.effectiveFrame).toMatchObject({
+    observationAdvancing: false,
+    observationPaused: true,
+  });
   expect(
     activeHarness.args.featureRuntime.readLatestFeatureModel,
   ).toHaveBeenCalledTimes(1);
@@ -2151,7 +2463,498 @@ test("resolveFeatureFrame retains an explicit paused-file hold", () => {
   ).toBe("paused-file-hold");
 });
 
-test("clearing adaptive resume state forces the next authoritative session to restart from calibrated base rungs", () => {
+test("shared feature resolver revisions semantic transitions once across render and OSC interleavings", () => {
+  const harness = createResolveFeatureFrameHarness();
+  const resolver = createFeatureFrameResolver();
+  const rendered = resolver.resolve(harness.args);
+  const sampled = resolver.resolve(harness.args);
+
+  expect(rendered.resolvedSemanticRevision).toBe(1);
+  expect(sampled).toBe(rendered);
+
+  harness.args.status = {
+    ...harness.args.status,
+    isPlaying: false,
+    isPlaybackPaused: true,
+    isLiveInputActive: false,
+    isAudioLoaded: true,
+    sourceSession: createFileSourceSession({ phase: "paused" }),
+  };
+  harness.args.clockMode = "paused-playback";
+  const pausedFromOsc = resolver.resolve(harness.args);
+  const pausedFromRender = resolver.resolve(harness.args);
+
+  expect(pausedFromOsc.resolvedSemanticRevision).toBe(2);
+  expect(pausedFromOsc.effectiveFrame?.observationAdvancing).toBe(false);
+  expect(pausedFromRender).toBe(pausedFromOsc);
+
+  harness.args.status = {
+    ...harness.args.status,
+    isPlaybackPaused: false,
+    isPlaying: true,
+    sourceSession: createFileSourceSession({ phase: "active" }),
+  };
+  harness.args.clockMode = "playing";
+  const resumedFromRender = resolver.resolve(harness.args);
+  const resumedFromOsc = resolver.resolve(harness.args);
+
+  expect(resumedFromRender.resolvedSemanticRevision).toBe(3);
+  expect(resumedFromOsc).toBe(resumedFromRender);
+});
+
+test("OSC-first resolution preserves render-only diagnostics on the cache hit", () => {
+  const harness = createResolveFeatureFrameHarness();
+  const resolver = createFeatureFrameResolver();
+
+  const sampled = resolver.resolve({
+    ...harness.args,
+    runtimeDiagnostics: null,
+  });
+  expect(sampled.resolvedSemanticRevision).toBe(1);
+  expect(harness.args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
+    null,
+  );
+
+  const rendered = resolver.resolve(harness.args);
+
+  expect(rendered).toBe(sampled);
+  expect(harness.args.runtimeDiagnostics.modalFreshness).toMatchObject({
+    frameSemanticSource: "feature-model",
+    frameSemanticFresh: true,
+    frameSemanticReused: false,
+  });
+  expect(harness.args.runtimeDiagnostics.engine).toMatchObject({
+    sourceGeneration: 2,
+    workerGeneration: 3,
+    topologyRevision: 1,
+    latestAcceptedFrameId: 7,
+  });
+});
+
+test("shared feature resolver observes a newly available model when runtime status lags", () => {
+  const harness = createResolveFeatureFrameHarness();
+  const readLatestFeatureModel =
+    harness.args.featureRuntime.readLatestFeatureModel;
+  const featureModel = readLatestFeatureModel();
+  readLatestFeatureModel.mockClear();
+  readLatestFeatureModel.mockReturnValue(null);
+  const resolver = createFeatureFrameResolver();
+  const createFeatureView = vi.fn(createRendererFeatureView);
+
+  const unavailable = resolver.resolve(harness.args, { createFeatureView });
+  expect(unavailable.effectiveFrame).toBeNull();
+  expect(unavailable.resolvedSemanticRevision).toBe(1);
+
+  readLatestFeatureModel.mockReturnValue(featureModel);
+  const available = resolver.resolve(harness.args, { createFeatureView });
+  const repeated = resolver.resolve(harness.args, { createFeatureView });
+
+  expect(available.effectiveFrame?.frameId).toBe(7);
+  expect(available.resolvedSemanticRevision).toBe(2);
+  expect(repeated).toBe(available);
+  expect(createFeatureView).toHaveBeenCalledTimes(1);
+});
+
+test("shared feature resolver revisions every resolver-only transition once with an unchanged frame id", () => {
+  const harness = createResolveFeatureFrameHarness();
+  const featureModel = harness.args.featureRuntime.readLatestFeatureModel();
+  const runtimeStatus = harness.args.featureRuntime.getStatus();
+  harness.args.featureRuntime.readLatestFeatureModel.mockReturnValue(
+    featureModel,
+  );
+  harness.args.featureRuntime.getStatus.mockImplementation(
+    () => runtimeStatus,
+  );
+  harness.args.status = {
+    ...harness.args.status,
+    sourceSession: createFileSourceSession({
+      sessionId: 1,
+      timelineRevision: 0,
+    }),
+  };
+  featureModel.drive.observationSourceKey = "file:1";
+  featureModel.drive.observationSessionKey = "file:1";
+  featureModel.drive.observationTimelineRevision = 0;
+  const resolver = createFeatureFrameResolver();
+  let expectedRevision = 0;
+
+  const resolveTransition = ({ frameAvailable }) => {
+    const first = resolver.resolve(harness.args);
+    const second = resolver.resolve(harness.args);
+    expectedRevision += 1;
+    expect(first.resolvedSemanticRevision).toBe(expectedRevision);
+    expect(second).toBe(first);
+    expect(Boolean(first.effectiveFrame)).toBe(frameAvailable);
+    expect(first.effectiveFrame?.frameId ?? featureModel.drive.frameId).toBe(7);
+  };
+
+  resolveTransition({ frameAvailable: true });
+
+  harness.args.status = {
+    ...harness.args.status,
+    sessionKey: "file:unexpected-session",
+  };
+  resolveTransition({ frameAvailable: false });
+
+  harness.args.status = {
+    ...harness.args.status,
+    sessionKey: null,
+  };
+  resolveTransition({ frameAvailable: true });
+
+  harness.args.status = {
+    ...harness.args.status,
+    sourceSession: {
+      ...harness.args.status.sourceSession,
+      timelineRevision: 1,
+    },
+  };
+  resolveTransition({ frameAvailable: false });
+
+  featureModel.drive.observationSessionKey = "file:1:timeline:1";
+  featureModel.drive.observationTimelineRevision = 1;
+  resolveTransition({ frameAvailable: true });
+
+  harness.args.status = {
+    ...harness.args.status,
+    isPlaying: false,
+    lastLiveInputInterruption: { sessionId: "interruption-1" },
+  };
+  resolveTransition({ frameAvailable: false });
+
+  harness.args.status = {
+    ...harness.args.status,
+    isPlaying: true,
+    lastLiveInputInterruption: null,
+  };
+  resolveTransition({ frameAvailable: true });
+
+  harness.args.status = {
+    ...harness.args.status,
+    isPlaying: false,
+  };
+  harness.args.controls.injectTestTone = false;
+  resolveTransition({ frameAvailable: false });
+
+  harness.args.controls.injectTestTone = true;
+  resolveTransition({ frameAvailable: true });
+
+  harness.args.status = {
+    ...harness.args.status,
+    isPlaying: true,
+    sourceSession: createFileSourceSession({
+      sessionId: 2,
+      timelineRevision: 0,
+    }),
+  };
+  harness.args.controls.injectTestTone = false;
+  featureModel.drive.observationSourceKey = "file:2";
+  featureModel.drive.observationSessionKey = "file:2";
+  featureModel.drive.observationTimelineRevision = 0;
+  resolveTransition({ frameAvailable: true });
+
+  harness.args.status = {
+    ...harness.args.status,
+    isPlaying: false,
+  };
+  runtimeStatus.naturalRingdownActive = true;
+  runtimeStatus.naturalRingdownSessionId = "song-1";
+  resolveTransition({ frameAvailable: true });
+
+  runtimeStatus.naturalRingdownSessionId = "ringdown-other";
+  resolveTransition({ frameAvailable: false });
+
+  harness.args.status = {
+    ...harness.args.status,
+    isAudioLoaded: true,
+    hasPreparedFileAnalysisSource: true,
+  };
+  resolveTransition({ frameAvailable: false });
+
+  harness.args.status = {
+    ...harness.args.status,
+    lastPlaybackEndReason: "natural",
+    lastPlaybackDiagnostics: { playbackSessionId: "song-1" },
+  };
+  resolveTransition({ frameAvailable: false });
+});
+
+test("resolveFeatureFrame invalidates the old hold and installs the paused seek target", () => {
+  const harness = createResolveFeatureFrameHarness();
+  resolveFeatureFrame(harness.args);
+
+  const seekFrame = {
+    fieldState: "active",
+    renderAuthority: true,
+    modalDescriptor: {
+      fieldAuthority: "complete",
+    },
+    observationPaused: true,
+    observationAdvancing: false,
+    observationTimelineRevision: 1,
+    observationTimeSeconds: 42,
+    ...createLiveRenderFrameEvidence(),
+  };
+  harness.args.status = {
+    isPlaying: false,
+    isPlaybackPaused: true,
+    isLiveInputActive: false,
+    isAudioLoaded: true,
+    hasPreparedFileAnalysisSource: true,
+    sourceSession: createFileSourceSession({
+      phase: "paused",
+      timelineRevision: 1,
+    }),
+    playbackSessionId: "song-1",
+  };
+  harness.args.clockMode = "paused-playback";
+  harness.args.featureRuntime.readLatestFeatureModel.mockReturnValue({
+    seek: true,
+  });
+
+  const result = resolveFeatureFrame(harness.args, {
+    createFeatureView: vi.fn(() => seekFrame),
+  });
+
+  expect(result.preparationFrame).toBeNull();
+  expect(result.effectiveFrame).toMatchObject({
+    observationTimeSeconds: 42,
+    observationTimelineRevision: 1,
+    audioMotionAuthority: false,
+  });
+  expect(
+    harness.args.renderLoopRefs.frameCacheRefs.pausedFileFrameRef.current,
+  ).toMatchObject({
+    playbackSessionId: "song-1",
+    fileSourceSessionId: "source-1",
+    fileTimelineRevision: 1,
+  });
+  expect(
+    harness.args.runtimeDiagnostics.modalFreshness.frameSemanticSource,
+  ).toBe("paused-file-seek");
+});
+
+test("resolveFeatureFrame never lets static idle mask paused seek reconstruction", () => {
+  const staleIdleFrame = {
+    fieldState: "idle",
+    renderAuthority: false,
+    sourceEvidence: {
+      sourceBoundaryState: "absent",
+      currentSourceEvidence: false,
+    },
+  };
+  const seekFrame = {
+    fieldState: "active",
+    renderAuthority: true,
+    modalDescriptor: {
+      fieldAuthority: "complete",
+    },
+    observationPaused: true,
+    observationAdvancing: false,
+    observationTimelineRevision: 1,
+    observationTimeSeconds: 42,
+    ...createLiveRenderFrameEvidence(),
+  };
+  const harness = createResolveFeatureFrameHarness({
+    status: {
+      isPlaying: false,
+      isPlaybackPaused: true,
+      isLiveInputActive: false,
+      isAudioLoaded: true,
+      hasPreparedFileAnalysisSource: true,
+      sourceSession: createFileSourceSession({
+        phase: "paused",
+        timelineRevision: 1,
+      }),
+      playbackSessionId: "song-1",
+    },
+    clockMode: "paused-playback",
+    renderLoopRefs: {
+      frameCacheRefs: {
+        lastIdleFrameRef: { current: staleIdleFrame },
+        pausedFileFrameRef: { current: null },
+      },
+    },
+  });
+  const createFeatureView = vi.fn(() => seekFrame);
+
+  const result = resolveFeatureFrame(harness.args, { createFeatureView });
+
+  expect(
+    harness.args.featureRuntime.readLatestFeatureModel,
+  ).toHaveBeenCalledTimes(1);
+  expect(result.effectiveFrame).toMatchObject({
+    fieldState: "active",
+    observationTimeSeconds: 42,
+    observationTimelineRevision: 1,
+  });
+  expect(
+    harness.args.renderLoopRefs.frameCacheRefs.lastIdleFrameRef.current,
+  ).toBeNull();
+  expect(
+    harness.args.runtimeDiagnostics.modalFreshness.frameSemanticSource,
+  ).toBe("paused-file-seek");
+});
+
+test.each([
+  ["auto", DEFAULT_ADAPTIVE_STARTUP_RAYMARCH_STEPS],
+  ["custom", MIN_PRESENTATION_RAYMARCH_STEPS],
+])(
+  "entering %s from max quality restarts at its calibrated rung when the requested cap is unchanged",
+  (qualityPreset, startupRaymarchSteps) => {
+    const { args, runtimeState, runtimeDiagnostics } =
+      createAdaptiveRaymarchHarness({
+        controls: {
+          raymarchSteps: 64,
+        },
+        renderProfile: {
+          qualityPreset: "max-quality",
+          renderContext: RENDER_CONTEXTS.externalOutput,
+        },
+      });
+
+    updateAdaptiveRaymarchStepBudget(args);
+    expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(64);
+
+    args.renderProfile = {
+      qualityPreset,
+      targetFps: qualityPreset === "custom" ? 120 : 60,
+      startupRaymarchSteps,
+      renderContext: RENDER_CONTEXTS.externalOutput,
+    };
+    updateAdaptiveRaymarchStepBudget(args);
+
+    expect(runtimeState.effectiveRaymarchSteps).toBe(startupRaymarchSteps);
+    expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(
+      startupRaymarchSteps,
+    );
+  },
+);
+
+test("adaptive initialization responds only to controller-relevant profile inputs", () => {
+  const { args, runtimeState, runtimeDiagnostics } =
+    createAdaptiveRaymarchHarness({
+      controls: { raymarchSteps: 64 },
+      renderProfile: {
+        qualityPreset: "auto",
+        targetFps: 60,
+        startupRaymarchSteps: DEFAULT_ADAPTIVE_STARTUP_RAYMARCH_STEPS,
+        bloomAllowed: true,
+      },
+    });
+
+  runtimeState.adaptiveRaymarchController.currentRung = 1;
+  runtimeState.adaptiveRaymarchController.decisionFrameCount = 2;
+  args.renderProfile = { ...args.renderProfile, bloomAllowed: false };
+  updateAdaptiveRaymarchStepBudget(args);
+
+  expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(1);
+  expect(runtimeDiagnostics.adaptiveRaymarch.decisionFrameCount).toBe(3);
+
+  args.renderProfile = {
+    ...args.renderProfile,
+    qualityPreset: "custom",
+    targetFps: 120,
+    startupRaymarchSteps: MIN_PRESENTATION_RAYMARCH_STEPS,
+  };
+  updateAdaptiveRaymarchStepBudget(args);
+
+  expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(0);
+  expect(runtimeDiagnostics.adaptiveRaymarch.decisionFrameCount).toBe(1);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(
+    MIN_PRESENTATION_RAYMARCH_STEPS,
+  );
+  expect(runtimeState.adaptiveRaymarchInitializationInputs).toMatchObject({
+    targetFps: 120,
+    startupStepBudget: MIN_PRESENTATION_RAYMARCH_STEPS,
+  });
+});
+
+test("stable adaptive profile and cap frames preserve the committed rung", () => {
+  const { args, runtimeState, runtimeDiagnostics } =
+    createAdaptiveRaymarchHarness({
+      controls: {
+        raymarchSteps: 64,
+      },
+      renderProfile: {
+        qualityPreset: "auto",
+        targetFps: 60,
+        startupRaymarchSteps: DEFAULT_ADAPTIVE_STARTUP_RAYMARCH_STEPS,
+        renderContext: RENDER_CONTEXTS.externalOutput,
+      },
+    });
+
+  updateAdaptiveRaymarchStepBudget(args);
+  runtimeState.adaptiveRaymarchController.currentRung = 1;
+  runtimeState.adaptiveRaymarchController.stepDownCount = 5;
+  runtimeState.adaptiveRaymarchController.decisionFrameCount = 2;
+
+  updateAdaptiveRaymarchStepBudget(args);
+
+  expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(1);
+  expect(runtimeDiagnostics.adaptiveRaymarch.stepDownCount).toBe(5);
+  expect(runtimeDiagnostics.adaptiveRaymarch.decisionFrameCount).toBe(3);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(20);
+});
+
+test("mirrored adaptive diagnostics and frame timing cannot reset controller state", () => {
+  const { args, runtimeState, runtimeDiagnostics } =
+    createAdaptiveRaymarchHarness({
+      controls: {
+        raymarchSteps: 64,
+      },
+      renderProfile: {
+        qualityPreset: "auto",
+        targetFps: 60,
+        startupRaymarchSteps: DEFAULT_ADAPTIVE_STARTUP_RAYMARCH_STEPS,
+        renderContext: RENDER_CONTEXTS.externalOutput,
+      },
+    });
+
+  updateAdaptiveRaymarchStepBudget(args);
+  runtimeState.adaptiveRaymarchController.currentRung = 1;
+  runtimeState.adaptiveRaymarchController.stepDownCount = 5;
+  runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
+  runtimeDiagnostics.lastFrameTimeMs = 200;
+  runtimeDiagnostics.smoothedFrameTimeMs = 200;
+
+  updateAdaptiveRaymarchStepBudget(args);
+
+  expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(1);
+  expect(runtimeDiagnostics.adaptiveRaymarch.stepDownCount).toBe(5);
+  expect(runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps).toBe(64);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(20);
+});
+
+test("replacing performance diagnostics cannot restart the adaptive decision window", () => {
+  const { args, runtimeState } = createAdaptiveRaymarchHarness({
+    controls: {
+      raymarchSteps: 64,
+    },
+    renderProfile: {
+      qualityPreset: "auto",
+      targetFps: 60,
+      startupRaymarchSteps: DEFAULT_ADAPTIVE_STARTUP_RAYMARCH_STEPS,
+      renderContext: RENDER_CONTEXTS.externalOutput,
+    },
+  });
+
+  runtimeState.adaptiveRaymarchController.currentRung = 1;
+  runtimeState.adaptiveRaymarchController.decisionFrameCount = 29;
+  runtimeState.adaptiveRaymarchController.longFrameCountInWindow = 3;
+  const freshDiagnostics = createRuntimeDiagnostics();
+  freshDiagnostics.lastFrameTimeMs = 200;
+  freshDiagnostics.smoothedFrameTimeMs = 200;
+  args.runtimeDiagnostics = freshDiagnostics;
+
+  updateAdaptiveRaymarchStepBudget(args);
+
+  expect(runtimeState.effectiveRaymarchSteps).toBe(16);
+  expect(freshDiagnostics.adaptiveRaymarch.currentRung).toBe(0);
+  expect(freshDiagnostics.adaptiveRaymarch.stepDownCount).toBe(1);
+});
+
+test("resetting the adaptive controller restarts the next authoritative session from its calibrated rung", () => {
   const { args, runtimeState, runtimeDiagnostics } =
     createAdaptiveRaymarchHarness({
       controls: {
@@ -2165,31 +2968,31 @@ test("clearing adaptive resume state forces the next authoritative session to re
       },
     });
 
-  runtimeState.adaptiveRaymarchResumeRung = 6;
-  clearAdaptiveRaymarchResumeState(runtimeState);
-  runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
+  resetAdaptiveRaymarchControllerState(runtimeState);
 
   updateAdaptiveRaymarchStepBudget(args);
 
-  expect(runtimeState.adaptiveRaymarchResumeRung).toBe(0);
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(16);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(
+    MIN_PRESENTATION_RAYMARCH_STEPS,
+  );
   expect(runtimeDiagnostics.adaptiveRaymarch).not.toHaveProperty(
     "effectiveRenderScale",
   );
 });
 
 test("auto raymarch ignores field-state labels when ledger authority is present", () => {
-  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness({
-    effectiveFrame: {
-      fieldState: "decay",
-      energySignal: 0,
-    },
-  });
-  primeAdaptiveRecoveryAttempt(runtimeDiagnostics);
+  const { args, runtimeState, runtimeDiagnostics } =
+    createAdaptiveRaymarchHarness({
+      effectiveFrame: {
+        fieldState: "decay",
+        energySignal: 0,
+      },
+    });
+  primeAdaptiveRecoveryAttempt(runtimeState.adaptiveRaymarchController);
 
   updateAdaptiveRaymarchStepBudget(args);
 
-  expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(4);
+  expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(1);
   expect(runtimeDiagnostics.adaptiveRaymarch.stepUpCount).toBe(1);
   expect(runtimeDiagnostics.adaptiveRaymarch.recoveryEligible).toBe(true);
   expect(runtimeDiagnostics.adaptiveRaymarch.recoveryBlockedReason).toBe(
@@ -2198,23 +3001,24 @@ test("auto raymarch ignores field-state labels when ledger authority is present"
 });
 
 test("auto raymarch does not recover during silent playback gaps", () => {
-  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness({
-    effectiveFrame: {
-      fieldState: "idle",
-      energySignal: 0,
-      sourceMode: "file",
-      renderAuthority: false,
-      energyLedger: {
-        projectedRenderEnergy: 0,
-        renderEnergyEpsilon: 1e-6,
+  const { args, runtimeState, runtimeDiagnostics } =
+    createAdaptiveRaymarchHarness({
+      effectiveFrame: {
+        fieldState: "idle",
+        energySignal: 0,
+        sourceMode: "file",
+        renderAuthority: false,
+        energyLedger: {
+          projectedRenderEnergy: 0,
+          renderEnergyEpsilon: 1e-6,
+        },
+        sourceEvidence: {
+          sourceBoundaryState: "zero",
+          currentSourceEvidence: true,
+        },
       },
-      sourceEvidence: {
-        sourceBoundaryState: "zero",
-        currentSourceEvidence: true,
-      },
-    },
-  });
-  primeAdaptiveRecoveryAttempt(runtimeDiagnostics);
+    });
+  primeAdaptiveRecoveryAttempt(runtimeState.adaptiveRaymarchController);
 
   updateAdaptiveRaymarchStepBudget(args);
 
@@ -2225,13 +3029,14 @@ test("auto raymarch does not recover during silent playback gaps", () => {
 });
 
 test("auto raymarch does not recover on weak active audio", () => {
-  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness({
-    effectiveFrame: {
-      energySignal: 0.4,
-      ...createLiveRenderFrameEvidence({ projectedRenderEnergy: 0.04 }),
-    },
-  });
-  primeAdaptiveRecoveryAttempt(runtimeDiagnostics);
+  const { args, runtimeState, runtimeDiagnostics } =
+    createAdaptiveRaymarchHarness({
+      effectiveFrame: {
+        energySignal: 0.4,
+        ...createLiveRenderFrameEvidence({ projectedRenderEnergy: 0.04 }),
+      },
+    });
+  primeAdaptiveRecoveryAttempt(runtimeState.adaptiveRaymarchController);
 
   updateAdaptiveRaymarchStepBudget(args);
 
@@ -2239,12 +3044,13 @@ test("auto raymarch does not recover on weak active audio", () => {
 });
 
 test("auto raymarch resumes recovery on sustained active audio", () => {
-  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness();
-  primeAdaptiveRecoveryAttempt(runtimeDiagnostics);
+  const { args, runtimeState, runtimeDiagnostics } =
+    createAdaptiveRaymarchHarness();
+  primeAdaptiveRecoveryAttempt(runtimeState.adaptiveRaymarchController);
 
   updateAdaptiveRaymarchStepBudget(args);
 
-  expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(4);
+  expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(1);
   expect(runtimeDiagnostics.adaptiveRaymarch.stepUpCount).toBe(1);
   expect(runtimeDiagnostics.adaptiveRaymarch.recoveryEligible).toBe(true);
   expect(runtimeDiagnostics.adaptiveRaymarch.recoveryBlockedReason).toBe(
@@ -2253,13 +3059,14 @@ test("auto raymarch resumes recovery on sustained active audio", () => {
 });
 
 test("playback session changes clear adaptive recovery momentum", () => {
-  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness({
-    status: {
-      playbackSessionId: "song-2",
-    },
-  });
-  runtimeDiagnostics.adaptiveRaymarch.lastPlaybackSessionId = "song-1";
-  runtimeDiagnostics.adaptiveRaymarch.stableWindowCount = 3;
+  const { args, runtimeState, runtimeDiagnostics } =
+    createAdaptiveRaymarchHarness({
+      status: {
+        playbackSessionId: "song-2",
+      },
+    });
+  runtimeState.adaptiveRaymarchController.lastPlaybackSessionId = "song-1";
+  runtimeState.adaptiveRaymarchController.stableWindowCount = 3;
 
   updateAdaptiveRaymarchStepBudget(args);
 
@@ -2274,26 +3081,27 @@ test("playback session changes clear adaptive recovery momentum", () => {
 });
 
 test("inject test tone bypasses the recovery gate", () => {
-  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness({
-    controls: {
-      injectTestTone: true,
-    },
-    effectiveFrame: {
-      fieldState: "idle",
-      energySignal: 0,
-      sourceMode: "silent",
-    },
-    status: {
-      isPlaying: false,
-      isLiveInputActive: false,
-      playbackSessionId: null,
-    },
-  });
-  primeAdaptiveRecoveryAttempt(runtimeDiagnostics);
+  const { args, runtimeState, runtimeDiagnostics } =
+    createAdaptiveRaymarchHarness({
+      controls: {
+        injectTestTone: true,
+      },
+      effectiveFrame: {
+        fieldState: "idle",
+        energySignal: 0,
+        sourceMode: "silent",
+      },
+      status: {
+        isPlaying: false,
+        isLiveInputActive: false,
+        playbackSessionId: null,
+      },
+    });
+  primeAdaptiveRecoveryAttempt(runtimeState.adaptiveRaymarchController);
 
   updateAdaptiveRaymarchStepBudget(args);
 
-  expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(4);
+  expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(1);
   expect(runtimeDiagnostics.adaptiveRaymarch.stepUpCount).toBe(1);
   expect(runtimeDiagnostics.adaptiveRaymarch.recoveryEligible).toBe(true);
   expect(runtimeDiagnostics.adaptiveRaymarch.recoveryBlockedReason).toBe(
@@ -2338,7 +3146,6 @@ test("resolveFeatureFrame clears retained caches and response after interruption
       motionSignal: 1,
       scaleSignal: 1,
       bloomResponseSignal: 1,
-      beatPulseEnvelope: 1,
     },
     renderLoopRefs: {
       frameCacheRefs: {
@@ -2355,7 +3162,11 @@ test("resolveFeatureFrame clears retained caches and response after interruption
 
   const result = resolveFeatureFrame(args);
 
-  expect(result).toEqual({ featureFrame: null, effectiveFrame: null });
+  expect(result).toEqual({
+    featureFrame: null,
+    effectiveFrame: null,
+    preparationFrame: null,
+  });
   expect(
     args.renderLoopRefs.frameCacheRefs.lastIdleFrameRef.current,
   ).toBeNull();
@@ -2368,7 +3179,6 @@ test("resolveFeatureFrame clears retained caches and response after interruption
     motionSignal: 0,
     scaleSignal: 0,
     bloomResponseSignal: 0,
-    beatPulseEnvelope: 0,
   });
 });
 
@@ -2392,14 +3202,82 @@ test("active live input consumes the runtime model without interruption reset", 
   expect(args.runtimeState.accentEnvelope).toBe(0.3);
 });
 
+test("resolveFeatureFrame rejects a model from the previous source session", () => {
+  const { args } = createResolveFeatureFrameHarness({
+    status: {
+      isPlaying: false,
+      isLiveInputActive: true,
+      sourceSession: {
+        kind: "system",
+        phase: "active",
+        sessionId: 2,
+        timelineRevision: 0,
+      },
+      playbackSessionId: null,
+    },
+  });
+
+  const result = resolveFeatureFrame(args, {
+    createFeatureView: vi.fn(() => ({
+      fieldState: "active",
+      observationSessionKey: "file:1",
+      ...createLiveRenderFrameEvidence(),
+    })),
+  });
+
+  expect(result).toEqual({
+    featureFrame: null,
+    effectiveFrame: null,
+    preparationFrame: null,
+  });
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
+    "stale-source-session-model-rejected",
+  );
+});
+
+test("resolveFeatureFrame rejects an active model after System stops", () => {
+  const { args } = createResolveFeatureFrameHarness({
+    status: {
+      isPlaying: false,
+      isLiveInputActive: false,
+      sourceSession: {
+        kind: "system",
+        phase: "stopped",
+        sessionId: 2,
+        timelineRevision: 0,
+      },
+      playbackSessionId: null,
+    },
+  });
+
+  const result = resolveFeatureFrame(args, {
+    createFeatureView: vi.fn(() => ({
+      fieldState: "active",
+      observationSessionKey: "system:2",
+      sourceEvidence: {
+        sourceBoundaryState: "live",
+        currentSourceEvidence: true,
+        transport: { playing: false, liveInputActive: true },
+      },
+    })),
+  });
+
+  expect(result).toEqual({
+    featureFrame: null,
+    effectiveFrame: null,
+    preparationFrame: null,
+  });
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
+    "stale-source-state-model-rejected",
+  );
+});
+
 test("resolveRaymarchFieldAnalysisFrameInputs prefers uploaded mode count over descriptor span", () => {
   const runtimeState = {
     modalFieldCapacity: 12,
-    modalBasisCache: { basisCapacity: 12 },
     modalFieldModeBuffer: { value: { array: new Float32Array(48) } },
     uniforms: {
       uModalFieldModeCount: { value: 3 },
-      uTotalSlotAmplitude: { value: 0.42 },
     },
   };
   const effectiveFrame = {
@@ -2420,11 +3298,9 @@ test("resolveRaymarchFieldAnalysisFrameInputs prefers uploaded mode count over d
 test("resolveRaymarchFieldAnalysisFrameInputs uses descriptor-owned mode count over raw active count", () => {
   const runtimeState = {
     modalFieldCapacity: 16,
-    modalBasisCache: { basisCapacity: 16 },
     modalFieldModeBuffer: { value: { array: new Float32Array(64) } },
     uniforms: {
       uModalFieldModeCount: { value: 0 },
-      uTotalSlotAmplitude: { value: 0.42 },
     },
   };
   const effectiveFrame = {
@@ -2449,11 +3325,9 @@ test("resolveRaymarchFieldAnalysisFrameInputs uses descriptor-owned mode count o
 test("resolveRaymarchFieldAnalysisFrameInputs suppresses fatal descriptor topology", () => {
   const runtimeState = {
     modalFieldCapacity: 12,
-    modalBasisCache: { basisCapacity: 12 },
     modalFieldModeBuffer: { value: { array: new Float32Array(48) } },
     uniforms: {
       uModalFieldModeCount: { value: 3 },
-      uTotalSlotAmplitude: { value: 0.42 },
     },
   };
 
@@ -2502,14 +3376,16 @@ test("syncRenderSurfacePixelRatio uses selected surface pixel ratio", () => {
   expect(gl.setPixelRatioCalls).toEqual([2]);
 });
 
-test("syncUploadedRenderQuantities mirrors runtime uniforms into diagnostics", () => {
+test("syncUploadedRenderQuantities mirrors canonical runtime quantities", () => {
   const runtimeDiagnostics = createRuntimeDiagnostics();
   syncUploadedRenderQuantities(runtimeDiagnostics, {
     uniforms: {
       uModalFieldModeCount: { value: 5 },
-      uTotalSlotAmplitude: { value: 0.18 },
-      uStructuralProjectionDrive: { value: 0.42 },
-      uStructuralProjectionConcentration: { value: 0.31 },
+    },
+    raymarchStructuralProjection: {
+      amplitudeSum: 0.18,
+      projectionEnergyDrive: 0.42,
+      structuralConcentration: 0.31,
     },
   });
 

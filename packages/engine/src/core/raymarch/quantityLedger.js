@@ -1,1914 +1,627 @@
-export const RAYMARCH_QUANTITY_LEDGER_VERSION = "raymarch-render-quantity-v12";
+export const RAYMARCH_QUANTITY_LEDGER_VERSION = "cymatic-observer-quantity-v11";
+export const RAYMARCH_OPTICAL_FIELD_REPRESENTATION =
+  "complete-modal-gorkov-field-fixed-scale-space-persistent-topology-u0-observer";
+export const RAYMARCH_SPECTRAL_PHASE_REPRESENTATION =
+  "observer-phase-cache-nearest-rgb-companion";
 
-function freezeStringArray(values = []) {
+function freezeStrings(values = []) {
   return Object.freeze([...values]);
 }
 
-function freezeStringArrayRecord(value = {}) {
+function freezeStringRecord(value = {}) {
   return Object.freeze(
     Object.fromEntries(
       Object.entries(value).map(([key, entries]) => [
         key,
-        freezeStringArray(entries),
+        freezeStrings(entries),
       ]),
     ),
   );
 }
 
-function createQuantityContract({
+function contract({
   quantity,
   lane,
-  surface = "material-transfer",
+  surface = "pipeline",
   represents,
-  deepOwner = "material.js material transfer",
+  deepOwner,
   transforms = [],
-  allowedConsumerPath = [],
   allowedConsumers = [],
   forbiddenConsumers = [],
-  requiredEvidenceByConsumer = {},
 }) {
-  const resolvedAllowedConsumerPath =
-    allowedConsumerPath.length > 0 ? allowedConsumerPath : allowedConsumers;
   return Object.freeze({
     quantity,
     lane,
     surface,
     represents,
     deepOwner,
-    transforms: freezeStringArray(transforms),
-    allowedConsumerPath: freezeStringArray(resolvedAllowedConsumerPath),
-    allowedConsumers: freezeStringArray(allowedConsumers),
-    forbiddenConsumers: freezeStringArray(forbiddenConsumers),
-    requiredEvidenceByConsumer: freezeStringArrayRecord(
-      requiredEvidenceByConsumer,
-    ),
-  });
-}
-
-function createSourceSurfaceAudit({
-  surface,
-  file,
-  owner,
-  startToken,
-  endToken,
-  requiredTokens = [],
-  requiredPatterns = [],
-  forbiddenTokens = [],
-}) {
-  return Object.freeze({
-    surface,
-    file,
-    owner,
-    startToken,
-    endToken,
-    requiredTokens: freezeStringArray(requiredTokens),
-    requiredPatterns: freezeStringArray(requiredPatterns),
-    forbiddenTokens: freezeStringArray(forbiddenTokens),
+    transforms: freezeStrings(transforms),
+    allowedConsumerPath: freezeStrings(allowedConsumers),
+    allowedConsumers: freezeStrings(allowedConsumers),
+    forbiddenConsumers: freezeStrings(forbiddenConsumers),
+    requiredEvidenceByConsumer: Object.freeze({}),
   });
 }
 
 export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
-  sourceEnergy: createQuantityContract({
-    quantity: "sourceEnergy",
-    lane: "audio-evidence",
-    surface: "pipeline",
-    represents: "current normalized audio source energy after boundary policy",
-    deepOwner:
-      "audioSourceEvidence.js resolves source boundaries; modalEnergyLedger.js clamps and publishes it",
-    transforms: ["source-boundary resolution", "clamp01"],
-    allowedConsumerPath: [
-      "audio evidence",
+  admittedModalDescriptor: contract({
+    quantity: "admittedModalDescriptor",
+    lane: "modal-field",
+    represents:
+      "the complete cache-resolved set of admitted eigenmode identities",
+    deepOwner: "audioFeatureModalProjection.js modal descriptor",
+    transforms: ["apparatus admission", "stable descriptor ordering"],
+    allowedConsumers: [
+      "modalFieldPacket",
+      "modalCoefficientPacket",
+      "diagnostics",
+    ],
+    forbiddenConsumers: [
+      "performanceTierPaging",
+      "cameraRanking",
+      "materialRanking",
+    ],
+  }),
+  modalCoefficientPacket: contract({
+    quantity: "modalCoefficientPacket",
+    lane: "modal-field",
+    represents:
+      "per-mode pressure amplitudes and phases at one authoritative audio time",
+    deepOwner: "runtimeModalUpload.js radiation potential packet",
+    transforms: [
       "modal response",
-      "modal energy ledger",
+      "cache-passband transfer",
+      "deterministic packing",
     ],
-    allowedConsumers: [
-      "storedModalEnergy",
-      "projectedRenderEnergy",
-      "diagnostics",
-    ],
+    allowedConsumers: ["completeAcousticField", "diagnostics"],
     forbiddenConsumers: [
-      "modalIdentityTopology",
-      "phaseState",
-      "sourceRadiance",
-      "displayCompression",
+      "bloom",
+      "camera",
+      "frameRate",
+      "performanceTierPaging",
     ],
   }),
-  sourceBoundaryModalObservationPolicy: createQuantityContract({
-    quantity: "sourceBoundaryModalObservationPolicy",
-    lane: "audio-evidence",
-    surface: "pipeline",
+  modalSpectralPacket: contract({
+    quantity: "modalSpectralPacket",
+    lane: "spectral-phase",
     represents:
-      "source-class weak-signal suppression policy before modal observation",
-    deepOwner:
-      "audioSourceEvidence.js derives policy from source class and source metrics",
-    transforms: ["source-boundary classification", "metric thresholding"],
-    allowedConsumerPath: [
-      "audio evidence",
-      "modal observation admission",
-      "modal excitation",
-    ],
-    allowedConsumers: ["modalObservationSuppression", "diagnostics"],
+      "per-shell first and second circular pitch basis independent of acoustic amplitude",
+    deepOwner: "modal descriptor spectral moment slot views",
+    transforms: ["response-frequency phase fold", "deterministic packing"],
+    allowedConsumers: ["fieldSpectralMomentEvidence", "diagnostics"],
     forbiddenConsumers: [
-      "storedModalEnergy",
-      "projectedRenderEnergy",
-      "modalIdentityTopology",
-      "modalAmplitudeCoefficient",
-      "renderAuthority",
-      "sourceRadiance",
+      "fieldPotential",
+      "observerGeometry",
+      "observerRadiance",
     ],
   }),
-  storedModalEnergy: createQuantityContract({
-    quantity: "storedModalEnergy",
-    lane: "modal-response",
-    surface: "pipeline",
+  fieldSpectralMomentEvidence: contract({
+    quantity: "fieldSpectralMomentEvidence",
+    lane: "spectral-phase",
     represents:
-      "retained modal response energy before render-boundary projection",
-    deepOwner:
-      "modalResponse.js computes retained response; modalEnergyLedger.js reads it",
-    transforms: ["modal response integration", "damping", "clamp01"],
-    allowedConsumerPath: ["modal response", "projected render energy"],
-    allowedConsumers: ["projectedRenderEnergy", "diagnostics"],
-    forbiddenConsumers: [
-      "renderAuthority",
-      "modalIdentityTopology",
-      "modalAmplitudeCoefficient",
-      "sourceRadiance",
-      "displayCompression",
-    ],
-  }),
-  projectedRenderEnergy: createQuantityContract({
-    quantity: "projectedRenderEnergy",
-    lane: "projection",
-    surface: "pipeline",
-    represents:
-      "bounded render-facing energy after source/render boundary caps",
-    deepOwner: "modalEnergyLedger.js",
+      "additive local first moment M1, second moment M2, and nonnegative support W",
+    deepOwner: "radiationPotentialObservation.js coherent shell observation",
     transforms: [
-      "slot amplitude square",
-      "boundary suppression",
-      "stored-energy cap",
+      "squared local shell support q=S^2",
+      "linear fine-aperture filtering before normalization",
     ],
-    allowedConsumerPath: [
-      "modal energy ledger",
-      "feature frame render authority",
-      "runtime upload authority",
-    ],
-    allowedConsumers: [
-      "renderAuthority",
-      "modalAmplitudeCoefficient",
-      "observationEnergy",
-      "runtimeUploadAuthority",
-      "diagnostics",
-    ],
+    allowedConsumers: ["resolvedSpectralMomentEvidence", "diagnostics"],
     forbiddenConsumers: [
-      "modalIdentityTopology",
-      "phaseState",
-      "displayCompression",
-    ],
-  }),
-  modalAmplitudeCoefficient: createQuantityContract({
-    quantity: "modalAmplitudeCoefficient",
-    lane: "canonical-descriptor",
-    surface: "pipeline",
-    represents:
-      "nonnegative modal coefficient/amplitude uploaded for field synthesis",
-    deepOwner:
-      "buildFeatureFrame.js publishes slots; modalDescriptor.js canonicalizes them",
-    transforms: [
-      "projected energy scale",
-      "continuity admission",
-      "descriptor merge",
-    ],
-    allowedConsumerPath: [
-      "canonical modal descriptor",
-      "runtime coefficient upload",
-      "field/support synthesis",
-    ],
-    allowedConsumers: [
-      "runtimeUploadAuthority",
-      "signedField",
-      "unsignedSupport",
-      "structuralProjectionDrive",
-      "diagnostics",
-    ],
-    forbiddenConsumers: [
-      "modalIdentityTopology",
-      "phaseState",
-      "displayCompression",
-    ],
-  }),
-  modalIdentityTopology: createQuantityContract({
-    quantity: "modalIdentityTopology",
-    lane: "canonical-descriptor",
-    surface: "pipeline",
-    represents: "canonical modal tuple identity and basis-cache topology",
-    deepOwner:
-      "modalDescriptor.js and fieldCache.js basis identity descriptors",
-    transforms: [
-      "descriptor admission",
-      "stable slot assignment",
-      "basis page assignment",
-    ],
-    allowedConsumerPath: [
-      "canonical modal descriptor",
-      "runtime upload authority",
-      "basis/cache topology",
-    ],
-    allowedConsumers: [
-      "runtimeUploadAuthority",
-      "basisIdentity",
-      "modalBasisCacheDescriptor",
-      "diagnostics",
-    ],
-    forbiddenConsumers: [
-      "modalAmplitudeCoefficient",
-      "phaseState",
-      "phaseAuthorityCoherence",
-      "displayCompression",
-    ],
-  }),
-  runtimeUploadAuthority: createQuantityContract({
-    quantity: "runtimeUploadAuthority",
-    lane: "runtime-upload",
-    surface: "pipeline",
-    represents:
-      "single writer authority for live GPU buffers and cache submissions",
-    deepOwner: "runtime.js applyRaymarchRuntimeUploadAuthority",
-    transforms: [
-      "capacity selection",
-      "buffer upload",
-      "cache descriptor publication",
-    ],
-    allowedConsumerPath: [
-      "runtime upload authority",
-      "live buffers",
-      "basis/cache topology",
-    ],
-    allowedConsumers: [
-      "liveBuffers",
-      "modalBasisCacheDescriptor",
-      "liveFieldProjectionCache",
-      "diagnostics",
-    ],
-    forbiddenConsumers: [
-      "sourceEnergy",
-      "storedModalEnergy",
-      "projectedRenderEnergy",
-      "displayCompression",
-    ],
-  }),
-  phaseState: createQuantityContract({
-    quantity: "phaseState",
-    lane: "phase",
-    surface: "pipeline",
-    represents: "phase offset and angular velocity for live phase motion",
-    deepOwner:
-      "modalPhaseSlots.js publishes phase slots; runtime.js uploads them",
-    transforms: ["unwrap", "velocity clamp", "time evaluation"],
-    allowedConsumerPath: [
-      "phase slots",
-      "phase interference carrier",
-      "material transfer modulation",
-    ],
-    allowedConsumers: [
-      "interferenceContrast",
-      "phaseInterferenceTransfer",
-      "diagnostics",
-    ],
-    forbiddenConsumers: [
-      "modalIdentityTopology",
-      "modalAmplitudeCoefficient",
-      "renderAuthority",
-      "projectedRenderEnergy",
-    ],
-  }),
-  phaseAuthorityCoherence: createQuantityContract({
-    quantity: "phaseAuthorityCoherence",
-    lane: "phase",
-    surface: "pipeline",
-    represents:
-      "bounded confidence that phase state may affect interference transfer",
-    deepOwner:
-      "modalPhaseSlots.js and fieldCache.js phase interference projection",
-    transforms: ["coherence times authority", "support weighting", "clamp01"],
-    allowedConsumerPath: [
-      "phase authority/coherence",
-      "phase interference carrier",
-      "material transfer modulation",
-    ],
-    allowedConsumers: [
-      "interferenceContrast",
-      "phaseInterferenceAuthority",
-      "diagnostics",
-    ],
-    forbiddenConsumers: [
-      "modalIdentityTopology",
-      "modalAmplitudeCoefficient",
-      "renderAuthority",
-      "projectedRenderEnergy",
-      "sourceRadiance",
-    ],
-  }),
-  signedField: createQuantityContract({
-    quantity: "signedField",
-    lane: "field",
-    surface: "pipeline",
-    represents: "signed modal field after coefficient-weighted basis summation",
-    deepOwner:
-      "fieldCache.js live projection cache; material.js direct synthesis only while no committed cache is active",
-    transforms: ["basis evaluation", "coefficient weighting", "normalization"],
-    allowedConsumerPath: [
-      "live buffers",
-      "field/support carriers",
-      "pressure/radiation carrier",
-      "material transfer",
-    ],
-    allowedConsumers: [
-      "normalizedPressure",
-      "cancellation",
-      "matchedFieldGradient",
-      "diagnostics",
-    ],
-    forbiddenConsumers: ["displayCompression", "modalIdentityTopology"],
-  }),
-  normalizedPressure: createQuantityContract({
-    quantity: "normalizedPressure",
-    lane: "field",
-    surface: "pipeline",
-    represents:
-      "normalized signed pressure proxy derived from coherent modal summation, not calibrated pascals",
-    deepOwner: "fieldCache.js pressure/radiation carrier",
-    transforms: [
-      "coherent signed modal summation",
-      "slot-amplitude normalization",
-      "signed-unit clamp",
-      "pressure/radiation texture write",
-    ],
-    allowedConsumerPath: [
-      "field/support carriers",
-      "pressure/radiation carrier",
-      "diagnostics",
-    ],
-    allowedConsumers: [
-      "cancellation",
-      "normalizedRadiationPotential",
-      "diagnostics",
-    ],
-    forbiddenConsumers: [
-      "displayCompression",
-      "modalIdentityTopology",
-      "modalAmplitudeCoefficient",
-      "fixedWorldSpaceCarrierDensity",
-      "sourceRadiance",
-      "laserIrradiance",
-    ],
-  }),
-  normalizedVelocityProxy: createQuantityContract({
-    quantity: "normalizedVelocityProxy",
-    lane: "field",
-    surface: "pipeline",
-    represents:
-      "normalized gradient-magnitude proxy for particle velocity, not calibrated fluid velocity",
-    deepOwner: "fieldCache.js pressure/radiation carrier",
-    transforms: [
-      "coherent modal gradient summation",
-      "slot-amplitude normalization",
-      "gradient magnitude",
-      "clamp01",
-    ],
-    allowedConsumerPath: [
-      "field gradients",
-      "pressure/radiation carrier",
-      "diagnostics",
-    ],
-    allowedConsumers: ["normalizedRadiationPotential", "diagnostics"],
-    forbiddenConsumers: [
-      "displayCompression",
-      "modalIdentityTopology",
-      "modalAmplitudeCoefficient",
-      "fixedWorldSpaceCarrierDensity",
-      "sourceRadiance",
-      "matchedFieldGradient",
-    ],
-  }),
-  normalizedRadiationPotential: createQuantityContract({
-    quantity: "normalizedRadiationPotential",
-    lane: "field",
-    surface: "pipeline",
-    represents:
-      "visualization-only normalized pressure-energy minus velocity-energy balance gated by explicit material contrast",
-    deepOwner: "fieldCache.js pressure/radiation carrier",
-    transforms: [
-      "normalized pressure energy",
-      "normalized velocity-proxy energy",
-      "explicit material-contrast weighting",
-      "signed-unit clamp",
-    ],
-    allowedConsumerPath: ["pressure/radiation carrier", "diagnostics"],
-    allowedConsumers: ["diagnostics"],
-    forbiddenConsumers: [
-      "displayCompression",
-      "modalIdentityTopology",
-      "modalAmplitudeCoefficient",
-      "fixedWorldSpaceCarrierDensity",
-      "sourceRadiance",
-      "topologyAdmission",
-      "matchedFieldGradient",
-    ],
-  }),
-  unsignedSupport: createQuantityContract({
-    quantity: "unsignedSupport",
-    lane: "support",
-    surface: "pipeline",
-    represents: "unsigned local field support before radiance transfer",
-    deepOwner: "fieldCache.js and material.js live support synthesis",
-    transforms: ["absolute field contribution sum", "amplitude normalization"],
-    allowedConsumerPath: ["field/support carriers", "diagnostics"],
-    allowedConsumers: ["cancellation", "diagnostics"],
-    forbiddenConsumers: ["sourceRadiance", "extinction"],
-  }),
-  cancellation: createQuantityContract({
-    quantity: "cancellation",
-    lane: "field",
-    surface: "pipeline",
-    represents:
-      "destructive-interference ratio derived from signed field and support",
-    deepOwner: "fieldCache.js deriveLiveSynthesisCancellationRatio",
-    transforms: ["abs signed field over unsigned support", "clamp01"],
-    allowedConsumerPath: ["field/support carriers", "diagnostics"],
-    allowedConsumers: ["diagnostics"],
-    forbiddenConsumers: [
-      "modalIdentityTopology",
-      "modalAmplitudeCoefficient",
-      "sourceRadiance",
-    ],
-  }),
-  interferenceContrast: createQuantityContract({
-    quantity: "interferenceContrast",
-    lane: "phase",
-    surface: "pipeline",
-    represents: "signed coherent-versus-independent phase energy contrast",
-    deepOwner: "fieldCache.js phase interference carrier",
-    transforms: [
-      "phase coherent energy",
-      "independent phase energy",
-      "signed contrast normalization",
-    ],
-    allowedConsumerPath: ["phase interference diagnostics"],
-    allowedConsumers: ["diagnostics"],
-    forbiddenConsumers: [
-      "modalIdentityTopology",
-      "modalAmplitudeCoefficient",
-      "renderAuthority",
-    ],
-  }),
-  displayCompression: createQuantityContract({
-    quantity: "displayCompression",
-    lane: "display",
-    surface: "pipeline",
-    represents:
-      "post-material scene-referred luminance and bloom headroom compression",
-    deepOwner: "displayRadiance.js and outputPipeline.js",
-    transforms: [
-      "luminance shoulder",
-      "channel ceiling",
-      "bloom headroom scale",
-    ],
-    allowedConsumerPath: [
-      "material radiance",
-      "display compression",
-      "final output",
-    ],
-    allowedConsumers: ["finalOutput", "displayDiagnostics"],
-    forbiddenConsumers: [
-      "sourceEnergy",
-      "storedModalEnergy",
-      "projectedRenderEnergy",
-      "modalAmplitudeCoefficient",
-      "modalIdentityTopology",
-      "runtimeUploadAuthority",
-    ],
-  }),
-  displayProjectionAmplitude: createQuantityContract({
-    quantity: "displayProjectionAmplitude",
-    lane: "display",
-    surface: "pipeline",
-    represents: "display-only projection shortlist amplitude after ranking",
-    deepOwner: "modalExcitation.js buildProjectionShortlist",
-    transforms: ["display score", "rank/cap shortlist", "clamp01"],
-    allowedConsumerPath: [
-      "projection shortlist",
-      "display slot amplitude",
-      "material transfer",
-    ],
-    allowedConsumers: [
-      "displaySlotAmplitude",
-      "displayShortlist",
-      "spectralLightColor",
-      "diagnostics",
-    ],
-    forbiddenConsumers: [
-      "storedModalEnergy",
-      "projectedRenderEnergy",
-      "modalAmplitudeCoefficient",
-      "modalIdentityTopology",
-      "renderAuthority",
-      "sourceRadiance",
-    ],
-  }),
-  spectralLanePacket: createQuantityContract({
-    quantity: "spectralLanePacket",
-    lane: "spectral",
-    surface: "pipeline",
-    represents:
-      "per-modal normalized wavelength-lane distribution plus phase, spread, confidence, and display-energy metadata",
-    deepOwner:
-      "modalExcitation.js createEntrySpectralLightComponent and writeLayerEntry",
-    transforms: [
-      "octave-folded spectral phase",
-      "lane-kernel normalization",
-      "packed lane storage",
-    ],
-    allowedConsumerPath: [
-      "modal spectral packet",
-      "canonical modal descriptor",
-      "spectral lane cache",
-    ],
-    allowedConsumers: [
-      "spectralLaneRadiance",
-      "runtimeUploadAuthority",
-      "diagnostics",
-    ],
-    forbiddenConsumers: [
-      "spectralDisplayProjection",
-      "displayCompression",
+      "fieldPotential",
+      "observerGeometry",
+      "materialPalette",
       "staticColor",
-      "rgbAverage",
-      "renderAuthority",
-      "projectedRenderEnergy",
     ],
-    requiredEvidenceByConsumer: {
-      spectralLaneRadiance: ["laneDistribution", "modal coefficient"],
-    },
   }),
-  spectralLaneRadiance: createQuantityContract({
-    quantity: "spectralLaneRadiance",
-    lane: "spectral",
-    surface: "field-cache",
+  resolvedSpectralMomentEvidence: contract({
+    quantity: "resolvedSpectralMomentEvidence",
+    lane: "spectral-phase",
     represents:
-      "nonnegative local spectral lane radiance after modal structural support and lane distribution are applied; display energy and spectral confidence remain packet metadata, not extinguishing radiance gates",
-    deepOwner: "fieldCache.js spectral lane cache compute",
+      "bounded normalized moments m1 and m2 plus support-derived presence p",
+    deepOwner: "fieldCacheBake.js float32 field resolve",
     transforms: [
-      "basis support sampling",
-      "modal coefficient weighting",
-      "lane radiance accumulation",
-      "dominance and entropy diagnostics",
-      "support-weighted spectral confidence diagnostics",
+      "divide by max(W,2^-16)",
+      "radial unit-disk clamp",
+      "presence W/(W+2^-16)",
     ],
-    allowedConsumerPath: [
-      "spectral lane cache",
-      "material spectral lane transfer",
-      "display projection",
+    allowedConsumers: ["observerLocalSpectralPhase", "diagnostics"],
+    forbiddenConsumers: [
+      "fieldPotential",
+      "observerGeometry",
+      "staticColor",
+      "chromaAttenuation",
     ],
+  }),
+  completeAcousticField: contract({
+    quantity: "completeAcousticField",
+    lane: "field-cache",
+    represents:
+      "cycle-averaged Gor'kov potential and gradient from every admitted mode",
+    deepOwner: "fieldCacheBake.js complete modal bake",
+    transforms: ["coherent same-frequency shells", "cycle-averaged energy"],
     allowedConsumers: [
-      "spectralDisplayProjection",
-      "spectralLaneDiagnostics",
+      "fineApertureResolvedField",
+      "topologyApertureResolvedField",
       "diagnostics",
     ],
     forbiddenConsumers: [
-      "staticColor",
-      "rgbAverage",
-      "modalFieldColorBuffer",
-      "displayCompression",
-      "renderAuthority",
-      "projectedRenderEnergy",
+      "cameraSlice",
+      "modalPaging",
+      "renderResolution",
+      "bloom",
     ],
   }),
-  spectralDisplayProjection: createQuantityContract({
-    quantity: "spectralDisplayProjection",
-    lane: "spectral",
+  fineApertureResolvedField: contract({
+    quantity: "fineApertureResolvedField",
+    lane: "field-cache",
+    represents:
+      "complete potential and gradient after the fine material-detail aperture",
+    deepOwner: "fieldCacheBake.js fixed scale-space pass",
+    transforms: ["fixed 0.104 world-unit Gaussian aperture"],
+    allowedConsumers: [
+      "fineDetailAgreement",
+      "fineResidualDetail",
+      "diagnostics",
+    ],
+    forbiddenConsumers: [
+      "observerTopology",
+      "implicitSurfaceMotion",
+      "observerGeometry",
+      "camera",
+      "frameRate",
+      "outputResolution",
+      "performanceTier",
+    ],
+  }),
+  topologyApertureResolvedField: contract({
+    quantity: "topologyApertureResolvedField",
+    lane: "field-cache",
+    represents:
+      "the complete potential and gradient after the fixed topology aperture",
+    deepOwner: "fieldCacheBake.js fixed scale-space pass",
+    transforms: ["fixed 0.26 world-unit Gaussian aperture"],
+    allowedConsumers: [
+      "observerTopology",
+      "implicitSurfaceMotion",
+      "fineDetailAgreement",
+      "fineResidualDetail",
+      "diagnostics",
+    ],
+    forbiddenConsumers: [
+      "camera",
+      "frameRate",
+      "outputResolution",
+      "performanceTier",
+    ],
+  }),
+  fineDetailAgreement: contract({
+    quantity: "fineDetailAgreement",
+    lane: "field-cache",
+    represents:
+      "continuous amplitude-normalized agreement of fine detail with canonical topology",
+    deepOwner: "fieldCacheBake.js scale-space resolve",
+    transforms: [
+      "signed surface displacement in world units",
+      "surface-normal agreement",
+      "continuous gradient validity",
+      "unit clamp",
+    ],
+    allowedConsumers: ["observerFineDetail", "diagnostics"],
+    forbiddenConsumers: [
+      "observerTopology",
+      "implicitSurfaceMotion",
+      "observerGeometry",
+      "modalAdmission",
+      "modeRanking",
+      "thresholdGate",
+      "camera",
+      "frameRate",
+      "bloom",
+    ],
+  }),
+  fineResidualDetail: contract({
+    quantity: "fineResidualDetail",
+    lane: "field-cache",
+    represents:
+      "bounded signed fine-minus-topology surface displacement used only as material detail",
+    deepOwner: "fieldCacheBake.js scale-space resolve",
+    transforms: [
+      "surface-distance difference in world units",
+      "fixed apparatus-scale normalization",
+      "continuous signed saturation",
+    ],
+    allowedConsumers: ["observerFineDetail", "diagnostics"],
+    forbiddenConsumers: [
+      "observerTopology",
+      "implicitSurfaceMotion",
+      "observerGeometry",
+      "surfaceIntersection",
+      "modalAdmission",
+      "camera",
+      "frameRate",
+      "bloom",
+    ],
+  }),
+  implicitSurfaceMotion: contract({
+    quantity: "implicitSurfaceMotion",
+    lane: "observer-state",
+    represents:
+      "minimum-norm motion of the topology-aperture-resolved U=0 surface",
+    deepOwner: "cymaticObserverNode.js implicit field backtrace",
+    transforms: ["potential delta", "gradient-normal backtrace"],
+    allowedConsumers: ["observerHistoryAdvection", "diagnostics"],
+    forbiddenConsumers: ["opticalFlow", "particleSimulation", "cameraMotion"],
+  }),
+  observerGeometryPersistence: contract({
+    quantity: "observerGeometryPersistence",
+    lane: "observer-state",
     surface: "material-transfer",
     represents:
-      "unit-luminance linear RGB chromaticity projected from spectral lane ratios",
-    deepOwner: "material.js spectral lane-to-chromaticity projection",
+      "advected finite-exposure signed level set of the topology-aperture-resolved U=0 sheet",
+    deepOwner: "cymaticObserverNode.js geometry ping-pong lane",
     transforms: [
-      "lane texture sampling",
-      "normalized lane RGB projection",
-      "linear-luminance chromaticity normalization",
+      "field-derived advection",
+      "fixed 200 ms exponential exposure",
+      "fixed-width sheet extraction at material sampling",
     ],
-    allowedConsumerPath: [
-      "material spectral lane transfer",
-      "material chromaticity",
-      "laser-excited emission source radiance",
-    ],
-    allowedConsumers: ["materialChromaticity", "sourceRadiance", "diagnostics"],
+    allowedConsumers: ["plasmaCarrier", "diagnostics"],
     forbiddenConsumers: [
-      "spectralLanePacket",
-      "spectralLaneRadiance",
-      "modalIdentityTopology",
-      "modalAmplitudeCoefficient",
-      "renderAuthority",
-      "staticColor",
-      "rgbAverage",
-      "organizedDensity",
-      "incidentLaserIrradiance",
+      "audioEnergyGain",
+      "spectralColorGain",
+      "camera",
+      "frameRate",
+      "bloom",
     ],
   }),
-  diagnostics: createQuantityContract({
-    quantity: "diagnostics",
-    lane: "diagnostics",
-    surface: "pipeline",
-    represents: "read-only audit and probe values",
-    deepOwner: "producer-specific debug snapshots",
-    transforms: ["sampling", "summarization", "serialization"],
-    allowedConsumerPath: ["owner-owned quantity", "diagnostics"],
-    allowedConsumers: ["debugSnapshot", "tests", "developerTools"],
-    forbiddenConsumers: [
-      "renderAuthority",
-      "runtimeUploadAuthority",
-      "projectedRenderEnergy",
-      "sourceRadiance",
-    ],
-  }),
-  structuralProjectionDrive: createQuantityContract({
-    quantity: "structuralProjectionDrive",
-    lane: "structural",
-    represents: "normalized modal structural energy drive",
-    transforms: ["energy normalization", "bounded support projection"],
-    allowedConsumers: [
-      "modalCoefficientEnergy",
-      "detectorIntegratedAcousticEnergy",
-      "diagnostics",
-    ],
-    forbiddenConsumers: ["phaseCurrent", "topologyIdentity", "sourceRadiance"],
-  }),
-  modalCoefficientEnergy: createQuantityContract({
-    quantity: "modalCoefficientEnergy",
-    lane: "structural",
-    represents: "bounded canonical modal coefficient energy",
-    transforms: ["clamp01", "structural projection drive"],
-    allowedConsumers: ["detectorIntegratedAcousticEnergy", "diagnostics"],
-    forbiddenConsumers: [
-      "phaseCurrent",
-      "topologyIdentity",
-      "rawAmplitudeNormalizer",
-    ],
-  }),
-  modalEnergyAmplitude: createQuantityContract({
-    quantity: "modalEnergyAmplitude",
-    lane: "structural",
+  observerSurfaceNormal: contract({
+    quantity: "observerSurfaceNormal",
+    lane: "observer-state",
+    surface: "material-transfer",
     represents:
-      "RMS modal coefficient amplitude equal to the square root of summed canonical modal coefficient energy",
-    deepOwner:
-      "fieldCache.js derives the represented energy; runtime.js publishes uModalEnergyAmplitude",
-    transforms: ["canonical modal coefficient energy sum", "square root"],
-    allowedConsumerPath: [
-      "canonical modal coefficient energy",
-      "field and gradient normalization",
-      "diagnostics",
+      "local normalized topology-aperture gradient whose nonzero direction proves persistent U=0 surface validity",
+    deepOwner: "cymaticObserverNode.js geometry ping-pong lane",
+    transforms: ["gradient normalization", "fixed 200 ms geometry exposure"],
+    allowedConsumers: ["plasmaCarrier", "plasmaTangentResponse", "diagnostics"],
+    forbiddenConsumers: ["observerRadiance", "observerSpectralPhase"],
+  }),
+  observerSurfaceSupport: contract({
+    quantity: "observerSurfaceSupport",
+    lane: "observer-state",
+    surface: "material-transfer",
+    represents:
+      "continuous acoustic support for a valid persistent topology surface",
+    deepOwner: "cymaticObserverNode.js appearance alpha lane",
+    transforms: [
+      "compressed absolute local acoustic energy",
+      "continuous topology-gradient validity",
+      "fixed 50 ms exponential exposure",
     ],
     allowedConsumers: [
-      "normalizedPressure",
-      "normalizedGradient",
-      "normalizedUnsignedSupport",
-      "diagnostics",
-    ],
-    forbiddenConsumers: ["sourceRadiance", "displayCompression"],
-  }),
-  matchedFieldGradient: createQuantityContract({
-    quantity: "matchedFieldGradient",
-    lane: "field",
-    surface: "field-cache",
-    represents:
-      "coherent scalar pressure proxy and its spatial gradient in one matched linear-amplitude representation",
-    deepOwner:
-      "fieldCache.js live field texture; material.js direct synthesis mirrors the same tuple",
-    transforms: [
-      "coherent modal basis summation",
-      "shared coefficient-amplitude normalization when direct synthesis is active",
-      "single RGBA tuple storage",
-    ],
-    allowedConsumerPath: [
-      "live field projection",
-      "local zero-set distance",
-      "fixed world-space carrier",
-    ],
-    allowedConsumers: [
-      "localZeroSetDistance",
-      "fixedWorldSpaceCarrierDensity",
-      "carrierNormalViewCosine",
+      "observerGeometryAssimilation",
+      "plasmaCarrier",
       "diagnostics",
     ],
     forbiddenConsumers: [
-      "detectorIntegratedAcousticEnergy",
-      "sourceRadiance",
-      "displayCompression",
+      "patternPersistence",
+      "spectralColorGain",
+      "camera",
+      "frameRate",
+      "bloom",
     ],
   }),
-  localZeroSetDistance: createQuantityContract({
-    quantity: "localZeroSetDistance",
-    lane: "carrier",
+  observerFineDetail: contract({
+    quantity: "observerFineDetail",
+    lane: "observer-state",
+    surface: "material-transfer",
     represents:
-      "amplitude-invariant local distance to the pressure zero set, abs(field) divided by gradient magnitude, in normalized cavity world units",
-    deepOwner: "carrierDensityNode.js deriveFixedWorldSpaceCarrierDensityNode",
+      "audio-time-persistent bounded material authority derived from fine agreement and residual",
+    deepOwner: "cymaticObserverNode.js organization alpha lane",
     transforms: [
-      "absolute scalar field",
-      "matched gradient magnitude",
-      "degenerate-gradient rejection",
+      "agreement times bounded residual reinforcement",
+      "field-derived advection",
+      "fixed 200 ms geometry exposure",
     ],
-    allowedConsumers: ["fixedWorldSpaceCarrierDensity", "diagnostics"],
+    allowedConsumers: ["plasmaDetailSpine", "diagnostics"],
     forbiddenConsumers: [
-      "sourceRadiance",
-      "incidentLaserIrradiance",
-      "displayCompression",
+      "observerTopology",
+      "implicitSurfaceMotion",
+      "observerGeometry",
+      "modalAdmission",
+      "camera",
+      "frameRate",
+      "outputResolution",
+      "bloom",
     ],
   }),
-  fixedWorldSpaceCarrierDensity: createQuantityContract({
-    quantity: "fixedWorldSpaceCarrierDensity",
-    lane: "carrier",
+  observerLocalRadiance: contract({
+    quantity: "observerLocalRadiance",
+    lane: "observer-state",
+    surface: "material-transfer",
     represents:
-      "unit-area core and sheath concentration sampled over the ray interval in normalized cavity coordinates",
-    deepOwner: "carrierDensityNode.js deriveFixedWorldSpaceCarrierDensityNode",
+      "fast local acoustic energy response carried with the observed sheet",
+    deepOwner: "cymaticObserverNode.js appearance blue lane",
     transforms: [
-      "fixed core FWHM",
-      "fixed sheath-to-core width ratio",
-      "fixed normalized core/sheath energy split",
-      "Gaussian interval integration",
-    ],
-    allowedConsumers: [
-      "organizedCoreDensity",
-      "organizedSheathDensity",
-      "diagnostics",
-    ],
-    forbiddenConsumers: [
-      "pitchVisibilityCompensation",
-      "beatVisibilityCompensation",
-      "radialVisibilityCompensation",
-      "centerVisibilityCompensation",
-      "edgeVisibilityCompensation",
-      "profileVisibilityCompensation",
-      "frameVisibilityCompensation",
-    ],
-  }),
-  carrierNormalViewCosine: createQuantityContract({
-    quantity: "carrierNormalViewCosine",
-    lane: "optical-detector",
-    represents:
-      "absolute cosine between the matched local zero-set normal and current ray direction",
-    deepOwner: "carrierDensityNode.js deriveFixedWorldSpaceCarrierDensityNode",
-    transforms: [
-      "matched gradient normalization",
-      "absolute dot with local ray direction",
-      "unit-interval clamp at the Fresnel consumer",
-    ],
-    allowedConsumers: ["holographicFresnelEmission", "diagnostics"],
-    forbiddenConsumers: [
-      "organizedCoreDensity",
-      "organizedSheathDensity",
-      "organizedDensity",
-      "sigmaS",
-      "sigmaA",
-      "extinction",
-      "incidentLaserIrradiance",
-      "pitchVisibilityCompensation",
-      "beatVisibilityCompensation",
-      "frameVisibilityCompensation",
-    ],
-  }),
-  detectorIntegratedAcousticEnergy: createQuantityContract({
-    quantity: "detectorIntegratedAcousticEnergy",
-    lane: "energy",
-    represents:
-      "nonnegative normalized acoustic energy after finite detector-window integration of coherent cross terms",
-    deepOwner:
-      "fieldCache.js detector integration; material.js consumes its detector-integrated and independent spatial energy with phase authority",
-    transforms: [
-      "modal coefficient energy",
-      "frequency-separation sinc window",
-      "phase cross-term integration",
-      "incoherent residual preservation",
-      "local spatial-energy normalization",
-    ],
-    allowedConsumers: [
-      "organizedCoreDensity",
-      "organizedSheathDensity",
-      "diagnostics",
-    ],
-    forbiddenConsumers: [
-      "pitchVisibilityCompensation",
-      "beatVisibilityCompensation",
-      "frameVisibilityCompensation",
-      "displayCompression",
-    ],
-  }),
-  materialChromaticity: createQuantityContract({
-    quantity: "materialChromaticity",
-    lane: "optical-material",
-    represents:
-      "nonnegative linear RGB chromaticity normalized to unit luminance; static and spectral modes own color ratios only",
-    deepOwner: "material.js normalizeMaterialChromaticityNode",
-    transforms: [
-      "nonnegative RGB clamp",
-      "linear-luminance normalization",
-      "spectral-lane RGB projection",
-    ],
-    allowedConsumers: [
-      "baseSourceRadiance",
-      "accentSourceRadiance",
-      "diagnostics",
-    ],
-    forbiddenConsumers: [
-      "organizedDensity",
-      "sigmaS",
-      "sigmaA",
-      "extinction",
-      "incidentLaserIrradiance",
-      "pitchVisibilityCompensation",
-    ],
-  }),
-  surfaceChromaticity: createQuantityContract({
-    quantity: "surfaceChromaticity",
-    lane: "optical-material",
-    represents:
-      "nonnegative unit-luminance linear RGB tint used only by the grazing-angle emission lane",
-    deepOwner: "material.js normalizeMaterialChromaticityNode",
-    transforms: ["nonnegative RGB clamp", "linear-luminance normalization"],
-    allowedConsumers: ["baseSourceRadiance", "diagnostics"],
-    forbiddenConsumers: [
-      "organizedDensity",
-      "sigmaS",
-      "sigmaA",
-      "extinction",
-      "incidentLaserIrradiance",
-    ],
-  }),
-  holographicFresnelEmission: createQuantityContract({
-    quantity: "holographicFresnelEmission",
-    lane: "optical-detector",
-    represents:
-      "bounded grazing-angle emission authority from carrier normal-view cosine and explicit holographic controls",
-    deepOwner:
-      "observationTransfer.js CPU oracle and observationTransferNode.js GPU mirror",
-    transforms: [
-      "one minus absolute normal-view cosine",
-      "explicit Fresnel power",
-      "bounded holographic intensity",
-    ],
-    allowedConsumers: ["fresnelEmissionSourceStrength", "diagnostics"],
-    forbiddenConsumers: [
-      "fixedWorldSpaceCarrierDensity",
-      "organizedDensity",
-      "sigmaS",
-      "sigmaA",
-      "extinction",
-      "incidentLaserIrradiance",
-      "pitchVisibilityCompensation",
-      "beatVisibilityCompensation",
-      "frameVisibilityCompensation",
-    ],
-  }),
-  materialDensityScale: createQuantityContract({
-    quantity: "materialDensityScale",
-    lane: "optical-material",
-    represents:
-      "nonnegative dimensionless operator scale applied once to organized core and sheath material",
-    deepOwner:
-      "material.js normalizes densityGain against the shipped material-density baseline",
-    transforms: [
-      "density gain divided by reference density gain",
-      "nonnegative clamp",
-    ],
-    allowedConsumers: [
-      "organizedCoreDensity",
-      "organizedSheathDensity",
-      "diagnostics",
-    ],
-    forbiddenConsumers: [
-      "fixedWorldSpaceCarrierDensity",
-      "detectorIntegratedAcousticEnergy",
-      "scatteringCoefficient",
-      "absorptionCoefficient",
-      "laserExcitedEmissionCoefficient",
-    ],
-  }),
-  carrierColumnDensityScale: createQuantityContract({
-    quantity: "carrierColumnDensityScale",
-    lane: "optical-material",
-    represents:
-      "bounded [0,1] column-density normalization derived from the admitted modes' energy-weighted RMS spatial wavenumber",
-    deepOwner:
-      "observationTransfer.js derives the scale; fieldCache.js owns the descriptor wavenumber statistic",
-    transforms: [
-      "reference wavenumber divided by admitted RMS spatial wavenumber",
-      "clamp to [minScale, 1]",
-    ],
-    allowedConsumers: [
-      "organizedCoreDensity",
-      "organizedSheathDensity",
-      "diagnostics",
-    ],
-    forbiddenConsumers: [
-      "fixedWorldSpaceCarrierDensity",
-      "detectorIntegratedAcousticEnergy",
-      "materialDensityScale",
-      "scatteringCoefficient",
-      "absorptionCoefficient",
-      "laserExcitedEmissionCoefficient",
-      "displayCompression",
-    ],
-  }),
-  scatteringCoefficient: createQuantityContract({
-    quantity: "scatteringCoefficient",
-    lane: "optical-material",
-    represents: "fixed dimensionless scattering interaction coefficient",
-    deepOwner: "observationTransfer.js fixed reference coefficient",
-    transforms: ["nonnegative material calibration"],
-    allowedConsumers: ["sigmaS", "diagnostics"],
-    forbiddenConsumers: [
-      "fixedWorldSpaceCarrierDensity",
-      "detectorIntegratedAcousticEnergy",
-      "displayCompression",
-    ],
-  }),
-  absorptionCoefficient: createQuantityContract({
-    quantity: "absorptionCoefficient",
-    lane: "optical-material",
-    represents: "fixed dimensionless absorption interaction coefficient",
-    deepOwner: "observationTransfer.js fixed reference coefficient",
-    transforms: ["nonnegative material calibration"],
-    allowedConsumers: ["sigmaA", "extinction", "diagnostics"],
-    forbiddenConsumers: [
-      "fixedWorldSpaceCarrierDensity",
-      "detectorIntegratedAcousticEnergy",
-      "sourceRadiance",
-    ],
-  }),
-  laserExcitedEmissionCoefficient: createQuantityContract({
-    quantity: "laserExcitedEmissionCoefficient",
-    lane: "optical-material",
-    represents:
-      "scene-linear radiance emitted per unit organized carrier density and per normalized path length",
-    deepOwner: "observationTransfer.js fixed reference coefficient",
-    transforms: ["nonnegative material calibration"],
-    allowedConsumers: [
-      "emissionSourceStrength",
-      "coreEmissionSourceStrength",
-      "sheathEmissionSourceStrength",
-      "diagnostics",
-    ],
-    forbiddenConsumers: [
-      "fixedWorldSpaceCarrierDensity",
-      "detectorIntegratedAcousticEnergy",
-      "sigmaS",
-      "sigmaA",
-      "extinction",
-      "displayCompression",
-    ],
-  }),
-  organizedCoreDensity: createQuantityContract({
-    quantity: "organizedCoreDensity",
-    lane: "material-transfer",
-    represents:
-      "core carrier concentration weighted once by detector-integrated acoustic energy per normalized cavity length",
-    deepOwner:
-      "observationTransfer.js CPU oracle and observationTransferNode.js GPU mirror",
-    transforms: [
-      "core density times detector-integrated acoustic energy",
-      "material density scale applied once",
-    ],
-    allowedConsumers: [
-      "organizedDensity",
-      "coreEmissionSourceStrength",
-      "diagnostics",
-    ],
-    forbiddenConsumers: [
-      "pitchVisibilityCompensation",
-      "beatVisibilityCompensation",
-      "frameVisibilityCompensation",
-      "displayCompression",
-    ],
-  }),
-  organizedSheathDensity: createQuantityContract({
-    quantity: "organizedSheathDensity",
-    lane: "material-transfer",
-    represents:
-      "linked sheath carrier concentration weighted once by detector-integrated acoustic energy per normalized cavity length",
-    deepOwner:
-      "observationTransfer.js CPU oracle and observationTransferNode.js GPU mirror",
-    transforms: [
-      "sheath density times detector-integrated acoustic energy",
-      "material density scale applied once",
-    ],
-    allowedConsumers: [
-      "organizedDensity",
-      "sheathEmissionSourceStrength",
-      "diagnostics",
-    ],
-    forbiddenConsumers: [
-      "pitchVisibilityCompensation",
-      "beatVisibilityCompensation",
-      "frameVisibilityCompensation",
-      "displayCompression",
-    ],
-  }),
-  organizedDensity: createQuantityContract({
-    quantity: "organizedDensity",
-    lane: "material-transfer",
-    represents:
-      "sum of organized core and sheath concentrations per normalized cavity length",
-    deepOwner:
-      "observationTransfer.js CPU oracle and observationTransferNode.js GPU mirror",
-    transforms: [
-      "organized core density plus organized sheath density",
-      "nonnegative clamp",
-    ],
-    allowedConsumers: [
-      "sigmaS",
-      "sigmaA",
-      "emissionSourceStrength",
-      "diagnostics",
-    ],
-    forbiddenConsumers: [
-      "pitchVisibilityCompensation",
-      "beatVisibilityCompensation",
-      "radialVisibilityCompensation",
-      "centerVisibilityCompensation",
-      "edgeVisibilityCompensation",
-      "profileVisibilityCompensation",
-      "frameVisibilityCompensation",
-    ],
-  }),
-  sigmaS: createQuantityContract({
-    quantity: "sigmaS",
-    lane: "material-transfer",
-    represents:
-      "local scattering extinction coefficient in inverse normalized cavity lengths",
-    deepOwner:
-      "observationTransfer.js CPU oracle and observationTransferNode.js GPU mirror",
-    transforms: ["organized density times scattering coefficient"],
-    allowedConsumers: ["extinction", "diagnostics"],
-    forbiddenConsumers: [
-      "fixedWorldSpaceCarrierDensity",
-      "detectorIntegratedAcousticEnergy",
-      "displayCompression",
-    ],
-  }),
-  sigmaA: createQuantityContract({
-    quantity: "sigmaA",
-    lane: "material-transfer",
-    represents:
-      "local absorption extinction coefficient in inverse normalized cavity lengths",
-    deepOwner:
-      "observationTransfer.js CPU oracle and observationTransferNode.js GPU mirror",
-    transforms: ["organized density times absorption coefficient"],
-    allowedConsumers: ["extinction", "diagnostics"],
-    forbiddenConsumers: [
-      "sourceRadiance",
-      "fixedWorldSpaceCarrierDensity",
-      "detectorIntegratedAcousticEnergy",
-    ],
-  }),
-  extinction: createQuantityContract({
-    quantity: "extinction",
-    lane: "material-transfer",
-    represents:
-      "sum of local scattering and absorption coefficients in inverse normalized cavity lengths",
-    deepOwner:
-      "observationTransfer.js CPU oracle and observationTransferNode.js GPU mirror",
-    transforms: ["sigmaS plus sigmaA"],
-    allowedConsumers: ["volumeTransmittance", "opacity", "diagnostics"],
-    forbiddenConsumers: [
-      "sourceRadiance",
-      "materialChromaticity",
-      "displayCompression",
-    ],
-  }),
-  emissionSourceStrength: createQuantityContract({
-    quantity: "emissionSourceStrength",
-    lane: "material-transfer",
-    represents:
-      "isotropic scene-linear laser-excited source radiance per normalized path length before chromaticity and lane gain",
-    deepOwner:
-      "observationTransfer.js CPU oracle and observationTransferNode.js GPU mirror",
-    transforms: ["organized density times laser-excited emission coefficient"],
-    allowedConsumers: ["fresnelEmissionSourceStrength", "diagnostics"],
-    forbiddenConsumers: [
-      "sigmaS",
-      "sigmaA",
-      "extinction",
-      "fixedWorldSpaceCarrierDensity",
-      "displayCompression",
-    ],
-  }),
-  coreEmissionSourceStrength: createQuantityContract({
-    quantity: "coreEmissionSourceStrength",
-    lane: "material-transfer",
-    represents:
-      "intrinsic scene-linear source strength of the narrow organized carrier core per normalized path length",
-    deepOwner:
-      "observationTransfer.js CPU oracle and observationTransferNode.js GPU mirror",
-    transforms: [
-      "organized core density times laser-excited emission coefficient",
-    ],
-    allowedConsumers: ["baseSourceRadiance", "diagnostics"],
-    forbiddenConsumers: [
-      "sigmaS",
-      "sigmaA",
-      "extinction",
-      "displayCompression",
-    ],
-  }),
-  sheathEmissionSourceStrength: createQuantityContract({
-    quantity: "sheathEmissionSourceStrength",
-    lane: "material-transfer",
-    represents:
-      "intrinsic scene-linear source strength of the linked organized sheath per normalized path length",
-    deepOwner:
-      "observationTransfer.js CPU oracle and observationTransferNode.js GPU mirror",
-    transforms: [
-      "organized sheath density times laser-excited emission coefficient",
-    ],
-    allowedConsumers: ["baseSourceRadiance", "diagnostics"],
-    forbiddenConsumers: [
-      "sigmaS",
-      "sigmaA",
-      "extinction",
-      "displayCompression",
-    ],
-  }),
-  fresnelEmissionSourceStrength: createQuantityContract({
-    quantity: "fresnelEmissionSourceStrength",
-    lane: "material-transfer",
-    represents:
-      "additive scene-linear grazing-angle source strength before volume integration",
-    deepOwner:
-      "observationTransfer.js CPU oracle and observationTransferNode.js GPU mirror",
-    transforms: [
-      "intrinsic emission source strength",
-      "bounded holographic Fresnel authority",
-      "fixed display-optics Fresnel emission gain",
-    ],
-    allowedConsumers: ["baseSourceRadiance", "diagnostics"],
-    forbiddenConsumers: [
-      "sigmaS",
-      "sigmaA",
-      "extinction",
-      "displayCompression",
-    ],
-  }),
-  incidentLaserIrradiance: createQuantityContract({
-    quantity: "incidentLaserIrradiance",
-    lane: "optical-transport",
-    represents:
-      "relative scene-linear total and zero-order optical power per area from the current transport apparatus profile",
-    deepOwner:
-      "laserTransport.js simultaneous ray and order resolve plus its transport texture",
-    transforms: [
-      "fixed energy-conserving reference and diffracted order split",
-      "nonnegative computed irradiance",
-    ],
-    allowedConsumers: ["laserCausticAccentAuthority", "diagnostics"],
-    forbiddenConsumers: [
-      "holographicBaseRadiance",
-      "baseSourceRadiance",
-      "organizedDensity",
-      "sigmaS",
-      "sigmaA",
-      "extinction",
-      "fixedWorldSpaceCarrierDensity",
-    ],
-  }),
-  holographicBaseRadianceGain: createQuantityContract({
-    quantity: "holographicBaseRadianceGain",
-    lane: "calibration",
-    represents:
-      "nonnegative dimensionless emission-radiance calibration gain selected by the target logarithmic sweep with no unity ceiling",
-    deepOwner:
-      "observationCalibration.js evidence selector; visualizationUniforms.js holds the unselected fail-closed runtime value",
-    transforms: [
-      "half-stop evidence search",
-      "lowest complete passing selection",
-    ],
-    allowedConsumers: [
-      "baseSourceRadiance",
-      "accentSourceRadiance",
-      "diagnostics",
-    ],
-    forbiddenConsumers: [
-      "fixedWorldSpaceCarrierDensity",
-      "organizedDensity",
-      "extinction",
-      "laserCausticAccentAuthority",
-    ],
-  }),
-  laserCausticAccentAuthority: createQuantityContract({
-    quantity: "laserCausticAccentAuthority",
-    lane: "optical-transport",
-    represents:
-      "bounded readiness-gated positive excess of current total irradiance above the attenuated zero-order straight reference",
-    deepOwner:
-      "observationTransfer.js CPU oracle and observationTransferNode.js GPU mirror; the material consumes it through the test-only off/current selector under the signed approve-base decision",
-    transforms: [
-      "attenuated zero-order reference",
-      "positive excess",
+      "field-local energy",
+      "field-derived advection",
+      "fixed 50 ms exponential exposure",
       "bounded compression",
-      "zero-preserving connected peak response",
-      "readiness gating",
     ],
-    allowedConsumers: ["accentSourceRadiance", "diagnostics"],
+    allowedConsumers: ["plasmaAccentRadiance", "diagnostics"],
     forbiddenConsumers: [
-      "baseSourceRadiance",
-      "holographicBaseRadianceGain",
-      "fixedWorldSpaceCarrierDensity",
-      "organizedDensity",
-      "extinction",
+      "observerGeometry",
+      "modalAdmission",
+      "surfaceWidth",
+      "bloom",
     ],
   }),
-  baseSourceRadiance: createQuantityContract({
-    quantity: "baseSourceRadiance",
-    lane: "material-transfer",
+  observerLocalSpectralPhase: contract({
+    quantity: "observerLocalSpectralPhase",
+    lane: "spectral-phase",
+    surface: "observer-state",
     represents:
-      "scene-linear holographic base source radiance per normalized path length before volume integration",
+      "unit circular hue direction H stored directly until material sampling",
     deepOwner:
-      "observationTransfer.js CPU oracle and observationTransferNode.js GPU mirror",
+      "cymaticObserverNode.js appearance xy phase direction and response-derived reset seed",
     transforms: [
-      "white-point core chromaticity times core emission source strength",
-      "material chromaticity times sheath emission source strength",
-      "surface-tinted chromaticity times Fresnel emission source strength",
-      "holographic base radiance gain",
+      "first/second-moment evidence resolution",
+      "fixed-aperture spatial moment resolution",
+      "local transported phase history",
+      "field-derived advection",
+      "fixed 100 ms exponential exposure",
     ],
-    allowedConsumers: [
-      "accentSourceRadiance",
-      "sourceRadiance",
-      "volumeBaseRadiance",
-      "diagnostics",
-    ],
+    allowedConsumers: ["spectralColorimetry", "diagnostics"],
     forbiddenConsumers: [
-      "laserTransportReady",
-      "incidentLaserIrradiance",
-      "laserCausticAccentAuthority",
-      "extinction",
+      "plasmaDensity",
+      "observerGeometry",
+      "modalAdmission",
+      "staticColorFallback",
+      "camera",
+      "frameRate",
     ],
   }),
-  accentSourceRadiance: createQuantityContract({
-    quantity: "accentSourceRadiance",
-    lane: "material-transfer",
+  observerLocalSpectralChromaticity: contract({
+    quantity: "observerLocalSpectralChromaticity",
+    lane: "spectral-phase",
+    surface: "material-transfer",
     represents:
-      "scene-linear laser-caustic accent source radiance per normalized path length before volume integration",
+      "unit-Rec.709-luminance RGB chromaticity derived from one resolved observer phase",
     deepOwner:
-      "observationTransfer.js CPU oracle and observationTransferNode.js GPU mirror",
+      "cymaticObserverNode.js two-harmonic projection; fieldCacheSampling.js nearest organization-lane fetch",
     transforms: [
-      "bounded fraction of calibrated base source radiance",
-      "bounded laser accent authority",
+      "pinned two-harmonic phase projection",
+      "RGB organization-lane half-float packing",
+      "nearest observer-voxel fetch",
     ],
-    allowedConsumers: ["sourceRadiance", "volumeAccentRadiance", "diagnostics"],
-    forbiddenConsumers: [
-      "baseSourceRadiance",
-      "fixedWorldSpaceCarrierDensity",
-      "extinction",
-    ],
-  }),
-  sourceRadiance: createQuantityContract({
-    quantity: "sourceRadiance",
-    lane: "material-transfer",
-    represents:
-      "sum of base and accent scene-linear source radiance per normalized path length",
-    deepOwner:
-      "observationTransfer.js CPU oracle and observationTransferNode.js GPU mirror",
-    transforms: ["base source radiance plus accent source radiance"],
     allowedConsumers: [
-      "volumeRadianceIntegral",
-      "displayCompression",
+      "operatorSpectralChroma",
+      "plasmaBaseRadiance",
+      "plasmaAccentRadiance",
       "diagnostics",
     ],
     forbiddenConsumers: [
-      "fixedWorldSpaceCarrierDensity",
-      "detectorIntegratedAcousticEnergy",
-      "organizedDensity",
-      "extinction",
-      "pitchVisibilityCompensation",
-      "beatVisibilityCompensation",
-      "radialVisibilityCompensation",
-      "centerVisibilityCompensation",
-      "edgeVisibilityCompensation",
-      "profileVisibilityCompensation",
-      "frameVisibilityCompensation",
+      "plasmaDensity",
+      "observerGeometry",
+      "modalAdmission",
+      "staticColorFallback",
+      "evidenceDerivedChromaAttenuation",
+      "camera",
+      "frameRate",
     ],
   }),
-  laserTransportReady: createQuantityContract({
-    quantity: "laserTransportReady",
-    lane: "optical-transport",
+  observerAudioClock: contract({
+    quantity: "observerAudioClock",
+    lane: "observer-state",
     represents:
-      "bounded authority permitting the current transport result to contribute only to laser caustic accent evaluation",
-    deepOwner: "laserTransport.js readiness channel",
-    transforms: ["boolean or bounded readiness normalization"],
-    allowedConsumers: ["laserCausticAccentAuthority", "diagnostics"],
+      "fixed-step observer time derived exclusively from authoritative audio time",
+    deepOwner: "cymaticObserverReference.js observer clock",
+    transforms: ["1/60 s quantization", "audio timestamp delta"],
+    allowedConsumers: ["observerHistoryAdvection", "observerExposure"],
     forbiddenConsumers: [
-      "organizedDensity",
-      "fixedWorldSpaceCarrierDensity",
-      "detectorIntegratedAcousticEnergy",
-      "baseSourceRadiance",
+      "renderFrameClock",
+      "camera",
+      "outputResolution",
+      "bloom",
+      "performanceTier",
     ],
   }),
-  volumeBaseRadiance: createQuantityContract({
-    quantity: "volumeBaseRadiance",
-    lane: "volume-integration",
+  plasmaContinuitySpineDensity: contract({
+    quantity: "plasmaContinuitySpineDensity",
+    lane: "plasma-material",
+    surface: "material-transfer",
     represents:
-      "premultiplied base radiance integrated along the production ray under the shared transmittance recurrence",
-    deepOwner: "SafeVolumetricLightingModel.js accumulatedBaseRadiance",
+      "thin emissive layer carried by every valid persistent topology U=0 surface",
+    deepOwner: "cymaticPlasmaCarrierNode.js",
     transforms: [
-      "exact homogeneous segment recurrence",
-      "shared transmittance",
+      "fixed continuity Gaussian width ratio",
+      "fixed layer weight",
+      "fixed valid-surface continuity authority",
     ],
-    allowedConsumers: [
-      "sourceRadianceOutput",
-      "baseRadianceAov",
-      "diagnostics",
-    ],
-    forbiddenConsumers: ["accentSourceRadiance", "displayCompression"],
+    allowedConsumers: ["plasmaEmission", "plasmaExtinction", "diagnostics"],
+    forbiddenConsumers: ["audioDensityWidth", "bloomWidth", "cameraWidth"],
   }),
-  volumeAccentRadiance: createQuantityContract({
-    quantity: "volumeAccentRadiance",
-    lane: "volume-integration",
+  plasmaDetailSpineDensity: contract({
+    quantity: "plasmaDetailSpineDensity",
+    lane: "plasma-material",
+    surface: "material-transfer",
     represents:
-      "premultiplied accent radiance integrated along the same production ray and transmittance recurrence as the base",
-    deepOwner: "SafeVolumetricLightingModel.js accumulatedAccentRadiance",
+      "bounded narrow emissive reinforcement from fine detail on the canonical topology sheet",
+    deepOwner: "cymaticPlasmaCarrierNode.js",
     transforms: [
-      "exact homogeneous segment recurrence",
-      "shared transmittance",
+      "fixed detail Gaussian width ratio",
+      "fixed layer weight",
+      "continuous saturating fine-detail authority",
     ],
-    allowedConsumers: [
-      "sourceRadianceOutput",
-      "accentRadianceAov",
-      "diagnostics",
-    ],
-    forbiddenConsumers: ["baseSourceRadiance", "displayCompression"],
+    allowedConsumers: ["plasmaEmission", "plasmaExtinction", "diagnostics"],
+    forbiddenConsumers: ["audioDensityWidth", "bloomWidth", "cameraWidth"],
   }),
-  volumeTransmittance: createQuantityContract({
+  plasmaCoreDensity: contract({
+    quantity: "plasmaCoreDensity",
+    lane: "plasma-material",
+    surface: "material-transfer",
+    represents:
+      "colored core layer carried by every valid persistent topology surface",
+    deepOwner: "cymaticPlasmaCarrierNode.js",
+    transforms: [
+      "fixed Gaussian width ratio",
+      "fixed layer weight",
+      "binary valid-surface authority",
+    ],
+    allowedConsumers: ["plasmaEmission", "plasmaExtinction", "diagnostics"],
+    forbiddenConsumers: ["audioDensityWidth", "bloomWidth", "cameraWidth"],
+  }),
+  plasmaSheathDensity: contract({
+    quantity: "plasmaSheathDensity",
+    lane: "plasma-material",
+    surface: "material-transfer",
+    represents:
+      "restrained nonzero continuity sheath for every valid topology U=0 surface",
+    deepOwner: "cymaticPlasmaCarrierNode.js",
+    transforms: [
+      "fixed Gaussian width ratio",
+      "fixed layer weight",
+      "continuous topology-surface validity",
+    ],
+    allowedConsumers: ["plasmaEmission", "plasmaExtinction", "diagnostics"],
+    forbiddenConsumers: ["audioDensityWidth", "bloomWidth", "cameraWidth"],
+  }),
+  plasmaExtinction: contract({
+    quantity: "plasmaExtinction",
+    lane: "plasma-material",
+    surface: "material-transfer",
+    represents:
+      "local Beer-Lambert extinction owned by organized plasma density",
+    deepOwner: "cymaticPlasmaTransfer.js",
+    transforms: [
+      "fixed continuity/detail spine, core, and sheath densities",
+      "fixed extinction coefficient",
+    ],
+    allowedConsumers: ["volumeTransmittance", "diagnostics"],
+    forbiddenConsumers: ["bloom", "exposure", "cameraDepthHeuristic"],
+  }),
+  plasmaBaseRadiance: contract({
+    quantity: "plasmaBaseRadiance",
+    lane: "plasma-material",
+    surface: "material-transfer",
+    represents:
+      "scene-linear locally colored self-emission before volume integration",
+    deepOwner: "cymaticPlasmaTransfer.js",
+    transforms: [
+      "local spectral chromaticity",
+      "fixed continuity/detail spine, core, and sheath excitation",
+      "bounded tinted spine",
+      "independent fixed continuity/detail/body source-radiance-to-extinction allocations",
+    ],
+    allowedConsumers: ["volumeBaseRadiance", "diagnostics"],
+    forbiddenConsumers: ["observerGeometry", "bloomFeedback", "modeRanking"],
+  }),
+  plasmaAccentRadiance: contract({
+    quantity: "plasmaAccentRadiance",
+    lane: "plasma-material",
+    surface: "material-transfer",
+    represents:
+      "bounded local audio accent on the same plasma sheet, before bloom",
+    deepOwner: "cymaticPlasmaTransfer.js",
+    transforms: ["local excitation authority", "fixed accent coefficient"],
+    allowedConsumers: ["volumeAccentRadiance", "diagnostics"],
+    forbiddenConsumers: ["observerGeometry", "surfaceWidth", "bloomFeedback"],
+  }),
+  volumeTransmittance: contract({
     quantity: "volumeTransmittance",
     lane: "volume-integration",
     represents:
-      "scalar production-ray transmission after the single shared extinction recurrence",
-    deepOwner: "SafeVolumetricLightingModel.js transmittance",
-    transforms: ["exponential extinction per segment"],
+      "front-to-back Beer-Lambert transmittance through the complete observed volume",
+    deepOwner: "SafeVolumetricLightingModel.js",
+    transforms: ["exponential extinction", "camera-ordered ray integration"],
     allowedConsumers: [
-      "opacity",
-      "transmittanceAov",
-      "coverage",
+      "volumeBaseRadiance",
+      "volumeAccentRadiance",
+      "outputCoverage",
       "diagnostics",
     ],
-    forbiddenConsumers: ["baseSourceRadiance", "accentSourceRadiance"],
+    forbiddenConsumers: ["plasmaEmission", "observerState"],
   }),
-  volumeCoverage: createQuantityContract({
-    quantity: "volumeCoverage",
+  volumeBaseRadiance: contract({
+    quantity: "volumeBaseRadiance",
     lane: "volume-integration",
-    represents: "one minus production-ray transmittance",
-    deepOwner: "SafeVolumetricLightingModel.js raymarchCoverageNode",
-    transforms: ["one minus transmittance", "unit saturation"],
+    represents: "front-to-back integrated premultiplied plasma base radiance",
+    deepOwner: "SafeVolumetricLightingModel.js",
+    transforms: ["Beer-Lambert integration"],
+    allowedConsumers: ["sceneLinearOutput", "baseAov", "diagnostics"],
+    forbiddenConsumers: ["observerState", "modalField"],
+  }),
+  volumeAccentRadiance: contract({
+    quantity: "volumeAccentRadiance",
+    lane: "volume-integration",
+    represents: "front-to-back integrated premultiplied plasma accent radiance",
+    deepOwner: "SafeVolumetricLightingModel.js",
+    transforms: ["Beer-Lambert integration"],
+    allowedConsumers: ["sceneLinearOutput", "accentAov", "diagnostics"],
+    forbiddenConsumers: ["observerState", "modalField"],
+  }),
+  outputCoverage: contract({
+    quantity: "outputCoverage",
+    lane: "volume-integration",
+    represents: "one minus complete-volume transmittance",
+    deepOwner: "SafeVolumetricLightingModel.js",
+    transforms: ["one minus transmittance", "unit clamp"],
     allowedConsumers: ["outputAlpha", "coverageAov", "diagnostics"],
-    forbiddenConsumers: ["baseSourceRadiance", "accentSourceRadiance"],
+    forbiddenConsumers: ["plasmaEmission", "observerState"],
   }),
-});
-
-export const RAYMARCH_RENDER_SURFACE_AUDITS = Object.freeze({
-  sourceBoundaryModalObservationPolicy: createSourceSurfaceAudit({
-    surface: "sourceBoundaryModalObservationPolicy",
-    file: "audioSourceEvidence.js",
-    owner: "audioSourceEvidence.js source boundary",
-    startToken: "function deriveModalObservationPolicy({",
-    endToken: "export function collectAudioSourceEvidenceInputs",
-    requiredTokens: [
-      'analysisClass === "file"',
-      "suppressWeakSpectralFallbackDrive",
-    ],
-    forbiddenTokens: [],
-  }),
-  modalObservationSourcePolicyConsumer: createSourceSurfaceAudit({
-    surface: "modalObservationSourcePolicyConsumer",
-    file: "modalObservedScoring.js",
-    owner: "sourceBoundaryModalObservationPolicy",
-    startToken: "export function computeModalObservation({",
-    endToken: "export function getResonantHarmonicCoupling",
-    requiredTokens: ["sourceBoundarySuppressWeakSpectralFallbackDrive"],
-    forbiddenTokens: [
-      'analysisClass === "file"',
-      "avgAmplitude < 10",
-      "analyserRms < 0.025",
+  optionalBloom: contract({
+    quantity: "optionalBloom",
+    lane: "presentation",
+    represents:
+      "downstream enhancement of already legible scene-linear plasma radiance",
+    deepOwner: "outputPipeline.js",
+    transforms: ["thresholded post-process blur"],
+    allowedConsumers: ["displayOutput"],
+    forbiddenConsumers: [
+      "plasmaEmission",
+      "plasmaExtinction",
+      "observerState",
+      "modalField",
     ],
   }),
-  modalProjectionDisplayScore: createSourceSurfaceAudit({
-    surface: "modalProjectionDisplayScore",
-    file: "modalExcitation.js",
-    owner: "displayProjectionAmplitude",
-    startToken: "function buildProjectionShortlist(",
-    endToken: "function getDisplayScore(",
-    requiredTokens: ["displayProjectionAmplitude", "getSignalScore"],
-    forbiddenTokens: ["signalAmplitude", "storedEnergy", "forcingEnergy"],
-  }),
-  spectralLanePacketPublisher: createSourceSurfaceAudit({
-    surface: "spectralLanePacketPublisher",
-    file: "modalExcitation.js",
-    owner: "spectralLanePacket",
-    startToken: "function createEntrySpectralLightComponent(",
-    endToken: "function writeShortlistedEntries(",
-    requiredTokens: [
-      "displayEnergy",
-      "spectralConfidence",
-      "spectralSpread",
-      "laneDistribution",
-      "layerBuffer.spectralMeta[offset + 3] = spectralLight.displayEnergy;",
-    ],
-    forbiddenTokens: [
-      "projectedRenderEnergy",
-      "modalFieldColorBuffer",
-      "spectralLightCacheTexture",
-    ],
-  }),
-  spectralLaneRadianceCache: createSourceSurfaceAudit({
-    surface: "spectralLaneRadianceCache",
-    file: "fieldCache.js",
-    owner: "spectralLaneRadiance",
-    startToken: "function createSpectralLaneCacheComputeKernel({",
-    endToken: "function getOrCreateRaymarchSpectralLaneCacheComputeNode(",
-    requiredTokens: [
-      "modalFieldSpectralLaneABuffer",
-      "modalFieldSpectralLaneBBuffer",
-      "modalFieldSpectralMetaBuffer",
-      "spectralLaneTextureA",
-      "spectralLaneTextureB",
-      "spectralLaneStatsTexture",
-      "dominance",
-      "entropy",
-    ],
-    forbiddenTokens: [
-      "colorSum.div",
-      "displayEnergy",
-      "modalFieldColorBuffer",
-      "spectralLightCacheTexture",
-      "cachedSpectralLightEnabled",
-    ],
-  }),
-  fieldCacheMatchedFieldGradient: createSourceSurfaceAudit({
-    surface: "fieldCacheMatchedFieldGradient",
-    file: "fieldCache.js",
-    owner: "matchedFieldGradient",
-    startToken: "// Physical pressure and ∇p are the acousto-optic carrier.",
-    endToken: "textureStore(\n        writeSupportTexture,",
-    requiredTokens: [
-      "stay linear in coefficient amplitude",
-      "vec4(fieldSum, gradXSum, gradYSum, gradZSum)",
-    ],
-    forbiddenTokens: [
-      "normalizedPressure",
-      "normalizedVelocityProxy",
-      "normalizedRadiationPotential",
-      "visibility",
-    ],
-  }),
-  materialMatchedFieldGradient: createSourceSurfaceAudit({
-    surface: "materialMatchedFieldGradient",
-    file: "material.js",
-    owner: "matchedFieldGradient",
-    startToken: "function sampleLiveFieldProjectionCacheNode({",
-    endToken: "function samplePhaseInterferenceCarrierNode({",
-    requiredTokens: [
-      "texture3D(modalLiveFieldTexture).sample(basisUv)",
-      "field: fieldSample.x",
-      "gradient: vec3(fieldSample.y, fieldSample.z, fieldSample.w)",
-      "exactly the same normalization",
-    ],
-    forbiddenTokens: [
-      "normalizedPressure",
-      "modalPressureRadiationTexture",
-      "materialColor",
-      "sourceRadiance",
-    ],
-  }),
-  materialChromaticity: createSourceSurfaceAudit({
-    surface: "materialChromaticity",
-    file: "material.js",
-    owner: "materialChromaticity",
-    startToken: "function normalizeMaterialChromaticityNode(color) {",
-    endToken: "function sampleSpectralLaneCacheNode({",
-    requiredTokens: [
-      "LINEAR_RGB_LUMINANCE",
-      "normalizeMaterialChromaticityNode",
-      "projectSpectralLaneRadianceToRgbNode",
-      "spectralChromaticity",
-      "fallbackChromaticity",
-      "chromaticity only",
-    ],
-    forbiddenTokens: [
-      "dominanceGain",
-      "entropyGain",
-      "spectralReadability",
-      "uBeatPulse",
-      "radialDistance",
-      "centerWeight",
-      "edgeWeight",
-      "visibilityProfile",
-      "frameBrightness",
-    ],
-  }),
-  materialFieldNormalization: createSourceSurfaceAudit({
-    surface: "materialFieldNormalization",
-    file: "material.js",
-    owner: "modalEnergyAmplitude",
-    startToken: "const modalCoefficientEnergy = clamp(",
-    endToken: "const activeMask =",
-    requiredTokens: [
-      "uStructuralProjectionDrive",
-      "uModalEnergyAmplitude",
-      "modalCoefficientEnergy",
-      "modalEnergyAmplitude",
-      "MODAL_BASIS_CACHE_ENERGY_EPSILON",
-    ],
-    forbiddenTokens: [
-      "uTotalSlotAmplitude",
-      "uStructureSignal",
-      "uModalResponseEnergy",
-      "uModeCoherence",
-      "uTrebleBroadbandEnergy",
-      "uAverageAmplitude",
-      "RAYMARCH_AVERAGE_AMPLITUDE_SHADER_REFERENCE",
-    ],
-  }),
-  materialGaussianIntervalIntegration: createSourceSurfaceAudit({
-    surface: "materialGaussianIntervalIntegration",
-    file: "carrierDensityNode.js",
-    owner: "fixedWorldSpaceCarrierDensity",
-    startToken: "function deriveNormalizedGaussianIntervalAverageNode({",
-    endToken: "function deriveFixedWorldSpaceCarrierDensityNode({",
-    requiredTokens: [
-      "localFieldDistance",
-      "intervalWidthWorld",
-      "fwhmWorld",
-      "intervalEnergy",
-      "pointProfile",
-      "approximateErrorFunctionNode",
-    ],
-    forbiddenTokens: [
-      "pitchVisibilityCompensation",
-      "beatVisibilityCompensation",
-      "radialDistance",
-      "centerWeight",
-      "edgeWeight",
-      "visibilityProfile",
-      "frameBrightness",
-    ],
-  }),
-  materialLocalZeroSetDistance: createSourceSurfaceAudit({
-    surface: "materialLocalZeroSetDistance",
-    file: "carrierDensityNode.js",
-    owner: "localZeroSetDistance",
-    startToken: "export function deriveFixedWorldSpaceCarrierDensityNode({",
-    endToken: "// Fixed world-space carrier density node owner end.",
-    requiredTokens: [
-      "gradientMagnitude",
-      "localFieldDistance",
-      "abs(fieldValue).div",
-      "max(gradientMagnitude, gradientEpsilon)",
-      "greaterThan(gradientEpsilon)",
-    ],
-    forbiddenTokens: [
-      "normalizedPressure",
-      "modalPressureRadiationTexture",
-      "observedDensityFloor",
-      "projectedCausticRadianceDensity",
-      "highlightMask",
-      "whiteEmission",
-    ],
-  }),
-  materialFixedWorldSpaceCarrier: createSourceSurfaceAudit({
-    surface: "materialFixedWorldSpaceCarrier",
-    file: "carrierDensityNode.js",
-    owner: "fixedWorldSpaceCarrierDensity",
-    startToken: "export function deriveFixedWorldSpaceCarrierDensityNode({",
-    endToken: "// Fixed world-space carrier density node owner end.",
-    requiredTokens: [
-      "coreFwhmWorld",
-      "sheathFwhmWorld",
-      "coreEnergyFraction",
-      "sheathEnergyFraction",
-      "intervalWidthWorld",
-      "deriveNormalizedGaussianIntervalAverageNode",
-      "carrierDensity",
-      "normalDotRay",
-    ],
-    forbiddenTokens: [
-      "radialDistance",
-      "centerWeight",
-      "edgeWeight",
-      "visibilityProfile",
-      "uBeatPulse",
-      "pitchVisibilityCompensation",
-      "frameBrightness",
-    ],
-  }),
-  materialDetectorWindowedEnergy: createSourceSurfaceAudit({
-    surface: "materialDetectorWindowedEnergy",
-    file: "material.js",
-    owner: "detectorIntegratedAcousticEnergy",
-    startToken: "const phaseInterferenceCarrier =",
-    endToken: "const assignLiveFieldSample =",
-    requiredTokens: [
-      "phaseEnergyCarrierAuthority",
-      "detectorIntegratedAcousticEnergy",
-      "modalCoefficientEnergy.mul",
-      "phaseInterferenceCarrier.independentSpatialEnergy",
-      "phaseInterferenceCarrier.detectorIntegratedSpatialEnergy",
-    ],
-    forbiddenTokens: [
-      "uBeatPulse",
-      "radialDistance",
-      "centerWeight",
-      "edgeWeight",
-      "visibilityProfile",
-      "frameBrightness",
-      "dominantFrequency",
-      "spectralCentroid",
-    ],
-  }),
-  acousticEnergyTransferCpuOwner: createSourceSurfaceAudit({
-    surface: "acousticEnergyTransferCpuOwner",
-    file: "observationTransfer.js",
-    owner: "observationTransfer.js CPU oracle",
-    startToken: "export function deriveAcousticEnergyMaterialTransfer({",
-    endToken: "// Acoustic energy material transfer CPU owner end.",
-    requiredTokens: [
-      "detectorIntegratedEnergy",
-      "coreDensity",
-      "sheathDensity",
-      "materialDensityScale",
-      "carrierColumnDensityScale",
-      "organizedCoreDensity",
-      "organizedSheathDensity",
-      "organizedDensity",
-      "scatteringCoefficient",
-      "absorptionCoefficient",
-      "laserExcitedEmissionCoefficient",
-      "sigmaS",
-      "sigmaA",
-      "extinction",
-      "emissionSourceStrength",
-      "coreEmissionSourceStrength",
-      "sheathEmissionSourceStrength",
-      "normalDotRay",
-      "holographicIntensity",
-      "holographicFresnelPower",
-      "holographicFresnel",
-      "fresnelEmissionSourceStrength",
-      "holographicBaseRadianceGain",
-      "laserAccentAuthority",
-      "baseRadiance",
-      "accentRadiance",
-      "sourceRadiance",
-    ],
-    forbiddenTokens: [
-      "projectedCausticRadianceDensity",
-      "visibleDensity",
-      "observedDensityFloor",
-      "highlightMask",
-      "whiteEmission",
-      "dominantFrequency",
-      "beat",
-      "radialDistance",
-      "centerWeight",
-      "edgeWeight",
-      "visibilityProfile",
-      "frameBrightness",
-    ],
-  }),
-  acousticEnergyTransferNodeOwner: createSourceSurfaceAudit({
-    surface: "acousticEnergyTransferNodeOwner",
-    file: "observationTransferNode.js",
-    owner: "observationTransferNode.js GPU owner",
-    startToken: "export function deriveAcousticEnergyMaterialTransferNode",
-    endToken: "// Acoustic energy material transfer node owner end.",
-    requiredTokens: [
-      "deriveAcousticEnergyMaterialTransferNode",
-      "detectorIntegratedEnergy",
-      "coreDensity",
-      "sheathDensity",
-      "materialDensityScale",
-      "carrierColumnDensityScale",
-      "organizedCoreDensity",
-      "organizedSheathDensity",
-      "organizedDensity",
-      "scatteringCoefficient",
-      "absorptionCoefficient",
-      "laserExcitedEmissionCoefficient",
-      "sigmaS",
-      "sigmaA",
-      "extinction",
-      "emissionSourceStrength",
-      "coreEmissionSourceStrength",
-      "sheathEmissionSourceStrength",
-      "normalDotRay",
-      "holographicIntensity",
-      "holographicFresnelPower",
-      "holographicFresnel",
-      "fresnelEmissionSourceStrength",
-      "holographicBaseRadianceGain",
-      "laserAccentAuthority",
-      "baseRadiance",
-      "accentRadiance",
-      "sourceRadiance",
-    ],
-    forbiddenTokens: [
-      "projectedCausticRadianceDensity",
-      "visibleDensity",
-      "observedDensityFloor",
-      "highlightMask",
-      "whiteEmission",
-      "dominantFrequency",
-      "uBeatPulse",
-      "radialDistance",
-      "centerWeight",
-      "edgeWeight",
-      "visibilityProfile",
-      "frameBrightness",
-    ],
-  }),
-  materialEmissionExtinctionTransfer: createSourceSurfaceAudit({
-    surface: "materialEmissionExtinctionTransfer",
-    file: "material.js",
-    owner: "observationTransferNode.js emission-extinction GPU owner",
-    startToken: "if (spectralLaneTransferEnabled) {",
-    endToken: "const RAYMARCH_DOMAIN_GEOMETRY_MARGIN",
-    requiredTokens: [
-      "deriveAcousticEnergyMaterialTransferNode",
-      "detectorIntegratedEnergy: detectorIntegratedAcousticEnergy",
-      "coreDensity,",
-      "sheathDensity,",
-      "materialDensityScale,",
-      "carrierColumnDensityScale: uCarrierColumnDensityScale",
-      "materialColor",
-      "surfaceColor",
-      "scatteringCoefficient",
-      "absorptionCoefficient",
-      "laserExcitedEmissionCoefficient",
-      "holographicIntensity: uHolographicIntensity",
-      "holographicFresnelPower: uHolographicFresnelPower",
-      "normalDotRay: carrier.normalDotRay",
-      "holographicBaseRadianceGain: uHolographicBaseRadianceGain",
-      "laserAccentAuthority,",
-      "baseRadiance",
-      "accentRadiance",
-      "extinction",
-    ],
-    forbiddenTokens: [
-      "visibleDensity",
-      "observationDensity",
-      "observedDensityFloor",
-      "projectedCausticRadianceDensity",
-      "supportRevealContribution",
-      "highlightMask",
-      "hotCoreInput",
-      "whiteEmission",
-      "uBeatPulse",
-      "radialDistance",
-      "centerWeight",
-      "edgeWeight",
-      "visibilityProfile",
-      "frameBrightness",
-      "laserTransportReady",
-      "laserIrradiance",
-    ],
-  }),
-  fieldCacheDetectorWindowedEnergy: createSourceSurfaceAudit({
-    surface: "fieldCacheDetectorWindowedEnergy",
-    file: "fieldCache.js",
-    owner: "detectorIntegratedAcousticEnergy",
-    startToken: "export function deriveDetectorIntegratedModalEnergy({",
-    endToken: "function accumulatePhaseInterferenceContrastAtPoint({",
-    requiredTokens: [
-      "integrationTimeSec",
-      "frequencySeparationHz",
-      "normalizedSinc",
-      "detectorWindowSec",
-      "detectorIntegratedCoherentEnergy",
-      "incoherentResidualEnergy",
-      "detectorIntegratedEnergy",
-    ],
-    forbiddenTokens: [
-      "pitchVisibilityCompensation",
-      "beatVisibilityCompensation",
-      "radialDistance",
-      "centerWeight",
-      "edgeWeight",
-      "visibilityProfile",
-      "frameBrightness",
-    ],
-  }),
-  runtimeMaterialProbeDiagnostics: createSourceSurfaceAudit({
-    surface: "runtimeMaterialProbeDiagnostics",
-    file: "runtime.js",
-    owner: "runtime.js read-only emission-extinction probe diagnostics",
-    startToken:
-      "    materialProbeDetectorIntegratedEnergy,\n    materialProbeCarrierDensity,",
-    endToken: "    materialProbePreBloomRadiance,",
-    requiredTokens: [
-      "materialProbeMaterialDensityScale",
-      "materialProbeOrganizedCoreDensity",
-      "materialProbeOrganizedSheathDensity",
-      "materialProbeOrganizedDensity",
-      "materialProbeScatteringCoefficient",
-      "materialProbeAbsorptionCoefficient",
-      "materialProbeLaserExcitedEmissionCoefficient",
-      "materialProbeSigmaS",
-      "materialProbeSigmaA",
-      "materialProbeExtinction",
-      "materialProbeEmissionSourceStrength",
-      "materialProbeCoreEmissionSourceStrength",
-      "materialProbeSheathEmissionSourceStrength",
-      "materialProbeFresnelEmissionSourceStrength",
-      "materialProbeHolographicFresnel",
-      "materialProbeHolographicBaseRadianceGain",
-      "materialProbeBaseRadiance",
-      "materialProbeAccentRadiance",
-    ],
-    forbiddenTokens: [
-      "materialProbePhysicalDensity",
-      "materialProbeObservationDensity",
-      "materialProbeCausticVisibleDensity",
-      "materialProbeProjectedCausticRadiance",
-      "materialProbeVisibleDensity",
-      "materialProbeHighlight",
-      "materialProbeWhiteEmission",
-    ],
-  }),
-  runtimeMaterialProbeTransfer: createSourceSurfaceAudit({
-    surface: "runtimeMaterialProbeTransfer",
-    file: "runtime.js",
-    owner: "runtime.js emission-extinction diagnostic material probe",
-    startToken: "const materialProbeCarrierDensity =",
-    endToken: "const materialProbeBloomAmplification =",
-    requiredTokens: [
-      "materialProbeCarrierDensity",
-      "materialProbeCoreDensity",
-      "materialProbeSheathDensity",
-      "materialProbeDetectorIntegratedEnergy",
-      "materialProbeLaserTransportReady",
-      "deriveAcousticEnergyMaterialTransfer",
-      "REFERENCE_SCATTERING_COEFFICIENT",
-      "materialAbsorptionCoefficient",
-      "REFERENCE_LASER_EXCITED_EMISSION_COEFFICIENT",
-      "materialDensityScale: densityGain / RAYMARCH_DEFAULTS.densityGain",
-      "carrierColumnDensityScale: materialProbeCarrierColumnDensityScale",
-      "holographicIntensity",
-      "holographicFresnelPower",
-      "normalDotRay: 1",
-      "materialProbeHolographicBaseRadianceGain",
-      "laserAccentAuthority: 0",
-      "materialProbeTransfer.extinction",
-      "materialProbeTransfer.sourceRadiance",
-    ],
-    forbiddenTokens: [
-      "materialProbePhysicalDensity",
-      "materialProbeObservationDensity",
-      "materialProbeCausticVisibleDensity",
-      "materialProbeProjectedCausticRadiance",
-      "materialProbeVisibleDensity",
-      "materialProbeHighlight",
-      "materialProbeWhiteEmission",
-      "dominantFrequency",
-      "beatDetected",
-      "radialDistance",
-      "centerWeight",
-      "edgeWeight",
-      "visibilityProfile",
-      "frameBrightness",
+  performanceResolution: contract({
+    quantity: "performanceResolution",
+    lane: "performance",
+    represents:
+      "numerical cache, march, and output resolution chosen for throughput",
+    deepOwner: "performance profile and raymarch step controller",
+    transforms: ["bounded numerical resolution selection"],
+    allowedConsumers: ["fieldCacheResolution", "raymarchStepBudget"],
+    forbiddenConsumers: [
+      "modalAdmission",
+      "observerClock",
+      "observerExposure",
+      "plasmaCalibration",
     ],
   }),
 });
 
-export const RAYMARCH_RENDER_QUANTITY_LANES = freezeStringArrayRecord(
-  Object.values(RAYMARCH_QUANTITY_LEDGER).reduce((lanes, contract) => {
-    lanes[contract.lane] ??= [];
-    lanes[contract.lane].push(contract.quantity);
+export const RAYMARCH_RENDER_QUANTITY_LANES = freezeStringRecord(
+  Object.values(RAYMARCH_QUANTITY_LEDGER).reduce((lanes, entry) => {
+    lanes[entry.lane] ??= [];
+    lanes[entry.lane].push(entry.quantity);
     return lanes;
   }, {}),
 );
 
-export const RAYMARCH_MATERIAL_TRANSFER_LANES = freezeStringArrayRecord(
+export const RAYMARCH_MATERIAL_TRANSFER_LANES = freezeStringRecord(
   Object.values(RAYMARCH_QUANTITY_LEDGER)
-    .filter((contract) => contract.surface === "material-transfer")
-    .reduce((lanes, contract) => {
-      lanes[contract.lane] ??= [];
-      lanes[contract.lane].push(contract.quantity);
+    .filter((entry) => entry.surface === "material-transfer")
+    .reduce((lanes, entry) => {
+      lanes[entry.lane] ??= [];
+      lanes[entry.lane].push(entry.quantity);
       return lanes;
     }, {}),
 );
 
-export const RAYMARCH_FORBIDDEN_CONSUMER_SUMMARY = freezeStringArrayRecord(
+export const RAYMARCH_FORBIDDEN_CONSUMER_SUMMARY = freezeStringRecord(
   Object.fromEntries(
     Object.entries(RAYMARCH_QUANTITY_LEDGER)
-      .filter(([, contract]) => contract.forbiddenConsumers.length > 0)
-      .map(([quantityName, contract]) => [
-        quantityName,
-        contract.forbiddenConsumers,
-      ]),
+      .filter(([, entry]) => entry.forbiddenConsumers.length > 0)
+      .map(([name, entry]) => [name, entry.forbiddenConsumers]),
   ),
 );
 
@@ -1916,65 +629,14 @@ export function getRaymarchQuantityContract(quantityName) {
   return RAYMARCH_QUANTITY_LEDGER[quantityName] ?? null;
 }
 
-export function auditRaymarchSourceSurface(surfaceName, source) {
-  const audit = RAYMARCH_RENDER_SURFACE_AUDITS[surfaceName] ?? null;
-  if (!audit) {
-    throw new Error(`Unknown raymarch source surface audit: ${surfaceName}.`);
-  }
-  const start = source.indexOf(audit.startToken);
-  if (start < 0) {
-    throw new Error(
-      `Raymarch source surface audit ${surfaceName} is missing start token: ${audit.startToken}.`,
-    );
-  }
-  const end = source.indexOf(audit.endToken, start + audit.startToken.length);
-  if (end < 0) {
-    throw new Error(
-      `Raymarch source surface audit ${surfaceName} is missing end token: ${audit.endToken}.`,
-    );
-  }
-  const surfaceSource = source.slice(start, end);
-  for (const requiredToken of audit.requiredTokens) {
-    if (!surfaceSource.includes(requiredToken)) {
-      throw new Error(
-        `Raymarch source surface audit ${surfaceName} is missing required token: ${requiredToken}.`,
-      );
-    }
-  }
-  for (const requiredPattern of audit.requiredPatterns) {
-    if (!new RegExp(requiredPattern, "m").test(surfaceSource)) {
-      throw new Error(
-        `Raymarch source surface audit ${surfaceName} is missing required pattern: ${requiredPattern}.`,
-      );
-    }
-  }
-  for (const forbiddenToken of audit.forbiddenTokens) {
-    if (surfaceSource.includes(forbiddenToken)) {
-      throw new Error(
-        `Raymarch source surface audit ${surfaceName} contains forbidden token: ${forbiddenToken}.`,
-      );
-    }
-  }
-  return Object.freeze({
-    surface: audit.surface,
-    file: audit.file,
-    owner: audit.owner,
-    start,
-    end,
-  });
-}
-
 export function isRaymarchQuantityConsumerAllowed(quantityName, consumerName) {
-  const contract = getRaymarchQuantityContract(quantityName);
-  if (!contract) {
-    return false;
-  }
-  if (contract.forbiddenConsumers.includes(consumerName)) {
+  const entry = getRaymarchQuantityContract(quantityName);
+  if (!entry || entry.forbiddenConsumers.includes(consumerName)) {
     return false;
   }
   return (
-    contract.allowedConsumers.includes(consumerName) ||
-    contract.allowedConsumers.includes("*")
+    entry.allowedConsumers.includes(consumerName) ||
+    entry.allowedConsumers.includes("*")
   );
 }
 

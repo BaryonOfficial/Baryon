@@ -1,12 +1,12 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   computeLinearLuminance,
   compressDisplayLuminance,
   compressDisplayRadiance,
-  compressPremultipliedDisplayRadiance,
   composeFixedOpticalPsfRadiance,
   DISPLAY_RADIANCE_HEADROOM_CONTRACT,
-  evaluateStraightSceneLinearHeadroom,
+  evaluateIntegratedSceneLinearHeadroom,
   FIXED_OPTICAL_PSF_CORE_FRACTION,
   FIXED_OPTICAL_PSF_HALO_FRACTION,
   FIXED_OPTICAL_PSF_KERNEL_WEIGHTS,
@@ -27,14 +27,14 @@ describe("display radiance", () => {
     expect(DISPLAY_RADIANCE_HEADROOM_CONTRACT).toEqual({
       coverageEpsilon: 1e-5,
       luminanceP99Max: 0.72,
-      maxChannelP99Max: 0.98,
-      overloadThreshold: 0.98,
-      overloadShareMax: 0.005,
+      maxChannelP99Max: 2,
+      overloadThreshold: 2,
+      overloadShareMax: 0.01,
     });
   });
 
-  it("evaluates premultiplied AOV samples in straight scene-linear space", () => {
-    const result = evaluateStraightSceneLinearHeadroom({
+  it("evaluates the integrated volume radiance without dividing by coverage", () => {
+    const result = evaluateIntegratedSceneLinearHeadroom({
       premultipliedRadiance: new Float32Array([
         0.06, 0.12, 0.18, 1, 0.1, 0.2, 0.3, 1,
       ]),
@@ -43,30 +43,41 @@ describe("display radiance", () => {
 
     expect(result.achieved).toBe(true);
     expect(result.activeSampleCount).toBe(2);
-    expect(result.straightRadianceMaxChannelP99).toBeCloseTo(0.9);
+    expect(result.integratedRadianceMaxChannelP99).toBeCloseTo(0.3);
     expect(result.overloadShare).toBe(0);
   });
 
-  it.each([[[1.2, 0, 0]], [[0, 1.2, 0]], [[0, 0, 1.2]]])(
+  it("admits bounded chromatic HDR as a bloom source", () => {
+    const result = evaluateIntegratedSceneLinearHeadroom({
+      premultipliedRadiance: new Float32Array([1.8, 0, 0, 1]),
+      coverage: new Float32Array([1, 0, 0, 1]),
+    });
+
+    expect(result.achieved).toBe(true);
+    expect(result.integratedRadianceMaxChannelP99).toBeCloseTo(1.8);
+    expect(result.overloadShare).toBe(0);
+  });
+
+  it.each([[[2.2, 0, 0]], [[0, 2.2, 0]], [[0, 0, 2.2]]])(
     "rejects saturated channel overload at rgb %j even without near-white pixels",
     (rgb) => {
-      const result = evaluateStraightSceneLinearHeadroom({
+      const result = evaluateIntegratedSceneLinearHeadroom({
         premultipliedRadiance: new Float32Array([...rgb, 1]),
         coverage: new Float32Array([1, 0, 0, 1]),
       });
 
       expect(result.achieved).toBe(false);
-      expect(result.straightRadianceMaxChannelP99).toBeGreaterThan(0.98);
+      expect(result.integratedRadianceMaxChannelP99).toBeGreaterThan(2);
       expect(result.overloadShare).toBe(1);
     },
   );
 
   it("fails closed on nonfinite or empty active evidence", () => {
-    const nonfinite = evaluateStraightSceneLinearHeadroom({
+    const nonfinite = evaluateIntegratedSceneLinearHeadroom({
       premultipliedRadiance: [Number.NaN, 0.1, 0.1, 1],
       coverage: [1, 0, 0, 1],
     });
-    const empty = evaluateStraightSceneLinearHeadroom({
+    const empty = evaluateIntegratedSceneLinearHeadroom({
       premultipliedRadiance: [0, 0, 0, 1],
       coverage: [0, 0, 0, 1],
     });
@@ -103,6 +114,76 @@ describe("display radiance", () => {
       FIXED_OPTICAL_PSF_CORE_FRACTION +
         FIXED_OPTICAL_PSF_HALO_FRACTION * kernelEnergy,
     ).toBeCloseTo(1);
+  });
+
+  it("packs the 3x3 binomial PSF into four exact bilinear reads", () => {
+    const source = readFileSync(
+      new URL("./displayRadiance.js", import.meta.url),
+      "utf8",
+    );
+    const block = source.slice(
+      source.indexOf("const FIXED_OPTICAL_PSF_BILINEAR_OFFSETS"),
+      source.indexOf("function finiteOr"),
+    );
+
+    expect(block.match(/Object\.freeze\(\{ x:/g)).toHaveLength(4);
+    for (const offset of [
+      "{ x: -0.5, y: -0.5 }",
+      "{ x: 0.5, y: -0.5 }",
+      "{ x: -0.5, y: 0.5 }",
+      "{ x: 0.5, y: 0.5 }",
+    ]) {
+      expect(block).toContain(offset);
+    }
+    expect(source).toContain(
+      "radianceTexture.sample(sampleUv).mul(float(0.25))",
+    );
+
+    const width = 5;
+    const height = 4;
+    const pixels = Array.from(
+      { length: width * height },
+      (_, index) => ((index * 17 + 3) % 29) / 28,
+    );
+    const read = (x, y) =>
+      pixels[
+        Math.max(0, Math.min(height - 1, y)) * width +
+          Math.max(0, Math.min(width - 1, x))
+      ];
+    const bilinear = (x, y) => {
+      const x0 = Math.floor(x);
+      const y0 = Math.floor(y);
+      const tx = x - x0;
+      const ty = y - y0;
+      return (
+        read(x0, y0) * (1 - tx) * (1 - ty) +
+        read(x0 + 1, y0) * tx * (1 - ty) +
+        read(x0, y0 + 1) * (1 - tx) * ty +
+        read(x0 + 1, y0 + 1) * tx * ty
+      );
+    };
+
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        let reference = 0;
+        let weightIndex = 0;
+        for (let dy = -1; dy <= 1; dy += 1) {
+          for (let dx = -1; dx <= 1; dx += 1) {
+            reference +=
+              read(x + dx, y + dy) *
+              FIXED_OPTICAL_PSF_KERNEL_WEIGHTS[weightIndex];
+            weightIndex += 1;
+          }
+        }
+        const packed =
+          0.25 *
+          (bilinear(x - 0.5, y - 0.5) +
+            bilinear(x + 0.5, y - 0.5) +
+            bilinear(x - 0.5, y + 0.5) +
+            bilinear(x + 0.5, y + 0.5));
+        expect(packed).toBeCloseTo(reference, 15);
+      }
+    }
   });
 
   it("uses linear sRGB relative luminance", () => {
@@ -179,38 +260,6 @@ describe("display radiance", () => {
       expect(Math.max(...compressed) - Math.min(...compressed)).toBeGreaterThan(
         0.8,
       );
-    }
-  });
-
-  it("compresses transparent HDR radiance in straight-color space", () => {
-    const straightFlagshipCyan = [
-      0.10461648408208657 * 8,
-      0.7681511472425809 * 8,
-      0.9046611743890203 * 8,
-    ];
-    const expectedStraightOutput =
-      compressDisplayRadiance(straightFlagshipCyan);
-
-    expect(
-      compressPremultipliedDisplayRadiance(straightFlagshipCyan, 0),
-    ).toEqual([0, 0, 0]);
-
-    for (const alpha of [0.02, 0.1, 0.5, 1]) {
-      const premultipliedInput = straightFlagshipCyan.map(
-        (channel) => channel * alpha,
-      );
-      const premultipliedOutput = compressPremultipliedDisplayRadiance(
-        premultipliedInput,
-        alpha,
-      );
-      const recoveredStraightOutput = premultipliedOutput.map(
-        (channel) => channel / alpha,
-      );
-
-      expect(recoveredStraightOutput[0]).toBeCloseTo(expectedStraightOutput[0]);
-      expect(recoveredStraightOutput[1]).toBeCloseTo(expectedStraightOutput[1]);
-      expect(recoveredStraightOutput[2]).toBeCloseTo(expectedStraightOutput[2]);
-      expect(Math.max(...recoveredStraightOutput)).toBeLessThanOrEqual(0.985);
     }
   });
 

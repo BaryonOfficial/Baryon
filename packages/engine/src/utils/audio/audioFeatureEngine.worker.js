@@ -1,13 +1,14 @@
-import { createAudioFeatureState } from "./modalStack.js";
+import { createAudioFeatureState } from "./audioFeatureState.js";
 import {
   buildCurrentAudioFeatureAnalysisResult,
-  composeAudioFeatureFrame,
-  prepareAudioFeatureFrameInputs,
   updateAudioFeatureChromaState,
   updateAudioFeatureFastSignalState,
   updateAudioFeatureStructuralState,
-  updateAudioFeatureTempoState,
-} from "./buildFeatureFrame.js";
+} from "./audioFeatureAnalysis.js";
+import { composeAudioFeatureFrame } from "./buildFeatureFrame.js";
+import { createAudioFeatureCompositionState } from "./audioFeatureFrameSignals.js";
+import { prepareAudioFeatureFrameInputs } from "./audioFeatureInputPreparation.js";
+import { updateAudioFeatureTempoState } from "./tempoTracking.js";
 import {
   buildDrivePacket,
   buildTopologyPacket,
@@ -24,11 +25,13 @@ import {
   captureFastModalOscillatorState,
   restoreFastModalOscillatorState,
 } from "./fastModalStructuralDrive.js";
-import { computeModalInputExposure } from "./modalResponse.js";
+import { computeModalInputEnergyScale } from "./modalResponse.js";
+import { AUDIO_SOURCE_KINDS } from "../../core/audio/audioSourceSession.js";
 import {
-  computePhaseAnchorAngularVelocityRadPerSec,
-  writePhaseSlotsForVisibleModes,
-} from "./modalPhaseSlots.js";
+  applyTopologyDriveProjection,
+  createTopologyDriveProjection,
+  refreshTopologyDriveProjection,
+} from "./topologyDriveProjection.js";
 
 function getWorkerNow() {
   return typeof globalThis.performance?.now === "function"
@@ -84,9 +87,9 @@ export function createFeatureWorkerState() {
     workerGeneration: 0,
     configuration: {},
     featureState: null,
+    compositionState: createAudioFeatureCompositionState(),
     latestStructuralState: null,
     latestAnalysisResult: null,
-    latestFeatureFrame: null,
     latestTopologyFrame: null,
     latestDriveTopology: null,
     topologyDriveProjection: null,
@@ -103,7 +106,6 @@ export function createFeatureWorkerState() {
     processedFrameCount: 0,
     topologyPublishCount: 0,
     drivePublishCount: 0,
-    bandwidthLimitedTopologyRetentionCount: 0,
     perf: {
       fastLane: createPerfEntry(),
       structuralLane: createPerfEntry(),
@@ -115,9 +117,9 @@ export function createFeatureWorkerState() {
 
 function clearSemanticState(state) {
   state.featureState = null;
+  state.compositionState = createAudioFeatureCompositionState();
   state.latestStructuralState = null;
   state.latestAnalysisResult = null;
-  state.latestFeatureFrame = null;
   state.latestTopologyFrame = null;
   state.latestDriveTopology = null;
   state.topologyDriveProjection = null;
@@ -136,6 +138,7 @@ function ensureFeatureState(state, capacity) {
   const resolvedCapacity = Math.max(1, Math.floor(capacity ?? 12));
   if (!state.featureState || state.featureState.capacity !== resolvedCapacity) {
     state.featureState = createAudioFeatureState(resolvedCapacity);
+    state.compositionState = createAudioFeatureCompositionState();
   }
   return state.featureState;
 }
@@ -168,7 +171,6 @@ function buildPreparedInputs({
     beatSettings: configuration?.beatSettings,
     frameTimeMs,
     liveInputAnalysisSettings: configuration?.liveInputAnalysisSettings,
-    includeSpectralLight: configuration?.includeSpectralLight,
   });
 }
 
@@ -189,28 +191,43 @@ function rebuildFastEstimator(state, preparedInputs, topologyFrame) {
     topologyFrame,
     state.latestStructuralState,
     modalExcitationState,
+    {
+      acousticScale: preparedInputs.cavityAcousticScale,
+      boundaryMode: preparedInputs.boundaryMode,
+    },
   );
-  const probeModeIndices = selectFastModalProbeModeIndices(committedModes);
+  // Probe selection already drops modes this sample rate cannot measure, so
+  // the estimator only ever sees a probeable set.
+  const probeModeIndices = selectFastModalProbeModeIndices(
+    committedModes,
+    undefined,
+    preparedInputs.sampleRate,
+  );
   const signature = buildFastEstimatorSignature(
     committedModes,
     preparedInputs.sampleRate,
     probeModeIndices,
   );
-  state.committedModes = committedModes;
   if (!committedModes.length) {
+    state.committedModes = committedModes;
     state.fastEstimator = null;
     state.fastEstimatorSignature = null;
     return;
   }
   if (state.fastEstimator && state.fastEstimatorSignature === signature) {
+    state.committedModes = committedModes;
     state.fastEstimator.updateCommittedModes(committedModes);
     return;
   }
-  state.fastEstimator = createFastModalDriveEstimator({
+  // The committed set is published only once its estimator exists, so a
+  // rejected topology cannot leave the worker describing modes it cannot drive.
+  const fastEstimator = createFastModalDriveEstimator({
     committedModes,
     sampleRate: preparedInputs.sampleRate,
     probeModeIndices,
   });
+  state.committedModes = committedModes;
+  state.fastEstimator = fastEstimator;
   state.fastEstimatorSignature = signature;
 }
 
@@ -260,38 +277,28 @@ function runStructuralLane(state, frame, fastSignalState) {
   };
 }
 
-function shouldRetainCommittedTopology(state, candidateTopologyFrame) {
-  const committedFieldAuthority =
-    state.latestTopologyFrame?.modalDescriptor?.fieldAuthority;
-  return (
-    candidateTopologyFrame?.modalDescriptor?.fieldAuthority ===
-      "bandwidth-limited" &&
-    (committedFieldAuthority === "complete" ||
-      committedFieldAuthority === "capacity-limited") &&
-    (state.latestDriveTopology?.activeModeCount ?? 0) > 0 &&
-    state.committedModes.length > 0 &&
-    state.fastEstimator !== null
-  );
-}
-
 function runExactFastDrive(state, preparedFast, fastSignalState) {
   if (!state.fastEstimator || !state.latestStructuralState) {
     return;
   }
-  const timeDomainData = preparedFast.snapshot?.timeData;
+  const timeDomainData =
+    preparedFast.waterAcousticDrive?.timeDomainData ??
+    preparedFast.snapshot?.timeData;
   if (!(timeDomainData instanceof Float32Array)) {
     return;
   }
   const hardSilence = preparedFast.liveInputHardSilenceActive === true;
-  const inputExposure = hardSilence
+  const inputEnergyScale = hardSilence
     ? 0
-    : computeModalInputExposure({
+    : computeModalInputEnergyScale({
         inputRms: preparedFast.analyserRms,
+        normalizedInputAmplitude:
+          fastSignalState.sourceNormalization?.normalizedRms,
       });
   const goertzelStartedAt = getWorkerNow();
   const exactDriveResult = state.fastEstimator.evaluate(
     timeDomainData,
-    inputExposure,
+    inputEnergyScale,
     hardSilence,
   );
   recordPerf(state.perf.goertzel, getWorkerNow() - goertzelStartedAt);
@@ -305,366 +312,19 @@ function runExactFastDrive(state, preparedFast, fastSignalState) {
       preparedFast.featureState.analysis.modalExcitationState,
     committedModes: state.committedModes,
     exactDriveResult,
-    fftLinearAmplitudes: fastSignalState.fftLinearAmplitudes,
+    fftLinearAmplitudes:
+      preparedFast.waterAcousticDrive?.fftLinearAmplitudes ??
+      fastSignalState.fftLinearAmplitudes,
     timeDomainData,
     sampleRate: preparedFast.sampleRate,
     deltaMs,
     inputRms: preparedFast.analyserRms,
+    normalizedInputAmplitude:
+      fastSignalState.sourceNormalization?.normalizedRms,
     hardSilence,
     coherence: Math.max(0, 1 - (fastSignalState.trebleBroadbandEnergy ?? 0)),
     frameTimeMs: preparedFast.currentFrameAtMs,
   });
-}
-
-function createTopologyDriveProjection(
-  topologyPacket,
-  committedModes,
-  previousProjection = null,
-) {
-  const committedModeCount = committedModes.length;
-  const visibleModeCount = Math.min(
-    committedModeCount,
-    Math.max(0, Math.floor(topologyPacket.activeModeCount ?? 0)),
-  );
-  const sourceCommittedIndices = Uint16Array.from(
-    committedModes
-      .map((mode, index) =>
-        index < visibleModeCount && mode.layer !== "resonant" ? index : -1,
-      )
-      .filter((index) => index >= 0),
-  );
-  const resonantCommittedIndices = Uint16Array.from(
-    committedModes
-      .map((mode, index) =>
-        index < visibleModeCount && mode.layer === "resonant" ? index : -1,
-      )
-      .filter((index) => index >= 0),
-  );
-  const sourceSlots = new Float32Array(sourceCommittedIndices.length * 4);
-  const resonantSlots = new Float32Array(resonantCommittedIndices.length * 4);
-  const sourcePhaseSlots = new Float32Array(sourceSlots.length);
-  const resonantPhaseSlots = new Float32Array(resonantSlots.length);
-  const committedDisplaySlots = new Float32Array(committedModeCount * 4);
-  const committedSignalSlots = new Float32Array(committedModeCount * 4);
-  const committedDisplayReferenceSlots = new Float32Array(
-    committedModeCount * 4,
-  );
-  const committedSignalReferenceSlots = new Float32Array(
-    committedModeCount * 4,
-  );
-  const committedPhaseSlots = new Float32Array(committedModeCount * 4);
-  const previousDisplayAmplitudeByModeKey = new Map();
-  const previousSignalAmplitudeByModeKey = new Map();
-  for (
-    let index = 0;
-    index < (previousProjection?.committedModeCount ?? 0);
-    index += 1
-  ) {
-    const offset = index * 4;
-    const modeKey = `${previousProjection.committedDisplaySlots[offset]}:${previousProjection.committedDisplaySlots[offset + 1]}:${previousProjection.committedDisplaySlots[offset + 2]}`;
-    previousDisplayAmplitudeByModeKey.set(
-      modeKey,
-      previousProjection.committedDisplaySlots[offset + 3],
-    );
-    previousSignalAmplitudeByModeKey.set(
-      modeKey,
-      previousProjection.committedSignalSlots[offset + 3],
-    );
-  }
-  for (let index = 0; index < committedModeCount; index += 1) {
-    const mode = committedModes[index];
-    const offset = index * 4;
-    for (let component = 0; component < 3; component += 1) {
-      const identity =
-        component === 0 ? mode.u : component === 1 ? mode.v : mode.w;
-      committedDisplaySlots[offset + component] = identity;
-      committedSignalSlots[offset + component] = identity;
-      committedDisplayReferenceSlots[offset + component] = identity;
-      committedSignalReferenceSlots[offset + component] = identity;
-    }
-    committedDisplayReferenceSlots[offset + 3] =
-      previousDisplayAmplitudeByModeKey.get(mode.modeKey) ?? 0;
-    committedSignalReferenceSlots[offset + 3] =
-      previousSignalAmplitudeByModeKey.get(mode.modeKey) ?? 0;
-  }
-  const initializeLayerIdentities = (target, committedIndices) => {
-    for (
-      let layerIndex = 0;
-      layerIndex < committedIndices.length;
-      layerIndex += 1
-    ) {
-      const committedOffset = committedIndices[layerIndex] * 4;
-      const layerOffset = layerIndex * 4;
-      for (let component = 0; component < 3; component += 1) {
-        target[layerOffset + component] =
-          committedDisplaySlots[committedOffset + component];
-      }
-    }
-  };
-  initializeLayerIdentities(sourceSlots, sourceCommittedIndices);
-  initializeLayerIdentities(resonantSlots, resonantCommittedIndices);
-  return {
-    sourceSlots,
-    resonantSlots,
-    sourcePhaseSlots,
-    resonantPhaseSlots,
-    sourceCommittedIndices,
-    resonantCommittedIndices,
-    committedDisplaySlots,
-    committedSignalSlots,
-    committedDisplayReferenceSlots,
-    committedSignalReferenceSlots,
-    committedPhaseSlots,
-    visibleDisplaySlots: committedDisplaySlots.subarray(
-      0,
-      visibleModeCount * 4,
-    ),
-    visibleSignalSlots: committedSignalSlots.subarray(0, visibleModeCount * 4),
-    visibleDisplayReferenceSlots: committedDisplayReferenceSlots.subarray(
-      0,
-      visibleModeCount * 4,
-    ),
-    visibleSignalReferenceSlots: committedSignalReferenceSlots.subarray(
-      0,
-      visibleModeCount * 4,
-    ),
-    activeSourceCoupledModeCount: sourceCommittedIndices.length,
-    activeResonantModeCount: resonantCommittedIndices.length,
-    activeModeCount: visibleModeCount,
-    visibleModeCount,
-    committedModeCount,
-  };
-}
-
-function readTopologyDriveEntry(modalExcitationState, slots, offset) {
-  const modeKey = `${slots[offset]}:${slots[offset + 1]}:${slots[offset + 2]}`;
-  return (
-    modalExcitationState?.observedModes?.get?.(modeKey) ??
-    modalExcitationState?.activeModes?.get?.(modeKey) ??
-    modalExcitationState?.modalCandidateState?.get?.(modeKey) ??
-    null
-  );
-}
-
-function refreshTopologyDriveProjection(state) {
-  const projection = state.topologyDriveProjection;
-  const modalExcitationState =
-    state.featureState?.analysis?.modalExcitationState;
-  if (!projection || !modalExcitationState) {
-    return;
-  }
-  for (
-    let offset = 0;
-    offset < projection.committedDisplaySlots.length;
-    offset += 4
-  ) {
-    projection.committedDisplayReferenceSlots[offset + 3] =
-      projection.committedDisplaySlots[offset + 3];
-    projection.committedSignalReferenceSlots[offset + 3] =
-      projection.committedSignalSlots[offset + 3];
-    const entry = readTopologyDriveEntry(
-      modalExcitationState,
-      projection.committedDisplaySlots,
-      offset,
-    );
-    projection.committedDisplaySlots[offset + 3] = Math.max(
-      0,
-      entry?.displayAmplitude ??
-        entry?.amplitude ??
-        Math.sqrt(Math.max(0, entry?.modalResponseEnergy ?? 0)),
-    );
-    projection.committedSignalSlots[offset + 3] = Math.sqrt(
-      Math.max(
-        0,
-        Math.min(
-          entry?.modalResponseEnergy ?? 0,
-          entry?.modalResponseDrive ?? 0,
-        ),
-      ),
-    );
-  }
-  const copyLayerCoefficients = (target, committedIndices) => {
-    for (
-      let layerIndex = 0;
-      layerIndex < committedIndices.length;
-      layerIndex += 1
-    ) {
-      target[layerIndex * 4 + 3] =
-        projection.committedDisplaySlots[committedIndices[layerIndex] * 4 + 3];
-    }
-  };
-  copyLayerCoefficients(
-    projection.sourceSlots,
-    projection.sourceCommittedIndices,
-  );
-  copyLayerCoefficients(
-    projection.resonantSlots,
-    projection.resonantCommittedIndices,
-  );
-  const phaseAnchorAngularVelocityRadPerSec =
-    computePhaseAnchorAngularVelocityRadPerSec({
-      slotSets: [
-        {
-          visibleSlots: projection.visibleDisplaySlots,
-          capacity: projection.visibleModeCount,
-        },
-      ],
-      activeModes: modalExcitationState.activeModes,
-      observedModes: modalExcitationState.observedModes,
-    });
-  writePhaseSlotsForVisibleModes({
-    target: projection.committedPhaseSlots,
-    visibleSlots: projection.committedDisplaySlots,
-    capacity: projection.committedModeCount,
-    activeModes: modalExcitationState.activeModes,
-    observedModes: modalExcitationState.observedModes,
-    anchorAngularVelocityRadPerSec: phaseAnchorAngularVelocityRadPerSec,
-  });
-  const copyLayerPhases = (target, committedIndices) => {
-    for (
-      let layerIndex = 0;
-      layerIndex < committedIndices.length;
-      layerIndex += 1
-    ) {
-      const committedOffset = committedIndices[layerIndex] * 4;
-      const layerOffset = layerIndex * 4;
-      for (let component = 0; component < 4; component += 1) {
-        target[layerOffset + component] =
-          projection.committedPhaseSlots[committedOffset + component];
-      }
-    }
-  };
-  copyLayerPhases(
-    projection.sourcePhaseSlots,
-    projection.sourceCommittedIndices,
-  );
-  copyLayerPhases(
-    projection.resonantPhaseSlots,
-    projection.resonantCommittedIndices,
-  );
-}
-
-function clampUnit(value) {
-  return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
-}
-
-function buildVisibleStructuralMetrics(state, baseMetrics) {
-  const projection = state.topologyDriveProjection;
-  const modalExcitationState =
-    state.featureState?.analysis?.modalExcitationState;
-  if (!projection || !baseMetrics) {
-    return baseMetrics;
-  }
-
-  let sourceEnergy = 0;
-  let resonantEnergy = 0;
-  let sourceCurrentSignalEnergy = 0;
-  let resonantCurrentSignalEnergy = 0;
-  let rawEnergy = 0;
-  let modalDriveEnergy = 0;
-  let dampingEnvelope = 0;
-  let couplingStrength = 0;
-  let phaseConfidence = 0;
-  let persistence = 0;
-  let entryCount = 0;
-  for (let index = 0; index < projection.visibleModeCount; index += 1) {
-    const offset = index * 4;
-    const mode = state.committedModes[index];
-    const entry = readTopologyDriveEntry(
-      modalExcitationState,
-      projection.committedDisplaySlots,
-      offset,
-    );
-    const retainedEnergy = clampUnit(
-      (projection.committedDisplaySlots[offset + 3] ?? 0) ** 2,
-    );
-    const currentSignalEnergy = clampUnit(
-      (projection.committedSignalSlots[offset + 3] ?? 0) ** 2,
-    );
-    if (mode?.layer === "resonant") {
-      resonantEnergy += retainedEnergy;
-      resonantCurrentSignalEnergy += currentSignalEnergy;
-    } else {
-      sourceEnergy += retainedEnergy;
-      sourceCurrentSignalEnergy += currentSignalEnergy;
-    }
-    rawEnergy += clampUnit(
-      entry?.modalResponseRawEnergy ?? entry?.modalResponseEnergy ?? 0,
-    );
-    modalDriveEnergy += clampUnit(entry?.modalResponseDrive ?? 0);
-    dampingEnvelope += clampUnit(entry?.dampingEnvelope ?? 0);
-    couplingStrength += clampUnit(entry?.couplingStrength ?? 0);
-    phaseConfidence += clampUnit(entry?.phaseConfidence ?? 0);
-    persistence += clampUnit(entry?.persistence ?? 0);
-    entryCount += 1;
-  }
-
-  sourceEnergy = clampUnit(sourceEnergy);
-  resonantEnergy = clampUnit(resonantEnergy);
-  const modalResponseEnergy = clampUnit(sourceEnergy + resonantEnergy);
-  sourceCurrentSignalEnergy = clampUnit(sourceCurrentSignalEnergy);
-  resonantCurrentSignalEnergy = clampUnit(resonantCurrentSignalEnergy);
-  const currentSignalEnergy = clampUnit(
-    sourceCurrentSignalEnergy + resonantCurrentSignalEnergy,
-  );
-  const average = (value) => (entryCount > 0 ? value / entryCount : 0);
-
-  return {
-    ...baseMetrics,
-    modalDriveEnergy: clampUnit(average(modalDriveEnergy)),
-    currentSignalEnergy,
-    currentSignalAmplitude: Math.sqrt(currentSignalEnergy),
-    modalResponseCurrentSignalEnergy: currentSignalEnergy,
-    modalResponseSourceCoupledCurrentSignalEnergy: sourceCurrentSignalEnergy,
-    modalResponseResonantCurrentSignalEnergy: resonantCurrentSignalEnergy,
-    modalResponseEnergy,
-    modalResponseSourceCoupledEnergy: sourceEnergy,
-    modalResponseResonantEnergy: resonantEnergy,
-    modalResponseModeCount: entryCount,
-    modalResponseRawEnergy: clampUnit(rawEnergy),
-    modalResponseAverageDampingEnvelope: clampUnit(average(dampingEnvelope)),
-    modalResponseAverageCouplingStrength: clampUnit(average(couplingStrength)),
-    modalResponseAveragePhaseConfidence: clampUnit(average(phaseConfidence)),
-    modalResponseAveragePersistence: clampUnit(average(persistence)),
-    modalResponseCurrentRenderSourceEvidence: currentSignalEnergy > 0,
-    modalResponseFreshCouplingEvidence: currentSignalEnergy > 0,
-    modalResponseRenderPreviewEnergy: modalResponseEnergy,
-    modalResponseRenderEnergy: modalResponseEnergy,
-    modalResponseRenderPreviewSourceCoupledEnergy: sourceEnergy,
-    modalResponseRenderPreviewResonantEnergy: resonantEnergy,
-    modalResponseRenderSourceCoupledEnergy: sourceEnergy,
-    modalResponseRenderResonantEnergy: resonantEnergy,
-    modalResponseRenderPreviewRawEnergy: clampUnit(rawEnergy),
-    modalResponseRenderRawEnergy: clampUnit(rawEnergy),
-  };
-}
-
-function applyTopologyDriveProjection(state, analysisResult) {
-  const projection = state.topologyDriveProjection;
-  if (!projection) {
-    return analysisResult;
-  }
-  analysisResult.candidateForcingSlots = projection.sourceSlots;
-  analysisResult.candidateResponseSlots = projection.resonantSlots;
-  analysisResult.sourceCoupledPhaseSlots = projection.sourcePhaseSlots;
-  analysisResult.resonantPhaseSlots = projection.resonantPhaseSlots;
-  // Hidden committed modes remain in the oscillator state and full-width
-  // drive packet, but only the topology's visible prefix may own render
-  // signals, energy-ledger authority, or field state.
-  analysisResult.modeSlots = projection.visibleDisplaySlots;
-  analysisResult.signalModeSlots = projection.visibleSignalSlots;
-  analysisResult.referenceModeSlots = projection.visibleDisplayReferenceSlots;
-  analysisResult.signalReferenceModeSlots =
-    projection.visibleSignalReferenceSlots;
-  analysisResult.activeSourceCoupledModeCount =
-    projection.activeSourceCoupledModeCount;
-  analysisResult.activeResonantModeCount = projection.activeResonantModeCount;
-  analysisResult.activeModeCount = projection.activeModeCount;
-  analysisResult.structuralMetrics = buildVisibleStructuralMetrics(
-    state,
-    analysisResult.structuralMetrics,
-  );
-  return analysisResult;
 }
 
 function buildCurrentFeatureFrame(state, preparedFast, fastSignalState) {
@@ -711,12 +371,10 @@ function buildCurrentFeatureFrame(state, preparedFast, fastSignalState) {
   const featureFrame = composeAudioFeatureFrame({
     preparedInputs: preparedFast,
     analysisResult,
-    previousFrame: state.latestFeatureFrame,
-    smoothFromPreviousFrame: Boolean(state.latestFeatureFrame),
+    compositionState: state.compositionState,
     topologyFrame: state.latestTopologyFrame,
   });
   recordPerf(state.perf.composition, getWorkerNow() - compositionStartedAt);
-  state.latestFeatureFrame = featureFrame;
   return featureFrame;
 }
 
@@ -751,8 +409,6 @@ function buildWorkerStatus(state, reason) {
     processedFrameCount: state.processedFrameCount,
     topologyPublishCount: state.topologyPublishCount,
     drivePublishCount: state.drivePublishCount,
-    bandwidthLimitedTopologyRetentionCount:
-      state.bandwidthLimitedTopologyRetentionCount,
     drivePacketBufferAllocationCount: state.drivePacketBufferAllocationCount,
     workerFastLaneMs: state.perf.fastLane.averageMs,
     workerFastLaneLastMs: state.perf.fastLane.lastMs,
@@ -794,7 +450,16 @@ function buildWorkerTopologyPacket(
     structuralDiagnostics:
       state.latestStructuralState?.structuralMetrics ?? null,
   });
+  const topologyDriveProjection = createTopologyDriveProjection(
+    topologyPacket,
+    state.committedModes,
+    state.topologyDriveProjection,
+  );
   if (topologyPacket.topologyFingerprint === state.latestTopologyFingerprint) {
+    // Identity can remain stable while the topology handoff envelope advances.
+    // Refresh the worker-side projection even when no new topology packet must
+    // cross the thread boundary.
+    state.topologyDriveProjection = topologyDriveProjection;
     return null;
   }
 
@@ -806,11 +471,7 @@ function buildWorkerTopologyPacket(
     activeModeCount: topologyPacket.activeModeCount,
     modalIdentitySlots: new Float32Array(topologyPacket.modalIdentitySlots),
   };
-  state.topologyDriveProjection = createTopologyDriveProjection(
-    topologyPacket,
-    state.committedModes,
-    state.topologyDriveProjection,
-  );
+  state.topologyDriveProjection = topologyDriveProjection;
   state.topologyPublishCount += 1;
   return topologyPacket;
 }
@@ -827,10 +488,11 @@ export function processFeatureWorkerFrame(state, frame) {
       frame.status?.fastFftSize ?? FAST_MODAL_DRIVE_WINDOW_SAMPLES,
   });
   let topologyPacket = null;
+  let featureFrame = preparedFast.silentFeatureFrame;
   if (preparedFast.silentFeatureFrame) {
     state.latestStructuralState = null;
     state.latestAnalysisResult = null;
-    state.latestFeatureFrame = preparedFast.silentFeatureFrame;
+    state.compositionState = createAudioFeatureCompositionState();
     state.latestTopologyFrame = preparedFast.silentFeatureFrame;
     state.topologyDriveProjection = null;
     state.committedModes = [];
@@ -839,6 +501,8 @@ export function processFeatureWorkerFrame(state, frame) {
   } else {
     const fastSignalState = updateAudioFeatureFastSignalState(preparedFast);
     const structuralUpdate = runStructuralLane(state, frame, fastSignalState);
+    let drivePreparedInputs = preparedFast;
+    let driveFastSignalState = fastSignalState;
     if (structuralUpdate) {
       // Structural analysis advances only the topology compositor. Its FFT
       // amplitudes never become the previous live frame or smoothing state.
@@ -850,55 +514,55 @@ export function processFeatureWorkerFrame(state, frame) {
         materializeStructuralProjection: true,
         materializeSignalProjection: true,
       });
-      const previousDescriptorAuthority =
-        preparedFast.featureState.analysis.modalDescriptorAuthorityState
-          ?.previousFieldAuthority;
       const topologyFeatureFrame = composeAudioFeatureFrame({
         preparedInputs: structuralUpdate.preparedStructural,
         analysisResult: topologyAnalysisResult,
         topologyOnly: true,
       });
-      const retainCommittedTopology = shouldRetainCommittedTopology(
+      state.latestStructuralState = structuralUpdate.structuralState;
+      state.latestTopologyFrame = topologyFeatureFrame;
+      rebuildFastEstimator(
         state,
+        structuralUpdate.preparedStructural,
         topologyFeatureFrame,
       );
-      if (retainCommittedTopology) {
-        state.bandwidthLimitedTopologyRetentionCount += 1;
-        if (preparedFast.featureState.analysis.modalDescriptorAuthorityState) {
-          preparedFast.featureState.analysis.modalDescriptorAuthorityState.previousFieldAuthority =
-            previousDescriptorAuthority;
-        }
-      } else {
-        state.latestStructuralState = structuralUpdate.structuralState;
-        state.latestTopologyFrame = topologyFeatureFrame;
-        rebuildFastEstimator(
-          state,
-          structuralUpdate.preparedStructural,
-          topologyFeatureFrame,
-        );
-        topologyPacket = buildWorkerTopologyPacket(
-          state,
-          frame,
-          topologyFeatureFrame,
-          structuralUpdate.preparedStructural.analysisInputsSignature,
-        );
-      }
+      topologyPacket = buildWorkerTopologyPacket(
+        state,
+        frame,
+        topologyFeatureFrame,
+        structuralUpdate.preparedStructural.analysisInputsSignature,
+      );
       restoreFastModalOscillatorState({
         modalExcitationState:
           preparedFast.featureState.analysis.modalExcitationState,
         committedModes: state.committedModes,
         previousOscillatorState: structuralUpdate.previousOscillatorState,
       });
+      if (
+        structuralUpdate.preparedStructural?.sourceEvidence?.transport
+          ?.preparationOnly === true &&
+        structuralUpdate.structuralFastSignalState
+      ) {
+        // A loaded file is a static preparation source. Its structural window
+        // owns the cache seed because the shorter fast window can legitimately
+        // begin in silence even when the decoded file already contains modal
+        // evidence. Live playback returns to the fast window below.
+        drivePreparedInputs = structuralUpdate.preparedStructural;
+        driveFastSignalState = structuralUpdate.structuralFastSignalState;
+      }
     }
-    runExactFastDrive(state, preparedFast, fastSignalState);
+    runExactFastDrive(state, drivePreparedInputs, driveFastSignalState);
     refreshTopologyDriveProjection(state);
-    buildCurrentFeatureFrame(state, preparedFast, fastSignalState);
+    featureFrame = buildCurrentFeatureFrame(
+      state,
+      drivePreparedInputs,
+      driveFastSignalState,
+    );
   }
   state.lastFastFrameAtMs = frame.captureTimestampMs;
   state.processedFrameCount += 1;
   recordPerf(state.perf.fastLane, getWorkerNow() - startedAt);
 
-  const featureFrame = state.latestFeatureFrame;
   if (!state.latestDriveTopology) {
     topologyPacket = buildWorkerTopologyPacket(state, frame, featureFrame);
   }
@@ -921,6 +585,15 @@ export function processFeatureWorkerFrame(state, frame) {
     frameId: frame.frameId,
     captureTimestampMs: frame.captureTimestampMs,
     processingTimestampMs: getWorkerNow(),
+    observationTimeSeconds: frame.status?.observationTimeSeconds,
+    observationAdvancing: frame.status?.observationAdvancing === true,
+    observationPaused: frame.status?.observationPaused === true,
+    observationSourceKey: frame.status?.sourceKey ?? null,
+    observationSessionKey: frame.status?.sessionKey ?? null,
+    observationTimelineRevision:
+      frame.status?.sourceSession?.kind === AUDIO_SOURCE_KINDS.file
+        ? frame.status.sourceSession.timelineRevision ?? 0
+        : 0,
   });
   state.drivePublishCount += 1;
   return { topologyPacket, drivePacket };

@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   LIVE_INPUT_ACOUSTIC_INTENTS,
   LIVE_INPUT_ANALYSIS_CLASSES,
+  areLiveInputAnalysisSettingsEqual,
   normalizeLiveInputAcousticIntent,
   normalizeLiveInputAnalysisClass,
+  normalizeLiveInputAnalysisSettings,
   resolveLiveInputAnalysisClass,
 } from "./liveInputAnalysis.js";
 
@@ -40,7 +42,7 @@ describe("live input analysis classification", () => {
   it("treats known virtual devices as line-feed in auto mode", () => {
     expect(
       resolveLiveInputAnalysisClass({
-        liveInputKind: "live",
+        liveInputDeviceKind: "live",
         selectedDeviceLabel: "BlackHole 2ch",
       }),
     ).toBe(LIVE_INPUT_ANALYSIS_CLASSES.lineFeed);
@@ -49,7 +51,7 @@ describe("live input analysis classification", () => {
   it("defaults unknown physical devices to acoustic-mic in auto mode", () => {
     expect(
       resolveLiveInputAnalysisClass({
-        liveInputKind: "live",
+        liveInputDeviceKind: "live",
         selectedDeviceLabel: "MacBook Pro Microphone",
       }),
     ).toBe(LIVE_INPUT_ANALYSIS_CLASSES.acousticMic);
@@ -58,7 +60,7 @@ describe("live input analysis classification", () => {
   it("lets per-device overrides win over heuristics", () => {
     expect(
       resolveLiveInputAnalysisClass({
-        liveInputKind: "live",
+        liveInputDeviceKind: "live",
         selectedDeviceId: "device-1",
         selectedDeviceLabel: "BlackHole 2ch",
         overrides: {
@@ -66,5 +68,43 @@ describe("live input analysis classification", () => {
         },
       }),
     ).toBe(LIVE_INPUT_ANALYSIS_CLASSES.acousticMic);
+  });
+
+  it("normalizes the complete settings contract at its semantic owner", () => {
+    expect(
+      normalizeLiveInputAnalysisSettings(
+        {
+          acousticIntent: "vocal",
+          overrides: {
+            "device-1": "acoustic-mic",
+            "device-2": "auto",
+          },
+        },
+        {
+          analysisClass: "line-feed",
+          acousticIntent: "ambient",
+          overrides: { stale: "line-feed" },
+        },
+      ),
+    ).toEqual({
+      analysisClass: "line-feed",
+      acousticIntent: "vocal",
+      overrides: { "device-1": "acoustic-mic" },
+    });
+  });
+
+  it("compares normalized settings instead of caller-owned object identity", () => {
+    expect(
+      areLiveInputAnalysisSettingsEqual(
+        {
+          analysisClass: "auto",
+          acousticIntent: "ambient",
+          overrides: { "device-1": "line-feed", ignored: "auto" },
+        },
+        {
+          overrides: { "device-1": "line-feed" },
+        },
+      ),
+    ).toBe(true);
   });
 });

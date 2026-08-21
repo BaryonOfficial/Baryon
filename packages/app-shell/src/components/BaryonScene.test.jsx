@@ -10,6 +10,7 @@ const {
   cameraState,
   controlsState,
   disposePipelineSpy,
+  frameCallbacks,
   invalidateSpy,
   orbitControlProps,
   postNodesRef,
@@ -28,6 +29,7 @@ const {
     update: vi.fn(),
   },
   disposePipelineSpy: vi.fn(),
+  frameCallbacks: [],
   invalidateSpy: vi.fn(),
   orbitControlProps: [],
   useBaryonPipelineSpy: vi.fn(),
@@ -37,10 +39,15 @@ const {
       temporalHistoryBlendUniform: { value: 1 },
     },
   },
-  useBaryonEngineSpy: vi.fn(() => null),
+  useBaryonEngineSpy: vi.fn(() => ({
+    points: null,
+  })),
 }));
 
 vi.mock("@react-three/fiber", () => ({
+  useFrame: (callback) => {
+    frameCallbacks.push(callback);
+  },
   useThree: () => ({
     camera: {
       position: { set: cameraState.positionSet },
@@ -107,6 +114,33 @@ function createSceneProps(cameraPose, overrides = {}) {
   };
 }
 
+test("mounts the engine-owned visualization root as the only program layer", async () => {
+  const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  useBaryonEngineSpy.mockReturnValueOnce({
+    points: { name: "visualization" },
+  });
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  await act(async () => {
+    root.render(
+      React.createElement(
+        BaryonScene,
+        createSceneProps(resolvePresetCameraPose("top-down")),
+      ),
+    );
+  });
+
+  expect(container.querySelectorAll("primitive")).toHaveLength(1);
+
+  await act(async () => {
+    root.unmount();
+  });
+  container.remove();
+  consoleError.mockRestore();
+});
+
 test("forwards the required audio feature authority role to the engine hook", async () => {
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -167,7 +201,11 @@ test("external camera pose changes apply without resetting the postprocess pipel
     );
   });
 
-  expect(cameraState.positionSet).toHaveBeenLastCalledWith(0, 0, 9);
+  expect(cameraState.positionSet).toHaveBeenLastCalledWith(
+    0,
+    0,
+    Math.hypot(4.5, 4.5, 4.5),
+  );
   expect(controlsState.targetSet).not.toHaveBeenCalled();
   expect(cameraState.lookAt).toHaveBeenLastCalledWith(0, 0, 0);
   expect(disposePipelineSpy).not.toHaveBeenCalled();
@@ -180,6 +218,58 @@ test("external camera pose changes apply without resetting the postprocess pipel
   await act(async () => {
     root.unmount();
   });
+  container.remove();
+});
+
+test("continuous external camera poses preserve temporal history until a cut nonce changes", async () => {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  await act(async () => {
+    root.render(
+      React.createElement(
+        BaryonScene,
+        createSceneProps(resolvePresetCameraPose("top-down"), {
+          cameraCutNonce: 0,
+        }),
+      ),
+    );
+  });
+
+  postNodesRef.current.temporalHistoryBlendUniform.value = 1;
+  postNodesRef.current.temporalHistoryCutFramesRemaining = 0;
+  await act(async () => {
+    root.render(
+      React.createElement(
+        BaryonScene,
+        createSceneProps(resolvePresetCameraPose("side"), {
+          cameraCutNonce: 0,
+        }),
+      ),
+    );
+  });
+
+  expect(postNodesRef.current.temporalHistoryBlendUniform.value).toBe(1);
+  expect(postNodesRef.current.temporalHistoryCutFramesRemaining).toBe(0);
+
+  await act(async () => {
+    root.render(
+      React.createElement(
+        BaryonScene,
+        createSceneProps(resolvePresetCameraPose("top-down"), {
+          cameraCutNonce: 1,
+        }),
+      ),
+    );
+  });
+
+  expect(postNodesRef.current.temporalHistoryBlendUniform.value).toBe(0);
+  expect(
+    postNodesRef.current.temporalHistoryCutFramesRemaining,
+  ).toBeGreaterThan(0);
+
+  await act(async () => root.unmount());
   container.remove();
 });
 
@@ -239,6 +329,56 @@ test("preview-local orbit changes invalidate demand frames before publishing pos
   await act(async () => {
     root.unmount();
   });
+  container.remove();
+});
+
+test("preview-local streamed camera poses apply during motion without publishing a drag", async () => {
+  const onCameraPoseChange = vi.fn();
+  const streamedCameraPoseRef = { current: null };
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  await act(async () => {
+    root.render(
+      React.createElement(
+        BaryonScene,
+        createSceneProps(resolvePresetCameraPose("side"), {
+          cameraControlMode: CAMERA_CONTROL_MODES.previewLocal,
+          onCameraPoseChange,
+          streamedCameraPoseRef,
+        }),
+      ),
+    );
+  });
+
+  const streamedPose = resolvePresetCameraPose("top-down");
+  streamedCameraPoseRef.current = streamedPose;
+  controlsState.update.mockImplementation(() => {
+    orbitControlProps.at(-1)?.onChange?.();
+  });
+  postNodesRef.current.temporalHistoryBlendUniform.value = 1;
+  postNodesRef.current.temporalHistoryCutFramesRemaining = 0;
+
+  await act(async () => {
+    frameCallbacks.at(-1)?.();
+  });
+
+  expect(cameraState.positionSet).toHaveBeenLastCalledWith(
+    streamedPose.position.x,
+    streamedPose.position.y,
+    streamedPose.position.z,
+  );
+  expect(controlsState.targetSet).toHaveBeenLastCalledWith(0, 0, 0);
+  expect(onCameraPoseChange).not.toHaveBeenCalled();
+  expect(
+    useBaryonEngineSpy.mock.calls.at(-1)?.[0]?.localCameraRenderSignalRef
+      ?.current,
+  ).toMatchObject({ version: 1, phase: "change" });
+  expect(postNodesRef.current.temporalHistoryBlendUniform.value).toBe(1);
+  expect(postNodesRef.current.temporalHistoryCutFramesRemaining).toBe(0);
+
+  await act(async () => root.unmount());
   container.remove();
 });
 
@@ -308,7 +448,11 @@ test("preview-local camera pose mirrors do not reapply as orbit commands", async
     );
   });
 
-  expect(cameraState.positionSet).toHaveBeenLastCalledWith(0, 9, 0);
+  expect(cameraState.positionSet).toHaveBeenLastCalledWith(
+    0,
+    Math.hypot(4.5, 4.5, 4.5),
+    0,
+  );
   expect(controlsState.targetSet).toHaveBeenLastCalledWith(0, 0, 0);
   expect(controlsState.update).toHaveBeenCalled();
 
@@ -318,7 +462,7 @@ test("preview-local camera pose mirrors do not reapply as orbit commands", async
   container.remove();
 });
 
-test("TRAA is enabled for the rotatable 3D-volume raymarch method", async () => {
+test("TRAA is disabled by default for the raymarch method", async () => {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -333,7 +477,7 @@ test("TRAA is enabled for the rotatable 3D-volume raymarch method", async () => 
       ),
     );
   });
-  expect(lastResolvedRenderProfile()?.traaEnabled).toBe(true);
+  expect(lastResolvedRenderProfile()?.traaEnabled).toBe(false);
 
   await act(async () => {
     root.unmount();
@@ -415,11 +559,12 @@ afterEach(() => {
   cameraState.updateProjectionMatrix.mockClear();
   cameraState.updateMatrixWorld.mockClear();
   controlsState.targetSet.mockClear();
-  controlsState.update.mockClear();
+  controlsState.update.mockReset();
   disposePipelineSpy.mockClear();
   invalidateSpy.mockClear();
   useBaryonEngineSpy.mockClear();
   orbitControlProps.splice(0);
+  frameCallbacks.splice(0);
   postNodesRef.current = {
     traaNode: {},
     temporalHistoryBlendUniform: { value: 1 },

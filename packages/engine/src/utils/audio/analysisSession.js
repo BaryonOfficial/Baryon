@@ -1,40 +1,69 @@
-import {
-  isLoopbackLiveInputDeviceKind,
-  normalizeLiveInputDeviceKind,
-} from "../../core/audio/inputDeviceSemantics.js";
+import { AUDIO_SOURCE_KINDS } from "../../core/audio/audioSourceSession.js";
+
+export function buildAnalysisSourceKey(status) {
+  const sourceSession = status?.sourceSession;
+  if (
+    sourceSession?.kind !== AUDIO_SOURCE_KINDS.file &&
+    sourceSession?.kind !== AUDIO_SOURCE_KINDS.system
+  ) {
+    return "idle";
+  }
+
+  const sessionId = Number.isFinite(sourceSession.sessionId)
+    ? Math.max(0, Math.floor(sourceSession.sessionId))
+    : "none";
+  return `${sourceSession.kind}:${sessionId}`;
+}
 
 export function buildAnalysisSessionKey(status) {
-  const liveInputDeviceKind = normalizeLiveInputDeviceKind(
-    status?.liveInputDeviceKind ?? status?.liveInputKind,
+  if (typeof status?.sessionKey === "string" && status.sessionKey) {
+    return status.sessionKey;
+  }
+
+  const sourceKey = buildAnalysisSourceKey(status);
+  if (!sourceKey.startsWith("file:")) {
+    return sourceKey;
+  }
+
+  const timelineRevision = Math.max(
+    0,
+    Math.floor(status?.sourceSession?.timelineRevision ?? 0),
   );
-  const hasLoadedFileSource =
-    status?.playbackSourceSessionId != null ||
-    status?.isPlaying === true ||
-    status?.isPlaybackPaused === true ||
-    status?.isAudioLoaded === true;
-  const inputMode = status?.isLiveInputActive
-    ? isLoopbackLiveInputDeviceKind(liveInputDeviceKind)
-      ? "system"
-      : "live"
-    : hasLoadedFileSource
-      ? "file"
-      : status?.audioInputMode === "file"
-        ? "idle"
-        : (status?.audioInputMode ?? "idle");
+  return timelineRevision > 0
+    ? `${sourceKey}:timeline:${timelineRevision}`
+    : sourceKey;
+}
 
-  if (inputMode === "file") {
-    return `file:${
-      status?.playbackSourceSessionId ?? status?.playbackSessionId ?? "none"
-    }`;
+function readFrameLiveInputActive(featureFrame) {
+  if (typeof featureFrame?.isLiveInputActive === "boolean") {
+    return featureFrame.isLiveInputActive;
+  }
+  return featureFrame?.sourceEvidence?.transport?.liveInputActive === true;
+}
+
+/**
+ * @returns {"source-session" | "source-state" | null}
+ */
+export function resolveAnalysisFrameStaleness(featureFrame, status) {
+  if (!featureFrame) {
+    return null;
   }
 
-  if (inputMode === "live") {
-    return `live:${status?.liveInputSessionId ?? "none"}`;
+  const observedSessionKey = featureFrame?.observationSessionKey;
+  if (
+    typeof observedSessionKey === "string" &&
+    observedSessionKey !== buildAnalysisSessionKey(status)
+  ) {
+    return "source-session";
   }
 
-  if (inputMode === "system") {
-    return `system:${status?.liveInputSessionId ?? "none"}`;
+  if (
+    status?.sourceSession?.kind === AUDIO_SOURCE_KINDS.system &&
+    readFrameLiveInputActive(featureFrame) !==
+      (status?.isLiveInputActive === true)
+  ) {
+    return "source-state";
   }
 
-  return "idle";
+  return null;
 }

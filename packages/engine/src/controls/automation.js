@@ -1,40 +1,23 @@
-import { CONTROL_DEFINITIONS, CONTROL_STATUSES } from "./schema.js";
+import {
+  CONTROL_DEFINITIONS,
+  CONTROL_STATUSES,
+  isCanonicalControlSurfaceSet,
+  isControlSurface,
+} from "./schema.js";
 
-export const AUTOMATION_CONTROL_SCHEMA_VERSION = 4;
-
-export const AUTOMATABLE_CONTROL_KEYS = Object.freeze([
-  "renderQualityPreset",
-  "customTargetFps",
-  "performanceHudEnabled",
-  "outputMode",
-  "outputBackgroundColor",
-  "boundaryMode",
-  "densityGain",
-  "laserDeflectionGain",
-  "raymarchSteps",
-  "colorMode",
-  "volumeColor",
-  "surfaceColor",
-  "spectralMix",
-  "holographicIntensity",
-  "holographicFresnelPower",
-  "rotationMode",
-  "rotationSpeed",
-  "motionAmount",
-  "bloomEnabled",
-  "bloomStrength",
-  "bloomRadius",
-  "bloomThreshold",
-  "idleLogoIntensity",
-  "idleLogoSize",
-  "idleLogoColor",
-]);
-
-const AUTOMATABLE_CONTROL_KEY_SET = new Set(AUTOMATABLE_CONTROL_KEYS);
+export const AUTOMATION_CONTROL_SCHEMA_VERSION = 8;
 const OSC_CONTROL_PREFIX = "/baryon/control/";
 const OSC_QUERY_CONTROL_ROOT = "/baryon/control";
 const MIDI_MIN_VALUE = 0;
 const MIDI_MAX_VALUE = 127;
+export const PARAMETER_AUTOMATION_MIDI_COLOR_COMPONENTS = Object.freeze([
+  "hue",
+  "saturation",
+  "brightness",
+]);
+const MIDI_COLOR_COMPONENT_SET = new Set(
+  PARAMETER_AUTOMATION_MIDI_COLOR_COMPONENTS,
+);
 
 function createFailure(reason, detail = null) {
   return {
@@ -52,7 +35,10 @@ function clamp(
   return Math.min(max, Math.max(min, value));
 }
 
-function getDefinitionValueKind(definition) {
+/**
+ * @returns {"scalar" | "boolean" | "enum" | "color" | null}
+ */
+export function getParameterAutomationControlValueKind(definition) {
   if (!definition || typeof definition !== "object") {
     return null;
   }
@@ -108,12 +94,31 @@ function isIntegerArg(arg) {
   return type == null || type === "i";
 }
 
+function canonicalizeOscFloat32(value) {
+  const float32Value = Math.fround(value);
+  // Nine significant decimal digits are sufficient to round-trip a float32.
+  for (
+    let significantDigits = 1;
+    significantDigits <= 9;
+    significantDigits += 1
+  ) {
+    const candidate = Number(value.toPrecision(significantDigits));
+    if (Math.fround(candidate) === float32Value) {
+      return candidate;
+    }
+  }
+  return value;
+}
+
 function readFiniteNumber(arg) {
   if (!isNumericArg(arg)) {
     return null;
   }
   const value = Number(readArgValue(arg));
-  return Number.isFinite(value) ? value : null;
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+  return readArgType(arg) === "f" ? canonicalizeOscFloat32(value) : value;
 }
 
 function normalizeScalarValue(definition, args) {
@@ -192,23 +197,319 @@ function normalizeColorValue(args) {
   };
 }
 
-function findControlDefinition(key, definitions = CONTROL_DEFINITIONS) {
-  return definitions.find((definition) => definition.key === key) ?? null;
+/** @returns {[number, number, number] | null} */
+function parseHexColor(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const match = /^#([0-9a-f]{6})$/i.exec(value.trim());
+  if (!match) {
+    return null;
+  }
+  const hex = match[1];
+  return [
+    Number.parseInt(hex.slice(0, 2), 16) / 255,
+    Number.parseInt(hex.slice(2, 4), 16) / 255,
+    Number.parseInt(hex.slice(4, 6), 16) / 255,
+  ];
+}
+
+function rgbToHsv([red, green, blue]) {
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  const delta = max - min;
+  let hue = 0;
+
+  if (delta > 0) {
+    if (max === red) {
+      hue = ((green - blue) / delta) % 6;
+    } else if (max === green) {
+      hue = (blue - red) / delta + 2;
+    } else {
+      hue = (red - green) / delta + 4;
+    }
+    hue = (((hue / 6) % 1) + 1) % 1;
+  }
+
+  return {
+    hue,
+    saturation: max === 0 ? 0 : delta / max,
+    brightness: max,
+  };
+}
+
+export function mapAutomationValueToOscArgs(definition, value) {
+  const valueKind = getParameterAutomationControlValueKind(definition);
+  if (valueKind === "scalar") {
+    const normalized = normalizeScalarValue(definition, [value]);
+    return normalized.ok ? [{ type: "f", value: normalized.value }] : null;
+  }
+  if (valueKind === "boolean") {
+    return typeof value === "boolean"
+      ? [{ type: "i", value: value ? 1 : 0 }]
+      : null;
+  }
+  if (valueKind === "enum") {
+    const allowedValues = Object.values(definition.binding?.options ?? {});
+    return allowedValues.includes(value) ? [{ type: "s", value }] : null;
+  }
+  if (valueKind === "color") {
+    const rgb = parseHexColor(value);
+    return rgb?.map((channel) => ({ type: "f", value: channel })) ?? null;
+  }
+  return null;
+}
+
+function clampMidiValue(value) {
+  return Math.round(clamp(value, MIDI_MIN_VALUE, MIDI_MAX_VALUE));
+}
+
+export function mapAutomationValueToMidi(definition, mapping, value) {
+  const valueKind = getParameterAutomationControlValueKind(definition);
+  if (valueKind === "boolean") {
+    if (value === true) {
+      return MIDI_MAX_VALUE;
+    }
+    if (value === false) {
+      return MIDI_MIN_VALUE;
+    }
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue)
+      ? numericValue === 0
+        ? MIDI_MIN_VALUE
+        : MIDI_MAX_VALUE
+      : null;
+  }
+  if (valueKind === "enum") {
+    const allowedValues = Object.values(definition.binding?.options ?? {});
+    const index = allowedValues.indexOf(value);
+    if (index < 0) {
+      return null;
+    }
+    return clampMidiValue(((index + 0.5) * 128) / allowedValues.length);
+  }
+  if (valueKind === "color") {
+    const colorComponent = mapping?.colorComponent;
+    const rgb = parseHexColor(value);
+    if (!MIDI_COLOR_COMPONENT_SET.has(colorComponent) || !rgb) {
+      return null;
+    }
+    const hsv = rgbToHsv(rgb);
+    return clampMidiValue(
+      hsv[colorComponent] * (colorComponent === "hue" ? 128 : MIDI_MAX_VALUE),
+    );
+  }
+  if (valueKind !== "scalar") {
+    return null;
+  }
+
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return null;
+  }
+  const min = Number.isFinite(mapping?.min)
+    ? Number(mapping.min)
+    : Number(definition.binding?.min ?? 0);
+  const max = Number.isFinite(mapping?.max)
+    ? Number(mapping.max)
+    : Number(definition.binding?.max ?? 1);
+  const bounded = clamp(numericValue, Math.min(min, max), Math.max(min, max));
+  if (min < 0 && max > 0) {
+    return bounded <= 0
+      ? clampMidiValue(((bounded - min) / -min) * 64)
+      : clampMidiValue(64 + (bounded / max) * 63);
+  }
+  if (min === max) {
+    return MIDI_MIN_VALUE;
+  }
+  return clampMidiValue(((bounded - min) / (max - min)) * MIDI_MAX_VALUE);
+}
+
+function hsvToRgb({ hue, saturation, brightness }) {
+  const wrappedHue = ((hue % 1) + 1) % 1;
+  const chroma = brightness * saturation;
+  const sector = wrappedHue * 6;
+  const intermediate = chroma * (1 - Math.abs((sector % 2) - 1));
+  let channels;
+
+  if (sector < 1) {
+    channels = [chroma, intermediate, 0];
+  } else if (sector < 2) {
+    channels = [intermediate, chroma, 0];
+  } else if (sector < 3) {
+    channels = [0, chroma, intermediate];
+  } else if (sector < 4) {
+    channels = [0, intermediate, chroma];
+  } else if (sector < 5) {
+    channels = [intermediate, 0, chroma];
+  } else {
+    channels = [chroma, 0, intermediate];
+  }
+
+  const match = brightness - chroma;
+  return channels.map((channel) => channel + match);
+}
+
+function normalizeMidiColorValue(mapping, rawValue, currentValue) {
+  const colorComponent = mapping?.colorComponent;
+  if (!MIDI_COLOR_COMPONENT_SET.has(colorComponent)) {
+    return createFailure("invalid-color-component");
+  }
+  if (currentValue == null) {
+    return createFailure("missing-current-value");
+  }
+  const rgb = parseHexColor(currentValue);
+  if (!rgb) {
+    return createFailure("invalid-current-color");
+  }
+
+  const hsv = rgbToHsv(rgb);
+  hsv[colorComponent] =
+    colorComponent === "hue"
+      ? clamp(rawValue, MIDI_MIN_VALUE, MIDI_MAX_VALUE) / 128
+      : clamp(rawValue, MIDI_MIN_VALUE, MIDI_MAX_VALUE) / MIDI_MAX_VALUE;
+
+  return {
+    ok: true,
+    value: `#${hsvToRgb(hsv).map(toHexByte).join("")}`,
+    valueKind: "color",
+  };
+}
+
+const UNSUPPORTED_VALUE_CONTRACT_REASON = "unsupported-value-contract";
+
+function assertParameterAutomationSurface(surface) {
+  if (surface != null && !isControlSurface(surface)) {
+    throw new TypeError(`Invalid control surface: ${String(surface)}`);
+  }
+}
+
+function hasValidProductSurfaces(definition) {
+  return isCanonicalControlSurfaceSet(definition?.surfaces);
+}
+
+function readRemoteControlExclusionReason(definition) {
+  const reason = definition?.remoteControl?.excludedReason;
+  return typeof reason === "string" && reason.trim() ? reason.trim() : null;
+}
+
+function isParameterAutomationCandidate(definition, surface = null) {
+  assertParameterAutomationSurface(surface);
+  if (!hasValidProductSurfaces(definition)) {
+    return false;
+  }
+  const belongsToSurface =
+    surface == null || definition.surfaces.includes(surface);
+  return (
+    definition.status === CONTROL_STATUSES.live &&
+    belongsToSurface &&
+    definition.sidebarHidden !== true &&
+    definition.publicReferenceHidden !== true
+  );
+}
+
+export function getParameterAutomationDefinitionIssues(definition) {
+  const key = definition?.key ?? "Unknown control";
+  if (!hasValidProductSurfaces(definition)) {
+    return [`Control ${key} has invalid product surfaces`];
+  }
+  if (!isParameterAutomationCandidate(definition)) {
+    return [];
+  }
+
+  const issues = [];
+  if (
+    !Number.isFinite(definition.groupOrder) ||
+    !Number.isFinite(definition.controlOrder)
+  ) {
+    issues.push(`Remote control ${key} has invalid presentation order`);
+  }
+
+  const exclusionDeclared = definition.remoteControl != null;
+  const exclusionReason = readRemoteControlExclusionReason(definition);
+  if (exclusionDeclared && exclusionReason == null) {
+    issues.push(`Remote control ${key} has an empty excludedReason`);
+  }
+  if (
+    getParameterAutomationControlValueKind(definition) == null &&
+    exclusionReason !== UNSUPPORTED_VALUE_CONTRACT_REASON
+  ) {
+    issues.push(
+      `Remote control ${key} has an unsupported value contract without excludedReason ${UNSUPPORTED_VALUE_CONTRACT_REASON}`,
+    );
+  }
+  return issues;
+}
+
+function assertParameterAutomationDefinitions(definitions) {
+  const issues = definitions.flatMap(getParameterAutomationDefinitionIssues);
+  if (issues.length > 0) {
+    throw new TypeError(issues.join("; "));
+  }
+}
+
+function compareRemoteControlPresentationOrder(left, right) {
+  if (left.groupOrder !== right.groupOrder) {
+    return left.groupOrder - right.groupOrder;
+  }
+  if (left.controlOrder !== right.controlOrder) {
+    return left.controlOrder - right.controlOrder;
+  }
+  return left.key.localeCompare(right.key);
 }
 
 export function getAutomatableControlDefinitions(
   definitions = CONTROL_DEFINITIONS,
+  { surface = null } = {},
 ) {
-  return AUTOMATABLE_CONTROL_KEYS.map((key) =>
-    findControlDefinition(key, definitions),
-  ).filter(
-    (definition) =>
-      definition &&
-      definition.status === CONTROL_STATUSES.live &&
-      definition.sidebarHidden !== true &&
-      definition.publicReferenceHidden !== true &&
-      getDefinitionValueKind(definition) != null,
-  );
+  assertParameterAutomationSurface(surface);
+  assertParameterAutomationDefinitions(definitions);
+  return definitions
+    .filter(
+      (definition) =>
+        isParameterAutomationCandidate(definition, surface) &&
+        readRemoteControlExclusionReason(definition) == null,
+    )
+    .sort(compareRemoteControlPresentationOrder);
+}
+
+// Metadata union only. Runtime transports must request an explicit product
+// surface; Desktop OSC and MIDI always request the Performer projection.
+const CROSS_SURFACE_AUTOMATABLE_CONTROL_DEFINITIONS =
+  getAutomatableControlDefinitions();
+export const AUTOMATABLE_CONTROL_KEYS = Object.freeze(
+  CROSS_SURFACE_AUTOMATABLE_CONTROL_DEFINITIONS.map(
+    (definition) => definition.key,
+  ),
+);
+const AUTOMATABLE_CONTROL_DEFINITION_BY_KEY = new Map(
+  CROSS_SURFACE_AUTOMATABLE_CONTROL_DEFINITIONS.map((definition) => [
+    definition.key,
+    definition,
+  ]),
+);
+
+function findAutomatableControlDefinition(
+  key,
+  definitions = CONTROL_DEFINITIONS,
+  surface = null,
+) {
+  assertParameterAutomationSurface(surface);
+  if (definitions === CONTROL_DEFINITIONS) {
+    const definition = AUTOMATABLE_CONTROL_DEFINITION_BY_KEY.get(key) ?? null;
+    return definition && isParameterAutomationCandidate(definition, surface)
+      ? definition
+      : null;
+  }
+
+  assertParameterAutomationDefinitions(definitions);
+  const definition =
+    definitions.find((candidate) => candidate.key === key) ?? null;
+  return definition &&
+    isParameterAutomationCandidate(definition, surface) &&
+    readRemoteControlExclusionReason(definition) == null
+    ? definition
+    : null;
 }
 
 function createOscQueryContainerNode(fullPath, description) {
@@ -274,7 +575,7 @@ function createOscQueryTags(definition, valueKind) {
 }
 
 function createOscQueryControlNode(definition) {
-  const valueKind = getDefinitionValueKind(definition);
+  const valueKind = getParameterAutomationControlValueKind(definition);
   const range = getOscQueryRange(definition, valueKind);
 
   return {
@@ -296,6 +597,7 @@ function createOscQueryControlNode(definition) {
 
 export function createParameterAutomationOscQueryTree({
   definitions = CONTROL_DEFINITIONS,
+  surface = null,
 } = {}) {
   const root = createOscQueryContainerNode(
     "/",
@@ -310,7 +612,9 @@ export function createParameterAutomationOscQueryTree({
     "Writable Baryon parameter automation controls.",
   );
 
-  for (const definition of getAutomatableControlDefinitions(definitions)) {
+  for (const definition of getAutomatableControlDefinitions(definitions, {
+    surface,
+  })) {
     control.CONTENTS[definition.key] = createOscQueryControlNode(definition);
   }
 
@@ -363,7 +667,7 @@ export function findParameterAutomationOscQueryNode(path = "/", options = {}) {
 }
 
 export function normalizeAutomationValue(definition, rawArgs) {
-  const valueKind = getDefinitionValueKind(definition);
+  const valueKind = getParameterAutomationControlValueKind(definition);
   const args = normalizeArgs(rawArgs);
 
   if (valueKind === "scalar") {
@@ -418,6 +722,7 @@ export function normalizeOscAutomationCommand(
   packet,
   {
     definitions = CONTROL_DEFINITIONS,
+    surface = null,
     sequence = 0,
     persistMode = "none",
     receivedAtMs = 0,
@@ -427,10 +732,11 @@ export function normalizeOscAutomationCommand(
   if (!key) {
     return createFailure("invalid-address");
   }
-  if (!AUTOMATABLE_CONTROL_KEY_SET.has(key)) {
-    return createFailure("unknown-key");
-  }
-  const definition = findControlDefinition(key, definitions);
+  const definition = findAutomatableControlDefinition(
+    key,
+    definitions,
+    surface,
+  );
   if (!definition) {
     return createFailure("unknown-key");
   }
@@ -472,15 +778,26 @@ function isMatchingMidiMapping(mapping, midiEvent) {
 
 function scaleMidiValue(value, min, max) {
   const bounded = clamp(value, MIDI_MIN_VALUE, MIDI_MAX_VALUE);
+  if (min < 0 && max > 0) {
+    if (bounded <= 64) {
+      return min + (bounded / 64) * -min;
+    }
+    return ((bounded - 64) / (MIDI_MAX_VALUE - 64)) * max;
+  }
   return min + (bounded / MIDI_MAX_VALUE) * (max - min);
 }
 
-function normalizeMidiMappedValue(definition, mapping, midiEvent) {
+function normalizeMidiMappedValue(
+  definition,
+  mapping,
+  midiEvent,
+  currentValue,
+) {
   const rawValue = Number(midiEvent?.value);
   if (!Number.isFinite(rawValue)) {
     return createFailure("non-finite-value");
   }
-  const valueKind = getDefinitionValueKind(definition);
+  const valueKind = getParameterAutomationControlValueKind(definition);
   if (valueKind === "scalar") {
     const min =
       typeof mapping.min === "number"
@@ -523,31 +840,54 @@ function normalizeMidiMappedValue(definition, mapping, midiEvent) {
       valueKind: "enum",
     };
   }
+  if (valueKind === "color") {
+    return normalizeMidiColorValue(mapping, rawValue, currentValue);
+  }
   return createFailure("unsupported-midi-value-kind");
 }
 
+/**
+ * @param {any} mapping
+ * @param {any} midiEvent
+ * @param {{
+ *   definitions?: readonly any[],
+ *   surface?: string | null,
+ *   sequence?: number,
+ *   persistMode?: string,
+ *   receivedAtMs?: number,
+ *   currentValue?: unknown,
+ * }} [options]
+ */
 export function normalizeMidiAutomationCommand(
   mapping,
   midiEvent,
   {
     definitions = CONTROL_DEFINITIONS,
+    surface = null,
     sequence = 0,
     persistMode = "none",
     receivedAtMs = 0,
+    currentValue,
   } = {},
 ) {
   if (!isMatchingMidiMapping(mapping, midiEvent)) {
     return createFailure("unmapped-midi-control");
   }
   const key = mapping.key;
-  if (!AUTOMATABLE_CONTROL_KEY_SET.has(key)) {
-    return createFailure("unknown-key");
-  }
-  const definition = findControlDefinition(key, definitions);
+  const definition = findAutomatableControlDefinition(
+    key,
+    definitions,
+    surface,
+  );
   if (!definition) {
     return createFailure("unknown-key");
   }
-  const normalized = normalizeMidiMappedValue(definition, mapping, midiEvent);
+  const normalized = normalizeMidiMappedValue(
+    definition,
+    mapping,
+    midiEvent,
+    currentValue,
+  );
   if (!normalized.ok) {
     return normalized;
   }

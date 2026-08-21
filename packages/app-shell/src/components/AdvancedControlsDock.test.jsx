@@ -35,6 +35,7 @@ vi.mock("./AdvancedControlsSidebar.jsx", () => ({
 
 import { ControlsProvider } from "../controls/ControlsProvider.jsx";
 import { createControlsStore } from "../controls/controlsStore.js";
+import { CONTROL_SURFACES } from "@baryon/engine/controls/schema";
 import AdvancedControlsDock from "./AdvancedControlsDock.jsx";
 
 describe("AdvancedControlsDock", () => {
@@ -73,7 +74,7 @@ describe("AdvancedControlsDock", () => {
     act(() => {
       root.render(
         <ControlsProvider store={store}>
-          <AdvancedControlsDock {...props} />
+          <AdvancedControlsDock surface={CONTROL_SURFACES.listener} {...props} />
         </ControlsProvider>,
       );
     });
@@ -89,6 +90,8 @@ describe("AdvancedControlsDock", () => {
     );
 
     expect(trigger).not.toBeNull();
+    expect(trigger?.getAttribute("aria-label")).toBe("Toggle settings");
+    expect(trigger?.getAttribute("title")).toBe("Show settings");
     expect(
       container.querySelector('[data-testid="advanced-controls-sidebar"]'),
     ).toBeNull();

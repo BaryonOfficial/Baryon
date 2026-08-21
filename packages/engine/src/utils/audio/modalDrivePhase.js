@@ -1,10 +1,12 @@
 import { normalizePhaseRad } from "./modalPhaseSlots.js";
+import { findCredibleSpectralPeaks } from "./spectralEvidence.js";
 
 const DRIVE_PHASE_WINDOW_SAMPLES = 2048;
 const DRIVE_PHASE_MIN_WINDOW_SAMPLES = 64;
 const HARMONIC_LOCK_MAX_ORDER = 10;
 const HARMONIC_LOCK_RELATIVE_TOLERANCE = 0.02;
 const DRIVE_PHASE_MAGNITUDE_FLOOR = 1e-4;
+const SOURCE_COMPONENT_DETECTION_LIMIT = 16;
 
 /**
  * Build the shared measurement window for per-mode complex drive.
@@ -77,6 +79,96 @@ export function measureModalComplexDrive(context, frequencyHz) {
   };
 }
 
+function resolveHarmonicOrder(frequencyHz, referenceFrequencyHz) {
+  if (!(frequencyHz > 0) || !(referenceFrequencyHz > 0)) {
+    return 0;
+  }
+  const ratio = frequencyHz / referenceFrequencyHz;
+  const harmonicOrder = Math.round(ratio);
+  return harmonicOrder >= 1 &&
+    harmonicOrder <= HARMONIC_LOCK_MAX_ORDER &&
+    Math.abs(ratio - harmonicOrder) <=
+      HARMONIC_LOCK_RELATIVE_TOLERANCE * harmonicOrder
+    ? harmonicOrder
+    : 0;
+}
+
+/**
+ * Measure the credible temporal components present in the source.
+ *
+ * A component carries source frequency and phase evidence only. Cavity
+ * eigenfrequency, Q, damping, and transfer remain mode metadata and are
+ * applied later by the modal-response owner.
+ */
+export function resolveCredibleSourceDriveComponents({
+  fftLinearAmplitudes,
+  timeDomainData,
+  sampleRate,
+}) {
+  const phaseContext = buildModalDrivePhaseContext({
+    timeDomainData,
+    sampleRate,
+  });
+  if (!phaseContext) {
+    return [];
+  }
+  const sourceComponents = findCredibleSpectralPeaks(
+    fftLinearAmplitudes,
+    sampleRate,
+    SOURCE_COMPONENT_DETECTION_LIMIT,
+  );
+  const measuredComponents = [];
+  for (const component of sourceComponents) {
+    const frequencyHz = component?.frequency ?? 0;
+    const measurement = measureModalComplexDrive(phaseContext, frequencyHz);
+    if (!(measurement?.magnitude > DRIVE_PHASE_MAGNITUDE_FLOOR)) {
+      continue;
+    }
+    measuredComponents.push({
+      frequencyHz,
+      sourceAmplitude: Math.max(0, component?.amplitude ?? 0),
+      sourceEnergy: Math.max(0, component?.amplitude ?? 0) ** 2,
+      magnitude: measurement.magnitude,
+      phaseRad: measurement.phaseRad,
+    });
+  }
+  if (measuredComponents.length === 0) {
+    return [];
+  }
+
+  measuredComponents.sort(
+    (left, right) =>
+      right.sourceEnergy - left.sourceEnergy ||
+      right.magnitude - left.magnitude ||
+      left.frequencyHz - right.frequencyHz,
+  );
+  const reference = measuredComponents[0];
+
+  return measuredComponents.map((component) => {
+    const harmonicOrder = resolveHarmonicOrder(
+      component.frequencyHz,
+      reference.frequencyHz,
+    );
+    return {
+      ...component,
+      harmonicOrder,
+      // The common source carrier is a rotating-frame gauge and is removed.
+      // Harmonic relative phase is shift-invariant and therefore remains
+      // physically observable. An inharmonic component starts a separate
+      // carrier group with an arbitrary zero phase rather than borrowing a
+      // cavity eigenfrequency.
+      lockedPhaseRad:
+        harmonicOrder > 0
+          ? normalizePhaseRad(
+              component.phaseRad - harmonicOrder * reference.phaseRad,
+            )
+          : 0,
+      referenceFrequencyHz: reference.frequencyHz,
+      drivenAngularVelocityRadPerSec: 2 * Math.PI * component.frequencyHz,
+    };
+  });
+}
+
 function resolveDrivePhaseReference(measurements) {
   let reference = null;
   for (const measurement of measurements) {
@@ -120,14 +212,11 @@ export function resolveHarmonicDrivePhaseLocks(measurements) {
     if (!(measurement?.magnitude > DRIVE_PHASE_MAGNITUDE_FLOOR)) {
       continue;
     }
-    const ratio = measurement.frequencyHz / reference.frequencyHz;
-    const harmonicOrder = Math.round(ratio);
-    if (
-      harmonicOrder < 1 ||
-      harmonicOrder > HARMONIC_LOCK_MAX_ORDER ||
-      Math.abs(ratio - harmonicOrder) >
-        HARMONIC_LOCK_RELATIVE_TOLERANCE * harmonicOrder
-    ) {
+    const harmonicOrder = resolveHarmonicOrder(
+      measurement.frequencyHz,
+      reference.frequencyHz,
+    );
+    if (harmonicOrder === 0) {
       continue;
     }
     locks.set(measurement.modeKey, {

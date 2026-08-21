@@ -57,11 +57,13 @@ describe("serializeControls", () => {
     state.bloomStrength = 1.5;
     state.volumeColor = "#ff0000";
     state.spectralMix = 0.72;
+    state.spectralChroma = 0.64;
     state.carrierCoreFwhmWorld = 0.106;
     const serialized = serializeControls(state, CONTROL_DEFINITIONS);
     expect(serialized.bloomStrength).toBe(1.5);
     expect(serialized.volumeColor).toBe("#ff0000");
-    expect(serialized.spectralMix).toBe(0.72);
+    expect(serialized).not.toHaveProperty("spectralMix");
+    expect(serialized.spectralChroma).toBe(0.64);
     expect(serialized).not.toHaveProperty("carrierCoreFwhmWorld");
     expect(serialized).not.toHaveProperty("zeroPointPrecision");
     expect(serialized).not.toHaveProperty("chromesthesiaMix");
@@ -281,14 +283,31 @@ describe("deserializeControlSettings", () => {
         "auto",
         CONTROL_DEFINITIONS,
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       isDefaultControlSettingValue(
         "renderQualityPreset",
         "none",
         CONTROL_DEFINITIONS,
       ),
-    ).toBe(false);
+    ).toBe(true);
+  });
+
+  it("persists the extended laser-focus range and clamps above it", () => {
+    expect(
+      normalizeControlSettingValue(
+        "holographicFresnelPower",
+        24,
+        CONTROL_DEFINITIONS,
+      ),
+    ).toBe(24);
+    expect(
+      normalizeControlSettingValue(
+        "holographicFresnelPower",
+        40,
+        CONTROL_DEFINITIONS,
+      ),
+    ).toBe(32);
   });
 
   it("drops known old bloom defaults from legacy settings", () => {
@@ -343,6 +362,19 @@ describe("deserializeControls", () => {
     const result = deserializeControls(raw, CONTROL_DEFINITIONS);
     expect(result.bloomStrength).toBe(0.75);
     expect(result.volumeColor).toBe("#ff0000");
+  });
+
+  it("restores pattern persistence within the observer exposure range", () => {
+    expect(
+      deserializeControls(
+        { patternPersistenceSeconds: 0.85 },
+        CONTROL_DEFINITIONS,
+      ).patternPersistenceSeconds,
+    ).toBe(0.85);
+    expect(
+      deserializeControls({ patternPersistenceSeconds: 8 }, CONTROL_DEFINITIONS)
+        .patternPersistenceSeconds,
+    ).toBe(2);
   });
 
   it("strips legacy and interim thickness controls from presets", () => {
@@ -452,18 +484,18 @@ describe("deserializeControls", () => {
     );
 
     expect(result.colorMode).toBe("spectral");
-    expect(result.spectralMix).toBe(0.6);
+    expect(result).not.toHaveProperty("spectralMix");
     expect(result).not.toHaveProperty("chromesthesiaMix");
   });
 
-  it("activates Spectral Light with the default mix when stored mix is zero", () => {
+  it("drops removed Color Mix settings while preserving Spectral mode", () => {
     const result = deserializeControls(
       { colorMode: "spectral", spectralMix: 0 },
       CONTROL_DEFINITIONS,
     );
 
     expect(result.colorMode).toBe("spectral");
-    expect(result.spectralMix).toBe(0.96);
+    expect(result).not.toHaveProperty("spectralMix");
   });
 
   it("falls back to default when the stored type does not match", () => {

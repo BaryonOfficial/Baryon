@@ -1,22 +1,29 @@
 ---
 title: "Parameter Automation"
-description: "Control Baryon Desktop from OSC software, OSCQuery-aware tools, and MIDI control-change hardware."
+description: "Control Baryon Desktop from OSC/MIDI surfaces and return current values to external controllers."
 ---
 
 Baryon Desktop can accept parameter automation from OSC software and MIDI
 control-change hardware. Open Performer Mode, open **Control I/O**, turn on the
 top **Enable** switch, and enable the transports you want.
 
+Parameter automation uses the Performer target surface. It includes public
+visual controls plus three viewing-camera targets. Listener Mode and the web
+app expose visual settings, but they do not run an OSC or MIDI automation
+transport. Performer output remains opaque over black, so Listener's **Output
+Color** setting is not a Performer automation target.
+
 <Note>
-  This page is for inbound control: external tool -> Baryon. To send Baryon's
-  modal structure out to TouchDesigner or another receiver, use
+  This page covers inbound control plus Controller Output for current parameter
+  values. To send Baryon's audio-derived modal structure to TouchDesigner, use
   [OSC Structure Export](/public/desktop/osc-structure-export).
 </Note>
 
-OSC listens on `127.0.0.1:9001` by default. Send messages to
-`/baryon/control/<key>`, where `<key>` is one of the automatable control keys
-below. MIDI v1 maps one selected MIDI input at a time; use learn mode to bind a
-knob or fader CC message to the same key list.
+OSC listens on `127.0.0.1:9001` by default. Visual controls use
+`/baryon/control/<key>`. Camera orbit uses
+`/baryon/camera/orbit/<axis>`. MIDI maps one selected MIDI input at a time. The
+recommended **Orbit XY** learn target guides a two-axis pad through X and then
+Y while keeping the stored mappings independent.
 
 When OSC is enabled, Baryon also serves an OSCQuery discovery endpoint on the
 next local port: `http://127.0.0.1:9002` by default. If you change the OSC port,
@@ -40,10 +47,14 @@ Use a physical MIDI controller like this:
    **MIDI**.
 3. If the app asks for MIDI access, allow it.
 4. Choose the controller under **Input**.
-5. Choose the Baryon parameter under **Target**.
-6. Press **Learn**, then move one knob, fader, or CC-capable pad on the
-   controller.
-7. Move that same control again. Baryon should update the mapped parameter and
+5. Choose the Baryon parameter under **Target**. For an XY pad, choose
+   **Orbit XY**.
+6. For a color target, leave **Color mapping** on **Hue Sweep** for normal
+   color-wheel control, or choose **Saturation** or **Brightness** for an
+   independent advanced mapping.
+7. Press **Learn**, then move the requested control. **Orbit XY** asks for X
+   first, then requires you to release the pad before moving Y.
+8. Move that same control again. Baryon should update the mapped parameter and
    the `ok` counter should increase.
 
 Use virtual MIDI on macOS like this:
@@ -58,29 +69,128 @@ Use virtual MIDI on macOS like this:
 6. In Baryon, choose a **Target**, press **Learn**, and move or send the CC
    control once to bind it.
 
+### MIDI Connection Recovery
+
+Baryon opens the selected MIDI input only while MIDI control is enabled. It
+releases that port when you disable MIDI, choose another input, or quit the app,
+and it reconnects when the selected device is unplugged and returned.
+
+If **MIDI In** says **Unavailable**, Baryon could not open that input. Check
+that the controller is connected and working, and whether another app has
+exclusive access, then press **Retry**. Baryon cannot identify or force-close
+another process.
+
+If the card says **Disconnected**, reconnect the controller and wait for Baryon
+to reopen it. Press **Retry** if the driver does not publish a reconnect event.
+Your learned mappings remain saved during either condition.
+
 ### Learn and Remove Mappings
 
-The **Learn** button binds one physical MIDI control to the selected Baryon
+The **Learn** button binds physical MIDI controls to the selected Baryon
 target:
 
 1. Choose a Baryon parameter in **Target**.
 2. Press **Learn**. The button changes to **Learning**.
 3. Move one knob, fader, or CC-capable pad on the selected MIDI input.
 4. Baryon records that input, MIDI channel, CC controller number, and target.
-5. Move the same physical control again to drive the mapped Baryon parameter.
+5. For **Orbit XY**, follow the live prompt: move X, then move Y. A controller
+   may emit both axis CCs on every drag; Baryon ignores the unchanged axis and
+   requires a short quiet gap between steps so one gesture cannot learn both
+   axes.
+6. Move the same physical control again to drive the mapped Baryon parameter.
 
-Learning the same physical CC again moves that CC to the newly selected target;
-other mapped CCs remain until you remove them.
+Each learned assignment appears in the **Mappings** list, so one controller can
+drive several Baryon targets at the same time. Repeat the Target → Learn flow for
+each knob or fader you want to add.
 
-The **X** button next to the shown mapping removes that mapping. Use it when you
-want the selected target to stop responding to the current MIDI control, or
-before teaching that target a different physical control.
+Baryon keeps one assignment per physical CC and one physical CC per target
+component. Learning an already-used CC moves it to the newly selected target.
+Learning a new CC for an already-mapped scalar target or color component
+replaces that assignment. Other mappings remain unchanged.
+
+Color targets use **Hue Sweep** by default. One knob or fader then moves around
+the color wheel while preserving the color's current saturation and brightness.
+You do not need three controls for normal color performance. If you want full
+channel control, repeat the learn flow with **Saturation** or **Brightness**;
+those optional component mappings coexist with Hue Sweep and each preserves the
+other two color components.
+
+Use the circular-arrow action on a mapping row to relearn that target, or the
+**X** action to remove only that mapping. **Clear all** requires a second
+confirmation and removes the complete MIDI mapping list.
 
 The **Control changes** menu controls whether incoming OSC/MIDI value changes
 are saved as visual settings. **Session only** applies external control without
 saving the changed Baryon values. **Remember** saves the changed values after
 Baryon's normal debounce. Learned MIDI mappings are saved with the control-input
 configuration either way.
+
+Camera targets are not visual settings and ignore this menu. Their final pose
+is retained as reconnect intent after incoming motion settles, without sending
+a new active-output bootstrap for every sample.
+
+## Camera Orbit
+
+Baryon exposes three absolute axes and two momentary camera actions. The
+**Orbit XY** learn target creates the horizontal and vertical mappings together;
+the runtime still keeps one independent CC per axis.
+
+MIDI CC messages do not identify a physical X or Y axis. During learning, the
+first control you deliberately move is assigned to Orbit Horizontal. If you move
+the wrong axis, cancel learning, remove that mapping, and run Orbit XY learning
+again.
+
+| Target           | OSC address                      | Range         |
+| ---------------- | -------------------------------- | ------------- |
+| Orbit Horizontal | `/baryon/camera/orbit/azimuth`   | `-180..180` ° |
+| Orbit Vertical   | `/baryon/camera/orbit/elevation` | `-85..85` °   |
+| Camera Distance  | `/baryon/camera/orbit/distance`  | `2..32`       |
+| Camera Home      | `/baryon/camera/orbit/home`      | button (`1`)  |
+| Orbit Center     | `/baryon/camera/orbit/center`    | button (`1`)  |
+
+Horizontal and vertical values orbit around the current camera target. Distance
+moves toward or away from that target; it is not a third rotation axis. Incoming
+motion is smoothed and treated as continuous camera movement, so it does not
+reset temporal rendering on every sample. The viewport's **Lock camera** option
+only blocks pointer dragging; deliberate MIDI and OSC camera input remains
+active.
+
+For horizontal and vertical MIDI mappings, CC `64` is exactly `0°`. Therefore:
+
+- the XY-pad center is the neutral `0° / 0°` side view;
+- bottom-left remains the minimum `-180° / -85°` extreme;
+- **Camera Home** restores Baryon's default diagonal pose at approximately
+  `45° / 35.26°`;
+- **Orbit Center** returns both angles to `0°` while preserving distance.
+
+## Keep an external controller in sync
+
+Controller output returns Baryon's current values so compatible faders,
+buttons, color controls, and XY markers stay aligned when values change inside
+Baryon or from another control source. MIDI returns mapped controls; OSC returns
+every current-valued automatable control. Actions have no value to return.
+
+For MIDI:
+
+1. In **MIDI In**, choose **Controller Output**. Select **No output** to disable
+   return messages.
+2. The output may differ from **Input**, especially with virtual MIDI buses.
+3. Configure the controller to receive the same channel/CC pairs it sends.
+   Orbit XY uses its mapped horizontal and vertical CCs.
+4. Leave **Takeover** on **Immediate** for a synchronized TouchOSC surface. Use
+   **Pickup** for fixed physical faders that cannot move themselves.
+
+For OSC:
+
+1. In **OSC In**, enable **Controller Output**.
+2. Set **Output Host** and **Output Port**; TouchOSC commonly receives on
+   `127.0.0.1:9000` when it runs on the same computer.
+3. Configure each OSC control to receive its Baryon address. Visual controls use
+   `/baryon/control/<key>`. Orbit XY uses `/baryon/camera/orbit/azimuth` and
+   `/baryon/camera/orbit/elevation`; distance uses its matching address.
+
+Baryon suppresses identical MIDI and OSC self-echoes. In TouchOSC, also ensure
+an incoming update is not retransmitted as a new gesture.
 
 ## TouchDesigner Control Surface
 
@@ -93,17 +203,34 @@ Use it like this:
    **OSC**.
 2. For local TouchDesigner on the same machine, leave OSC at
    `127.0.0.1:9001`. OSCQuery will be available at `127.0.0.1:9002`.
-3. Drag `baryon_osc.tox` into a TouchDesigner network.
-4. Select the parent `baryon_osc` component and pulse **Refresh Query**.
-5. Select `baryon_osc/controls` and tune the generated custom parameters.
-6. Use **Send All** on the parent component to push the current TouchDesigner
+3. Under Baryon's **OSC In**, enable **Controller Output** and set it to
+   `127.0.0.1:9003`.
+4. Drag `baryon_osc.tox` into a TouchDesigner network. Its **Controller Output
+   Port** defaults to `9003`.
+5. Select the parent `baryon_osc` component and pulse **Refresh Query**.
+6. Confirm the parent status reads `Loaded 32 OSCQuery controls`.
+7. Select `baryon_osc/controls` and tune the generated custom parameters.
+8. Use **Send All** on the parent component to push the current TouchDesigner
    values to Baryon.
 
-The parent `baryon_osc` component owns OSC host/port, OSCQuery host/port,
-Bonjour discovery, refresh, active state, and Send All. The child
+The parent `baryon_osc` component owns Baryon's input address, the Controller
+Output receive port, OSCQuery address, Bonjour discovery, refresh, active
+state, and Send All. The child
 `baryon_osc/controls` component is the control surface. It is regenerated from
-Baryon's OSCQuery metadata, so pages such as Shape, Motion, Bloom, Color,
-Output, Performance, and Logo track the Baryon build you are running.
+Baryon's OSCQuery metadata, so its Performance, Camera, Volume, Appearance,
+Motion, and Logo pages track the Baryon build you are running. Every live public
+visual control and camera target on the Performer surface is discovered
+automatically when its value contract is supported. Debug, audit, lifecycle,
+and explicitly excluded controls stay private.
+
+Values changed in Baryon return to the same generated TouchDesigner controls.
+Those mirrored updates are not retransmitted as commands. If Controller Output
+was already enabled before loading the component, switch it off and back on
+once so Baryon replays its current values.
+
+Conditional controls keep stable OSC addresses. For example, Logo Rotation
+Speed remains discoverable while Logo Rotation is `off`; its value takes effect
+when Logo Rotation returns to `manual`.
 
 Before OSCQuery is reachable, the component starts with a small Shape, Motion,
 and Bloom fallback surface. After **Refresh Query** succeeds, the fallback is
@@ -118,9 +245,9 @@ as **OSCQuery Host** and then pulse **Refresh Query**.
 ## Manual OSC
 
 Query `/?HOST_INFO` for the OSC receiver details, `/baryon/control` for the
-writable control tree, or a specific address such as
-`/baryon/control/densityGain` for type, range, description, tags, label,
-and default metadata.
+writable visual-control tree, `/baryon/camera/orbit` for the camera tree, or a
+specific address such as `/baryon/control/densityGain` for type, range,
+description, tags, label, and default metadata.
 
 Example OSC messages:
 
@@ -128,24 +255,43 @@ Example OSC messages:
 /baryon/control/densityGain 2.5
 /baryon/control/bloomEnabled 1
 /baryon/control/colorMode spectral
+/baryon/control/spectralChroma 0.7
 /baryon/control/volumeColor 0.36 0.89 0.96
+/baryon/camera/orbit/azimuth -45
+/baryon/camera/orbit/elevation 20
+/baryon/camera/orbit/distance 9
+/baryon/camera/orbit/home 1
+/baryon/camera/orbit/center 1
 ```
 
 OSC scalar controls take one numeric argument. Boolean controls take one integer
 argument, where `0` is off and any non-zero value is on. Enum controls take one
-string argument matching the control value. Color controls take three numeric RGB
-arguments from `0` to `1`. MIDI mappings scale CC values (`0..127`) into the
-target control range.
+string argument matching the control value. Color controls take three numeric
+RGB arguments from `0` to `1`. MIDI scalar mappings scale CC values (`0..127`)
+into the target control range. MIDI color mappings replace the selected HSV
+component of the current color and emit the result as one canonical color
+update.
 
-| Area        | Automatable keys                                                                                                  |
-| ----------- | ----------------------------------------------------------------------------------------------------------------- |
-| Performance | `renderQualityPreset`, `customTargetFps`, `performanceHudEnabled`                                                 |
-| Output      | `outputMode`, `outputBackgroundColor`                                                                             |
-| Shape       | `boundaryMode`, `densityGain`, `laserDeflectionGain`, `raymarchSteps`                                            |
-| Color       | `colorMode`, `volumeColor`, `surfaceColor`, `spectralMix`, `holographicIntensity`, `holographicFresnelPower`     |
-| Motion      | `rotationMode`, `rotationSpeed`, `motionAmount`                                                                   |
-| Bloom       | `bloomEnabled`, `bloomStrength`, `bloomRadius`, `bloomThreshold`                                                  |
-| Logo        | `idleLogoIntensity`, `idleLogoSize`, `idleLogoColor`                                                            |
+Scalar values are clamped to the published range. Fractional UI steps such as
+`0.05` for Pattern Persistence or `0.01` for Logo Rotation Speed do not
+quantize incoming OSC values. Integer-step controls such as Max Samples remain
+integer-quantized.
 
-Notes, pitch bend, aftertouch, feedback LEDs, multi-device profiles, and remote
-hardware profiles are outside the first automation surface.
+| Area        | Automatable keys                                                                                                                                                                  |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Performance | `renderQualityPreset`, `customTargetFps`, `performanceHudEnabled`                                                                                                                 |
+| Camera      | `cameraOrbitAzimuth`, `cameraOrbitElevation`, `cameraOrbitDistance`, `cameraOrbitHome`, `cameraOrbitCenter`                                                                       |
+| Volume      | `volumeShape`, `boundaryMode`, `densityGain`, `laserDeflectionGain`, `raymarchSteps`                                                                                              |
+| Appearance  | `colorMode`, `volumeColor`, `surfaceColor`, `spectralChroma`, `holographicIntensity`, `holographicFresnelPower`, `bloomEnabled`, `bloomStrength`, `bloomRadius`, `bloomThreshold` |
+| Motion      | `rotationMode`, `rotationSpeed`, `motionAmount`, `patternPersistenceSeconds`                                                                                                      |
+| Logo        | `idleLogoIntensity`, `idleLogoSize`, `idleLogoColor`, `idleLogoRotationMode`, `idleLogoRotationSpeed`                                                                             |
+
+To verify the Shape, persistence, and logo additions in TouchDesigner, play active audio and change
+**Shape** and **Pattern Persistence**. Stop the audio to reveal the idle logo,
+set **Logo Rotation** to `Off`, and confirm it stops. Return it to `Manual`, set
+**Logo Rotation Speed** to `+4` and then `-4`, and confirm the direction
+reverses. Each accepted action should increase `ok` without increasing `rej`.
+
+Notes, pitch bend, aftertouch, relative encoders, camera pan/roll,
+camera-motion recording and looping, multi-device profiles, and remote hardware
+profiles remain outside this automation surface.

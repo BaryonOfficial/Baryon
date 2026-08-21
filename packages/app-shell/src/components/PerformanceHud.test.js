@@ -141,6 +141,7 @@ describe("PerformanceHud", () => {
   it("summarizes performer output diagnostics without budget-threshold pop-in", () => {
     const markup = renderToStaticMarkup(
       React.createElement(PerformanceHud, {
+        showPublishSummary: true,
         metrics: {
           fps: 44.3,
           smoothedFrameTimeMs: 22.56,
@@ -189,6 +190,46 @@ describe("PerformanceHud", () => {
     expect(markup).not.toContain("Invalidate-&gt;Paint ms:");
     expect(markup).not.toContain("Stage Lead ms:");
     expect(markup).not.toContain("Stage Coalesced:");
+  });
+
+  it("keeps an explicitly enabled publish summary mounted across publish states", () => {
+    const renderPublishSummary = (metrics) =>
+      renderToStaticMarkup(
+        React.createElement(PerformanceHud, {
+          metrics: createMetrics(metrics),
+          showPublishSummary: true,
+        }),
+      );
+
+    expect(
+      renderPublishSummary({
+        outputPublishAttemptCount: 120,
+        outputSuccessfulPublishCount: 120,
+      }),
+    ).toContain("Publish: 120 / 120");
+    expect(
+      renderPublishSummary({
+        outputPublishAttemptCount: 121,
+        outputSuccessfulPublishCount: 120,
+      }),
+    ).toContain("Publish: 120 / 121");
+    expect(
+      renderPublishSummary({
+        outputPublishAttemptCount: 1_260_000,
+        outputSuccessfulPublishCount: 1_200_000,
+      }),
+    ).toContain("Publish: 1.2M / 1.3M");
+    expect(renderPublishSummary({})).toContain("Publish: n/a");
+
+    const defaultMarkup = renderToStaticMarkup(
+      React.createElement(PerformanceHud, {
+        metrics: createMetrics({
+          outputPublishAttemptCount: 121,
+          outputSuccessfulPublishCount: 120,
+        }),
+      }),
+    );
+    expect(defaultMarkup).not.toContain("Publish:");
   });
 
   it("keeps paint-only counters out of the visible HUD layout", () => {
@@ -262,7 +303,7 @@ describe("PerformanceHud", () => {
     expect(markup).not.toContain("Profile:");
     expect(markup).toContain("font-style:italic");
     expect(markup.indexOf("Max Quality")).toBeLessThan(markup.indexOf("FPS:"));
-    expect(markup.indexOf("Steps: 72 / 80")).toBeLessThan(
+    expect(markup.indexOf("Samples: 72 / 80")).toBeLessThan(
       markup.indexOf('data-testid="performance-hud-resolution-divider"'),
     );
     expect(
@@ -273,7 +314,7 @@ describe("PerformanceHud", () => {
     expect(markup).not.toContain("Render Scale:");
   });
 
-  it("shows raymarch steps", () => {
+  it("shows the analytic camera-ray sample budget", () => {
     const markup = renderToStaticMarkup(
       React.createElement(PerformanceHud, {
         metrics: {
@@ -290,7 +331,7 @@ describe("PerformanceHud", () => {
       }),
     );
 
-    expect(markup).toContain("Steps: 64 / 80");
+    expect(markup).toContain("Samples: 64 / 80");
   });
 
   it("shows the physical canvas backing size when diagnostics provide it", () => {

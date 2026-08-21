@@ -5,6 +5,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import sharp from "sharp";
 
 const APP_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const DEFAULT_OUTPUT_ROOT = path.join(
@@ -373,7 +374,6 @@ function createDensePolyphonicFixtureWavBuffer({
   amplitude = 0.82,
   durationSeconds = 30,
 } = {}) {
-  const fixtureDurationMs = DENSE_POLYPHONIC_FIXTURE.durationMs;
   const frameCount = Math.max(1, Math.floor(sampleRate * durationSeconds));
   const channelCount = 1;
   const bytesPerSample = 2;
@@ -384,9 +384,23 @@ function createDensePolyphonicFixtureWavBuffer({
   const bytes = new Uint8Array(buffer);
   const view = new DataView(buffer);
   const encoder = new TextEncoder();
-  const fixtureFrames = DENSE_POLYPHONIC_FIXTURE.frames;
   const writeAscii = (offset, value) => {
     bytes.set(encoder.encode(value), offset);
+  };
+  const resolveTones = (timeSeconds) => {
+    const localTimeMs =
+      (timeSeconds * 1000) % DENSE_POLYPHONIC_FIXTURE.durationMs;
+    const segment = DENSE_POLYPHONIC_FIXTURE.segments.find(
+      ({ startMs, endMs }) => localTimeMs >= startMs && localTimeMs < endMs,
+    );
+    if (segment?.equalPitchClasses) {
+      const { referenceHz, count } = segment.equalPitchClasses;
+      return Array.from(
+        { length: count },
+        (_, index) => referenceHz * 2 ** (index / count),
+      );
+    }
+    return segment?.frequenciesHz ?? [440];
   };
 
   writeAscii(0, "RIFF");
@@ -403,37 +417,25 @@ function createDensePolyphonicFixtureWavBuffer({
   writeAscii(36, "data");
   view.setUint32(40, dataSize, true);
 
-  let rightIndex = 0;
   for (let index = 0; index < frameCount; index += 1) {
-    const timeMs = ((index / sampleRate) * 1000) % fixtureDurationMs;
-    while (
-      rightIndex < fixtureFrames.length - 1 &&
-      fixtureFrames[rightIndex].frameTimeMs < timeMs
-    ) {
-      rightIndex += 1;
-    }
-    if (rightIndex > 0 && fixtureFrames[rightIndex - 1].frameTimeMs > timeMs) {
-      rightIndex = 0;
-    }
-
-    const rightFrame =
-      fixtureFrames[Math.min(rightIndex, fixtureFrames.length - 1)];
-    const leftFrame = fixtureFrames[Math.max(0, rightIndex - 1)] ?? rightFrame;
-    const range = Math.max(
-      1,
-      (rightFrame?.frameTimeMs ?? 0) - (leftFrame?.frameTimeMs ?? 0),
-    );
-    const mix =
-      rightFrame === leftFrame
-        ? 0
-        : Math.max(0, Math.min(1, (timeMs - leftFrame.frameTimeMs) / range));
-    const leftData = leftFrame.analysisSnapshot.timeData;
-    const rightData = rightFrame.analysisSnapshot.timeData;
-    const position = index % Math.min(leftData.length, rightData.length);
-    const value = leftData[position] * (1 - mix) + rightData[position] * mix;
+    const timeSeconds = index / sampleRate;
+    const tones = resolveTones(timeSeconds);
+    const toneScale = amplitude / Math.sqrt(tones.length);
     const normalized = Math.max(
       -1,
-      Math.min(1, ((value - 128) / 128) * amplitude),
+      Math.min(
+        1,
+        tones.reduce(
+          (sum, frequency, toneIndex) =>
+            sum +
+            toneScale *
+              Math.sin(
+                2 * Math.PI * frequency * timeSeconds +
+                  (Math.PI * toneIndex * (toneIndex - 1)) / tones.length,
+              ),
+          0,
+        ),
+      ),
     );
     view.setInt16(
       44 + index * bytesPerSample,
@@ -447,22 +449,38 @@ function createDensePolyphonicFixtureWavBuffer({
 
 async function waitForBaryonControls(page) {
   await page.waitForFunction(
-    () => typeof window.__baryonControls?.setControl === "function",
+    () =>
+      typeof window.__baryonControls?.setControl === "function" ||
+      Boolean(window.__baryonPerfProbeControls),
     null,
     { timeout: 10000 },
   );
 }
 
 async function waitForBaryonRuntime(page) {
-  await page.waitForFunction(() => window.__baryonTestReady === true, null, {
-    timeout: 30000,
-  });
+  await page.waitForFunction(
+    () =>
+      window.__baryonTestReady === true ||
+      Boolean(
+        document.querySelector("canvas") && window.__baryonPerfMetrics?.render,
+      ),
+    null,
+    { timeout: 30000 },
+  );
 }
 
 async function applyProbeControls(page, controlMutations) {
   await page.evaluate(async (mutations) => {
     for (const [key, value] of mutations) {
-      window.__baryonControls.setControl(key, value);
+      if (typeof window.__baryonControls?.setControl === "function") {
+        window.__baryonControls.setControl(key, value);
+      } else {
+        window.dispatchEvent(
+          new CustomEvent("__baryon-controls-command", {
+            detail: { key, value, persistMode: "none" },
+          }),
+        );
+      }
     }
     await new Promise((resolve) => window.requestAnimationFrame(resolve));
   }, controlMutations);
@@ -470,7 +488,10 @@ async function applyProbeControls(page, controlMutations) {
   const expectedControls = Object.fromEntries(controlMutations);
   await page.waitForFunction(
     (expected) => {
-      const controls = window.__baryonControls?.getState?.() ?? {};
+      const controls =
+        window.__baryonControls?.getState?.() ??
+        window.__baryonPerfProbeControls ??
+        {};
       return Object.entries(expected).every(([key, value]) =>
         Object.is(controls[key], value),
       );
@@ -505,7 +526,7 @@ async function prepareProbeAudioSource(page, audioSource) {
       }
 
       return (
-        snapshot?.audioInputMode === "file" &&
+        snapshot?.sourceSession?.kind === "file" &&
         snapshot?.analysisSourceUsed === "file" &&
         snapshot?.raymarchDebug?.fieldState !== "idle"
       );
@@ -529,6 +550,50 @@ async function waitForMaxQualityRuntime(page) {
     },
     null,
     { timeout: 30000 },
+  );
+}
+
+async function waitForActiveCanvasPresentation(page) {
+  const canvas = page.locator("canvas").first();
+  await canvas.waitFor({ state: "visible", timeout: 10000 });
+  const deadline = Date.now() + 20000;
+  let lastMetrics = null;
+  while (Date.now() < deadline) {
+    const screenshot = await canvas.screenshot();
+    const {
+      data,
+      info: { width, height },
+    } = await sharp(screenshot)
+      .resize({ width: 128, withoutEnlargement: true })
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    let activePixelCount = 0;
+    let peakLuminance = 0;
+    for (let offset = 0; offset < data.length; offset += 3) {
+      const luminance =
+        (0.2126 * data[offset] +
+          0.7152 * data[offset + 1] +
+          0.0722 * data[offset + 2]) /
+        255;
+      peakLuminance = Math.max(peakLuminance, luminance);
+      if (luminance > 0.004) activePixelCount += 1;
+    }
+    const pixelCount = Math.max(1, width * height);
+    lastMetrics = {
+      activePixelRatio: activePixelCount / pixelCount,
+      peakLuminance,
+    };
+    if (
+      lastMetrics.activePixelRatio > 0.01 &&
+      lastMetrics.peakLuminance > 0.02
+    ) {
+      return lastMetrics;
+    }
+    await page.waitForTimeout(250);
+  }
+  throw new Error(
+    `[web-perf-baseline] Canvas did not present an active field: ${JSON.stringify(lastMetrics)}`,
   );
 }
 
@@ -585,7 +650,10 @@ async function collectPageDiagnosticSnapshot(page) {
       hasControls: typeof window.__baryonControls?.setControl === "function",
       hasPerfMetrics: Boolean(window.__baryonPerfMetrics),
       hasAuditSnapshot: Boolean(window.__baryonAuditSnapshot),
-      controls: window.__baryonControls?.getState?.() ?? null,
+      controls:
+        window.__baryonControls?.getState?.() ??
+        window.__baryonPerfProbeControls ??
+        null,
       bodyText: document.body?.innerText?.slice(0, 2000) ?? "",
       canvas: canvas
         ? {
@@ -674,6 +742,13 @@ async function runBaselineCase(browser, config, scenario, baselineCase) {
   });
   await context.addInitScript(() => {
     window.localStorage?.clear?.();
+    // Production omits the devtools bridge by design. Observe and command the
+    // always-live controls event boundary so this probe measures the shipping
+    // bundle rather than a development-only build.
+    window.__baryonPerfProbeControls = null;
+    window.addEventListener("__baryon-controls-change", (event) => {
+      window.__baryonPerfProbeControls = { ...(event.detail ?? {}) };
+    });
   });
 
   const page = await context.newPage();
@@ -687,6 +762,7 @@ async function runBaselineCase(browser, config, scenario, baselineCase) {
     await prepareProbeAudioSource(page, config.audioSource);
     await waitForMaxQualityRuntime(page);
     await page.waitForTimeout(config.warmupMs);
+    const presentation = await waitForActiveCanvasPresentation(page);
 
     const sample = await sampleAnimationFrames(page, config.sampleMs);
     const frameSummary = summarizeFrameIntervals(
@@ -708,6 +784,7 @@ async function runBaselineCase(browser, config, scenario, baselineCase) {
         baselineCase.deviceScaleFactor *
         baselineCase.deviceScaleFactor,
       frameSummary,
+      presentation,
       renderSurface: sample.perfMetrics?.renderSurface ?? null,
       render: sample.perfMetrics?.render ?? null,
       modalVarietyAudit: sample.perfMetrics?.render?.modalVarietyAudit ?? null,
@@ -721,8 +798,8 @@ async function runBaselineCase(browser, config, scenario, baselineCase) {
             activeModeCount: sample.perfMetrics.modalFreshness.activeModeCount,
             activeModalFieldModeCount:
               sample.perfMetrics.modalFreshness.activeModalFieldModeCount,
-            observedResonanceModeCount:
-              sample.perfMetrics.modalFreshness.observedResonanceModeCount,
+            resonantObservedModeCount:
+              sample.perfMetrics.modalFreshness.resonantObservedModeCount,
             responseEnvelope:
               sample.perfMetrics.modalFreshness.responseEnvelope,
             motionSignal: sample.perfMetrics.modalFreshness.motionSignal,
@@ -795,6 +872,10 @@ async function runWebPerfBaselineProbe(config = resolvePerfProbeConfig()) {
   await mkdir(config.outputDir, { recursive: true });
   const launchOptions = {
     headless: config.headless,
+    // Match the production visual-acceptance browser lane. Chromium otherwise
+    // reports adapter-null in headless macOS even when native Metal is
+    // available to the host process.
+    args: ["--enable-unsafe-webgpu", "--use-angle=metal"],
   };
   if (config.browserChannel) {
     launchOptions.channel = config.browserChannel;

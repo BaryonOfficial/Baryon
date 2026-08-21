@@ -90,7 +90,7 @@ export function shouldMirrorCameraPose(cameraControlMode) {
   return cameraControlMode === CAMERA_CONTROL_MODES.previewLocal;
 }
 
-export function commitOrbitControlsCameraPose(controls, applyPose) {
+function commitOrbitControlsCameraPose(controls, applyPose) {
   if (!controls) {
     return;
   }

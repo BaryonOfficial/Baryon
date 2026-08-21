@@ -14,17 +14,16 @@ import {
   vec4,
   velocity,
 } from "three/tsl";
-import { bloom } from "three/examples/jsm/tsl/display/BloomNode.js";
-import { smaa } from "three/examples/jsm/tsl/display/SMAANode.js";
 import { traa } from "three/examples/jsm/tsl/display/TRAANode.js";
 import { RENDER_DEFAULTS } from "../defaults.js";
 import {
   composeFixedOpticalPsfRadianceNode,
   compressDisplayRadianceNode,
-  compressPremultipliedDisplayRadianceNode,
   FIXED_OPTICAL_PSF_HALO_FRACTION,
   sampleFixedOpticalPsfNode,
 } from "./displayRadiance.js";
+import { pairedBloom } from "./pairedBloomNode.js";
+import { fusedSmaa } from "./fusedSmaaNode.js";
 import {
   OUTPUT_MODES,
   RENDER_CONTEXTS,
@@ -113,7 +112,7 @@ function checkpointAttachmentNamesForMode(mode) {
 // kernel or attachment change must bump them so sealed evidence cannot be
 // silently reinterpreted.
 export const CHECKPOINT_PRODUCTION_IDENTITIES = Object.freeze({
-  volumeKernelIdentity: "safe-volumetric-emission-absorption/v1",
+  volumeKernelIdentity: "safe-volumetric-carrier-emission-extinction/v2",
   stepControllerIdentity: "adaptive-error-half-step/v1",
   attachmentFormat: "rgba16float",
   baseAovIdentities: BASE_CHECKPOINT_AOV_NAMES,
@@ -245,7 +244,6 @@ function deriveCoverageFromTransmittance(transmittance) {
 }
 
 function resolveOutputTopologyKey({
-  bloomEnabled,
   carrierTruthEnabled = false,
   outputMode,
   smaaEnabled,
@@ -255,9 +253,9 @@ function resolveOutputTopologyKey({
     return `carrier-truth:${outputMode}`;
   }
 
-  return `${bloomEnabled ? 1 : 0}:${outputMode}:${
-    temporalHistoryEnabled ? 1 : 0
-  }:${smaaEnabled ? 1 : 0}`;
+  return `${outputMode}:${temporalHistoryEnabled ? 1 : 0}:${
+    smaaEnabled ? 1 : 0
+  }`;
 }
 
 function resolveOutputSmaaEnabled(postNodes, smaaEnabled) {
@@ -278,11 +276,9 @@ function resolveOutputSmaaGraphEnabled(postNodes, smaaEnabled, outputMode) {
   const transparentOutput =
     normalizeOutputMode(outputMode) === OUTPUT_MODES.transparent;
 
-  // Three's SMAA example uses the default opaque WebGPURenderer. Its RGBA
-  // blend changes coverage across Baryon's edge-dense transparent field,
-  // which changes composited brightness instead of only antialiasing. Keep
-  // transparent output on its canonical premultiplied path; preview surfaces
-  // composite that output onto black before requesting SMAA.
+  // Three's display SMAA path blends coverage with color. On transparent
+  // program output that changes composited brightness, so preserve the
+  // canonical premultiplied RGBA edge instead of antialiasing it twice.
   return requested && !transparentOutput;
 }
 
@@ -319,7 +315,7 @@ function composeRenderOutputSmaaNode(
   postNodes.smaaNodes = smaaNodes;
   let smaaNode = smaaNodes.get(topologyKey);
   if (!smaaNode) {
-    smaaNode = smaa(linearOutputNode);
+    smaaNode = fusedSmaa(linearOutputNode);
     smaaNodes.set(topologyKey, smaaNode);
   }
   postNodes.smaaNode = smaaNode;
@@ -334,9 +330,9 @@ function getRenderDisplayLinearTextureNode(
   let textureNode = postNodes.displayLinearTextureNodes.get(topologyKey);
   if (!textureNode) {
     // SMAA's documented boundary is before sRGB conversion. Baryon's display
-    // shoulder must run first because transparent output is premultiplied and
-    // the shoulder works on straight radiance. Both toggle branches then read
-    // this exact linear-display RGBA texture without alpha or RGB surgery.
+    // shoulder runs on the authoritative integrated radiance before that
+    // conversion. Both toggle branches then read this exact linear-display
+    // RGBA texture without alpha or RGB surgery.
     textureNode = convertToTexture(displayLinearOutputNode, null, null, {
       type: THREE.HalfFloatType,
       colorSpace: THREE.NoColorSpace,
@@ -348,17 +344,24 @@ function getRenderDisplayLinearTextureNode(
   return textureNode;
 }
 
+function disposeRenderTextureNode(textureNode) {
+  if (!textureNode) {
+    return;
+  }
+  if (typeof textureNode.dispose === "function") {
+    textureNode.dispose();
+    return;
+  }
+  // Three's RTTNode currently exposes no public dispose method even though
+  // it owns both resources. Release them at the Baryon owner boundary.
+  textureNode.renderTarget?.dispose?.();
+  textureNode._quadMesh?.material?.dispose?.();
+}
+
 function disposeRenderDisplayLinearTextureNodes(postNodes) {
   for (const textureNode of postNodes?.displayLinearTextureNodes?.values?.() ??
     []) {
-    if (typeof textureNode.dispose === "function") {
-      textureNode.dispose();
-      continue;
-    }
-    // Three's RTTNode currently exposes no public dispose method even though
-    // it owns both resources. Release them at the Baryon owner boundary.
-    textureNode.renderTarget?.dispose?.();
-    textureNode._quadMesh?.material?.dispose?.();
+    disposeRenderTextureNode(textureNode);
   }
   postNodes?.displayLinearTextureNodes?.clear?.();
 }
@@ -366,6 +369,12 @@ function disposeRenderDisplayLinearTextureNodes(postNodes) {
 export function disposeRenderOutputPostNodes(postNodes) {
   disposeRenderOutputSmaaNodes(postNodes);
   disposeRenderDisplayLinearTextureNodes(postNodes);
+  // The optics lane materializes the temporal blend into its own target when
+  // TRAA is active; it is owned here, not by the display-linear cache.
+  if (postNodes?.opticsSourceTextureNode) {
+    disposeRenderTextureNode(postNodes.opticsSourceTextureNode);
+    postNodes.opticsSourceTextureNode = null;
+  }
   for (const bloomPass of getRenderOutputBloomPasses(postNodes)) {
     bloomPass.dispose?.();
   }
@@ -422,26 +431,40 @@ function resolvePipelineRenderProfile(renderProfile) {
   return resolveRenderQualityProfile(renderProfile ?? {});
 }
 
-export function syncRenderOutputBloomPassUniforms(
+/**
+ * @param {({ bloomUniforms?: { enabled?: { value: number } } } & Record<string, unknown>) | null | undefined} postNodes
+ * @param {{
+ *   enabled?: boolean,
+ *   strength?: number,
+ *   radius?: number,
+ *   threshold?: number,
+ * }} values
+ */
+export function syncRenderOutputBloomUniforms(
   postNodes,
-  { strength, radius, threshold },
+  { enabled, strength, radius, threshold },
 ) {
+  if (typeof enabled === "boolean" && postNodes?.bloomUniforms?.enabled) {
+    postNodes.bloomUniforms.enabled.value = enabled ? 1 : 0;
+  }
+
   for (const bloomPass of getRenderOutputBloomPasses(postNodes)) {
-    bloomPass.strength.value = strength;
-    bloomPass.radius.value = radius;
-    bloomPass.threshold.value = threshold;
+    if (strength !== undefined) {
+      bloomPass.strength.value = strength;
+    }
+    if (radius !== undefined) {
+      bloomPass.radius.value = radius;
+    }
+    if (threshold !== undefined) {
+      bloomPass.threshold.value = threshold;
+    }
   }
 }
 
 export function syncRenderOutputNodeTopology(
   pipeline,
   postNodes,
-  {
-    bloomEnabled,
-    outputMode,
-    temporalHistoryEnabled = undefined,
-    smaaEnabled = undefined,
-  },
+  { outputMode, temporalHistoryEnabled = undefined, smaaEnabled = undefined },
 ) {
   if (!pipeline || !postNodes) {
     return false;
@@ -457,7 +480,6 @@ export function syncRenderOutputNodeTopology(
     outputMode,
   );
   const nextTopologyKey = resolveOutputTopologyKey({
-    bloomEnabled,
     carrierTruthEnabled: postNodes.carrierTruthEnabled,
     outputMode,
     temporalHistoryEnabled: resolvedTemporalHistoryEnabled,
@@ -470,7 +492,6 @@ export function syncRenderOutputNodeTopology(
   const { sceneColor, composeOutputNode } = postNodes ?? {};
   pipeline.outputNode = composeOutputNode
     ? composeOutputNode({
-        bloomEnabled,
         outputMode,
         temporalHistoryEnabled: resolvedTemporalHistoryEnabled,
         smaaEnabled: resolvedSmaaEnabled,
@@ -583,7 +604,7 @@ function composeRenderLinearOutputNode({
   sceneColor,
   opticalPsfPass,
   bloomPass,
-  bloomEnabled,
+  bloomEnabledNode,
 }) {
   const sceneRgb = sceneColor.rgb;
   const sceneAlpha = sceneColor.a;
@@ -591,9 +612,12 @@ function composeRenderLinearOutputNode({
   const psfRadiance = opticalPsfActive
     ? composeFixedOpticalPsfRadianceNode(sceneRgb, opticalPsfPass.rgb)
     : sceneRgb;
-  const bloomActive = bloomEnabled && bloomPass;
-  const linearRadiance = bloomActive
-    ? psfRadiance.add(bloomPass.rgb)
+  const bloomActive = Boolean(bloomPass);
+  const bloomRadiance = bloomActive
+    ? bloomPass.rgb.mul(bloomEnabledNode)
+    : null;
+  const linearRadiance = bloomRadiance
+    ? psfRadiance.add(bloomRadiance)
     : psfRadiance;
   const psfHaloRgb = opticalPsfActive
     ? opticalPsfPass.rgb.mul(float(FIXED_OPTICAL_PSF_HALO_FRACTION))
@@ -604,10 +628,10 @@ function composeRenderLinearOutputNode({
   const opticalPsfAlpha = opticalPsfActive
     ? max(sceneAlpha, psfAlpha).clamp()
     : sceneAlpha;
-  const bloomAlpha = bloomActive
-    ? max(max(bloomPass.rgb.r, bloomPass.rgb.g), bloomPass.rgb.b).clamp()
+  const bloomAlpha = bloomRadiance
+    ? max(max(bloomRadiance.r, bloomRadiance.g), bloomRadiance.b).clamp()
     : float(0.0);
-  const finalAlpha = bloomActive
+  const finalAlpha = bloomRadiance
     ? max(opticalPsfAlpha, bloomAlpha).clamp()
     : opticalPsfAlpha;
 
@@ -620,17 +644,17 @@ function composeRenderDisplayOutputNode({
   outputBackgroundNode,
 }) {
   const normalizedMode = normalizeOutputMode(outputMode);
+  // RGB is integrated scene radiance after fixed optics and bloom. Its
+  // display transfer must not depend on the separately derived coverage
+  // channel, or transparent program output becomes dimmer than the same
+  // authoritative frame shown over black in the operator preview.
+  const finalRgb = compressDisplayRadianceNode(linearOutputNode.rgb);
 
   if (normalizedMode === OUTPUT_MODES.opaque) {
-    const finalRgb = compressDisplayRadianceNode(linearOutputNode.rgb);
     const opaqueRgb = outputBackgroundNode.add(finalRgb);
     return vec4(opaqueRgb, 1.0);
   }
 
-  const finalRgb = compressPremultipliedDisplayRadianceNode(
-    linearOutputNode.rgb,
-    linearOutputNode.a,
-  );
   return vec4(finalRgb, linearOutputNode.a);
 }
 
@@ -638,7 +662,7 @@ export function composeRenderOutputNode({
   sceneColor,
   opticalPsfPass,
   bloomPass,
-  bloomEnabled,
+  bloomEnabledNode,
   outputMode,
   outputBackgroundNode,
 }) {
@@ -646,7 +670,7 @@ export function composeRenderOutputNode({
     sceneColor,
     opticalPsfPass,
     bloomPass,
-    bloomEnabled,
+    bloomEnabledNode,
   });
 
   return composeRenderDisplayOutputNode({
@@ -654,6 +678,104 @@ export function composeRenderOutputNode({
     outputMode,
     outputBackgroundNode,
   });
+}
+
+/**
+ * Output pipeline for the WebGL fallback.
+ *
+ * Only two things in the full chain are genuinely WebGPU-coupled: TRAA, which
+ * needs a velocity MRT attachment, and SMAA, which sits behind it. Everything
+ * else reads straight off the scene colour and runs anywhere.
+ *
+ * The display transfer is not one of them. The lighting model integrates HDR
+ * scene radiance by contract, so a frame that reaches the canvas without
+ * `compressDisplayRadiance` is not a plainer image — it is a wrong one. Every
+ * channel clips independently at one, which turns saturated structure grey and
+ * crushes everything below it. That reads as a washed-out, desaturated render
+ * rather than as an obvious failure, which is why it survived this long.
+ *
+ * So the fallback carries the display transfer, the fixed optical PSF and
+ * bloom — the PSF because it models the instrument rather than decorating it,
+ * and bloom because its budgets were measured against a display-compressed
+ * scene and dropping it changes the look rather than simplifying it. It
+ * composes through the same `composeRenderOutputNode` as the full path, so
+ * every one of those transforms keeps a single owner.
+ *
+ * @param {any} gl
+ * @param {import("three").Scene} scene
+ * @param {import("three").Camera} camera
+ * @param {{ outputMode?: string, renderProfile?: any }} [options]
+ */
+export function createFallbackRenderOutputPipeline(
+  gl,
+  scene,
+  camera,
+  { outputMode = RENDER_DEFAULTS.outputMode, renderProfile = null } = {},
+) {
+  if (gl?.backend?.isWebGLBackend !== true) {
+    return null;
+  }
+
+  const resolvedRenderProfile = resolvePipelineRenderProfile(renderProfile);
+  const bloomUniforms = {
+    enabled: uniform(RENDER_DEFAULTS.bloomEnabled ? 1 : 0),
+    strength: uniform(RENDER_DEFAULTS.bloomStrength),
+    radius: uniform(RENDER_DEFAULTS.bloomRadius),
+    threshold: uniform(RENDER_DEFAULTS.bloomThreshold),
+  };
+  const outputUniforms = {
+    backgroundColor: uniform(
+      new THREE.Color(RENDER_DEFAULTS.outputBackgroundColor),
+    ),
+  };
+  // The fallback has no depth consumer: volume and idle presentation are
+  // mutually exclusive, the idle materials do not write depth, and neither
+  // fixed optics nor bloom reads it. Avoid allocating and clearing a
+  // full-resolution attachment.
+  const scenePass = pass(scene, camera, { depthBuffer: false });
+  const sceneColor = scenePass.getTextureNode("output");
+  // No TRAA here, so both optics lanes read the scene colour directly rather
+  // than the temporal blend the full path materialises for them.
+  const opticalPsfPass = sampleFixedOpticalPsfNode(sceneColor);
+  const bloomPass = resolvedRenderProfile.bloomAllowed
+    ? pairedBloom(
+        sceneColor,
+        /** @type {any} */ (bloomUniforms.strength),
+        /** @type {any} */ (bloomUniforms.radius),
+        /** @type {any} */ (bloomUniforms.threshold),
+      )
+    : null;
+  const pipeline = new RenderPipeline(gl);
+  const composeOutputNode = ({ outputMode: mode = outputMode } = {}) =>
+    composeRenderOutputNode({
+      sceneColor,
+      opticalPsfPass,
+      bloomPass,
+      bloomEnabledNode: bloomUniforms.enabled,
+      outputMode: mode,
+      outputBackgroundNode: outputUniforms.backgroundColor,
+    });
+
+  pipeline.outputNode = composeOutputNode();
+  pipeline.needsUpdate = true;
+
+  return {
+    pipeline,
+    // Narrow on purpose: no traaNode and no smaaNode, so the callers that sync
+    // temporal history and SMAA topology see the node they need is absent and
+    // no-op, rather than being handed stubs that silently accept writes.
+    postNodes: {
+      scenePass,
+      sceneColor,
+      opticalPsfPass,
+      bloomPass,
+      bloomPasses: [bloomPass].filter(Boolean),
+      composeOutputNode,
+      bloomUniforms,
+      outputUniforms,
+      fallbackOutputPipeline: true,
+    },
+  };
 }
 
 /**
@@ -672,7 +794,19 @@ export function createRenderOutputPipeline(
     return null;
   }
 
-  const resolvedRenderProfile = resolvePipelineRenderProfile(renderProfile);
+  const resolvedCheckpointAovMode =
+    normalizeCheckpointAovMode(checkpointAovMode);
+  const requestedRenderProfile = resolvePipelineRenderProfile(renderProfile);
+  // Checkpoint captures are single-frame evidence renders: temporal history
+  // is meaningless there, and TRAA's velocity attachment would make the
+  // scene MRT five rgba16float attachments (40 bytes per sample), over
+  // WebGPU's 32-byte baseline budget — render pipeline creation then fails
+  // validation and every attachment reads back zero.
+  const resolvedRenderProfile =
+    resolvedCheckpointAovMode !== CHECKPOINT_AOV_MODES.off &&
+    requestedRenderProfile.traaEnabled
+      ? { ...requestedRenderProfile, traaEnabled: false }
+      : requestedRenderProfile;
   const carrierTruthEnabled =
     resolvedRenderProfile.carrierTruthEnabled === true;
   const defaultOutputMode =
@@ -680,9 +814,8 @@ export function createRenderOutputPipeline(
     resolvedRenderProfile.renderContext === RENDER_CONTEXTS.externalOutput
       ? RENDER_DEFAULTS.outputMode
       : OUTPUT_MODES.opaque;
-  const resolvedCheckpointAovMode =
-    normalizeCheckpointAovMode(checkpointAovMode);
   const bloomUniforms = {
+    enabled: uniform(RENDER_DEFAULTS.bloomEnabled ? 1 : 0),
     strength: uniform(RENDER_DEFAULTS.bloomStrength),
     radius: uniform(RENDER_DEFAULTS.bloomRadius),
     threshold: uniform(RENDER_DEFAULTS.bloomThreshold),
@@ -693,9 +826,15 @@ export function createRenderOutputPipeline(
     ),
   };
   const temporalHistoryBlendUniform = uniform(1);
-  const scenePass = pass(scene, camera);
+  const temporalReprojectionEnabled =
+    !carrierTruthEnabled && resolvedRenderProfile.traaEnabled;
+  // TRAA is the sole scene-depth reader. Checkpoint, carrier-truth and regular
+  // non-temporal renders therefore keep the scene pass color-only.
+  const scenePass = pass(scene, camera, {
+    depthBuffer: temporalReprojectionEnabled,
+  });
   const sceneMrtOutputs = { output };
-  if (!carrierTruthEnabled && resolvedRenderProfile.traaEnabled) {
+  if (temporalReprojectionEnabled) {
     sceneMrtOutputs.velocity = velocity;
   }
   const checkpointAttachmentNames = checkpointAttachmentNamesForMode(
@@ -723,10 +862,7 @@ export function createRenderOutputPipeline(
   let traaColor = null;
   let outputSceneColor = null;
   let opticalPsfPass = null;
-  let rawSceneOpticalPsfPass = null;
   let bloomPass = null;
-  let rawSceneBloomPass = null;
-  let outputBloomPass = null;
   const postNodes = {
     scenePass,
     sceneColor: null,
@@ -734,10 +870,8 @@ export function createRenderOutputPipeline(
     traaColor: null,
     outputSceneColor: null,
     opticalPsfPass: null,
-    rawSceneOpticalPsfPass: null,
+    opticsSourceTextureNode: null,
     bloomPass: null,
-    rawSceneBloomPass: null,
-    outputBloomPass: null,
     bloomPasses: [],
     bloomUniforms,
     outputUniforms,
@@ -753,7 +887,7 @@ export function createRenderOutputPipeline(
     checkpointAovs,
   };
 
-  if (!carrierTruthEnabled && resolvedRenderProfile.traaEnabled) {
+  if (temporalReprojectionEnabled) {
     // Enable velocity MRT so TRAANode can reproject history across frames.
     // `output` must be included so MRTNode.setup() fills index 0 of renderTarget.textures;
     // omitting it leaves members[0] undefined and crashes OutputStructNode.generate().
@@ -776,46 +910,49 @@ export function createRenderOutputPipeline(
     traaNode.useSubpixelCorrection = false;
     // @ts-ignore — getTextureNode() exists in TRAANode source but is missing from its .d.ts
     traaColor = traaNode.getTextureNode();
-    outputSceneColor = mix(sceneColor, traaColor, temporalHistoryBlendUniform);
+    // TRAA's resolve quad is an opaque NodeMaterial, so Three assigns alpha 1
+    // to every resolved texel. Radiance takes the temporal path, but coverage
+    // alpha must come from the current scene pass or transparent output
+    // (Spout/external sinks) turns fully opaque.
+    outputSceneColor = vec4(
+      mix(sceneColor.rgb, traaColor.rgb, temporalHistoryBlendUniform),
+      sceneColor.a,
+    );
   } else {
     sceneColor = scenePass.getTextureNode("output");
     traaColor = sceneColor;
     outputSceneColor = sceneColor;
   }
 
+  // The temporal blend is binary: advanceRenderOutputTemporalHistoryBypass only
+  // ever writes 0 or 1, never an intermediate crossfade. For a binary weight
+  // mix(f(a), f(b), t) === f(mix(a, b, t)) for any f, so the optics read one
+  // already-blended color instead of running a second bloom pyramid and a
+  // second 9-tap kernel whose result is multiplied by zero. Materializing that
+  // blend costs one 1-tap full-res copy and both optics lanes share it.
+  const opticsSourceTextureNode = temporalReprojectionEnabled
+    ? convertToTexture(outputSceneColor, null, null, {
+        type: THREE.HalfFloatType,
+        colorSpace: THREE.NoColorSpace,
+        depthBuffer: false,
+      })
+    : null;
+  const opticsSourceColor = opticsSourceTextureNode ?? sceneColor;
+
   if (!carrierTruthEnabled) {
-    rawSceneOpticalPsfPass = sampleFixedOpticalPsfNode(sceneColor);
-    opticalPsfPass = resolvedRenderProfile.traaEnabled
-      ? mix(
-          rawSceneOpticalPsfPass,
-          sampleFixedOpticalPsfNode(traaColor),
-          temporalHistoryBlendUniform,
-        )
-      : rawSceneOpticalPsfPass;
+    opticalPsfPass = sampleFixedOpticalPsfNode(opticsSourceColor);
   }
 
   if (!carrierTruthEnabled && resolvedRenderProfile.bloomAllowed) {
-    rawSceneBloomPass = bloom(
-      sceneColor,
+    bloomPass = pairedBloom(
+      opticsSourceColor,
       /** @type {any} */ (bloomUniforms.strength),
       /** @type {any} */ (bloomUniforms.radius),
       /** @type {any} */ (bloomUniforms.threshold),
     );
-    bloomPass = resolvedRenderProfile.traaEnabled
-      ? bloom(
-          traaColor,
-          /** @type {any} */ (bloomUniforms.strength),
-          /** @type {any} */ (bloomUniforms.radius),
-          /** @type {any} */ (bloomUniforms.threshold),
-        )
-      : rawSceneBloomPass;
-    outputBloomPass = resolvedRenderProfile.traaEnabled
-      ? mix(rawSceneBloomPass, bloomPass, temporalHistoryBlendUniform)
-      : bloomPass;
   }
   const pipeline = new RenderPipeline(gl);
   const composeOutputNode = ({
-    bloomEnabled = RENDER_DEFAULTS.bloomEnabled,
     outputMode = defaultOutputMode,
     temporalHistoryEnabled = true,
     smaaEnabled = DEFAULT_OUTPUT_SMAA_ENABLED,
@@ -823,30 +960,18 @@ export function createRenderOutputPipeline(
     const temporalLinearPathActive = Boolean(
       !carrierTruthEnabled && temporalHistoryEnabled && traaNode,
     );
-    const bloomLinearPathActive = Boolean(
-      !carrierTruthEnabled &&
-      bloomEnabled &&
-      resolvedRenderProfile.bloomAllowed,
-    );
     const linearOutputNode = composeRenderLinearOutputNode({
       sceneColor: temporalLinearPathActive ? outputSceneColor : sceneColor,
-      opticalPsfPass: carrierTruthEnabled
-        ? null
-        : temporalLinearPathActive
-          ? opticalPsfPass
-          : (rawSceneOpticalPsfPass ?? opticalPsfPass),
-      bloomPass: carrierTruthEnabled
-        ? null
-        : temporalLinearPathActive
-          ? outputBloomPass
-          : (rawSceneBloomPass ?? outputBloomPass),
-      bloomEnabled: bloomLinearPathActive,
+      // Both toggle branches read the same optics lane: its input already
+      // carries the temporal blend, so there is no separate raw-scene chain to
+      // choose between.
+      opticalPsfPass: carrierTruthEnabled ? null : opticalPsfPass,
+      bloomPass: carrierTruthEnabled ? null : bloomPass,
+      bloomEnabledNode: bloomUniforms.enabled,
     });
     const displayTopologyKey = `${
       temporalLinearPathActive ? "temporal" : "current"
-    }:${bloomLinearPathActive ? "bloom" : "sharp"}:${normalizeOutputMode(
-      outputMode,
-    )}`;
+    }:${normalizeOutputMode(outputMode)}`;
     const displayLinearOutputNode = composeRenderDisplayOutputNode({
       linearOutputNode,
       outputMode,
@@ -888,11 +1013,9 @@ export function createRenderOutputPipeline(
     traaColor,
     outputSceneColor,
     opticalPsfPass,
-    rawSceneOpticalPsfPass,
+    opticsSourceTextureNode,
     bloomPass,
-    rawSceneBloomPass,
-    outputBloomPass,
-    bloomPasses: [...new Set([rawSceneBloomPass, bloomPass].filter(Boolean))],
+    bloomPasses: [bloomPass].filter(Boolean),
     composeOutputNode,
   });
 
@@ -903,7 +1026,6 @@ export function createRenderOutputPipeline(
     true,
   );
   postNodes[OUTPUT_TOPOLOGY_KEY_FIELD] = resolveOutputTopologyKey({
-    bloomEnabled: RENDER_DEFAULTS.bloomEnabled,
     carrierTruthEnabled,
     outputMode: defaultOutputMode,
     temporalHistoryEnabled: defaultTemporalHistoryEnabled,

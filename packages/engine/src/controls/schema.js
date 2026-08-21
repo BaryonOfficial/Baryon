@@ -9,10 +9,15 @@ import {
 } from "../defaults.js";
 import {
   MAX_PERFORMANCE_TARGET_FPS,
+  MIN_PRESENTATION_RAYMARCH_STEPS,
   MIN_PERFORMANCE_TARGET_FPS,
   PERFORMANCE_PROFILES,
 } from "../render/outputProfilePolicy.js";
 import { VISUALIZATION_METHODS } from "../visualization/types.js";
+import {
+  CYMATIC_OBSERVER_GEOMETRY_EXPOSURE_LIMITS,
+  CYMATIC_OBSERVER_REFERENCE,
+} from "../core/raymarch/cymaticObserverReference.js";
 
 export const CONTROL_TARGET_TYPES = Object.freeze({
   uniform: "uniform",
@@ -35,6 +40,43 @@ export const CONTROL_HANDLERS = Object.freeze({
   scene: "scene",
   audio: "audio",
   audit: "audit",
+});
+
+export const CONTROL_SURFACES = Object.freeze({
+  listener: "listener",
+  performer: "performer",
+});
+
+export const SHARED_CONTROL_SURFACES = Object.freeze([
+  CONTROL_SURFACES.listener,
+  CONTROL_SURFACES.performer,
+]);
+export const LISTENER_CONTROL_SURFACES = Object.freeze([
+  CONTROL_SURFACES.listener,
+]);
+export const PERFORMER_CONTROL_SURFACES = Object.freeze([
+  CONTROL_SURFACES.performer,
+]);
+
+const CONTROL_SURFACE_SET = new Set(Object.values(CONTROL_SURFACES));
+const CANONICAL_CONTROL_SURFACE_SET = new Set([
+  SHARED_CONTROL_SURFACES,
+  LISTENER_CONTROL_SURFACES,
+  PERFORMER_CONTROL_SURFACES,
+]);
+
+export function isControlSurface(surface) {
+  return CONTROL_SURFACE_SET.has(surface);
+}
+
+export function isCanonicalControlSurfaceSet(surfaces) {
+  return CANONICAL_CONTROL_SURFACE_SET.has(surfaces);
+}
+
+export const BLOOM_ENHANCER_LIMITS = Object.freeze({
+  maximumStrength: 3,
+  maximumRadius: 1,
+  minimumThreshold: 0,
 });
 
 const ALL_METHODS = Object.freeze(Object.values(VISUALIZATION_METHODS));
@@ -104,6 +146,11 @@ function sortControlsByPresentationOrder(left, right) {
 }
 
 function withControlGroup(definition, group) {
+  if (!isCanonicalControlSurfaceSet(definition?.surfaces)) {
+    throw new TypeError(
+      `[Baryon controls] ${definition?.key ?? "Unknown control"} must declare one canonical product-surface set`,
+    );
+  }
   return {
     ...definition,
     folder: group.title,
@@ -118,6 +165,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "liveInputAnalysisClass",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Live Input Mode",
       title:
         "Choose how unknown live devices should be analyzed. Auto uses heuristics, Line Feed pushes live devices through the file-style path, and Acoustic Mic keeps the forgiving mic-specific path.",
@@ -141,6 +189,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "liveInputAcousticIntent",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Mic Intent",
       title:
         "Choose how acoustic mic input should be interpreted. Ambient is forgiving for rooms and instruments; Vocal emphasizes singing and lead pitch.",
@@ -163,6 +212,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "echoCancellation",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Echo Cancel",
       title:
         "Suppress speaker bleed and room echo from mic input — helpful when using speakers, but may color the audio spectrum",
@@ -179,6 +229,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "noiseSuppression",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Noise Suppress",
       title:
         "Filter out steady background noise before analysis — good for noisy rooms, but can soften quieter harmonics",
@@ -195,6 +246,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "autoGainControl",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Auto Gain",
       title:
         "Automatically normalize mic volume — convenient for speech, but flattens dynamics for visualization",
@@ -213,6 +265,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "volumeShape",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Shape",
       title:
         "Clip the rectangular cymatic field to a sphere, or reveal its full cubic domain",
@@ -235,6 +288,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "boundaryMode",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Boundary",
       title:
         "Choose whether the modal family behaves like a reflective boundary (Neumann) or a fixed node at the boundary (Dirichlet)",
@@ -257,9 +311,10 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "densityGain",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Material Density",
       title:
-        "Scales the organized cymatic material before its fixed scattering, absorption, and emission response",
+        "Scales the luminous cymatic carrier's emission and extinction without changing acoustic topology",
       defaultValue: RAYMARCH_DEFAULTS.densityGain,
       methods: methodsFor("shared"),
       binding: { min: 0.1, max: 4, step: 0.01 },
@@ -274,6 +329,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "laserDeflectionGain",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Laser Bending",
       title:
         "How strongly laser rays bend through the acoustic pressure field, changing caustic placement and concentration",
@@ -291,12 +347,17 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "raymarchSteps",
-      label: "Max Steps",
+      surfaces: SHARED_CONTROL_SURFACES,
+      label: "Max Samples",
       title:
-        "Maximum raymarch quality budget; Auto and Custom profiles may use fewer steps to hold their target frame rate",
+        "Maximum analytic camera-ray sample budget; Auto and Custom profiles may use fewer samples to hold their target frame rate",
       defaultValue: RAYMARCH_DEFAULTS.raymarchSteps,
       methods: methodsFor("volume"),
-      binding: { min: 16, max: 192, step: 1 },
+      binding: {
+        min: MIN_PRESENTATION_RAYMARCH_STEPS,
+        max: 192,
+        step: 1,
+      },
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.volumeMesh.material.steps",
@@ -310,7 +371,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "volumeColor",
-      label: "Volume",
+      surfaces: SHARED_CONTROL_SURFACES,
+      label: "Volume Color",
       title: "Main color of the volume interior",
       defaultValue: RENDER_DEFAULTS.volumeColor,
       methods: ALL_METHODS,
@@ -326,14 +388,15 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "surfaceColor",
-      label: "Fresnel Color",
-      title: "Color of the grazing-angle laser energy emitted at field edges",
+      surfaces: SHARED_CONTROL_SURFACES,
+      label: "Caustic Color",
+      title: "Color of focused laser irradiance revealed by the tracer",
       defaultValue: RENDER_DEFAULTS.surfaceColor,
       methods: ALL_METHODS,
       binding: { view: "color" },
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uSurfaceColor.value",
+      runtimePath: "runtime.uniforms.uCausticColor.value",
       status: CONTROL_STATUSES.live,
       controlOrder: 30,
     },
@@ -342,8 +405,9 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "outputBackgroundColor",
+      surfaces: LISTENER_CONTROL_SURFACES,
       label: "Output Color",
-      title: "Background fill color used in Opaque output mode",
+      title: "Background fill color for opaque output",
       defaultValue: RENDER_DEFAULTS.outputBackgroundColor,
       methods: ALL_METHODS,
       binding: { view: "color" },
@@ -351,7 +415,6 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.output,
       runtimePath: "program.backgroundColor",
       status: CONTROL_STATUSES.live,
-      visibleWhen: { key: "outputMode", value: "opaque" },
       controlOrder: 20,
     },
     CONTROL_GROUPS.output,
@@ -359,9 +422,10 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "colorMode",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Color Mode",
       title:
-        "Static uses your chosen colors; Spectral colors promoted cymatic modes from the audio spectrum",
+        "Static uses your chosen colors; Spectral maps the persistent cymatic phase field through its cyclic palette",
       defaultValue: RENDER_DEFAULTS.colorMode,
       methods: ALL_METHODS,
       binding: {
@@ -372,7 +436,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       },
       targetType: CONTROL_TARGET_TYPES.object,
       handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.spectralLight.colorMode",
+      runtimePath: "runtime.uniforms.uSpectralPresentationEnabled.value",
       status: CONTROL_STATUSES.live,
       controlOrder: 10,
     },
@@ -380,16 +444,17 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   ),
   withControlGroup(
     {
-      key: "spectralMix",
-      label: "Color Mix",
+      key: "spectralChroma",
+      surfaces: SHARED_CONTROL_SURFACES,
+      label: "Spectral Chroma",
       title:
-        "How strongly Spectral Light colors tint the volume when Color Mode is set to Spectral",
-      defaultValue: RENDER_DEFAULTS.spectralMix,
+        "Controls spectral color vividness at constant luminance without blending in static colors",
+      defaultValue: RENDER_DEFAULTS.spectralChroma,
       methods: ALL_METHODS,
-      binding: { min: 0.01, max: 1, step: 0.01 },
+      binding: { min: 0, max: 1, step: 0.01 },
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uSpectralMix.value",
+      runtimePath: "runtime.uniforms.uSpectralChroma.value",
       status: CONTROL_STATUSES.live,
       visibleWhen: { key: "colorMode", value: "spectral" },
       controlOrder: 40,
@@ -399,15 +464,16 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "holographicIntensity",
-      label: "Fresnel Strength",
+      surfaces: SHARED_CONTROL_SURFACES,
+      label: "Caustic Strength",
       title:
-        "Strength of the grazing-angle laser energy emitted at field edges",
+        "Scales the camera-visible focused-light lane without changing the acoustic field, ray bending, or material extinction",
       defaultValue: RAYMARCH_DEFAULTS.holographicIntensity,
       methods: methodsFor("raymarchOnly"),
       binding: { min: 0, max: 1, step: 0.01 },
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uHolographicIntensity.value",
+      runtimePath: "runtime.uniforms.uCausticStrength.value",
       status: CONTROL_STATUSES.live,
       controlOrder: 50,
     },
@@ -416,15 +482,16 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "holographicFresnelPower",
-      label: "Fresnel Tightness",
+      surfaces: SHARED_CONTROL_SURFACES,
+      label: "Laser Focus",
       title:
-        "How tightly Fresnel energy hugs the edge — higher values confine it to a thinner rim",
+        "Controls finite-source angular spread: higher focus produces narrower caustic folds without changing the acoustic field",
       defaultValue: RAYMARCH_DEFAULTS.holographicFresnelPower,
       methods: methodsFor("raymarchOnly"),
-      binding: { min: 0.5, max: 8, step: 0.1 },
+      binding: { min: 0.5, max: 32, step: 0.1 },
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uHolographicFresnelPower.value",
+      runtimePath: "runtime.uniforms.uLaserFocus.value",
       status: CONTROL_STATUSES.live,
       controlOrder: 70,
     },
@@ -433,6 +500,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "idleLogoIntensity",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Logo Intensity",
       title: "Brightness of the idle logo shown when no audio is playing",
       defaultValue: RENDER_DEFAULTS.idleLogoIntensity,
@@ -449,8 +517,9 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "idleLogoSize",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Logo Size",
-      title: "Size of the idle logo overlay shown when no audio is playing",
+      title: "Size of the 3D idle logo shown when no audio is playing",
       defaultValue: RENDER_DEFAULTS.idleLogoSize,
       methods: ALL_METHODS,
       binding: { min: 0.1, max: 2, step: 0.01 },
@@ -465,8 +534,9 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "idleLogoColor",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Logo Color",
-      title: "Color of the idle logo overlay shown when no audio is playing",
+      title: "Color of the 3D idle logo shown when no audio is playing",
       defaultValue: RENDER_DEFAULTS.idleLogoColor,
       methods: ALL_METHODS,
       binding: { view: "color" },
@@ -478,14 +548,57 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     },
     CONTROL_GROUPS.logo,
   ),
+  withControlGroup(
+    {
+      key: "idleLogoRotationMode",
+      surfaces: SHARED_CONTROL_SURFACES,
+      label: "Logo Rotation",
+      title:
+        "Manual = rotate the idle logo at the speed below; Off = keep the idle logo stationary",
+      defaultValue: RENDER_DEFAULTS.idleLogoRotationMode,
+      methods: ALL_METHODS,
+      binding: {
+        options: {
+          Manual: "manual",
+          Off: "off",
+        },
+      },
+      targetType: CONTROL_TARGET_TYPES.object,
+      handler: CONTROL_HANDLERS.scene,
+      runtimePath: "runtime.idleLogoMotion.rotationMode",
+      status: CONTROL_STATUSES.live,
+      controlOrder: 40,
+    },
+    CONTROL_GROUPS.logo,
+  ),
+  withControlGroup(
+    {
+      key: "idleLogoRotationSpeed",
+      surfaces: SHARED_CONTROL_SURFACES,
+      label: "Logo Rotation Speed",
+      title:
+        "Idle-logo spin speed in Manual mode — negative values reverse direction",
+      defaultValue: RENDER_DEFAULTS.idleLogoRotationSpeed,
+      methods: ALL_METHODS,
+      binding: { min: -12, max: 12, step: 0.01 },
+      targetType: CONTROL_TARGET_TYPES.object,
+      handler: CONTROL_HANDLERS.scene,
+      runtimePath: "runtime.idleLogoMotion.angularVelocity",
+      status: CONTROL_STATUSES.live,
+      visibleWhen: { key: "idleLogoRotationMode", value: "manual" },
+      controlOrder: 50,
+    },
+    CONTROL_GROUPS.logo,
+  ),
 
   // ── Motion ─────────────────────────────────────────────────────────────────
   withControlGroup(
     {
       key: "rotationMode",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Rotation Mode",
       title:
-        "Audio = shape rotates with the music; Manual = set a fixed speed below; Off = stationary",
+        "Audio = cymatic render rotates with the music; Manual = set a fixed speed below; Off = stationary",
       defaultValue: RENDER_DEFAULTS.rotationMode,
       methods: methodsFor("raymarchOnly"),
       binding: {
@@ -506,9 +619,10 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "rotationSpeed",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Manual Rotation",
       title:
-        "Spin speed in Manual rotation mode — negative values reverse direction",
+        "Cymatic-render spin speed in Manual rotation mode — negative values reverse direction",
       defaultValue: RENDER_DEFAULTS.rotationSpeed,
       methods: methodsFor("raymarchOnly"),
       binding: { min: -12, max: 12, step: 0.01 },
@@ -524,6 +638,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "motionAmount",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Motion Scale",
       title:
         "Scales the auto-calibrated rotation in Audio mode (1 = fully automatic; lower = calmer, higher = more intense). Has no effect in Manual rotation mode.",
@@ -538,10 +653,33 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     },
     CONTROL_GROUPS.motion,
   ),
+  withControlGroup(
+    {
+      key: "patternPersistenceSeconds",
+      surfaces: SHARED_CONTROL_SURFACES,
+      label: "Pattern Persistence",
+      title:
+        "How long cymatic geometry remains visible while it deforms into the next pattern. Higher values are steadier but can overlap more.",
+      defaultValue: CYMATIC_OBSERVER_REFERENCE.geometryExposureSeconds,
+      methods: methodsFor("raymarchOnly"),
+      binding: {
+        min: CYMATIC_OBSERVER_GEOMETRY_EXPOSURE_LIMITS.minimumSeconds,
+        max: CYMATIC_OBSERVER_GEOMETRY_EXPOSURE_LIMITS.maximumSeconds,
+        step: 0.05,
+      },
+      targetType: CONTROL_TARGET_TYPES.object,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.cymaticObserverTuning.geometryExposureSeconds",
+      status: CONTROL_STATUSES.live,
+      controlOrder: 40,
+    },
+    CONTROL_GROUPS.motion,
+  ),
   // Bloom follows color and surface-light controls in the Appearance section.
   withControlGroup(
     {
       key: "bloomEnabled",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Bloom",
       title:
         "Optional soft optical halo. Leave off for the sharp scene-radiance render.",
@@ -558,11 +696,16 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "bloomStrength",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Bloom Strength",
-      title: "How bright the bloom halo is",
+      title: "How bright the bounded highlight halo is",
       defaultValue: RENDER_DEFAULTS.bloomStrength,
       methods: ALL_METHODS,
-      binding: { min: 0, max: 3, step: 0.01 },
+      binding: {
+        min: 0,
+        max: BLOOM_ENHANCER_LIMITS.maximumStrength,
+        step: 0.01,
+      },
       targetType: CONTROL_TARGET_TYPES.pipeline,
       handler: CONTROL_HANDLERS.bloom,
       runtimePath: "bloomPass.strength.value",
@@ -574,11 +717,16 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "bloomRadius",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Bloom Radius",
-      title: "How far the bloom spreads from bright areas",
+      title: "How far the bounded highlight halo spreads",
       defaultValue: RENDER_DEFAULTS.bloomRadius,
       methods: ALL_METHODS,
-      binding: { min: 0, max: 1, step: 0.01 },
+      binding: {
+        min: 0,
+        max: BLOOM_ENHANCER_LIMITS.maximumRadius,
+        step: 0.01,
+      },
       targetType: CONTROL_TARGET_TYPES.pipeline,
       handler: CONTROL_HANDLERS.bloom,
       runtimePath: "bloomPass.radius.value",
@@ -590,12 +738,17 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "bloomThreshold",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Bloom Threshold",
       title:
         "Minimum brightness before a region contributes to bloom — raise to limit it to the brightest highlights",
       defaultValue: RENDER_DEFAULTS.bloomThreshold,
       methods: methodsFor("shared"),
-      binding: { min: 0, max: 1, step: 0.01 },
+      binding: {
+        min: BLOOM_ENHANCER_LIMITS.minimumThreshold,
+        max: 1,
+        step: 0.01,
+      },
       targetType: CONTROL_TARGET_TYPES.pipeline,
       handler: CONTROL_HANDLERS.bloom,
       runtimePath: "bloomPass.threshold.value",
@@ -607,6 +760,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "backgroundColor",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Background",
       title: "Legacy transparent-preview backdrop retained for saved presets",
       defaultValue: RENDER_DEFAULTS.backgroundColor,
@@ -624,9 +778,10 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "renderQualityPreset",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Profile",
       title:
-        "Auto adapts raymarch steps toward 60 FPS, Custom uses your Target FPS, and Max Quality leaves raymarch steps ungoverned.",
+        "Auto adapts analytic camera-ray samples toward 60 FPS, Custom uses your Target FPS, and Max Quality leaves the sample budget ungoverned.",
       defaultValue: RENDER_DEFAULTS.renderQualityPreset,
       methods: ALL_METHODS,
       binding: {
@@ -648,6 +803,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "customTargetFps",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Target FPS",
       title:
         "Used when Profile is Custom to set performer cadence and the adaptive raymarch target.",
@@ -672,30 +828,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   ),
   withControlGroup(
     {
-      key: "outputMode",
-      label: "Output Mode",
-      title:
-        "Transparent composites over other content; Opaque renders its own solid background",
-      defaultValue: RENDER_DEFAULTS.outputMode,
-      methods: ALL_METHODS,
-      binding: {
-        view: "segmented",
-        options: {
-          Transparent: "transparent",
-          Opaque: "opaque",
-        },
-      },
-      targetType: CONTROL_TARGET_TYPES.pipeline,
-      handler: CONTROL_HANDLERS.output,
-      runtimePath: "program.outputMode",
-      status: CONTROL_STATUSES.live,
-      controlOrder: 10,
-    },
-    CONTROL_GROUPS.output,
-  ),
-  withControlGroup(
-    {
       key: "performanceHudEnabled",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "HUD",
       title: "Shows FPS and render resolution on screen",
       defaultValue: RENDER_DEFAULTS.performanceHudEnabled,
@@ -712,6 +846,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "visualizationMethod",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Visualizer",
       title: "Visualization method (single 3D Volume raymarch renderer)",
       defaultValue: VISUALIZATION_METHODS.raymarch,
@@ -728,6 +863,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "cameraLocked",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Lock Camera",
       title: "Lock the camera so orbit drag cannot accidentally move the view",
       defaultValue: RENDER_DEFAULTS.cameraLocked,
@@ -746,6 +882,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "traaEnabled",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "TRAA",
       title:
         "Toggle temporal anti-aliasing for diagnostics. Disable only when isolating render latency, shimmer, or post-process cost.",
@@ -761,6 +898,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "smaaEnabled",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "SMAA",
       title:
         "Toggle screen-space morphological anti-aliasing on the final output for visual A/B comparison.",
@@ -777,6 +915,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "auditEnabled",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Capture Debug Data",
       title:
         "Record per-frame debug data for the active analysis and renderer.",
@@ -792,6 +931,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "freezeModeSlots",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Freeze Pattern",
       title:
         "Hold the current modal pattern in place instead of updating it from live audio.",
@@ -807,6 +947,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "forceWebGLFallbackTest",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Force WebGL2",
       title:
         "Restart the renderer on the WebGL2 fallback path for compatibility testing. This remounts the canvas.",
@@ -821,15 +962,16 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   ),
   withControlGroup(
     {
-      key: "lowLoadPlaybackDiagnostics",
-      label: "Low-load Playback",
+      key: "suppressPlaybackTelemetry",
+      surfaces: SHARED_CONTROL_SURFACES,
+      label: "Suppress Playback Telemetry",
       title:
-        "Reduce render overhead during playback diagnostics so you can inspect behavior on slower systems or heavier songs.",
-      defaultValue: AUDIT_DEFAULTS.lowLoadPlaybackDiagnostics,
+        "Pause per-frame devtools snapshots and console audit logs during playback. Rendering quality and frame cadence are unchanged.",
+      defaultValue: AUDIT_DEFAULTS.suppressPlaybackTelemetry,
       methods: ALL_METHODS,
       targetType: CONTROL_TARGET_TYPES.audit,
       handler: CONTROL_HANDLERS.audit,
-      runtimePath: "featureState.audit.settings.lowLoadPlaybackDiagnostics",
+      runtimePath: "featureState.audit.settings.suppressPlaybackTelemetry",
       status: CONTROL_STATUSES.debugOnly,
     },
     CONTROL_GROUPS.diagnostics,
@@ -837,6 +979,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "cavityGeometry",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Cavity Geometry",
       title:
         "Choose which cavity geometry to request for diagnostics. Spherical is wired through the pipeline, but the renderer still falls back to the rectangular basis today.",
@@ -860,6 +1003,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "injectTestTone",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Inject Tone",
       title:
         "Replace live audio with a synthetic test tone so you can inspect a known, repeatable input.",
@@ -875,6 +1019,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "testToneHz",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Tone Hz",
       title:
         "Frequency of the injected test tone in Hz. Low values inspect renderable patterns; high values exercise bandwidth-limit diagnostics.",
@@ -891,6 +1036,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "testToneSignal",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Tone Signal",
       title:
         "Choose whether the injected test signal is a pure sine or an explicit harmonic series.",
@@ -912,6 +1058,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "testToneAmplitude",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Tone Amp",
       title: "How strongly the injected test tone excites the pattern.",
       defaultValue: AUDIT_DEFAULTS.testToneAmplitude,
@@ -927,6 +1074,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "logEveryFrames",
+      surfaces: SHARED_CONTROL_SURFACES,
       label: "Log Frames",
       title:
         "Write a debug snapshot to the browser console every N frames. Use 1 for every frame.",

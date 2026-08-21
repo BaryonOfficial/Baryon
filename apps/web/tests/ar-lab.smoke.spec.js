@@ -57,7 +57,7 @@ test.describe("Baryon AR lab smoke", () => {
 
     // The lab route must not mount the normal web app shell.
     await expect(
-      page.getByRole("button", { name: "Toggle advanced controls" }),
+      page.getByRole("button", { name: "Toggle settings" }),
     ).toHaveCount(0);
 
     expect(pageErrors).toEqual([]);
@@ -68,7 +68,7 @@ test.describe("Baryon AR lab smoke", () => {
 
     await page.goto("/");
     await expect(
-      page.getByRole("button", { name: "Toggle advanced controls" }),
+      page.getByRole("button", { name: "Toggle settings" }),
     ).toBeVisible();
     await expect(page.getByTestId("ar-lab-launch-button")).toBeVisible();
     await expect(page.getByTestId("ar-lab-root")).toHaveCount(0);
@@ -259,7 +259,7 @@ test.describe("Baryon AR lab smoke", () => {
 
     await page.getByTestId("advanced-controls-trigger").click();
     await expect(page.getByTestId("advanced-controls-sidebar")).toBeVisible();
-    await page.getByRole("button", { name: "Close advanced controls" }).click();
+    await page.getByRole("button", { name: "Close settings" }).click();
 
     await page.getByTestId("live-input-source-tab").click();
     await expect(page.getByTestId("live-input-status-panel")).toBeVisible();

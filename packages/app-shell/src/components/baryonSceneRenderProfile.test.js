@@ -96,7 +96,18 @@ test("preview custom profiles use the custom target FPS without downscaling", ()
   expect(profile).toMatchObject({
     qualityPreset: "custom",
     targetFps: 72,
+    traaEnabled: false,
     renderContext: RENDER_CONTEXTS.preview,
   });
   expect(profile).not.toHaveProperty("renderScale");
+});
+
+test("preview scenes allow an explicit diagnostics TRAA opt-in", () => {
+  const profile = resolveSceneRenderPerformanceProfile({
+    performanceProfile: "auto",
+    renderContext: RENDER_CONTEXTS.preview,
+    traaEnabled: true,
+  });
+
+  expect(profile.traaEnabled).toBe(true);
 });

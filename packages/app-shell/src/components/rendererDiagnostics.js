@@ -1,9 +1,33 @@
 import { WebGPURenderer } from "three/webgpu";
+import { HalfFloatType } from "three";
+import {
+  BROWSER_FAMILY,
+  BROWSER_PLATFORM,
+  detectBrowserFamily,
+  detectPlatform,
+} from "./browserSupport.js";
 
 export const WEBGPU_RENDERER_INIT_ERROR = "WebGPURendererInitError";
-const TRANSPARENT_CLEAR_COLOR = 0x000000;
-const TRANSPARENT_CLEAR_ALPHA = 0;
+export const WEBGPU_RENDERER_RUNTIME_LOSS_ERROR =
+  "WebGPURendererRuntimeLossError";
+const CANVAS_CLEAR_COLOR = 0x000000;
+const GPU_POWER_PREFERENCE = "high-performance";
 const MAX_RENDERER_GPU_ERRORS = 8;
+const guardedWebGpuDevices = new WeakSet();
+const TERMINAL_WEBGPU_ERROR_SCOPE_PATTERNS = [
+  /instance dropped in poperrorscope/i,
+  /device lost during poperrorscope/i,
+  /valid external instance reference no longer exists/i,
+];
+
+function shouldRequestHighPerformanceWebGpu(
+  navigatorObject = globalThis.navigator,
+) {
+  return !(
+    detectPlatform(navigatorObject) === BROWSER_PLATFORM.windows &&
+    detectBrowserFamily(navigatorObject) === BROWSER_FAMILY.chromium
+  );
+}
 
 /**
  * @typedef {NonNullable<Window["__baryonRendererInfo"]>} RendererInfoSnapshot
@@ -155,39 +179,128 @@ function appendRendererGpuError(renderer, forceWebGLFallbackTest, gpuError) {
   publishRendererInfoSnapshot(snapshot);
 }
 
-function installRendererRuntimeDiagnostics(renderer, forceWebGLFallbackTest) {
+function isTerminalWebGpuErrorScopeFailure(error) {
+  const message = normalizeRendererErrorMessage(error, "");
+  return TERMINAL_WEBGPU_ERROR_SCOPE_PATTERNS.some((pattern) =>
+    pattern.test(message),
+  );
+}
+
+function createRuntimeLossReporter(onRuntimeFailure) {
+  let reported = false;
+
+  return (gpuError, cause = null) => {
+    if (reported) {
+      return;
+    }
+    reported = true;
+
+    const runtimeError = new Error(
+      `WebGPU renderer runtime lost: ${gpuError.message}`,
+      cause ? { cause } : undefined,
+    );
+    runtimeError.name = WEBGPU_RENDERER_RUNTIME_LOSS_ERROR;
+    onRuntimeFailure?.(runtimeError, gpuError);
+  };
+}
+
+function installRendererRuntimeDiagnostics(
+  renderer,
+  forceWebGLFallbackTest,
+  reportRuntimeLoss,
+) {
   const onError = renderer.onError?.bind(renderer);
   renderer.onError = (info) => {
+    const kind =
+      info?.kind === "error-scope-rejected"
+        ? "error-scope-rejected"
+        : "uncaptured-error";
     appendRendererGpuError(
       renderer,
       forceWebGLFallbackTest,
-      buildRendererGpuError("uncaptured-error", info),
+      buildRendererGpuError(kind, info),
     );
     onError?.(info);
   };
 
   const onDeviceLost = renderer.onDeviceLost?.bind(renderer);
   renderer.onDeviceLost = (info) => {
-    appendRendererGpuError(
-      renderer,
-      forceWebGLFallbackTest,
-      buildRendererGpuError("device-lost", info),
-    );
+    const gpuError = buildRendererGpuError("device-lost", info);
+    appendRendererGpuError(renderer, forceWebGLFallbackTest, gpuError);
     onDeviceLost?.(info);
+    reportRuntimeLoss(gpuError, info?.originalEvent ?? null);
+  };
+}
+
+function installWebGpuErrorScopeGuard(renderer, reportRuntimeLoss) {
+  const backend = /** @type {any} */ (renderer.backend);
+  const device = backend?.device;
+  if (
+    backend?.isWebGLBackend === true ||
+    !device ||
+    guardedWebGpuDevices.has(device) ||
+    typeof device.popErrorScope !== "function"
+  ) {
+    return;
+  }
+  guardedWebGpuDevices.add(device);
+
+  const originalPopErrorScope = device.popErrorScope.bind(device);
+
+  device.popErrorScope = (...args) => {
+    const handleRejectedScope = (error) => {
+      const info = {
+        api: "WebGPU",
+        kind: "error-scope-rejected",
+        message: normalizeRendererErrorMessage(error),
+        originalEvent: error,
+        reason: "error-scope-rejected",
+        type: error?.name || error?.constructor?.name || "Error",
+      };
+      renderer.onError(info);
+      if (isTerminalWebGpuErrorScopeFailure(error)) {
+        reportRuntimeLoss(
+          buildRendererGpuError("error-scope-rejected", info),
+          error,
+        );
+      }
+      return null;
+    };
+
+    try {
+      return Promise.resolve(originalPopErrorScope(...args)).catch(
+        handleRejectedScope,
+      );
+    } catch (error) {
+      return Promise.resolve(handleRejectedScope(error));
+    }
   };
 }
 
 export async function createBaryonRenderer(
   glDefaults,
   forceWebGLFallbackTest,
-  { initialPixelRatio = null, xrMode = false, alpha = true } = {},
+  {
+    initialPixelRatio = null,
+    xrMode = false,
+    alpha = true,
+    halfFloatOutput = false,
+    onRuntimeFailure = null,
+  } = {},
 ) {
   const canvas = /** @type {HTMLCanvasElement} */ (glDefaults.canvas);
   const transparentCanvas = alpha !== false;
+  // Chromium ignores WebGPU's powerPreference on Windows and emits a warning
+  // for every adapter request. WebGL2 has a separate, supported context hint.
+  const requestHighPerformanceGpu =
+    forceWebGLFallbackTest || shouldRequestHighPerformanceWebGpu();
   const context = forceWebGLFallbackTest
     ? canvas.getContext("webgl2", {
         antialias: true,
         alpha: transparentCanvas,
+        // This is a browser/OS hint, not an adapter guarantee. Request the
+        // discrete GPU where one is available while preserving normal fallback.
+        powerPreference: GPU_POWER_PREFERENCE,
       })
     : undefined;
   const rendererParameters = /** @type {any} */ ({
@@ -195,10 +308,21 @@ export async function createBaryonRenderer(
     alpha: transparentCanvas,
     antialias: !!forceWebGLFallbackTest,
     forceWebGL: forceWebGLFallbackTest,
+    ...(requestHighPerformanceGpu
+      ? { powerPreference: GPU_POWER_PREFERENCE }
+      : {}),
+    ...(halfFloatOutput && !forceWebGLFallbackTest
+      ? { outputType: HalfFloatType }
+      : {}),
     ...(context ? { context } : {}),
   });
   const renderer = new WebGPURenderer(rendererParameters);
-  installRendererRuntimeDiagnostics(renderer, forceWebGLFallbackTest);
+  const reportRuntimeLoss = createRuntimeLossReporter(onRuntimeFailure);
+  installRendererRuntimeDiagnostics(
+    renderer,
+    forceWebGLFallbackTest,
+    reportRuntimeLoss,
+  );
 
   // Keep the renderer's internal size bookkeeping aligned with the canvas
   // before WebGPU allocates its MSAA/resolve attachments.
@@ -234,8 +358,9 @@ export async function createBaryonRenderer(
     throw rendererInitError;
   }
 
+  installWebGpuErrorScopeGuard(renderer, reportRuntimeLoss);
   syncInitialRendererSize(renderer, canvas, initialPixelRatio);
-  renderer.setClearColor(TRANSPARENT_CLEAR_COLOR, TRANSPARENT_CLEAR_ALPHA);
+  renderer.setClearColor(CANVAS_CLEAR_COLOR, transparentCanvas ? 0 : 1);
   setRendererInfo(renderer, forceWebGLFallbackTest, null);
   return renderer;
 }

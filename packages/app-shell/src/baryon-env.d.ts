@@ -71,7 +71,7 @@ declare global {
       isFallback: boolean;
       error: string | null;
       gpuErrors?: Array<{
-        kind: "uncaptured-error" | "device-lost";
+        kind: "uncaptured-error" | "device-lost" | "error-scope-rejected";
         api: string | null;
         type: string | null;
         message: string;

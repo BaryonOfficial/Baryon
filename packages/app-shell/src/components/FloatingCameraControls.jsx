@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { CAMERA_VIEW_PRESETS } from "./cameraPosePresets.js";
+import {
+  CAMERA_VIEW_PRESETS,
+  normalizeCameraCoordinateForDisplay,
+} from "./cameraPosePresets.js";
 import { useDraggableFloatingUi } from "./hooks/useDraggableFloatingUi.js";
 
 function CameraIcon() {
@@ -102,11 +105,14 @@ function LockIcon({ locked }) {
   );
 }
 
+// A real pointerdown→click pair arrives within a few milliseconds; anything
+// slower is a separate press and must be acted on.
+const POINTER_CLICK_DEDUPE_WINDOW_MS = 700;
+
 const SEGMENT_FONT = "var(--baryon-type-mono-family)";
 
 function formatCoordinate(value) {
-  const number = Number.isFinite(value) ? Number(value) : 0;
-  const normalized = Object.is(number, -0) ? 0 : number;
+  const normalized = normalizeCameraCoordinateForDisplay(value);
   return `${normalized >= 0 ? "+" : ""}${normalized.toFixed(2)}`;
 }
 
@@ -152,6 +158,7 @@ function areViewPositionsEqual(first, second) {
  *   lockButtonTestId?: string,
  *   zIndex?: number,
  *   position?: "absolute" | "fixed",
+ *   topInset?: string | null,
  * }} props
  */
 export default function FloatingCameraControls({
@@ -169,6 +176,7 @@ export default function FloatingCameraControls({
   lockButtonTestId = "camera-lock-button",
   zIndex = 61,
   position = "absolute",
+  topInset: topInsetOverride = null,
 }) {
   const [viewportWidth, setViewportWidth] = useState(() =>
     typeof window === "undefined" ? 1440 : window.innerWidth,
@@ -183,6 +191,24 @@ export default function FloatingCameraControls({
     handlePointerUp,
     handleDoubleClick,
   } = useDraggableFloatingUi();
+
+  // A cancelled pointer never produces a click, so the pending dedupe has
+  // nothing left to swallow. Dropping it here is what keeps a drifted touch
+  // from disarming the *next* press instead of its own.
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const releasePendingClickDedupe = () => {
+      suppressClickTargetRef.current = null;
+    };
+
+    window.addEventListener("pointercancel", releasePendingClickDedupe);
+    return () => {
+      window.removeEventListener("pointercancel", releasePendingClickDedupe);
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -235,7 +261,9 @@ export default function FloatingCameraControls({
   }, [cameraPoseRef, expanded]);
 
   const isPhoneViewport = viewportWidth <= 640;
-  const topInset = isPhoneViewport ? "0.7rem" : "0.9rem";
+  // Surfaces that already own the top-centre strip pass their own inset so the
+  // controls clear it instead of stacking on top.
+  const topInset = topInsetOverride ?? (isPhoneViewport ? "0.7rem" : "0.9rem");
   const resolvedPosition = isPhoneViewport ? "fixed" : position;
 
   const presets = [
@@ -267,13 +295,27 @@ export default function FloatingCameraControls({
       return;
     }
 
-    suppressClickTargetRef.current = event.currentTarget;
+    suppressClickTargetRef.current = {
+      target: event.currentTarget,
+      at: Date.now(),
+    };
     action();
   };
 
   const activateCameraButtonOnClick = (event, action) => {
-    if (suppressClickTargetRef.current === event.currentTarget) {
-      suppressClickTargetRef.current = null;
+    const armed = suppressClickTargetRef.current;
+    // The pointerdown that armed this is the one whose click we drop. Touch
+    // platforms routinely never deliver that click — the element re-renders
+    // under the finger, or the touch drifts and cancels — and an unbounded
+    // latch would then swallow the next real press instead, leaving the button
+    // dead until some other control cleared it.
+    const isSameInteraction =
+      armed?.target === event.currentTarget &&
+      Date.now() - armed.at <= POINTER_CLICK_DEDUPE_WINDOW_MS;
+
+    suppressClickTargetRef.current = null;
+
+    if (isSameInteraction) {
       return;
     }
 

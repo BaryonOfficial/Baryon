@@ -4,12 +4,26 @@ import {
   createAudioFeatureRuntime,
   DEFAULT_AUDIO_FEATURE_RUNTIME_SETTINGS,
 } from "./audioFeatureEngine.js";
-import { AUDIO_FEATURE_PROTOCOL_VERSION } from "./audioFeaturePackets.js";
+import { AUDIO_FEATURE_PROTOCOL_VERSION } from "../../contracts/audioFeatureProtocol.js";
 import {
   createFeatureWorkerState,
   processFeatureWorkerFrame,
 } from "./audioFeatureEngine.worker.js";
-import { AUDIO_SLOT_CAPACITY } from "../../defaults.js";
+import {
+  AUDIO_SLOT_CAPACITY,
+  CAVITY_ACOUSTIC_DEFAULTS,
+} from "../../defaults.js";
+import { deriveCavityModalFieldCacheBandwidth } from "../../core/raymarch/fieldCachePassband.js";
+import {
+  AUDIO_SOURCE_KINDS,
+  AUDIO_SOURCE_PHASES,
+} from "../../core/audio/audioSourceSession.js";
+
+const DEFAULT_MODAL_OBSERVATION_BAND = deriveCavityModalFieldCacheBandwidth({
+  sideLengthMeters: CAVITY_ACOUSTIC_DEFAULTS.sideLengthMeters,
+  soundSpeedMetersPerSecond: CAVITY_ACOUSTIC_DEFAULTS.soundSpeedMetersPerSecond,
+  boundaryMode: "neumann",
+});
 
 class FakeWorker {
   constructor() {
@@ -46,10 +60,88 @@ class FakeWorker {
   }
 }
 
+class LoopbackFeatureWorker extends FakeWorker {
+  constructor() {
+    super();
+    this.messageCursor = 0;
+    this.engineState = createFeatureWorkerState();
+  }
+
+  processPendingMessages() {
+    while (this.messageCursor < this.messages.length) {
+      const payload = this.messages[this.messageCursor]?.message ?? {};
+      this.messageCursor += 1;
+      if (payload.type === "init") {
+        this.engineState = createFeatureWorkerState();
+        this.engineState.settings = payload.settings;
+        this.engineState.sourceGeneration = payload.sourceGeneration;
+        this.engineState.workerGeneration = payload.workerGeneration;
+        this.engineState.configuration = payload.configuration ?? {};
+        continue;
+      }
+      if (payload.type === "configure") {
+        this.engineState.configuration = payload.configuration ?? {};
+        continue;
+      }
+      if (payload.type !== "analysis-input" || !payload.frame) {
+        continue;
+      }
+
+      const { topologyPacket, drivePacket } = processFeatureWorkerFrame(
+        this.engineState,
+        payload.frame,
+      );
+      if (topologyPacket) {
+        this.emit("message", {
+          type: "topology-packet",
+          packet: structuredClone(topologyPacket),
+        });
+      }
+      this.emit("message", {
+        type: "drive-packet",
+        packet: structuredClone(drivePacket),
+      });
+      this.emit("message", {
+        type: "analysis-input-ack",
+        sourceGeneration: this.engineState.sourceGeneration,
+        workerGeneration: this.engineState.workerGeneration,
+        frameId: payload.frame.frameId,
+      });
+    }
+  }
+}
+
+function createFileSourceSession(overrides = {}) {
+  return {
+    kind: AUDIO_SOURCE_KINDS.file,
+    phase: AUDIO_SOURCE_PHASES.active,
+    sessionId: 1,
+    timelineRevision: 0,
+    terminalReason: null,
+    systemCapture: null,
+    ...overrides,
+  };
+}
+
+function createSystemSourceSession(overrides = {}) {
+  return {
+    kind: AUDIO_SOURCE_KINDS.system,
+    phase: AUDIO_SOURCE_PHASES.active,
+    sessionId: 2,
+    timelineRevision: 0,
+    terminalReason: null,
+    systemCapture: {
+      captureType: "loopback",
+      deviceId: "system-default",
+    },
+    ...overrides,
+  };
+}
+
 function createStatus(overrides = {}) {
   return {
-    audioInputMode: "file",
     analysisSource: "file",
+    sourceSession: createFileSourceSession(),
     pitchSourceMode: "spectral",
     fftSize: 8192,
     fastFftSize: 2048,
@@ -60,7 +152,6 @@ function createStatus(overrides = {}) {
     isPlaybackPaused: false,
     isLiveInputActive: false,
     hasAnalysisSource: true,
-    playbackSourceSessionId: 1,
     playbackSessionId: 1,
     lastPlaybackEndReason: null,
     ...overrides,
@@ -109,6 +200,9 @@ function createRuntimeHarness(statusOverrides = {}, dependencyOverrides = {}) {
   const workers = [];
   const audioSession = {
     getStatus: vi.fn(() => status),
+    getTransportState: vi.fn(
+      () => dependencyOverrides.getTransportState?.({ currentTimeMs }) ?? null,
+    ),
     readFeatureAnalysisCapture: vi.fn(({ includeStructural }) => {
       captures.push(includeStructural);
       if (dependencyOverrides.readFeatureAnalysisCapture) {
@@ -195,10 +289,8 @@ function createTopologyPacket(runtimeStatus, overrides = {}) {
     modalRoleMetadata: new Uint8Array([1]),
     committedModeRoleMetadata: new Uint8Array([1]),
     fastProbeModeIndices: new Uint16Array([0]),
-    modalFieldColorSlots: new Float32Array(4),
-    modalFieldSpectralLaneA: new Float32Array(4),
-    modalFieldSpectralLaneB: new Float32Array(4),
-    modalFieldSpectralMeta: new Float32Array(4),
+    modalFieldSpectralMomentSlots: new Float32Array([1, 0, 1, 0]),
+    modalFieldSpectralSeedDirection: new Float32Array([1, 0]),
     modalFieldMetadataSlots: new Float32Array(4),
     ...overrides,
   };
@@ -219,7 +311,7 @@ function createDrivePacket(runtimeStatus, overrides = {}) {
     phaseSlots: new Float32Array(4),
     bandEnergies: new Float32Array(4),
     spectralBandEnergies: new Float32Array(4),
-    renderState: {},
+    renderState: { renderAuthority: true },
     ...overrides,
   };
 }
@@ -255,11 +347,95 @@ describe("audio feature runtime", () => {
     expect(harness.runtime.start()).toBe(false);
   });
 
+  it("prepares a decoded file's structural frame before playback starts", () => {
+    const harness = createRuntimeHarness(
+      {
+        analysisSource: "idle",
+        sourceSession: createFileSourceSession({
+          phase: AUDIO_SOURCE_PHASES.ready,
+        }),
+        isPlaying: false,
+        hasAnalysisSource: false,
+        hasPlaybackAnalysisSource: false,
+        hasPreparedFileAnalysisSource: true,
+        playbackSessionId: null,
+      },
+      {
+        createWorker: () => new LoopbackFeatureWorker(),
+        readFeatureAnalysisCapture: ({ includeStructural, currentTimeMs }) => ({
+          captureTimestampMs: currentTimeMs,
+          fast: {
+            ...createSilentAnalysisSnapshot(2048),
+            avgAmplitude: 19,
+            rms: 0.00047,
+          },
+          structural: includeStructural ? createAnalysisSnapshot(8192) : null,
+        }),
+      },
+    );
+
+    expect(harness.runtime.start()).toBe(true);
+
+    const [input] = findMessages(harness.workers[0], "analysis-input");
+    expect(input.frame.structuralRequested).toBe(true);
+    expect(input.frame.structuralPayload).not.toBeNull();
+    expect(input.frame.status.observationTimeSeconds).toBe(0);
+    expect(input.frame.status.observationAdvancing).toBe(false);
+
+    harness.workers[0].processPendingMessages();
+    const model = harness.runtime.readLatestFeatureModel();
+    expect(model).not.toBeNull();
+    expect(model.topology.activeModeCount).toBeGreaterThan(0);
+    expect(
+      Array.from(model.drive.modalCoefficients).some(
+        (coefficient) => Math.abs(coefficient) > 0,
+      ),
+    ).toBe(true);
+    expect(model.drive.renderState.renderAuthority).toBe(false);
+    expect(model.drive.renderState.sourceEvidence).toMatchObject({
+      sourceKind: "file",
+      sourceBoundaryState: "prepared",
+      currentSourceEvidence: false,
+      transport: {
+        playing: false,
+        preparationOnly: true,
+      },
+    });
+
+    expect(harness.runNextCapture()).toBe(true);
+    expect(findMessages(harness.workers[0], "analysis-input")).toHaveLength(1);
+    expect(harness.runtime.getStatus().reason).toBe("prepared-file-hold");
+
+    harness.setTime(1_000);
+    harness.setStatus({
+      analysisSource: "file",
+      sourceSession: createFileSourceSession({
+        phase: AUDIO_SOURCE_PHASES.active,
+      }),
+      isPlaying: true,
+      hasAnalysisSource: true,
+      hasPlaybackAnalysisSource: true,
+      playbackSessionId: 1,
+    });
+    expect(harness.runNextCapture()).toBe(true);
+    expect(harness.workers).toHaveLength(1);
+    expect(findMessages(harness.workers[0], "analysis-input")).toHaveLength(2);
+    const playbackInput = findMessages(
+      harness.workers[0],
+      "analysis-input",
+    ).at(-1);
+    expect(playbackInput.frame.structuralRequested).toBe(false);
+    expect(playbackInput.frame.structuralPayload).toBeNull();
+  });
+
   it("requests a worker-owned test-tone topology when no audio capture exists", () => {
     const harness = createRuntimeHarness(
       {
-        audioInputMode: "idle",
         analysisSource: "idle",
+        sourceSession: createFileSourceSession({
+          phase: AUDIO_SOURCE_PHASES.empty,
+          sessionId: 0,
+        }),
         isAudioLoaded: false,
         isPlaying: false,
         hasAnalysisSource: false,
@@ -284,6 +460,10 @@ describe("audio feature runtime", () => {
       fastPayload: null,
       structuralPayload: null,
       structuralRequested: true,
+      status: {
+        observationAdvancing: true,
+        observationPaused: false,
+      },
     });
 
     const state = createFeatureWorkerState();
@@ -298,6 +478,40 @@ describe("audio feature runtime", () => {
       renderAuthority: true,
     });
     expect(state.latestAnalysisResult.preparedInputs.fftSize).toBe(2048);
+  });
+
+  it("advances injected tone time independently of a stopped loaded file", () => {
+    const harness = createRuntimeHarness(
+      { isPlaying: false, isAudioLoaded: true },
+      { getTransportState: () => ({ currentTimeSeconds: 12 }) },
+    );
+    harness.runtime.configure({
+      auditSettings: {
+        injectTestTone: true,
+        testToneHz: 528,
+        testToneAmplitude: 0.8,
+      },
+    });
+    harness.runtime.start();
+
+    const worker = harness.workers[0];
+    const firstInput = findMessages(worker, "analysis-input")[0].frame;
+    worker.emit("message", {
+      type: "analysis-input-ack",
+      sourceGeneration: firstInput.sourceGeneration,
+      workerGeneration: firstInput.workerGeneration,
+      frameId: firstInput.frameId,
+    });
+    harness.setTime(1000);
+    harness.runNextCapture();
+
+    expect(
+      findMessages(worker, "analysis-input").at(-1).frame.status,
+    ).toMatchObject({
+      observationTimeSeconds: 1,
+      observationAdvancing: true,
+      observationPaused: false,
+    });
   });
 
   it("keeps one input in flight and one newest coalesced pending input", () => {
@@ -392,7 +606,10 @@ describe("audio feature runtime", () => {
     const harness = createRuntimeHarness();
     harness.runtime.start();
     const initialGeneration = harness.runtime.getStatus().sourceGeneration;
-    harness.setStatus({ playbackSourceSessionId: 2, playbackSessionId: 2 });
+    harness.setStatus({
+      sourceSession: createFileSourceSession({ sessionId: 2 }),
+      playbackSessionId: 2,
+    });
     harness.setTime(8);
     harness.runNextCapture();
 
@@ -422,81 +639,33 @@ describe("audio feature runtime", () => {
     });
   });
 
-  it("keeps structural bootstrap pending until file playback analysis activates", () => {
-    let analysisReady = false;
-    const harness = createRuntimeHarness(
-      {
-        analysisSource: "idle",
-        isPlaying: false,
-        hasAnalysisSource: false,
-        hasPlaybackAnalysisSource: false,
-        playbackSessionId: null,
-      },
-      {
-        readFeatureAnalysisCapture: ({ includeStructural, currentTimeMs }) =>
-          analysisReady
-            ? {
-                captureTimestampMs: currentTimeMs,
-                fast: createAnalysisSnapshot(2048),
-                structural: includeStructural
-                  ? createAnalysisSnapshot(8192)
-                  : null,
-              }
-            : null,
-      },
-    );
+  it("keeps the prepared file model available when playback activates", () => {
+    const harness = createRuntimeHarness({
+      analysisSource: "idle",
+      isPlaying: false,
+      hasAnalysisSource: false,
+      hasPlaybackAnalysisSource: false,
+      hasPreparedFileAnalysisSource: true,
+      playbackSessionId: null,
+    });
 
     harness.runtime.start();
-    const worker = harness.workers[0];
-    const acknowledgeLatestInput = () => {
-      const frame = findMessages(worker, "analysis-input").at(-1).frame;
-      worker.emit("message", {
-        type: "analysis-input-ack",
-        sourceGeneration: frame.sourceGeneration,
-        workerGeneration: frame.workerGeneration,
-        frameId: frame.frameId,
-      });
-    };
+    publishModel(harness);
+    expect(harness.runtime.readLatestFeatureModel()).not.toBeNull();
 
-    expect(harness.captures).toEqual([true]);
-    acknowledgeLatestInput();
-
-    harness.setTime(8);
-    harness.runNextCapture();
-    expect(harness.captures.at(-1)).toBe(false);
-    acknowledgeLatestInput();
-
-    analysisReady = true;
     harness.setStatus({
       analysisSource: "file",
       isPlaying: true,
       hasAnalysisSource: true,
-      hasPlaybackAnalysisSource: true,
       playbackSessionId: 1,
     });
-    harness.setTime(9);
+    harness.setTime(8);
     harness.runNextCapture();
 
-    const activeInput = findMessages(worker, "analysis-input").at(-1).frame;
-    expect(activeInput.structuralPayload).not.toBeNull();
-    expect(harness.runtime.getStatus().playbackAnalysisPending).toBe(true);
-
-    publishModel(harness, {
-      drive: {
-        captureTimestampMs: activeInput.captureTimestampMs - 1,
-      },
-    });
-    expect(harness.runtime.getStatus().playbackAnalysisPending).toBe(true);
-
-    worker.emit("message", {
-      type: "drive-packet",
-      packet: createDrivePacket(harness.runtime.getStatus(), {
-        frameId: 2,
-        captureTimestampMs: activeInput.captureTimestampMs,
-      }),
-    });
-
-    expect(harness.runtime.getStatus().playbackAnalysisPending).toBe(false);
+    expect(harness.runtime.readLatestFeatureModel()).not.toBeNull();
+    expect(harness.runtime.getStatus()).not.toHaveProperty(
+      "playbackAnalysisPending",
+    );
   });
 
   it("restarts a stalled worker at most once per source generation", () => {
@@ -515,14 +684,96 @@ describe("audio feature runtime", () => {
     expect(harness.workers).toHaveLength(2);
   });
 
-  it("fails closed after 96 ms only for an advancing active local source", () => {
+  it("retains the last valid model while the same file playback remains active", () => {
     const harness = createRuntimeHarness();
+    harness.runtime.start();
+    publishModel(harness);
+    const published = harness.runtime.readLatestFeatureModel();
+    harness.setTime(97);
+
+    expect(harness.runtime.readLatestFeatureModel()).toBe(published);
+    expect(harness.runtime.getStatus()).toMatchObject({
+      latestDriveAgeMs: 97,
+      latestDriveStale: true,
+      renderAuthorityRevoked: false,
+    });
+  });
+
+  it("retains the last valid file model across an internal worker restart", () => {
+    const harness = createRuntimeHarness();
+    harness.runtime.start();
+    publishModel(harness);
+    const published = harness.runtime.readLatestFeatureModel();
+    const initialSourceGeneration =
+      harness.runtime.getStatus().sourceGeneration;
+
+    harness.setTime(288);
+    harness.runNextCapture();
+
+    expect(harness.runtime.getStatus()).toMatchObject({
+      sourceGeneration: initialSourceGeneration,
+      workerRestartCount: 1,
+      renderAuthorityRevoked: false,
+    });
+    expect(harness.runtime.readLatestFeatureModel()).toBe(published);
+  });
+
+  it("invalidates a retained file model when the source session changes", () => {
+    const harness = createRuntimeHarness();
+    harness.runtime.start();
+    publishModel(harness);
+
+    harness.setStatus({
+      sourceSession: createFileSourceSession({ sessionId: 2 }),
+      playbackSessionId: 2,
+    });
+    harness.setTime(8);
+    harness.runNextCapture();
+
+    expect(harness.runtime.readLatestFeatureModel()).toBeNull();
+  });
+
+  it("fails closed after 96 ms for an advancing live input", () => {
+    const harness = createRuntimeHarness({
+      analysisSource: "live",
+      sourceSession: createSystemSourceSession(),
+      isAudioLoaded: false,
+      isPlaying: false,
+      isLiveInputActive: true,
+      playbackSessionId: null,
+    });
     harness.runtime.start();
     publishModel(harness);
     harness.setTime(97);
 
     expect(harness.runtime.readLatestFeatureModel()).toBeNull();
-    expect(harness.runtime.getStatus().renderAuthorityRevoked).toBe(true);
+    expect(harness.runtime.getStatus()).toMatchObject({
+      latestDriveAgeMs: 97,
+      latestDriveStale: true,
+      renderAuthorityRevoked: true,
+    });
+  });
+
+  it("does not treat a cached File as advancing while System is idle", () => {
+    const harness = createRuntimeHarness({
+      analysisSource: "idle",
+      sourceSession: createSystemSourceSession({
+        phase: AUDIO_SOURCE_PHASES.ready,
+        systemCapture: null,
+      }),
+      isPlaying: false,
+      isLiveInputActive: false,
+      hasAnalysisSource: false,
+      hasPreparedFileAnalysisSource: true,
+      playbackSessionId: null,
+    });
+    harness.runtime.start();
+    expect(harness.workers).toHaveLength(1);
+    harness.setTime(288);
+    harness.runNextCapture();
+
+    expect(harness.workers).toHaveLength(1);
+    expect(harness.runtime.getStatus().renderAuthorityRevoked).toBe(false);
   });
 
   it("exempts explicit paused-file hold from stale revocation", () => {
@@ -532,13 +783,61 @@ describe("audio feature runtime", () => {
     harness.setStatus({
       isPlaying: false,
       isPlaybackPaused: true,
-      audioInputMode: "idle",
+      sourceSession: createFileSourceSession({
+        phase: AUDIO_SOURCE_PHASES.paused,
+      }),
     });
     harness.setTime(500);
     harness.runNextCapture();
 
     expect(harness.runtime.readLatestFeatureModel()).not.toBeNull();
     expect(harness.runtime.getStatus().renderAuthorityRevoked).toBe(false);
+  });
+
+  it("rebuilds analysis and captures the decoded target once after a paused seek", () => {
+    const harness = createRuntimeHarness();
+    harness.runtime.start();
+    const initialGeneration = harness.runtime.getStatus().sourceGeneration;
+
+    harness.setStatus({
+      isPlaying: false,
+      isPlaybackPaused: true,
+      hasPreparedFileAnalysisSource: true,
+      sourceSession: createFileSourceSession({
+        phase: AUDIO_SOURCE_PHASES.paused,
+        timelineRevision: 1,
+      }),
+    });
+    harness.setTime(8);
+    harness.runNextCapture();
+    expect(harness.runtime.getStatus().sourceGeneration).toBe(
+      initialGeneration + 1,
+    );
+
+    harness.setTime(16);
+    harness.runNextCapture();
+    const inputs = harness.workers.flatMap((worker) =>
+      findMessages(worker, "analysis-input"),
+    );
+    expect(inputs).toHaveLength(2);
+    expect(inputs.at(-1).frame.status).toMatchObject({
+      sessionKey: "file:1:timeline:1",
+      observationAdvancing: false,
+      observationPaused: true,
+      sourceSession: {
+        kind: AUDIO_SOURCE_KINDS.file,
+        timelineRevision: 1,
+      },
+    });
+    expect(
+      harness.audioSession.readFeatureAnalysisCapture,
+    ).toHaveBeenCalledTimes(2);
+
+    harness.setTime(24);
+    harness.runNextCapture();
+    expect(
+      harness.audioSession.readFeatureAnalysisCapture,
+    ).toHaveBeenCalledTimes(2);
   });
 
   it.each(["premature", "interrupted"])(
@@ -549,7 +848,10 @@ describe("audio feature runtime", () => {
       harness.setStatus({
         isPlaying: false,
         isPlaybackPaused: false,
-        audioInputMode: "idle",
+        sourceSession: createFileSourceSession({
+          phase: AUDIO_SOURCE_PHASES.ended,
+          terminalReason: lastPlaybackEndReason,
+        }),
         lastPlaybackEndReason,
       });
       harness.setTime(500);
@@ -560,12 +862,325 @@ describe("audio feature runtime", () => {
     },
   );
 
+  it("advances deterministic zero-input frames through natural modal ring-down", () => {
+    const harness = createRuntimeHarness();
+    harness.runtime.start();
+    publishModel(harness, {
+      drive: {
+        renderState: {
+          fieldState: "active",
+          renderAuthority: true,
+        },
+      },
+    });
+    const worker = harness.workers[0];
+    const firstInput = findMessages(worker, "analysis-input")[0].frame;
+
+    harness.setStatus({
+      isPlaying: false,
+      isPlaybackPaused: false,
+      analysisSource: "idle",
+      hasAnalysisSource: false,
+      lastPlaybackEndReason: "natural",
+      lastPlaybackDiagnostics: { playbackSessionId: 1 },
+      sourceSession: createFileSourceSession({
+        phase: AUDIO_SOURCE_PHASES.ended,
+        terminalReason: "natural",
+      }),
+    });
+    harness.setTime(8);
+    harness.runNextCapture();
+
+    expect(
+      harness.audioSession.readFeatureAnalysisCapture,
+    ).toHaveBeenCalledTimes(1);
+    expect(harness.runtime.getStatus()).toMatchObject({
+      naturalRingdownActive: true,
+      naturalRingdownSessionId: 1,
+    });
+
+    worker.emit("message", {
+      type: "analysis-input-ack",
+      sourceGeneration: firstInput.sourceGeneration,
+      workerGeneration: firstInput.workerGeneration,
+      frameId: firstInput.frameId,
+    });
+    const ringdownInput = findMessages(worker, "analysis-input")[1].frame;
+    expect(ringdownInput).toMatchObject({
+      captureTimestampMs: 8,
+      fastPayload: {
+        sourceMode: "file",
+        avgAmplitude: 0,
+        rms: 0,
+        spectralCentroid: 0,
+        spectralFlux: 0,
+      },
+      structuralPayload: null,
+      structuralRequested: false,
+      status: {
+        naturalRingdownActive: true,
+        observationTimeSeconds: 0.008,
+        observationAdvancing: true,
+        observationPaused: false,
+        sourceSession: {
+          kind: AUDIO_SOURCE_KINDS.file,
+          phase: AUDIO_SOURCE_PHASES.ended,
+          sessionId: 1,
+        },
+      },
+    });
+    expect(Array.from(ringdownInput.fastPayload.timeData)).toEqual(
+      Array.from(new Float32Array(2048)),
+    );
+    expect(Array.from(ringdownInput.fastPayload.fftLinearAmplitudes)).toEqual(
+      Array.from(new Float32Array(1024)),
+    );
+
+    worker.emit("message", {
+      type: "drive-packet",
+      packet: createDrivePacket(harness.runtime.getStatus(), {
+        frameId: ringdownInput.frameId,
+        captureTimestampMs: ringdownInput.captureTimestampMs,
+        renderState: {
+          fieldState: "idle",
+          renderAuthority: false,
+        },
+      }),
+    });
+    expect(harness.runtime.getStatus()).toMatchObject({
+      naturalRingdownActive: false,
+      naturalRingdownSessionId: null,
+      reason: "natural-ringdown-complete",
+    });
+  });
+
+  it("clears an already-idle model when natural playback completes", () => {
+    const harness = createRuntimeHarness();
+    harness.runtime.start();
+    const initialGeneration = harness.runtime.getStatus().sourceGeneration;
+    publishModel(harness, {
+      drive: {
+        renderState: {
+          fieldState: "idle",
+          renderAuthority: false,
+        },
+      },
+    });
+
+    harness.setStatus({
+      isPlaying: false,
+      isPlaybackPaused: false,
+      analysisSource: "idle",
+      hasAnalysisSource: false,
+      lastPlaybackEndReason: "natural",
+      lastPlaybackDiagnostics: { playbackSessionId: 1 },
+      sourceSession: createFileSourceSession({
+        phase: AUDIO_SOURCE_PHASES.ended,
+        terminalReason: "natural",
+      }),
+    });
+    harness.setTime(8);
+    harness.runNextCapture();
+
+    expect(harness.runtime.readLatestFeatureModel()).toBeNull();
+    expect(harness.runtime.getStatus()).toMatchObject({
+      sourceGeneration: initialGeneration + 1,
+      naturalRingdownActive: false,
+      naturalRingdownSessionId: null,
+      renderAuthorityRevoked: true,
+      reason: "natural-ringdown-empty",
+    });
+  });
+
+  it("releases render authority after the real worker completes natural modal ring-down", () => {
+    const worker = new LoopbackFeatureWorker();
+    const harness = createRuntimeHarness({}, { createWorker: () => worker });
+    harness.runtime.configure({ radius: 1, includeSpectralLight: true });
+    const initialSourceGeneration =
+      harness.runtime.getStatus().sourceGeneration;
+    harness.runtime.start();
+
+    for (let frameIndex = 0; frameIndex < 12; frameIndex += 1) {
+      worker.processPendingMessages();
+      harness.setTime((frameIndex + 1) * 8);
+      harness.runNextCapture();
+    }
+    worker.processPendingMessages();
+    expect(
+      harness.runtime.readLatestFeatureModel()?.drive?.renderState
+        ?.renderAuthority,
+    ).toBe(true);
+
+    harness.setStatus({
+      isPlaying: false,
+      isPlaybackPaused: false,
+      analysisSource: "idle",
+      hasAnalysisSource: false,
+      lastPlaybackEndReason: "natural",
+      lastPlaybackDiagnostics: { playbackSessionId: 1 },
+      sourceSession: createFileSourceSession({
+        phase: AUDIO_SOURCE_PHASES.ended,
+        terminalReason: "natural",
+      }),
+    });
+
+    let completionFrameCount = null;
+    for (let frameIndex = 0; frameIndex < 120; frameIndex += 1) {
+      harness.setTime((13 + frameIndex) * 8);
+      harness.runNextCapture();
+      worker.processPendingMessages();
+      if (!harness.runtime.getStatus().naturalRingdownActive) {
+        completionFrameCount = frameIndex + 1;
+        break;
+      }
+    }
+
+    expect(completionFrameCount).not.toBeNull();
+    expect(harness.runtime.readLatestFeatureModel()).toBeNull();
+    expect(harness.runtime.getStatus()).toMatchObject({
+      sourceGeneration: initialSourceGeneration + 1,
+      naturalRingdownActive: false,
+      naturalRingdownSessionId: null,
+      renderAuthorityRevoked: true,
+      reason: "natural-ringdown-complete",
+    });
+
+    const completedSourceGeneration =
+      harness.runtime.getStatus().sourceGeneration;
+    for (let frameIndex = 0; frameIndex < 3; frameIndex += 1) {
+      harness.setTime((133 + frameIndex) * 8);
+      harness.runNextCapture();
+      worker.processPendingMessages();
+    }
+    expect(harness.runtime.readLatestFeatureModel()).toBeNull();
+    expect(harness.runtime.getStatus()).toMatchObject({
+      sourceGeneration: completedSourceGeneration,
+      naturalRingdownActive: false,
+      renderAuthorityRevoked: true,
+      reason: "natural-ringdown-complete",
+    });
+  });
+
+  it("recovers a stalled worker while natural modal ring-down advances", () => {
+    const harness = createRuntimeHarness();
+    harness.runtime.start();
+    publishModel(harness, {
+      drive: {
+        renderState: {
+          fieldState: "active",
+          renderAuthority: true,
+        },
+      },
+    });
+
+    harness.setStatus({
+      isPlaying: false,
+      isPlaybackPaused: false,
+      analysisSource: "idle",
+      hasAnalysisSource: false,
+      lastPlaybackEndReason: "natural",
+      lastPlaybackDiagnostics: { playbackSessionId: 1 },
+      sourceSession: createFileSourceSession({
+        phase: AUDIO_SOURCE_PHASES.ended,
+        terminalReason: "natural",
+      }),
+    });
+    harness.setTime(8);
+    harness.runNextCapture();
+    expect(harness.runtime.getStatus().naturalRingdownActive).toBe(true);
+
+    harness.setTime(289);
+    harness.runNextCapture();
+
+    expect(harness.workers).toHaveLength(2);
+    expect(harness.workers[0].terminated).toBe(true);
+    expect(harness.runtime.getStatus()).toMatchObject({
+      naturalRingdownActive: true,
+      naturalRingdownSessionId: 1,
+      workerRestartCount: 1,
+      configurationReplayCount: 1,
+      reason: "worker-advancement-timeout",
+    });
+  });
+
+  it("does not start modal ring-down after an explicit stop", () => {
+    const harness = createRuntimeHarness();
+    harness.runtime.start();
+    const initialGeneration = harness.runtime.getStatus().sourceGeneration;
+    publishModel(harness, {
+      drive: {
+        renderState: {
+          fieldState: "active",
+          renderAuthority: true,
+        },
+      },
+    });
+
+    harness.setStatus({
+      isPlaying: false,
+      isPlaybackPaused: false,
+      analysisSource: "idle",
+      hasAnalysisSource: false,
+      lastPlaybackEndReason: "stopped",
+      lastPlaybackDiagnostics: { playbackSessionId: 1 },
+      sourceSession: createFileSourceSession({
+        phase: AUDIO_SOURCE_PHASES.stopped,
+        terminalReason: "stopped",
+      }),
+    });
+    harness.setTime(8);
+    harness.runNextCapture();
+
+    expect(
+      harness.audioSession.readFeatureAnalysisCapture,
+    ).toHaveBeenCalledTimes(1);
+    expect(harness.runtime.getStatus()).toMatchObject({
+      sourceGeneration: initialGeneration + 1,
+      naturalRingdownActive: false,
+      naturalRingdownSessionId: null,
+      reason: "explicit-stop-hold",
+    });
+    expect(harness.runtime.readLatestFeatureModel()).toBeNull();
+  });
+
+  it.each(["stopped", "natural"])(
+    "lets active system input supersede a stale %s file marker",
+    (lastPlaybackEndReason) => {
+      const harness = createRuntimeHarness({
+        analysisSource: "live",
+        sourceSession: createSystemSourceSession(),
+        isPlaying: false,
+        isPlaybackPaused: false,
+        isLiveInputActive: true,
+        hasAnalysisSource: true,
+        lastPlaybackEndReason,
+        lastPlaybackDiagnostics: { playbackSessionId: 1 },
+      });
+
+      harness.runtime.start();
+
+      expect(
+        harness.audioSession.readFeatureAnalysisCapture,
+      ).toHaveBeenCalledTimes(1);
+      expect(findMessages(harness.workers[0], "analysis-input")).toHaveLength(
+        1,
+      );
+      expect(harness.runtime.getStatus()).toMatchObject({
+        naturalRingdownActive: false,
+        reason: "input-sent",
+      });
+    },
+  );
+
   it("rejects delayed worker status from a stale generation", () => {
     const harness = createRuntimeHarness();
     harness.runtime.start();
     const worker = harness.workers[0];
     const staleGeneration = harness.runtime.getStatus();
-    harness.setStatus({ playbackSourceSessionId: 2, playbackSessionId: 2 });
+    harness.setStatus({
+      sourceSession: createFileSourceSession({ sessionId: 2 }),
+      playbackSessionId: 2,
+    });
     harness.setTime(8);
     harness.runNextCapture();
 
@@ -667,7 +1282,10 @@ describe("audio feature runtime", () => {
       .mockReturnValueOnce(recoveredWorker);
     const harness = createRuntimeHarness({}, { createWorker });
     harness.runtime.start();
-    harness.setStatus({ playbackSourceSessionId: 2, playbackSessionId: 2 });
+    harness.setStatus({
+      sourceSession: createFileSourceSession({ sessionId: 2 }),
+      playbackSessionId: 2,
+    });
 
     harness.setTime(8);
     harness.runNextCapture();
@@ -711,7 +1329,10 @@ describe("audio feature runtime", () => {
     harness.runtime.setAuthorityRole(
       AUDIO_FEATURE_AUTHORITY_ROLES.externalConsumer,
     );
-    harness.setStatus({ playbackSourceSessionId: 2, playbackSessionId: 2 });
+    harness.setStatus({
+      sourceSession: createFileSourceSession({ sessionId: 2 }),
+      playbackSessionId: 2,
+    });
     const beforeLocal = harness.runtime.getStatus();
 
     harness.runtime.setAuthorityRole(
@@ -800,7 +1421,14 @@ describe("audio feature runtime", () => {
   });
 
   it("does not clear stale authority until a future drive has matching topology", () => {
-    const harness = createRuntimeHarness();
+    const harness = createRuntimeHarness({
+      analysisSource: "live",
+      sourceSession: createSystemSourceSession(),
+      isAudioLoaded: false,
+      isPlaying: false,
+      isLiveInputActive: true,
+      playbackSessionId: null,
+    });
     harness.runtime.start();
     publishModel(harness);
     harness.setTime(97);
@@ -834,6 +1462,131 @@ describe("audio feature runtime", () => {
 });
 
 describe("feature worker packets", () => {
+  it("projects retained modal energy during natural zero-force ring-down", () => {
+    const state = createFeatureWorkerState();
+    state.sourceGeneration = 1;
+    state.workerGeneration = 1;
+    state.configuration = { radius: 1, includeSpectralLight: true };
+    const activeStatus = createStatus({ sessionKey: "file:1" });
+    let active = null;
+
+    for (let frameId = 1; frameId <= 12; frameId += 1) {
+      active = processFeatureWorkerFrame(state, {
+        frameId,
+        sourceGeneration: 1,
+        workerGeneration: 1,
+        captureTimestampMs: frameId * 8,
+        fastPayload: createAnalysisSnapshot(2048, 220),
+        structuralPayload:
+          frameId === 1 ? createAnalysisSnapshot(8192, 220) : null,
+        structuralRequested: frameId === 1,
+        status: activeStatus,
+      });
+    }
+
+    expect(active.drivePacket.renderState.renderAuthority).toBe(true);
+    const activeStoredEnergy =
+      active.drivePacket.renderState.energyLedger.storedModalEnergy;
+    expect(activeStoredEnergy).toBeGreaterThan(0);
+
+    const ringdown = processFeatureWorkerFrame(state, {
+      frameId: 13,
+      sourceGeneration: 1,
+      workerGeneration: 1,
+      captureTimestampMs: 13 * 8,
+      fastPayload: {
+        sourceMode: "file",
+        avgAmplitude: 0,
+        rms: 0,
+        spectralCentroid: 0,
+        spectralFlux: 0,
+        fftLinearAmplitudes: new Float32Array(1024),
+        timeData: new Float32Array(2048),
+      },
+      structuralPayload: null,
+      structuralRequested: false,
+      status: createStatus({
+        sessionKey: "file:1",
+        isPlaying: false,
+        naturalRingdownActive: true,
+        lastPlaybackEndReason: "natural",
+        lastPlaybackDiagnostics: { playbackSessionId: 1 },
+      }),
+    });
+
+    expect(ringdown.drivePacket.renderState).toMatchObject({
+      renderAuthority: true,
+      sourceEvidence: {
+        sourceBoundaryState: "zero",
+      },
+      energyLedger: {
+        sourceBoundaryState: "zero",
+        renderBoundaryState: "zero",
+      },
+    });
+    expect(
+      ringdown.drivePacket.renderState.energyLedger.storedModalEnergy,
+    ).toBeGreaterThan(0);
+    expect(
+      ringdown.drivePacket.renderState.energyLedger.storedModalEnergy,
+    ).toBeLessThan(activeStoredEnergy);
+    expect(
+      ringdown.drivePacket.renderState.energyLedger.projectedRenderEnergy,
+    ).toBeGreaterThan(0);
+    expect(
+      Array.from(ringdown.drivePacket.modalCoefficients).some(Boolean),
+    ).toBe(true);
+  });
+
+  it("does not feed published frame scalars back into current semantics", () => {
+    const runSequence = (tamperPublishedFrame) => {
+      const state = createFeatureWorkerState();
+      state.sourceGeneration = 1;
+      state.workerGeneration = 1;
+      state.configuration = { radius: 1, includeSpectralLight: true };
+      const base = {
+        sourceGeneration: 1,
+        workerGeneration: 1,
+        status: createStatus({ sessionKey: "file:1" }),
+      };
+      const first = processFeatureWorkerFrame(state, {
+        ...base,
+        frameId: 1,
+        captureTimestampMs: 10,
+        fastPayload: createAnalysisSnapshot(2048, 220),
+        structuralPayload: createAnalysisSnapshot(8192, 220),
+      });
+      expect(state).not.toHaveProperty("latestFeatureFrame");
+      if (tamperPublishedFrame) {
+        Object.assign(first.drivePacket.renderState, {
+          structureSignal: 1,
+          energySignal: 1,
+          changeSignal: 1,
+          pulseSignal: 1,
+          modalVisibilityEnergy: 1,
+        });
+      }
+      return processFeatureWorkerFrame(state, {
+        ...base,
+        frameId: 2,
+        captureTimestampMs: 26,
+        fastPayload: createAnalysisSnapshot(2048, 220),
+        structuralPayload: null,
+      }).drivePacket.renderState;
+    };
+
+    const expected = runSequence(false);
+    const afterPublishedFrameTamper = runSequence(true);
+
+    expect(afterPublishedFrameTamper).toMatchObject({
+      structureSignal: expected.structureSignal,
+      energySignal: expected.energySignal,
+      changeSignal: expected.changeSignal,
+      pulseSignal: expected.pulseSignal,
+      modalVisibilityEnergy: expected.modalVisibilityEnergy,
+    });
+  });
+
   it("composes semantics in the worker and separates topology from drive", () => {
     const state = createFeatureWorkerState();
     state.sourceGeneration = 1;
@@ -881,6 +1634,42 @@ describe("feature worker packets", () => {
         topologyPacket.modalIdentitySlots.length,
       ),
     ).toEqual(Array.from(topologyPacket.modalIdentitySlots));
+  });
+
+  it("pauses renderer observer evolution while pattern freeze is active", () => {
+    const state = createFeatureWorkerState();
+    state.sourceGeneration = 1;
+    state.workerGeneration = 1;
+    state.configuration = {
+      radius: 1,
+      includeSpectralLight: true,
+      auditSettings: { freezeModeSlots: true },
+    };
+
+    const { drivePacket } = processFeatureWorkerFrame(state, {
+      frameId: 1,
+      sourceGeneration: 1,
+      workerGeneration: 1,
+      captureTimestampMs: 1_000,
+      fastPayload: createAnalysisSnapshot(2048, 220),
+      structuralPayload: createAnalysisSnapshot(8192, 220),
+      structuralRequested: true,
+      status: createStatus({
+        sessionKey: "file:1",
+        observationTimeSeconds: 12.5,
+        observationAdvancing: true,
+        observationPaused: false,
+      }),
+    });
+
+    expect(drivePacket.renderState.diagnosticControlState.freezeModeSlots).toBe(
+      true,
+    );
+    expect(drivePacket).toMatchObject({
+      observationTimeSeconds: 12.5,
+      observationAdvancing: false,
+      observationPaused: true,
+    });
   });
 
   it("does not republish topology for a fast-only coefficient update", () => {
@@ -997,7 +1786,7 @@ describe("feature worker packets", () => {
     expect(result.drivePacket.renderState.renderAuthority).toBe(false);
   });
 
-  it("keeps hidden committed decay out of visible render semantics", () => {
+  it("leaves no committed mode outside the render window", () => {
     const state = createFeatureWorkerState();
     state.sourceGeneration = 1;
     state.workerGeneration = 1;
@@ -1015,39 +1804,18 @@ describe("feature worker packets", () => {
       structuralPayload: createAnalysisSnapshot(8192, 220),
       structuralRequested: true,
     });
-    const hiddenModeIndex = first.topologyPacket.activeModeCount;
-    expect(first.topologyPacket.committedModeCount).toBeGreaterThan(
-      hiddenModeIndex,
+    // This used to guard a leak path that only existed because a small optical
+    // mode ceiling left committed modes sitting outside the render window,
+    // where retained decay energy could accumulate unseen. With no ceiling that
+    // region cannot exist, which is the stronger guarantee: the render window
+    // covers the committed set exactly, so there is nowhere for a mode to hide.
+    expect(first.topologyPacket.committedModeCount).toBeGreaterThan(0);
+    expect(first.topologyPacket.activeModeCount).toBe(
+      first.topologyPacket.committedModeCount,
     );
-    const hiddenMode = state.committedModes[hiddenModeIndex];
-    const modalExcitationState =
-      state.featureState.analysis.modalExcitationState;
-    const previous =
-      modalExcitationState.activeModes.get(hiddenMode.modeKey) ??
-      modalExcitationState.modalCandidateState.get(hiddenMode.modeKey) ??
-      hiddenMode;
-    const retainedEnergy = 0.8;
-    const hiddenEntry = {
-      ...previous,
-      modalResponseEnergy: retainedEnergy,
-      amplitude: Math.sqrt(retainedEnergy),
-      displayAmplitude: Math.sqrt(retainedEnergy),
-      modalResponseDrive: 0,
-      currentDriveEnergy: 0,
-      forcingEnergy: 0,
-      modalOscillatorEnvelopeRe: Math.sqrt(retainedEnergy),
-      modalOscillatorEnvelopeIm: 0,
-      modalOscillatorRotationRad: 0,
-      fastModalOscillatorOwned: true,
-    };
-    modalExcitationState.activeModes.set(hiddenMode.modeKey, hiddenEntry);
-    modalExcitationState.modalCandidateState.set(
-      hiddenMode.modeKey,
-      hiddenEntry,
+    expect(state.committedModes).toHaveLength(
+      first.topologyPacket.committedModeCount,
     );
-    if (modalExcitationState.observedModes.has(hiddenMode.modeKey)) {
-      modalExcitationState.observedModes.set(hiddenMode.modeKey, hiddenEntry);
-    }
 
     const second = processFeatureWorkerFrame(state, {
       ...base,
@@ -1057,17 +1825,9 @@ describe("feature worker packets", () => {
       structuralPayload: null,
       structuralRequested: false,
     });
-    const visibleCoefficients = second.drivePacket.modalCoefficients.subarray(
-      0,
-      second.drivePacket.activeModeCount,
-    );
 
-    expect(
-      second.drivePacket.modalCoefficients[hiddenModeIndex],
-    ).toBeGreaterThan(0);
-    expect(Array.from(visibleCoefficients).every((value) => value === 0)).toBe(
-      true,
-    );
+    // Silence still clears the field, so nothing survives in the render window
+    // on its own once drive stops.
     expect(second.drivePacket.renderState).toMatchObject({
       fieldState: "idle",
       modalResponseEnergy: 0,
@@ -1119,7 +1879,7 @@ describe("feature worker packets", () => {
     expect(state.drivePacketBufferAllocationCount).toBe(1);
   });
 
-  it("retains a render-authoritative committed topology across a same-source bandwidth-limited candidate", () => {
+  it("rebuilds same-source test-tone topology when frequency changes", () => {
     const state = createFeatureWorkerState();
     state.sourceGeneration = 1;
     state.workerGeneration = 1;
@@ -1133,8 +1893,11 @@ describe("feature worker packets", () => {
       },
     };
     const status = createStatus({
-      audioInputMode: "idle",
       analysisSource: "idle",
+      sourceSession: createFileSourceSession({
+        phase: AUDIO_SOURCE_PHASES.empty,
+        sessionId: 0,
+      }),
       isAudioLoaded: false,
       isPlaying: false,
       hasAnalysisSource: false,
@@ -1166,16 +1929,9 @@ describe("feature worker packets", () => {
       "complete",
     );
 
-    // Remove continuity payload so the next structural result exposes the
-    // high-only candidate's own bandwidth authority instead of retaining the
-    // prior modes inside the structural compositor itself.
-    const continuityState =
-      state.featureState.analysis.modalFieldContinuityState;
-    continuityState.recordsByModeKey.clear();
-    continuityState.visibleModeKeys = [];
-    continuityState.lastBasisReassignAtSec = Number.NEGATIVE_INFINITY;
-    state.featureState.analysis.lastModalFieldContinuityFrameAtMs = undefined;
-    state.featureState.analysis.modalExcitationState = null;
+    // This is the live slider path: configuration changes in place while the
+    // worker and source session remain stable. No private continuity reset is
+    // permitted here; the input identity owns that transition.
     state.configuration = {
       ...state.configuration,
       auditSettings: {
@@ -1185,7 +1941,7 @@ describe("feature worker packets", () => {
       },
     };
 
-    const second = processFeatureWorkerFrame(state, {
+    let switchedTopologyPacket = processFeatureWorkerFrame(state, {
       frameId: 2,
       sourceGeneration: 1,
       workerGeneration: 1,
@@ -1194,27 +1950,48 @@ describe("feature worker packets", () => {
       structuralPayload: null,
       structuralRequested: true,
       status,
-    });
+    }).topologyPacket;
+    for (let frameId = 3; frameId <= 5; frameId += 1) {
+      const result = processFeatureWorkerFrame(state, {
+        frameId,
+        sourceGeneration: 1,
+        workerGeneration: 1,
+        captureTimestampMs: 76 + (frameId - 2) * 33,
+        fastPayload: null,
+        structuralPayload: null,
+        structuralRequested: true,
+        status,
+      });
+      switchedTopologyPacket = result.topologyPacket ?? switchedTopologyPacket;
+    }
 
-    expect(second.topologyPacket).toBeNull();
-    expect(state.bandwidthLimitedTopologyRetentionCount).toBe(1);
-    expect(state.topologyRevision).toBe(committedTopologyRevision);
-    expect(state.latestTopologyFrame).toBe(committedTopologyFrame);
-    expect(state.fastEstimator).toBe(committedEstimator);
-    expect(state.committedModes.map((mode) => mode.modeKey)).toEqual(
+    // Upper-band audio remains a valid source frame. Any spatial identities it
+    // drives off resonance must still come from the apparatus-supported atlas,
+    // rather than mapping the 6 kHz peak to an unsupported high-order tuple.
+    expect(switchedTopologyPacket).not.toBeNull();
+    expect(switchedTopologyPacket.modalDescriptor.fieldAuthority).toBe(
+      "complete",
+    );
+    expect(state.topologyRevision).toBeGreaterThan(committedTopologyRevision);
+    expect(state.latestTopologyFrame).not.toBe(committedTopologyFrame);
+    expect(state.fastEstimator).not.toBe(committedEstimator);
+    expect(state.committedModes.map((mode) => mode.modeKey)).not.toEqual(
       committedModeKeys,
     );
-    expect(second.drivePacket.activeModeCount).toBe(
-      first.topologyPacket.activeModeCount,
-    );
-    expect(
-      Array.from(second.drivePacket.modalCoefficients).some(
-        (coefficient) => coefficient > 0,
-      ),
-    ).toBe(true);
+    // Every newly admitted mode must arrive with its cavity frequency resolved
+    // and probeable; an unresolved one used to reach the Goertzel and abort the
+    // whole frame.
+    expect(state.fastEstimator).not.toBeNull();
+    expect(state.committedModes.length).toBeGreaterThan(0);
+    for (const mode of state.committedModes) {
+      expect(mode.naturalFrequencyHz).toBeGreaterThan(0);
+      expect(mode.naturalFrequencyHz).toBeLessThanOrEqual(
+        DEFAULT_MODAL_OBSERVATION_BAND.tailMaxFrequencyHz,
+      );
+    }
   });
 
-  it("keeps a fresh high-only bandwidth-limited bootstrap fail-closed", () => {
+  it("keeps a fresh high-only bootstrap authoritative without over-tail topology", () => {
     const state = createFeatureWorkerState();
     state.sourceGeneration = 1;
     state.workerGeneration = 1;
@@ -1237,8 +2014,11 @@ describe("feature worker packets", () => {
       structuralPayload: null,
       structuralRequested: true,
       status: createStatus({
-        audioInputMode: "idle",
         analysisSource: "idle",
+        sourceSession: createFileSourceSession({
+          phase: AUDIO_SOURCE_PHASES.empty,
+          sessionId: 0,
+        }),
         isAudioLoaded: false,
         isPlaying: false,
         hasAnalysisSource: false,
@@ -1247,11 +2027,18 @@ describe("feature worker packets", () => {
       }),
     });
 
+    // The source remains authoritative, but the spatial representation stays
+    // within the observation-derived atlas support.
     expect(result.topologyPacket.modalDescriptor.fieldAuthority).toBe(
-      "bandwidth-limited",
+      "complete",
     );
-    expect(result.topologyPacket.activeModeCount).toBe(0);
-    expect(result.drivePacket.renderState.renderAuthority).toBe(false);
-    expect(state.bandwidthLimitedTopologyRetentionCount).toBe(0);
+    expect(result.topologyPacket.activeModeCount).toBeGreaterThan(0);
+    expect(
+      state.committedModes.every(
+        (mode) =>
+          mode.naturalFrequencyHz <=
+          DEFAULT_MODAL_OBSERVATION_BAND.tailMaxFrequencyHz,
+      ),
+    ).toBe(true);
   });
 });

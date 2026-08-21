@@ -4,7 +4,6 @@ import React from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { SIMULATION_DEFAULTS } from "@baryon/engine/defaults";
 
 const featureRuntimeSpies = vi.hoisted(() => ({
   create: vi.fn(),
@@ -40,7 +39,7 @@ vi.mock("@baryon/engine/visualization/runtime", () => ({
   createVisualizationRuntime: (...args) => {
     visualizationSpies.create(...args);
     return {
-      method: args[0],
+      method: "raymarch",
       setup: visualizationSpies.setup,
       dispose: visualizationSpies.dispose,
     };
@@ -48,13 +47,13 @@ vi.mock("@baryon/engine/visualization/runtime", () => ({
 }));
 
 vi.mock("./baryonEngineRuntimeState.js", () => ({
-  clearAdaptiveRaymarchResumeState: vi.fn(),
   clearFrameCache: vi.fn(),
   createEmptyControlSnapshots: (controlsSnapshot = null) => ({
     controlsSnapshot,
   }),
   createRuntimeDiagnostics: () => ({}),
   initializeAdaptiveRaymarchRuntimeState: vi.fn(),
+  resetAdaptiveRaymarchControllerState: vi.fn(),
 }));
 
 vi.mock("../../context/liveInputRuntimeStatus.js", () => ({
@@ -69,16 +68,18 @@ const AUDIO_FEATURE_AUTHORITY_ROLES = {
 };
 
 function Harness(props) {
-  useVisualizationRuntimeLifecycle(props);
+  latestLifecycle = useVisualizationRuntimeLifecycle(props);
   return null;
 }
 
 let container;
 let root;
+let latestLifecycle;
 
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   vi.clearAllMocks();
+  latestLifecycle = null;
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -104,7 +105,6 @@ test("feature runtime has stable session ownership and command-only role/config 
       boundaryMode: "neumann",
       cavityGeometry: "rectangular",
       colorMode: "spectral",
-      spectralMix: 0.8,
     },
   };
   const baryonGeometry = {};
@@ -146,7 +146,6 @@ test("feature runtime has stable session ownership and command-only role/config 
     expect.objectContaining({
       boundaryMode: "neumann",
       cavityGeometry: "rectangular",
-      includeSpectralLight: true,
     }),
   );
 
@@ -176,10 +175,17 @@ test("feature runtime has stable session ownership and command-only role/config 
   expect(featureRuntimeSpies.configure).toHaveBeenLastCalledWith(
     expect.objectContaining({ boundaryMode: "dirichlet" }),
   );
+  expect(visualizationSpies.create).toHaveBeenCalledTimes(1);
+  expect(visualizationSpies.setup).toHaveBeenCalledTimes(1);
+  expect(visualizationSpies.dispose).not.toHaveBeenCalled();
 
+  const lifecycle = latestLifecycle;
   await act(async () => root.unmount());
   root = null;
   expect(featureRuntimeSpies.dispose).toHaveBeenCalledTimes(1);
+  expect(lifecycle.runtimeRef.current).toBeNull();
+  expect(lifecycle.runtimeStateRef.current).toBeNull();
+  expect(lifecycle.audioFeatureRuntimeRef.current).toBeNull();
 });
 
 test("visualization runtime is created once per structural stage session", async () => {
@@ -215,9 +221,9 @@ test("visualization runtime is created once per structural stage session", async
   expect(visualizationSpies.setup).toHaveBeenCalledTimes(1);
   expect(visualizationSpies.setup).toHaveBeenCalledWith(
     expect.objectContaining({
+      baryonGeometry: commonProps.baryonGeometry,
       parameters: expect.objectContaining({
         volumeShape: "cube",
-        carrierCoreFwhmWorld: SIMULATION_DEFAULTS.carrierCoreFwhmWorld,
       }),
     }),
   );

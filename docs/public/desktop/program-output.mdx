@@ -1,0 +1,74 @@
+---
+title: "Program output"
+description: "Send Baryon Performer fullscreen to another display or publish it through Syphon or Spout."
+---
+
+Performer sends one program image to one destination at a time. Choose
+**Display** for a fullscreen monitor or projector, **Syphon** for a macOS
+receiving app, or **Spout** for a Windows receiving app.
+
+<Info>
+  Program output requires Baryon Pro and Performer Mode. It is available on
+  macOS and Windows.
+</Info>
+
+## Output destinations
+
+| Destination | Platform       | Use it for                                                           |
+| ----------- | -------------- | -------------------------------------------------------------------- |
+| **Off**     | macOS, Windows | Stop program output.                                                 |
+| **Display** | macOS, Windows | Cover another connected monitor or projector with the program.       |
+| **Syphon**  | macOS          | Publish the program to Resolume, TouchDesigner, or another receiver. |
+| **Spout**   | Windows        | Publish the program to Resolume, TouchDesigner, or another receiver. |
+
+Display, Syphon, and Spout are alternatives. Selecting one stops the previous
+destination; Baryon does not send the same frame to several destinations at
+once.
+
+## Send the program to a display
+
+1. Connect the monitor or projector you want to use for program output.
+2. Open Baryon Desktop and enter **Performer Mode**.
+3. In the output controls, choose the monitor under **Target**.
+4. Select **Display**.
+
+Baryon covers the selected display while the operator window stays on its own
+screen. A display occupied by the operator window is not available as a target.
+On a single-display system, connect another display before selecting Display.
+With several displays connected, keep the operator window off the target.
+
+If the active display disconnects, Baryon turns program output off. Reconnecting
+the display does not restart output; select Display again when the target is
+ready.
+
+## Publish to a receiving app
+
+Select **Syphon** on macOS or **Spout** on Windows, then choose Baryon as the
+source in the receiving app. The program surface supports these resolution
+presets:
+
+- 720p
+- 1080p (default)
+- 1440p
+- UHD 4K
+- DCI 4K
+
+The resolution preset applies to Syphon and Spout. Direct Display uses the
+selected monitor's pixel dimensions.
+
+## Appearance and compositing
+
+Every Performer destination receives the same opaque image composited over
+black. Performer does not expose **Output Color**, and its program output does
+not carry a transparent background.
+
+When you want the cymatic field over another layer, set the receiving layer to
+Add or Screen. Black contributes nothing under those blend modes, while the
+rendered field remains intact.
+
+The web app and Listener Mode expose **Output Color**, but their rendered output
+is also opaque.
+
+OSC Data Out is independent of the selected pixel destination. You can send
+modal structure data while Display, Syphon, or Spout is active; see [OSC
+Structure Export](/public/desktop/osc-structure-export).

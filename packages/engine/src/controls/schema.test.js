@@ -5,6 +5,9 @@ import {
   CONTROL_HANDLERS,
   CONTROL_STATUSES,
   CONTROL_TARGET_TYPES,
+  LISTENER_CONTROL_SURFACES,
+  PERFORMER_CONTROL_SURFACES,
+  SHARED_CONTROL_SURFACES,
   createControlState,
   getControlFolders,
   getControlsForFolder,
@@ -12,6 +15,7 @@ import {
 } from "./schema.js";
 import { auditControlSchema } from "./audit.js";
 import { RAYMARCH_DEFAULTS, RENDER_DEFAULTS } from "../defaults.js";
+import { CYMATIC_OBSERVER_REFERENCE } from "../core/raymarch/cymaticObserverReference.js";
 import {
   DEFAULT_VISUALIZATION_METHOD,
   VISUALIZATION_METHODS,
@@ -36,17 +40,20 @@ const EXPECTED_CONTROL_KEYS = [
   "surfaceColor",
   "outputBackgroundColor",
   "colorMode",
-  "spectralMix",
+  "spectralChroma",
   "holographicIntensity",
   "holographicFresnelPower",
   // Logo
   "idleLogoIntensity",
   "idleLogoSize",
   "idleLogoColor",
+  "idleLogoRotationMode",
+  "idleLogoRotationSpeed",
   // Motion
   "rotationMode",
   "rotationSpeed",
   "motionAmount",
+  "patternPersistenceSeconds",
   // Bloom / performance / output
   "bloomEnabled",
   "bloomStrength",
@@ -55,7 +62,6 @@ const EXPECTED_CONTROL_KEYS = [
   "backgroundColor",
   "renderQualityPreset",
   "customTargetFps",
-  "outputMode",
   // PresetsArea (rendered inline in Presets, but defined here in file order)
   "performanceHudEnabled",
   // Display (continued)
@@ -67,7 +73,7 @@ const EXPECTED_CONTROL_KEYS = [
   "auditEnabled",
   "freezeModeSlots",
   "forceWebGLFallbackTest",
-  "lowLoadPlaybackDiagnostics",
+  "suppressPlaybackTelemetry",
   "cavityGeometry",
   "injectTestTone",
   "testToneHz",
@@ -182,9 +188,16 @@ describe("control schema", () => {
   it("defaults the raymarch surface to the current baseline", () => {
     const state = createControlState();
 
-    expect(state.colorMode).toBe("static");
-    expect(state.spectralMix).toBe(0.96);
+    expect(state.colorMode).toBe("spectral");
+    expect(state.spectralChroma).toBe(1);
     expect(state.rotationMode).toBe("off");
+    expect(state.rotationSpeed).toBe(4.78);
+    expect(state.idleLogoRotationMode).toBe("manual");
+    expect(state.idleLogoRotationSpeed).toBe(2.5);
+    expect(state.patternPersistenceSeconds).toBe(
+      CYMATIC_OBSERVER_REFERENCE.geometryExposureSeconds,
+    );
+    expect(state.patternPersistenceSeconds).toBe(0.4);
     expect(state.volumeColor).toBe("#5be3f4");
     expect(state.surfaceColor).toBe("#5be3f4");
     expect(state.idleLogoColor).toBe("#f7fdff");
@@ -196,18 +209,18 @@ describe("control schema", () => {
     expect(state.volumeShape).toBe("sphere");
     expect(state).not.toHaveProperty("fieldExtent");
     expect(state.raymarchSteps).toBe(RAYMARCH_DEFAULTS.raymarchSteps);
-    expect(state.densityGain).toBe(4);
+    expect(state.densityGain).toBe(3.5);
     expect(state.laserDeflectionGain).toBe(1.2);
     expect(state).not.toHaveProperty("absorption");
     expect(state).not.toHaveProperty("opacityGain");
     expect(state).not.toHaveProperty("contourSharpness");
     expect(state.holographicIntensity).toBe(1);
     expect(state).not.toHaveProperty("holographicShift");
-    expect(state.holographicFresnelPower).toBe(2.4);
+    expect(state.holographicFresnelPower).toBe(10);
     expect(state.bloomEnabled).toBe(true);
-    expect(state.bloomStrength).toBe(1.18);
+    expect(state.bloomStrength).toBe(0.5);
     expect(state.bloomRadius).toBe(0);
-    expect(state.bloomThreshold).toBe(0.5);
+    expect(state.bloomThreshold).toBe(1);
     expect(state.smaaEnabled).toBe(RENDER_DEFAULTS.smaaEnabled);
     expect(state.performanceHudEnabled).toBe(
       RENDER_DEFAULTS.performanceHudEnabled,
@@ -219,6 +232,32 @@ describe("control schema", () => {
     expect(state).not.toHaveProperty("bloomResponseBias");
     expect(state).not.toHaveProperty("rimBloomBias");
     expect(state).not.toHaveProperty("rimCompression");
+  });
+
+  it("exposes the full bloom control domain while defaults stay restrained", () => {
+    const bloomStrength = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "bloomStrength",
+    );
+    const bloomRadius = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "bloomRadius",
+    );
+    const bloomThreshold = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "bloomThreshold",
+    );
+
+    expect(bloomStrength?.binding).toEqual({ min: 0, max: 3, step: 0.01 });
+    expect(bloomRadius?.binding).toEqual({ min: 0, max: 1, step: 0.01 });
+    expect(bloomThreshold?.binding).toEqual({ min: 0, max: 1, step: 0.01 });
+    expect(bloomStrength?.defaultValue).toBe(0.5);
+    expect(bloomRadius?.defaultValue).toBe(0);
+    expect(bloomThreshold?.defaultValue).toBe(1);
+  });
+
+  it("names the volume color explicitly for control surfaces", () => {
+    expect(
+      CONTROL_DEFINITIONS.find((definition) => definition.key === "volumeColor")
+        ?.label,
+    ).toBe("Volume Color");
   });
 
   it("does not expose contour sharpness as a control", () => {
@@ -268,7 +307,7 @@ describe("control schema", () => {
     expect(performanceHudControl?.pinnedPlacement).toBe("section-header");
   });
 
-  it("defines program output controls separately from the preview backdrop", () => {
+  it("keeps program output opaque while exposing its background color", () => {
     const outputModeControl = CONTROL_DEFINITIONS.find(
       (definition) => definition.key === "outputMode",
     );
@@ -276,9 +315,9 @@ describe("control schema", () => {
       (definition) => definition.key === "outputBackgroundColor",
     );
 
-    expect(outputModeControl?.label).toBe("Output Mode");
-    expect(outputModeControl?.runtimePath).toBe("program.outputMode");
+    expect(outputModeControl).toBeUndefined();
     expect(outputFillControl?.runtimePath).toBe("program.backgroundColor");
+    expect(outputFillControl?.visibleWhen).toBeUndefined();
   });
 
   it("exposes SMAA as a live diagnostics post-process toggle", () => {
@@ -298,13 +337,13 @@ describe("control schema", () => {
     });
   });
 
-  it("keeps default-on TRAA scoped to the raymarch pipeline", () => {
+  it("keeps default-off TRAA scoped to the raymarch pipeline", () => {
     const traaControl = CONTROL_DEFINITIONS.find(
       (definition) => definition.key === "traaEnabled",
     );
 
     expect(traaControl).toMatchObject({
-      defaultValue: true,
+      defaultValue: false,
       methods: [VISUALIZATION_METHODS.raymarch],
       status: CONTROL_STATUSES.debugOnly,
     });
@@ -356,24 +395,103 @@ describe("control schema", () => {
     }
   });
 
-  it("exposes Spectral Light as the live dynamic color mode", () => {
+  it("requires explicit product-surface ownership on every control", () => {
+    const canonicalSurfaceSets = [
+      SHARED_CONTROL_SURFACES,
+      LISTENER_CONTROL_SURFACES,
+      PERFORMER_CONTROL_SURFACES,
+    ];
+    for (const definition of CONTROL_DEFINITIONS) {
+      expect(definition, definition.key).toHaveProperty("surfaces");
+      expect(Object.isFrozen(definition.surfaces), definition.key).toBe(true);
+      expect(canonicalSurfaceSets, definition.key).toContain(
+        definition.surfaces,
+      );
+    }
+  });
+
+  it("fails audit when product surfaces or remote ordering are missing", () => {
+    const missingSurfaces = CONTROL_DEFINITIONS.map((definition) =>
+      definition.key === "densityGain"
+        ? { ...definition, surfaces: undefined }
+        : definition,
+    );
+    const missingOrder = CONTROL_DEFINITIONS.map((definition) =>
+      definition.key === "densityGain"
+        ? { ...definition, controlOrder: undefined }
+        : definition,
+    );
+    const copiedSurfaceSet = CONTROL_DEFINITIONS.map((definition) =>
+      definition.key === "densityGain"
+        ? { ...definition, surfaces: Object.freeze([...definition.surfaces]) }
+        : definition,
+    );
+
+    expect(auditControlSchema(missingSurfaces).issues).toContain(
+      "Control densityGain has invalid product surfaces",
+    );
+    expect(auditControlSchema(missingOrder).issues).toContain(
+      "Remote control densityGain has invalid presentation order",
+    );
+    expect(auditControlSchema(copiedSurfaceSet).issues).toContain(
+      "Control densityGain has invalid product surfaces",
+    );
+  });
+
+  it("fails audit when an unsupported remote candidate lacks its exact exclusion", () => {
+    const unsupported = CONTROL_DEFINITIONS.map((definition) =>
+      definition.key === "densityGain"
+        ? {
+            ...definition,
+            defaultValue: "unsupported",
+            binding: {},
+          }
+        : definition,
+    );
+    const incorrectlyExcluded = unsupported.map((definition) =>
+      definition.key === "densityGain"
+        ? {
+            ...definition,
+            remoteControl: { excludedReason: "private" },
+          }
+        : definition,
+    );
+
+    expect(auditControlSchema(unsupported).issues).toContain(
+      "Remote control densityGain has an unsupported value contract without excludedReason unsupported-value-contract",
+    );
+    expect(auditControlSchema(incorrectlyExcluded).issues).toContain(
+      "Remote control densityGain has an unsupported value contract without excludedReason unsupported-value-contract",
+    );
+  });
+
+  it("exposes Spectral as a discrete phase-palette mode", () => {
     const colorMode = CONTROL_DEFINITIONS.find(
       (definition) => definition.key === "colorMode",
     );
-    const spectralMix = CONTROL_DEFINITIONS.find(
-      (definition) => definition.key === "spectralMix",
+    const spectralChroma = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "spectralChroma",
     );
 
     expect(colorMode?.binding?.options).toEqual({
       Static: "static",
       Spectral: "spectral",
     });
-    expect(colorMode?.runtimePath).toBe("runtime.spectralLight.colorMode");
-    expect(spectralMix).toMatchObject({
-      label: "Color Mix",
-      defaultValue: 0.96,
-      binding: { min: 0.01, max: 1, step: 0.01 },
-      runtimePath: "runtime.uniforms.uSpectralMix.value",
+    expect(colorMode?.runtimePath).toBe(
+      "runtime.uniforms.uSpectralPresentationEnabled.value",
+    );
+    expect(
+      CONTROL_DEFINITIONS.find(
+        (definition) => definition.key === "spectralMix",
+      ),
+    ).toBeUndefined();
+    expect(spectralChroma).toMatchObject({
+      label: "Spectral Chroma",
+      title: expect.stringContaining("without blending in static colors"),
+      defaultValue: 1,
+      binding: { min: 0, max: 1, step: 0.01 },
+      runtimePath: "runtime.uniforms.uSpectralChroma.value",
+      visibleWhen: { key: "colorMode", value: "spectral" },
     });
   });
 
@@ -412,7 +530,7 @@ describe("control schema", () => {
       getControlsForFolder("Output", DEFAULT_VISUALIZATION_METHOD).map(
         (definition) => definition.key,
       ),
-    ).toEqual(["outputMode", "outputBackgroundColor"]);
+    ).toEqual(["outputBackgroundColor"]);
     expect(
       getControlsForFolder("Volume", DEFAULT_VISUALIZATION_METHOD).map(
         (definition) => definition.key,
@@ -432,7 +550,7 @@ describe("control schema", () => {
       "colorMode",
       "volumeColor",
       "surfaceColor",
-      "spectralMix",
+      "spectralChroma",
       "holographicIntensity",
       "holographicFresnelPower",
       "bloomEnabled",
@@ -444,12 +562,23 @@ describe("control schema", () => {
       getControlsForFolder("Motion", DEFAULT_VISUALIZATION_METHOD).map(
         (definition) => definition.key,
       ),
-    ).toEqual(["rotationMode", "rotationSpeed", "motionAmount"]);
+    ).toEqual([
+      "rotationMode",
+      "rotationSpeed",
+      "motionAmount",
+      "patternPersistenceSeconds",
+    ]);
     expect(
       getControlsForFolder("Logo", DEFAULT_VISUALIZATION_METHOD).map(
         (definition) => definition.key,
       ),
-    ).toEqual(["idleLogoIntensity", "idleLogoSize", "idleLogoColor"]);
+    ).toEqual([
+      "idleLogoIntensity",
+      "idleLogoSize",
+      "idleLogoColor",
+      "idleLogoRotationMode",
+      "idleLogoRotationSpeed",
+    ]);
     expect(
       getControlsForFolder("Diagnostics", DEFAULT_VISUALIZATION_METHOD).map(
         (definition) => definition.key,
@@ -460,7 +589,7 @@ describe("control schema", () => {
       "auditEnabled",
       "freezeModeSlots",
       "forceWebGLFallbackTest",
-      "lowLoadPlaybackDiagnostics",
+      "suppressPlaybackTelemetry",
       "injectTestTone",
       "testToneHz",
       "testToneSignal",
@@ -511,6 +640,25 @@ describe("control schema", () => {
     expect(holographicFresnelPower?.methods).toEqual([
       VISUALIZATION_METHODS.raymarch,
     ]);
+    expect(holographicFresnelPower?.binding).toMatchObject({
+      min: 0.5,
+      max: 32,
+      step: 0.1,
+    });
+  });
+
+  it("exposes observer persistence in seconds without an audio-density heuristic", () => {
+    const patternPersistence = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "patternPersistenceSeconds",
+    );
+
+    expect(patternPersistence).toMatchObject({
+      label: "Pattern Persistence",
+      defaultValue: CYMATIC_OBSERVER_REFERENCE.geometryExposureSeconds,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.cymaticObserverTuning.geometryExposureSeconds",
+      binding: { min: 0.05, max: 2, step: 0.05 },
+    });
   });
 
   it("fails audit when a live control lacks runtime coverage", () => {
@@ -524,6 +672,21 @@ describe("control schema", () => {
     expect(report.isValid).toBe(false);
     expect(report.issues).toContain(
       "Control densityGain is missing runtime coverage",
+    );
+  });
+
+  it("fails audit when runtime coverage invents a non-schema control", () => {
+    const report = auditControlSchema(CONTROL_DEFINITIONS, {
+      ...CONTROL_RUNTIME_COVERAGE,
+      [CONTROL_HANDLERS.raymarch]: [
+        ...CONTROL_RUNTIME_COVERAGE[CONTROL_HANDLERS.raymarch],
+        "decorativeOnlyControl",
+      ],
+    });
+
+    expect(report.isValid).toBe(false);
+    expect(report.issues).toContain(
+      "Runtime coverage raymarch.decorativeOnlyControl has no control definition",
     );
   });
 });

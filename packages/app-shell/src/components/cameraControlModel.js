@@ -12,7 +12,7 @@ import {
  * @param {unknown} preset
  * @returns {CameraControlPreset}
  */
-export function normalizeCameraControlPreset(preset) {
+function normalizeCameraControlPreset(preset) {
   return preset === CAMERA_VIEW_PRESETS.topDown
     ? CAMERA_VIEW_PRESETS.topDown
     : CAMERA_VIEW_PRESETS.side;
@@ -25,22 +25,6 @@ export function normalizeCameraControlPreset(preset) {
 export function createCameraPresetCommand(preset) {
   return {
     cameraPose: resolvePresetCameraPose(normalizeCameraControlPreset(preset)),
-  };
-}
-
-/**
- * @param {ReturnType<typeof resolvePresetCameraPose> | null | undefined} appliedCameraPose
- * @param {CameraControlPreset} [fallbackPreset]
- * @returns {{ cameraPose: ReturnType<typeof resolvePresetCameraPose> }}
- */
-export function createCameraResetCommand(
-  appliedCameraPose,
-  fallbackPreset = CAMERA_VIEW_PRESETS.topDown,
-) {
-  return {
-    cameraPose:
-      appliedCameraPose ??
-      resolvePresetCameraPose(normalizeCameraControlPreset(fallbackPreset)),
   };
 }
 

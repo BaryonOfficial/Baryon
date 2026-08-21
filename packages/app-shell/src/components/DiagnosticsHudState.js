@@ -27,6 +27,17 @@ export function resolveDiagnosticsHudState({
   );
 }
 
+export function reconcileDiagnosticsHudState(currentState, nextState) {
+  if (
+    currentState?.enabled === nextState?.enabled &&
+    currentState?.snapshot === nextState?.snapshot
+  ) {
+    return currentState;
+  }
+
+  return nextState;
+}
+
 export function shouldRenderDiagnosticsHud({
   devtoolsEnabled = DEVTOOLS_ENABLED,
   enabledOverride,
