@@ -12,6 +12,7 @@ function makeModes(entries) {
   return entries.map((entry) => ({
     physicalTransfer: 1,
     targetEnergy: 0,
+    qualityFactor: 20,
     ...entry,
   }));
 }
@@ -32,6 +33,21 @@ function makeSignal({ sampleRate, components }) {
 }
 
 describe("fast modal drive estimator", () => {
+  it("rejects committed physical modes without apparatus-derived Q", () => {
+    expect(() =>
+      createFastModalDriveEstimator({
+        committedModes: makeModes([
+          {
+            modeKey: "missing-q",
+            naturalFrequencyHz: 220,
+            qualityFactor: undefined,
+          },
+        ]),
+        sampleRate: 48000,
+      }),
+    ).toThrow("Committed mode missing-q must declare an apparatus-derived Q");
+  });
+
   it("selects the strongest 48 modes with a deterministic identity tie-break", () => {
     const modes = makeModes(
       Array.from({ length: 52 }, (_, index) => ({
@@ -81,7 +97,7 @@ describe("fast modal drive estimator", () => {
     );
     expect(result.magnitudes[0]).toBeCloseTo(amplitude, 4);
     expect(normalizePhaseRad(result.phasesRad[0] - phaseRad)).toBeCloseTo(0, 4);
-    expect(result.energyShares[0]).toBeCloseTo(1, 4);
+    expect(result.responseEnergies[0]).toBeCloseTo(1, 4);
   });
 
   it("measures a detuned low mode at its exact non-bin frequency", () => {
@@ -145,7 +161,7 @@ describe("fast modal drive estimator", () => {
     );
 
     expect(matchedMagnitude).toBeGreaterThan(detuned.magnitudes[0] * 4);
-    expect(detuned.energyShares[0]).toBeLessThan(0.05);
+    expect(detuned.responseEnergies[0]).toBeLessThan(0.05);
   });
 
   it("produces physical targets and harmonic-lock measurements for a polyphonic series", () => {
@@ -154,7 +170,7 @@ describe("fast modal drive estimator", () => {
     const fundamentalHz = binFrequencyHz * 8;
     const amplitudes = [0.5, 0.25, 0.125];
     const phases = [0.35, -0.6, 1.1];
-    const inputExposure = 0.8;
+    const inputEnergyScale = 0.8;
     const physicalTransfers = [0.5, 0.75, 1];
     const modes = makeModes(
       amplitudes.map((_, index) => ({
@@ -177,22 +193,33 @@ describe("fast modal drive estimator", () => {
           phaseRad: phases[index],
         })),
       }),
-      inputExposure,
+      inputEnergyScale,
     );
     const totalSquaredAmplitude = amplitudes.reduce(
       (total, amplitude) => total + amplitude * amplitude,
       0,
     );
 
+    // Each harmonic still owns its own mode, but the modes now exchange a
+    // little forcing off resonance rather than being perfectly isolated, so the
+    // shares track the drive's energy split without reproducing it exactly.
     for (let index = 0; index < amplitudes.length; index += 1) {
       const expectedShare =
         (amplitudes[index] * amplitudes[index]) / totalSquaredAmplitude;
-      expect(result.energyShares[index]).toBeCloseTo(expectedShare, 4);
+      expect(result.responseEnergies[index]).toBeCloseTo(expectedShare, 1);
       expect(result.targetEnergies[index]).toBeCloseTo(
-        expectedShare * inputExposure * physicalTransfers[index],
+        result.responseEnergies[index] *
+          inputEnergyScale *
+          physicalTransfers[index],
         4,
       );
     }
+    expect(result.responseEnergies[0]).toBeGreaterThan(
+      result.responseEnergies[1],
+    );
+    expect(result.responseEnergies[1]).toBeGreaterThan(
+      result.responseEnergies[2],
+    );
 
     const locks = resolveHarmonicDrivePhaseLocks(result.measurements);
     expect(locks.get("harmonic:1")?.harmonicOrder).toBe(1);
@@ -204,7 +231,130 @@ describe("fast modal drive estimator", () => {
     );
   });
 
-  it("writes zero forcing for unselected modes and hard silence", () => {
+  // A cavity's low modes are sparse and its high modes are dense. Probes in the
+  // dense region overlap heavily over a 42.7 ms window, so measuring each one
+  // independently lets them all claim the same acoustic energy. The summed
+  // share then tracks local mode density rather than the input, and the shared
+  // response budget downstream turns that into a loudness bias against the
+  // sparse low end.
+  const CAVITY_LOW_MODES_HZ = [59.2, 83.7, 102.5, 118.4, 132.4, 145.0];
+  const CAVITY_DENSE_MODES_HZ = [
+    632.1, 645.9, 659.4, 672.4, 685.2, 697.7, 710.0, 722.0,
+  ];
+
+  function makeCavityEstimator(sampleRate = 48000) {
+    return createFastModalDriveEstimator({
+      committedModes: makeModes(
+        [...CAVITY_LOW_MODES_HZ, ...CAVITY_DENSE_MODES_HZ].map(
+          (naturalFrequencyHz) => ({
+            modeKey: `cavity:${naturalFrequencyHz}`,
+            naturalFrequencyHz,
+            targetEnergy: 1,
+          }),
+        ),
+      ),
+      sampleRate,
+    });
+  }
+
+  function sumResponses(result, predicate = () => true) {
+    let total = 0;
+    for (let probe = 0; probe < result.probeCount; probe += 1) {
+      if (predicate(result.frequenciesHz[probe])) {
+        total += result.responseEnergies[probe];
+      }
+    }
+    return total;
+  }
+
+  it("preserves absolute modal response instead of normalizing transfer columns", () => {
+    const sampleRate = 48000;
+    const estimator = makeCavityEstimator(sampleRate);
+    const result = estimator.evaluate(
+      makeSignal({
+        sampleRate,
+        components: [{ frequencyHz: 670, amplitude: 1 }],
+      }),
+    );
+
+    // The source-channel fit still partitions measured input, but several
+    // physical modes may each store response to that same drive.
+    expect(result.explainedEnergyShare).toBeLessThanOrEqual(1.000001);
+    expect(sumResponses(result)).toBeGreaterThan(result.explainedEnergyShare);
+    expect(
+      Array.from(result.responseEnergyByMode).every(
+        (responseEnergy) => responseEnergy >= 0 && responseEnergy <= 1,
+      ),
+    ).toBe(true);
+  });
+
+  it("retains the apparatus response-density difference between sparse and dense regions", () => {
+    const sampleRate = 48000;
+    const estimator = makeCavityEstimator(sampleRate);
+    const result = estimator.evaluate(
+      makeSignal({
+        sampleRate,
+        components: [
+          { frequencyHz: 59.2, amplitude: 0.5 },
+          { frequencyHz: 672.4, amplitude: 0.5 },
+        ],
+      }),
+    );
+    const low = sumResponses(result, (frequencyHz) => frequencyHz < 300);
+    const high = sumResponses(result, (frequencyHz) => frequencyHz >= 300);
+
+    expect(high).toBeGreaterThan(low);
+    expect(low / (low + high)).toBeLessThan(0.3);
+  });
+
+  it("keeps fitted amplitudes within the input rather than manufacturing energy", () => {
+    const sampleRate = 48000;
+    const estimator = makeCavityEstimator(sampleRate);
+    // Below the cavity's acoustic floor, so no committed mode can represent it.
+    // An unregularized fit answers with huge cancelling amplitudes instead of
+    // admitting the input is unexplainable.
+    const result = estimator.evaluate(
+      makeSignal({
+        sampleRate,
+        components: [{ frequencyHz: 45, amplitude: 0.5 }],
+      }),
+    );
+
+    for (let probe = 0; probe < result.probeCount; probe += 1) {
+      expect(result.magnitudes[probe]).toBeLessThanOrEqual(0.5);
+    }
+    // Sub-floor input is reported as unexplained rather than absorbed.
+    expect(result.explainedEnergyShare).toBeLessThan(0.95);
+  });
+
+  it("publishes equal absolute responses for exactly degenerate family rows", () => {
+    const sampleRate = 48000;
+    const degenerateHz = 177.6;
+    const estimator = createFastModalDriveEstimator({
+      committedModes: makeModes([
+        { modeKey: "0,0,3", naturalFrequencyHz: degenerateHz, targetEnergy: 1 },
+        { modeKey: "1,2,2", naturalFrequencyHz: degenerateHz, targetEnergy: 1 },
+      ]),
+      sampleRate,
+    });
+    const result = estimator.evaluate(
+      makeSignal({
+        sampleRate,
+        components: [{ frequencyHz: degenerateHz, amplitude: 1 }],
+      }),
+    );
+
+    // No temporal measurement can separate them. Both family rows carry the
+    // same response and the shell-collapse owner retains one maximum.
+    expect(result.channelCount).toBe(1);
+    expect(result.responseEnergies[0]).toBeCloseTo(
+      result.responseEnergies[1],
+      6,
+    );
+    expect(result.responseEnergies[0]).toBeCloseTo(1, 3);
+  });
+
+  it("forces unprobed modes off resonance and zeroes everything on hard silence", () => {
     const sampleRate = 48000;
     const modes = makeModes([
       {
@@ -231,15 +381,21 @@ describe("fast modal drive estimator", () => {
       1,
     );
 
+    // Forcing is a transfer, not a measurement, so a mode responds whether or
+    // not a probe was spent on it. The 440 Hz mode is driven an octave below
+    // its resonance and answers weakly rather than not at all — which is what
+    // a driven cavity does, and what the old probe-budget zero denied.
+    expect(active.responseEnergyByMode[0]).toBeGreaterThan(0);
+    expect(active.responseEnergyByMode[1]).toBeGreaterThan(0);
+    expect(active.responseEnergyByMode[1]).toBeLessThan(
+      active.responseEnergyByMode[0] / 4,
+    );
     expect(active.targetEnergyByMode[0]).toBeGreaterThan(0);
-    expect(active.targetEnergyByMode[1]).toBe(0);
-    expect(active.energyShareByMode[0]).toBeGreaterThan(0);
-    expect(active.energyShareByMode[1]).toBe(0);
 
     const silent = estimator.evaluate(null, 1, true);
     expect(silent.hardSilence).toBe(true);
     expect(Array.from(silent.targetEnergyByMode)).toEqual([0, 0]);
-    expect(Array.from(silent.energyShareByMode)).toEqual([0, 0]);
+    expect(Array.from(silent.responseEnergyByMode)).toEqual([0, 0]);
     expect(silent.measurements[0].magnitude).toBe(0);
   });
 
@@ -267,8 +423,8 @@ describe("fast modal drive estimator", () => {
       imaginary: first.imaginary,
       magnitudes: first.magnitudes,
       phasesRad: first.phasesRad,
-      energyShares: first.energyShares,
-      energyShareByMode: first.energyShareByMode,
+      responseEnergies: first.responseEnergies,
+      responseEnergyByMode: first.responseEnergyByMode,
       targetEnergies: first.targetEnergies,
       targetEnergyByMode: first.targetEnergyByMode,
       measurements: first.measurements,

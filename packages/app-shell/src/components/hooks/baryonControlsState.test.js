@@ -1,13 +1,25 @@
-import { createControlState } from "@baryon/engine/controls/schema";
+import {
+  CONTROL_DEFINITIONS,
+  CONTROL_SURFACES,
+  createControlState,
+} from "@baryon/engine/controls/schema";
 import { expect, test } from "vitest";
 import {
   SETTINGS_KEY,
+  controlMatchesSettingsSurface,
   getVisibleControlLayout,
   persistControls,
 } from "./baryonControlsState.js";
 
+function getListenerControlLayout(options = {}) {
+  return getVisibleControlLayout({
+    ...options,
+    surface: CONTROL_SURFACES.listener,
+  });
+}
+
 test("builds the advanced controls presentation layout", () => {
-  const { folderGroups, presetsAreaControls } = getVisibleControlLayout({
+  const { folderGroups, presetsAreaControls } = getListenerControlLayout({
     controlsState: {
       ...createControlState(),
       colorMode: "spectral",
@@ -48,10 +60,9 @@ test("builds the advanced controls presentation layout", () => {
     controls: expect.any(Array),
   });
   expect(outputGroup.controls.map((control) => control.key)).toStrictEqual([
-    "outputMode",
     "outputBackgroundColor",
   ]);
-  expect(outputGroup.controls[0].label).toBe("Output Mode");
+  expect(outputGroup.controls[0].label).toBe("Output Color");
 
   const volumeGroup = groupByTitle.get("Volume");
   expect(volumeGroup).toMatchObject({
@@ -80,7 +91,7 @@ test("builds the advanced controls presentation layout", () => {
     "colorMode",
     "volumeColor",
     "surfaceColor",
-    "spectralMix",
+    "spectralChroma",
     "holographicIntensity",
     "holographicFresnelPower",
     "bloomEnabled",
@@ -98,6 +109,7 @@ test("builds the advanced controls presentation layout", () => {
     "rotationMode",
     "rotationSpeed",
     "motionAmount",
+    "patternPersistenceSeconds",
   ]);
 
   const diagnosticsGroup = groupByTitle.get("Diagnostics");
@@ -112,7 +124,7 @@ test("builds the advanced controls presentation layout", () => {
       "auditEnabled",
       "freezeModeSlots",
       "forceWebGLFallbackTest",
-      "lowLoadPlaybackDiagnostics",
+      "suppressPlaybackTelemetry",
       "injectTestTone",
       "testToneHz",
       "testToneSignal",
@@ -130,11 +142,13 @@ test("builds the advanced controls presentation layout", () => {
     "idleLogoIntensity",
     "idleLogoSize",
     "idleLogoColor",
+    "idleLogoRotationMode",
+    "idleLogoRotationSpeed",
   ]);
 });
 
 test("hides mode-dependent controls until their controlling value enables them", () => {
-  const defaultLayout = getVisibleControlLayout({
+  const defaultLayout = getListenerControlLayout({
     controlsState: createControlState(),
     devtoolsEnabled: true,
     method: "raymarch",
@@ -143,14 +157,16 @@ test("hides mode-dependent controls until their controlling value enables them",
     group.controls.map((control) => control.key),
   );
 
-  // Static color and disabled rotation are the baseline defaults, so every
-  // mode-dependent control starts hidden.
+  // Disabled rotation and the max-quality preset are baseline defaults, so
+  // their dependent controls start hidden. Spectral colour is the baseline, so
+  // its spectral presentation controls start visible.
   expect(defaultControls).not.toContain("customTargetFps");
-  expect(defaultControls).not.toContain("outputBackgroundColor");
+  expect(defaultControls).toContain("outputBackgroundColor");
   expect(defaultControls).not.toContain("rotationSpeed");
-  expect(defaultControls).not.toContain("spectralMix");
+  expect(defaultControls).toContain("idleLogoRotationSpeed");
+  expect(defaultControls).toContain("spectralChroma");
 
-  const staticColorLayout = getVisibleControlLayout({
+  const staticColorLayout = getListenerControlLayout({
     controlsState: {
       ...createControlState(),
       colorMode: "static",
@@ -162,13 +178,12 @@ test("hides mode-dependent controls until their controlling value enables them",
     group.controls.map((control) => control.key),
   );
 
-  expect(staticColorControls).not.toContain("spectralMix");
+  expect(staticColorControls).not.toContain("spectralChroma");
 
-  const expandedLayout = getVisibleControlLayout({
+  const expandedLayout = getListenerControlLayout({
     controlsState: {
       ...createControlState(),
       colorMode: "spectral",
-      outputMode: "opaque",
       renderQualityPreset: "custom",
       rotationMode: "manual",
     },
@@ -182,11 +197,26 @@ test("hides mode-dependent controls until their controlling value enables them",
   expect(expandedControls).toContain("customTargetFps");
   expect(expandedControls).toContain("outputBackgroundColor");
   expect(expandedControls).toContain("rotationSpeed");
-  expect(expandedControls).toContain("spectralMix");
+  expect(expandedControls).toContain("idleLogoRotationSpeed");
+  expect(expandedControls).toContain("spectralChroma");
+
+  const idleLogoOffLayout = getListenerControlLayout({
+    controlsState: {
+      ...createControlState(),
+      idleLogoRotationMode: "off",
+    },
+    devtoolsEnabled: true,
+    method: "raymarch",
+  });
+  const idleLogoOffControls = idleLogoOffLayout.folderGroups.flatMap((group) =>
+    group.controls.map((control) => control.key),
+  );
+
+  expect(idleLogoOffControls).not.toContain("idleLogoRotationSpeed");
 });
 
 test("operator control keys can surface Capture Debug Data without enabling all devtools controls", () => {
-  const { folderGroups } = getVisibleControlLayout({
+  const { folderGroups } = getListenerControlLayout({
     devtoolsEnabled: false,
     method: "raymarch",
     operatorControlKeys: ["auditEnabled"],
@@ -198,6 +228,75 @@ test("operator control keys can surface Capture Debug Data without enabling all 
   expect(
     diagnosticsGroup?.controls.map((control) => control.key),
   ).toStrictEqual(["smaaEnabled", "auditEnabled"]);
+});
+
+test("a product surface can hide controls it does not own", () => {
+  const options = {
+    controlsState: createControlState(),
+    devtoolsEnabled: true,
+    method: "raymarch",
+  };
+  const listenerLayout = getVisibleControlLayout({
+    ...options,
+    surface: CONTROL_SURFACES.listener,
+  });
+  const performerLayout = getVisibleControlLayout({
+    ...options,
+    surface: CONTROL_SURFACES.performer,
+  });
+  const listenerKeys = listenerLayout.folderGroups.flatMap((group) =>
+    group.controls.map((control) => control.key),
+  );
+  const performerKeys = performerLayout.folderGroups.flatMap((group) =>
+    group.controls.map((control) => control.key),
+  );
+
+  expect(listenerKeys).toContain("outputBackgroundColor");
+  expect(performerKeys).not.toContain("outputBackgroundColor");
+  expect(performerLayout.folderGroups.map((group) => group.title)).not.toContain(
+    "Output",
+  );
+});
+
+test("requires a recognized settings surface", () => {
+  const options = { devtoolsEnabled: true, method: "raymarch" };
+
+  expect(() => getVisibleControlLayout(options)).toThrow(TypeError);
+  expect(() => getVisibleControlLayout({ ...options, surface: null })).toThrow(
+    TypeError,
+  );
+  expect(() =>
+    getVisibleControlLayout({ ...options, surface: "desktop" }),
+  ).toThrow(TypeError);
+});
+
+test("remote exclusions do not alter normal settings-surface ownership", () => {
+  const sourceDefinition = CONTROL_DEFINITIONS.find(
+    (definition) => definition.key === "volumeShape",
+  );
+  const supportedExcluded = {
+    ...sourceDefinition,
+    remoteControl: { excludedReason: "operator-only" },
+  };
+  const unsupportedExcluded = {
+    ...sourceDefinition,
+    defaultValue: "unsupported-contract",
+    binding: undefined,
+    remoteControl: { excludedReason: "unsupported-value-contract" },
+  };
+
+  expect(
+    controlMatchesSettingsSurface(
+      supportedExcluded,
+      CONTROL_SURFACES.listener,
+    ),
+  ).toBe(true);
+  expect(
+    controlMatchesSettingsSurface(
+      unsupportedExcluded,
+      CONTROL_SURFACES.listener,
+    ),
+  ).toBe(true);
 });
 
 test("persistControls rewrites settings to the current schema and drops removed keys", () => {

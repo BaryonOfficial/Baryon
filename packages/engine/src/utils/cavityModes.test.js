@@ -112,7 +112,6 @@ describe("acoustic cavity scale", () => {
     expect(
       new Set(mappings.map((mode) => `${mode.u}:${mode.v}:${mode.w}`)).size,
     ).toBeGreaterThan(3);
-    expect(mappings.every((mode) => mode.subfloorProjectionActive)).toBe(false);
   });
 
   it("uses boundary-aware zero index modes for the neumann acoustic floor", () => {
@@ -120,7 +119,6 @@ describe("acoustic cavity scale", () => {
       acousticScale: {
         sideLengthMeters: 3,
         soundSpeedMetersPerSecond: 1480,
-        subfloorPolicy: "project-subfundamental",
       },
       boundaryMode: "neumann",
     };
@@ -128,53 +126,29 @@ describe("acoustic cavity scale", () => {
     expect(getCavityAcousticFloorHz(options)).toBeCloseTo(1480 / 6);
     expect(
       resolveCavityModeFamilyForPitch(1480 / 6, options, 1)[0],
-    ).toMatchObject({
-      u: 0,
-      v: 0,
-      w: 1,
-      subfloorProjectionActive: false,
-    });
+    ).toMatchObject({ u: 0, v: 0, w: 1 });
   });
 
-  it("reports subfloor projection instead of silently pretending bass is resolved", () => {
+  it("returns the lowest mode for a pitch under the acoustic floor", () => {
     const options = {
       acousticScale: {
         sideLengthMeters: 3,
         soundSpeedMetersPerSecond: 1480,
-        subfloorPolicy: "project-subfundamental",
       },
       boundaryMode: "dirichlet",
     };
     const [mode] = resolveCavityModeFamilyForPitch(60, options, 1);
 
+    // A cavity has no mode below its fundamental, so the nearest one is the
+    // fundamental itself. What is NOT reported here is any claim that the pitch
+    // was represented: how much of the input the committed basis can actually
+    // account for is measured downstream as the drive estimator's explained
+    // energy share, not guessed at from the geometry.
     expect(getCavityAcousticFloorHz(options)).toBeGreaterThan(60);
-    expect(mode).toMatchObject({
-      u: 1,
-      v: 1,
-      w: 1,
-      subfloorProjectionActive: true,
-      subfloorPolicy: "project-subfundamental",
-    });
-    expect(mode.subfloorFrequencyHz).toBeCloseTo(
+    expect(mode).toMatchObject({ u: 1, v: 1, w: 1 });
+    expect(mode.naturalFrequencyHz).toBeCloseTo(
       getCavityAcousticFloorHz(options),
     );
-  });
-
-  it("translates the retired subfloor policy name only at the cavity boundary", () => {
-    const options = {
-      acousticScale: {
-        sideLengthMeters: 3,
-        soundSpeedMetersPerSecond: 1480,
-        subfloorPolicy: "project-low-q",
-      },
-      boundaryMode: "dirichlet",
-    };
-    const [mode] = resolveCavityModeFamilyForPitch(60, options, 1);
-
-    expect(mode).toMatchObject({
-      subfloorProjectionActive: true,
-      subfloorPolicy: "project-subfundamental",
-    });
   });
 });
 
@@ -208,7 +182,12 @@ describe("sampleFFTAmplitudeForFrequency", () => {
   it("returns 0 for frequency 0", () => {
     const fftLinearAmplitudes = new Float32Array(16).fill(0.5);
     expect(
-      sampleFFTAmplitudeForFrequency(0, fftLinearAmplitudes, sampleRate, fftSize),
+      sampleFFTAmplitudeForFrequency(
+        0,
+        fftLinearAmplitudes,
+        sampleRate,
+        fftSize,
+      ),
     ).toBe(0);
   });
 
@@ -241,11 +220,16 @@ describe("sampleFFTAmplitudeForFrequency", () => {
   it("returns 0 for invalid sampling inputs", () => {
     const fftLinearAmplitudes = new Float32Array(16).fill(0.5);
     expect(
-      sampleFFTAmplitudeForFrequency(-1, fftLinearAmplitudes, sampleRate, fftSize),
+      sampleFFTAmplitudeForFrequency(
+        -1,
+        fftLinearAmplitudes,
+        sampleRate,
+        fftSize,
+      ),
     ).toBe(0);
-    expect(sampleFFTAmplitudeForFrequency(440, fftLinearAmplitudes, 0, fftSize)).toBe(
-      0,
-    );
+    expect(
+      sampleFFTAmplitudeForFrequency(440, fftLinearAmplitudes, 0, fftSize),
+    ).toBe(0);
     expect(
       sampleFFTAmplitudeForFrequency(440, fftLinearAmplitudes, sampleRate, 0),
     ).toBe(0);
@@ -256,6 +240,8 @@ describe("solveCavityModeFamilyForPitch", () => {
   it("returns an empty family for invalid inputs", () => {
     expect(solveCavityModeFamilyForPitch(0, SIDE_LENGTH, 4)).toStrictEqual([]);
     expect(solveCavityModeFamilyForPitch(440, 0, 4)).toStrictEqual([]);
-    expect(solveCavityModeFamilyForPitch(440, SIDE_LENGTH, 0)).toStrictEqual([]);
+    expect(solveCavityModeFamilyForPitch(440, SIDE_LENGTH, 0)).toStrictEqual(
+      [],
+    );
   });
 });

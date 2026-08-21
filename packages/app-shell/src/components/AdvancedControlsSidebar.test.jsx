@@ -8,7 +8,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PERFORMANCE_PROFILES } from "@baryon/engine/render/outputProfilePolicy";
 import AdvancedControlsSidebar from "./AdvancedControlsSidebar.jsx";
 
-describe("AdvancedControlsSidebar info links", () => {
+const VOLUME_GROUP = {
+  title: "Volume",
+  expanded: true,
+  controls: [
+    {
+      key: "densityGain",
+      label: "Density",
+      title: "Density",
+      defaultValue: 3,
+      binding: { min: 0.1, max: 4, step: 0.01 },
+    },
+  ],
+};
+
+describe("AdvancedControlsSidebar", () => {
   let container = null;
   let root = null;
   let originalActEnvironment;
@@ -61,11 +75,27 @@ describe("AdvancedControlsSidebar info links", () => {
           loadPreset={() => {}}
           deletePreset={() => {}}
           onClose={() => {}}
-          dockWidth="360px"
+          dockWidth="312px"
           {...overrides}
         />,
       );
     });
+  }
+
+  function setFilterQuery(query) {
+    const input = container.querySelector(
+      'input[aria-label="Filter controls"]',
+    );
+    expect(input).toBeInstanceOf(HTMLInputElement);
+    act(() => {
+      const setValue = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      ).set;
+      setValue.call(input, query);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    return input;
   }
 
   it("does not attach React wheel handlers inside the scroll panel", () => {
@@ -86,93 +116,191 @@ describe("AdvancedControlsSidebar info links", () => {
     expect(source).not.toContain('addEventListener("scroll"');
   });
 
-  it("renders docs, source, license, and social profile links", () => {
+  it("renders a compact unbranded header with an accessible close button", () => {
     renderSidebar();
 
-    const links = Array.from(
-      container.querySelectorAll(".baryon-controls-footer-links a"),
+    const header = container.querySelector(".baryon-controls-header");
+    const closeButton = container.querySelector(
+      ".baryon-controls-close-button",
     );
 
-    expect(links.map((link) => [link.textContent, link.href])).toEqual([
+    expect(header?.textContent).toContain("Settings");
+    expect(window.getComputedStyle(header).display).toBe("grid");
+    expect(header?.querySelector(".baryon-controls-header-logo")).toBeNull();
+    expect(closeButton?.getAttribute("aria-label")).toBe("Close settings");
+    expect(closeButton?.getAttribute("title")).toBe("Close settings");
+    expect(container.querySelector('[role="tab"]')).toBeNull();
+  });
+
+  it("renders a labeled bug-report button and quiet resource links", () => {
+    renderSidebar();
+
+    const bugLink = Array.from(
+      container.querySelectorAll("a.baryon-controls-footer-button"),
+    ).find((link) => link.textContent?.includes("Feedback"));
+    expect(bugLink).toBeInstanceOf(HTMLAnchorElement);
+    expect(bugLink.href).toBe(
+      "https://github.com/BaryonOfficial/Baryon/issues",
+    );
+    expect(bugLink.getAttribute("target")).toBe("_blank");
+    expect(bugLink.querySelector("svg")).not.toBeNull();
+
+    const textLinks = Array.from(
+      container.querySelectorAll("a.baryon-controls-footer-text-link"),
+    );
+    expect(textLinks.map((link) => [link.textContent, link.href])).toEqual([
       ["Docs", "https://baryon.live/docs/"],
       ["Source", "https://github.com/BaryonOfficial/Baryon"],
       [
         "License",
         "https://github.com/BaryonOfficial/Baryon/blob/main/LICENSING.md",
       ],
+    ]);
+
+    const socialLinks = Array.from(
+      container.querySelectorAll(".baryon-controls-footer-social a"),
+    );
+    expect(
+      socialLinks.map((link) => [link.getAttribute("aria-label"), link.href]),
+    ).toEqual([
       ["X", "https://x.com/kyledcollins"],
       ["Instagram", "https://www.instagram.com/baryon.eth/"],
     ]);
-
-    expect(links.map((link) => link.getAttribute("aria-label"))).toEqual([
-      null,
-      null,
-      null,
-      null,
-      null,
+    expect(socialLinks.map((link) => link.getAttribute("data-brand"))).toEqual([
+      "x",
+      "instagram",
     ]);
-
-    expect(container.querySelector(".baryon-controls-footer img")).toBeNull();
   });
 
-  it("renders custom footer actions after the license link", () => {
+  it("opens in-app feedback instead of linking out when a handler is provided", () => {
+    const onOpenFeedback = vi.fn();
+    renderSidebar({ onOpenFeedback });
+
+    expect(
+      container.querySelector("a.baryon-controls-footer-button"),
+    ).toBeNull();
+    const feedbackButton = Array.from(
+      container.querySelectorAll("button.baryon-controls-footer-button"),
+    ).find((button) => button.textContent?.includes("Feedback"));
+    expect(feedbackButton).toBeInstanceOf(HTMLButtonElement);
+    expect(feedbackButton.querySelector("svg")).not.toBeNull();
+
+    act(() => {
+      feedbackButton.click();
+    });
+    expect(onOpenFeedback).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders custom footer actions as text buttons", () => {
     const onSelectTerms = vi.fn();
     renderSidebar({
       footerActions: [{ label: "Terms", onSelect: onSelectTerms }],
     });
 
-    const footerItems = Array.from(
-      container.querySelectorAll(
-        ".baryon-controls-footer-links a, .baryon-controls-footer-links button",
-      ),
-    );
+    const termsButton = Array.from(
+      container.querySelectorAll("button.baryon-controls-footer-text-link"),
+    ).find((button) => button.textContent === "Terms");
 
-    expect(footerItems.map((item) => item.textContent)).toEqual([
-      "Docs",
-      "Source",
-      "License",
-      "Terms",
-      "X",
-      "Instagram",
-    ]);
-
-    footerItems[3].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(termsButton).toBeInstanceOf(HTMLButtonElement);
+    termsButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(onSelectTerms).toHaveBeenCalledTimes(1);
   });
 
-  it("gives the icon-only close button a specific accessible name", () => {
-    renderSidebar();
+  it("seats a host footer accessory between the buttons and the resource links", () => {
+    renderSidebar({
+      footerAccessory: <div data-testid="host-footer-accessory" />,
+    });
 
-    const closeButton = container.querySelector(
-      ".baryon-controls-close-button",
+    const accessory = container.querySelector(
+      '[data-testid="host-footer-accessory"]',
     );
-
-    expect(closeButton?.getAttribute("aria-label")).toBe(
-      "Close advanced controls",
+    expect(accessory).not.toBeNull();
+    expect(accessory.previousElementSibling.className).toBe(
+      "baryon-controls-footer-buttons",
     );
-    expect(closeButton?.getAttribute("title")).toBe("Close advanced controls");
+    expect(accessory.nextElementSibling.className).toBe(
+      "baryon-controls-footer-meta",
+    );
   });
 
-  it("renders the fullscreen UI opt-in directly below presets", () => {
+  it("omits the footer accessory when the host supplies none", () => {
+    renderSidebar();
+
+    const footer = container.querySelector(".baryon-controls-footer");
+    expect(footer.children).toHaveLength(2);
+  });
+
+  it("resets controls from the footer action", () => {
+    const resetControls = vi.fn();
+    renderSidebar({ resetControls });
+
+    const resetButton = Array.from(
+      container.querySelectorAll("button.baryon-controls-footer-button"),
+    ).find((button) => button.textContent === "Reset all");
+
+    expect(resetButton).toBeInstanceOf(HTMLButtonElement);
+    act(() => {
+      resetButton.click();
+    });
+    expect(resetControls).toHaveBeenCalledTimes(1);
+  });
+
+  it("groups the fullscreen UI preference with Output", () => {
     const onChange = vi.fn();
     renderSidebar({
+      folderGroups: [
+        { title: "Logo", expanded: false, controls: [] },
+        {
+          title: "Output",
+          expanded: false,
+          controls: [
+            {
+              key: "outputBackgroundColor",
+              label: "Output Color",
+              title: "Output Color",
+              defaultValue: "#000000",
+              binding: { view: "color" },
+            },
+          ],
+        },
+        { title: "Diagnostics", expanded: false, controls: [] },
+      ],
       showUiInFullscreen: false,
       onShowUiInFullscreenChange: onChange,
     });
 
-    const toggle = container.querySelector(
-      '[data-testid="show-ui-in-fullscreen-toggle"]',
+    const groups = Array.from(
+      container.querySelectorAll(".baryon-controls-group"),
     );
-    const input = toggle?.querySelector('input[type="checkbox"]');
-    const presets = container.querySelector(".baryon-controls-presets");
+    expect(
+      groups.map(
+        (group) =>
+          group.querySelector(".baryon-controls-group-title")?.textContent,
+      ),
+    ).toEqual(["Logo", "Output", "Diagnostics"]);
 
-    expect(toggle).not.toBeNull();
-    expect(toggle?.textContent).toContain("Show UI in fullscreen");
-    expect(toggle?.textContent).toContain("Press F to enter/exit fullscreen.");
+    const outputGroup = groups[1];
+    const groupToggle = outputGroup?.querySelector(
+      ".baryon-controls-group-toggle",
+    );
+    expect(groupToggle?.textContent).toContain("2");
+    expect(
+      outputGroup?.querySelector('input[aria-label="Fullscreen UI"]'),
+    ).toBeNull();
+
+    act(() => {
+      groupToggle?.click();
+    });
+
+    expect(
+      outputGroup?.querySelector('input[aria-label="Output Color"]'),
+    ).toBeInstanceOf(HTMLInputElement);
+    const input = outputGroup?.querySelector(
+      'input[aria-label="Fullscreen UI"]',
+    );
+
     expect(input).toBeInstanceOf(HTMLInputElement);
-    expect(input?.getAttribute("aria-label")).toBe("Show UI in fullscreen");
     expect(input?.checked).toBe(false);
-    expect(presets?.nextElementSibling).toBe(toggle);
 
     act(() => {
       input?.click();
@@ -181,42 +309,195 @@ describe("AdvancedControlsSidebar info links", () => {
     expect(onChange).toHaveBeenCalledWith(true);
   });
 
+  it("finds the fullscreen UI preference through control filtering", () => {
+    renderSidebar({
+      folderGroups: [{ ...VOLUME_GROUP, expanded: false }],
+      showUiInFullscreen: false,
+      onShowUiInFullscreenChange: vi.fn(),
+    });
+
+    setFilterQuery("fullscreen");
+
+    expect(container.textContent).toContain("Fullscreen");
+    expect(
+      container.querySelector('input[aria-label="Fullscreen UI"]'),
+    ).toBeInstanceOf(HTMLInputElement);
+    expect(container.textContent).not.toContain("No controls match");
+    expect(container.textContent).not.toContain("Volume");
+  });
+
+  it("loads a preset from the preset select", () => {
+    const loadPreset = vi.fn();
+    renderSidebar({
+      presets: [
+        { name: "Night Bloom", controls: {} },
+        { name: "Ember Field", controls: {} },
+      ],
+      loadPreset,
+    });
+
+    const select = container.querySelector(
+      'select[aria-label="Saved presets"]',
+    );
+    expect(select).toBeInstanceOf(HTMLSelectElement);
+    expect(
+      Array.from(select.options).map((option) => option.textContent),
+    ).toEqual(["Live — unsaved", "Night Bloom", "Ember Field"]);
+
+    act(() => {
+      const setValue = Object.getOwnPropertyDescriptor(
+        HTMLSelectElement.prototype,
+        "value",
+      ).set;
+      setValue.call(select, "Ember Field");
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    expect(loadPreset).toHaveBeenCalledWith("Ember Field");
+  });
+
+  it("shows an empty placeholder when there are no saved presets", () => {
+    renderSidebar({ presets: [] });
+
+    const emptyState = container.querySelector(
+      '[aria-label="No saved presets"]',
+    );
+    expect(emptyState?.textContent).toContain("No presets yet");
+    expect(emptyState?.textContent).toContain(
+      "Name this setup below to keep it for later.",
+    );
+    expect(
+      container.querySelector('select[aria-label="Saved presets"]'),
+    ).toBeNull();
+    expect(container.textContent).toContain("0 saved");
+  });
+
+  it("saves a named preset and identifies replacement", () => {
+    const savePreset = vi.fn();
+    renderSidebar({ presetName: "Night Bloom", savePreset });
+
+    const saveButton = container.querySelector('button[type="submit"]');
+    expect(saveButton?.textContent).toBe("Save");
+    expect(saveButton?.disabled).toBe(false);
+
+    act(() => {
+      saveButton?.click();
+    });
+    expect(savePreset).toHaveBeenCalledTimes(1);
+
+    renderSidebar({
+      presetName: "Night Bloom",
+      presets: [{ name: "Night Bloom", controls: {} }],
+    });
+    const replaceButton = container.querySelector('button[type="submit"]');
+    expect(replaceButton?.textContent).toBe("Replace");
+    expect(replaceButton?.getAttribute("aria-label")).toBe(
+      "Replace Night Bloom",
+    );
+  });
+
+  it("disables the save button without a preset name", () => {
+    renderSidebar({ presetName: "   " });
+
+    const saveButton = container.querySelector('button[type="submit"]');
+    expect(saveButton?.disabled).toBe(true);
+  });
+
   it("does not offer deletion when no user preset is selected", () => {
     const deletePreset = vi.fn();
-
     renderSidebar({
       presets: [],
       selectedPresetName: "",
       deletePreset,
     });
 
-    const deleteButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Delete selected",
+    const deleteButton = container.querySelector(
+      '.baryon-controls-icon-button[data-variant="danger"]',
     );
 
-    expect(deleteButton?.disabled).toBe(true);
-    deleteButton?.click();
+    expect(deleteButton).toBeNull();
     expect(deletePreset).not.toHaveBeenCalled();
   });
 
-  it("renders only the placeholder option when there are no user presets", () => {
-    renderSidebar({ presets: [] });
+  it("confirms deletion on the same button before removing a preset", () => {
+    const deletePreset = vi.fn();
+    renderSidebar({
+      presets: [{ name: "Night Bloom", controls: {} }],
+      selectedPresetName: "Night Bloom",
+      deletePreset,
+    });
 
-    const select = container.querySelector('select[aria-label="Load preset"]');
-    expect(select).toBeInstanceOf(HTMLSelectElement);
-    expect(Array.from(select.options).map((option) => option.value)).toEqual([
-      "",
-    ]);
+    const deleteButton = container.querySelector(
+      '.baryon-controls-icon-button[data-variant="danger"]',
+    );
+    expect(deleteButton?.getAttribute("aria-label")).toBe("Delete Night Bloom");
+
+    act(() => {
+      deleteButton.click();
+    });
+    expect(deletePreset).not.toHaveBeenCalled();
+
+    const confirmButton = container.querySelector(
+      '.baryon-controls-icon-button[data-variant="danger-confirm"]',
+    );
+    expect(confirmButton?.getAttribute("aria-label")).toBe(
+      "Confirm delete Night Bloom",
+    );
+
+    act(() => {
+      confirmButton.click();
+    });
+    expect(deletePreset).toHaveBeenCalledWith("Night Bloom");
   });
 
-  it("pins performance and output controls outside collapsible groups", () => {
-    const updateControl = vi.fn();
+  it("collapses groups by default and expands them on toggle", () => {
+    const multiControlVolumeGroup = {
+      ...VOLUME_GROUP,
+      expanded: false,
+      controls: [
+        ...VOLUME_GROUP.controls,
+        {
+          key: "surfaceBias",
+          label: "Surface Bias",
+          title: "Surface Bias",
+          defaultValue: 0,
+          binding: { min: -1, max: 1, step: 0.01 },
+        },
+      ],
+    };
+    renderSidebar({
+      folderGroups: [multiControlVolumeGroup],
+      controlsState: { densityGain: 2.85, surfaceBias: 0 },
+    });
 
+    expect(
+      container.querySelector('input[aria-label="Density value"]'),
+    ).toBeNull();
+
+    const groupToggle = container.querySelector(
+      ".baryon-controls-group-toggle",
+    );
+    expect(groupToggle?.getAttribute("aria-expanded")).toBe("false");
+    expect(groupToggle?.textContent).toContain("Volume");
+    expect(groupToggle?.textContent).toContain("2");
+
+    act(() => {
+      groupToggle.click();
+    });
+
+    expect(groupToggle?.getAttribute("aria-expanded")).toBe("true");
+    expect(
+      container.querySelector('input[aria-label="Density value"]'),
+    ).toBeInstanceOf(HTMLInputElement);
+  });
+
+  it("keeps section-header controls interactive while the group is collapsed", () => {
+    const updateControl = vi.fn();
     renderSidebar({
       folderGroups: [
         {
           title: "Performance",
-          expanded: true,
+          expanded: false,
           controls: [
             {
               key: "renderQualityPreset",
@@ -241,144 +522,137 @@ describe("AdvancedControlsSidebar info links", () => {
             },
           ],
         },
+      ],
+      controlsState: {
+        renderQualityPreset: PERFORMANCE_PROFILES.auto,
+        performanceHudEnabled: false,
+      },
+      updateControl,
+    });
+
+    const header = container.querySelector(".baryon-controls-group-header");
+    const hudToggle = header?.querySelector('input[aria-label="HUD"]');
+    expect(hudToggle).toBeInstanceOf(HTMLInputElement);
+    expect(container.querySelectorAll('[role="radio"]')).toHaveLength(0);
+
+    hudToggle?.click();
+    expect(updateControl).toHaveBeenCalledWith("performanceHudEnabled", true);
+
+    const groupToggle = container.querySelector(
+      ".baryon-controls-group-toggle",
+    );
+    act(() => {
+      groupToggle.click();
+    });
+
+    expect(
+      Array.from(container.querySelectorAll('[role="radio"]')).map(
+        (button) => button.textContent,
+      ),
+    ).toEqual(["Auto", "Custom", "Max"]);
+    expect(
+      container.querySelectorAll(".baryon-controls-segmented"),
+    ).toHaveLength(1);
+  });
+
+  it("shows applied diagnostic state beside the requested control", () => {
+    renderSidebar({
+      folderGroups: [
         {
-          title: "Output",
+          title: "Diagnostics",
           expanded: true,
           controls: [
             {
-              key: "outputMode",
-              label: "Output Mode",
-              title: "Output Mode",
-              defaultValue: "transparent",
+              key: "injectTestTone",
+              label: "Inject Tone",
+              title: "Inject a test tone",
+              defaultValue: false,
+            },
+          ],
+        },
+      ],
+      controlsState: { injectTestTone: true },
+      controlStatuses: {
+        injectTestTone: {
+          state: "applying",
+          label: "Applying",
+        },
+      },
+    });
+
+    const status = container.querySelector(
+      '[data-testid="advanced-controls-status-injectTestTone"]',
+    );
+    expect(status?.textContent).toBe("Applying");
+    expect(status?.getAttribute("data-state")).toBe("applying");
+    expect(status?.getAttribute("aria-label")).toBe("Inject Tone: Applying");
+  });
+
+  it("filters controls across collapsed groups", () => {
+    renderSidebar({
+      folderGroups: [
+        { ...VOLUME_GROUP, expanded: false },
+        {
+          title: "Appearance",
+          expanded: false,
+          controls: [
+            {
+              key: "colorMode",
+              label: "Color Mode",
+              title: "Color Mode",
+              defaultValue: "static",
               binding: {
-                view: "segmented",
-                options: {
-                  Transparent: "transparent",
-                  Opaque: "opaque",
-                },
+                options: { Static: "static", Spectral: "spectral" },
               },
             },
           ],
         },
       ],
-      controlsState: {
-        renderQualityPreset: PERFORMANCE_PROFILES.auto,
-        performanceHudEnabled: false,
-        outputMode: "transparent",
-      },
-      updateControl,
+      controlsState: { densityGain: 2.85, colorMode: "static" },
+      presets: [{ name: "Night Bloom", controls: {} }],
     });
 
-    expect(container.querySelector('select[aria-label="Profile"]')).toBeNull();
+    setFilterQuery("color");
+
     expect(
-      container.querySelector('select[aria-label="Output Mode"]'),
+      container.querySelector('select[aria-label="Color Mode"]'),
+    ).toBeInstanceOf(HTMLSelectElement);
+    expect(
+      container.querySelector('input[aria-label="Density value"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('select[aria-label="Saved presets"]'),
     ).toBeNull();
 
-    const groups = Array.from(
-      container.querySelectorAll(".baryon-controls-segmented"),
-    );
-    expect(groups).toHaveLength(2);
+    const clearButton = container.querySelector('[aria-label="Clear filter"]');
+    act(() => {
+      clearButton.click();
+    });
+
+    expect(container.textContent).toContain("Volume");
     expect(
-      Array.from(container.querySelectorAll('[role="radio"]')).map(
-        (button) => button.textContent,
-      ),
-    ).toEqual(["Auto", "Custom", "Max", "Transparent", "Opaque"]);
-
+      container.querySelector('input[aria-label="Density value"]'),
+    ).toBeNull();
     expect(
-      Array.from(container.querySelectorAll(".baryon-controls-pinned-section"))
-        .map((section) =>
-          section
-            .querySelector(".baryon-controls-section-label")
-            ?.textContent?.trim(),
-        )
-        .filter(Boolean),
-    ).toEqual(["Performance"]);
-
-    const performanceSection = Array.from(
-      container.querySelectorAll(".baryon-controls-pinned-section"),
-    ).find((section) =>
-      section
-        .querySelector(".baryon-controls-section-label")
-        ?.textContent?.includes("Performance"),
-    );
-    const performanceHeader = performanceSection?.querySelector(
-      ".baryon-controls-pinned-header",
-    );
-    const hudToggle = performanceHeader?.querySelector(
-      'input[aria-label="HUD"]',
-    );
-    const profileCard = Array.from(
-      performanceSection?.querySelectorAll(".baryon-controls-card") ?? [],
-    ).find((card) => card.textContent?.includes("Profile"));
-    expect(performanceHeader?.textContent).toContain("Performance");
-    expect(performanceHeader?.textContent).toContain("HUD");
-    expect(hudToggle).toBeInstanceOf(HTMLInputElement);
-    expect(
-      performanceHeader?.compareDocumentPosition(profileCard) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-
-    hudToggle?.click();
-    expect(updateControl).toHaveBeenCalledWith("performanceHudEnabled", true);
-
-    const outputModeLabel = Array.from(
-      container.querySelectorAll(".baryon-controls-card-label"),
-    ).find((label) => label.textContent === "Output Mode");
-    const outputModeCard = outputModeLabel?.closest(".baryon-controls-card");
-    expect(outputModeLabel?.classList).toContain(
-      "baryon-controls-segmented-label",
-    );
-    expect(outputModeCard?.children[0]).toContain(outputModeLabel);
-    expect(
-      outputModeCard?.children[1]?.classList.contains(
-        "baryon-controls-segmented",
-      ),
-    ).toBe(true);
-    expect(
-      Array.from(container.querySelectorAll(".baryon-controls-group-toggle"))
-        .map((button) => button.textContent)
-        .some(
-          (text) => text.includes("Performance") || text.includes("Output"),
-        ),
-    ).toBe(false);
-
-    const opaqueButton = Array.from(
-      container.querySelectorAll('[role="radio"]'),
-    ).find((button) => button.textContent === "Opaque");
-    opaqueButton?.click();
-
-    expect(updateControl).toHaveBeenCalledWith("outputMode", "opaque");
+      container.querySelector('select[aria-label="Saved presets"]'),
+    ).toBeInstanceOf(HTMLSelectElement);
   });
 
-  it("adds extra separation between preset name and load controls", () => {
-    renderSidebar();
+  it("shows an empty state when no controls match the filter", () => {
+    renderSidebar({
+      folderGroups: [{ ...VOLUME_GROUP, expanded: false }],
+      controlsState: { densityGain: 2.85 },
+    });
 
-    const loadField = container.querySelector(
-      ".baryon-controls-presets-load-field",
-    );
+    setFilterQuery("zzzz");
 
-    expect(loadField).not.toBeNull();
-    expect(window.getComputedStyle(loadField).marginTop).toBe("0.22rem");
+    expect(container.textContent).toContain("No controls match");
   });
 
   it("does not let sidebar scrolling step focused numeric controls", () => {
     const updateControl = vi.fn();
     renderSidebar({
-      folderGroups: [
-        {
-          title: "Volume",
-          expanded: true,
-          controls: [
-            {
-              key: "densityGain",
-              label: "Density",
-              title: "Density",
-              defaultValue: 3,
-              binding: { min: 0.1, max: 4, step: 0.01 },
-            },
-          ],
-        },
-      ],
+      folderGroups: [VOLUME_GROUP],
       controlsState: { densityGain: 2.85 },
       updateControl,
     });
@@ -409,21 +683,7 @@ describe("AdvancedControlsSidebar info links", () => {
     window.addEventListener("__baryon-ui-interaction", handleInteraction);
     try {
       renderSidebar({
-        folderGroups: [
-          {
-            title: "Volume",
-            expanded: true,
-            controls: [
-              {
-                key: "densityGain",
-                label: "Density",
-                title: "Density",
-                defaultValue: 3,
-                binding: { min: 0.1, max: 4, step: 0.01 },
-              },
-            ],
-          },
-        ],
+        folderGroups: [VOLUME_GROUP],
         controlsState: { densityGain: 2.85 },
       });
 
@@ -454,21 +714,7 @@ describe("AdvancedControlsSidebar info links", () => {
     window.addEventListener("__baryon-ui-interaction", handleInteraction);
     try {
       renderSidebar({
-        folderGroups: [
-          {
-            title: "Volume",
-            expanded: true,
-            controls: [
-              {
-                key: "densityGain",
-                label: "Density",
-                title: "Density",
-                defaultValue: 3,
-                binding: { min: 0.1, max: 4, step: 0.01 },
-              },
-            ],
-          },
-        ],
+        folderGroups: [VOLUME_GROUP],
         controlsState: { densityGain: 2.85 },
       });
 
@@ -503,21 +749,7 @@ describe("AdvancedControlsSidebar info links", () => {
     window.addEventListener("__baryon-ui-interaction", handleInteraction);
     try {
       renderSidebar({
-        folderGroups: [
-          {
-            title: "Volume",
-            expanded: true,
-            controls: [
-              {
-                key: "densityGain",
-                label: "Density",
-                title: "Density",
-                defaultValue: 3,
-                binding: { min: 0.1, max: 4, step: 0.01 },
-              },
-            ],
-          },
-        ],
+        folderGroups: [VOLUME_GROUP],
         controlsState: { densityGain: 2.85 },
       });
 
@@ -547,21 +779,7 @@ describe("AdvancedControlsSidebar info links", () => {
   it("does not let sidebar scrolling step focused slider controls", () => {
     const updateControl = vi.fn();
     renderSidebar({
-      folderGroups: [
-        {
-          title: "Volume",
-          expanded: true,
-          controls: [
-            {
-              key: "densityGain",
-              label: "Density",
-              title: "Density",
-              defaultValue: 3,
-              binding: { min: 0.1, max: 4, step: 0.01 },
-            },
-          ],
-        },
-      ],
+      folderGroups: [VOLUME_GROUP],
       controlsState: { densityGain: 2.85 },
       updateControl,
     });
@@ -587,14 +805,30 @@ describe("AdvancedControlsSidebar info links", () => {
   });
 
   it("does not let sidebar scrolling change a focused select control", () => {
-    const loadPreset = vi.fn();
+    const updateControl = vi.fn();
     renderSidebar({
-      presets: [{ name: "Saved Haze", controls: {} }],
-      selectedPresetName: "Saved Haze",
-      loadPreset,
+      folderGroups: [
+        {
+          title: "Appearance",
+          expanded: true,
+          controls: [
+            {
+              key: "colorMode",
+              label: "Color Mode",
+              title: "Color Mode",
+              defaultValue: "static",
+              binding: {
+                options: { Static: "static", Spectral: "spectral" },
+              },
+            },
+          ],
+        },
+      ],
+      controlsState: { colorMode: "static" },
+      updateControl,
     });
 
-    const select = container.querySelector('select[aria-label="Load preset"]');
+    const select = container.querySelector('select[aria-label="Color Mode"]');
     expect(select).toBeInstanceOf(HTMLSelectElement);
     select.focus();
 
@@ -608,7 +842,7 @@ describe("AdvancedControlsSidebar info links", () => {
     expect(dispatchResult).toBe(true);
     expect(wheelEvent.defaultPrevented).toBe(false);
     expect(document.activeElement).not.toBe(select);
-    expect(select.value).toBe("Saved Haze");
-    expect(loadPreset).not.toHaveBeenCalled();
+    expect(select.value).toBe("static");
+    expect(updateControl).not.toHaveBeenCalled();
   });
 });

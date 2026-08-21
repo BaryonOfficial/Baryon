@@ -1,4 +1,5 @@
 import { performance } from "node:perf_hooks";
+import process from "node:process";
 import {
   createFeatureWorkerState,
   processFeatureWorkerFrame,
@@ -113,9 +114,13 @@ function installFullProbeContract(state, sampleRate) {
     committedModes,
     sampleRate,
   });
-  state.fastEstimatorSignature = `benchmark:${sampleRate}:48`;
-  // Force the canonical worker path to publish a matching 48-mode topology
-  // before measured fast-only frames begin.
+  state.fastEstimatorSignature =
+    `benchmark:${sampleRate}:${committedModes.length}:` +
+    `${FAST_MODAL_DRIVE_PROBE_LIMIT}`;
+  // Force the canonical worker path to publish this committed topology before
+  // measured fast-only frames begin. The semantic topology may contain more
+  // modes than the bounded exact-probe set; every committed mode still receives
+  // forcing distributed from those probes.
   state.latestDriveTopology = null;
   state.latestTopologyFingerprint = null;
 }
@@ -124,17 +129,24 @@ function runProbe(sampleRate) {
   const state = createFeatureWorkerState();
   state.sourceGeneration = 1;
   state.workerGeneration = 1;
-  state.configuration = { radius: 1, includeSpectralLight: true };
+  state.configuration = { radius: 1 };
   const fastPayload = createSnapshot(2048, sampleRate);
   const structuralPayload = createSnapshot(8192, sampleRate);
   const status = {
-    audioInputMode: "file",
+    sourceSession: {
+      kind: "file",
+      phase: "active",
+      sessionId: 1,
+      timelineRevision: 0,
+      terminalReason: null,
+      systemCapture: null,
+    },
     analysisSource: "file",
     pitchSourceMode: "spectral",
     fftSize: 8192,
     fastFftSize: 2048,
-    // Exercise the full exact-drive contract even though the shipped renderer
-    // exposes a narrower visible atlas prefix.
+    // Exercise the full bounded exact-probe contract while the semantic
+    // topology may carry more committed modes than direct probe channels.
     capacity: FAST_MODAL_DRIVE_PROBE_LIMIT,
     sampleRate,
     isAudioLoaded: true,
@@ -165,11 +177,18 @@ function runProbe(sampleRate) {
     status,
   });
   if (
+    state.committedModes.length < FAST_MODAL_DRIVE_PROBE_LIMIT ||
     fullContractSetup.topologyPacket?.committedModeCount !==
-      FAST_MODAL_DRIVE_PROBE_LIMIT ||
+      state.committedModes.length ||
     state.fastEstimator?.result?.probeCount !== FAST_MODAL_DRIVE_PROBE_LIMIT
   ) {
-    throw new Error("Integrated worker benchmark did not install 48 probes.");
+    throw new Error(
+      `Integrated worker benchmark did not install ${FAST_MODAL_DRIVE_PROBE_LIMIT} probes ` +
+        `across the committed topology ` +
+        `(state=${state.committedModes.length}, ` +
+        `published=${fullContractSetup.topologyPacket?.committedModeCount ?? "missing"}, ` +
+        `probed=${state.fastEstimator?.result?.probeCount ?? "missing"}).`,
+    );
   }
   const stableDrivePacketBuffers = {
     modalCoefficients: fullContractSetup.drivePacket.modalCoefficients,

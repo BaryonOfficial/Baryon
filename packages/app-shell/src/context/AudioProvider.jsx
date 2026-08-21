@@ -5,7 +5,10 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { getDefaultAudioSession } from "@baryon/engine/audio";
+import {
+  AUDIO_SOURCE_KINDS,
+  getDefaultAudioSession,
+} from "@baryon/engine/audio";
 import {
   deserializeControlSettings,
   isDefaultControlSettingValue,
@@ -55,7 +58,6 @@ import { subscribeControlsChanged } from "../controls/controlsEvents.js";
 const DEFAULT_FILE_NAME = "Upload Audio";
 const PRELOADED_DEMO_AUDIO = Object.freeze({
   name: "baryon-demo.mp3",
-  bundledPath: "audio/baryon-demo.mp3",
   webUrl: "/audio/baryon-demo.mp3",
 });
 /**
@@ -69,6 +71,7 @@ const DEFAULT_TRANSPORT_SEEK_STATE = Object.freeze({
   durationSeconds: 0,
   canSeek: false,
 });
+const PREVIOUS_TRACK_ZERO_THRESHOLD_SECONDS = 0.05;
 const RECENT_UPLOAD_LIMIT = 4;
 const LIVE_INPUT_ANALYSIS_OVERRIDES_KEY = "liveInputAnalysisOverrides";
 const LIVE_INPUT_ACOUSTIC_INTENT_KEY = "liveInputAcousticIntent";
@@ -80,22 +83,6 @@ const LIVE_INPUT_PERMISSION_STATES = Object.freeze({
   unsupported: "unsupported",
 });
 
-function resolvePreloadedDemoAudioUrl(audioPlatform) {
-  if (audioPlatform !== "desktop") {
-    return PRELOADED_DEMO_AUDIO.webUrl;
-  }
-
-  const baseUrl = globalThis.document?.baseURI ?? globalThis.location?.href;
-  if (!baseUrl) {
-    return PRELOADED_DEMO_AUDIO.bundledPath;
-  }
-
-  try {
-    return new URL(PRELOADED_DEMO_AUDIO.bundledPath, baseUrl).toString();
-  } catch {
-    return PRELOADED_DEMO_AUDIO.bundledPath;
-  }
-}
 /**
  * @typedef {"unknown" | "requesting" | "granted" | "denied" | "unsupported"} LiveInputPermissionState
  */
@@ -119,13 +106,6 @@ function createLocalFileEntry(file) {
     name: file.name,
     size: file.size,
     lastModified: file.lastModified,
-  };
-}
-
-function createLiveReturnLocalFile(file, resumeTimeSeconds = 0) {
-  return {
-    ...createLocalFileEntry(file),
-    resumeTimeSeconds: clampTransportTime(resumeTimeSeconds, 0),
   };
 }
 
@@ -263,6 +243,7 @@ function normalizeProviderLiveInputUiState(value) {
 function normalizeProviderLiveInputErrorCode(value) {
   return value === LIVE_INPUT_ERROR_CODES.permissionDenied ||
     value === LIVE_INPUT_ERROR_CODES.deviceMissing ||
+    value === LIVE_INPUT_ERROR_CODES.deviceUnavailable ||
     value === LIVE_INPUT_ERROR_CODES.deviceDisconnected ||
     value === LIVE_INPUT_ERROR_CODES.startFailed ||
     value === LIVE_INPUT_ERROR_CODES.calibrationInvalid
@@ -423,8 +404,14 @@ export function AudioProvider({
   const [fileName, setFileName] = useState(DEFAULT_FILE_NAME);
   const [recentUploads, setRecentUploads] = useState([]);
   const [currentLoadedLocalFile, setCurrentLoadedLocalFile] = useState(null);
-  const [liveReturnLocalFile, setLiveReturnLocalFile] = useState(null);
-  const [queuedNextLocalFile, setQueuedNextLocalFile] = useState(null);
+  const [localFileQueueSnapshot, setLocalFileQueueSnapshot] = useState(() => ({
+    entries: [],
+    activeIndex: -1,
+  }));
+  const localFileQueue = localFileQueueSnapshot.entries;
+  const activeLocalFileQueueIndex = localFileQueueSnapshot.activeIndex;
+  const [isLocalFileQueueAutoplayEnabled, setIsLocalFileQueueAutoplayEnabled] =
+    useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLiveInputActive, setIsLiveInputActive] = useState(false);
   const [isAudioLoaded, setIsAudioLoaded] = useState(false);
@@ -438,7 +425,9 @@ export function AudioProvider({
   );
   const [showDeviceMenu, setShowDeviceMenu] = useState(false);
   const [isEngineReady, setIsEngineReady] = useState(false);
-  const [selectedSource, setSelectedSource] = useState("file");
+  const [sourceSession, setSourceSession] = useState(
+    () => getDefaultAudioSession().getStatus().sourceSession,
+  );
   const [selectedSystemDevice, setSelectedSystemDevice] = useState(null);
   const [liveInputPermissionState, setLiveInputPermissionState] = useState(
     /** @returns {LiveInputPermissionState} */ () =>
@@ -448,7 +437,6 @@ export function AudioProvider({
   );
   const [liveInputDeviceKind, setLiveInputDeviceKind] = useState(null);
   const liveInputKind = liveInputDeviceKind;
-  const setLiveInputKind = setLiveInputDeviceKind;
   const [liveInputUiState, setLiveInputUiState] = useState(
     /** @type {import("./liveInputRuntimeStatus.js").LiveInputUiState} */ (
       LIVE_INPUT_UI_STATES.idle
@@ -482,7 +470,15 @@ export function AudioProvider({
   const resumeAfterScrubRef = useRef(false);
   const isScrubbingRef = useRef(false);
   const hasAutoLoadedDemoAudioRef = useRef(false);
+  const demoAudioLoadPromiseRef = useRef(null);
+  const demoFileSessionIdRef = useRef(null);
+  const demoPreloadGenerationRef = useRef(0);
   const liveInputStartRequestIdRef = useRef(0);
+  const localFileQueueStateRef = useRef({
+    entries: [],
+    activeIndex: -1,
+  });
+  const queueAdvanceInFlightRef = useRef(false);
   const liveInputUiStateRef = useRef(
     /** @type {import("./liveInputRuntimeStatus.js").LiveInputUiState} */ (
       LIVE_INPUT_UI_STATES.idle
@@ -507,7 +503,6 @@ export function AudioProvider({
   }, []);
 
   const {
-    handleFileChange: handleLocalFileChange,
     handleRecentFileSelect: handleLocalRecentFileSelect,
     handlePlayPause: handleLocalPlayPause,
     handleStop: handleLocalStop,
@@ -522,7 +517,6 @@ export function AudioProvider({
     setIsPlaying,
     setIsLiveInputActive,
     setLiveInputDeviceKind,
-    setLiveInputKind,
     setVolume,
     setIsMuted,
     setAudioDevices,
@@ -555,32 +549,41 @@ export function AudioProvider({
     setScrubPreviewSeconds(null);
   }, []);
 
-  const clearLiveLocalFileState = useCallback(() => {
-    setLiveReturnLocalFile(null);
-    setQueuedNextLocalFile(null);
-  }, []);
-
-  const queueNextLocalFile = useCallback(
-    (file) => {
-      if (!file) {
-        return;
-      }
-      registerRecentUpload(file);
-      setQueuedNextLocalFile(createLocalFileEntry(file));
+  const commitLocalFileQueue = useCallback(
+    (
+      nextEntries,
+      nextActiveIndex = localFileQueueStateRef.current.activeIndex,
+    ) => {
+      const nextState = {
+        entries: nextEntries,
+        activeIndex: nextActiveIndex,
+      };
+      localFileQueueStateRef.current = nextState;
+      setLocalFileQueueSnapshot(nextState);
     },
-    [registerRecentUpload],
+    [],
   );
 
-  const createLiveReturnSnapshot = useCallback(() => {
-    if (isLiveInputActive || !isAudioLoaded || !currentLoadedLocalFile?.file) {
-      return null;
-    }
+  const clearLocalFileQueue = useCallback(() => {
+    commitLocalFileQueue([], -1);
+  }, [commitLocalFileQueue]);
 
-    return createLiveReturnLocalFile(
-      currentLoadedLocalFile.file,
-      getDefaultAudioSession().getTransportState().currentTimeSeconds,
-    );
-  }, [currentLoadedLocalFile, isAudioLoaded, isLiveInputActive]);
+  const appendLocalFilesToQueue = useCallback(
+    (files) => {
+      const entries = files.filter(Boolean).map(createLocalFileEntry);
+      if (entries.length === 0) {
+        return;
+      }
+
+      for (const entry of entries) {
+        registerRecentUpload(entry.file);
+      }
+
+      const nextQueue = [...localFileQueueStateRef.current.entries, ...entries];
+      commitLocalFileQueue(nextQueue);
+    },
+    [commitLocalFileQueue, registerRecentUpload],
+  );
 
   const syncTransportState = useCallback((options = {}) => {
     const { includeSeekState = true } = options;
@@ -629,6 +632,7 @@ export function AudioProvider({
     const audioSession = getDefaultAudioSession();
     const status = audioSession.getStatus();
     const nextTransportState = audioSession.getTransportState();
+    setSourceSession(status.sourceSession);
     setIsAudioLoaded(status.isAudioLoaded);
     setIsPlaying(status.isPlaying);
     setIsLiveInputActive(status.isLiveInputActive);
@@ -1009,14 +1013,14 @@ export function AudioProvider({
       return;
     }
 
-    if (selectedSource === "system") {
+    if (sourceSession.kind === AUDIO_SOURCE_KINDS.system) {
       applyLiveInputUiState(LIVE_INPUT_UI_STATES.error, nextErrorCode);
     }
   }, [
     applyLiveInputUiState,
     audioDevices,
     isLiveInputActive,
-    selectedSource,
+    sourceSession.kind,
     selectedSystemDevice,
     syncSessionStatus,
   ]);
@@ -1073,7 +1077,7 @@ export function AudioProvider({
   ]);
 
   const loadImmediateLocalFile = useCallback(
-    async (file, { seekTimeSeconds = null, clearQueuedNext = true } = {}) => {
+    async (file, { seekTimeSeconds = null } = {}) => {
       if (!file) {
         return false;
       }
@@ -1090,15 +1094,115 @@ export function AudioProvider({
       }
 
       setCurrentLoadedLocalFile(createLocalFileEntry(file));
-      setSelectedSource("file");
       setShowDeviceMenu(false);
-      setLiveReturnLocalFile(null);
-      if (clearQueuedNext) {
-        setQueuedNextLocalFile(null);
-      }
+      syncSessionStatus();
       return true;
     },
     [handleLocalRecentFileSelect, syncSessionStatus, syncTransportState],
+  );
+
+  const loadQueuedLocalFileAtIndex = useCallback(
+    async (queueIndex, { autoPlay = false } = {}) => {
+      const queueEntries = localFileQueueStateRef.current.entries;
+      const queueEntry = queueEntries[queueIndex];
+      if (!queueEntry?.file) {
+        return false;
+      }
+
+      commitLocalFileQueue(queueEntries, queueIndex);
+      const loaded = await loadImmediateLocalFile(queueEntry.file);
+      if (!loaded) {
+        return false;
+      }
+
+      const currentQueueState = localFileQueueStateRef.current;
+      if (
+        currentQueueState.activeIndex !== queueIndex ||
+        currentQueueState.entries[queueIndex]?.file !== queueEntry.file
+      ) {
+        return false;
+      }
+
+      if (autoPlay) {
+        const audioSession = getDefaultAudioSession();
+        if (!audioSession.getStatus().isPlaying) {
+          await audioSession.playPauseAudio();
+        }
+        syncSessionStatus();
+        syncTransportState();
+      }
+      return true;
+    },
+    [
+      commitLocalFileQueue,
+      loadImmediateLocalFile,
+      syncSessionStatus,
+      syncTransportState,
+    ],
+  );
+
+  const playNextLocalFile = useCallback(async () => {
+    if (queueAdvanceInFlightRef.current) {
+      return false;
+    }
+
+    const nextQueueIndex = localFileQueueStateRef.current.activeIndex + 1;
+    if (!localFileQueueStateRef.current.entries[nextQueueIndex]?.file) {
+      return false;
+    }
+
+    queueAdvanceInFlightRef.current = true;
+    try {
+      return await loadQueuedLocalFileAtIndex(nextQueueIndex, {
+        autoPlay: true,
+      });
+    } finally {
+      queueAdvanceInFlightRef.current = false;
+    }
+  }, [loadQueuedLocalFileAtIndex]);
+
+  const toggleLocalFileQueueAutoplay = useCallback(() => {
+    setIsLocalFileQueueAutoplayEnabled((isEnabled) => !isEnabled);
+  }, []);
+
+  const playLocalFileAtQueueIndex = useCallback(
+    async (queueIndex) => {
+      if (isLiveInputActive) {
+        return false;
+      }
+
+      const queueState = localFileQueueStateRef.current;
+      const queueEntry = queueState.entries[queueIndex];
+      if (!queueEntry?.file) {
+        return false;
+      }
+
+      const audioSession = getDefaultAudioSession();
+      const status = audioSession.getStatus();
+      const isCurrentLoadedFile =
+        queueState.activeIndex === queueIndex &&
+        currentLoadedLocalFile?.file === queueEntry.file &&
+        status.isAudioLoaded;
+
+      if (!isCurrentLoadedFile) {
+        return loadQueuedLocalFileAtIndex(queueIndex, { autoPlay: true });
+      }
+
+      if (!status.isPlaying) {
+        await audioSession.playPauseAudio();
+      }
+      setFileName(queueEntry.name);
+      syncSessionStatus();
+      syncTransportState();
+      return true;
+    },
+    [
+      currentLoadedLocalFile,
+      isLiveInputActive,
+      loadQueuedLocalFileAtIndex,
+      syncSessionStatus,
+      syncTransportState,
+    ],
   );
 
   const loadImmediateAudioUrl = useCallback(
@@ -1108,18 +1212,25 @@ export function AudioProvider({
         audioSession.stopLiveInputStream();
       }
 
+      const loaded = await audioSession.loadAudio(sourceUrl);
+      if (loaded === false) {
+        return null;
+      }
+
       setFileName(sourceName);
-      await audioSession.loadAudio(sourceUrl);
       setCurrentLoadedLocalFile(null);
-      setSelectedSource("file");
       setShowDeviceMenu(false);
-      setLiveReturnLocalFile(null);
-      setQueuedNextLocalFile(null);
+      clearLocalFileQueue();
       syncSessionStatus();
       syncTransportState();
       return audioSession;
     },
-    [isLiveInputActive, syncSessionStatus, syncTransportState],
+    [
+      clearLocalFileQueue,
+      isLiveInputActive,
+      syncSessionStatus,
+      syncTransportState,
+    ],
   );
 
   const loadProbeAudioFile = useCallback(
@@ -1154,8 +1265,8 @@ export function AudioProvider({
         loaded = await loadImmediateLocalFile(selectedProbeFile);
       } else if (sourceUrl) {
         try {
-          await loadImmediateAudioUrl({ sourceUrl, sourceName });
-          loaded = true;
+          loaded =
+            (await loadImmediateAudioUrl({ sourceUrl, sourceName })) != null;
         } catch (error) {
           console.error("Error loading probe audio:", error);
           setIsAudioLoaded(false);
@@ -1208,27 +1319,79 @@ export function AudioProvider({
   }, [clearScrubState, syncSessionStatus, syncTransportState]);
 
   const loadDemoAudioFile = useCallback(
-    async ({ autoPlay = true } = {}) => {
+    async ({ autoPlay = true, preloadGeneration = null } = {}) => {
       clearScrubState();
+      clearLocalFileQueue();
 
       try {
-        let audioSession = null;
-        if (typeof demoAudioFileLoader === "function") {
-          try {
-            const demoFile = await demoAudioFileLoader();
-            const loaded = await loadImmediateLocalFile(demoFile);
-            if (loaded) {
-              audioSession = getDefaultAudioSession();
-            }
-          } catch (error) {
-            console.warn("Desktop demo audio bridge failed:", error);
+        let audioSession = getDefaultAudioSession();
+        const currentStatus = audioSession.getStatus();
+        const currentDemoSourceIsLoaded =
+          currentStatus.isAudioLoaded === true &&
+          currentStatus.sourceSession.kind === AUDIO_SOURCE_KINDS.file &&
+          demoFileSessionIdRef.current != null &&
+          currentStatus.sourceSession.sessionId ===
+            demoFileSessionIdRef.current;
+
+        if (!currentDemoSourceIsLoaded) {
+          if (!demoAudioLoadPromiseRef.current) {
+            demoAudioLoadPromiseRef.current = (async () => {
+              let loadedSession = null;
+              if (typeof demoAudioFileLoader === "function") {
+                const demoFile = await demoAudioFileLoader();
+                if (!demoFile) {
+                  throw new Error(
+                    "Desktop demo audio bridge did not return a file.",
+                  );
+                }
+                if (
+                  preloadGeneration != null &&
+                  preloadGeneration !== demoPreloadGenerationRef.current
+                ) {
+                  return null;
+                }
+                const loaded = await loadImmediateLocalFile(demoFile);
+                if (!loaded) {
+                  return null;
+                }
+                loadedSession = getDefaultAudioSession();
+              } else if (isWebPlatform) {
+                loadedSession = await loadImmediateAudioUrl({
+                  sourceUrl: PRELOADED_DEMO_AUDIO.webUrl,
+                  sourceName: PRELOADED_DEMO_AUDIO.name,
+                });
+              } else {
+                throw new Error("Desktop demo audio loader is required.");
+              }
+              if (!loadedSession) {
+                return null;
+              }
+              demoFileSessionIdRef.current =
+                loadedSession.getStatus().sourceSession.sessionId;
+              return loadedSession;
+            })();
           }
-        }
-        if (!audioSession) {
-          audioSession = await loadImmediateAudioUrl({
-            sourceUrl: resolvePreloadedDemoAudioUrl(audioPlatform),
-            sourceName: PRELOADED_DEMO_AUDIO.name,
-          });
+          const loadPromise = demoAudioLoadPromiseRef.current;
+          try {
+            audioSession = await loadPromise;
+          } finally {
+            if (demoAudioLoadPromiseRef.current === loadPromise) {
+              demoAudioLoadPromiseRef.current = null;
+            }
+          }
+          if (!audioSession) {
+            const status = syncSessionStatus();
+            syncTransportState();
+            return {
+              ok: false,
+              error: "Demo audio load was superseded.",
+              isAudioLoaded: status.isAudioLoaded,
+              isPlaying: status.isPlaying,
+            };
+          }
+        } else {
+          setFileName(PRELOADED_DEMO_AUDIO.name);
+          setShowDeviceMenu(false);
         }
 
         if (autoPlay && !audioSession.getStatus().isPlaying) {
@@ -1245,60 +1408,49 @@ export function AudioProvider({
         };
       } catch (error) {
         console.error("Error loading demo audio:", error);
-        setIsAudioLoaded(false);
-        syncSessionStatus();
+        const status = syncSessionStatus();
         syncTransportState();
         return {
           ok: false,
           error: "Demo audio failed to load.",
+          isAudioLoaded: status.isAudioLoaded,
+          isPlaying: status.isPlaying,
         };
       }
     },
     [
       clearScrubState,
-      audioPlatform,
+      clearLocalFileQueue,
       demoAudioFileLoader,
+      isWebPlatform,
       loadImmediateAudioUrl,
       loadImmediateLocalFile,
-      setIsAudioLoaded,
       syncSessionStatus,
       syncTransportState,
     ],
   );
 
   useEffect(() => {
-    if (!isWebPlatform || hasAutoLoadedDemoAudioRef.current) {
+    const canPreloadDemo =
+      isWebPlatform || typeof demoAudioFileLoader === "function";
+    if (!canPreloadDemo || hasAutoLoadedDemoAudioRef.current) {
       return;
     }
 
     hasAutoLoadedDemoAudioRef.current = true;
-    void loadDemoAudioFile({ autoPlay: false });
-  }, [isWebPlatform, loadDemoAudioFile]);
-
-  const restoreAfterLiveStop = useCallback(async () => {
-    if (liveReturnLocalFile?.file) {
-      return loadImmediateLocalFile(liveReturnLocalFile.file, {
-        seekTimeSeconds: liveReturnLocalFile.resumeTimeSeconds,
-        clearQueuedNext: false,
-      });
-    }
-
-    if (!queuedNextLocalFile?.file) {
-      return false;
-    }
-
-    return loadImmediateLocalFile(queuedNextLocalFile.file, {
-      clearQueuedNext: true,
+    void loadDemoAudioFile({
+      autoPlay: false,
+      preloadGeneration: demoPreloadGenerationRef.current,
     });
-  }, [liveReturnLocalFile, loadImmediateLocalFile, queuedNextLocalFile]);
+  }, [demoAudioFileLoader, isWebPlatform, loadDemoAudioFile]);
 
   useEffect(() => {
     const audioSession = getDefaultAudioSession();
     audioSession.setAudioEndedCallback(async () => {
-      if (queuedNextLocalFile?.file) {
-        await loadImmediateLocalFile(queuedNextLocalFile.file, {
-          clearQueuedNext: true,
-        });
+      if (queueAdvanceInFlightRef.current) {
+        return;
+      }
+      if (isLocalFileQueueAutoplayEnabled && (await playNextLocalFile())) {
         return;
       }
 
@@ -1309,35 +1461,38 @@ export function AudioProvider({
     return () => {
       audioSession.setAudioEndedCallback(null);
     };
-  }, [loadImmediateLocalFile, queuedNextLocalFile]);
+  }, [isLocalFileQueueAutoplayEnabled, playNextLocalFile]);
 
   const handleFileChange = useCallback(
     async (event) => {
-      const file = event.target.files?.[0];
-      if (!file) {
+      const files = Array.from(event.target.files ?? []);
+      if (files.length === 0) {
         return;
       }
 
       clearScrubState();
       setShowDeviceMenu(false);
-      if (isLiveInputActive) {
-        queueNextLocalFile(file);
-      } else {
-        clearLiveLocalFileState();
-        setSelectedSource("file");
-        const loaded = await handleLocalFileChange(event);
-        if (loaded) {
-          setCurrentLoadedLocalFile(createLocalFileEntry(file));
-        }
+      const currentQueueState = localFileQueueStateRef.current;
+      const hadActiveQueueFile =
+        currentQueueState.activeIndex >= 0 &&
+        Boolean(currentQueueState.entries[currentQueueState.activeIndex]?.file);
+      appendLocalFilesToQueue(files);
+
+      if (sourceSession.kind === AUDIO_SOURCE_KINDS.system) {
+        event.target.value = "";
+        return;
+      }
+
+      if (!hadActiveQueueFile) {
+        await loadQueuedLocalFileAtIndex(0);
       }
       event.target.value = "";
     },
     [
-      clearLiveLocalFileState,
+      appendLocalFilesToQueue,
       clearScrubState,
-      handleLocalFileChange,
-      isLiveInputActive,
-      queueNextLocalFile,
+      loadQueuedLocalFileAtIndex,
+      sourceSession.kind,
     ],
   );
 
@@ -1352,57 +1507,52 @@ export function AudioProvider({
 
       clearScrubState();
       setShowDeviceMenu(false);
-      if (isLiveInputActive) {
-        queueNextLocalFile(recentUpload.file);
+      if (sourceSession.kind === AUDIO_SOURCE_KINDS.system) {
+        appendLocalFilesToQueue([recentUpload.file]);
         return;
       }
 
-      clearLiveLocalFileState();
-      setSelectedSource("file");
-      const loaded = await handleLocalRecentFileSelect(recentUpload.file);
-      if (loaded) {
-        setCurrentLoadedLocalFile(createLocalFileEntry(recentUpload.file));
-      }
+      commitLocalFileQueue([createLocalFileEntry(recentUpload.file)], -1);
+      await loadQueuedLocalFileAtIndex(0, { autoPlay: true });
     },
     [
-      clearLiveLocalFileState,
+      appendLocalFilesToQueue,
       clearScrubState,
-      handleLocalRecentFileSelect,
-      isLiveInputActive,
-      queueNextLocalFile,
+      commitLocalFileQueue,
+      loadQueuedLocalFileAtIndex,
       recentUploads,
+      sourceSession.kind,
     ],
   );
 
   const handlePlayPause = useCallback(async () => {
-    if (selectedSource === "system") {
+    if (sourceSession.kind === AUDIO_SOURCE_KINDS.system) {
       return;
     }
 
     await handleLocalPlayPause();
     syncTransportState();
-  }, [handleLocalPlayPause, selectedSource, syncTransportState]);
+  }, [handleLocalPlayPause, sourceSession.kind, syncTransportState]);
 
   const handleStop = useCallback(() => {
-    if (selectedSource === "system") {
+    if (sourceSession.kind === AUDIO_SOURCE_KINDS.system) {
       return;
     }
 
     clearScrubState();
     handleLocalStop();
     syncTransportState();
-  }, [clearScrubState, handleLocalStop, selectedSource, syncTransportState]);
+  }, [
+    clearScrubState,
+    handleLocalStop,
+    sourceSession.kind,
+    syncTransportState,
+  ]);
 
   const handleLiveInputToggle = useCallback(async () => {
     clearScrubState();
-    const liveReturnSnapshot = createLiveReturnSnapshot();
-
-    if (!isLiveInputActive) {
-      setLiveReturnLocalFile(liveReturnSnapshot);
-    }
     if (isLiveInputActive) {
       const status = stopLiveInputSession();
-      await restoreAfterLiveStop();
       if (status.isLiveInputActive) {
         applyLiveInputUiState(
           LIVE_INPUT_UI_STATES.error,
@@ -1413,23 +1563,14 @@ export function AudioProvider({
       return;
     }
 
-    const started = await startLiveInputSession({
+    await startLiveInputSession({
       deviceId: selectedDevice,
       liveInputKind: "live",
     });
-    if (!started && liveReturnSnapshot?.file) {
-      await loadImmediateLocalFile(liveReturnSnapshot.file, {
-        seekTimeSeconds: liveReturnSnapshot.resumeTimeSeconds,
-        clearQueuedNext: false,
-      });
-    }
   }, [
     applyLiveInputUiState,
     clearScrubState,
-    createLiveReturnSnapshot,
     isLiveInputActive,
-    loadImmediateLocalFile,
-    restoreAfterLiveStop,
     selectedDevice,
     startLiveInputSession,
     stopLiveInputSession,
@@ -1437,81 +1578,72 @@ export function AudioProvider({
 
   const handleSourceChange = useCallback(
     async (next) => {
-      if (next === selectedSource) return;
-
-      if (next === "system") {
-        clearScrubState();
-        if (isAudioLoaded) {
-          handleLocalStop();
-          syncTransportState();
-        }
+      const nextKind =
+        next === AUDIO_SOURCE_KINDS.system
+          ? AUDIO_SOURCE_KINDS.system
+          : AUDIO_SOURCE_KINDS.file;
+      if (nextKind === sourceSession.kind) {
+        return sourceSession;
       }
 
-      if (next === "file") {
-        stopLiveInputSession();
-        if (isLiveInputActive) {
-          await restoreAfterLiveStop();
-        }
+      clearScrubState();
+      const audioSession = getDefaultAudioSession();
+      audioSession.selectSource(nextKind);
+      const status = syncSessionStatus();
+      syncTransportState();
+      if (nextKind === AUDIO_SOURCE_KINDS.file) {
+        applyLiveInputUiState(
+          LIVE_INPUT_UI_STATES.idle,
+          LIVE_INPUT_ERROR_CODES.none,
+          status,
+        );
       }
-      if (next !== "system") {
-        applyLiveInputUiState(LIVE_INPUT_UI_STATES.idle);
-      }
-      setSelectedSource(next);
       if (
-        next === "system" &&
+        nextKind === AUDIO_SOURCE_KINDS.system &&
         isWebPlatform &&
         liveInputPermissionState === LIVE_INPUT_PERMISSION_STATES.unknown
       ) {
         await requestLiveInputPermission();
       }
+      return status.sourceSession;
     },
     [
       applyLiveInputUiState,
       clearScrubState,
-      handleLocalStop,
-      isAudioLoaded,
-      isLiveInputActive,
       isWebPlatform,
       liveInputPermissionState,
       requestLiveInputPermission,
-      restoreAfterLiveStop,
-      selectedSource,
+      sourceSession,
+      syncSessionStatus,
       syncTransportState,
-      stopLiveInputSession,
     ],
   );
 
-  const startSelectedSystemLiveInput = useCallback(
-    async (liveReturnSnapshot) => {
-      setLiveReturnLocalFile(liveReturnSnapshot);
-      const started = await startLiveInputSession({
-        deviceId: selectedLiveDeviceId,
-        deviceLabel: selectedLiveDevice?.label ?? "",
-        liveInputKind: selectedLiveInputDeviceKind,
-      });
-      if (started) {
-        setFileName(DEFAULT_FILE_NAME);
-      }
-      return started;
-    },
-    [
-      selectedLiveDeviceId,
-      selectedLiveDevice,
-      selectedLiveInputDeviceKind,
-      startLiveInputSession,
-    ],
-  );
+  const startSelectedSystemLiveInput = useCallback(async () => {
+    demoPreloadGenerationRef.current += 1;
+    const started = await startLiveInputSession({
+      deviceId: selectedLiveDeviceId,
+      deviceLabel: selectedLiveDevice?.label ?? "",
+      liveInputKind: selectedLiveInputDeviceKind,
+    });
+    if (started) {
+      setFileName(DEFAULT_FILE_NAME);
+    }
+    return started;
+  }, [
+    selectedLiveDeviceId,
+    selectedLiveDevice,
+    selectedLiveInputDeviceKind,
+    startLiveInputSession,
+  ]);
 
   const handleSystemToggle = useCallback(async () => {
     clearScrubState();
-    const liveReturnSnapshot = createLiveReturnSnapshot();
     try {
       if (isLiveInputActive) {
-        // Stop live input but stay in System mode — do not restore the
-        // previous local file, which would switch the source back to File.
         stopLiveInputSession();
       } else {
-        await startSelectedSystemLiveInput(liveReturnSnapshot);
+        await startSelectedSystemLiveInput();
       }
     } catch (error) {
       console.error("Error toggling system audio:", error);
@@ -1521,19 +1653,11 @@ export function AudioProvider({
         mapLiveInputStartError(error),
         status,
       );
-      if (!status.isLiveInputActive && liveReturnSnapshot?.file) {
-        await loadImmediateLocalFile(liveReturnSnapshot.file, {
-          seekTimeSeconds: liveReturnSnapshot.resumeTimeSeconds,
-          clearQueuedNext: false,
-        });
-      }
     }
   }, [
     applyLiveInputUiState,
     clearScrubState,
-    createLiveReturnSnapshot,
     isLiveInputActive,
-    loadImmediateLocalFile,
     startSelectedSystemLiveInput,
     stopLiveInputSession,
     syncSessionStatus,
@@ -1541,26 +1665,23 @@ export function AudioProvider({
 
   const handleLiveInputAction = useCallback(async () => {
     clearScrubState();
-    const liveReturnSnapshot = createLiveReturnSnapshot();
     try {
       if (isLiveInputActive) {
         stopLiveInputSession();
         return;
       }
 
-      if (selectedSource !== "system") {
-        if (isAudioLoaded) {
-          handleLocalStop();
-          syncTransportState();
-        }
-        setSelectedSource("system");
+      if (sourceSession.kind !== AUDIO_SOURCE_KINDS.system) {
+        getDefaultAudioSession().selectSource(AUDIO_SOURCE_KINDS.system);
+        syncSessionStatus();
+        syncTransportState();
       }
 
       if (!selectedSystemDevice && selectedLiveDeviceId) {
         setSelectedSystemDevice(selectedLiveDeviceId);
       }
 
-      await startSelectedSystemLiveInput(liveReturnSnapshot);
+      await startSelectedSystemLiveInput();
     } catch (error) {
       console.error("Error toggling live input:", error);
       const status = syncSessionStatus();
@@ -1569,24 +1690,14 @@ export function AudioProvider({
         mapLiveInputStartError(error),
         status,
       );
-      if (!status.isLiveInputActive && liveReturnSnapshot?.file) {
-        await loadImmediateLocalFile(liveReturnSnapshot.file, {
-          seekTimeSeconds: liveReturnSnapshot.resumeTimeSeconds,
-          clearQueuedNext: false,
-        });
-      }
     }
   }, [
     applyLiveInputUiState,
     clearScrubState,
-    createLiveReturnSnapshot,
-    handleLocalStop,
-    isAudioLoaded,
     isLiveInputActive,
-    loadImmediateLocalFile,
     selectedLiveDeviceId,
-    selectedSource,
     selectedSystemDevice,
+    sourceSession.kind,
     startSelectedSystemLiveInput,
     stopLiveInputSession,
     syncSessionStatus,
@@ -1710,7 +1821,12 @@ export function AudioProvider({
   }, [handleLocalMuteToggle]);
 
   const displayName = fileName;
-  const hasQueuedNextLocalFile = Boolean(queuedNextLocalFile?.file);
+  const hasPreviousLocalFile =
+    activeLocalFileQueueIndex > 0 &&
+    activeLocalFileQueueIndex < localFileQueue.length;
+  const hasNextLocalFile =
+    activeLocalFileQueueIndex >= 0 &&
+    activeLocalFileQueueIndex < localFileQueue.length - 1;
 
   const beginScrub = useCallback(
     async (nextPreviewSeconds = null) => {
@@ -1801,6 +1917,50 @@ export function AudioProvider({
     ],
   );
 
+  const restartOrLoadPreviousLocalFile = useCallback(async () => {
+    if (sourceSession.kind !== AUDIO_SOURCE_KINDS.file) {
+      return false;
+    }
+
+    const audioSession = getDefaultAudioSession();
+    const currentTransportState = audioSession.getTransportState();
+    const queueState = localFileQueueStateRef.current;
+    const previousQueueIndex = queueState.activeIndex - 1;
+    const hasPreviousQueueEntry = Boolean(
+      queueState.entries[previousQueueIndex]?.file,
+    );
+    const currentTimeSeconds = Number.isFinite(
+      currentTransportState.currentTimeSeconds,
+    )
+      ? Math.max(0, currentTransportState.currentTimeSeconds)
+      : 0;
+
+    if (
+      currentTimeSeconds <= PREVIOUS_TRACK_ZERO_THRESHOLD_SECONDS &&
+      hasPreviousQueueEntry
+    ) {
+      clearScrubState();
+      return loadQueuedLocalFileAtIndex(previousQueueIndex);
+    }
+
+    if (!isAudioLoaded) {
+      return false;
+    }
+
+    clearScrubState();
+    audioSession.stopAudio();
+    syncSessionStatus();
+    syncTransportState();
+    return true;
+  }, [
+    clearScrubState,
+    isAudioLoaded,
+    loadQueuedLocalFileAtIndex,
+    sourceSession.kind,
+    syncSessionStatus,
+    syncTransportState,
+  ]);
+
   const cancelScrub = useCallback(async () => {
     if (!isScrubbingRef.current) {
       return;
@@ -1825,8 +1985,7 @@ export function AudioProvider({
     clearScrubState();
     setFileName(DEFAULT_FILE_NAME);
     setCurrentLoadedLocalFile(null);
-    setLiveReturnLocalFile(null);
-    setQueuedNextLocalFile(null);
+    clearLocalFileQueue();
     setIsPlaying(false);
     setIsLiveInputActive(false);
     setIsAudioLoaded(false);
@@ -1837,7 +1996,6 @@ export function AudioProvider({
     setLiveInputRuntimeStatus(createLiveInputRuntimeStatus());
     setShowDeviceMenu(false);
     setIsEngineReady(false);
-    setSelectedSource("file");
     setSelectedSystemDevice(null);
     setLiveInputPermissionState(
       isWebPlatform
@@ -1852,7 +2010,7 @@ export function AudioProvider({
     setTransportSeekState(DEFAULT_TRANSPORT_SEEK_STATE);
 
     return audioSession.dispose();
-  }, [clearScrubState, isWebPlatform, storage]);
+  }, [clearLocalFileQueue, clearScrubState, isWebPlatform, storage]);
 
   useEffect(() => {
     return () => {
@@ -1885,7 +2043,7 @@ export function AudioProvider({
       liveInputDeviceKind,
       liveInputKind,
       liveInputPermissionState,
-      selectedSource,
+      sourceSession,
       selectedSystemDevice,
       selectedLiveDeviceId,
       selectedLiveInputDeviceKind,
@@ -1901,9 +2059,11 @@ export function AudioProvider({
       fileName,
       displayName,
       currentLoadedLocalFile,
-      liveReturnLocalFile,
-      queuedNextLocalFile,
-      hasQueuedNextLocalFile,
+      localFileQueue,
+      activeLocalFileQueueIndex,
+      hasPreviousLocalFile,
+      hasNextLocalFile,
+      isLocalFileQueueAutoplayEnabled,
       recentUploads,
       isPlaying,
       isLiveInputActive,
@@ -1943,11 +2103,16 @@ export function AudioProvider({
       beginScrub,
       previewScrub,
       commitScrub,
+      restartOrLoadPreviousLocalFile,
+      playLocalFileAtQueueIndex,
+      playNextLocalFile,
+      toggleLocalFileQueueAutoplay,
       cancelScrub,
     }),
     [
       audioDevices,
       audioPlatform,
+      activeLocalFileQueueIndex,
       beginScrub,
       cancelScrub,
       commitScrub,
@@ -1968,10 +2133,12 @@ export function AudioProvider({
       handleStop,
       handleSystemToggle,
       handleVolumeChange,
-      hasQueuedNextLocalFile,
+      hasPreviousLocalFile,
+      hasNextLocalFile,
       isAudioLoaded,
       isEngineReady,
       isLiveInputActive,
+      isLocalFileQueueAutoplayEnabled,
       isMuted,
       isPlaying,
       isScrubbing,
@@ -1983,14 +2150,16 @@ export function AudioProvider({
       liveInputPermissionState,
       liveInputRuntimeStatus,
       liveInputUiState,
-      liveReturnLocalFile,
+      localFileQueue,
       loadDemoAudioFile,
       loadProbeAudioFile,
+      playLocalFileAtQueueIndex,
+      playNextLocalFile,
       previewScrub,
-      queuedNextLocalFile,
       recentUploads,
       requestLiveInputPermission,
       resetAudioSession,
+      restartOrLoadPreviousLocalFile,
       resolvedLiveInputAnalysisClass,
       scrubPreviewSeconds,
       selectedDevice,
@@ -1999,14 +2168,15 @@ export function AudioProvider({
       selectedLiveInputDeviceKind,
       selectedLiveInputDeviceKindOverride,
       selectedResolvedLiveInputAnalysisClass,
-      selectedSource,
       selectedSystemDevice,
+      sourceSession,
       setSelectedDevice,
       setSelectedLiveInputAnalysisClass,
       setLiveInputAcousticIntent,
       setShowDeviceMenu,
       showDeviceMenu,
       stopProbeAudio,
+      toggleLocalFileQueueAutoplay,
       volume,
     ],
   );

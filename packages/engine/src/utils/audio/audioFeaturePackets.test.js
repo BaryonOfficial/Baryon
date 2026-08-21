@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { AUDIO_FEATURE_PROTOCOL_VERSION } from "../../contracts/audioFeatureProtocol.js";
 import {
-  AUDIO_FEATURE_PROTOCOL_VERSION,
   createAudioFeaturePacketJoiner,
   createBoundedAudioInputTransport,
 } from "./audioFeaturePackets.js";
@@ -19,10 +19,8 @@ function topology(overrides = {}) {
     modalRoleMetadata: new Uint8Array([1]),
     committedModeRoleMetadata: new Uint8Array([1]),
     fastProbeModeIndices: new Uint16Array([0]),
-    modalFieldColorSlots: new Float32Array(4),
-    modalFieldSpectralLaneA: new Float32Array(4),
-    modalFieldSpectralLaneB: new Float32Array(4),
-    modalFieldSpectralMeta: new Float32Array(4),
+    modalFieldSpectralMomentSlots: new Float32Array(4),
+    modalFieldSpectralSeedDirection: new Float32Array([1, 0]),
     modalFieldMetadataSlots: new Float32Array(4),
     ...overrides,
   };
@@ -41,12 +39,25 @@ function drive(overrides = {}) {
     phaseSlots: new Float32Array(4),
     bandEnergies: new Float32Array(4),
     spectralBandEnergies: new Float32Array(4),
-    renderState: {},
+    renderState: { renderAuthority: true },
     ...overrides,
   };
 }
 
 describe("audio feature packet join", () => {
+  it("fails closed on legacy protocol v1 packets", () => {
+    const joiner = createAudioFeaturePacketJoiner();
+
+    expect(joiner.acceptTopology(topology({ protocolVersion: 1 }))).toMatchObject(
+      { accepted: false, published: false },
+    );
+    expect(joiner.acceptDrive(drive({ protocolVersion: 1 }))).toMatchObject({
+      accepted: false,
+      published: false,
+    });
+    expect(joiner.readLatestModel()).toBeNull();
+  });
+
   it("publishes only a matching topology and drive without copying arrays", () => {
     const joiner = createAudioFeaturePacketJoiner();
     const topologyPacket = topology();
@@ -167,6 +178,10 @@ describe("audio feature packet join", () => {
       accepted: false,
       reason: "invalid-drive-shape",
     });
+    expect(joiner.acceptDrive(drive({ renderState: [] }))).toMatchObject({
+      accepted: false,
+      reason: "invalid-drive-shape",
+    });
     expect(joiner.readLatestModel()).toBeNull();
   });
 
@@ -180,6 +195,40 @@ describe("audio feature packet join", () => {
         }),
       ),
     ).toMatchObject({ accepted: false, reason: "invalid-topology-shape" });
+  });
+
+  it("rejects malformed topology role, slot, and probe shapes", () => {
+    const joiner = createAudioFeaturePacketJoiner();
+
+    expect(
+      joiner.acceptTopology(topology({ modalRoleMetadata: new Uint8Array(0) })),
+    ).toMatchObject({ accepted: false, reason: "invalid-topology-shape" });
+    expect(
+      joiner.acceptTopology(
+        topology({ modalFieldMetadataSlots: new Float32Array(3) }),
+      ),
+    ).toMatchObject({ accepted: false, reason: "invalid-topology-shape" });
+    expect(
+      joiner.acceptTopology(
+        topology({ fastProbeModeIndices: new Uint16Array([1]) }),
+      ),
+    ).toMatchObject({ accepted: false, reason: "invalid-topology-shape" });
+  });
+
+  it("applies the committed-mode count invariant to both packet kinds", () => {
+    const topologyJoiner = createAudioFeaturePacketJoiner();
+    const driveJoiner = createAudioFeaturePacketJoiner();
+
+    expect(
+      topologyJoiner.acceptTopology(
+        topology({ activeModeCount: 2, committedModeCount: 1 }),
+      ),
+    ).toMatchObject({ accepted: false, reason: "invalid-topology-shape" });
+    expect(
+      driveJoiner.acceptDrive(
+        drive({ activeModeCount: 2, committedModeCount: 1 }),
+      ),
+    ).toMatchObject({ accepted: false, reason: "invalid-drive-shape" });
   });
 
   it("discards a held future drive when its matching topology has another shape", () => {

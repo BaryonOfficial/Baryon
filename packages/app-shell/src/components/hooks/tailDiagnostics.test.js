@@ -1,5 +1,8 @@
 import { expect, test, vi } from "vitest";
-import { RAYMARCH_QUANTITY_LEDGER_VERSION } from "@baryon/engine/core/raymarch/quantityLedger";
+import {
+  RAYMARCH_OPTICAL_FIELD_REPRESENTATION,
+  RAYMARCH_QUANTITY_LEDGER_VERSION,
+} from "@baryon/engine/core/raymarch/quantityLedger";
 import {
   classifyTailDiagnosticSample,
   createTailDiagnosticsRecorder,
@@ -30,9 +33,9 @@ function createRuntimeDiagnostics(overrides = {}) {
       liveInputHardSilenceActive: false,
       liveInputNoiseGateActive: false,
       observationEnergy: 0.32,
-      observedResonanceModeCount: 8,
-      observedResonanceEnergy: 1,
-      highQRingSupport: 1,
+      resonantObservedModeCount: 8,
+      resonantObservedEnergy: 1,
+      resonantRingSupport: 1,
       modeCoherence: 0.7,
       modalPhaseAuthority: 1,
       activeModeCount: 16,
@@ -40,10 +43,9 @@ function createRuntimeDiagnostics(overrides = {}) {
       ...overrides.modalFreshness,
     },
     render: {
-      observationReferenceDensityFloor: 0.07,
-      observationReferenceContourSupport: 0.012,
-      observationSampledDensityFloor: 0.045,
-      observationSampledContourSupport: 0.008,
+      observerGeometryExposureSeconds: 0.3,
+      observerRadianceExposureSeconds: 0.05,
+      observerSpectralExposureSeconds: 0.1,
       renderQuantityLedgerVersion: RAYMARCH_QUANTITY_LEDGER_VERSION,
       renderQuantityForbiddenConsumers: {
         observedDensityFloor: ["highlightMask", "whiteEmissionFieldAuthority"],
@@ -52,25 +54,20 @@ function createRuntimeDiagnostics(overrides = {}) {
       totalSlotAmplitude: 0.9,
       structuralProjectionDrive: 0.45,
       structuralProjectionConcentration: 0.25,
-      materialProbePhysicalDensity: 0.42,
-      materialProbeCausticVisibleDensity: 0.18,
-      materialProbeSupportVisibleDensity: 0.07,
-      materialProbePreBloomRadiance: 0.21,
-      materialProbePostBloomRisk: 0.34,
-      materialProbeBloomAmplification: 1.62,
-      modalBasisCacheReady: true,
-      modalBasisCacheSupportReady: true,
-      modalBasisCacheSupportSemantic: "coefficient-invariant-basis-support",
-      liveSynthesisUnsignedSupportMean: 0.52,
-      liveSynthesisCancellationRatioMean: 0.33,
-      liveSynthesisCancellationRatioMax: 0.88,
-      liveSynthesisSupportDiagnosticSampleCount: 9,
-      liveSynthesisSupportDiagnosticSupportedSampleCount: 5,
-      liveSynthesisSupportDiagnosticCoverage: 5 / 9,
-      modalBasisCacheZeroAmplitudeSkippedModeCount: 1,
-      modalBasisCacheDescriptorStaleReason: "modal-identity",
-      modalBasisCacheRebuildPending: false,
-      modalBasisCachePhaseAuthority: 1,
+      plasmaProbeLocalRadiance: 0.42,
+      plasmaProbePersistence: 0.74,
+      plasmaProbeOrganizedDensity: 0.18,
+      plasmaProbeExtinction: 0.07,
+      plasmaProbePreBloomRadiance: 0.21,
+      plasmaProbePostBloomRisk: 0.34,
+      plasmaProbeBloomAmplification: 1.62,
+      opticalFieldRepresentation: RAYMARCH_OPTICAL_FIELD_REPRESENTATION,
+      radiationPotentialModeCapacity: 13,
+      radiationPotentialObservedCoefficientEnergy: 0.36,
+      radiationPotentialObservedCoefficientNorm: 0.6,
+      radiationPotentialNormalizedEnergyNorm: 1,
+      radiationPotentialBakeModeCount: 13,
+      radiationPotentialExposureDrive: 0.72,
       bloomEnabled: false,
       ...overrides.render,
     },
@@ -129,10 +126,9 @@ test("tail diagnostics records compact samples on the configured interval", () =
         idleOverlayVisible: false,
         raymarchDebug: {
           renderAuthority: true,
-          observationReferenceDensityFloor: 0.04,
-          observationReferenceContourSupport: 0.03,
-          observationSampledDensityFloor: 0.025,
-          observationSampledContourSupport: 0.012,
+          observerGeometryExposureSeconds: 0.3,
+          observerRadianceExposureSeconds: 0.05,
+          observerSpectralExposureSeconds: 0.1,
         },
       },
     },
@@ -165,9 +161,9 @@ test("tail diagnostics records compact samples on the configured interval", () =
       sourceMode: "system",
     },
     observer: {
-      observedResonanceModeCount: 8,
-      observedResonanceEnergy: 1,
-      highQRingSupport: 1,
+      resonantObservedModeCount: 8,
+      resonantObservedEnergy: 1,
+      resonantRingSupport: 1,
     },
     frame: {
       fieldState: "active",
@@ -177,29 +173,26 @@ test("tail diagnostics records compact samples on the configured interval", () =
     },
     render: {
       volumeVisible: true,
-      observationReferenceDensityFloor: 0.07,
-      observationReferenceContourSupport: 0.012,
-      observationSampledDensityFloor: 0.045,
-      observationSampledContourSupport: 0.008,
+      observerGeometryExposureSeconds: 0.3,
+      observerRadianceExposureSeconds: 0.05,
+      observerSpectralExposureSeconds: 0.1,
       totalSlotAmplitude: 0.9,
       structuralProjectionDrive: 0.45,
       structuralProjectionConcentration: 0.25,
-      materialProbePhysicalDensity: 0.42,
-      materialProbeCausticVisibleDensity: 0.18,
-      materialProbeSupportVisibleDensity: 0.07,
-      materialProbePreBloomRadiance: 0.21,
-      materialProbePostBloomRisk: 0.34,
-      materialProbeBloomAmplification: 1.62,
-      modalBasisCacheSupportReady: true,
-      modalBasisCacheSupportSemantic: "coefficient-invariant-basis-support",
-      liveSynthesisUnsignedSupportMean: 0.52,
-      liveSynthesisCancellationRatioMean: 0.33,
-      liveSynthesisCancellationRatioMax: 0.88,
-      liveSynthesisSupportDiagnosticSampleCount: 9,
-      liveSynthesisSupportDiagnosticSupportedSampleCount: 5,
-      liveSynthesisSupportDiagnosticCoverage: 5 / 9,
-      modalBasisCacheZeroAmplitudeSkippedModeCount: 1,
-      modalBasisCacheDescriptorStaleReason: "modal-identity",
+      plasmaProbeLocalRadiance: 0.42,
+      plasmaProbePersistence: 0.74,
+      plasmaProbeOrganizedDensity: 0.18,
+      plasmaProbeExtinction: 0.07,
+      plasmaProbePreBloomRadiance: 0.21,
+      plasmaProbePostBloomRisk: 0.34,
+      plasmaProbeBloomAmplification: 1.62,
+      opticalFieldRepresentation: RAYMARCH_OPTICAL_FIELD_REPRESENTATION,
+      radiationPotentialModeCapacity: 13,
+      radiationPotentialObservedCoefficientEnergy: 0.36,
+      radiationPotentialObservedCoefficientNorm: 0.6,
+      radiationPotentialNormalizedEnergyNorm: 1,
+      radiationPotentialBakeModeCount: 13,
+      radiationPotentialExposureDrive: 0.72,
       renderQuantityLedgerVersion: RAYMARCH_QUANTITY_LEDGER_VERSION,
       renderQuantityForbiddenConsumers: {
         observedDensityFloor: ["highlightMask", "whiteEmissionFieldAuthority"],
@@ -269,19 +262,19 @@ test("tail diagnostics summarizes material probe windows", () => {
 
   [
     {
-      materialProbePreBloomRadiance: 0.2,
-      materialProbePostBloomRisk: 0.22,
-      materialProbeBloomAmplification: 1.1,
+      plasmaProbePreBloomRadiance: 0.2,
+      plasmaProbePostBloomRisk: 0.22,
+      plasmaProbeBloomAmplification: 1.1,
     },
     {
-      materialProbePreBloomRadiance: 0.21,
-      materialProbePostBloomRisk: 0.23,
-      materialProbeBloomAmplification: 1.1,
+      plasmaProbePreBloomRadiance: 0.21,
+      plasmaProbePostBloomRisk: 0.23,
+      plasmaProbeBloomAmplification: 1.1,
     },
     {
-      materialProbePreBloomRadiance: 0.2,
-      materialProbePostBloomRisk: 0.82,
-      materialProbeBloomAmplification: 4.1,
+      plasmaProbePreBloomRadiance: 0.2,
+      plasmaProbePostBloomRisk: 0.82,
+      plasmaProbeBloomAmplification: 4.1,
     },
   ].forEach((render, index) => {
     recordTailDiagnosticsSample(recorder, {
@@ -301,82 +294,42 @@ test("tail diagnostics summarizes material probe windows", () => {
     sampleCount: 3,
     classification: "bloom-output",
     metrics: {
-      materialProbePreBloomRadiance: {
+      plasmaProbePreBloomRadiance: {
         max: 0.21,
         p95: 0.21,
         spikeCount: 0,
       },
-      materialProbePostBloomRisk: {
+      plasmaProbePostBloomRisk: {
         max: 0.82,
         p95: 0.82,
         spikeCount: 1,
       },
-      materialProbeBloomAmplification: {
+      plasmaProbeBloomAmplification: {
         max: 4.1,
         spikeCount: 1,
       },
     },
   });
-  expect(windowSummary.metrics.materialProbePreBloomRadiance.mean).toBeCloseTo(
+  expect(windowSummary.metrics.plasmaProbePreBloomRadiance.mean).toBeCloseTo(
     0.20333333333333334,
   );
 });
 
-test("tail diagnostics classifies material washout seams across a window", () => {
+test("tail diagnostics classifies plasma transfer spikes across a window", () => {
   expect(
     summarizeTailDiagnosticWindow([
-      { render: { materialProbePreBloomRadiance: 0.18 } },
-      { render: { materialProbePreBloomRadiance: 0.19 } },
-      { render: { materialProbePreBloomRadiance: 0.74 } },
+      { render: { plasmaProbePreBloomRadiance: 0.18 } },
+      { render: { plasmaProbePreBloomRadiance: 0.19 } },
+      { render: { plasmaProbePreBloomRadiance: 0.74 } },
     ]),
-  ).toMatchObject({ classification: "material-transfer" });
-
-  expect(
-    summarizeTailDiagnosticWindow([
-      {
-        render: {
-          materialProbeCausticVisibleDensity: 0.08,
-          materialProbeSupportVisibleDensity: 0.35,
-        },
-      },
-      {
-        render: {
-          materialProbeCausticVisibleDensity: 0.09,
-          materialProbeSupportVisibleDensity: 0.38,
-        },
-      },
-    ]),
-  ).toMatchObject({
-    classification: "support-fill",
-    dominance: { supportDominantSampleCount: 2 },
-  });
-
-  expect(
-    summarizeTailDiagnosticWindow([
-      {
-        render: {
-          materialProbeCausticVisibleDensity: 0.28,
-          materialProbeSupportVisibleDensity: 0.08,
-        },
-      },
-      {
-        render: {
-          materialProbeCausticVisibleDensity: 0.05,
-          materialProbeSupportVisibleDensity: 0.22,
-        },
-      },
-    ]),
-  ).toMatchObject({
-    classification: "caustic-collapse",
-    dominance: { causticCollapseSampleCount: 1 },
-  });
+  ).toMatchObject({ classification: "plasma-transfer" });
 });
 
 test("tail diagnostics does not call an unavailable material probe stable", () => {
   expect(
     summarizeTailDiagnosticWindow([
       {
-        classification: "observation-transfer-drop",
+        classification: "plasma-transfer-drop",
         frame: {
           renderAuthority: true,
           projectedRenderEnergy: 0.4,
@@ -384,12 +337,13 @@ test("tail diagnostics does not call an unavailable material probe stable", () =
         },
         render: {
           volumeVisible: true,
-          materialProbePhysicalDensity: 0,
-          materialProbeCausticVisibleDensity: 0,
-          materialProbeSupportVisibleDensity: 0,
-          materialProbePreBloomRadiance: 0,
-          materialProbePostBloomRisk: 0,
-          materialProbeBloomAmplification: 1,
+          plasmaProbeLocalRadiance: 0,
+          plasmaProbePersistence: 0,
+          plasmaProbeOrganizedDensity: 0,
+          plasmaProbeExtinction: 0,
+          plasmaProbePreBloomRadiance: 0,
+          plasmaProbePostBloomRisk: 0,
+          plasmaProbeBloomAmplification: 1,
         },
       },
       {
@@ -401,12 +355,13 @@ test("tail diagnostics does not call an unavailable material probe stable", () =
         },
         render: {
           volumeVisible: true,
-          materialProbePhysicalDensity: 0,
-          materialProbeCausticVisibleDensity: 0,
-          materialProbeSupportVisibleDensity: 0,
-          materialProbePreBloomRadiance: 0,
-          materialProbePostBloomRisk: 0,
-          materialProbeBloomAmplification: 1,
+          plasmaProbeLocalRadiance: 0,
+          plasmaProbePersistence: 0,
+          plasmaProbeOrganizedDensity: 0,
+          plasmaProbeExtinction: 0,
+          plasmaProbePreBloomRadiance: 0,
+          plasmaProbePostBloomRisk: 0,
+          plasmaProbeBloomAmplification: 1,
         },
       },
     ]),
@@ -415,7 +370,7 @@ test("tail diagnostics does not call an unavailable material probe stable", () =
     probeSampleCount: 0,
     sampleClassifications: {
       "input-drop": 1,
-      "observation-transfer-drop": 1,
+      "plasma-transfer-drop": 1,
     },
   });
 });
@@ -431,12 +386,13 @@ test("tail diagnostics accepts a healthy zero-valued render probe", () => {
         },
         render: {
           volumeVisible: true,
-          materialProbePhysicalDensity: 0,
-          materialProbeCausticVisibleDensity: 0,
-          materialProbeSupportVisibleDensity: 0,
-          materialProbePreBloomRadiance: 0,
-          materialProbePostBloomRisk: 0,
-          materialProbeBloomAmplification: 1,
+          plasmaProbeLocalRadiance: 0,
+          plasmaProbePersistence: 0,
+          plasmaProbeOrganizedDensity: 0,
+          plasmaProbeExtinction: 0,
+          plasmaProbePreBloomRadiance: 0,
+          plasmaProbePostBloomRisk: 0,
+          plasmaProbeBloomAmplification: 1,
         },
         probe: {
           health: {
@@ -468,7 +424,7 @@ test("tail diagnostics classifies black-tail failure seams", () => {
         noiseGate: false,
         sourceMode: "silent",
       },
-      observer: { observedResonanceModeCount: 0, observedResonanceEnergy: 0 },
+      observer: { resonantObservedModeCount: 0, resonantObservedEnergy: 0 },
       frame: { fieldState: "idle" },
       render: { volumeVisible: false },
     }),
@@ -482,7 +438,7 @@ test("tail diagnostics classifies black-tail failure seams", () => {
         analyserRms: 0.004,
         sourceMode: "system",
       },
-      observer: { observedResonanceModeCount: 0, observedResonanceEnergy: 0 },
+      observer: { resonantObservedModeCount: 0, resonantObservedEnergy: 0 },
       frame: { fieldState: "active", renderAuthority: true },
       render: { volumeVisible: true },
     }),
@@ -496,7 +452,7 @@ test("tail diagnostics classifies black-tail failure seams", () => {
         analyserRms: 0.004,
         sourceMode: "system",
       },
-      observer: { observedResonanceModeCount: 8, observedResonanceEnergy: 1 },
+      observer: { resonantObservedModeCount: 8, resonantObservedEnergy: 1 },
       frame: {
         fieldState: "active",
         renderAuthority: true,
@@ -514,7 +470,7 @@ test("tail diagnostics classifies black-tail failure seams", () => {
         analyserRms: 0.004,
         sourceMode: "system",
       },
-      observer: { observedResonanceModeCount: 8, observedResonanceEnergy: 1 },
+      observer: { resonantObservedModeCount: 8, resonantObservedEnergy: 1 },
       frame: {
         fieldState: "active",
         renderAuthority: true,
@@ -522,13 +478,10 @@ test("tail diagnostics classifies black-tail failure seams", () => {
       },
       render: {
         volumeVisible: true,
-        observationReferenceDensityFloor: 0.05,
-        observationReferenceContourSupport: 0.02,
-        observationSampledDensityFloor: 0,
-        observationSampledContourSupport: 0,
+        plasmaProbeOrganizedDensity: 0,
       },
     }),
-  ).toBe("observation-transfer-drop");
+  ).toBe("plasma-transfer-drop");
 
   expect(
     classifyTailDiagnosticSample({
@@ -538,7 +491,7 @@ test("tail diagnostics classifies black-tail failure seams", () => {
         analyserRms: 0.004,
         sourceMode: "system",
       },
-      observer: { observedResonanceModeCount: 8, observedResonanceEnergy: 1 },
+      observer: { resonantObservedModeCount: 8, resonantObservedEnergy: 1 },
       frame: {
         fieldState: "active",
         renderAuthority: true,
@@ -546,8 +499,7 @@ test("tail diagnostics classifies black-tail failure seams", () => {
       },
       render: {
         volumeVisible: false,
-        observationReferenceDensityFloor: 0.05,
-        observationSampledDensityFloor: 0.05,
+        plasmaProbeOrganizedDensity: 0.05,
       },
     }),
   ).toBe("render-hidden");

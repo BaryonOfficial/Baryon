@@ -1,5 +1,6 @@
 import {
   applyRenderProfilePostProcessOverrides,
+  DEFAULT_TRAA_ENABLED,
   normalizePerformanceProfile,
   normalizePerformanceTargetFps,
   normalizeRenderPostProcessOverrides,
@@ -45,9 +46,10 @@ export function resolveSceneRenderPerformanceProfile({
   outputHeight = 0,
   resolvedRenderProfile = null,
   localPostProcessOverrides = null,
-  traaEnabled = true,
+  traaEnabled = DEFAULT_TRAA_ENABLED,
 }) {
-  const traaOverride = traaEnabled === false ? { traaEnabled: false } : null;
+  const traaOverride =
+    typeof traaEnabled === "boolean" ? { traaEnabled } : null;
   const sanitizedLocalOverrides = shouldAllowLocalPostProcessOverrides(
     renderContext,
   )

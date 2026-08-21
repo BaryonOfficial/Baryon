@@ -8,4 +8,13 @@ export declare function createBaryonWorkspaceAliases(options: {
   find: string | RegExp;
   replacement: string;
 }[];
-export declare function createBaseViteConfig(): UserConfig;
+export declare function shouldForceBaryonRuntimeReload(
+  file: string,
+  options: { workspaceRoot: string },
+): boolean;
+export declare function createBaryonRuntimeHmrPlugin(options: {
+  workspaceRoot: string;
+}): import("vite").Plugin;
+export declare function createBaseViteConfig(options?: {
+  workspaceRoot?: string | null;
+}): UserConfig;

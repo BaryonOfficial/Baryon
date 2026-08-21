@@ -1,6 +1,35 @@
 import { clamp01 } from "../math.js";
+import { AUDIO_SOURCE_KINDS } from "../../core/audio/audioSourceSession.js";
 
 export const AUDIO_SOURCE_EVIDENCE_VERSION = "audio-source-evidence:v1";
+
+/** @typedef {import("../../core/audio/audioSourceSession.js").AudioSourceKind} AudioSourceKind */
+/**
+ * @typedef {object} AudioSourceEvidenceOptions
+ * @property {AudioSourceKind} [sourceKind]
+ * @property {{
+ *   hasAnalysisSource?: boolean;
+ *   isPlaying?: boolean;
+ *   isLiveInputActive?: boolean;
+ *   lastPlaybackEndReason?: string | null;
+ *   naturalRingdownActive?: boolean;
+ * } | null} [status]
+ * @property {boolean} [hasAnalysisSource]
+ * @property {unknown} [analysisSnapshot]
+ * @property {boolean} [includeSnapshotAsAnalysisSource]
+ * @property {boolean} [isPlaying]
+ * @property {boolean} [isLiveInputActive]
+ * @property {string | null} [playbackEndReason]
+ * @property {boolean} [naturalRingdownActive]
+ * @property {boolean} [isAcousticLiveInput]
+ * @property {boolean} [isLineFeedLiveInput]
+ * @property {boolean} [injectTestTone]
+ * @property {boolean} [preparationOnly]
+ * @property {boolean} [fileMuted]
+ * @property {boolean} [lineFeedProgramActive]
+ * @property {boolean} [liveInputHardSilenceActive]
+ * @property {Record<string, number | undefined>} [metrics]
+ */
 
 const CURRENT_SOURCE_TIME_DOMAIN_PEAK_FLOOR = 1e-4;
 const FILE_TIME_DOMAIN_SOURCE_PEAK_FLOOR = 0.004;
@@ -93,8 +122,9 @@ function deriveModalObservationPolicy({ analysisClass, metrics }) {
   };
 }
 
+/** @param {AudioSourceEvidenceOptions} [options] */
 export function collectAudioSourceEvidenceInputs({
-  inputMode = "idle",
+  sourceKind = AUDIO_SOURCE_KINDS.file,
   status = null,
   hasAnalysisSource = false,
   analysisSnapshot = null,
@@ -102,6 +132,7 @@ export function collectAudioSourceEvidenceInputs({
   isAcousticLiveInput = false,
   isLineFeedLiveInput = false,
   injectTestTone = false,
+  preparationOnly = false,
   fileMuted = false,
   lineFeedProgramActive = true,
   liveInputHardSilenceActive = false,
@@ -109,7 +140,7 @@ export function collectAudioSourceEvidenceInputs({
 } = {}) {
   const testToneActive = injectTestTone === true;
   return {
-    inputMode,
+    sourceKind,
     hasAnalysisSource:
       hasAnalysisSource === true ||
       status?.hasAnalysisSource === true ||
@@ -121,9 +152,11 @@ export function collectAudioSourceEvidenceInputs({
       typeof status?.lastPlaybackEndReason === "string"
         ? status.lastPlaybackEndReason
         : null,
+    naturalRingdownActive: status?.naturalRingdownActive === true,
     isAcousticLiveInput: isAcousticLiveInput === true,
     isLineFeedLiveInput: isLineFeedLiveInput === true,
     injectTestTone: testToneActive,
+    preparationOnly: preparationOnly === true,
     fileMuted: fileMuted === true,
     lineFeedProgramActive: lineFeedProgramActive === true,
     liveInputHardSilenceActive: liveInputHardSilenceActive === true,
@@ -145,6 +178,15 @@ function liveSourceEvidence(evidence, sourceEnergy) {
     ...evidence,
     sourceBoundaryState: "live",
     currentSourceEvidence: true,
+    sourceEnergy: clamp01(sourceEnergy),
+  };
+}
+
+function preparedSourceEvidence(evidence, sourceEnergy) {
+  return {
+    ...evidence,
+    sourceBoundaryState: "prepared",
+    currentSourceEvidence: false,
     sourceEnergy: clamp01(sourceEnergy),
   };
 }
@@ -171,25 +213,15 @@ function liveRenderBoundary(evidence, sourceEnergy) {
   };
 }
 
-function resolveSourceKind({
-  inputMode = "idle",
-  injectTestTone = false,
-  isAcousticLiveInput = false,
-  isLineFeedLiveInput = false,
-}) {
-  if (injectTestTone) {
-    return "test";
-  }
-  if (isAcousticLiveInput || inputMode === "mic") {
-    return "mic";
-  }
-  if (inputMode === "system" || isLineFeedLiveInput) {
-    return "system";
-  }
-  if (inputMode === "file") {
-    return "file";
-  }
-  return "none";
+function preparedRenderBoundary(evidence, sourceEnergy) {
+  return {
+    ...evidence,
+    rawSourceBoundaryState: evidence.sourceBoundaryState ?? "prepared",
+    renderBoundaryState: "prepared",
+    sourceBoundaryState: "prepared",
+    currentSourceEvidence: false,
+    sourceEnergy: clamp01(sourceEnergy),
+  };
 }
 
 function resolveAnalysisClass({
@@ -198,58 +230,53 @@ function resolveAnalysisClass({
   isAcousticLiveInput = false,
   isLineFeedLiveInput = false,
 }) {
-  if (injectTestTone || sourceKind === "test") {
+  if (injectTestTone) {
     return "test";
   }
-  if (isLineFeedLiveInput || sourceKind === "system") {
-    return "line-feed";
-  }
-  if (isAcousticLiveInput || sourceKind === "mic") {
+  if (isAcousticLiveInput) {
     return "acoustic-mic";
   }
-  if (sourceKind === "file") {
+  if (isLineFeedLiveInput || sourceKind === AUDIO_SOURCE_KINDS.system) {
+    return "line-feed";
+  }
+  if (sourceKind === AUDIO_SOURCE_KINDS.file) {
     return "file";
   }
   return "none";
 }
 
 function isTransportPresent({
-  sourceKind,
-  inputMode,
+  hasAnalysisSource,
   playing,
   liveInputActive,
+  naturalRingdownActive,
 }) {
   return (
-    sourceKind !== "none" ||
-    inputMode === "file" ||
-    inputMode === "live" ||
-    inputMode === "system" ||
+    hasAnalysisSource ||
     playing ||
-    liveInputActive
+    liveInputActive ||
+    naturalRingdownActive
   );
 }
 
+/** @param {AudioSourceEvidenceOptions} [options] */
 export function buildAudioSourceEvidenceFrame({
-  inputMode = "idle",
+  sourceKind = AUDIO_SOURCE_KINDS.file,
   hasAnalysisSource = false,
   isPlaying = false,
   isLiveInputActive = false,
   playbackEndReason = null,
+  naturalRingdownActive = false,
   isAcousticLiveInput = false,
   isLineFeedLiveInput = false,
   injectTestTone = false,
+  preparationOnly = false,
   fileMuted = false,
   lineFeedProgramActive = true,
   liveInputHardSilenceActive = false,
   metrics = {},
 } = {}) {
   const normalizedMetrics = normalizeMetrics(metrics);
-  const sourceKind = resolveSourceKind({
-    inputMode,
-    injectTestTone,
-    isAcousticLiveInput,
-    isLineFeedLiveInput,
-  });
   const analysisClass = resolveAnalysisClass({
     sourceKind,
     injectTestTone,
@@ -258,9 +285,16 @@ export function buildAudioSourceEvidenceFrame({
   });
   const playing = isPlaying === true;
   const liveInputActive = isLiveInputActive === true;
+  const preparedFileAnalysis =
+    preparationOnly === true &&
+    sourceKind === AUDIO_SOURCE_KINDS.file &&
+    !playing;
   const fileTransportMuted =
     fileMuted === true ||
-    (sourceKind === "file" && inputMode === "file" && !playing);
+    (sourceKind === AUDIO_SOURCE_KINDS.file &&
+      !playing &&
+      !preparedFileAnalysis &&
+      naturalRingdownActive !== true);
   const lineFeedFreshSignal = lineFeedProgramActive === true;
   const lineFeedTransportMuted =
     analysisClass === "line-feed" && !lineFeedFreshSignal;
@@ -269,13 +303,13 @@ export function buildAudioSourceEvidenceFrame({
     lineFeedProgramActive === true &&
     hasResidualMetricEvidence(normalizedMetrics);
   const micHardSilence =
-    sourceKind === "mic" && liveInputHardSilenceActive === true;
+    analysisClass === "acoustic-mic" && liveInputHardSilenceActive === true;
   const transportPresent = isTransportPresent({
-    sourceKind,
-    inputMode,
+    hasAnalysisSource,
     playing,
     liveInputActive,
-  });
+    naturalRingdownActive: naturalRingdownActive === true,
+  }) || preparedFileAnalysis;
   const metricEvidence = hasMetricEvidence(normalizedMetrics, analysisClass);
   const evidence = {
     ownerVersion: AUDIO_SOURCE_EVIDENCE_VERSION,
@@ -291,6 +325,8 @@ export function buildAudioSourceEvidenceFrame({
       liveInputActive,
       playbackEndReason:
         typeof playbackEndReason === "string" ? playbackEndReason : null,
+      naturalRingdownActive: naturalRingdownActive === true,
+      preparationOnly: preparedFileAnalysis,
       fileMuted: fileTransportMuted,
       lineFeedProgramActive: lineFeedProgramActive === true,
       micHardSilence,
@@ -299,6 +335,15 @@ export function buildAudioSourceEvidenceFrame({
 
   if (injectTestTone) {
     return liveSourceEvidence(evidence, 1);
+  }
+
+  if (preparedFileAnalysis) {
+    return metricEvidence
+      ? preparedSourceEvidence(
+          evidence,
+          deriveSourceEnergy(normalizedMetrics),
+        )
+      : closeSourceEvidence(evidence, "zero");
   }
 
   if (!hasAnalysisSource && !transportPresent) {
@@ -326,7 +371,7 @@ export function resolveAudioRenderBoundary({
   const evidence =
     sourceEvidence ??
     buildAudioSourceEvidenceFrame({
-      inputMode: "idle",
+      sourceKind: AUDIO_SOURCE_KINDS.file,
       hasAnalysisSource: false,
     });
   const sourceBoundaryState = evidence.sourceBoundaryState ?? "absent";
@@ -335,11 +380,15 @@ export function resolveAudioRenderBoundary({
     return closeRenderBoundary(evidence, sourceBoundaryState);
   }
 
-  if (evidence.sourceKind === "test" || evidence.analysisClass === "test") {
+  if (evidence.analysisClass === "test") {
     return liveRenderBoundary(
       evidence,
       Math.max(1, evidence.sourceEnergy ?? 0),
     );
+  }
+
+  if (sourceBoundaryState === "prepared") {
+    return preparedRenderBoundary(evidence, evidence.sourceEnergy ?? 0);
   }
 
   if (sourceBoundaryState === "zero") {
@@ -347,7 +396,10 @@ export function resolveAudioRenderBoundary({
       modalResponse?.modalResponseEnergy ?? 0,
     );
     const resolvedRenderBoundaryState =
-      retainedModalEnergy > 0 ? "muted" : "zero";
+      retainedModalEnergy > 0 &&
+      evidence.transport?.naturalRingdownActive !== true
+        ? "muted"
+        : "zero";
 
     return closeRenderBoundary(evidence, resolvedRenderBoundaryState);
   }

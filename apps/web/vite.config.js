@@ -20,8 +20,8 @@ const zustandDir = path.dirname(require.resolve("zustand/package.json"));
 /** @returns {import('vite').UserConfig} */
 export default defineConfig(() => {
   const isHttps = process.env.HTTPS === "true";
-  const base = createBaseViteConfig();
   const workspaceRoot = path.resolve(dirname, "../..");
+  const base = createBaseViteConfig({ workspaceRoot });
   const workspaceAliases = createBaryonWorkspaceAliases({ workspaceRoot });
   /** @type {import('vite').PluginOption[]} */
   const plugins = [

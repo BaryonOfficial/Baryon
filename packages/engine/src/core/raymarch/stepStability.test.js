@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { RAYMARCH_DEFAULTS } from "../../defaults.js";
 import {
   deriveLowStepBloomGuard,
   deriveStableStepJitter,
   deriveStepCompensation,
+  MIN_ADAPTIVE_STEPS,
+  QUADRATURE_SPARSITY_STEP_THRESHOLD,
   STEP_REFERENCE,
 } from "./stepStability.js";
 
@@ -28,10 +31,34 @@ describe("step stability", () => {
     expect(deriveStepCompensation(192)).toBe(1);
   });
 
-  it("raises the bloom guard only below 64 steps", () => {
-    expect(deriveLowStepBloomGuard(64)).toBe(0);
-    expect(deriveLowStepBloomGuard(32)).toBeCloseTo(2 / 3);
-    expect(deriveLowStepBloomGuard(16)).toBe(1);
+  it("leaves the sealed presentation budget unguarded and ramps to the floor", () => {
+    // The shipped budget carries hand-measured bloom values, so the guard must
+    // not silently rescale them there. It only engages for budgets the user or
+    // an adaptive profile drops below that measured point.
+    const sealedBudget = RAYMARCH_DEFAULTS.raymarchSteps;
+
+    expect(deriveLowStepBloomGuard(STEP_REFERENCE)).toBe(0);
+    expect(deriveLowStepBloomGuard(MIN_ADAPTIVE_STEPS)).toBe(1);
+
+    // The invariant: the shipped budget is never guarded, so hand-measured
+    // bloom values are never silently rescaled. The guard band starts at the
+    // quadrature threshold, which the shipped budget must stay at or above —
+    // dropping it below would engage the guard on the sealed operating point.
+    expect(sealedBudget).toBeGreaterThanOrEqual(
+      QUADRATURE_SPARSITY_STEP_THRESHOLD,
+    );
+    expect(deriveLowStepBloomGuard(sealedBudget)).toBe(0);
+    expect(deriveLowStepBloomGuard(QUADRATURE_SPARSITY_STEP_THRESHOLD)).toBe(0);
+    expect(
+      deriveLowStepBloomGuard(QUADRATURE_SPARSITY_STEP_THRESHOLD - 1),
+    ).toBeGreaterThan(0);
+
+    // The ramp spans the guard band, which now starts below the shipped budget
+    // rather than at it.
+    const midpoint = deriveLowStepBloomGuard(
+      (QUADRATURE_SPARSITY_STEP_THRESHOLD + MIN_ADAPTIVE_STEPS) / 2,
+    );
+    expect(midpoint).toBeCloseTo(0.5);
   });
 
   it("returns the same jitter for the same local ray entry point", () => {

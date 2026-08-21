@@ -1,7 +1,6 @@
-import { LightingModel } from "three/webgpu";
 import {
   abs,
-  Break,
+  ceil,
   clamp,
   dot,
   float,
@@ -11,8 +10,8 @@ import {
   Loop,
   max,
   min,
+  mix,
   modelRadius,
-  modelWorldMatrix,
   modelWorldMatrixInverse,
   cameraPosition,
   positionWorld,
@@ -22,7 +21,6 @@ import {
   vec3,
   vec4,
 } from "three/tsl";
-import { MIN_ADAPTIVE_STEPS } from "./stepStability.js";
 
 export const raymarchLightNode = property("vec3", "baryonRaymarchLight");
 export const raymarchOpacityNode = property("float", "baryonRaymarchOpacity");
@@ -41,73 +39,107 @@ export const raymarchTransmittanceNode = property(
   "baryonRaymarchTransmittance",
   float(1),
 );
-export const raymarchCoverageNode = property(
+const raymarchCoverageNode = property(
   "float",
   "baryonRaymarchCoverage",
   float(0),
 );
 
-const EARLY_EXIT_TRANSMITTANCE_EPSILON = 5e-3;
 const EXTINCTION_EPSILON = 1e-8;
-
-const ADAPTIVE_INTEGRATION_ERROR_TOLERANCE = 0.01;
-const ADAPTIVE_INTEGRATION_MIN_STEP_MULTIPLIER = 0.5;
-// Refinement may split the base lattice, but it may never enlarge a step and
-// skip a thin carrier interval.
-export const ADAPTIVE_INTEGRATION_MAX_STEP_MULTIPLIER = 1;
+const GAUSS_LEGENDRE_TWO_POINT_OFFSET = 1 / (2 * Math.sqrt(3));
 
 /**
- * CPU mirror of the interval-centered quadrature used by the GPU march.
- * intervalStart is an integration boundary, never a stochastic sample phase.
+ * CPU mirror of the deterministic GPU quadrature. `sampleBudget` is the
+ * declared number of analytic field evaluations on a reference-length chord.
+ * It is rounded up once to an even count because every panel uses the same
+ * two-point rule. Shorter chords retain the same world-space panel spacing and
+ * finish with one partial panel instead of rescaling every existing sample.
+ *
+ * That fixed lattice is important visually: changing chord length can only add
+ * or grow the final panel, so neighbouring rays never turn integer sample-count
+ * boundaries into either coherent rings or stochastic grain.
  */
-export function deriveRaymarchSampleInterval({
-  intervalStart = 0,
-  intervalEnd = 0,
-  nominalStepSize = 1,
-  stepMultiplier = 1,
+export function deriveCompositeGaussLegendreRaymarchSamples({
+  entryDistance = 0,
+  exitDistance = 0,
+  referenceLength = 1,
+  sampleBudget = 1,
 } = {}) {
-  const start = Number.isFinite(intervalStart) ? intervalStart : 0;
-  const end = Math.max(start, Number.isFinite(intervalEnd) ? intervalEnd : 0);
-  const requestedStep =
-    Math.max(0, Number.isFinite(nominalStepSize) ? nominalStepSize : 0) *
-    Math.max(0, Number.isFinite(stepMultiplier) ? stepMultiplier : 0);
-  const stepSize = Math.min(requestedStep, end - start);
+  const entry = Number.isFinite(entryDistance) ? entryDistance : 0;
+  const exit = Math.max(
+    entry,
+    Number.isFinite(exitDistance) ? exitDistance : entry,
+  );
+  const segmentLength = exit - entry;
+  if (!(segmentLength > 0)) {
+    return [];
+  }
 
-  return {
-    stepSize,
-    sampleDistance: start + stepSize * 0.5,
-    nextIntervalStart: start + stepSize,
-  };
-}
-
-/** CPU mirror of the local-error refinement controller used by the GPU. */
-export function deriveAdaptiveRaymarchStepSize({
-  baseStepSize = 1,
-  previousDensity = 0,
-  currentDensity = 0,
-  errorTolerance = ADAPTIVE_INTEGRATION_ERROR_TOLERANCE,
-  minStepMultiplier = ADAPTIVE_INTEGRATION_MIN_STEP_MULTIPLIER,
-  maxStepMultiplier = ADAPTIVE_INTEGRATION_MAX_STEP_MULTIPLIER,
-} = {}) {
-  const safeBaseStepSize = Math.max(Number.EPSILON, baseStepSize);
-  const localError =
-    Math.abs(currentDensity - previousDensity) * safeBaseStepSize;
-  const stepMultiplier = Math.min(
-    maxStepMultiplier,
-    Math.max(
-      minStepMultiplier,
-      Math.sqrt(
-        Math.max(errorTolerance, Number.EPSILON) /
-          Math.max(localError, Number.EPSILON),
-      ),
+  const normalizedBudget = Math.max(
+    1,
+    Math.round(Number.isFinite(sampleBudget) ? sampleBudget : 1),
+  );
+  const safeReferenceLength = Math.max(
+    Number.EPSILON,
+    Number.isFinite(referenceLength) ? referenceLength : 1,
+  );
+  const evenSampleBudget = 2 * Math.ceil(normalizedBudget / 2);
+  const targetPanelWidth =
+    safeReferenceLength / Math.max(1, evenSampleBudget / 2);
+  const panelCount = Math.max(
+    1,
+    Math.ceil(
+      segmentLength / targetPanelWidth - Number.EPSILON * evenSampleBudget,
     ),
   );
+  const samples = [];
 
-  return {
-    localError,
-    stepMultiplier,
-    stepSize: safeBaseStepSize * stepMultiplier,
-  };
+  for (let panelIndex = 0; panelIndex < panelCount; panelIndex += 1) {
+    const panelStart = entry + panelIndex * targetPanelWidth;
+    const localPanelWidth = Math.min(targetPanelWidth, exit - panelStart);
+    if (!(localPanelWidth > 0)) {
+      continue;
+    }
+    const panelCenter = panelStart + localPanelWidth * 0.5;
+    const offset = localPanelWidth * GAUSS_LEGENDRE_TWO_POINT_OFFSET;
+    const weight = localPanelWidth * 0.5;
+    samples.push(
+      { distance: panelCenter - offset, weight },
+      { distance: panelCenter + offset, weight },
+    );
+  }
+
+  return samples;
+}
+
+/**
+ * Deterministic CPU oracle for the direct volume quadrature.
+ * @param {{
+ *   entryDistance?: number,
+ *   exitDistance?: number,
+ *   referenceLength?: number,
+ *   sampleBudget?: number,
+ *   sample?: (distance: number) => number,
+ * }} options
+ */
+export function integrateCompositeGaussLegendreRaymarch({
+  entryDistance = 0,
+  exitDistance = 0,
+  referenceLength = 1,
+  sampleBudget = 1,
+  sample = () => 0,
+} = {}) {
+  return deriveCompositeGaussLegendreRaymarchSamples({
+    entryDistance,
+    exitDistance,
+    referenceLength,
+    sampleBudget,
+  }).reduce(
+    (integral, quadratureSample) =>
+      integral +
+      Number(sample(quadratureSample.distance) || 0) * quadratureSample.weight,
+    0,
+  );
 }
 
 /**
@@ -162,16 +194,72 @@ export function integrateRadiativeTransferStep({
 }
 
 /**
+ * Deterministic CPU oracle for the camera-ordered production transfer.
+ *
+ * Composite Gauss-Legendre weights partition the chord into positive path
+ * intervals. Each sampled coefficient tuple is treated as constant over its
+ * interval, then integrated exactly before the next camera-depth interval.
+ */
+export function integrateRadiativeTransferRay({
+  entryDistance = 0,
+  exitDistance = 0,
+  referenceLength = 1,
+  sampleBudget = 1,
+  cameraAtRayStart = true,
+  sample = /** @type {(distance: number) => any} */ (() => ({})),
+} = {}) {
+  const samples = deriveCompositeGaussLegendreRaymarchSamples({
+    entryDistance,
+    exitDistance,
+    referenceLength,
+    sampleBudget,
+  });
+  const orderedSamples = cameraAtRayStart ? samples : [...samples].reverse();
+  const baseRadiance = [0, 0, 0];
+  const accentRadiance = [0, 0, 0];
+  let transmittance = 1;
+
+  for (const quadratureSample of orderedSamples) {
+    const coefficients = sample(quadratureSample.distance) ?? {};
+    const localExtinction = Math.max(
+      0,
+      Number.isFinite(coefficients.extinction) ? coefficients.extinction : 0,
+    );
+    const step = integrateRadiativeTransferStep({
+      transmittance,
+      baseSourceRadiance: coefficients.baseSourceRadiance,
+      accentSourceRadiance: coefficients.accentSourceRadiance,
+      extinction: localExtinction,
+      stepSize: quadratureSample.weight,
+    });
+
+    for (let channel = 0; channel < 3; channel += 1) {
+      baseRadiance[channel] += step.segmentBaseRadiance[channel];
+      accentRadiance[channel] += step.segmentAccentRadiance[channel];
+    }
+    transmittance = step.nextTransmittance;
+  }
+
+  return {
+    baseRadiance,
+    accentRadiance,
+    sourceRadiance: baseRadiance.map(
+      (channel, index) => channel + accentRadiance[index],
+    ),
+    transmittance,
+    coverage: Math.min(1, Math.max(0, 1 - transmittance)),
+  };
+}
+
+/**
  * @typedef {import("three").Material & {
  *   steps?: number,
  *   radiusNode?: any,
  *   domainHalfExtentsNode?: any,
- *   scatteringNode?: ((args: {
- *     positionRay: any,
- *     positionRayLocal: any,
- *     rayDirLocal: any,
- *     stepSize: any
- *   }) => any) | null
+ *   createOpticalTransferRaySampler?: ((args: {
+ *     rayOriginLocal: any,
+ *     unitRayDirLocal: any
+ *   }) => ((sample: {sampleDistance: any, stepSize: any}) => any)) | null
  * }} RuntimeVolumeMaterial
  */
 
@@ -181,6 +269,10 @@ export function createSafeVolumetricOutputNode(material) {
     const endPos = property("vec3");
     const radiusNode = material.radiusNode ?? modelRadius;
     const cameraDistanceThreshold = radiusNode.mul(2);
+    // Which end of the parameterized ray the camera sits on. The emission
+    // integral attenuates each sample by the optical depth between it and the
+    // camera, so this decides which endpoint that depth is measured from.
+    const cameraAtRayStart = float(0).toVar();
 
     If(
       cameraPosition
@@ -190,10 +282,12 @@ export function createSafeVolumetricOutputNode(material) {
       () => {
         startPos.assign(cameraPosition);
         endPos.assign(positionWorld);
+        cameraAtRayStart.assign(1);
       },
     ).Else(() => {
       startPos.assign(positionWorld);
       endPos.assign(cameraPosition);
+      cameraAtRayStart.assign(0);
     });
 
     const steps = uniform(0, /** @type {any} */ ("int")).onRenderUpdate(
@@ -212,15 +306,30 @@ export function createSafeVolumetricOutputNode(material) {
     const entryDistance = float(0).toVar();
     const exitDistance = float(0).toVar();
     const segmentLength = float(0).toVar();
-    const nominalStepSize = float(0).toVar();
-    const stepSize = float(0).toVar();
-    const adaptiveStepMultiplier = float(1).toVar();
-    const previousExtinction = float(0).toVar();
     const stepCount = max(float(steps), 1).toVar();
-    const distTravelled = float(0).toVar();
-    const transmittance = float(1).toVar();
+    // `stepCount` is the declared sample budget for a diameter chord. The
+    // production rule rounds it up to complete two-point panels, fixes that
+    // panel spacing in world space, and allows longer box chords to consume
+    // proportionally more panels.
+    const domainDiameter = max(radiusNode.mul(2), float(1e-4)).toVar();
+    const longestDomainChord = material.domainHalfExtentsNode
+      ? float(vec3(material.domainHalfExtentsNode).length()).mul(2)
+      : float(radiusNode).mul(2);
+    const panelBudget = max(ceil(stepCount.mul(float(0.5))), float(1)).toVar();
+    const targetPanelWidth = domainDiameter.div(panelBudget).toVar();
+    const panelCountCeiling = max(
+      ceil(longestDomainChord.div(targetPanelWidth)),
+      float(1),
+    ).toVar();
     const accumulatedBaseRadiance = vec3(0).toVar();
     const accumulatedAccentRadiance = vec3(0).toVar();
+    const accumulatedTransmittance = float(1).toVar();
+    const opticalTransferRaySampler = material.createOpticalTransferRaySampler
+      ? material.createOpticalTransferRaySampler({
+          rayOriginLocal: startPosLocal,
+          unitRayDirLocal: rayDirLocal,
+        })
+      : null;
 
     raymarchLightNode.assign(vec3(0));
     raymarchOpacityNode.assign(float(0));
@@ -232,112 +341,108 @@ export function createSafeVolumetricOutputNode(material) {
     const marchVolumeSegment = () => {
       If(exitDistance.greaterThan(entryDistance), () => {
         segmentLength.assign(exitDistance.sub(entryDistance));
-        const diameter = radiusNode.mul(2);
-        const stepsPerUnit = stepCount.div(max(diameter, float(1e-4)));
-        const effectiveSteps = clamp(
-          segmentLength.mul(stepsPerUnit),
-          float(MIN_ADAPTIVE_STEPS),
-          stepCount,
+        // Each ray shares one fixed panel lattice measured from its entry
+        // point. Only the final panel changes width as a chord grows, removing
+        // both coherent count bands and the former per-ray dither grain.
+        const segmentPanelCount = int(
+          clamp(
+            ceil(segmentLength.div(targetPanelWidth)),
+            float(1),
+            panelCountCeiling,
+          ),
         ).toVar();
-        nominalStepSize.assign(
-          segmentLength.div(max(effectiveSteps, float(1))),
-        );
-        stepSize.assign(nominalStepSize);
-        distTravelled.assign(entryDistance);
+        const segmentPanelCountFloat = float(segmentPanelCount).toVar();
+        const lastPanelIndex = segmentPanelCountFloat.sub(float(1)).toVar();
+        const firstGaussDirection = mix(
+          float(1),
+          float(-1),
+          cameraAtRayStart,
+        ).toVar();
 
-        // A two-times ceiling lets the controller halve every interval without
-        // truncating the finite ray segment.
+        const accumulateSample = (sampleDistance, sampleWeight) => {
+          const opticalSample = opticalTransferRaySampler
+            ? opticalTransferRaySampler({
+                sampleDistance,
+                stepSize: sampleWeight,
+              })
+            : null;
+          if (opticalSample) {
+            const baseSourceRadiance = vec3(opticalSample.baseRadiance).toVar();
+            const accentSourceRadiance = vec3(
+              opticalSample.accentRadiance,
+            ).toVar();
+            const localExtinction = float(opticalSample.extinction).toVar();
+            const falloff = localExtinction
+              .negate()
+              .mul(sampleWeight)
+              .exp()
+              .toVar();
+            const attenuatedInterval = float(1)
+              .sub(falloff)
+              .div(max(localExtinction, float(EXTINCTION_EPSILON)));
+            const segmentIntegral = localExtinction
+              .greaterThan(float(EXTINCTION_EPSILON))
+              .select(attenuatedInterval, sampleWeight)
+              .uniformFlow()
+              .toVar();
+            const weightedTransmittance = accumulatedTransmittance
+              .mul(segmentIntegral)
+              .toVar();
+            accumulatedBaseRadiance.addAssign(
+              baseSourceRadiance.mul(weightedTransmittance),
+            );
+            accumulatedAccentRadiance.addAssign(
+              accentSourceRadiance.mul(weightedTransmittance),
+            );
+            accumulatedTransmittance.mulAssign(falloff);
+          }
+        };
+
+        // Traverse the same deterministic quadrature from the camera toward the
+        // far side in either ray parameterization. Each interval updates the
+        // one shared extinction recurrence before the next depth sample.
         Loop(
           {
             start: int(0),
-            end: steps.mul(int(2)),
+            end: segmentPanelCount,
             type: "int",
             condition: "<",
           },
-          () => {
-            stepSize.assign(nominalStepSize.mul(adaptiveStepMultiplier));
-            const currentStepSize = min(
-              stepSize,
-              max(exitDistance.sub(distTravelled), float(0)),
+          ({ i }) => {
+            const panelIndex = float(i).toVar();
+            const marchPanelIndex = mix(
+              lastPanelIndex.sub(panelIndex),
+              panelIndex,
+              cameraAtRayStart,
             ).toVar();
-            const sampleDistance = distTravelled.add(currentStepSize.mul(0.5));
-            const positionRayLocal = startPosLocal
-              .add(rayDirLocal.mul(sampleDistance))
-              .toVar();
-            const positionRay = modelWorldMatrix
-              .mul(vec4(positionRayLocal, 1))
-              .xyz.toVar();
-            // The scattering callback supplies split base and accent source
-            // lanes with one shared extinction; both lanes integrate against
-            // the same transmittance recurrence and step sequence.
-            const scatterSample = material.scatteringNode
-              ? material.scatteringNode({
-                  positionRay,
-                  positionRayLocal,
-                  rayDirLocal,
-                  stepSize: currentStepSize,
-                })
-              : null;
-            const baseSourceRadiance = scatterSample
-              ? max(vec3(scatterSample.baseRadiance), vec3(0)).toVar()
-              : vec3(0).toVar();
-            const accentSourceRadiance = scatterSample
-              ? max(vec3(scatterSample.accentRadiance), vec3(0)).toVar()
-              : vec3(0).toVar();
-            const extinction = scatterSample
-              ? max(float(scatterSample.extinction), float(0)).toVar()
-              : float(0).toVar();
-
-            const localIntegrationError = abs(
-              extinction.sub(previousExtinction),
-            )
-              .mul(currentStepSize)
-              .toVar();
-            adaptiveStepMultiplier.assign(
-              clamp(
-                sqrt(
-                  float(ADAPTIVE_INTEGRATION_ERROR_TOLERANCE).div(
-                    max(localIntegrationError, float(1e-8)),
-                  ),
-                ),
-                float(ADAPTIVE_INTEGRATION_MIN_STEP_MULTIPLIER),
-                float(ADAPTIVE_INTEGRATION_MAX_STEP_MULTIPLIER),
-              ),
+            const panelOffset = marchPanelIndex.mul(targetPanelWidth).toVar();
+            const panelStartDistance = entryDistance.add(panelOffset);
+            const localPanelWidth = min(
+              targetPanelWidth,
+              max(exitDistance.sub(panelStartDistance), float(0)),
+            ).toVar();
+            const gaussWeight = localPanelWidth.mul(float(0.5)).toVar();
+            const panelCenterDistance = entryDistance.add(
+              panelOffset.add(gaussWeight),
             );
-            previousExtinction.assign(extinction);
-
-            // Exact homogeneous radiative transfer for this interval:
-            // L += T * J/sigma_t * (1 - exp(-sigma_t ds)).
-            const falloff = extinction
-              .negate()
-              .mul(currentStepSize)
-              .exp()
+            const gaussOffset = localPanelWidth
+              .mul(float(GAUSS_LEGENDRE_TWO_POINT_OFFSET))
               .toVar();
-            const segmentIntegral = transmittance
-              .mul(float(1).sub(falloff))
-              .div(max(extinction, float(EXTINCTION_EPSILON)))
+            const signedGaussOffset = gaussOffset
+              .mul(firstGaussDirection)
               .toVar();
-            accumulatedBaseRadiance.addAssign(
-              baseSourceRadiance.mul(segmentIntegral),
-            );
-            accumulatedAccentRadiance.addAssign(
-              accentSourceRadiance.mul(segmentIntegral),
-            );
-            transmittance.mulAssign(falloff);
-
-            If(
-              transmittance.lessThan(float(EARLY_EXIT_TRANSMITTANCE_EPSILON)),
-              () => {
-                Break();
-              },
-            );
-            distTravelled.addAssign(currentStepSize);
-            If(distTravelled.greaterThanEqual(exitDistance), () => {
-              Break();
-            });
+            const firstSampleDistance = panelCenterDistance
+              .add(signedGaussOffset)
+              .toVar();
+            const secondSampleDistance = panelCenterDistance
+              .sub(signedGaussOffset)
+              .toVar();
+            accumulateSample(firstSampleDistance, gaussWeight);
+            accumulateSample(secondSampleDistance, gaussWeight);
           },
         );
 
+        const transmittance = accumulatedTransmittance;
         const coverage = float(1.0).sub(transmittance).saturate();
         raymarchBaseLightNode.assign(accumulatedBaseRadiance);
         raymarchAccentLightNode.assign(accumulatedAccentRadiance);
@@ -423,14 +528,4 @@ export function createSafeVolumetricOutputNode(material) {
   })();
 }
 
-export default class SafeVolumetricLightingModel extends LightingModel {
-  start(builder) {
-    const material = /** @type {RuntimeVolumeMaterial} */ (builder.material);
-    const outputNode = createSafeVolumetricOutputNode(material);
-    builder.context.outgoingLight.assign(outputNode.rgb);
-  }
-
-  finish(builder) {
-    builder.context.outgoingLight.assign(raymarchLightNode);
-  }
-}
+// Safe volumetric lighting model owner end.

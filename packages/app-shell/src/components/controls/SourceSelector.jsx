@@ -1,4 +1,5 @@
 import React, { useCallback } from "react";
+import { AUDIO_SOURCE_KINDS } from "@baryon/engine/audio";
 import { useAudio } from "../../context/AudioContext";
 import { isLiveInputTransitionLocked } from "../../context/liveInputRuntimeStatus.js";
 
@@ -49,7 +50,7 @@ function ensureStyles() {
   padding: 2px;
   background: transparent;
   border: none;
-  border-radius: var(--baryon-source-selector-radius);
+  border-radius: var(--baryon-source-selector-segment-radius);
   flex-shrink: 0;
   overflow: hidden;
   min-height: var(--baryon-source-selector-inner-min-height);
@@ -62,7 +63,7 @@ function ensureStyles() {
   left: calc(2px + var(--slider-offset, 0rem));
   width: var(--slider-width, 3.5rem);
   box-sizing: border-box;
-  border-radius: var(--baryon-source-selector-radius);
+  border-radius: var(--baryon-source-selector-segment-radius);
   border: 1px solid var(--nd-border-visible);
   background: var(--nd-surface-raised);
   transition:
@@ -84,7 +85,7 @@ function ensureStyles() {
   min-height: var(--baryon-source-selector-inner-min-height);
   padding: 0;
   border: none;
-  border-radius: var(--baryon-source-selector-radius);
+  border-radius: var(--baryon-source-selector-segment-radius);
   background: transparent;
   color: var(--nd-text-secondary);
   font-family: var(--baryon-type-mono-family);
@@ -288,7 +289,7 @@ export function SourceSelector({
 
   const {
     platform,
-    selectedSource,
+    sourceSession,
     handleSourceChange,
     isLiveInputActive,
     liveInputDeviceKind,
@@ -300,8 +301,10 @@ export function SourceSelector({
   const isWebPlatform = platform === "web";
 
   const resolvedSource =
-    !showSystemSource || selectedSource === "file" ? "file" : "system";
-  const isLiveSource = resolvedSource === "system";
+    !showSystemSource || sourceSession.kind === AUDIO_SOURCE_KINDS.file
+      ? AUDIO_SOURCE_KINDS.file
+      : AUDIO_SOURCE_KINDS.system;
+  const isLiveSource = resolvedSource === AUDIO_SOURCE_KINDS.system;
   const isCurrentLive = isLiveInputActive && isLiveSource;
   const activeLiveLabel =
     liveInputDeviceKind === "system" ? "system input" : "live input";

@@ -1,5 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
+import { CYMATIC_OBSERVER_REFERENCE } from "@baryon/engine/core/raymarch/cymaticObserverReference";
+import {
+  CYMATIC_PLASMA_BODY_RADIANCE_PER_EXTINCTION_LIMIT,
+  CYMATIC_PLASMA_CONTINUITY_SPINE_RADIANCE_PER_EXTINCTION_LIMIT,
+  CYMATIC_PLASMA_DETAIL_SPINE_RADIANCE_PER_EXTINCTION_LIMIT,
+  CYMATIC_PLASMA_EMISSION_COEFFICIENT,
+  CYMATIC_PLASMA_EXTINCTION_COEFFICIENT,
+  CYMATIC_PLASMA_RADIANCE_GAIN,
+} from "@baryon/engine/core/raymarch/cymaticPlasmaTransfer";
 import { createRaymarchAuditFixtureRuntimeDriver } from "./raymarchAuditFixtureRuntimeAdapter.js";
 
 function numericArray(values) {
@@ -8,7 +17,8 @@ function numericArray(values) {
 
 function createDescriptor() {
   const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
-  const slots = [1, 2, 3, 0.8];
+  const identitySlots = [1, 2, 3];
+  const coefficientSlots = [0.8];
   const zero = [0, 0, 0, 0];
   return {
     descriptorId: "base-front-v1",
@@ -17,12 +27,10 @@ function createDescriptor() {
       fieldAuthority: "complete",
       activeModeCount: 1,
       capacity: 1,
-      slots: numericArray(slots),
+      identitySlots: numericArray(identitySlots),
+      coefficientSlots: numericArray(coefficientSlots),
       phaseSlots: numericArray(zero),
-      colorSlots: numericArray([0.2, 0.6, 1, 1]),
-      spectralLaneA: numericArray(zero),
-      spectralLaneB: numericArray(zero),
-      spectralMeta: numericArray(zero),
+      spectralMomentSlots: numericArray([0.2, 0.6, 1, 1]),
       metadataSlots: numericArray(zero),
     },
     phase: { evaluationTimeSec: 2.5, authority: 1 },
@@ -32,23 +40,41 @@ function createDescriptor() {
       cavityGeometry: "rectangular",
       volumeShape: "sphere",
     },
-    spectral: { enabled: false, colorMode: "static", spectralMix: 0 },
+    spectral: {
+      colorMode: "static",
+      spectralChroma: 0.42,
+    },
     camera: {
       viewMatrix: numericArray(identity),
       projectionMatrix: numericArray(identity),
     },
     material: {
-      holographicBaseRadianceGain: 2 ** -8,
       densityGain: 1,
-      absorption: 0.5,
-      carrierCoreFwhmWorld: 0.024,
-      contourSharpness: 8,
+      plasmaRadianceGain: CYMATIC_PLASMA_RADIANCE_GAIN,
+      plasmaExtinctionCoefficient: CYMATIC_PLASMA_EXTINCTION_COEFFICIENT,
+      plasmaEmissionCoefficient: CYMATIC_PLASMA_EMISSION_COEFFICIENT,
+      plasmaContinuitySpineRadiancePerExtinctionLimit:
+        CYMATIC_PLASMA_CONTINUITY_SPINE_RADIANCE_PER_EXTINCTION_LIMIT,
+      plasmaDetailSpineRadiancePerExtinctionLimit:
+        CYMATIC_PLASMA_DETAIL_SPINE_RADIANCE_PER_EXTINCTION_LIMIT,
+      plasmaBodyRadiancePerExtinctionLimit:
+        CYMATIC_PLASMA_BODY_RADIANCE_PER_EXTINCTION_LIMIT,
+      observerFineApertureFwhmWorld:
+        CYMATIC_OBSERVER_REFERENCE.fineApertureFwhmWorld,
+      observerTopologyApertureFwhmWorld:
+        CYMATIC_OBSERVER_REFERENCE.topologyApertureFwhmWorld,
+      observerFineResidualScaleWorld:
+        CYMATIC_OBSERVER_REFERENCE.fineResidualScaleWorld,
+      observerFineResidualDetailLimit:
+        CYMATIC_OBSERVER_REFERENCE.fineResidualDetailLimit,
+      observerSheetFwhmWorld: CYMATIC_OBSERVER_REFERENCE.sheetFwhmWorld,
+      deterministicSeed: 0,
     },
     output: {
       width: 64,
       height: 64,
       raymarchSteps: 96,
-      volumeKernelIdentity: "safe-volumetric-lighting-model/v1",
+      volumeKernelIdentity: "safe-volumetric-carrier-emission-extinction/v2",
     },
     post: { exposure: 1 },
   };
@@ -67,29 +93,27 @@ function createHarness() {
     uniforms: {
       uRadius: { value: 3 },
       uDensityGain: { value: 1 },
-      uMaterialAbsorptionCoefficient: { value: 0.02 },
-      uCarrierCoreFwhmWorld: { value: 0.024 },
-      uContourSharpness: { value: 8 },
-      uHolographicBaseRadianceGain: { value: 0 },
-      uLaserCausticActive: { value: 1 },
-      uSpectralMix: { value: 0 },
+      uSpectralPresentationEnabled: { value: 0 },
+      uSpectralChroma: { value: 1 },
       uRaymarchSteps: { value: 64 },
+      uModalFieldModeCount: { value: 0 },
     },
-    modalBasisCache: { ready: false, generation: 3 },
-    liveFieldProjectionCache: { ready: false, generation: 4 },
-    spectralLaneCache: { ready: false, generation: 5 },
-    laserTransportCache: { dispatchCount: 7 },
-    spectralLight: { colorMode: "static", spectralMix: 0 },
     baseDensityGain: 1,
-    baseCarrierCoreFwhmWorld: 0.024,
   };
   const runtime = {
+    // Mirrors what tickRaymarchRuntime + applyRaymarchModalPacketUploads leave
+    // behind: a visible mesh, a phase epoch, a live analytic mode count, and a
+    // committed basis and drive frames. fixtureIsReady gates the checkpoint on all
+    // four, so a tick that sets only the first two never becomes ready.
     tick: vi.fn(({ runtimeState, time }) => {
       runtimeState.volumeMesh.visible = true;
-      runtimeState.modalBasisCache.ready = true;
-      runtimeState.liveFieldProjectionCache.ready = true;
-      runtimeState.activeModalRenderPacket = { generationId: 8 };
       runtimeState.modalPhaseEvaluationEpochSec = time;
+      runtimeState.uniforms.uModalFieldModeCount.value = 1;
+      runtimeState.raymarchUploadState = {
+        basisPlan: { revision: 1 },
+        driveFrame: { activeCount: 1 },
+        counters: { driveUpdateCount: 1 },
+      };
     }),
   };
   const captureSession = {
@@ -121,6 +145,7 @@ function createHarness() {
     invalidate: vi.fn(),
     restoreControls,
     createCaptureSession: vi.fn(() => captureSession),
+    syncBloomUniforms: vi.fn(),
     syncOutputTopology: vi.fn(),
   });
   return {
@@ -150,18 +175,36 @@ describe("raymarch audit fixture runtime adapter", () => {
       ready: true,
     });
     expect(harness.runtime.tick).toHaveBeenCalledWith(
-      expect.objectContaining({ time: 2.5, deltaTime: 0 }),
+      expect.objectContaining({
+        time: 2.5,
+        deltaTime: 0,
+        featureFrame: expect.objectContaining({
+          observationTimeSeconds: 2.5,
+          observationAdvancing: false,
+          observationPaused: true,
+          observationSessionKey: "fixture:base-front-v1",
+          frameId: 1,
+          topologyRevision: 1,
+          basisIdentityHash: "descriptor-hash",
+        }),
+      }),
     );
     expect(harness.runtimeState).toMatchObject({
       auditFixtureBaseOnly: true,
       baseDensityGain: 1,
+      uniforms: {
+        uSpectralPresentationEnabled: { value: 0 },
+        uSpectralChroma: { value: 0.42 },
+      },
     });
-    expect(
-      harness.runtimeState.uniforms.uHolographicBaseRadianceGain.value,
-    ).toBe(2 ** -8);
+    expect(harness.runtimeState).not.toHaveProperty("spectralPresentation");
+    expect(harness.runtimeState.uniforms).not.toHaveProperty(
+      "uHolographicBaseRadianceGain",
+    );
     expect(await harness.driver.adapter.readSeal()).toMatchObject({
       descriptorHash: "descriptor-hash",
-      transportDispatchCount: 7,
+      // The analytic path dispatches no transport work at all.
+      transportDispatchCount: 0,
       phaseEvaluationTimeSec: 2.5,
       aovGeneration: 1,
     });
@@ -177,6 +220,41 @@ describe("raymarch audit fixture runtime adapter", () => {
     await harness.driver.adapter.clearFixtureState();
     await harness.driver.adapter.restoreCanonicalState(snapshot);
     expect(harness.restoreControls).toHaveBeenCalledWith(snapshot.controls);
+  });
+
+  it("publishes fresh basis and drive revisions for every installed descriptor", async () => {
+    const harness = createHarness();
+    const firstDescriptor = createDescriptor();
+    const secondDescriptor = createDescriptor();
+    secondDescriptor.descriptorId = "base-side-v1";
+    secondDescriptor.modal.identitySlots = numericArray([4, 5, 6]);
+
+    await harness.driver.adapter.suspendProducers();
+    await harness.driver.adapter.installDescriptor({
+      descriptor: firstDescriptor,
+      descriptorHash: "first-descriptor-hash",
+    });
+    harness.driver.renderFixtureFrame();
+    const firstFrame = harness.runtime.tick.mock.calls.at(-1)[0].featureFrame;
+
+    await harness.driver.adapter.installDescriptor({
+      descriptor: secondDescriptor,
+      descriptorHash: "second-descriptor-hash",
+    });
+    harness.driver.renderFixtureFrame();
+    const secondFrame = harness.runtime.tick.mock.calls.at(-1)[0].featureFrame;
+
+    expect(firstFrame).toMatchObject({
+      frameId: 1,
+      topologyRevision: 1,
+      basisIdentityHash: "first-descriptor-hash",
+    });
+    expect(secondFrame).toMatchObject({
+      frameId: 2,
+      topologyRevision: 2,
+      basisIdentityHash: "second-descriptor-hash",
+    });
+    expect(secondFrame.modalIdentitySlots).toEqual(new Float32Array([4, 5, 6]));
   });
 
   it("does not consume ordinary authoritative frames while suspended", async () => {

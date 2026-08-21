@@ -5,35 +5,49 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { useAudioMock, useAudioTransportClockMock, useDraggableFloatingUiMock } =
-  vi.hoisted(() => ({
-    useAudioMock: vi.fn(),
-    useAudioTransportClockMock: vi.fn(),
-    useDraggableFloatingUiMock: vi.fn(),
-  }));
+const { useAudioMock, observeAudioTransportClockMock } = vi.hoisted(() => ({
+  useAudioMock: vi.fn(),
+  observeAudioTransportClockMock: vi.fn(),
+}));
 
 vi.mock("../context/AudioContext.jsx", () => ({
   useAudio: useAudioMock,
 }));
 
 vi.mock("../context/audioTransportClock.js", () => ({
-  useAudioTransportClock: useAudioTransportClockMock,
-}));
-
-vi.mock("./hooks/useDraggableFloatingUi.js", () => ({
-  useDraggableFloatingUi: useDraggableFloatingUiMock,
+  observeAudioTransportClock: observeAudioTransportClockMock,
 }));
 
 import { ListenerControls } from "./AudioControls.jsx";
 
-describe("ListenerControls compact dock layout", () => {
+describe("ListenerControls file player layout", () => {
   let container = null;
   let root = null;
   let originalActEnvironment;
+  let transportClockSnapshot;
+  let transportClockObservers;
 
   beforeEach(() => {
     originalActEnvironment = globalThis.IS_REACT_ACT_ENVIRONMENT;
     globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    transportClockSnapshot = {
+      currentTimeSeconds: 0,
+      durationSeconds: 0,
+      canSeek: false,
+    };
+    transportClockObservers = new Set();
+    observeAudioTransportClockMock.mockImplementation((observer) => {
+      transportClockObservers.add(observer);
+      observer(transportClockSnapshot);
+      let active = true;
+      return () => {
+        if (!active) {
+          return;
+        }
+        active = false;
+        transportClockObservers.delete(observer);
+      };
+    });
   });
 
   afterEach(() => {
@@ -45,8 +59,7 @@ describe("ListenerControls compact dock layout", () => {
     container = null;
     document.body.innerHTML = "";
     useAudioMock.mockReset();
-    useAudioTransportClockMock.mockReset();
-    useDraggableFloatingUiMock.mockReset();
+    observeAudioTransportClockMock.mockReset();
     if (originalActEnvironment === undefined) {
       delete globalThis.IS_REACT_ACT_ENVIRONMENT;
     } else {
@@ -64,21 +77,18 @@ describe("ListenerControls compact dock layout", () => {
     };
   }
 
-  function renderControls(audioOverrides = {}, { viewportWidth = 900 } = {}) {
-    useDraggableFloatingUiMock.mockReturnValue({
-      dragOffset: { x: 0, y: 0 },
-      isDragging: false,
-      handlePointerDown: () => {},
-      handlePointerUp: () => {},
-      handleDoubleClick: () => {},
-    });
-
+  function renderControls(
+    audioOverrides = {},
+    { transportClockOverrides = {}, onRender = null } = {},
+  ) {
     useAudioMock.mockReturnValue({
-      selectedSource: "file",
+      sourceSession: { kind: "file" },
       displayName: "Upload Audio",
-      liveReturnLocalFile: null,
-      queuedNextLocalFile: null,
-      hasQueuedNextLocalFile: false,
+      localFileQueue: [],
+      activeLocalFileQueueIndex: -1,
+      hasPreviousLocalFile: false,
+      hasNextLocalFile: false,
+      isLocalFileQueueAutoplayEnabled: true,
       recentUploads: [],
       isPlaying: false,
       isLiveInputActive: false,
@@ -91,7 +101,6 @@ describe("ListenerControls compact dock layout", () => {
       handleRecentUploadSelect: () => {},
       loadDemoAudioFile: () => {},
       handlePlayPause: () => {},
-      handleStop: () => {},
       handleVolumeChange: () => {},
       handleMuteToggle: () => {},
       setShowDeviceMenu: () => {},
@@ -100,38 +109,53 @@ describe("ListenerControls compact dock layout", () => {
       beginScrub: () => Promise.resolve(),
       previewScrub: () => {},
       commitScrub: () => Promise.resolve(),
+      restartOrLoadPreviousLocalFile: () => Promise.resolve(),
+      playLocalFileAtQueueIndex: () => Promise.resolve(),
+      playNextLocalFile: () => Promise.resolve(),
+      toggleLocalFileQueueAutoplay: () => {},
       cancelScrub: () => Promise.resolve(),
       ...audioOverrides,
     });
-    useAudioTransportClockMock.mockReturnValue({
+    transportClockSnapshot = {
       currentTimeSeconds: 0,
       durationSeconds: 0,
       canSeek: false,
-    });
+      ...transportClockOverrides,
+    };
 
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
 
-    const originalInnerWidth = window.innerWidth;
-    Object.defineProperty(window, "innerWidth", {
-      configurable: true,
-      value: viewportWidth,
-    });
-
     act(() => {
-      root.render(<ListenerControls showSourceLiveButton={false} />);
+      const controls = <ListenerControls showSourceLiveButton={false} />;
+      root.render(
+        onRender ? (
+          <React.Profiler id="listener-controls" onRender={onRender}>
+            {controls}
+          </React.Profiler>
+        ) : (
+          controls
+        ),
+      );
     });
+  }
 
-    Object.defineProperty(window, "innerWidth", {
-      configurable: true,
-      value: originalInnerWidth,
+  function publishTransportClock(overrides = {}) {
+    transportClockSnapshot = {
+      ...transportClockSnapshot,
+      ...overrides,
+    };
+    act(() => {
+      for (const observer of transportClockObservers) {
+        observer(transportClockSnapshot);
+      }
     });
   }
 
   it("shows the source control without the compact file dock in system mode", () => {
     renderControls({
-      selectedSource: "system",
+      sourceSession: { kind: "system" },
       liveInputDeviceKind: "live",
       recentUploads: [createRecentUpload()],
     });
@@ -155,9 +179,9 @@ describe("ListenerControls compact dock layout", () => {
     expect(container.querySelector(".am-compact-volume-row")).toBeNull();
   });
 
-  it("aligns the standalone source control to the top-right overlay rail", () => {
+  it("aligns the source control bottom edge with the compact player", () => {
     renderControls({
-      selectedSource: "system",
+      sourceSession: { kind: "system" },
       liveInputDeviceKind: "system",
     });
 
@@ -166,42 +190,371 @@ describe("ListenerControls compact dock layout", () => {
       .join("\n");
 
     expect(injectedCss).toContain(`.am-source-mode-shell {
+  --baryon-source-selector-radius: 10px;
+  --baryon-source-selector-segment-radius: 7px;
   position: fixed;
-  right: 0.9rem;`);
+  right: 0.9rem;
+  bottom: 16px;`);
+    expect(injectedCss).toContain(`.am-player-shell--compact {
+  align-items: center;
+  bottom: 16px;`);
+  });
+
+  it("uses the compact desktop grid and restores the stacked mobile player", () => {
+    renderControls(
+      {
+        isAudioLoaded: true,
+      },
+      {
+        transportClockOverrides: {
+          currentTimeSeconds: 18,
+          durationSeconds: 156,
+          canSeek: true,
+        },
+      },
+    );
+
+    const trackSection = container.querySelector(".am-compact-track-section");
+    const injectedCss = Array.from(document.querySelectorAll("style"))
+      .map((style) => style.textContent ?? "")
+      .join("\n");
+    const mobileLayoutCss = injectedCss.slice(
+      injectedCss.lastIndexOf("@media (max-width: 720px)"),
+      injectedCss.lastIndexOf("@media (max-width: 640px)"),
+    );
+    const smallMobileCss = injectedCss.slice(
+      injectedCss.lastIndexOf("@media (max-width: 480px)"),
+      injectedCss.lastIndexOf("@media (prefers-reduced-motion: reduce)"),
+    );
+
+    expect(trackSection).not.toBeNull();
+    expect(trackSection?.querySelector(".am-compact-identity")).not.toBeNull();
+    expect(trackSection?.querySelector(".am-timeline-shell")).not.toBeNull();
+    expect(injectedCss).toContain(
+      "grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);",
+    );
+    expect(injectedCss).toContain("grid-template-rows: auto auto;");
+    expect(injectedCss).toContain(`.am-compact-track-section {
+  display: contents;
+}`);
+    expect(injectedCss).toContain(`.am-compact-identity {
+  grid-column: 1;
+  grid-row: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);`);
+    expect(injectedCss).toContain(`.am-compact-source-actions {
+  display: none;`);
+    expect(injectedCss).toContain(`.am-compact-card .am-timeline-shell {
+  grid-column: 1 / -1;
+  grid-row: 1;`);
+    expect(injectedCss).toContain(`.am-compact-volume-row {
+  grid-column: 3;
+  grid-row: 2;`);
+    expect(injectedCss).toContain("width: 8.5rem;");
+    expect(injectedCss).toContain(`@media (max-width: 720px) {
+  .am-source-mode-shell`);
+    expect(injectedCss).toContain(`  .am-compact-card {
+    display: flex;
+    flex-direction: column;
+    padding: 6px 8px;
+    border-radius: 16px;
+  }`);
+    expect(injectedCss).toContain(`  .am-compact-card .am-timeline-shell {
+    order: 2;
+    grid-column: auto;
+    grid-row: auto;
+    margin-top: 2px;
+  }`);
+    expect(injectedCss).toContain(`  .am-compact-identity {
+    order: 1;
+    grid-column: auto;
+    grid-row: auto;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }`);
+    expect(injectedCss).toContain(`  .am-compact-unified-actions {
+    order: 3;
+    grid-column: auto;
+    grid-row: auto;
+    width: 100%;
+  }`);
+    expect(injectedCss).toContain(`  .am-compact-volume-row {
+    order: 4;
+    grid-column: auto;
+    grid-row: auto;
+    width: 100%;
+    justify-self: stretch;
+    padding: 0 12px;
+  }`);
+    expect(injectedCss).toContain("width: min(19rem, calc(100vw - 1.5rem));");
+    expect(injectedCss).toContain(`@media (max-width: 480px) {
+  .am-source-mode-shell`);
+    expect(mobileLayoutCss).toContain("grid-template-columns: 44px 48px 44px;");
+    expect(mobileLayoutCss).toContain(`  .am-compact-action {
+    min-width: 44px;
+    height: 44px;
+  }`);
+    expect(smallMobileCss).not.toContain(".am-compact-utility");
+    expect(smallMobileCss).not.toContain(".am-compact-action");
+    expect(injectedCss).toContain("width: min(32rem, calc(100vw - 1.5rem));");
+    expect(injectedCss).not.toContain("@media (min-width: 1100px)");
+    expect(injectedCss).not.toContain(
+      "width: min(46rem, calc(100vw - 1.5rem));",
+    );
+  });
+
+  it("projects transport ticks without committing the React control tree", () => {
+    const onRender = vi.fn();
+    const beginScrub = vi.fn(() => Promise.resolve());
+    const previewScrub = vi.fn();
+    const commitScrub = vi.fn(() => Promise.resolve());
+    const cancelScrub = vi.fn(() => Promise.resolve());
+    renderControls(
+      {
+        isAudioLoaded: true,
+        beginScrub,
+        previewScrub,
+        commitScrub,
+        cancelScrub,
+      },
+      {
+        transportClockOverrides: {
+          currentTimeSeconds: 1,
+          durationSeconds: 180,
+          canSeek: true,
+        },
+        onRender,
+      },
+    );
+
+    const timeline = container.querySelector(
+      '[data-testid="playback-timeline"]',
+    );
+    const currentTime = container.querySelector(".am-timeline-time");
+    const initialCommitCount = onRender.mock.calls.length;
+    expect(timeline?.value).toBe("1");
+
+    for (
+      let currentTimeSeconds = 2;
+      currentTimeSeconds <= 101;
+      currentTimeSeconds += 1
+    ) {
+      publishTransportClock({ currentTimeSeconds });
+    }
+
+    expect(timeline?.value).toBe("101");
+    expect(timeline?.title).toBe("Playback position 1:41 of 3:00");
+    expect(currentTime?.textContent).toBe("1:41");
+    expect(onRender).toHaveBeenCalledTimes(initialCommitCount);
+    expect(beginScrub).not.toHaveBeenCalled();
+    expect(previewScrub).not.toHaveBeenCalled();
+    expect(commitScrub).not.toHaveBeenCalled();
+    expect(cancelScrub).not.toHaveBeenCalled();
+  });
+
+  it("keeps clock projection gated until a scrub commit settles", async () => {
+    let resolveCommit;
+    const commitScrub = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveCommit = resolve;
+        }),
+    );
+    renderControls(
+      {
+        isAudioLoaded: true,
+        beginScrub: vi.fn(() => Promise.resolve()),
+        commitScrub,
+      },
+      {
+        transportClockOverrides: {
+          currentTimeSeconds: 5,
+          durationSeconds: 120,
+          canSeek: true,
+        },
+      },
+    );
+
+    const timeline = container.querySelector(
+      '[data-testid="playback-timeline"]',
+    );
+    timeline.value = "20";
+    await act(async () => {
+      timeline.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    publishTransportClock({
+      currentTimeSeconds: 30,
+      durationSeconds: 240,
+    });
+    expect(timeline.value).toBe("20");
+    expect(timeline.max).toBe("240");
+
+    await act(async () => {
+      timeline.dispatchEvent(new Event("pointerup", { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(commitScrub).toHaveBeenCalledWith(20);
+
+    publishTransportClock({ currentTimeSeconds: 40 });
+    expect(timeline.value).toBe("20");
+
+    await act(async () => {
+      resolveCommit();
+      await Promise.resolve();
+    });
+    expect(timeline.value).toBe("40");
+    expect(timeline.title).toBe("Playback position 0:40 of 4:00");
+  });
+
+  it("hides the timeline immediately when seekability is lost mid-commit", async () => {
+    let resolveCommit;
+    const commitScrub = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveCommit = resolve;
+        }),
+    );
+    renderControls(
+      {
+        isAudioLoaded: true,
+        beginScrub: vi.fn(() => Promise.resolve()),
+        commitScrub,
+      },
+      {
+        transportClockOverrides: {
+          currentTimeSeconds: 5,
+          durationSeconds: 120,
+          canSeek: true,
+        },
+      },
+    );
+
+    const timeline = container.querySelector(
+      '[data-testid="playback-timeline"]',
+    );
+    timeline.value = "20";
+    await act(async () => {
+      timeline.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      await Promise.resolve();
+      timeline.dispatchEvent(new Event("pointerup", { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(commitScrub).toHaveBeenCalledWith(20);
+
+    publishTransportClock({
+      currentTimeSeconds: 0,
+      durationSeconds: 0,
+      canSeek: false,
+    });
+    expect(
+      container.querySelector('[data-testid="playback-timeline"]'),
+    ).toBeNull();
+
+    await act(async () => {
+      resolveCommit();
+      await Promise.resolve();
+    });
+    expect(
+      container.querySelector('[data-testid="playback-timeline"]'),
+    ).toBeNull();
   });
 
   it("shows upload-audio placeholder copy for the file source before a file is loaded", () => {
     renderControls({
-      selectedSource: "file",
+      sourceSession: { kind: "file" },
       displayName: "Upload Audio",
     });
 
     const trackMeta = container.querySelector(".am-compact-track-meta");
     const trackTitle = container.querySelector(".am-compact-track-title");
+    const inlineUploadIcon = trackMeta?.querySelector(
+      ".am-compact-track-meta-upload",
+    );
+    const injectedCss = Array.from(document.querySelectorAll("style"))
+      .map((style) => style.textContent ?? "")
+      .join("\n");
 
     expect(trackMeta?.textContent).toBe("Source");
     expect(trackTitle?.textContent).toBe("Upload Audio File");
+    expect(inlineUploadIcon).not.toBeNull();
+    expect(inlineUploadIcon?.getAttribute("aria-hidden")).toBe("true");
+    expect(window.getComputedStyle(inlineUploadIcon).display).toBe(
+      "inline-flex",
+    );
+    expect(inlineUploadIcon?.querySelector("svg")).not.toBeNull();
+    expect(injectedCss).toContain(`  .am-compact-track-meta-upload {
+    display: none;
+  }`);
   });
 
-  it("uses a semantic button for the full track upload trigger", () => {
-    renderControls(
-      {
-        selectedSource: "file",
-        displayName: "Upload Audio",
-      },
-      { viewportWidth: 1200 },
-    );
+  it("uses the canonical upload button", () => {
+    renderControls({
+      sourceSession: { kind: "file" },
+      displayName: "Upload Audio",
+    });
 
-    const trackTrigger = container.querySelector(".am-track");
+    const trackTrigger = container.querySelector(
+      '.am-compact-source-actions [aria-label="Upload audio files"]',
+    );
 
     expect(trackTrigger?.tagName).toBe("BUTTON");
     expect(trackTrigger?.getAttribute("type")).toBe("button");
+    expect(trackTrigger?.classList.contains("am-compact-utility")).toBe(true);
+    expect(window.getComputedStyle(trackTrigger).borderStyle).toBe("none");
+    expect(window.getComputedStyle(trackTrigger).borderRadius).toBe("0px");
+    expect(window.getComputedStyle(trackTrigger).backgroundColor).toBe(
+      "rgba(0, 0, 0, 0)",
+    );
+  });
+
+  it("opens the file picker from the source area", () => {
+    renderControls({
+      sourceSession: { kind: "file" },
+      displayName: "Upload Audio",
+    });
+
+    const sourceTrigger = container.querySelector(
+      '[data-testid="compact-source-trigger"]',
+    );
+    const fileInput = container.querySelector('input[type="file"]');
+    const fileInputClick = vi.spyOn(fileInput, "click");
+
+    act(() => {
+      sourceTrigger?.click();
+    });
+
+    expect(sourceTrigger?.tagName).toBe("BUTTON");
+    expect(sourceTrigger?.getAttribute("aria-label")).toBe(
+      "Upload audio files",
+    );
+    expect(fileInputClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the file player fixed so sliders own pointer gestures", () => {
+    renderControls({ isAudioLoaded: true });
+
+    const playerShell = container.querySelector(".am-player-shell");
+
+    expect(playerShell).not.toBeNull();
+    expect(playerShell?.getAttribute("style")).toBeNull();
+    expect(playerShell?.getAttribute("title")).toBeNull();
+  });
+
+  it("accepts multiple audio files from one upload selection", () => {
+    renderControls();
+
+    const fileInput = container.querySelector('input[type="file"]');
+
+    expect(fileInput?.multiple).toBe(true);
+    expect(fileInput?.getAttribute("accept")).toBe("audio/*");
   });
 
   it("starts the preloaded demo audio from the compact file dock", () => {
     const loadDemoAudioFile = vi.fn();
     renderControls({
-      selectedSource: "file",
+      sourceSession: { kind: "file" },
       loadDemoAudioFile,
     });
 
@@ -210,118 +563,74 @@ describe("ListenerControls compact dock layout", () => {
     );
 
     expect(demoButton).not.toBeNull();
-    expect(
-      demoButton?.classList.contains("am-compact-header-button--demo"),
-    ).toBe(true);
-    expect(window.getComputedStyle(demoButton).borderColor).toBe(
-      "rgba(0, 0, 0, 0)",
+    expect(demoButton?.classList.contains("am-compact-hover-action")).toBe(
+      true,
     );
+    expect(demoButton?.textContent).toBe("");
     act(() => {
       demoButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(loadDemoAudioFile).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the preloaded demo audio available in the full file dock", () => {
-    const loadDemoAudioFile = vi.fn();
-    renderControls(
-      {
-        selectedSource: "file",
-        loadDemoAudioFile,
-      },
-      { viewportWidth: 1200 },
-    );
-
-    const demoButton = container.querySelector(
-      '.am-source-tools [aria-label="Play demo audio"]',
-    );
-
-    expect(demoButton).not.toBeNull();
-    expect(demoButton?.classList.contains("am-btn--demo")).toBe(true);
-    expect(window.getComputedStyle(demoButton).borderColor).toBe(
-      "rgba(0, 0, 0, 0)",
-    );
-    act(() => {
-      demoButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  it("keeps recent-upload UI out of system mode", () => {
+    renderControls({
+      sourceSession: { kind: "system" },
+      recentUploads: [createRecentUpload()],
+      isAudioLoaded: true,
     });
-    expect(loadDemoAudioFile).toHaveBeenCalledTimes(1);
-  });
-
-  it("removes the full file dock when system is selected", () => {
-    renderControls(
-      {
-        selectedSource: "system",
-        recentUploads: [createRecentUpload()],
-        isAudioLoaded: true,
-      },
-      { viewportWidth: 1200 },
-    );
 
     expect(
       container.querySelector('[data-testid="source-mode-control"]'),
     ).not.toBeNull();
     expect(container.querySelector(".am-player-shell")).toBeNull();
-    expect(container.querySelector(".am-track")).toBeNull();
-    expect(container.querySelector(".am-source-icon")).toBeNull();
-    expect(container.querySelector(".am-transport")).toBeNull();
-    expect(container.querySelector(".am-volume-row")).toBeNull();
-    expect(container.querySelector(".am-recent-panel")).toBeNull();
+    expect(container.querySelector(".am-compact-card")).toBeNull();
+    expect(container.querySelector(".am-file-list-panel")).toBeNull();
   });
 
-  it("marks the full play button active from playback state", () => {
-    renderControls(
-      {
-        selectedSource: "file",
-        isPlaying: true,
-        isAudioLoaded: true,
-      },
-      { viewportWidth: 1200 },
+  it("marks the canonical play button active", () => {
+    renderControls({
+      sourceSession: { kind: "file" },
+      isPlaying: true,
+      isAudioLoaded: true,
+    });
+
+    const playButton = container.querySelector(".am-compact-action--primary");
+
+    expect(playButton?.classList.contains("am-compact-action--active")).toBe(
+      true,
     );
-
-    const playButton = container.querySelector(".am-btn--play");
-
-    expect(playButton?.classList.contains("am-btn--play-active")).toBe(true);
     expect(playButton?.getAttribute("aria-label")).toBe("Pause");
   });
 
-  it("keeps the full dock stop button bare while using shared pill metrics", () => {
-    renderControls(
-      {
-        selectedSource: "file",
-        isAudioLoaded: false,
-      },
-      { viewportWidth: 1200 },
+  it("uses the queue-aware transport without legacy controls", () => {
+    renderControls({
+      sourceSession: { kind: "file" },
+      isAudioLoaded: false,
+    });
+
+    const playerShell = container.querySelector(".am-player-shell");
+    const playbackGroup = container.querySelector(
+      ".am-compact-action-group--playback",
     );
 
-    const stopButton = container.querySelector(".am-btn--stop");
-    const transport = container.querySelector(".am-transport");
-    const divider = container.querySelector(".am-divider");
-    const terminalDivider = container.querySelector(".am-divider--terminal");
-    const injectedCss = Array.from(document.querySelectorAll("style"))
-      .map((style) => style.textContent ?? "")
-      .join("\n");
-
-    expect(stopButton?.disabled).toBe(true);
-    expect(injectedCss).toContain(".am-btn--stop:disabled");
-    expect(injectedCss).toContain("border-color: transparent;");
-    expect(injectedCss).toContain("gap: var(--baryon-audio-pill-gap);");
-    expect(injectedCss).toContain("padding: var(--baryon-audio-pill-padding);");
-    expect(injectedCss).toContain(
-      "border-radius: var(--baryon-audio-pill-radius);",
+    expect(playerShell?.classList.contains("am-player-shell--compact")).toBe(
+      true,
     );
-    expect(injectedCss).toContain(
-      "min-height: var(--baryon-audio-pill-min-height);",
-    );
-    expect(window.getComputedStyle(transport).gap).toBe("8px");
-    expect(window.getComputedStyle(divider).marginLeft).toBe("8px");
-    expect(window.getComputedStyle(divider).marginRight).toBe("8px");
-    expect(window.getComputedStyle(terminalDivider).marginLeft).toBe("8px");
-    expect(window.getComputedStyle(terminalDivider).marginRight).toBe("0px");
+    expect(
+      playbackGroup?.querySelector('[aria-label="Previous track"]'),
+    ).not.toBeNull();
+    expect(
+      playbackGroup?.querySelector('[aria-label="Next track"]'),
+    ).not.toBeNull();
+    expect(container.querySelector('[aria-label="Stop"]')).toBeNull();
+    expect(container.querySelector(".am-divider")).toBeNull();
+    expect(container.querySelector(".am-compact-volume-row")).not.toBeNull();
   });
 
   it("shows the loaded file name for the file source on compact layouts", () => {
     renderControls({
-      selectedSource: "file",
+      sourceSession: { kind: "file" },
       displayName: "set-break-live.wav",
       isAudioLoaded: true,
     });
@@ -333,30 +642,30 @@ describe("ListenerControls compact dock layout", () => {
     expect(trackTitle?.textContent).toBe("set-break-live.wav");
   });
 
-  it("keeps the compact file dock out of system mode", () => {
+  it("shows the active position when the compact player has an autoplay queue", () => {
     renderControls({
-      selectedSource: "system",
+      sourceSession: { kind: "file" },
+      displayName: "first.wav",
+      localFileQueue: [
+        createRecentUpload("first.wav"),
+        createRecentUpload("second.wav"),
+      ],
+      activeLocalFileQueueIndex: 0,
+      hasNextLocalFile: true,
       isAudioLoaded: true,
     });
 
-    const playButton = container.querySelector('[aria-label="Play"]');
-    const stopButton = container.querySelector('[aria-label="Stop"]');
-    const timeline = container.querySelector(
-      '[data-testid="playback-timeline"]',
+    expect(container.querySelector(".am-compact-track-meta")?.textContent).toBe(
+      "Queue 1/2",
     );
-
-    expect(
-      container.querySelector('[data-testid="source-mode-control"]'),
-    ).not.toBeNull();
-    expect(container.querySelector(".am-player-shell--compact")).toBeNull();
-    expect(playButton).toBeNull();
-    expect(stopButton).toBeNull();
-    expect(timeline).toBeNull();
+    expect(container.querySelector('[aria-label="Next track"]')?.disabled).toBe(
+      false,
+    );
   });
 
   it("keeps long file names inside the compact dock width budget", () => {
     renderControls({
-      selectedSource: "file",
+      sourceSession: { kind: "file" },
       displayName:
         "very-long-recording-name-that-should-not-stretch-the-compact-dock-layout.wav",
       isAudioLoaded: true,
@@ -390,7 +699,7 @@ describe("ListenerControls compact dock layout", () => {
     expect(container.querySelector(".am-compact-state-chip")).toBeNull();
   });
 
-  it("labels a silent line feed without showing the live-input error color", () => {
+  it("shows a connected silent line feed without the starting pulse", () => {
     renderControls({
       isLiveInputActive: true,
       liveInputDeviceKind: "system",
@@ -411,8 +720,11 @@ describe("ListenerControls compact dock layout", () => {
       sourceControl?.querySelector(".am-status-dot")
     );
 
-    expect(statusLight?.getAttribute("aria-label")).toBe("Line feed silent");
+    expect(statusLight?.getAttribute("aria-label")).toBe(
+      "Live input connected — waiting for audio",
+    );
     expect(statusDot?.style.background).not.toBe("rgb(215, 25, 33)");
+    expect(statusDot?.style.animation).toBe("none");
   });
 
   it("uses green for a line feed with current source evidence", () => {
@@ -455,6 +767,16 @@ describe("ListenerControls compact dock layout", () => {
     const sourceTabs = sourceControl?.querySelector(".ac-source-tabs");
 
     expect(sourceControl).not.toBeNull();
+    expect(
+      window
+        .getComputedStyle(sourceControl)
+        .getPropertyValue("--baryon-source-selector-radius"),
+    ).toBe("10px");
+    expect(
+      window
+        .getComputedStyle(sourceControl)
+        .getPropertyValue("--baryon-source-selector-segment-radius"),
+    ).toBe("7px");
     expect(sourceControl?.firstElementChild).toBe(sourceSelector);
     expect(sourceControl?.lastElementChild).toBe(statusLight);
     expect(window.getComputedStyle(sourceControl).gap).toBe(
@@ -477,25 +799,123 @@ describe("ListenerControls compact dock layout", () => {
     ).toBe("4rem");
   });
 
-  it("keeps recent uploads in the transport cluster and out of the source cluster", () => {
+  it("reveals Queue, Demo, and Autoplay above the pane on hover", () => {
+    const toggleLocalFileQueueAutoplay = vi.fn();
     renderControls({
       recentUploads: [createRecentUpload()],
       isAudioLoaded: true,
+      toggleLocalFileQueueAutoplay,
     });
 
     const sourceActions = container.querySelector(".am-compact-source-actions");
-    const transportCluster = container.querySelector(
-      ".am-compact-transport-right",
+    const compactCard = container.querySelector(".am-compact-card");
+    const utilityRow = container.querySelector(".am-compact-hover-actions");
+    const queueButton = utilityRow?.querySelector(
+      '[aria-label="Recent uploads"]',
     );
+    const demoButton = utilityRow?.querySelector(
+      '[aria-label="Play demo audio"]',
+    );
+    const autoplayButton = utilityRow?.querySelector('[aria-label="Autoplay"]');
+    const injectedCss = Array.from(document.querySelectorAll("style"))
+      .map((style) => style.textContent ?? "")
+      .join("\n");
 
     expect(sourceActions).not.toBeNull();
-    expect(transportCluster).not.toBeNull();
+    expect(compactCard).not.toBeNull();
+    expect(utilityRow).not.toBeNull();
+    expect(container.querySelector(".am-compact-footer-actions")).toBeNull();
+    expect(
+      sourceActions?.querySelector('[aria-label="Upload audio files"]'),
+    ).not.toBeNull();
     expect(
       sourceActions?.querySelector('[aria-label="Recent uploads"]'),
     ).toBeNull();
     expect(
-      transportCluster?.querySelector('[aria-label="Recent uploads"]'),
-    ).not.toBeNull();
+      sourceActions?.querySelector('[aria-label="Play demo audio"]'),
+    ).toBeNull();
+    expect(sourceActions?.querySelector('[aria-label="Autoplay"]')).toBeNull();
+    expect(queueButton).not.toBeNull();
+    expect(
+      utilityRow?.querySelector('[aria-label="Upload audio files"]'),
+    ).toBeNull();
+    expect(demoButton).not.toBeNull();
+    expect(autoplayButton).not.toBeNull();
+    expect(queueButton?.getAttribute("data-tooltip")).toBe("Recent uploads");
+    expect(demoButton?.getAttribute("data-tooltip")).toBe("Demo audio");
+    expect(autoplayButton?.getAttribute("data-tooltip")).toBe("Autoplay on");
+    expect(autoplayButton?.getAttribute("aria-pressed")).toBe("true");
+    expect(injectedCss).toContain(".am-compact-hover-action::after {");
+    expect(injectedCss).toContain(`.am-compact-hover-action:hover::after,
+.am-compact-hover-action:focus-visible::after {`);
+    expect(compactCard?.getAttribute("data-utility-state")).toBe("collapsed");
+    expect(window.getComputedStyle(utilityRow).position).toBe("absolute");
+    expect(window.getComputedStyle(utilityRow).pointerEvents).toBe("none");
+    expect(
+      window.getComputedStyle(
+        utilityRow?.querySelector(".am-compact-hover-action"),
+      ).width,
+    ).toBe("44px");
+    expect(
+      window.getComputedStyle(
+        utilityRow?.querySelector(".am-compact-hover-action"),
+      ).height,
+    ).toBe("28px");
+
+    act(() => {
+      compactCard.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    });
+
+    expect(compactCard?.getAttribute("data-utility-state")).toBe("expanded");
+    expect(
+      utilityRow?.classList.contains("am-compact-hover-actions--expanded"),
+    ).toBe(true);
+    expect(window.getComputedStyle(utilityRow).pointerEvents).toBe("auto");
+
+    act(() => {
+      compactCard.dispatchEvent(
+        new MouseEvent("mouseout", {
+          bubbles: true,
+          relatedTarget: document.body,
+        }),
+      );
+    });
+
+    expect(compactCard?.getAttribute("data-utility-state")).toBe("collapsed");
+
+    act(() => {
+      autoplayButton.focus();
+    });
+
+    expect(compactCard?.getAttribute("data-utility-state")).toBe("expanded");
+
+    act(() => {
+      autoplayButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(toggleLocalFileQueueAutoplay).toHaveBeenCalledTimes(1);
+    expect(
+      container
+        .querySelector(".am-compact-transport-right")
+        ?.querySelector('[aria-label="Recent uploads"]'),
+    ).toBeNull();
+  });
+
+  it("keeps the shell-free Queue icon visible but disabled when empty", () => {
+    renderControls();
+
+    const utilityRow = container.querySelector(".am-compact-hover-actions");
+    const queueButton = utilityRow?.querySelector('[aria-label="Queue"]');
+
+    expect(queueButton).not.toBeNull();
+    expect(queueButton?.disabled).toBe(true);
+    expect(queueButton?.getAttribute("title")).toBe("Queue");
+    expect(queueButton?.getAttribute("data-tooltip")).toBe("Queue");
+    expect(window.getComputedStyle(queueButton).borderStyle).toBe("none");
+    expect(window.getComputedStyle(queueButton).borderRadius).toBe("0px");
+    expect(window.getComputedStyle(queueButton).backgroundColor).toBe(
+      "rgba(0, 0, 0, 0)",
+    );
   });
 
   it("keeps playback controls grouped inside the compact transport cluster", () => {
@@ -520,7 +940,13 @@ describe("ListenerControls compact dock layout", () => {
     expect(transportCluster).not.toBeNull();
     expect(playbackGroup).not.toBeNull();
     expect(playbackGroup?.querySelector('[aria-label="Play"]')).not.toBeNull();
-    expect(playbackGroup?.querySelector('[aria-label="Stop"]')).not.toBeNull();
+    expect(
+      playbackGroup?.querySelector('[aria-label="Previous track"]'),
+    ).not.toBeNull();
+    expect(
+      playbackGroup?.querySelector('[aria-label="Next track"]'),
+    ).not.toBeNull();
+    expect(playbackGroup?.querySelector('[aria-label="Stop"]')).toBeNull();
     expect(
       playbackGroup?.querySelector(".am-compact-header-button"),
     ).toBeNull();
@@ -542,7 +968,7 @@ describe("ListenerControls compact dock layout", () => {
       ".am-compact-unified-actions",
     );
     const sourceControls = container.querySelector(
-      ".am-compact-unified-actions .am-compact-source-actions",
+      ".am-compact-identity .am-compact-source-actions",
     );
     const transportControls = container.querySelector(
       ".am-compact-unified-actions .am-compact-transport-right",
@@ -551,18 +977,21 @@ describe("ListenerControls compact dock layout", () => {
       '[data-testid="source-mode-control"]',
     );
 
-    expect(unifiedActions?.firstElementChild).toBe(sourceControls);
     expect(sourceControls).not.toBeNull();
     expect(transportControls).not.toBeNull();
     expect(sourceModeControl).not.toBeNull();
+    expect(sourceControls?.querySelector(".am-compact-utility")).not.toBeNull();
     expect(
       sourceControls?.querySelector(".am-compact-header-button"),
-    ).not.toBeNull();
+    ).toBeNull();
     expect(
       sourceControls?.querySelector('[data-testid="file-source-tab"]'),
     ).toBeNull();
     expect(
       sourceControls?.querySelector('[data-testid="live-input-source-tab"]'),
+    ).toBeNull();
+    expect(
+      unifiedActions?.querySelector(".am-compact-source-actions"),
     ).toBeNull();
     expect(
       sourceModeControl?.querySelector('[data-testid="file-source-tab"]'),
@@ -572,7 +1001,7 @@ describe("ListenerControls compact dock layout", () => {
     ).not.toBeNull();
   });
 
-  it("uses tighter compact transport sizing after removing utility controls from the dock", () => {
+  it("uses compact desktop controls with touch-sized mobile targets", () => {
     renderControls({
       isAudioLoaded: true,
     });
@@ -580,9 +1009,159 @@ describe("ListenerControls compact dock layout", () => {
     const playButton = container.querySelector(
       ".am-compact-action-group--playback [aria-label='Play']",
     );
+    const compactCard = container.querySelector(".am-compact-card");
+    const injectedCss = Array.from(document.querySelectorAll("style"))
+      .map((style) => style.textContent ?? "")
+      .join("\n");
 
     expect(playButton).not.toBeNull();
     expect(window.getComputedStyle(playButton).width).toBe("40px");
     expect(window.getComputedStyle(playButton).height).toBe("40px");
+    expect(window.getComputedStyle(compactCard).paddingTop).toBe("8px");
+    expect(window.getComputedStyle(compactCard).paddingBottom).toBe("8px");
+    expect(injectedCss).toContain("grid-template-columns: repeat(3, 44px);");
+    expect(window.getComputedStyle(playButton).borderStyle).toBe("none");
+    expect(window.getComputedStyle(playButton).backgroundColor).toBe(
+      "rgba(0, 0, 0, 0)",
+    );
+  });
+
+  it("optically aligns the volume icons around the slider above mobile", () => {
+    renderControls({ isAudioLoaded: true });
+
+    const volumeRow = container.querySelector(".am-compact-volume-row");
+    const volumeSlider = volumeRow?.querySelector(
+      '[aria-label="App playback volume"]',
+    );
+    const volumeStart = volumeRow?.querySelector(".am-btn--volume");
+    const volumeEnd = volumeRow?.querySelector(".am-compact-volume-end");
+    const injectedCss = Array.from(document.querySelectorAll("style"))
+      .map((style) => style.textContent ?? "")
+      .join("\n");
+
+    expect(volumeRow).not.toBeNull();
+    expect(volumeStart).not.toBeNull();
+    expect(volumeEnd).not.toBeNull();
+    expect(volumeRow?.querySelector(".am-compact-volume-value")).toBeNull();
+    expect(window.getComputedStyle(volumeRow).borderTopStyle).toBe("none");
+    expect(window.getComputedStyle(volumeRow).paddingLeft).toBe("0px");
+    expect(window.getComputedStyle(volumeRow).paddingRight).toBe("0px");
+    expect(window.getComputedStyle(volumeSlider).borderRadius).toBe("999px");
+    expect(window.getComputedStyle(volumeStart).width).toBe("24px");
+    expect(window.getComputedStyle(volumeEnd).width).toBe("24px");
+    expect(window.getComputedStyle(volumeStart).justifyContent).toBe(
+      "flex-end",
+    );
+    expect(window.getComputedStyle(volumeEnd).justifyContent).toBe(
+      "flex-start",
+    );
+    expect(window.getComputedStyle(volumeEnd).paddingLeft).toBe("0px");
+    expect(injectedCss).toContain(`  .am-compact-volume-end,
+  .am-compact-volume-row .am-btn--volume {
+    justify-content: center;
+  }`);
+  });
+
+  it("runs the queue-aware previous and next transport actions", () => {
+    const restartOrLoadPreviousLocalFile = vi.fn(() => Promise.resolve());
+    const playNextLocalFile = vi.fn(() => Promise.resolve());
+    renderControls(
+      {
+        isAudioLoaded: true,
+        localFileQueue: [
+          createRecentUpload("first.wav"),
+          createRecentUpload("second.wav"),
+        ],
+        activeLocalFileQueueIndex: 0,
+        hasPreviousLocalFile: false,
+        hasNextLocalFile: true,
+        restartOrLoadPreviousLocalFile,
+        playNextLocalFile,
+      },
+      {
+        transportClockOverrides: {
+          currentTimeSeconds: 25,
+          durationSeconds: 30,
+          canSeek: true,
+        },
+      },
+    );
+
+    const backButton = container.querySelector('[aria-label="Previous track"]');
+    const forwardButton = container.querySelector('[aria-label="Next track"]');
+
+    act(() => {
+      backButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      forwardButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(restartOrLoadPreviousLocalFile).toHaveBeenCalledTimes(1);
+    expect(playNextLocalFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps previous available while a selected earlier queue file is loading", () => {
+    renderControls({
+      isAudioLoaded: false,
+      hasPreviousLocalFile: true,
+    });
+
+    expect(
+      container.querySelector('[aria-label="Previous track"]')?.disabled,
+    ).toBe(false);
+  });
+
+  it("shows the full queue in a scrollable list and plays any selected entry", () => {
+    const playLocalFileAtQueueIndex = vi.fn(() => Promise.resolve());
+    const queueEntries = Array.from({ length: 8 }, (_, index) =>
+      createRecentUpload(`track-${index + 1}.wav`),
+    );
+    renderControls({
+      localFileQueue: queueEntries,
+      activeLocalFileQueueIndex: 0,
+      recentUploads: [],
+      isAudioLoaded: true,
+      playLocalFileAtQueueIndex,
+    });
+
+    const queueButton = container.querySelector('[aria-label="Queue"]');
+    expect(queueButton).not.toBeNull();
+
+    act(() => {
+      queueButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const queuePanel = container.querySelector(
+      '[data-testid="local-file-queue-panel"]',
+    );
+    const queueList = queuePanel?.querySelector(".am-file-list-items");
+    const queueHelper = queuePanel?.querySelector(".am-file-list-helper");
+    const firstTrack = queuePanel?.querySelector(
+      '[aria-label="Play track-1.wav"]',
+    );
+    const thirdTrack = queuePanel?.querySelector(
+      '[aria-label="Play track-3.wav"]',
+    );
+    const firstTrackMain = firstTrack?.querySelector(".am-file-list-item-main");
+    const secondTrackAction = queuePanel
+      ?.querySelector('[aria-label="Play track-2.wav"]')
+      ?.querySelector(".am-file-list-item-action");
+
+    expect(queuePanel).not.toBeNull();
+    expect(queueList?.children).toHaveLength(8);
+    expect(window.getComputedStyle(queueList).overflowY).toBe("auto");
+    expect(queueHelper?.textContent).toBe("Select a track · Autoplay on");
+    expect(window.getComputedStyle(queuePanel).paddingTop).toBe("10px");
+    expect(window.getComputedStyle(queuePanel).borderRadius).toBe("10px");
+    expect(window.getComputedStyle(firstTrack).paddingTop).toBe("8px");
+    expect(window.getComputedStyle(firstTrack).borderRadius).toBe("7px");
+    expect(window.getComputedStyle(firstTrackMain).flexDirection).toBe("row");
+    expect(window.getComputedStyle(secondTrackAction).opacity).toBe("0");
+    expect(thirdTrack).not.toBeNull();
+
+    act(() => {
+      thirdTrack.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(playLocalFileAtQueueIndex).toHaveBeenCalledWith(2);
   });
 });

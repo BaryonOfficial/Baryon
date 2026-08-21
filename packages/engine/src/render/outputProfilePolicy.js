@@ -1,28 +1,23 @@
+import { MIN_ADAPTIVE_STEPS } from "../core/raymarch/stepStability.js";
+
+// Camera integration is a presentation budget over direct analytic optical
+// samples. This profile/controller minimum is not an acoustic Nyquist
+// requirement and does not own acoustic or optical spatial fidelity.
+export const MIN_PRESENTATION_RAYMARCH_STEPS = MIN_ADAPTIVE_STEPS;
+export const DEFAULT_ADAPTIVE_STARTUP_RAYMARCH_STEPS = 32;
+
 export const MIN_PERFORMANCE_TARGET_FPS = 24;
 export const MAX_PERFORMANCE_TARGET_FPS = 240;
 export const DEFAULT_PERFORMANCE_TARGET_FPS = 60;
+export const DEFAULT_TRAA_ENABLED = false;
 const MAX_QUALITY_PERFORMANCE_TARGET_FPS = 240;
-
-const STARTUP_RAYMARCH_STEPS_BY_RESOLUTION_BAND = Object.freeze({
-  "1080p-": 32,
-  "1440p": 24,
-  "2160p+": 16,
-  unknown: 32,
-});
-
-const STARTUP_RAYMARCH_STEPS_BY_TARGET_FPS_BAND = Object.freeze({
-  low: 40,
-  balanced: 32,
-  high: 24,
-  ultra: 16,
-});
 
 export const PERFORMANCE_PROFILES = Object.freeze({
   auto: "auto",
   custom: "custom",
   maxQuality: "max-quality",
 });
-export const DEFAULT_PERFORMANCE_PROFILE = PERFORMANCE_PROFILES.auto;
+export const DEFAULT_PERFORMANCE_PROFILE = PERFORMANCE_PROFILES.maxQuality;
 export const RENDER_CONTEXTS = Object.freeze({
   preview: "preview",
   externalOutput: "external-output",
@@ -136,72 +131,25 @@ export function formatPerformanceProfileLabel(qualityPreset, targetFps = null) {
   return "Auto";
 }
 
-function resolveOutputResolutionBand(outputWidth, outputHeight) {
-  if (!Number.isFinite(outputWidth) || !Number.isFinite(outputHeight)) {
-    return "unknown";
-  }
-
-  if (outputWidth >= 3840 || outputHeight >= 2160) {
-    return "2160p+";
-  }
-
-  if (outputWidth >= 2560 || outputHeight >= 1440) {
-    return "1440p";
-  }
-
-  return "1080p-";
-}
-
-function resolveResolutionStartupRaymarchSteps(outputWidth, outputHeight) {
-  const resolutionBand = resolveOutputResolutionBand(outputWidth, outputHeight);
-  return (
-    STARTUP_RAYMARCH_STEPS_BY_RESOLUTION_BAND[resolutionBand] ??
-    STARTUP_RAYMARCH_STEPS_BY_RESOLUTION_BAND.unknown
-  );
-}
-
-function resolveTargetFpsStartupRaymarchSteps(targetFps) {
-  const normalizedTargetFps = normalizePerformanceTargetFps(targetFps);
-  if (normalizedTargetFps <= 48) {
-    return STARTUP_RAYMARCH_STEPS_BY_TARGET_FPS_BAND.low;
-  }
-  if (normalizedTargetFps <= 72) {
-    return STARTUP_RAYMARCH_STEPS_BY_TARGET_FPS_BAND.balanced;
-  }
-  if (normalizedTargetFps <= 96) {
-    return STARTUP_RAYMARCH_STEPS_BY_TARGET_FPS_BAND.high;
-  }
-  return STARTUP_RAYMARCH_STEPS_BY_TARGET_FPS_BAND.ultra;
-}
-
-function resolveStartupRaymarchSteps({
-  qualityPreset,
-  targetFps,
-  outputWidth,
-  outputHeight,
-}) {
+function resolveStartupRaymarchSteps({ qualityPreset }) {
   if (qualityPreset === PERFORMANCE_PROFILES.maxQuality) {
     return null;
   }
 
-  const resolutionStartupSteps = resolveResolutionStartupRaymarchSteps(
-    outputWidth,
-    outputHeight,
-  );
-  if (qualityPreset === PERFORMANCE_PROFILES.custom) {
-    return Math.min(
-      resolutionStartupSteps,
-      resolveTargetFpsStartupRaymarchSteps(targetFps),
-    );
-  }
-  return resolutionStartupSteps;
+  return DEFAULT_ADAPTIVE_STARTUP_RAYMARCH_STEPS;
 }
 
 function normalizeStartupRaymarchSteps(value) {
   if (!Number.isFinite(value)) {
     return null;
   }
-  return Math.min(192, Math.max(16, Math.round(/** @type {number} */ (value))));
+  return Math.min(
+    192,
+    Math.max(
+      MIN_PRESENTATION_RAYMARCH_STEPS,
+      Math.round(/** @type {number} */ (value)),
+    ),
+  );
 }
 
 function buildRenderQualityProfile({
@@ -240,8 +188,6 @@ function resolveProfileTargetFps({
 function resolveProfile({
   normalizedPerformanceProfile,
   resolvedTargetFps,
-  outputWidth,
-  outputHeight,
   renderContext,
 }) {
   const targetFps = resolveProfileTargetFps({
@@ -253,11 +199,8 @@ function resolveProfile({
     targetFps,
     startupRaymarchSteps: resolveStartupRaymarchSteps({
       qualityPreset: normalizedPerformanceProfile,
-      targetFps,
-      outputWidth,
-      outputHeight,
     }),
-    traaEnabled: true,
+    traaEnabled: DEFAULT_TRAA_ENABLED,
     renderContext,
   });
 }
@@ -333,9 +276,12 @@ export function normalizeResolvedRenderQualityProfile(profile) {
     startupRaymarchSteps:
       qualityPreset === PERFORMANCE_PROFILES.maxQuality
         ? null
-        : (normalizeStartupRaymarchSteps(candidate.startupRaymarchSteps) ?? 32),
+        : (normalizeStartupRaymarchSteps(candidate.startupRaymarchSteps) ??
+          DEFAULT_ADAPTIVE_STARTUP_RAYMARCH_STEPS),
     traaEnabled:
-      typeof candidate.traaEnabled === "boolean" ? candidate.traaEnabled : true,
+      typeof candidate.traaEnabled === "boolean"
+        ? candidate.traaEnabled
+        : DEFAULT_TRAA_ENABLED,
     bloomAllowed:
       typeof candidate.bloomAllowed === "boolean"
         ? candidate.bloomAllowed
@@ -391,8 +337,6 @@ export function getRenderQualityProfileTargetFps(profile) {
 export function resolveRenderQualityProfile(options = {}) {
   const {
     qualityPreset = DEFAULT_PERFORMANCE_PROFILE,
-    outputWidth = 0,
-    outputHeight = 0,
     postProcessOverrides = null,
     bloomAllowed,
     traaEnabled,
@@ -423,8 +367,6 @@ export function resolveRenderQualityProfile(options = {}) {
     resolveProfile({
       normalizedPerformanceProfile,
       resolvedTargetFps,
-      outputWidth,
-      outputHeight,
       renderContext:
         renderContext === RENDER_CONTEXTS.externalOutput
           ? RENDER_CONTEXTS.externalOutput
@@ -473,7 +415,7 @@ export const OUTPUT_MODES = Object.freeze({
 });
 
 export function normalizeOutputMode(mode) {
-  return mode === OUTPUT_MODES.opaque
-    ? OUTPUT_MODES.opaque
-    : OUTPUT_MODES.transparent;
+  return mode === OUTPUT_MODES.transparent
+    ? OUTPUT_MODES.transparent
+    : OUTPUT_MODES.opaque;
 }

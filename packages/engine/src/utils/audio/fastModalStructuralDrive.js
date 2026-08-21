@@ -1,31 +1,52 @@
+import { getCavityModeFrequency } from "../cavityModes.js";
+import { buildModalTopologyModeKey } from "../../core/modalTopology.js";
+import { getModalResponseModeKey } from "../../core/modalShell.js";
 import { updateModalResponseFrame } from "./modalResponse.js";
 import {
+  advancePhaseAnchorState,
   computePhaseAnchorAngularVelocityRadPerSec,
+  normalizePhaseRad,
   writePhaseSlotsForVisibleModes,
 } from "./modalPhaseSlots.js";
 import { buildModalEnergyLedger } from "./modalEnergyLedger.js";
 import { clamp01 } from "../math.js";
+import {
+  computeLoadedModalQualityFactor,
+  requireModalQualityFactor,
+  resolveModalDampingApparatus,
+} from "./modalDamping.js";
 
 function modeKeyFromSlots(slots, offset) {
-  return `${slots?.[offset] ?? 0}:${slots?.[offset + 1] ?? 0}:${slots?.[offset + 2] ?? 0}`;
+  return buildModalTopologyModeKey(
+    slots?.[offset],
+    slots?.[offset + 1],
+    slots?.[offset + 2],
+  );
 }
 
-function readEntry(state, modeKey) {
+function readProjectedModeState(state, modeKey) {
   return (
     state?.activeModes?.get?.(modeKey) ??
-    state?.observedModes?.get?.(modeKey) ??
     state?.modalCandidateState?.get?.(modeKey) ??
     null
   );
 }
 
+// Physical projected state owns current forcing. Observer state is only a
+// last-resort source of immutable atlas metadata for a committed identity.
+function readCommittedModeDescriptor(state, modeKey) {
+  return (
+    state?.activeModes?.get?.(modeKey) ??
+    state?.modalCandidateState?.get?.(modeKey) ??
+    state?.observedModes?.get?.(modeKey) ??
+    null
+  );
+}
+
 const FAST_MODAL_OSCILLATOR_FIELDS = Object.freeze([
-  "amplitude",
   "displayAmplitude",
   "modalResponseEnergy",
-  "modalResponseDisplayAmplitude",
   "modalResponseBudgetScale",
-  "modalResponseInputEnergy",
   "oscillatorPhaseRad",
   "oscillatorAngularVelocityRadPerSec",
   "signedModalCoefficient",
@@ -57,15 +78,11 @@ function copyFastModalOscillatorFields(entry) {
 
 export function captureFastModalOscillatorState(modalExcitationState) {
   const snapshot = new Map();
-  for (const entries of [
-    modalExcitationState?.activeModes,
-    modalExcitationState?.observedModes,
-    modalExcitationState?.modalCandidateState,
-  ]) {
-    for (const [modeKey, entry] of entries?.entries?.() ?? []) {
-      if (snapshot.has(modeKey) || entry?.fastModalOscillatorOwned !== true) {
-        continue;
-      }
+  for (const [
+    modeKey,
+    entry,
+  ] of modalExcitationState?.modalOscillatorStates?.entries?.() ?? []) {
+    if (entry?.fastModalOscillatorOwned === true) {
       snapshot.set(modeKey, copyFastModalOscillatorFields(entry));
     }
   }
@@ -81,18 +98,15 @@ export function restoreFastModalOscillatorState({
     return;
   }
   for (const mode of committedModes ?? []) {
-    const current = readEntry(modalExcitationState, mode.modeKey) ?? mode;
-    const previous = previousOscillatorState?.get?.(mode.modeKey) ?? null;
-    const restored = {
-      ...current,
-      amplitude: 0,
+    const responseModeKey = getModalResponseModeKey(mode);
+    const currentResponseState =
+      modalExcitationState.modalOscillatorStates.get(responseModeKey) ?? mode;
+    const previous = previousOscillatorState?.get?.(responseModeKey) ?? null;
+    const restoredResponseState = {
+      ...currentResponseState,
       displayAmplitude: 0,
-      forcingEnergy: 0,
-      currentDriveEnergy: 0,
-      driveEnergy: 0,
       modalResponseDrive: 0,
       modalResponseEnergy: 0,
-      modalResponseDisplayAmplitude: 0,
       modalOscillatorEnvelopeRe: 0,
       modalOscillatorEnvelopeIm: 0,
       modalOscillatorDriveLockRe: 0,
@@ -102,11 +116,24 @@ export function restoreFastModalOscillatorState({
       ...(previous ?? {}),
       fastModalOscillatorOwned: true,
     };
+    modalExcitationState.modalOscillatorStates.set(
+      responseModeKey,
+      restoredResponseState,
+    );
+
+    const current =
+      readProjectedModeState(modalExcitationState, mode.modeKey) ?? mode;
+    const restored = {
+      ...current,
+      ...restoredResponseState,
+      amplitude: restoredResponseState.displayAmplitude,
+      forcingEnergy: 0,
+      currentDriveEnergy: 0,
+      driveEnergy: 0,
+      modalResponseDisplayAmplitude: restoredResponseState.displayAmplitude,
+    };
     modalExcitationState.activeModes.set(mode.modeKey, restored);
     modalExcitationState.modalCandidateState.set(mode.modeKey, restored);
-    if (modalExcitationState.observedModes.has(mode.modeKey)) {
-      modalExcitationState.observedModes.set(mode.modeKey, restored);
-    }
   }
 }
 
@@ -115,10 +142,7 @@ function readPhysicalTransfer(entry) {
     return clamp01(entry.physicalTransfer);
   }
   return clamp01(
-    (entry?.couplingStrength ?? 1) *
-      (entry?.phaseConfidence ?? entry?.phaseAuthority ?? 1) *
-      (entry?.dampingEnvelope ?? 1) *
-      (0.35 + (entry?.persistence ?? 1) * 0.65),
+    (entry?.couplingStrength ?? 1) * (entry?.dampingEnvelope ?? 1),
   );
 }
 
@@ -131,6 +155,105 @@ function readPositiveFinite(...values) {
   return 0;
 }
 
+function readFinite(...values) {
+  for (const value of values) {
+    if (Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return 0;
+}
+
+function resolveBoundedSlotModeCount(slots, requestedCount) {
+  const availableCount = Math.floor((slots?.length ?? 0) / 4);
+  const count = Number.isFinite(requestedCount)
+    ? Math.max(0, Math.floor(requestedCount))
+    : availableCount;
+  return Math.min(availableCount, count);
+}
+
+/**
+ * Natural frequency of one committed mode.
+ *
+ * Carried metadata is preferred because it records what the analysis actually
+ * measured, but the frequency is not an optional annotation: f = c|n| / 2L is
+ * fixed by the mode indices and the cavity scale. When a packet arrives
+ * without metadata — a fresh topology whose excitation state was cleared, for
+ * instance — the frequency is recomputed from the geometry rather than left at
+ * zero, which would otherwise present a real mode as an unmeasurable one.
+ *
+ * @param {{ u: number, v: number, w: number, cavity: any, carried: number[] }} args
+ */
+function resolveModeNaturalFrequencyHz({ u, v, w, cavity, carried }) {
+  const measured = readPositiveFinite(...carried);
+  if (measured > 0) {
+    return measured;
+  }
+  return getCavityModeFrequency(u, v, w, cavity);
+}
+
+function resolveCommittedModeQualityFactor({
+  modeKey,
+  naturalFrequencyHz,
+  cavity,
+  carried,
+}) {
+  const explicitQualityFactor = readPositiveFinite(...carried);
+  if (explicitQualityFactor > 0) {
+    return requireModalQualityFactor(
+      explicitQualityFactor,
+      `Committed mode ${modeKey}`,
+    );
+  }
+  return computeLoadedModalQualityFactor({
+    naturalFrequencyHz,
+    ...resolveModalDampingApparatus(cavity),
+  });
+}
+
+function buildFastLayerMode({ slots, offset, layer, state, cavity }) {
+  const modeKey = modeKeyFromSlots(slots, offset);
+  const previous = readCommittedModeDescriptor(state, modeKey) ?? {};
+  const u = readFinite(slots[offset], previous.u);
+  const v = readFinite(slots[offset + 1], previous.v);
+  const w = readFinite(slots[offset + 2], previous.w);
+  const naturalFrequencyHz = resolveModeNaturalFrequencyHz({
+    u,
+    v,
+    w,
+    cavity,
+    carried: [previous.naturalFrequencyHz, previous.frequencyHz],
+  });
+  return {
+    modeKey,
+    u,
+    v,
+    w,
+    layer: previous.layer ?? layer,
+    renderLayer: previous.renderLayer ?? layer,
+    naturalFrequencyHz,
+    targetEnergy: clamp01(
+      readFinite(
+        previous.forcingEnergy,
+        previous.currentDriveEnergy,
+        previous.modalResponseDrive,
+      ),
+    ),
+    physicalTransfer: readPhysicalTransfer(previous),
+    qualityFactor: resolveCommittedModeQualityFactor({
+      modeKey,
+      naturalFrequencyHz,
+      cavity,
+      carried: [previous.qualityFactor],
+    }),
+    apparatusTransfer: previous.apparatusTransfer,
+    responseModeKey: previous.responseModeKey ?? modeKey,
+    shellMemberCount: previous.shellMemberCount,
+    sourceProjectionWeight: previous.sourceProjectionWeight,
+    sourceCouplingEnergy: previous.sourceCouplingEnergy,
+  };
+}
+
 function collectLayerModes({
   slots,
   activeModeCount,
@@ -138,8 +261,9 @@ function collectLayerModes({
   state,
   seen,
   modes,
+  cavity,
 }) {
-  const count = Math.max(0, Math.floor(activeModeCount ?? 0));
+  const count = resolveBoundedSlotModeCount(slots, activeModeCount);
   for (let slotIndex = 0; slotIndex < count; slotIndex += 1) {
     const offset = slotIndex * 4;
     const modeKey = modeKeyFromSlots(slots, offset);
@@ -147,30 +271,15 @@ function collectLayerModes({
       continue;
     }
     seen.add(modeKey);
-    const previous = readEntry(state, modeKey);
-    modes.push({
-      modeKey,
-      u: slots?.[offset] ?? previous?.u ?? 0,
-      v: slots?.[offset + 1] ?? previous?.v ?? 0,
-      w: slots?.[offset + 2] ?? previous?.w ?? 0,
-      layer: previous?.layer ?? layer,
-      renderLayer: previous?.renderLayer ?? layer,
-      naturalFrequencyHz:
-        previous?.naturalFrequencyHz ?? previous?.frequencyHz ?? 0,
-      targetEnergy: clamp01(
-        previous?.forcingEnergy ??
-          previous?.currentDriveEnergy ??
-          previous?.modalResponseDrive ??
-          0,
-      ),
-      physicalTransfer: readPhysicalTransfer(previous),
-      qualityFactor: previous?.qualityFactor,
-      modalResponseProfile: previous?.modalResponseProfile,
-    });
+    modes.push(buildFastLayerMode({ slots, offset, layer, state, cavity }));
   }
 }
 
-export function buildFastCommittedModes(structuralState, modalExcitationState) {
+export function buildFastCommittedModes(
+  structuralState,
+  modalExcitationState,
+  cavity,
+) {
   const modes = [];
   const seen = new Set();
   collectLayerModes({
@@ -180,6 +289,7 @@ export function buildFastCommittedModes(structuralState, modalExcitationState) {
     state: modalExcitationState,
     seen,
     modes,
+    cavity,
   });
   collectLayerModes({
     slots: structuralState?.candidateResponseSlotsSource,
@@ -188,18 +298,14 @@ export function buildFastCommittedModes(structuralState, modalExcitationState) {
     state: modalExcitationState,
     seen,
     modes,
+    cavity,
   });
   return modes;
 }
 
 function collectModeKeySet(slots, activeModeCount) {
   const keys = new Set();
-  const count = Math.min(
-    Math.floor((slots?.length ?? 0) / 4),
-    Number.isFinite(activeModeCount)
-      ? Math.max(0, Math.floor(activeModeCount))
-      : Math.floor((slots?.length ?? 0) / 4),
-  );
+  const count = resolveBoundedSlotModeCount(slots, activeModeCount);
   for (let index = 0; index < count; index += 1) {
     const offset = index * 4;
     if ((slots?.[offset + 3] ?? 0) > 0) {
@@ -207,6 +313,92 @@ function collectModeKeySet(slots, activeModeCount) {
     }
   }
   return keys;
+}
+
+function buildFastTopologyMode({
+  slots,
+  metadataSlots,
+  offset,
+  sourceModeKeys,
+  modalExcitationState,
+  cavity,
+}) {
+  const modeKey = modeKeyFromSlots(slots, offset);
+  const previous =
+    readCommittedModeDescriptor(modalExcitationState, modeKey) ?? {};
+  const layer =
+    previous.layer ??
+    previous.renderLayer ??
+    (sourceModeKeys.has(modeKey) ? "source-coupled" : "resonant");
+  const u = readFinite(slots[offset], previous.u);
+  const v = readFinite(slots[offset + 1], previous.v);
+  const w = readFinite(slots[offset + 2], previous.w);
+  const naturalFrequencyHz = resolveModeNaturalFrequencyHz({
+    u,
+    v,
+    w,
+    cavity,
+    carried: [
+      metadataSlots?.[offset],
+      previous.naturalFrequencyHz,
+      previous.frequencyHz,
+    ],
+  });
+  const projectedAmplitude = Math.max(0, slots[offset + 3] ?? 0);
+  const physicalAmplitude = readPositiveFinite(
+    previous.modalResponseDisplayAmplitude,
+    previous.displayAmplitude,
+    previous.amplitude,
+    Math.sqrt(Math.max(0, previous.modalResponseEnergy ?? 0)),
+  );
+  return {
+    modeKey,
+    u,
+    v,
+    w,
+    layer,
+    renderLayer: previous.renderLayer ?? layer,
+    naturalFrequencyHz,
+    targetEnergy: clamp01(
+      readFinite(
+        previous.forcingEnergy,
+        previous.currentDriveEnergy,
+        previous.modalResponseDrive,
+        readFinite(slots[offset + 3]) ** 2,
+      ),
+    ),
+    physicalTransfer: readPhysicalTransfer(previous),
+    qualityFactor: resolveCommittedModeQualityFactor({
+      modeKey,
+      naturalFrequencyHz,
+      cavity,
+      carried: [metadataSlots?.[offset + 1], previous.qualityFactor],
+    }),
+    apparatusTransfer: previous.apparatusTransfer,
+    responseModeKey: previous.responseModeKey ?? modeKey,
+    shellMemberCount: previous.shellMemberCount,
+    sourceProjectionWeight: previous.sourceProjectionWeight,
+    sourceCouplingEnergy: previous.sourceCouplingEnergy,
+    // Modal-field continuity owns only the topology handoff envelope. Keep it
+    // separate from the oscillator coefficient so every fast refresh can
+    // advance the physical response without bypassing the active crossfade.
+    projectionAmplitudeScale:
+      physicalAmplitude > 0
+        ? clamp01(projectedAmplitude / physicalAmplitude)
+        : projectedAmplitude > 0
+          ? 1
+          : 0,
+  };
+}
+
+function appendUniqueCommittedModes(modes, additions, committedModeKeys) {
+  for (const mode of additions) {
+    if (committedModeKeys.has(mode.modeKey)) {
+      continue;
+    }
+    modes.push(mode);
+    committedModeKeys.add(mode.modeKey);
+  }
 }
 
 /**
@@ -219,12 +411,13 @@ export function buildFastCommittedModesFromTopology(
   topologyFrame,
   structuralState,
   modalExcitationState,
+  cavity,
 ) {
   const slots = topologyFrame?.modalFieldSlots;
   const metadataSlots = topologyFrame?.modalFieldMetadataSlots;
-  const activeModeCount = Math.min(
-    Math.max(0, Math.floor(topologyFrame?.activeModalFieldModeCount ?? 0)),
-    Math.floor((slots?.length ?? 0) / 4),
+  const activeModeCount = resolveBoundedSlotModeCount(
+    slots,
+    topologyFrame?.activeModalFieldModeCount,
   );
   const sourceModeKeys = collectModeKeySet(
     structuralState?.proposalSourceCoupledSlotsSource ??
@@ -233,84 +426,70 @@ export function buildFastCommittedModesFromTopology(
       ? undefined
       : structuralState?.activeSourceCoupledModeCount,
   );
-  const resonantModeKeys = collectModeKeySet(
-    structuralState?.proposalResonantSlotsSource ??
-      structuralState?.candidateResponseSlotsSource,
-    structuralState?.proposalResonantSlotsSource
-      ? undefined
-      : structuralState?.activeResonantModeCount,
-  );
   const modes = [];
   const committedModeKeys = new Set();
   for (let index = 0; index < activeModeCount; index += 1) {
     const offset = index * 4;
-    const modeKey = modeKeyFromSlots(slots, offset);
-    const previous = readEntry(modalExcitationState, modeKey);
-    const layer =
-      previous?.layer ??
-      previous?.renderLayer ??
-      (sourceModeKeys.has(modeKey)
-        ? "source-coupled"
-        : resonantModeKeys.has(modeKey)
-          ? "resonant"
-          : "resonant");
-    modes.push({
-      modeKey,
-      u: slots[offset] ?? previous?.u ?? 0,
-      v: slots[offset + 1] ?? previous?.v ?? 0,
-      w: slots[offset + 2] ?? previous?.w ?? 0,
-      layer,
-      renderLayer: previous?.renderLayer ?? layer,
-      naturalFrequencyHz: readPositiveFinite(
-        metadataSlots?.[offset],
-        previous?.naturalFrequencyHz,
-        previous?.frequencyHz,
-      ),
-      targetEnergy: clamp01(
-        previous?.forcingEnergy ??
-          previous?.currentDriveEnergy ??
-          previous?.modalResponseDrive ??
-          (slots[offset + 3] ?? 0) ** 2,
-      ),
-      physicalTransfer: readPhysicalTransfer(previous),
-      qualityFactor: readPositiveFinite(
-        metadataSlots?.[offset + 1],
-        previous?.qualityFactor,
-      ),
-      modalResponseProfile: previous?.modalResponseProfile,
+    const mode = buildFastTopologyMode({
+      slots,
+      metadataSlots,
+      offset,
+      sourceModeKeys,
+      modalExcitationState,
+      cavity,
     });
-    committedModeKeys.add(modeKey);
+    modes.push(mode);
+    committedModeKeys.add(mode.modeKey);
   }
-  for (const mode of buildFastCommittedModes(
-    structuralState,
-    modalExcitationState,
-  )) {
-    if (!committedModeKeys.has(mode.modeKey)) {
-      modes.push(mode);
-      committedModeKeys.add(mode.modeKey);
-    }
-  }
+  appendUniqueCommittedModes(
+    modes,
+    buildFastCommittedModes(structuralState, modalExcitationState, cavity),
+    committedModeKeys,
+  );
   return modes;
 }
 
-function buildPreviousResponseState(state, committedModes) {
-  const previous = new Map();
+function buildPreviousOscillatorStates(state, committedModes) {
+  const previousOscillatorStates = new Map();
   for (const mode of committedModes) {
-    const entry = readEntry(state, mode.modeKey) ?? mode;
-    previous.set(mode.modeKey, entry);
+    const responseModeKey = getModalResponseModeKey(mode);
+    const entry = state.modalOscillatorStates.get(responseModeKey);
+    if (entry) {
+      previousOscillatorStates.set(responseModeKey, entry);
+    }
   }
-  return previous;
+  return previousOscillatorStates;
 }
 
 function mergeResponseEntries(
   state,
   committedModes,
   responseEntries,
+  oscillatorStates,
   observedAtMs,
 ) {
   const byModeKey = new Map();
+  const modalOscillatorStates = new Map(state.modalOscillatorStates);
+  for (const mode of committedModes) {
+    modalOscillatorStates.delete(getModalResponseModeKey(mode));
+  }
+  for (const entry of oscillatorStates) {
+    modalOscillatorStates.set(entry.modeKey, {
+      ...entry,
+      fastModalOscillatorOwned: true,
+    });
+  }
   for (const response of responseEntries) {
-    const previous = readEntry(state, response.modeKey) ?? {};
+    const previous = readProjectedModeState(state, response.modeKey) ?? {};
+    const observedAtSec = observedAtMs / 1000;
+    const modalOscillatorPhaseOffsetRad =
+      Number.isFinite(response.oscillatorPhaseRad) &&
+      Number.isFinite(response.oscillatorAngularVelocityRadPerSec)
+        ? normalizePhaseRad(
+            response.oscillatorPhaseRad -
+              response.oscillatorAngularVelocityRadPerSec * observedAtSec,
+          )
+        : undefined;
     const merged = {
       ...previous,
       ...response,
@@ -319,18 +498,15 @@ function mergeResponseEntries(
       currentDriveEnergy: response.modalResponseDrive,
       driveEnergy: response.modalResponseDrive,
       modalOscillatorPhaseRad: response.oscillatorPhaseRad,
-      modalOscillatorPhaseOffsetRad: response.oscillatorPhaseRad,
+      modalOscillatorPhaseOffsetRad,
       modalOscillatorAngularVelocityRadPerSec:
         response.oscillatorAngularVelocityRadPerSec,
-      modalOscillatorPhaseObservedAtSec: observedAtMs / 1000,
+      modalOscillatorPhaseObservedAtSec: observedAtSec,
       modalOscillatorPhaseAuthority: response.oscillatorPhaseAuthority,
       modalOscillatorPhaseCoherence: response.oscillatorPhaseCoherence,
       fastModalOscillatorOwned: true,
     };
     state.activeModes.set(response.modeKey, merged);
-    if (state.observedModes.has(response.modeKey)) {
-      state.observedModes.set(response.modeKey, merged);
-    }
     state.modalCandidateState.set(response.modeKey, merged);
     byModeKey.set(response.modeKey, merged);
   }
@@ -338,10 +514,27 @@ function mergeResponseEntries(
     if (byModeKey.has(mode.modeKey)) {
       continue;
     }
-    const previous = readEntry(state, mode.modeKey) ?? mode;
+    const previous = readProjectedModeState(state, mode.modeKey) ?? mode;
+    const responseModeKey = getModalResponseModeKey(mode);
+    if (!modalOscillatorStates.has(responseModeKey)) {
+      modalOscillatorStates.set(responseModeKey, {
+        ...mode,
+        modeKey: responseModeKey,
+        responseModeKey,
+        modalResponseEnergy: 0,
+        modalOscillatorEnvelopeRe: 0,
+        modalOscillatorEnvelopeIm: 0,
+        modalOscillatorDriveLockRe: 0,
+        modalOscillatorDriveLockIm: 0,
+        oscillatorPhaseAuthority: 0,
+        oscillatorPhaseCoherence: 0,
+        fastModalOscillatorOwned: true,
+      });
+    }
     const decayed = {
       ...previous,
       amplitude: 0,
+      displayAmplitude: 0,
       forcingEnergy: 0,
       currentDriveEnergy: 0,
       modalResponseDrive: 0,
@@ -350,15 +543,12 @@ function mergeResponseEntries(
       modalOscillatorEnvelopeIm: 0,
       modalOscillatorPhaseAuthority: 0,
       modalOscillatorPhaseCoherence: 0,
-      fastModalOscillatorOwned: true,
     };
     state.activeModes.set(mode.modeKey, decayed);
-    if (state.observedModes.has(mode.modeKey)) {
-      state.observedModes.set(mode.modeKey, decayed);
-    }
     state.modalCandidateState.set(mode.modeKey, decayed);
     byModeKey.set(mode.modeKey, decayed);
   }
+  state.modalOscillatorStates = modalOscillatorStates;
   return byModeKey;
 }
 
@@ -374,6 +564,10 @@ function applyResponseToSlots(
     const entry = responseByModeKey.get(modeKeyFromSlots(slots, offset));
     slots[offset + 3] = readAmplitude(entry);
   }
+}
+
+function getSlotModeCapacity(slots) {
+  return Math.floor((slots?.length ?? 0) / 4);
 }
 
 function updateStructuralMetrics({
@@ -455,7 +649,7 @@ function updateStructuralMetrics({
     response.modalResponseAveragePhaseConfidence;
   metrics.modalResponseAveragePersistence =
     response.modalResponseAveragePersistence;
-  metrics.modalResponseRenderCapEnergy = hardSilence ? 0 : undefined;
+  delete metrics.modalResponseRenderCapEnergy;
   metrics.modalResponseCurrentRenderSourceEvidence = currentSignalAmplitude > 0;
   metrics.modalResponseFreshCouplingEvidence = currentSignalAmplitude > 0;
   metrics.modalResponseRenderPreviewLedger = energyLedger;
@@ -490,6 +684,7 @@ export function applyFastModalDriveToStructuralState({
   sampleRate,
   deltaMs,
   inputRms,
+  normalizedInputAmplitude,
   hardSilence,
   coherence,
   frameTimeMs,
@@ -502,12 +697,13 @@ export function applyFastModalDriveToStructuralState({
     fftLinearAmplitudes,
     timeDomainData,
     sampleRate,
-    previousEnergies: buildPreviousResponseState(
+    previousOscillatorStates: buildPreviousOscillatorStates(
       modalExcitationState,
       committedModes,
     ),
     deltaMs,
     inputRms,
+    normalizedInputAmplitude,
     hardSilence,
     coherence,
     exactDriveResult,
@@ -519,6 +715,7 @@ export function applyFastModalDriveToStructuralState({
     modalExcitationState,
     committedModes,
     response.entries,
+    response.oscillatorStates,
     frameTimeMs,
   );
   const sourceCount = structuralState.activeSourceCoupledModeCount;
@@ -541,13 +738,13 @@ export function applyFastModalDriveToStructuralState({
     );
   applyResponseToSlots(
     structuralState.proposalSourceCoupledSlotsSource,
-    sourceCount,
+    getSlotModeCapacity(structuralState.proposalSourceCoupledSlotsSource),
     responseByModeKey,
     readCurrentSignalAmplitude,
   );
   applyResponseToSlots(
     structuralState.proposalResonantSlotsSource,
-    resonantCount,
+    getSlotModeCapacity(structuralState.proposalResonantSlotsSource),
     responseByModeKey,
     readCurrentSignalAmplitude,
   );
@@ -565,23 +762,31 @@ export function applyFastModalDriveToStructuralState({
         },
       ],
       activeModes: modalExcitationState.activeModes,
-      observedModes: modalExcitationState.observedModes,
     });
+  const phaseObservedAtSec = frameTimeMs / 1000;
+  const phaseAnchorState = advancePhaseAnchorState({
+    previous: modalExcitationState.phaseAnchorState,
+    angularVelocityRadPerSec: phaseAnchorAngularVelocityRadPerSec,
+    observedAtSec: phaseObservedAtSec,
+  });
+  modalExcitationState.phaseAnchorState = phaseAnchorState;
   writePhaseSlotsForVisibleModes({
     target: structuralState.sourceCoupledPhaseSlotsSource,
     visibleSlots: structuralState.candidateForcingSlotsSource,
     capacity: sourceCount,
     activeModes: modalExcitationState.activeModes,
-    observedModes: modalExcitationState.observedModes,
     anchorAngularVelocityRadPerSec: phaseAnchorAngularVelocityRadPerSec,
+    anchorPhaseRadAtObserved: phaseAnchorState.phaseRad,
+    phaseObservedAtSec,
   });
   writePhaseSlotsForVisibleModes({
     target: structuralState.resonantPhaseSlotsSource,
     visibleSlots: structuralState.candidateResponseSlotsSource,
     capacity: resonantCount,
     activeModes: modalExcitationState.activeModes,
-    observedModes: modalExcitationState.observedModes,
     anchorAngularVelocityRadPerSec: phaseAnchorAngularVelocityRadPerSec,
+    anchorPhaseRadAtObserved: phaseAnchorState.phaseRad,
+    phaseObservedAtSec,
   });
   updateStructuralMetrics({
     structuralState,

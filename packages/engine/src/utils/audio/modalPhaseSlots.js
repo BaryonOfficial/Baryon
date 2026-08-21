@@ -1,4 +1,5 @@
-import { clamp01 } from "../math.js";
+import { buildModalTopologyModeKey } from "../../core/modalTopology.js";
+import { clamp01, smoothstep } from "../math.js";
 
 const RESONANT_PHASE_MAX_VELOCITY_RAD_PER_SEC = Math.PI * 1.25;
 const SOURCE_COUPLED_PHASE_MAX_VELOCITY_RAD_PER_SEC = Math.PI * 0.65;
@@ -7,9 +8,9 @@ const RESONANT_PHASE_RELEASE = 0.9;
 const SOURCE_COUPLED_PHASE_ATTACK = 0.22;
 const SOURCE_COUPLED_PHASE_RELEASE = 0.84;
 
-export const PHASE_VELOCITY_BLEND = 0.18;
-export const PHASE_VELOCITY_RELEASE = 0.92;
-export const PHASE_AUTHORITY_MIN = 0.015;
+const PHASE_VELOCITY_BLEND = 0.18;
+const PHASE_VELOCITY_RELEASE = 0.92;
+const PHASE_AUTHORITY_MIN = 0.015;
 
 const TWO_PI = Math.PI * 2;
 // Largest finite phase magnitude for which `phase + Math.PI` does not lose
@@ -22,7 +23,7 @@ const CLOSED_FORM_PHASE_MAX_MAGNITUDE = 1e15;
  * Reduce an angle (radians) to the canonical interval `[-π, π)`.
  *
  * Used as the canonical helper across the modal/raymarch pipeline:
- * imported by `modalResponse.js` and `core/raymarch/phaseSlotSemantics.js`
+ * imported by modal response and detector-integration diagnostics
  * so the three former local copies cannot drift.
  *
  * The closed-form reduction is O(1) and accurate for `|phase| ≲ 1e15`;
@@ -46,52 +47,160 @@ export function normalizePhaseRad(phase) {
   return normalized;
 }
 
-export function unwrapPhaseDeltaRad(previousPhase, nextPhase) {
+function unwrapPhaseDeltaRad(previousPhase, nextPhase) {
   return normalizePhaseRad(nextPhase - previousPhase);
 }
 
-export function getPhaseVelocityLimit(layer) {
+function getPhaseVelocityLimit(layer) {
   return layer === "resonant"
     ? RESONANT_PHASE_MAX_VELOCITY_RAD_PER_SEC
     : SOURCE_COUPLED_PHASE_MAX_VELOCITY_RAD_PER_SEC;
 }
 
-export function getPhaseAttack(layer) {
+function getPhaseAttack(layer) {
   return layer === "resonant"
     ? RESONANT_PHASE_ATTACK
     : SOURCE_COUPLED_PHASE_ATTACK;
 }
 
-export function getPhaseRelease(layer) {
+function getPhaseRelease(layer) {
   return layer === "resonant"
     ? RESONANT_PHASE_RELEASE
     : SOURCE_COUPLED_PHASE_RELEASE;
 }
 
-function getRenderPhaseLayer(entry) {
-  return entry?.renderLayer ?? entry?.layer;
+/**
+ * Smooths observer phase evidence for diagnostics and continuity scoring.
+ * Its bounded velocity is not a physical modal response frequency and is
+ * therefore never granted detector-integration authority.
+ */
+export function deriveObservedModalPhaseState({
+  layer = "resonant",
+  previous,
+  observedPhaseRad,
+  observedDrive,
+  observationConfidence,
+  observedSnr,
+  observerCoherence,
+  currentFrameAtMs,
+  observationProfile,
+  hardSilentFrame = false,
+}) {
+  const phase = normalizePhaseRad(observedPhaseRad ?? previous?.phase ?? 0);
+  const previousPhase = Number.isFinite(previous?.phase)
+    ? previous.phase
+    : phase;
+  const previousVelocity = Number.isFinite(previous?.phaseVelocityRadPerSec)
+    ? previous.phaseVelocityRadPerSec
+    : 0;
+  const previousPhaseAtMs = Number.isFinite(previous?.lastPhaseObservedAtMs)
+    ? previous.lastPhaseObservedAtMs
+    : currentFrameAtMs;
+  const deltaSeconds = Math.max(
+    0,
+    (currentFrameAtMs - previousPhaseAtMs) / 1000,
+  );
+  const velocityLimit = getPhaseVelocityLimit(layer);
+  const rawVelocity =
+    deltaSeconds > 0
+      ? unwrapPhaseDeltaRad(previousPhase, phase) / deltaSeconds
+      : previousVelocity;
+  const boundedVelocity = Math.max(
+    -velocityLimit,
+    Math.min(velocityLimit, rawVelocity),
+  );
+  const confidenceGate = smoothstep(
+    observationProfile.minObservationConfidence,
+    observationProfile.minObservationConfidence *
+      (layer === "resonant" ? 10 : 6),
+    observationConfidence,
+  );
+  const driveGate = smoothstep(
+    observationProfile.minObservedDrive * 0.45,
+    observationProfile.minObservedDrive * (layer === "resonant" ? 4 : 3),
+    observedDrive,
+  );
+  const snrGate = smoothstep(
+    observationProfile.snrStart,
+    observationProfile.snrFull,
+    observedSnr,
+  );
+  const coherenceGate = smoothstep(
+    observationProfile.minObservationCoherence * 0.55,
+    observationProfile.minObservationCoherence,
+    observerCoherence,
+  );
+  const phaseCoherenceTarget = clamp01(
+    Math.max(snrGate, driveGate * 0.85) * coherenceGate,
+  );
+  const authorityTarget = clamp01(
+    confidenceGate * driveGate * phaseCoherenceTarget,
+  );
+  const previousAuthority = clamp01(previous?.phaseAuthority ?? 0);
+  if (hardSilentFrame) {
+    return {
+      phase,
+      phaseOffsetRad: previous?.phaseOffsetRad ?? phase,
+      phaseVelocityRadPerSec: previousVelocity * PHASE_VELOCITY_RELEASE,
+      phaseCoherence: 0,
+      phaseAuthority: 0,
+      lastPhaseObservedAtMs: previousPhaseAtMs,
+    };
+  }
+
+  const phaseAuthority =
+    authorityTarget >= previousAuthority
+      ? previousAuthority +
+        (authorityTarget - previousAuthority) * getPhaseAttack(layer)
+      : previousAuthority * getPhaseRelease(layer);
+  const previousPhaseCoherence = clamp01(previous?.phaseCoherence ?? 0);
+  const phaseCoherence =
+    phaseCoherenceTarget >= previousPhaseCoherence
+      ? previousPhaseCoherence +
+        (phaseCoherenceTarget - previousPhaseCoherence) * 0.24
+      : previousPhaseCoherence * 0.92;
+  const phaseVelocityRadPerSec =
+    phaseAuthority > PHASE_AUTHORITY_MIN
+      ? previousVelocity +
+        (boundedVelocity - previousVelocity) * PHASE_VELOCITY_BLEND
+      : previousVelocity * PHASE_VELOCITY_RELEASE;
+  const phaseOffsetRad = normalizePhaseRad(
+    phase - phaseVelocityRadPerSec * (currentFrameAtMs / 1000),
+  );
+
+  return {
+    phase,
+    phaseOffsetRad,
+    phaseVelocityRadPerSec,
+    phaseCoherence,
+    phaseAuthority: phaseAuthority > PHASE_AUTHORITY_MIN ? phaseAuthority : 0,
+    lastPhaseObservedAtMs:
+      authorityTarget > 0 ? currentFrameAtMs : previousPhaseAtMs,
+  };
 }
 
-function findModalPhaseEntryForSlot(slots, offset, activeModes, observedModes) {
-  const modeKey = `${slots[offset]}:${slots[offset + 1]}:${slots[offset + 2]}`;
-  return observedModes?.get?.(modeKey) ?? activeModes?.get?.(modeKey) ?? null;
+function findModalPhaseEntryForSlot(slots, offset, activeModes) {
+  const modeKey = buildModalTopologyModeKey(
+    slots[offset],
+    slots[offset + 1],
+    slots[offset + 2],
+  );
+  return activeModes?.get?.(modeKey) ?? null;
 }
 
 /**
  * Amplitude-and-authority-weighted mean modal angular velocity across the
  * given render slot sets.
  *
- * Render phase evolves in a rotating frame anchored at this mean: uploading
- * `ω_m − ω̄` instead of `ω_m` keeps every slot inside the alias-free render
- * band while preserving the physical relative rates that govern visible
- * interference dynamics. Near-degenerate modes beat at their exact acoustic
- * difference frequencies, and a single pure tone renders as a true standing
- * pattern (`ν = 0`) instead of pulsing at the clamp rate.
+ * Phase evolves in a rotating frame anchored at this mean: uploading
+ * `ω_m − ω̄` instead of `ω_m` removes the physically irrelevant common
+ * carrier while preserving the exact relative angular velocities required by
+ * finite-time detector integration. A display-rate renderer must not clamp
+ * this physical quantity and later reuse the clamp as detector frequency.
  */
 export function computePhaseAnchorAngularVelocityRadPerSec({
   slotSets,
   activeModes,
-  observedModes,
 }) {
   let weightedAngularVelocitySum = 0;
   let weightSum = 0;
@@ -115,7 +224,6 @@ export function computePhaseAnchorAngularVelocityRadPerSec({
         visibleSlots,
         offset,
         activeModes,
-        observedModes,
       );
       const angularVelocityRadPerSec =
         entry?.modalOscillatorAngularVelocityRadPerSec;
@@ -135,25 +243,82 @@ export function computePhaseAnchorAngularVelocityRadPerSec({
   return weightSum > 0 ? weightedAngularVelocitySum / weightSum : 0;
 }
 
-function resolvePhaseUpload(entry, anchorAngularVelocityRadPerSec) {
+/**
+ * Integrate the rotating-frame carrier as state. Recomputing `ω̄t` from a
+ * changing weighted velocity would introduce a common phase jump whenever the
+ * visible modal mixture changes; the physical reference phase is ∫ω̄(t)dt.
+ */
+export function advancePhaseAnchorState({
+  previous = null,
+  angularVelocityRadPerSec,
+  observedAtSec,
+}) {
+  const angularVelocity = Number.isFinite(angularVelocityRadPerSec)
+    ? angularVelocityRadPerSec
+    : 0;
+  const observationTime = Number.isFinite(observedAtSec) ? observedAtSec : 0;
+  const hasPrevious =
+    Number.isFinite(previous?.phaseRad) &&
+    Number.isFinite(previous?.angularVelocityRadPerSec) &&
+    Number.isFinite(previous?.observedAtSec) &&
+    observationTime >= previous.observedAtSec;
+  const phaseRad = hasPrevious
+    ? normalizePhaseRad(
+        previous.phaseRad +
+          previous.angularVelocityRadPerSec *
+            (observationTime - previous.observedAtSec),
+      )
+    : normalizePhaseRad(angularVelocity * observationTime);
+
+  return {
+    phaseRad,
+    angularVelocityRadPerSec: angularVelocity,
+    observedAtSec: observationTime,
+  };
+}
+
+function resolvePhaseUpload(
+  entry,
+  anchorAngularVelocityRadPerSec,
+  anchorPhaseRadAtObserved,
+  phaseObservedAtSec,
+) {
   const hasOscillatorPhase =
     Number.isFinite(entry?.modalOscillatorPhaseRad) &&
     Number.isFinite(entry?.modalOscillatorPhaseOffsetRad) &&
     Number.isFinite(entry?.modalOscillatorAngularVelocityRadPerSec);
   if (hasOscillatorPhase) {
-    const phaseVelocityRadPerSec = clampPhaseVelocity(
+    const phaseVelocityRadPerSec =
       entry.modalOscillatorAngularVelocityRadPerSec -
-        anchorAngularVelocityRadPerSec,
-      entry,
-    );
-    const phaseOffsetRad = Number.isFinite(
-      entry?.modalOscillatorPhaseObservedAtSec,
-    )
-      ? normalizePhaseRad(
-          entry.modalOscillatorPhaseRad -
-            phaseVelocityRadPerSec * entry.modalOscillatorPhaseObservedAtSec,
-        )
-      : entry.modalOscillatorPhaseOffsetRad;
+      anchorAngularVelocityRadPerSec;
+    const entryObservedAtSec = entry.modalOscillatorPhaseObservedAtSec;
+    let phaseOffsetRad = entry.modalOscillatorPhaseOffsetRad;
+    if (
+      Number.isFinite(anchorPhaseRadAtObserved) &&
+      Number.isFinite(phaseObservedAtSec)
+    ) {
+      const labPhaseAtObservation = normalizePhaseRad(
+        entry.modalOscillatorPhaseRad +
+          entry.modalOscillatorAngularVelocityRadPerSec *
+            (phaseObservedAtSec -
+              (Number.isFinite(entryObservedAtSec)
+                ? entryObservedAtSec
+                : phaseObservedAtSec)),
+      );
+      phaseOffsetRad = normalizePhaseRad(
+        labPhaseAtObservation -
+          anchorPhaseRadAtObserved -
+          phaseVelocityRadPerSec * phaseObservedAtSec,
+      );
+    } else if (Number.isFinite(entryObservedAtSec)) {
+      // Stateless callers use the constant-carrier gauge α(t)=ω̄t. Stateful
+      // engine paths pass the integrated anchor phase above.
+      phaseOffsetRad = normalizePhaseRad(
+        entry.modalOscillatorPhaseRad -
+          anchorAngularVelocityRadPerSec * entryObservedAtSec -
+          phaseVelocityRadPerSec * entryObservedAtSec,
+      );
+    }
     return {
       phaseOffsetRad,
       phaseVelocityRadPerSec,
@@ -163,22 +328,15 @@ function resolvePhaseUpload(entry, anchorAngularVelocityRadPerSec) {
   }
 
   return {
-    phaseOffsetRad: entry?.phaseOffsetRad,
-    phaseVelocityRadPerSec: entry?.phaseVelocityRadPerSec,
-    phaseCoherence: entry?.phaseCoherence,
-    phaseAuthority: entry?.phaseAuthority,
+    // The observer-derived fallback velocity is deliberately bounded for
+    // temporal smoothing and is not a physical response frequency. Without
+    // oscillator-owned angular velocity, detector coherence must fail closed
+    // rather than manufacture a slow beat from that display-rate estimate.
+    phaseOffsetRad: 0,
+    phaseVelocityRadPerSec: 0,
+    phaseCoherence: 0,
+    phaseAuthority: 0,
   };
-}
-
-function clampPhaseVelocity(phaseVelocityRadPerSec, entry) {
-  const phaseVelocity = Number.isFinite(phaseVelocityRadPerSec)
-    ? phaseVelocityRadPerSec
-    : 0;
-  const phaseVelocityLimit = getPhaseVelocityLimit(getRenderPhaseLayer(entry));
-  return Math.max(
-    -phaseVelocityLimit,
-    Math.min(phaseVelocityLimit, phaseVelocity),
-  );
 }
 
 export function writePhaseSlotsForVisibleModes({
@@ -186,8 +344,9 @@ export function writePhaseSlotsForVisibleModes({
   visibleSlots,
   capacity,
   activeModes,
-  observedModes,
   anchorAngularVelocityRadPerSec = null,
+  anchorPhaseRadAtObserved = null,
+  phaseObservedAtSec = null,
 }) {
   target?.fill?.(0);
   if (!target?.length || !visibleSlots?.length) {
@@ -201,7 +360,6 @@ export function writePhaseSlotsForVisibleModes({
     : computePhaseAnchorAngularVelocityRadPerSec({
         slotSets: [{ visibleSlots, capacity }],
         activeModes,
-        observedModes,
       });
   const slotLimit = Math.min(
     capacity,
@@ -218,24 +376,26 @@ export function writePhaseSlotsForVisibleModes({
       visibleSlots,
       offset,
       activeModes,
-      observedModes,
     );
     const phaseUpload = resolvePhaseUpload(
       phaseEntry,
       phaseAnchorAngularVelocityRadPerSec,
+      anchorPhaseRadAtObserved,
+      phaseObservedAtSec,
     );
     const authority = clamp01(phaseUpload.phaseAuthority ?? 0);
-    if (authority <= 0) {
-      continue;
-    }
     target[offset] = normalizePhaseRad(phaseUpload.phaseOffsetRad ?? 0);
-    target[offset + 1] = clampPhaseVelocity(
-      phaseUpload.phaseVelocityRadPerSec,
-      phaseEntry,
-    );
+    // This slot is a physical rotating-frame angular velocity. It remains
+    // diagnostic metadata; clipping it to a comfortable display rate would
+    // still misreport the response frequency represented by the phase.
+    target[offset + 1] = Number.isFinite(phaseUpload.phaseVelocityRadPerSec)
+      ? phaseUpload.phaseVelocityRadPerSec
+      : 0;
     target[offset + 2] = clamp01(phaseUpload.phaseCoherence ?? 0);
     target[offset + 3] = authority;
-    authoritativeCount += 1;
+    if (authority > 0) {
+      authoritativeCount += 1;
+    }
   }
 
   return authoritativeCount;

@@ -22,6 +22,9 @@ subdirectory path as `/docs`. The required site config lives at
 **Desktop**
 
 - [`desktop/overview.mdx`](public/desktop/overview.mdx)
+- [`desktop/program-output.mdx`](public/desktop/program-output.mdx)
+- [`desktop/parameter-automation.mdx`](public/desktop/parameter-automation.mdx)
+- [`desktop/osc-structure-export.mdx`](public/desktop/osc-structure-export.mdx)
 - [`desktop/licensing.mdx`](public/desktop/licensing.mdx)
 
 **Developers**

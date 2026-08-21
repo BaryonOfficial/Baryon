@@ -5,7 +5,6 @@ import {
   LIVE_INPUT_SIGNAL_STATES,
   LIVE_INPUT_UI_STATES,
   buildLiveInputRuntimeStatus,
-  getLiveInputStatusLabel,
   isLiveInputTransitionLocked,
   mapLiveInputStartError,
 } from "./liveInputRuntimeStatus.js";
@@ -79,7 +78,6 @@ test("maps acoustic mic runtime phases from calibration to listening to weak sig
   });
   expect(listening.phase).toBe(LIVE_INPUT_PHASES.listening);
   expect(listening.gateOpen).toBe(true);
-  expect(getLiveInputStatusLabel(listening)).toBe("Live Input: Acoustic Mic");
 
   const weak = buildLiveInputRuntimeStatus({
     status: createStatus({ isLiveInputActive: true }),
@@ -92,7 +90,6 @@ test("maps acoustic mic runtime phases from calibration to listening to weak sig
   });
   expect(weak.phase).toBe(LIVE_INPUT_PHASES.weakSignal);
   expect(weak.signalState).toBe(LIVE_INPUT_SIGNAL_STATES.weak);
-  expect(getLiveInputStatusLabel(weak)).toBe("Input too weak");
 
   const silent = buildLiveInputRuntimeStatus({
     status: createStatus({ isLiveInputActive: true }),
@@ -125,7 +122,6 @@ test("treats line feed input as listening without mic calibration states", () =>
   expect(runtimeStatus.calibrationActive).toBe(false);
   expect(runtimeStatus.gateOpen).toBe(true);
   expect(runtimeStatus.sourceBoundaryState).toBe("live");
-  expect(getLiveInputStatusLabel(runtimeStatus)).toBe("Live Input: Line Feed");
 });
 
 test("treats line feed live boundary as listening when source energy is zero", () => {
@@ -156,7 +152,6 @@ test("treats line feed live boundary as listening when source energy is zero", (
   expect(runtimeStatus.gateOpen).toBe(true);
   expect(runtimeStatus.signalState).toBe(LIVE_INPUT_SIGNAL_STATES.ok);
   expect(runtimeStatus.sourceBoundaryState).toBe("live");
-  expect(getLiveInputStatusLabel(runtimeStatus)).toBe("Live Input: Line Feed");
 });
 
 test("treats active line feed with muted source evidence as silent", () => {
@@ -180,7 +175,6 @@ test("treats active line feed with muted source evidence as silent", () => {
   expect(runtimeStatus.hardSilence).toBe(true);
   expect(runtimeStatus.signalState).toBe(LIVE_INPUT_SIGNAL_STATES.silent);
   expect(runtimeStatus.sourceBoundaryState).toBe("muted");
-  expect(getLiveInputStatusLabel(runtimeStatus)).toBe("Line feed silent");
 });
 
 test("maps invalid calibration to clipped error status", () => {
@@ -200,9 +194,6 @@ test("maps invalid calibration to clipped error status", () => {
     LIVE_INPUT_ERROR_CODES.calibrationInvalid,
   );
   expect(runtimeStatus.signalState).toBe(LIVE_INPUT_SIGNAL_STATES.clipped);
-  expect(getLiveInputStatusLabel(runtimeStatus)).toBe(
-    "Mic signal looks clipped",
-  );
 });
 
 test("maps provider start errors and transition locking", () => {
@@ -216,6 +207,17 @@ test("maps provider start errors and transition locking", () => {
       name: "NotFoundError",
     }),
   ).toBe(LIVE_INPUT_ERROR_CODES.deviceMissing);
+  expect(
+    mapLiveInputStartError({
+      name: "NotReadableError",
+      message: "Could not start audio source",
+    }),
+  ).toBe(LIVE_INPUT_ERROR_CODES.deviceUnavailable);
+  expect(
+    mapLiveInputStartError({
+      name: "TrackStartError",
+    }),
+  ).toBe(LIVE_INPUT_ERROR_CODES.deviceUnavailable);
   expect(
     mapLiveInputStartError({
       message: "unexpected failure",
@@ -237,22 +239,4 @@ test("maps provider start errors and transition locking", () => {
       phase: LIVE_INPUT_PHASES.listening,
     }),
   ).toBe(false);
-});
-
-test("hides classification labels while live input is idle", () => {
-  const idleAutoMic = buildLiveInputRuntimeStatus({
-    status: createStatus({
-      isLiveInputActive: false,
-      resolvedLiveInputAnalysisClass: "acoustic-mic",
-    }),
-  });
-  expect(getLiveInputStatusLabel(idleAutoMic)).toBe("");
-
-  const idleAutoLine = buildLiveInputRuntimeStatus({
-    status: createStatus({
-      isLiveInputActive: false,
-      resolvedLiveInputAnalysisClass: "line-feed",
-    }),
-  });
-  expect(getLiveInputStatusLabel(idleAutoLine)).toBe("");
 });

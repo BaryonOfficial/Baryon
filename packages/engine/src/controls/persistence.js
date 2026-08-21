@@ -155,13 +155,6 @@ function normalizeLegacySpectralLight(raw) {
     next.colorMode = "spectral";
   }
 
-  if (
-    !Object.prototype.hasOwnProperty.call(next, "spectralMix") &&
-    typeof raw.chromesthesiaMix === "number"
-  ) {
-    next.spectralMix = clamp(raw.chromesthesiaMix, 0, 1);
-  }
-
   return next;
 }
 
@@ -283,37 +276,6 @@ function readNormalizedControlSettingValue(
   return { ok: true, value: normalizedValue };
 }
 
-function resolveDefaultControlValue(definitions, key, fallback) {
-  const definition = definitions.find((item) => item.key === key);
-  return definition?.defaultValue ?? fallback;
-}
-
-function hasPositiveNumber(value) {
-  return typeof value === "number" && Number.isFinite(value) && value > 0;
-}
-
-export function normalizeSpectralLightActivationControls(
-  controls,
-  definitions,
-) {
-  if (!isPlainRecord(controls)) {
-    return controls;
-  }
-
-  if (controls.colorMode !== "spectral") {
-    return controls;
-  }
-
-  if (hasPositiveNumber(controls.spectralMix)) {
-    return controls;
-  }
-
-  return {
-    ...controls,
-    spectralMix: resolveDefaultControlValue(definitions, "spectralMix", 1),
-  };
-}
-
 /**
  * Normalize a single persisted settings value using the control's storage rules.
  *
@@ -326,6 +288,24 @@ export function normalizeControlSettingValue(key, value, definitions) {
   const definition = findLiveControlDefinition(definitions, key);
   if (!definition) {
     return undefined;
+  }
+
+  if (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    definition.binding &&
+    (Number.isFinite(definition.binding.min) ||
+      Number.isFinite(definition.binding.max))
+  ) {
+    value = clamp(
+      value,
+      Number.isFinite(definition.binding.min)
+        ? definition.binding.min
+        : Number.NEGATIVE_INFINITY,
+      Number.isFinite(definition.binding.max)
+        ? definition.binding.max
+        : Number.POSITIVE_INFINITY,
+    );
   }
 
   if (key === "liveInputAnalysisClass") {
@@ -472,10 +452,7 @@ export function deserializeControlSettings(raw, definitions) {
     };
   }
 
-  const normalizedLegacyControls = normalizeSpectralLightActivationControls(
-    normalizeLegacyControls(raw),
-    definitions,
-  );
+  const normalizedLegacyControls = normalizeLegacyControls(raw);
   if (!isPlainRecord(normalizedLegacyControls)) {
     return { controls, explicitKeys, migratedLegacy: true };
   }
@@ -500,7 +477,10 @@ export function deserializeControlSettings(raw, definitions) {
         normalized.value,
         definitions,
       ) ||
-      isLegacyOldDefaultControlSettingValue(definition.key, normalized.value)
+      isLegacyOldDefaultControlSettingValue(
+        definition.key,
+        normalizedLegacyControls[definition.key],
+      )
     ) {
       continue;
     }
@@ -558,18 +538,21 @@ export function deserializeControls(raw, definitions) {
   if (!isPlainRecord(normalizedRaw)) {
     return result;
   }
-  for (const def of definitions) {
-    if (Object.prototype.hasOwnProperty.call(normalizedRaw, def.key)) {
-      const val = /** @type {Record<string, unknown>} */ (normalizedRaw)[
-        def.key
-      ];
-      // Accept the stored value only if its type matches the default value's type
-      if (typeof val === typeof def.defaultValue) {
-        result[def.key] = val;
-      }
+  for (const definition of definitions) {
+    if (!hasOwn(normalizedRaw, definition.key)) {
+      continue;
+    }
+
+    const normalized = readNormalizedControlSettingValue(
+      normalizedRaw,
+      definition,
+      definitions,
+    );
+    if (normalized.ok) {
+      result[definition.key] = normalized.value;
     }
   }
-  return normalizeSpectralLightActivationControls(result, definitions);
+  return result;
 }
 
 /**

@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "strict": true,
+    "noImplicitAny": true,
+    "types": ["node"]
+  },
+  "include": ["src/contracts/**/*.js"],
+  "exclude": ["node_modules", "dist", "src/contracts/**/*.test.js"]
+}

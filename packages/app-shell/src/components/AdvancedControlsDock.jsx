@@ -8,7 +8,9 @@ import {
   useControlsSnapshot,
 } from "../controls/useControlsStore.js";
 
-const DEFAULT_DOCK_WIDTH = "min(17.5rem, calc(100vw - 2.4rem))";
+const DEFAULT_DOCK_WIDTH = "min(19.5rem, calc(100vw - 2.4rem))";
+const DEFAULT_OPERATOR_CONTROL_KEYS = [];
+const DEFAULT_HIDDEN_CONTROL_KEYS = [];
 
 function ControlsIcon() {
   return (
@@ -34,13 +36,18 @@ function ControlsIcon() {
 }
 
 export default function AdvancedControlsDock({
+  surface,
   visible = true,
-  operatorControlKeys = [],
+  controlStatuses = {},
+  operatorControlKeys = DEFAULT_OPERATOR_CONTROL_KEYS,
+  hiddenControlKeys = DEFAULT_HIDDEN_CONTROL_KEYS,
   dockWidth = DEFAULT_DOCK_WIDTH,
   brandAccessory = null,
   showUiInFullscreen = false,
   onShowUiInFullscreenChange = null,
   footerActions = [],
+  footerAccessory = null,
+  onOpenFeedback = null,
   onOpenChange = null,
 }) {
   const controlsState = useControlsSnapshot(
@@ -71,11 +78,13 @@ export default function AdvancedControlsDock({
       getVisibleControlLayout({
         controlsState,
         devtoolsEnabled: DEVTOOLS_ENABLED,
+        surface,
         method:
           controlsState.visualizationMethod ?? DEFAULT_VISUALIZATION_METHOD,
         operatorControlKeys,
+        hiddenControlKeys,
       }),
-    [controlsState, operatorControlKeys],
+    [controlsState, hiddenControlKeys, operatorControlKeys, surface],
   );
 
   useEffect(() => {
@@ -136,14 +145,14 @@ export default function AdvancedControlsDock({
           <button
             ref={triggerRef}
             type="button"
-            aria-label="Toggle advanced controls"
+            aria-label="Toggle settings"
             data-testid="advanced-controls-trigger"
             aria-expanded={isOpen}
             onClick={() => {
               setIsLoaded(true);
               setIsOpen((current) => !current);
             }}
-            title="Show advanced controls"
+            title="Show settings"
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -200,6 +209,7 @@ export default function AdvancedControlsDock({
           folderGroups={folderGroups}
           presetsAreaControls={presetsAreaControls}
           controlsState={controlsState}
+          controlStatuses={controlStatuses}
           presets={presets}
           presetName={presetName}
           selectedPresetName={selectedPresetName}
@@ -218,6 +228,8 @@ export default function AdvancedControlsDock({
           showUiInFullscreen={showUiInFullscreen}
           onShowUiInFullscreenChange={onShowUiInFullscreenChange}
           footerActions={footerActions}
+          footerAccessory={footerAccessory}
+          onOpenFeedback={onOpenFeedback}
         />
       ) : null}
     </>

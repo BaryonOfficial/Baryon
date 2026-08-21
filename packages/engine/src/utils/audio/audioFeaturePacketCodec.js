@@ -1,23 +1,35 @@
-import { AUDIO_FEATURE_PROTOCOL_VERSION } from "./audioFeaturePackets.js";
+import {
+  AUDIO_FEATURE_PROTOCOL_VERSION,
+  isCanonicalModalDescriptor,
+  isCompleteAudioFeatureModel,
+} from "../../contracts/audioFeatureProtocol.js";
 import { hasRenderAuthority } from "../../core/renderAuthorityContract.js";
+import { HASH32_OFFSET_BASIS, hashFloat32, hashUint32 } from "../hash32.js";
 
 const MODAL_SLOT_STRIDE = 4;
 const MODAL_IDENTITY_STRIDE = 3;
-const FNV_OFFSET_BASIS = 0x811c9dc5;
-const FNV_PRIME = 0x01000193;
-const FLOAT32_BITS = new Float32Array(1);
-const UINT32_BITS = new Uint32Array(FLOAT32_BITS.buffer);
 
 const TOPOLOGY_ARRAY_KEYS = Object.freeze([
-  "modalFieldColorSlots",
-  "modalFieldSpectralLaneA",
-  "modalFieldSpectralLaneB",
-  "modalFieldSpectralMeta",
+  "modalFieldSpectralMomentSlots",
   "modalFieldMetadataSlots",
 ]);
 
 const OMITTED_DIAGNOSTIC_KEY_PATTERN =
-  /(candidate|reference.*slot|modeSlots|colorSlots|spectralLane|structuralFingerprint|structuralSummary)/i;
+  /(candidate|reference.*slot|modeSlots|spectralMomentSlots|structuralFingerprint|structuralSummary)/i;
+
+function toModeCount(value) {
+  return Math.max(0, Math.floor(value ?? 0));
+}
+
+function readActiveModeCount(featureFrame) {
+  return toModeCount(
+    featureFrame?.activeModalFieldModeCount ?? featureFrame?.activeModeCount,
+  );
+}
+
+function encodeModeRole(mode) {
+  return mode?.layer === "resonant" ? 2 : 1;
+}
 
 // The fast wire contract is intentionally explicit. Adding a new property to
 // a composed feature frame cannot silently make it a 60 Hz transport field.
@@ -40,14 +52,13 @@ const DRIVE_RENDER_SCALAR_KEYS = Object.freeze([
   "frameSequence",
   "frameTimeMs",
   "hasModalField",
-  "highQPhaseAuthority",
   "isLiveInputActive",
   "keyConfidence",
   "keyMode",
   "keyTonicHue",
-  "lowQPhaseAuthority",
   "modalObserverVisibilityEnergy",
   "modalPhaseAuthority",
+  "modalPhaseAnchorAngularVelocityRadPerSec",
   "modalPhaseCoherentFieldModeCount",
   "modalResponseAverageCouplingStrength",
   "modalResponseAverageDampingEnvelope",
@@ -60,7 +71,6 @@ const DRIVE_RENDER_SCALAR_KEYS = Object.freeze([
   "modalResponseRenderResonantEnergy",
   "modalResponseRenderSourceCoupledEnergy",
   "modalVisibilityEnergy",
-  "modalVisibilityRetainedHighQEnergy",
   "modeCoherence",
   "observationEnergy",
   "pulseSignal",
@@ -68,8 +78,10 @@ const DRIVE_RENDER_SCALAR_KEYS = Object.freeze([
   "rhythmicDensity",
   "sourceMode",
   "spectralCentroid",
+  "spectralFlatness",
   "spectralFlux",
   "spectralNovelty",
+  "spectralSpread",
   "structureSignal",
   "tempoConfidence",
   "timbreSpread",
@@ -80,23 +92,24 @@ const DRIVE_RENDER_SCALAR_KEYS = Object.freeze([
 
 const DRIVE_DEBUG_SCALAR_KEYS = Object.freeze([
   "analysisSourceUsed",
+  "analysisInputMode",
   "analyserRms",
-  "audioInputMode",
   "avgAmplitude",
   "dominantFrequency",
   "excitedModeCount",
   "fieldState",
   "fundamentalFrequency",
-  "highQPhaseAuthority",
-  "highQResonantEnergy",
-  "highQResonantModeCount",
-  "highQRingSupport",
+  "resonantPhaseAuthority",
+  "resonantObservedEnergy",
+  "resonantObservedModeCount",
+  "resonantRingSupport",
   "liveInputCalibrationActive",
   "liveInputCalibrationInvalid",
   "liveInputCalibrationInvalidReason",
   "liveInputHardSilenceActive",
   "liveInputNoiseGateActive",
-  "lowQPhaseAuthority",
+  "liveInputPolicy",
+  "sourceCoupledPhaseAuthority",
   "modalPersistence",
   "modalPhaseCoherentFieldModeCount",
   "modalResponseAverageCouplingStrength",
@@ -109,44 +122,27 @@ const DRIVE_DEBUG_SCALAR_KEYS = Object.freeze([
   "modalResponseRenderEnergy",
   "observedModalModeCount",
   "periodicity",
-  "projectionAllocatedEnergyResonant",
-  "projectionAllocatedEnergySourceCoupled",
-  "projectionCompetitionReduction",
-  "projectionEnergyBudgetResonant",
-  "projectionEnergyBudgetSourceCoupled",
-  "projectionEnergyNormalizationApplied",
-  "projectionEnergyScaleResonant",
-  "projectionEnergyScaleSourceCoupled",
-  "projectionEnergyUsedResonant",
-  "projectionEnergyUsedSourceCoupled",
-  "projectionHighQProtection",
+  "projectionResonantProtection",
   "projectionLoad",
   "projectionOverlapPressureResonant",
   "projectionOverlapPressureSourceCoupled",
   "projectionRawEnergyResonant",
   "projectionRawEnergySourceCoupled",
-  "resonantShiftReleaseOverrideCount",
-  "resonantShiftTrackingOverrideCount",
-  "resonantSignalAuthoritative",
-  "resonantSignalAuthoritativeCoverage",
-  "resonantSignalAuthoritativeFastAssist",
-  "resonantSignalAuthoritativeFreshSignal",
-  "resonantSignalAuthoritativeHighQ",
-  "resonantSignalAuthoritativeReason",
+  "sourceKind",
   "sourceBoundaryState",
+  "spectralFlatness",
+  "spectralSpread",
   "structuralProjectionConcentration",
   "structuralProjectionDrive",
   "totalSlotAmplitude",
 ]);
 
-function hashUint32(value, hash) {
-  return Math.imul(hash ^ (value >>> 0), FNV_PRIME) >>> 0;
-}
-
-function hashNumber(value, hash) {
-  FLOAT32_BITS[0] = Math.fround(Number.isFinite(value) ? value : 0);
-  return hashUint32(UINT32_BITS[0], hash);
-}
+const DIAGNOSTIC_CONTROL_STATE_KEYS = Object.freeze([
+  "auditEnabled",
+  "freezeModeSlots",
+  "injectTestTone",
+  "suppressPlaybackTelemetry",
+]);
 
 function hashString(value, hash) {
   const text = String(value ?? "");
@@ -164,7 +160,7 @@ function hashArray(values, length, hash) {
   );
   let nextHash = hashUint32(resolvedLength, hash);
   for (let index = 0; index < resolvedLength; index += 1) {
-    nextHash = hashNumber(values[index], nextHash);
+    nextHash = hashFloat32(values[index], nextHash);
   }
   return nextHash;
 }
@@ -264,10 +260,50 @@ function findModalIdentityIndex(
 function findDriveLayerIdentityIndex(layer, identities, targetIndex) {
   return findModalIdentityIndex(
     layer?.slots,
-    Math.max(0, Math.floor(layer?.activeModeCount ?? 0)),
+    toModeCount(layer?.activeModeCount),
     identities,
     targetIndex,
   );
+}
+
+function findTopologyDriveSource({
+  featureFrame,
+  topologyPacket,
+  driveLayers,
+  sourceActiveModeCount,
+  targetIndex,
+}) {
+  if (Array.isArray(driveLayers)) {
+    for (const layer of driveLayers) {
+      const sourceIndex = findDriveLayerIdentityIndex(
+        layer,
+        topologyPacket?.modalIdentitySlots,
+        targetIndex,
+      );
+      if (sourceIndex >= 0) {
+        return {
+          slots: layer.slots,
+          phaseSlots: layer.phaseSlots,
+          sourceIndex,
+        };
+      }
+    }
+    return null;
+  }
+
+  const sourceIndex = findModalIdentityIndex(
+    featureFrame?.modalFieldSlots,
+    sourceActiveModeCount,
+    topologyPacket?.modalIdentitySlots,
+    targetIndex,
+  );
+  return sourceIndex < 0
+    ? null
+    : {
+        slots: featureFrame?.modalFieldSlots,
+        phaseSlots: featureFrame?.modalFieldPhaseSlots,
+        sourceIndex,
+      };
 }
 
 function copyDriveSlotsForTopology(
@@ -275,58 +311,31 @@ function copyDriveSlotsForTopology(
   topologyPacket,
   driveLayers = null,
 ) {
-  const activeModeCount = Math.max(
-    0,
-    Math.floor(topologyPacket?.activeModeCount ?? 0),
-  );
-  const sourceActiveModeCount = Math.max(
-    0,
-    Math.floor(
-      featureFrame?.activeModalFieldModeCount ??
-        featureFrame?.activeModeCount ??
-        0,
-    ),
-  );
+  const activeModeCount = toModeCount(topologyPacket?.activeModeCount);
+  const sourceActiveModeCount = readActiveModeCount(featureFrame);
   const modalCoefficients = new Float32Array(activeModeCount);
   const phaseSlots = new Float32Array(activeModeCount * MODAL_SLOT_STRIDE);
   for (let targetIndex = 0; targetIndex < activeModeCount; targetIndex += 1) {
-    let sourceSlots = featureFrame?.modalFieldSlots;
-    let sourcePhaseSlots = featureFrame?.modalFieldPhaseSlots;
-    let sourceIndex = -1;
-    if (Array.isArray(driveLayers)) {
-      for (const layer of driveLayers) {
-        sourceIndex = findDriveLayerIdentityIndex(
-          layer,
-          topologyPacket?.modalIdentitySlots,
-          targetIndex,
-        );
-        if (sourceIndex >= 0) {
-          sourceSlots = layer.slots;
-          sourcePhaseSlots = layer.phaseSlots;
-          break;
-        }
-      }
-    } else {
-      sourceIndex = findModalIdentityIndex(
-        sourceSlots,
-        sourceActiveModeCount,
-        topologyPacket?.modalIdentitySlots,
-        targetIndex,
-      );
-    }
-    if (sourceIndex < 0) {
+    const source = findTopologyDriveSource({
+      featureFrame,
+      topologyPacket,
+      driveLayers,
+      sourceActiveModeCount,
+      targetIndex,
+    });
+    if (!source) {
       continue;
     }
     modalCoefficients[targetIndex] =
-      sourceSlots?.[sourceIndex * MODAL_SLOT_STRIDE + 3] ?? 0;
-    const sourcePhaseOffset = sourceIndex * MODAL_SLOT_STRIDE;
+      source.slots?.[source.sourceIndex * MODAL_SLOT_STRIDE + 3] ?? 0;
+    const sourcePhaseOffset = source.sourceIndex * MODAL_SLOT_STRIDE;
     const targetPhaseOffset = targetIndex * MODAL_SLOT_STRIDE;
     for (let component = 0; component < MODAL_SLOT_STRIDE; component += 1) {
       phaseSlots[targetPhaseOffset + component] =
-        sourcePhaseSlots?.[sourcePhaseOffset + component] ?? 0;
+        source.phaseSlots?.[sourcePhaseOffset + component] ?? 0;
     }
   }
-  return { activeModeCount, modalCoefficients, phaseSlots };
+  return { modalCoefficients, phaseSlots };
 }
 
 function cloneObjectWithoutTypedArrays(value) {
@@ -387,12 +396,156 @@ function buildRenderState(featureFrame) {
       renderState[key] = cloneObjectWithoutTypedArrays(featureFrame[key]);
     }
   }
+  renderState.diagnosticControlState = copyScalarFields(
+    featureFrame?.diagnosticControlState,
+    DIAGNOSTIC_CONTROL_STATE_KEYS,
+  );
   renderState.debug = copyScalarFields(
     featureFrame?.debug,
     DRIVE_DEBUG_SCALAR_KEYS,
   );
   renderState.renderAuthority = hasRenderAuthority(featureFrame);
   return renderState;
+}
+
+function buildVisibleModeRoleMetadata(
+  featureFrame,
+  activeModeCount,
+  committedModes,
+) {
+  const roles = new Uint8Array(activeModeCount);
+  if (committedModes) {
+    const visibleCommittedModeCount = Math.min(
+      activeModeCount,
+      committedModes.length,
+    );
+    for (let index = 0; index < visibleCommittedModeCount; index += 1) {
+      roles[index] = encodeModeRole(committedModes[index]);
+    }
+    return roles;
+  }
+
+  const diagnostics = featureFrame?.modalDescriptor?.diagnostics;
+  const sourceCount = Math.min(
+    activeModeCount,
+    toModeCount(diagnostics?.upstreamSourceCoupledModeCount),
+  );
+  const resonantCount = Math.min(
+    activeModeCount - sourceCount,
+    toModeCount(diagnostics?.upstreamResonantModeCount),
+  );
+  roles.fill(1, 0, sourceCount);
+  roles.fill(2, sourceCount, sourceCount + resonantCount);
+  return roles;
+}
+
+function countModeRole(roles, expectedRole) {
+  let count = 0;
+  for (const role of roles) {
+    count += Number(role === expectedRole);
+  }
+  return count;
+}
+
+function buildCommittedModeMetadata({
+  activeModeCount,
+  committedModes,
+  modalIdentitySlots,
+  modalRoleMetadata,
+}) {
+  const committedModeCount = committedModes?.length ?? activeModeCount;
+  const committedModeIdentitySlots = new Float32Array(
+    committedModeCount * MODAL_IDENTITY_STRIDE,
+  );
+  const committedModeFrequenciesHz = new Float32Array(committedModeCount);
+  const committedModeRoleMetadata = new Uint8Array(committedModeCount);
+
+  if (committedModes) {
+    for (let index = 0; index < committedModeCount; index += 1) {
+      const mode = committedModes[index];
+      const offset = index * MODAL_IDENTITY_STRIDE;
+      if (!mode) {
+        committedModeIdentitySlots[offset] = modalIdentitySlots[offset] ?? 0;
+        committedModeIdentitySlots[offset + 1] =
+          modalIdentitySlots[offset + 1] ?? 0;
+        committedModeIdentitySlots[offset + 2] =
+          modalIdentitySlots[offset + 2] ?? 0;
+        committedModeRoleMetadata[index] = modalRoleMetadata[index] ?? 0;
+        continue;
+      }
+      committedModeIdentitySlots[offset] = mode.u ?? 0;
+      committedModeIdentitySlots[offset + 1] = mode.v ?? 0;
+      committedModeIdentitySlots[offset + 2] = mode.w ?? 0;
+      committedModeFrequenciesHz[index] = mode.naturalFrequencyHz ?? 0;
+      committedModeRoleMetadata[index] = encodeModeRole(mode);
+    }
+  } else {
+    committedModeIdentitySlots.set(modalIdentitySlots);
+    committedModeRoleMetadata.set(modalRoleMetadata);
+  }
+  return {
+    committedModeCount,
+    committedModeIdentitySlots,
+    committedModeFrequenciesHz,
+    committedModeRoleMetadata,
+  };
+}
+
+function cloneTopologySlotArrays(featureFrame, activeModeCount) {
+  return Object.fromEntries(
+    TOPOLOGY_ARRAY_KEYS.map((key) => [
+      key,
+      cloneActivePrefix(featureFrame?.[key], activeModeCount),
+    ]),
+  );
+}
+
+function copyProbeModeIndices(indices) {
+  return indices instanceof Uint16Array
+    ? new Uint16Array(indices)
+    : Uint16Array.from(indices ?? []);
+}
+
+function hashModalIdentityPrefix(featureFrame) {
+  const activeModeCount = readActiveModeCount(featureFrame);
+  const slots = featureFrame?.modalFieldSlots;
+  let hash = hashUint32(activeModeCount, HASH32_OFFSET_BASIS);
+  for (let modeIndex = 0; modeIndex < activeModeCount; modeIndex += 1) {
+    const offset = modeIndex * MODAL_SLOT_STRIDE;
+    hash = hashFloat32(slots?.[offset], hash);
+    hash = hashFloat32(slots?.[offset + 1], hash);
+    hash = hashFloat32(slots?.[offset + 2], hash);
+  }
+  return { activeModeCount, hash };
+}
+
+function hashTopologySlotArrays(featureFrame, activeModeCount, initialHash) {
+  let hash = initialHash;
+  for (const key of TOPOLOGY_ARRAY_KEYS) {
+    hash = hashArray(
+      featureFrame?.[key],
+      activeModeCount * MODAL_SLOT_STRIDE,
+      hash,
+    );
+  }
+  return hashArray(featureFrame?.modalFieldSpectralSeedDirection, 2, hash);
+}
+
+function hashTopologyInterpretation(
+  featureFrame,
+  interpretationArrays,
+  initialHash,
+) {
+  const diagnostics = featureFrame?.modalDescriptor?.diagnostics;
+  let hash = hashUint32(
+    diagnostics?.upstreamSourceCoupledModeCount ?? 0,
+    initialHash,
+  );
+  hash = hashUint32(diagnostics?.upstreamResonantModeCount ?? 0, hash);
+  for (const values of interpretationArrays) {
+    hash = hashArray(values, values?.length, hash);
+  }
+  return hashString(featureFrame?.modalDescriptor?.fieldAuthority, hash);
 }
 
 export function computeFeatureTopologyFingerprint(
@@ -405,81 +558,29 @@ export function computeFeatureTopologyFingerprint(
     committedModeRoleMetadata = null,
   } = {},
 ) {
-  const activeModeCount = Math.max(
-    0,
-    Math.floor(
-      featureFrame?.activeModalFieldModeCount ??
-        featureFrame?.activeModeCount ??
-        0,
-    ),
+  const identity = hashModalIdentityPrefix(featureFrame);
+  const topologyHash = hashTopologySlotArrays(
+    featureFrame,
+    identity.activeModeCount,
+    identity.hash,
   );
-  let hash = hashUint32(activeModeCount, FNV_OFFSET_BASIS);
-  const slots = featureFrame?.modalFieldSlots;
-  for (let modeIndex = 0; modeIndex < activeModeCount; modeIndex += 1) {
-    const offset = modeIndex * MODAL_SLOT_STRIDE;
-    hash = hashNumber(slots?.[offset], hash);
-    hash = hashNumber(slots?.[offset + 1], hash);
-    hash = hashNumber(slots?.[offset + 2], hash);
-  }
-  for (const key of TOPOLOGY_ARRAY_KEYS) {
-    hash = hashArray(
-      featureFrame?.[key],
-      activeModeCount * MODAL_SLOT_STRIDE,
-      hash,
-    );
-  }
-  const descriptorDiagnostics = featureFrame?.modalDescriptor?.diagnostics;
-  hash = hashUint32(
-    descriptorDiagnostics?.upstreamSourceCoupledModeCount ?? 0,
-    hash,
+  return (
+    hashTopologyInterpretation(
+      featureFrame,
+      [
+        fastProbeModeIndices,
+        modalRoleMetadata,
+        committedModeIdentitySlots,
+        committedModeFrequenciesHz,
+        committedModeRoleMetadata,
+      ],
+      topologyHash,
+    ) >>> 0
   );
-  hash = hashUint32(
-    descriptorDiagnostics?.upstreamResonantModeCount ?? 0,
-    hash,
-  );
-  hash = hashArray(
-    fastProbeModeIndices,
-    fastProbeModeIndices?.length ?? 0,
-    hash,
-  );
-  hash = hashArray(modalRoleMetadata, modalRoleMetadata?.length ?? 0, hash);
-  hash = hashArray(
-    committedModeIdentitySlots,
-    committedModeIdentitySlots?.length ?? 0,
-    hash,
-  );
-  hash = hashArray(
-    committedModeFrequenciesHz,
-    committedModeFrequenciesHz?.length ?? 0,
-    hash,
-  );
-  hash = hashArray(
-    committedModeRoleMetadata,
-    committedModeRoleMetadata?.length ?? 0,
-    hash,
-  );
-  hash = hashString(featureFrame?.modalDescriptor?.fieldAuthority, hash);
-  return hash >>> 0;
 }
 
 export function computeBasisIdentityHash(featureFrame) {
-  const activeModeCount = Math.max(
-    0,
-    Math.floor(
-      featureFrame?.activeModalFieldModeCount ??
-        featureFrame?.activeModeCount ??
-        0,
-    ),
-  );
-  let hash = hashUint32(activeModeCount, FNV_OFFSET_BASIS);
-  const slots = featureFrame?.modalFieldSlots;
-  for (let modeIndex = 0; modeIndex < activeModeCount; modeIndex += 1) {
-    const offset = modeIndex * MODAL_SLOT_STRIDE;
-    hash = hashNumber(slots?.[offset], hash);
-    hash = hashNumber(slots?.[offset + 1], hash);
-    hash = hashNumber(slots?.[offset + 2], hash);
-  }
-  return hash >>> 0;
+  return hashModalIdentityPrefix(featureFrame).hash >>> 0;
 }
 
 export function buildTopologyPacket({
@@ -495,90 +596,22 @@ export function buildTopologyPacket({
   structuralFingerprint = null,
   structuralDiagnostics = null,
 }) {
-  const activeModeCount = Math.max(
-    0,
-    Math.floor(
-      featureFrame?.activeModalFieldModeCount ??
-        featureFrame?.activeModeCount ??
-        0,
-    ),
-  );
-  const descriptorDiagnostics = featureFrame?.modalDescriptor?.diagnostics;
-  const modalRoleMetadata = new Uint8Array(activeModeCount);
-  const committedModeIndexByKey = new Map();
-  for (let index = 0; index < (committedModes?.length ?? 0); index += 1) {
-    committedModeIndexByKey.set(committedModes[index]?.modeKey, index);
-  }
+  const activeModeCount = readActiveModeCount(featureFrame);
   const modalIdentitySlots = copyModalIdentities(
     featureFrame?.modalFieldSlots,
     activeModeCount,
   );
-  for (
-    let topologyIndex = 0;
-    topologyIndex < activeModeCount;
-    topologyIndex += 1
-  ) {
-    const identityOffset = topologyIndex * MODAL_IDENTITY_STRIDE;
-    const modeKey = `${modalIdentitySlots[identityOffset]}:${modalIdentitySlots[identityOffset + 1]}:${modalIdentitySlots[identityOffset + 2]}`;
-    const committedModeIndex = committedModeIndexByKey.get(modeKey);
-    if (committedModeIndex === undefined) {
-      continue;
-    }
-    modalRoleMetadata[topologyIndex] =
-      committedModes[committedModeIndex]?.layer === "resonant" ? 2 : 1;
-  }
-  if (!committedModes) {
-    const sourceCount = Math.min(
-      activeModeCount,
-      Math.max(
-        0,
-        Math.floor(descriptorDiagnostics?.upstreamSourceCoupledModeCount ?? 0),
-      ),
-    );
-    const resonantCount = Math.min(
-      Math.max(0, activeModeCount - sourceCount),
-      Math.max(
-        0,
-        Math.floor(descriptorDiagnostics?.upstreamResonantModeCount ?? 0),
-      ),
-    );
-    modalRoleMetadata.fill(1, 0, sourceCount);
-    modalRoleMetadata.fill(2, sourceCount, sourceCount + resonantCount);
-  }
-  const activeSourceCoupledModeCount = modalRoleMetadata.reduce(
-    (count, role) => count + Number(role === 1),
-    0,
+  const modalRoleMetadata = buildVisibleModeRoleMetadata(
+    featureFrame,
+    activeModeCount,
+    committedModes,
   );
-  const activeResonantModeCount = modalRoleMetadata.reduce(
-    (count, role) => count + Number(role === 2),
-    0,
-  );
-  const committedModeCount = committedModes?.length ?? activeModeCount;
-  const committedModeIdentitySlots = new Float32Array(committedModeCount * 3);
-  const committedModeFrequenciesHz = new Float32Array(committedModeCount);
-  const committedModeRoleMetadata = new Uint8Array(committedModeCount);
-  for (let index = 0; index < committedModeCount; index += 1) {
-    const mode = committedModes?.[index];
-    const offset = index * 3;
-    if (mode) {
-      committedModeIdentitySlots[offset] = mode.u ?? 0;
-      committedModeIdentitySlots[offset + 1] = mode.v ?? 0;
-      committedModeIdentitySlots[offset + 2] = mode.w ?? 0;
-      committedModeFrequenciesHz[index] = mode.naturalFrequencyHz ?? 0;
-      committedModeRoleMetadata[index] = mode.layer === "resonant" ? 2 : 1;
-    } else {
-      committedModeIdentitySlots[offset] = modalIdentitySlots[offset] ?? 0;
-      committedModeIdentitySlots[offset + 1] =
-        modalIdentitySlots[offset + 1] ?? 0;
-      committedModeIdentitySlots[offset + 2] =
-        modalIdentitySlots[offset + 2] ?? 0;
-      committedModeRoleMetadata[index] = modalRoleMetadata[index] ?? 0;
-    }
-  }
-  const topologyProbeIndices =
-    fastProbeModeIndices instanceof Uint16Array
-      ? new Uint16Array(fastProbeModeIndices)
-      : Uint16Array.from(fastProbeModeIndices ?? []);
+  const committedModeMetadata = buildCommittedModeMetadata({
+    activeModeCount,
+    committedModes,
+    modalIdentitySlots,
+    modalRoleMetadata,
+  });
   const packet = {
     protocolVersion: AUDIO_FEATURE_PROTOCOL_VERSION,
     sourceGeneration,
@@ -588,35 +621,17 @@ export function buildTopologyPacket({
     inputSignature: inputSignature ?? null,
     captureTimestampMs,
     activeModeCount,
-    committedModeCount,
-    activeSourceCoupledModeCount,
-    activeResonantModeCount,
+    activeSourceCoupledModeCount: countModeRole(modalRoleMetadata, 1),
+    activeResonantModeCount: countModeRole(modalRoleMetadata, 2),
     modalRoleMetadata,
     modalIdentitySlots,
-    committedModeIdentitySlots,
-    committedModeFrequenciesHz,
-    committedModeRoleMetadata,
-    modalFieldColorSlots: cloneActivePrefix(
-      featureFrame?.modalFieldColorSlots,
-      activeModeCount,
+    ...committedModeMetadata,
+    ...cloneTopologySlotArrays(featureFrame, activeModeCount),
+    modalFieldSpectralSeedDirection: copyFixedFloat32(
+      featureFrame?.modalFieldSpectralSeedDirection ?? [1, 0],
+      2,
     ),
-    modalFieldSpectralLaneA: cloneActivePrefix(
-      featureFrame?.modalFieldSpectralLaneA,
-      activeModeCount,
-    ),
-    modalFieldSpectralLaneB: cloneActivePrefix(
-      featureFrame?.modalFieldSpectralLaneB,
-      activeModeCount,
-    ),
-    modalFieldSpectralMeta: cloneActivePrefix(
-      featureFrame?.modalFieldSpectralMeta,
-      activeModeCount,
-    ),
-    modalFieldMetadataSlots: cloneActivePrefix(
-      featureFrame?.modalFieldMetadataSlots,
-      activeModeCount,
-    ),
-    fastProbeModeIndices: topologyProbeIndices,
+    fastProbeModeIndices: copyProbeModeIndices(fastProbeModeIndices),
     basisIdentityHash: computeBasisIdentityHash(featureFrame),
     structuralFingerprint: cloneObjectWithoutTypedArrays(structuralFingerprint),
     structuralDiagnostics: cloneObjectWithoutTypedArrays(structuralDiagnostics),
@@ -624,14 +639,52 @@ export function buildTopologyPacket({
       featureFrame?.modalDescriptor,
     ),
   };
-  packet.topologyFingerprint = computeFeatureTopologyFingerprint(featureFrame, {
-    fastProbeModeIndices: packet.fastProbeModeIndices,
-    modalRoleMetadata: packet.modalRoleMetadata,
-    committedModeIdentitySlots: packet.committedModeIdentitySlots,
-    committedModeFrequenciesHz: packet.committedModeFrequenciesHz,
-    committedModeRoleMetadata: packet.committedModeRoleMetadata,
-  });
-  return packet;
+  return {
+    ...packet,
+    topologyFingerprint: computeFeatureTopologyFingerprint(featureFrame, {
+      fastProbeModeIndices: packet.fastProbeModeIndices,
+      modalRoleMetadata: packet.modalRoleMetadata,
+      committedModeIdentitySlots: packet.committedModeIdentitySlots,
+      committedModeFrequenciesHz: packet.committedModeFrequenciesHz,
+      committedModeRoleMetadata: packet.committedModeRoleMetadata,
+    }),
+  };
+}
+
+function buildDriveArrays({
+  featureFrame,
+  topologyDrive,
+  committedDriveSlots,
+  committedPhaseSlots,
+  activeModeCount,
+  committedModeCount,
+  buffers,
+}) {
+  const modalCoefficients = committedDriveSlots
+    ? copyModalCoefficients(
+        committedDriveSlots,
+        committedModeCount,
+        buffers?.modalCoefficients,
+      )
+    : (topologyDrive?.modalCoefficients ??
+      copyModalCoefficients(
+        featureFrame?.modalFieldSlots,
+        activeModeCount,
+        buffers?.modalCoefficients,
+      ));
+  const phaseSlots = committedPhaseSlots
+    ? copyFixedFloat32(
+        committedPhaseSlots,
+        committedModeCount * MODAL_SLOT_STRIDE,
+        buffers?.phaseSlots,
+      )
+    : (topologyDrive?.phaseSlots ??
+      copyFixedFloat32(
+        featureFrame?.modalFieldPhaseSlots,
+        committedModeCount * MODAL_SLOT_STRIDE,
+        buffers?.phaseSlots,
+      ));
+  return { modalCoefficients, phaseSlots };
 }
 
 export function buildDrivePacket({
@@ -647,6 +700,12 @@ export function buildDrivePacket({
   frameId,
   captureTimestampMs,
   processingTimestampMs,
+  observationTimeSeconds = captureTimestampMs / 1000,
+  observationAdvancing = true,
+  observationPaused = false,
+  observationSourceKey = null,
+  observationSessionKey = null,
+  observationTimelineRevision = 0,
 }) {
   // The worker-owned committed projection is already ordered against the
   // packet topology. Avoid constructing a second visible coefficient/phase
@@ -656,20 +715,22 @@ export function buildDrivePacket({
       ? copyDriveSlotsForTopology(featureFrame, topologyPacket, driveLayers)
       : null;
   const activeModeCount = topologyPacket
-    ? Math.max(0, Math.floor(topologyPacket.activeModeCount ?? 0))
-    : topologyDrive
-      ? topologyDrive.activeModeCount
-      : Math.max(
-          0,
-          Math.floor(
-            featureFrame?.activeModalFieldModeCount ??
-              featureFrame?.activeModeCount ??
-              0,
-          ),
-        );
+    ? toModeCount(topologyPacket.activeModeCount)
+    : readActiveModeCount(featureFrame);
   const committedModeCount = committedDriveSlots
     ? Math.floor(committedDriveSlots.length / MODAL_SLOT_STRIDE)
     : activeModeCount;
+  const driveArrays = buildDriveArrays({
+    featureFrame,
+    topologyDrive,
+    committedDriveSlots,
+    committedPhaseSlots,
+    activeModeCount,
+    committedModeCount,
+    buffers,
+  });
+  const patternFrozen =
+    featureFrame?.diagnosticControlState?.freezeModeSlots === true;
   return {
     protocolVersion: AUDIO_FEATURE_PROTOCOL_VERSION,
     sourceGeneration,
@@ -678,32 +739,19 @@ export function buildDrivePacket({
     frameId,
     captureTimestampMs,
     processingTimestampMs,
+    observationTimeSeconds,
+    observationAdvancing:
+      patternFrozen !== true && observationAdvancing === true,
+    observationPaused: patternFrozen || observationPaused === true,
+    observationSourceKey,
+    observationSessionKey,
+    observationTimelineRevision: Math.max(
+      0,
+      Math.floor(observationTimelineRevision ?? 0),
+    ),
     activeModeCount,
     committedModeCount,
-    modalCoefficients: committedDriveSlots
-      ? copyModalCoefficients(
-          committedDriveSlots,
-          committedModeCount,
-          buffers?.modalCoefficients,
-        )
-      : (topologyDrive?.modalCoefficients ??
-        copyModalCoefficients(
-          featureFrame?.modalFieldSlots,
-          activeModeCount,
-          buffers?.modalCoefficients,
-        )),
-    phaseSlots: committedPhaseSlots
-      ? copyFixedFloat32(
-          committedPhaseSlots,
-          committedModeCount * MODAL_SLOT_STRIDE,
-          buffers?.phaseSlots,
-        )
-      : (topologyDrive?.phaseSlots ??
-        copyFixedFloat32(
-          featureFrame?.modalFieldPhaseSlots,
-          activeModeCount * MODAL_SLOT_STRIDE,
-          buffers?.phaseSlots,
-        )),
+    ...driveArrays,
     bandEnergies: copyFixedFloat32(
       featureFrame?.bandEnergies,
       4,
@@ -718,36 +766,127 @@ export function buildDrivePacket({
   };
 }
 
+function createRendererModalDescriptor(topology, drive) {
+  if (!topology.modalDescriptor) {
+    return null;
+  }
+  return Object.freeze({
+    ...topology.modalDescriptor,
+    slotViews: Object.freeze({
+      modalIdentitySlots: topology.modalIdentitySlots,
+      modalCoefficientSlots: drive.modalCoefficients,
+      modalFieldPhaseSlots: drive.phaseSlots,
+      modalFieldSpectralMomentSlots: topology.modalFieldSpectralMomentSlots,
+      modalFieldMetadataSlots: topology.modalFieldMetadataSlots,
+    }),
+  });
+}
+
 /**
  * Creates the renderer-facing immutable view from a complete packet model.
- * Typed arrays remain owned by their packets and are never copied here.
+ * Packet arrays retain their topology or drive ownership through the renderer
+ * boundary. The raymarch modal compiler is the sole owner of the packed GPU
+ * projection.
+ * @returns {(import("../../contracts/audioFeatureProtocol.js").RendererFeatureFrame & Record<string, unknown>) | null}
  */
 export function createRendererFeatureView(model) {
-  if (!model?.topology || !model?.drive) {
+  if (!isCompleteAudioFeatureModel(model)) {
     return null;
   }
   const topology = model.topology;
   const drive = model.drive;
+  const modalDescriptor = createRendererModalDescriptor(topology, drive);
+  if (!isCanonicalModalDescriptor(modalDescriptor)) {
+    return null;
+  }
   return Object.freeze({
     ...drive.renderState,
+    frameId: drive.frameId,
+    sourceGeneration: drive.sourceGeneration,
+    workerGeneration: drive.workerGeneration,
     frameTimeMs: drive.captureTimestampMs,
     captureTimestampMs: drive.captureTimestampMs,
     processingTimestampMs: drive.processingTimestampMs,
+    observationTimeSeconds: drive.observationTimeSeconds,
+    observationAdvancing: drive.observationAdvancing === true,
+    observationPaused: drive.observationPaused === true,
+    observationSourceKey: drive.observationSourceKey ?? null,
+    observationSessionKey: drive.observationSessionKey ?? null,
+    observationTimelineRevision: Math.max(
+      0,
+      Math.floor(drive.observationTimelineRevision ?? 0),
+    ),
+    observationInputSignature: topology.inputSignature ?? null,
     topologyRevision: topology.topologyRevision,
     basisIdentityHash: topology.basisIdentityHash,
     modalIdentitySlots: topology.modalIdentitySlots,
     modalCoefficientSlots: drive.modalCoefficients,
     modalFieldPhaseSlots: drive.phaseSlots,
-    modalFieldColorSlots: topology.modalFieldColorSlots,
-    modalFieldSpectralLaneA: topology.modalFieldSpectralLaneA,
-    modalFieldSpectralLaneB: topology.modalFieldSpectralLaneB,
-    modalFieldSpectralMeta: topology.modalFieldSpectralMeta,
+    modalFieldSpectralMomentSlots: topology.modalFieldSpectralMomentSlots,
+    modalFieldSpectralSeedDirection: topology.modalFieldSpectralSeedDirection,
     modalFieldMetadataSlots: topology.modalFieldMetadataSlots,
     bandEnergies: drive.bandEnergies,
     spectralBandEnergies: drive.spectralBandEnergies,
     activeModeCount: drive.activeModeCount,
     activeModalFieldModeCount: drive.activeModeCount,
     committedModeCount: drive.committedModeCount,
-    modalDescriptor: topology.modalDescriptor,
+    modalDescriptor,
   });
+}
+
+/**
+ * Restores the renderer view's single-owner slot aliases after a process
+ * transport clones repeated typed-array references independently. The packet
+ * values remain authoritative; this boundary only reconnects the descriptor's
+ * slot views to the transported top-level renderer arrays.
+ *
+ * @template T
+ * @param {T} featureFrame
+ * @returns {T}
+ */
+export function restoreTransportedRendererFeatureViewOwnership(featureFrame) {
+  if (!featureFrame || typeof featureFrame !== "object") {
+    return featureFrame;
+  }
+  const transportedFrame = /** @type {Record<string, any>} */ (featureFrame);
+  const modalDescriptor = transportedFrame.modalDescriptor;
+  const descriptorSlots = modalDescriptor?.slotViews;
+  if (
+    !isCanonicalModalDescriptor(modalDescriptor) ||
+    !(transportedFrame.modalIdentitySlots instanceof Float32Array) ||
+    !(transportedFrame.modalCoefficientSlots instanceof Float32Array) ||
+    !(transportedFrame.modalFieldPhaseSlots instanceof Float32Array)
+  ) {
+    return featureFrame;
+  }
+
+  const restoredSlots = {
+    ...descriptorSlots,
+    modalIdentitySlots: transportedFrame.modalIdentitySlots,
+    modalCoefficientSlots: transportedFrame.modalCoefficientSlots,
+    modalFieldPhaseSlots: transportedFrame.modalFieldPhaseSlots,
+    modalFieldSpectralMomentSlots:
+      transportedFrame.modalFieldSpectralMomentSlots ??
+      descriptorSlots.modalFieldSpectralMomentSlots,
+    modalFieldMetadataSlots:
+      transportedFrame.modalFieldMetadataSlots ??
+      descriptorSlots.modalFieldMetadataSlots,
+  };
+  const ownershipAlreadyCanonical = Object.keys(restoredSlots).every(
+    (key) => restoredSlots[key] === descriptorSlots[key],
+  );
+  if (ownershipAlreadyCanonical) {
+    return featureFrame;
+  }
+
+  const restoredDescriptor = Object.freeze({
+    ...modalDescriptor,
+    slotViews: Object.freeze(restoredSlots),
+  });
+  return /** @type {T} */ (
+    Object.freeze({
+      ...transportedFrame,
+      modalDescriptor: restoredDescriptor,
+    })
+  );
 }

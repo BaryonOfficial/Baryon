@@ -38,6 +38,19 @@ function makeRayleighSpectrum(sigma, seed = 0xdecafbad) {
 }
 
 describe("spectral evidence", () => {
+  it("keeps the audio evidence window through 12 kHz independently of spatial modal support", () => {
+    const spectrum = makeSpectrum(0);
+    writePeak(spectrum, 11900, 0.8);
+    writePeak(spectrum, 12000, 0.85);
+    writePeak(spectrum, 12500, 0.9);
+    const peaks = findCredibleSpectralPeaks(spectrum, SAMPLE_RATE, 8);
+
+    expect(SPECTRAL_EVIDENCE_POLICY.maxFrequencyHz).toBe(12000);
+    expect(peaks.some((peak) => peak.frequency > 11800)).toBe(true);
+    expect(peaks.some((peak) => peak.frequency === 12000)).toBe(true);
+    expect(peaks.every((peak) => peak.frequency <= 12000)).toBe(true);
+  });
+
   it("derives the Rayleigh family-wise threshold from the declared false-alarm budget", () => {
     const sigma = 0.0005;
     const robustStatistic =

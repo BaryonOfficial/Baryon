@@ -7,9 +7,8 @@ import {
 import { createNodeAnalyser, sampleAnalyser } from "./analyserSampler.js";
 import {
   DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
-  normalizeLiveInputAcousticIntent,
-  normalizeLiveInputAnalysisClass,
-  normalizeLiveInputAnalysisOverrides,
+  areLiveInputAnalysisSettingsEqual,
+  normalizeLiveInputAnalysisSettings,
   resolveLiveInputAnalysisClass,
 } from "./liveInputAnalysis.js";
 import {
@@ -17,146 +16,40 @@ import {
   isLoopbackLiveInputDeviceKind,
   normalizeLiveInputDeviceKind,
 } from "./inputDeviceSemantics.js";
+import {
+  areLiveInputCaptureSettingsEqual,
+  buildAcousticLiveInputConstraints,
+  buildLiveInputConstraints,
+  cloneLiveInputCaptureSettings,
+  isDefaultAudioInputDeviceId,
+  normalizeAudioDeviceLabelKey,
+  normalizeLiveInputCaptureSettings,
+} from "./liveInputCapture.js";
+import {
+  buildLiveInputTrackDiagnostics,
+  cloneLiveInputInterruptionDiagnostics,
+  clonePlaybackDiagnostics,
+} from "./audioSessionDiagnostics.js";
+import { createDecodedAudioAnalysisSource } from "./decodedAudioAnalysis.js";
+import {
+  AUDIO_SOURCE_EVENTS,
+  AUDIO_SOURCE_KINDS,
+  AUDIO_SOURCE_PHASES,
+  cloneAudioSourceSession,
+  createAudioSourceSession,
+  isPreparedFileAwaitingPlayback,
+  reduceAudioSourceSession,
+} from "./audioSourceSession.js";
+
+export {
+  AUDIO_SOURCE_KINDS,
+  AUDIO_SOURCE_PHASES,
+  isPreparedFileAwaitingPlayback,
+};
 
 const LIVE_INPUT_INTERRUPTION_MUTE_TIMEOUT_MS = 1500;
 const LIVE_INPUT_INTERRUPTION_CONTEXT_TIMEOUT_MS = 1500;
 const FAST_ANALYSIS_FFT_SIZE = 2048;
-
-function normalizeLiveInputSettings(settings = {}) {
-  return {
-    echoCancellation: Boolean(
-      settings.echoCancellation ?? AUDIO_DEFAULTS.echoCancellation,
-    ),
-    noiseSuppression: Boolean(
-      settings.noiseSuppression ?? AUDIO_DEFAULTS.noiseSuppression,
-    ),
-    autoGainControl: Boolean(
-      settings.autoGainControl ?? AUDIO_DEFAULTS.autoGainControl,
-    ),
-  };
-}
-
-function cloneLiveInputSettings(settings) {
-  return {
-    echoCancellation: Boolean(settings?.echoCancellation),
-    noiseSuppression: Boolean(settings?.noiseSuppression),
-    autoGainControl: Boolean(settings?.autoGainControl),
-  };
-}
-
-function normalizeLiveInputAnalysisSettings(
-  settings = {},
-  previous = undefined,
-) {
-  return {
-    analysisClass: normalizeLiveInputAnalysisClass(
-      settings.analysisClass ??
-        previous?.analysisClass ??
-        AUDIO_DEFAULTS.liveInputAnalysisClass,
-    ),
-    acousticIntent: normalizeLiveInputAcousticIntent(
-      settings.acousticIntent ??
-        previous?.acousticIntent ??
-        AUDIO_DEFAULTS.liveInputAcousticIntent,
-    ),
-    overrides: normalizeLiveInputAnalysisOverrides(
-      settings.overrides ?? previous?.overrides,
-    ),
-  };
-}
-
-function cloneLiveInputAnalysisSettings(settings) {
-  return {
-    analysisClass: normalizeLiveInputAnalysisClass(settings?.analysisClass),
-    acousticIntent: normalizeLiveInputAcousticIntent(settings?.acousticIntent),
-    overrides: normalizeLiveInputAnalysisOverrides(settings?.overrides),
-  };
-}
-
-function areLiveInputAnalysisSettingsEqual(left, right) {
-  const normalizedLeft = cloneLiveInputAnalysisSettings(left);
-  const normalizedRight = cloneLiveInputAnalysisSettings(right);
-  if (normalizedLeft.analysisClass !== normalizedRight.analysisClass) {
-    return false;
-  }
-  if (normalizedLeft.acousticIntent !== normalizedRight.acousticIntent) {
-    return false;
-  }
-
-  const leftKeys = Object.keys(normalizedLeft.overrides);
-  const rightKeys = Object.keys(normalizedRight.overrides);
-  if (leftKeys.length !== rightKeys.length) {
-    return false;
-  }
-
-  return leftKeys.every(
-    (key) => normalizedLeft.overrides[key] === normalizedRight.overrides[key],
-  );
-}
-
-function areLiveInputSettingsEqual(left, right) {
-  return (
-    Boolean(left?.echoCancellation) === Boolean(right?.echoCancellation) &&
-    Boolean(left?.noiseSuppression) === Boolean(right?.noiseSuppression) &&
-    Boolean(left?.autoGainControl) === Boolean(right?.autoGainControl)
-  );
-}
-
-function normalizeGetUserMediaDeviceId(deviceId) {
-  return typeof deviceId === "string" && deviceId !== "default"
-    ? deviceId
-    : null;
-}
-
-function isDefaultAudioInputDeviceId(deviceId) {
-  return deviceId == null || deviceId === "default";
-}
-
-function buildLiveConstraints(deviceId, liveInputSettings) {
-  const exactDeviceId = normalizeGetUserMediaDeviceId(deviceId);
-  return {
-    ...(exactDeviceId ? { deviceId: { exact: exactDeviceId } } : {}),
-    ...cloneLiveInputSettings(liveInputSettings),
-  };
-}
-
-function buildSystemConstraints(deviceId) {
-  const exactDeviceId = normalizeGetUserMediaDeviceId(deviceId);
-  return {
-    ...(exactDeviceId ? { deviceId: { exact: exactDeviceId } } : {}),
-    echoCancellation: false,
-    noiseSuppression: false,
-    autoGainControl: false,
-  };
-}
-
-function buildLiveInputConstraints(
-  liveInputDeviceKind,
-  deviceId,
-  liveInputSettings,
-) {
-  return isLoopbackLiveInputDeviceKind(liveInputDeviceKind)
-    ? buildSystemConstraints(deviceId)
-    : buildLiveConstraints(deviceId, liveInputSettings);
-}
-
-function normalizeAudioDeviceLabel(value) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function normalizeAudioDeviceLabelKey(value) {
-  return normalizeAudioDeviceLabel(value).toLowerCase();
-}
-
-function normalizeAudioInputMode(mode) {
-  return mode === "file" ||
-    mode === "live" ||
-    mode === "system" ||
-    mode === "stopped"
-    ? mode
-    : "idle";
-}
-
 function disconnectAudioNode(node, target = undefined) {
   if (!node?.disconnect) return;
   try {
@@ -178,59 +71,77 @@ function createAnalysisTap(audioCtx, sourceNode, fftSize) {
   };
 }
 
+function disconnectAnalysisTaps(taps) {
+  disconnectAudioNode(taps?.fast?.analyserNode);
+  disconnectAudioNode(taps?.structural?.analyserNode);
+}
+
 function createSynchronizedAnalysisTaps(
   audioCtx,
   sourceNode,
   structuralFftSize,
 ) {
-  return {
-    fast: createAnalysisTap(audioCtx, sourceNode, FAST_ANALYSIS_FFT_SIZE),
-    structural: createAnalysisTap(audioCtx, sourceNode, structuralFftSize),
-  };
+  const taps = {};
+  try {
+    taps.fast = createAnalysisTap(audioCtx, sourceNode, FAST_ANALYSIS_FFT_SIZE);
+    taps.structural = createAnalysisTap(
+      audioCtx,
+      sourceNode,
+      structuralFftSize,
+    );
+    return taps;
+  } catch (error) {
+    disconnectAnalysisTaps(taps);
+    throw error;
+  }
+}
+
+function createLiveInputAnalysisGraph(audioCtx, stream, structuralFftSize) {
+  const sourceNode = audioCtx.createMediaStreamSource(stream);
+  try {
+    return {
+      sourceNode,
+      analysisTaps: createSynchronizedAnalysisTaps(
+        audioCtx,
+        sourceNode,
+        structuralFftSize,
+      ),
+    };
+  } catch (error) {
+    disconnectAudioNode(sourceNode);
+    throw error;
+  }
+}
+
+function releaseLiveInputAnalysisGraph(graph) {
+  disconnectAnalysisTaps(graph?.analysisTaps);
+  disconnectAudioNode(graph?.sourceNode);
+}
+
+function stopMediaStreamTracks(stream) {
+  const tracks = stream?.getTracks?.() ?? stream?.getAudioTracks?.() ?? [];
+  for (const track of tracks) {
+    track.stop?.();
+  }
 }
 
 function getAnalysisSource(status) {
-  if (status.hasPlaybackAnalysisSource && status.sourceKind !== "live") {
+  if (
+    status.sourceSession.kind === AUDIO_SOURCE_KINDS.file &&
+    (status.hasPlaybackAnalysisSource ||
+      (status.hasPreparedFileAnalysisSource && status.isPlaying))
+  ) {
     return "file";
   }
-  if (status.isLiveInputActive) {
-    return isLoopbackLiveInputDeviceKind(
-      status.liveInputDeviceKind ?? status.liveInputKind,
-    )
+  if (
+    status.sourceSession.kind === AUDIO_SOURCE_KINDS.system &&
+    status.isLiveInputActive
+  ) {
+    return isLoopbackLiveInputDeviceKind(status.liveInputDeviceKind)
       ? "file"
       : "live";
   }
   return "idle";
-}
-
-function createDefaultAudioSessionBindings(instance) {
-  return {
-    attachAudio: (camera) => instance.attach(camera),
-    loadAudio: (url) => instance.loadAudio(url),
-    loadStream: (options) => instance.loadStream(options),
-    playPauseAudio: () => instance.playPauseAudio(),
-    stopAudio: () => instance.stopAudio(),
-    getTransportState: () => instance.getTransportState(),
-    seekTo: (timeSeconds) => instance.seekTo(timeSeconds),
-    setAudioVolume: (value) => instance.setVolume(value),
-    setAudioMuted: (value) => instance.setMuted(value),
-    setLiveInputSettings: (settings) => instance.setLiveInputSettings(settings),
-    setLiveInputAnalysisSettings: (settings) =>
-      instance.setLiveInputAnalysisSettings(settings),
-    startLiveInputStream: (deviceId, liveInputKind) =>
-      instance.startLiveInputStream(deviceId, liveInputKind),
-    stopLiveInputStream: () => instance.stopLiveInputStream(),
-    setAudioEndedCallback: (cb) => instance.setAudioEndedCallback(cb),
-    getIsAudioLoaded: () => instance.getIsAudioLoaded(),
-    getAnalysisState: () => instance.getAnalysisState(),
-    getStatus: () => instance.getStatus(),
-    getLiveInputSettings: () => instance.getLiveInputSettings(),
-    getLiveInputAnalysisSettings: () => instance.getLiveInputAnalysisSettings(),
-    readClockSnapshot: (elapsedTime) => instance.readClockSnapshot(elapsedTime),
-    readFeatureAnalysisCapture: (options) =>
-      instance.readFeatureAnalysisCapture(options),
-    disposeAudio: () => instance.dispose(),
-  };
 }
 
 function getAudioContextCtor() {
@@ -267,105 +178,18 @@ function getTimingNowMs() {
   return Date.now();
 }
 
-function clonePlaybackDiagnostics(diagnostics) {
-  if (!diagnostics) {
-    return null;
-  }
-
-  return {
-    ...diagnostics,
-    contextStateTransitions: Array.isArray(diagnostics.contextStateTransitions)
-      ? diagnostics.contextStateTransitions.map((transition) => ({
-          ...transition,
-        }))
-      : [],
-    lastContextStateChange: diagnostics.lastContextStateChange
-      ? { ...diagnostics.lastContextStateChange }
-      : null,
-    lastResumeAttempt: diagnostics.lastResumeAttempt
-      ? { ...diagnostics.lastResumeAttempt }
-      : null,
-  };
-}
-
-function cloneLiveInputInterruptionDiagnostics(diagnostics) {
-  return diagnostics ? { ...diagnostics } : null;
-}
-
-function cloneTrackRecord(value) {
-  if (!value || typeof value !== "object") {
-    return {};
-  }
-
-  return Object.fromEntries(
-    Object.entries(value).map(([key, entry]) => {
-      if (Array.isArray(entry)) {
-        return [key, [...entry]];
-      }
-      if (entry && typeof entry === "object") {
-        return [key, { ...entry }];
-      }
-      return [key, entry];
-    }),
-  );
-}
-
-function readTrackMethodRecord(track, methodName) {
-  try {
-    const method = track?.[methodName];
-    return typeof method === "function"
-      ? cloneTrackRecord(method.call(track))
-      : {};
-  } catch (error) {
-    return {
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-}
-
-function buildLiveInputTrackDiagnostics(track, stream) {
-  if (!track) {
-    return {
-      present: false,
-      streamActive: Boolean(stream?.active),
-      id: null,
-      label: "",
-      kind: null,
-      enabled: null,
-      muted: null,
-      readyState: null,
-      settings: {},
-      constraints: {},
-      capabilities: {},
-    };
-  }
-
-  return {
-    present: true,
-    streamActive: Boolean(stream?.active),
-    id: typeof track.id === "string" ? track.id : null,
-    label: typeof track.label === "string" ? track.label : "",
-    kind: typeof track.kind === "string" ? track.kind : null,
-    enabled: typeof track.enabled === "boolean" ? track.enabled : null,
-    muted: typeof track.muted === "boolean" ? track.muted : null,
-    readyState: typeof track.readyState === "string" ? track.readyState : null,
-    settings: readTrackMethodRecord(track, "getSettings"),
-    constraints: readTrackMethodRecord(track, "getConstraints"),
-    capabilities: readTrackMethodRecord(track, "getCapabilities"),
-  };
-}
-
 export function createAudioSession() {
   const state = {
     fftSize: DEFAULT_FFT_SIZE,
     capacity: AUDIO_SLOT_CAPACITY,
     pitchSourceMode: "spectral",
-    audioInputMode: "idle",
+    sourceSession: createAudioSourceSession(),
+    cachedFileTimelineRevision: 0,
     audioCtx: null,
     playbackOutputGain: null,
-    playbackAnalyser: null,
     activeAnalysisTaps: null,
     decodedBuffer: null,
+    decodedAnalysisSource: null,
     activeBufferSource: null,
     mediaElement: null,
     mediaElementSourceNode: null,
@@ -374,18 +198,15 @@ export function createAudioSession() {
     playbackOffsetSeconds: 0,
     playbackStartedAtSeconds: 0,
     playbackDurationSeconds: 0,
-    analyser: null,
-    liveInputAnalyser: null,
     liveInputNode: null,
     gumStream: null,
-    liveInputSettings: normalizeLiveInputSettings(),
-    appliedLiveInputSettings: normalizeLiveInputSettings(),
+    liveInputSettings: normalizeLiveInputCaptureSettings(),
+    appliedLiveInputSettings: normalizeLiveInputCaptureSettings(),
     liveInputAnalysisSettings: normalizeLiveInputAnalysisSettings(),
     selectedLiveInputDeviceId: null,
     selectedLiveInputDeviceLabel: "",
-    liveInputKind: null,
+    liveInputDeviceKind: null,
     liveInputCalibrationVersion: 0,
-    liveInputSessionId: null,
     lastLiveInputInterruption: null,
     liveInputTrackListeners: null,
     liveInputMuteTimeoutId: null,
@@ -396,7 +217,6 @@ export function createAudioSession() {
       label: "",
       sourceKind: "idle",
     },
-    playbackSourceSessionId: null,
     playbackSessionId: null,
     lastPlaybackEndReason: null,
     lastPlaybackDiagnostics: null,
@@ -405,22 +225,60 @@ export function createAudioSession() {
     audioContextStateListenerAttached: false,
   };
 
-  let isAudioLoaded = false;
   let endedCallback = null;
   let activeLiveInputSettingsSync = null;
-  let nextPlaybackSourceSessionId = 0;
   let nextPlaybackSessionId = 0;
-  let nextLiveInputSessionId = 0;
-  let playbackLoadRequestId = 0;
-  let liveInputStartRequestId = 0;
   const clockState = {
     mode: "realtime",
     previousElapsedTime: 0,
     lastKnownAudioTime: 0,
   };
 
-  function setAudioInputMode(mode) {
-    state.audioInputMode = normalizeAudioInputMode(mode);
+  function transitionSource(event) {
+    state.sourceSession = reduceAudioSourceSession(state.sourceSession, event);
+    if (state.sourceSession.kind === AUDIO_SOURCE_KINDS.file) {
+      state.cachedFileTimelineRevision = state.sourceSession.timelineRevision;
+    }
+    return state.sourceSession;
+  }
+
+  function beginSourceRequest(event, expectedPhase) {
+    const sourceSession = transitionSource(event);
+    return {
+      kind: sourceSession.kind,
+      phase: expectedPhase,
+      sessionId: sourceSession.sessionId,
+    };
+  }
+
+  function isCurrentSourceRequest(request) {
+    return Boolean(
+      request &&
+      state.sourceSession.kind === request.kind &&
+      state.sourceSession.phase === request.phase &&
+      state.sourceSession.sessionId === request.sessionId,
+    );
+  }
+
+  function failCurrentSystemRequest(request, reason) {
+    if (!isCurrentSourceRequest(request)) {
+      return false;
+    }
+    clearLiveInputRuntimeState();
+    transitionSource({
+      type: AUDIO_SOURCE_EVENTS.systemError,
+      sessionId: request.sessionId,
+      reason,
+    });
+    return true;
+  }
+
+  function currentSourceEvent(type, overrides = {}) {
+    return {
+      type,
+      sessionId: state.sourceSession.sessionId,
+      ...overrides,
+    };
   }
 
   function getEffectiveVolume() {
@@ -429,7 +287,7 @@ export function createAudioSession() {
 
   function getResolvedLiveInputAnalysisClass() {
     return resolveLiveInputAnalysisClass({
-      liveInputKind: state.liveInputKind,
+      liveInputDeviceKind: state.liveInputDeviceKind,
       selectedDeviceId: state.selectedLiveInputDeviceId,
       selectedDeviceLabel: state.selectedLiveInputDeviceLabel,
       analysisClass: state.liveInputAnalysisSettings.analysisClass,
@@ -467,6 +325,41 @@ export function createAudioSession() {
     state.lastPlaybackEndReason = null;
     state.lastPlaybackDiagnostics = null;
     state.activePlaybackDiagnostics = null;
+  }
+
+  function beginPlaybackSession({ audioCtx, sourceKind, offsetSeconds }) {
+    const startedAtContextTimeSeconds = audioCtx.currentTime;
+    const durationSeconds = normalizeDurationSeconds(
+      state.playbackDurationSeconds,
+    );
+    const expectedRemainingDurationSeconds = Math.max(
+      0,
+      durationSeconds - offsetSeconds,
+    );
+
+    state.playbackStartedAtSeconds = startedAtContextTimeSeconds;
+    state.playbackSessionId = ++nextPlaybackSessionId;
+    state.lastPlaybackEndReason = null;
+    state.activePlaybackDiagnostics = {
+      playbackSessionId: state.playbackSessionId,
+      sourceKind,
+      startedAtContextTimeSeconds,
+      startedAtWallTimeMs: getTimingNowMs(),
+      offsetSeconds,
+      durationSeconds,
+      expectedRemainingDurationSeconds,
+      expectedEndTimeSeconds:
+        startedAtContextTimeSeconds + expectedRemainingDurationSeconds,
+      audioContextStateAtStart: audioCtx.state,
+      latestAudioContextState: audioCtx.state,
+      contextStateTransitions: [],
+      lastContextStateChange: null,
+      lastResumeAttempt: null,
+    };
+    state.lastPlaybackDiagnostics = clonePlaybackDiagnostics(
+      state.activePlaybackDiagnostics,
+    );
+    transitionSource(currentSourceEvent(AUDIO_SOURCE_EVENTS.filePlayStarted));
   }
 
   function updateActivePlaybackDiagnostics(mutator) {
@@ -536,7 +429,7 @@ export function createAudioSession() {
       }
     });
 
-    if (state.audioInputMode !== "live" && state.audioInputMode !== "system") {
+    if (state.sourceSession.kind !== AUDIO_SOURCE_KINDS.system) {
       return;
     }
 
@@ -546,12 +439,12 @@ export function createAudioSession() {
     }
 
     if (nextState === "suspended") {
-      const sessionId = state.liveInputSessionId;
+      const sessionId = state.sourceSession.sessionId;
       clearLiveInputContextTimeout();
       state.liveInputContextTimeoutId = globalThis.setTimeout?.(() => {
         if (
-          state.liveInputSessionId === sessionId &&
-          (state.audioInputMode === "live" || state.audioInputMode === "system")
+          state.sourceSession.kind === AUDIO_SOURCE_KINDS.system &&
+          state.sourceSession.sessionId === sessionId
         ) {
           recoverInterruptedLiveInput("audio-context-interrupted");
         }
@@ -646,12 +539,8 @@ export function createAudioSession() {
   }
 
   function clearActiveAnalysisTap() {
-    disconnectAudioNode(state.activeAnalysisTaps?.fast?.analyserNode);
-    disconnectAudioNode(state.activeAnalysisTaps?.structural?.analyserNode);
+    disconnectAnalysisTaps(state.activeAnalysisTaps);
     state.activeAnalysisTaps = null;
-    state.playbackAnalyser = null;
-    state.liveInputAnalyser = null;
-    state.analyser = null;
   }
 
   function clearLiveInputMuteTimeout() {
@@ -686,44 +575,38 @@ export function createAudioSession() {
   }
 
   function clearLiveInputRuntimeState({ stopTracks = true } = {}) {
-    liveInputStartRequestId += 1;
     clearLiveInputMuteTimeout();
     clearLiveInputContextTimeout();
     detachLiveInputTrackListeners();
 
-    if (stopTracks && state.gumStream) {
-      state.gumStream.getAudioTracks().forEach((track) => track.stop());
+    if (stopTracks) {
+      stopMediaStreamTracks(state.gumStream);
     }
 
     activeLiveInputSettingsSync = null;
     disconnectAudioNode(state.liveInputNode);
 
-    state.liveInputAnalyser = null;
     state.liveInputNode = null;
     state.gumStream = null;
     state.selectedLiveInputDeviceId = null;
     state.selectedLiveInputDeviceLabel = "";
-    state.liveInputKind = null;
-    state.liveInputSessionId = null;
-
-    if (state.audioInputMode === "live" || state.audioInputMode === "system") {
-      setAudioInputMode("idle");
-    }
+    state.liveInputDeviceKind = null;
     clearActiveAnalysisTap();
   }
 
   function recoverInterruptedLiveInput(reason) {
-    if (state.audioInputMode !== "live" && state.audioInputMode !== "system") {
+    if (state.sourceSession.kind !== AUDIO_SOURCE_KINDS.system) {
       return;
     }
 
+    const sessionId = state.sourceSession.sessionId;
     const track = getActiveLiveInputTrack();
     const diagnostics = {
       reason,
-      sessionId: state.liveInputSessionId,
+      sessionId,
       deviceId: state.selectedLiveInputDeviceId,
       deviceLabel: state.selectedLiveInputDeviceLabel,
-      liveInputKind: state.liveInputKind,
+      liveInputDeviceKind: state.liveInputDeviceKind,
       audioContextState: state.audioCtx?.state ?? state.audioContextState,
       trackMuted: Boolean(track?.muted),
       atWallTimeMs: getTimingNowMs(),
@@ -731,6 +614,9 @@ export function createAudioSession() {
 
     clearLiveInputRuntimeState({ stopTracks: reason !== "track-ended" });
     state.lastLiveInputInterruption = diagnostics;
+    transitionSource(
+      currentSourceEvent(AUDIO_SOURCE_EVENTS.systemError, { reason }),
+    );
   }
 
   function attachLiveInputTrackListeners(track, sessionId) {
@@ -739,18 +625,25 @@ export function createAudioSession() {
     }
 
     const handleEnded = () => {
-      if (state.liveInputSessionId === sessionId) {
+      if (
+        state.sourceSession.kind === AUDIO_SOURCE_KINDS.system &&
+        state.sourceSession.sessionId === sessionId
+      ) {
         recoverInterruptedLiveInput("track-ended");
       }
     };
     const handleMute = () => {
-      if (state.liveInputSessionId !== sessionId) {
+      if (
+        state.sourceSession.kind !== AUDIO_SOURCE_KINDS.system ||
+        state.sourceSession.sessionId !== sessionId
+      ) {
         return;
       }
       clearLiveInputMuteTimeout();
       state.liveInputMuteTimeoutId = globalThis.setTimeout?.(() => {
         if (
-          state.liveInputSessionId === sessionId &&
+          state.sourceSession.kind === AUDIO_SOURCE_KINDS.system &&
+          state.sourceSession.sessionId === sessionId &&
           getActiveLiveInputTrack()?.muted === true
         ) {
           recoverInterruptedLiveInput("track-muted-timeout");
@@ -758,7 +651,10 @@ export function createAudioSession() {
       }, LIVE_INPUT_INTERRUPTION_MUTE_TIMEOUT_MS);
     };
     const handleUnmute = () => {
-      if (state.liveInputSessionId === sessionId) {
+      if (
+        state.sourceSession.kind === AUDIO_SOURCE_KINDS.system &&
+        state.sourceSession.sessionId === sessionId
+      ) {
         clearLiveInputMuteTimeout();
       }
     };
@@ -774,16 +670,13 @@ export function createAudioSession() {
     };
   }
 
-  function replaceActiveAnalysisTap(taps, targetKind) {
+  function hasActiveAnalysisTap(sourceKind) {
+    return state.activeAnalysisTaps?.sourceKind === sourceKind;
+  }
+
+  function replaceActiveAnalysisTap(taps, sourceKind) {
     clearActiveAnalysisTap();
-    state.activeAnalysisTaps = taps;
-    state.analyser = taps.structural.reader;
-    if (targetKind === "live") {
-      state.liveInputAnalyser = taps.structural.reader;
-    } else {
-      state.playbackAnalyser = taps.structural.reader;
-    }
-    return taps.structural.reader;
+    state.activeAnalysisTaps = { ...taps, sourceKind };
   }
 
   function applyOutputVolume() {
@@ -795,6 +688,16 @@ export function createAudioSession() {
   function resetPlaybackPosition(nextOffsetSeconds = 0) {
     state.playbackOffsetSeconds = nextOffsetSeconds;
     clockState.lastKnownAudioTime = nextOffsetSeconds;
+  }
+
+  function hasLoadedPlaybackSource() {
+    return state.loadedPlaybackSourceKind !== "none";
+  }
+
+  function hasLoadedBufferSource() {
+    return (
+      state.loadedPlaybackSourceKind === "file" && Boolean(state.decodedBuffer)
+    );
   }
 
   function isStreamSourcePlaying() {
@@ -880,7 +783,11 @@ export function createAudioSession() {
     pauseMediaElement(element);
     setMediaElementTime(element, 0);
     resetPlaybackPosition();
-    setAudioInputMode("stopped");
+    transitionSource(
+      currentSourceEvent(AUDIO_SOURCE_EVENTS.fileEnded, {
+        reason: "natural",
+      }),
+    );
     finalizePlaybackDiagnostics("natural", {
       playbackSessionId:
         state.playbackSessionId ??
@@ -935,12 +842,12 @@ export function createAudioSession() {
   }
 
   function clearLoadedPlaybackState() {
-    playbackLoadRequestId += 1;
     clearActiveBufferSource();
     if (state.mediaElement) {
       pauseMediaElement(state.mediaElement);
     }
     state.decodedBuffer = null;
+    state.decodedAnalysisSource = null;
     state.loadedPlaybackSourceKind = "none";
     state.playbackDurationSeconds = 0;
     state.sourceMetadata = {
@@ -948,13 +855,23 @@ export function createAudioSession() {
       sourceKind: "idle",
     };
     resetPlaybackPosition();
-    isAudioLoaded = false;
-    state.playbackSourceSessionId = null;
     state.playbackSessionId = null;
     state.activePlaybackDiagnostics = null;
-    if (state.audioInputMode !== "live") {
-      setAudioInputMode("idle");
+  }
+
+  function transitionPausedOrStoppedPlayback(stoppedMode, endReason) {
+    if (state.sourceSession.kind !== AUDIO_SOURCE_KINDS.file) {
+      return;
     }
+    if (stoppedMode === "stopped" || endReason === "stopped") {
+      transitionSource(
+        currentSourceEvent(AUDIO_SOURCE_EVENTS.fileStopped, {
+          reason: endReason ?? "stopped",
+        }),
+      );
+      return;
+    }
+    transitionSource(currentSourceEvent(AUDIO_SOURCE_EVENTS.filePaused));
   }
 
   function stopBufferPlayback({
@@ -1001,11 +918,7 @@ export function createAudioSession() {
       state.activePlaybackDiagnostics = null;
     }
 
-    if (stoppedMode) {
-      setAudioInputMode(stoppedMode);
-    } else if (state.audioInputMode === "file") {
-      setAudioInputMode("idle");
-    }
+    transitionPausedOrStoppedPlayback(stoppedMode, endReason);
   }
 
   function stopStreamPlayback({
@@ -1041,11 +954,7 @@ export function createAudioSession() {
       });
     }
 
-    if (stoppedMode) {
-      setAudioInputMode(stoppedMode);
-    } else if (state.audioInputMode === "file") {
-      setAudioInputMode("idle");
-    }
+    transitionPausedOrStoppedPlayback(stoppedMode, endReason);
   }
 
   function stopPlayback({
@@ -1072,11 +981,7 @@ export function createAudioSession() {
       });
     }
 
-    if (stoppedMode) {
-      setAudioInputMode(stoppedMode);
-    } else if (state.audioInputMode === "file") {
-      setAudioInputMode("idle");
-    }
+    transitionPausedOrStoppedPlayback(stoppedMode, endReason);
   }
 
   function handleBufferEnded(source) {
@@ -1115,10 +1020,14 @@ export function createAudioSession() {
     clearActiveBufferSource();
     if (endReason === "natural") {
       resetPlaybackPosition();
-      setAudioInputMode("stopped");
+      transitionSource(
+        currentSourceEvent(AUDIO_SOURCE_EVENTS.fileEnded, {
+          reason: "natural",
+        }),
+      );
     } else {
       resetPlaybackPosition(playbackTime);
-      setAudioInputMode("idle");
+      transitionSource(currentSourceEvent(AUDIO_SOURCE_EVENTS.filePaused));
     }
     finalizePlaybackDiagnostics(endReason, {
       endedAtContextTimeSeconds: audioCtx?.currentTime ?? 0,
@@ -1137,59 +1046,68 @@ export function createAudioSession() {
       state.activeBufferSource || isStreamSourcePlaying(),
     );
     const hasPlaybackAnalysisSource = Boolean(
-      state.playbackAnalyser && hasActivePlaybackSource,
+      hasActiveAnalysisTap("playback") && hasActivePlaybackSource,
     );
-    const isPlaying = hasActivePlaybackSource;
+    const hasPreparedFileAnalysisSource = Boolean(
+      state.loadedPlaybackSourceKind === "file" &&
+      state.decodedBuffer &&
+      state.decodedAnalysisSource,
+    );
+    const isPlaying = Boolean(
+      state.sourceSession.kind === AUDIO_SOURCE_KINDS.file &&
+      hasActivePlaybackSource,
+    );
     const isLiveInputActive = Boolean(
-      state.gumStream?.active && state.liveInputAnalyser,
+      state.sourceSession.kind === AUDIO_SOURCE_KINDS.system &&
+      state.sourceSession.phase === AUDIO_SOURCE_PHASES.active &&
+      state.gumStream?.active &&
+      hasActiveAnalysisTap("live"),
     );
+    const isAudioLoaded = hasLoadedPlaybackSource();
     const isPlaybackPaused = Boolean(
       isAudioLoaded &&
       !isPlaying &&
-      !isLiveInputActive &&
-      state.audioInputMode === "idle" &&
-      state.playbackOffsetSeconds > 0 &&
+      state.sourceSession.kind === AUDIO_SOURCE_KINDS.file &&
+      state.sourceSession.phase === AUDIO_SOURCE_PHASES.paused &&
       state.lastPlaybackEndReason == null,
     );
     const liveInputTrack = getActiveLiveInputTrack();
     const liveInputDeviceKind = isLiveInputActive
-      ? normalizeLiveInputDeviceKind(state.liveInputKind)
+      ? normalizeLiveInputDeviceKind(state.liveInputDeviceKind)
       : null;
-    const sourceKind = isLiveInputActive
-      ? isLoopbackLiveInputDeviceKind(liveInputDeviceKind)
-        ? "system"
-        : "live"
-      : state.loadedPlaybackSourceKind === "stream"
-        ? state.sourceMetadata.sourceKind || "stream"
-        : state.loadedPlaybackSourceKind === "file"
-          ? "file"
-          : "idle";
+    const sourceSession = cloneAudioSourceSession(state.sourceSession);
     const analysisSource = getAnalysisSource({
       hasPlaybackAnalysisSource,
+      hasPreparedFileAnalysisSource,
+      isPlaying,
       isLiveInputActive,
-      liveInputKind: liveInputDeviceKind,
       liveInputDeviceKind,
-      sourceKind,
+      sourceKind: sourceSession.kind,
+      sourceSession,
     });
 
     return {
-      audioInputMode: state.audioInputMode,
+      sourceSession,
       analysisSource,
       pitchSourceMode: state.pitchSourceMode,
       fastFftSize: FAST_ANALYSIS_FFT_SIZE,
       fftSize: state.fftSize,
       capacity: state.capacity,
-      sampleRate: state.audioCtx?.sampleRate ?? DEFAULT_SAMPLE_RATE,
+      sampleRate:
+        state.decodedBuffer?.sampleRate ??
+        state.audioCtx?.sampleRate ??
+        DEFAULT_SAMPLE_RATE,
       isAudioLoaded,
       isPlaying,
       isPlaybackPaused,
       isLiveInputActive,
       hasPlaybackAnalysisSource,
+      hasPreparedFileAnalysisSource,
       hasAnalysisSource: analysisSource !== "idle",
       workerStatus: null,
       volume: state.volume,
       muted: state.muted,
-      liveInputSettings: cloneLiveInputSettings(state.liveInputSettings),
+      liveInputSettings: cloneLiveInputCaptureSettings(state.liveInputSettings),
       liveInputAnalysisClass:
         state.liveInputAnalysisSettings.analysisClass ??
         DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
@@ -1199,19 +1117,15 @@ export function createAudioSession() {
       resolvedLiveInputAnalysisClass: isLiveInputActive
         ? getResolvedLiveInputAnalysisClass()
         : null,
-      liveInputKind: liveInputDeviceKind,
       liveInputDeviceKind,
       liveInputCalibrationVersion: state.liveInputCalibrationVersion,
-      liveInputSessionId: state.liveInputSessionId,
       selectedLiveInputDeviceId: state.selectedLiveInputDeviceId,
       selectedLiveInputDeviceLabel: state.selectedLiveInputDeviceLabel,
       liveInputTrack: buildLiveInputTrackDiagnostics(
         liveInputTrack,
         state.gumStream,
       ),
-      sourceKind,
       sourceLabel: state.sourceMetadata.label || "",
-      playbackSourceSessionId: state.playbackSourceSessionId,
       playbackSessionId:
         state.playbackSessionId ??
         state.lastPlaybackDiagnostics?.playbackSessionId ??
@@ -1230,31 +1144,14 @@ export function createAudioSession() {
     );
     const currentTimeSeconds = clampPlaybackTime(getCurrentPlaybackTime());
     const canSeek =
-      isAudioLoaded &&
-      !(state.gumStream?.active && state.liveInputAnalyser) &&
-      durationSeconds > 0 &&
-      state.loadedPlaybackSourceKind !== "none";
+      hasLoadedPlaybackSource() &&
+      !(state.gumStream?.active && hasActiveAnalysisTap("live")) &&
+      durationSeconds > 0;
 
     return {
       currentTimeSeconds,
       durationSeconds,
       canSeek,
-    };
-  }
-
-  function getAnalysisState() {
-    const status = getStatus();
-    return {
-      audioInputMode: status.audioInputMode,
-      pitchSourceMode: status.pitchSourceMode,
-      workerStatus: status.workerStatus,
-      liveInputAnalysisClass:
-        status.liveInputAnalysisClass ?? DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
-      liveInputAcousticIntent:
-        status.liveInputAcousticIntent ??
-        AUDIO_DEFAULTS.liveInputAcousticIntent,
-      resolvedLiveInputAnalysisClass:
-        status.resolvedLiveInputAnalysisClass ?? null,
     };
   }
 
@@ -1303,7 +1200,8 @@ export function createAudioSession() {
     if (
       state.playbackOffsetSeconds > 0 &&
       status.isAudioLoaded &&
-      status.audioInputMode === "idle"
+      status.sourceSession.kind === AUDIO_SOURCE_KINDS.file &&
+      status.sourceSession.phase === AUDIO_SOURCE_PHASES.paused
     ) {
       clockState.mode = "paused-playback";
       clockState.previousElapsedTime = elapsedTime;
@@ -1318,30 +1216,65 @@ export function createAudioSession() {
     return updateRealtimeClock(elapsedTime, "realtime");
   }
 
-  function attach(_camera) {
-    void _camera;
-  }
-
   function setAudioEndedCallback(callback) {
     endedCallback = callback;
+  }
+
+  function getReturnedFilePhase() {
+    if (!hasLoadedPlaybackSource()) {
+      return AUDIO_SOURCE_PHASES.empty;
+    }
+    return AUDIO_SOURCE_PHASES.ready;
+  }
+
+  function selectSource(kind) {
+    const nextKind =
+      kind === AUDIO_SOURCE_KINDS.system
+        ? AUDIO_SOURCE_KINDS.system
+        : AUDIO_SOURCE_KINDS.file;
+    if (state.sourceSession.kind === nextKind) {
+      return cloneAudioSourceSession(state.sourceSession);
+    }
+
+    if (nextKind === AUDIO_SOURCE_KINDS.system) {
+      if (state.activeBufferSource || isStreamSourcePlaying()) {
+        stopPlayback({ resetOffset: false });
+      }
+      clearLiveInputRuntimeState();
+      transitionSource({
+        type: AUDIO_SOURCE_EVENTS.select,
+        kind: AUDIO_SOURCE_KINDS.system,
+        phase: AUDIO_SOURCE_PHASES.ready,
+      });
+    } else {
+      clearLiveInputRuntimeState();
+      transitionSource({
+        type: AUDIO_SOURCE_EVENTS.select,
+        kind: AUDIO_SOURCE_KINDS.file,
+        phase: getReturnedFilePhase(),
+        timelineRevision: state.cachedFileTimelineRevision,
+      });
+    }
+
+    return cloneAudioSourceSession(state.sourceSession);
   }
 
   async function loadAudio(url) {
     ensurePlaybackAudioGraph();
     resetPlaybackDiagnostics();
 
-    if (state.gumStream?.active) {
-      stopLiveInputStream();
-    }
+    clearLiveInputRuntimeState();
 
     stopPlayback({ resetOffset: true });
     clearLoadedPlaybackState();
-    const requestId = ++playbackLoadRequestId;
-    setAudioInputMode("file");
+    const sourceRequest = beginSourceRequest(
+      { type: AUDIO_SOURCE_EVENTS.fileLoadStarted },
+      AUDIO_SOURCE_PHASES.loading,
+    );
 
     try {
       const response = await fetch(url);
-      if (requestId !== playbackLoadRequestId) {
+      if (!isCurrentSourceRequest(sourceRequest)) {
         return false;
       }
       if (!response.ok) {
@@ -1349,15 +1282,22 @@ export function createAudioSession() {
       }
 
       const arrayBuffer = await response.arrayBuffer();
-      if (requestId !== playbackLoadRequestId) {
+      if (!isCurrentSourceRequest(sourceRequest)) {
         return false;
       }
       const decodedBuffer =
         await ensureAudioContext().decodeAudioData(arrayBuffer);
-      if (requestId !== playbackLoadRequestId) {
+      if (!isCurrentSourceRequest(sourceRequest)) {
         return false;
       }
       state.decodedBuffer = decodedBuffer;
+      state.decodedAnalysisSource = createDecodedAudioAnalysisSource(
+        decodedBuffer,
+        {
+          fastFftSize: FAST_ANALYSIS_FFT_SIZE,
+          structuralFftSize: state.fftSize,
+        },
+      );
       state.loadedPlaybackSourceKind = "file";
       state.playbackDurationSeconds = normalizeDurationSeconds(
         decodedBuffer.duration,
@@ -1366,16 +1306,19 @@ export function createAudioSession() {
         label: "",
         sourceKind: "file",
       };
-      state.playbackSourceSessionId = ++nextPlaybackSourceSessionId;
       resetPlaybackPosition();
       applyOutputVolume();
-      isAudioLoaded = true;
+      transitionSource(currentSourceEvent(AUDIO_SOURCE_EVENTS.fileLoadReady));
       return true;
     } catch (error) {
-      if (requestId !== playbackLoadRequestId) {
+      if (!isCurrentSourceRequest(sourceRequest)) {
         return false;
       }
-      setAudioInputMode("idle");
+      transitionSource(
+        currentSourceEvent(AUDIO_SOURCE_EVENTS.fileError, {
+          reason: error instanceof Error ? error.message : "load-error",
+        }),
+      );
       throw error;
     }
   }
@@ -1395,12 +1338,14 @@ export function createAudioSession() {
     ensurePlaybackAudioGraph();
     resetPlaybackDiagnostics();
 
-    if (state.gumStream?.active) {
-      stopLiveInputStream();
-    }
+    clearLiveInputRuntimeState();
 
     stopPlayback({ resetOffset: true });
     clearLoadedPlaybackState();
+    beginSourceRequest(
+      { type: AUDIO_SOURCE_EVENTS.fileLoadStarted },
+      AUDIO_SOURCE_PHASES.loading,
+    );
     ensureStreamBinding(element);
 
     state.loadedPlaybackSourceKind = "stream";
@@ -1411,22 +1356,20 @@ export function createAudioSession() {
       label: String(label).trim(),
       sourceKind: String(sourceKind || "stream"),
     };
-    state.playbackSourceSessionId = ++nextPlaybackSourceSessionId;
     resetPlaybackPosition(getMediaElementPlaybackTime(element));
     applyOutputVolume();
-    isAudioLoaded = true;
-    setAudioInputMode("file");
+    transitionSource(currentSourceEvent(AUDIO_SOURCE_EVENTS.fileLoadReady));
   }
 
   async function startBufferPlayback(
     offsetSeconds = state.playbackOffsetSeconds,
   ) {
-    if (!isAudioLoaded || !state.decodedBuffer) {
+    if (!hasLoadedBufferSource()) {
       return false;
     }
 
-    if (state.gumStream?.active) {
-      stopLiveInputStream();
+    if (state.sourceSession.kind !== AUDIO_SOURCE_KINDS.file) {
+      selectSource(AUDIO_SOURCE_KINDS.file);
     }
 
     const audioCtx = ensureAudioContext();
@@ -1438,10 +1381,6 @@ export function createAudioSession() {
 
     const source = audioCtx.createBufferSource();
     source.buffer = state.decodedBuffer;
-    replaceActiveAnalysisTap(
-      createSynchronizedAnalysisTaps(audioCtx, source, state.fftSize),
-      "playback",
-    );
     source.connect(state.playbackOutputGain);
     source.onended = () => {
       handleBufferEnded(source);
@@ -1452,34 +1391,12 @@ export function createAudioSession() {
       Math.max(0, state.playbackDurationSeconds - 1e-4),
     );
     resetPlaybackPosition(nextOffset);
-    state.playbackStartedAtSeconds = audioCtx.currentTime;
-    state.playbackSessionId = ++nextPlaybackSessionId;
-    state.lastPlaybackEndReason = null;
-    state.activePlaybackDiagnostics = {
-      playbackSessionId: state.playbackSessionId,
+    beginPlaybackSession({
+      audioCtx,
       sourceKind: "file",
-      startedAtContextTimeSeconds: audioCtx.currentTime,
-      startedAtWallTimeMs: getTimingNowMs(),
       offsetSeconds: nextOffset,
-      durationSeconds: normalizeDurationSeconds(state.playbackDurationSeconds),
-      expectedRemainingDurationSeconds: Math.max(
-        0,
-        state.playbackDurationSeconds - nextOffset,
-      ),
-      expectedEndTimeSeconds:
-        audioCtx.currentTime +
-        Math.max(0, state.playbackDurationSeconds - nextOffset),
-      audioContextStateAtStart: audioCtx.state,
-      latestAudioContextState: audioCtx.state,
-      contextStateTransitions: [],
-      lastContextStateChange: null,
-      lastResumeAttempt: null,
-    };
-    state.lastPlaybackDiagnostics = clonePlaybackDiagnostics(
-      state.activePlaybackDiagnostics,
-    );
+    });
     state.activeBufferSource = source;
-    setAudioInputMode("file");
     source.start(0, nextOffset);
     return true;
   }
@@ -1508,33 +1425,11 @@ export function createAudioSession() {
     const offsetSeconds = clampPlaybackTime(
       getMediaElementPlaybackTime(element),
     );
-    state.playbackStartedAtSeconds = streamAudioCtx.currentTime;
-    state.playbackSessionId = ++nextPlaybackSessionId;
-    state.lastPlaybackEndReason = null;
-    state.activePlaybackDiagnostics = {
-      playbackSessionId: state.playbackSessionId,
+    beginPlaybackSession({
+      audioCtx: streamAudioCtx,
       sourceKind: state.sourceMetadata.sourceKind || "stream",
-      startedAtContextTimeSeconds: streamAudioCtx.currentTime,
-      startedAtWallTimeMs: getTimingNowMs(),
       offsetSeconds,
-      durationSeconds: normalizeDurationSeconds(state.playbackDurationSeconds),
-      expectedRemainingDurationSeconds: Math.max(
-        0,
-        state.playbackDurationSeconds - offsetSeconds,
-      ),
-      expectedEndTimeSeconds:
-        streamAudioCtx.currentTime +
-        Math.max(0, state.playbackDurationSeconds - offsetSeconds),
-      audioContextStateAtStart: streamAudioCtx.state,
-      latestAudioContextState: streamAudioCtx.state,
-      contextStateTransitions: [],
-      lastContextStateChange: null,
-      lastResumeAttempt: null,
-    };
-    state.lastPlaybackDiagnostics = clonePlaybackDiagnostics(
-      state.activePlaybackDiagnostics,
-    );
-    setAudioInputMode("file");
+    });
     return true;
   }
 
@@ -1554,11 +1449,15 @@ export function createAudioSession() {
       return false;
     }
 
+    if (state.sourceSession.kind !== AUDIO_SOURCE_KINDS.file) {
+      selectSource(AUDIO_SOURCE_KINDS.file);
+    }
+
     if (state.loadedPlaybackSourceKind === "stream" && state.mediaElement) {
       return startStreamPlayback(state.mediaElement);
     }
 
-    if (!isAudioLoaded || !state.decodedBuffer) {
+    if (!hasLoadedBufferSource()) {
       return false;
     }
 
@@ -1576,12 +1475,16 @@ export function createAudioSession() {
         stoppedMode: "stopped",
         endReason: "stopped",
       });
-    } else if (state.audioInputMode === "file") {
+    } else if (state.sourceSession.kind === AUDIO_SOURCE_KINDS.file) {
       finalizePlaybackDiagnostics("stopped", {
         endedAtContextTimeSeconds: state.audioCtx?.currentTime ?? 0,
         endedAtPlaybackTimeSeconds: 0,
       });
-      setAudioInputMode("stopped");
+      transitionSource(
+        currentSourceEvent(AUDIO_SOURCE_EVENTS.fileStopped, {
+          reason: "stopped",
+        }),
+      );
     }
   }
 
@@ -1612,6 +1515,9 @@ export function createAudioSession() {
       }
       setMediaElementTime(state.mediaElement, nextTimeSeconds);
       resetPlaybackPosition(nextTimeSeconds);
+      transitionSource(
+        currentSourceEvent(AUDIO_SOURCE_EVENTS.fileTimelineChanged),
+      );
       return true;
     }
 
@@ -1637,13 +1543,16 @@ export function createAudioSession() {
     }
 
     resetPlaybackPosition(nextTimeSeconds);
+    transitionSource(
+      currentSourceEvent(AUDIO_SOURCE_EVENTS.fileTimelineChanged),
+    );
 
     if (wasPlaying) {
       return startBufferPlayback(nextTimeSeconds);
     }
 
-    if (state.audioInputMode === "file") {
-      setAudioInputMode("idle");
+    if (state.sourceSession.kind === AUDIO_SOURCE_KINDS.file) {
+      transitionSource(currentSourceEvent(AUDIO_SOURCE_EVENTS.filePaused));
     }
 
     return true;
@@ -1652,48 +1561,53 @@ export function createAudioSession() {
   async function applyLiveInputSettingsToActiveStream(targetSettings) {
     const track = state.gumStream?.getAudioTracks?.()?.[0];
     const resolvedLiveInputDeviceKind = normalizeLiveInputDeviceKind(
-      state.liveInputKind,
+      state.liveInputDeviceKind,
     );
 
     if (isLoopbackLiveInputDeviceKind(resolvedLiveInputDeviceKind)) {
-      state.appliedLiveInputSettings = cloneLiveInputSettings(targetSettings);
-      return cloneLiveInputSettings(state.appliedLiveInputSettings);
+      state.appliedLiveInputSettings =
+        cloneLiveInputCaptureSettings(targetSettings);
+      return cloneLiveInputCaptureSettings(state.appliedLiveInputSettings);
     }
 
     if (!track) {
-      state.appliedLiveInputSettings = cloneLiveInputSettings(targetSettings);
-      return cloneLiveInputSettings(state.appliedLiveInputSettings);
+      state.appliedLiveInputSettings =
+        cloneLiveInputCaptureSettings(targetSettings);
+      return cloneLiveInputCaptureSettings(state.appliedLiveInputSettings);
     }
 
     if (typeof track.applyConstraints === "function") {
-      await track.applyConstraints(buildLiveConstraints(null, targetSettings));
-      state.appliedLiveInputSettings = cloneLiveInputSettings(targetSettings);
-      return cloneLiveInputSettings(state.appliedLiveInputSettings);
+      await track.applyConstraints(
+        buildAcousticLiveInputConstraints(null, targetSettings),
+      );
+      state.appliedLiveInputSettings =
+        cloneLiveInputCaptureSettings(targetSettings);
+      return cloneLiveInputCaptureSettings(state.appliedLiveInputSettings);
     }
 
     const selectedDeviceId = state.selectedLiveInputDeviceId;
     stopLiveInputStream();
     await startLiveInputStream(selectedDeviceId, resolvedLiveInputDeviceKind);
-    state.appliedLiveInputSettings = cloneLiveInputSettings(
+    state.appliedLiveInputSettings = cloneLiveInputCaptureSettings(
       state.liveInputSettings,
     );
-    return cloneLiveInputSettings(state.appliedLiveInputSettings);
+    return cloneLiveInputCaptureSettings(state.appliedLiveInputSettings);
   }
 
   async function setLiveInputSettings(nextSettings) {
-    const normalized = normalizeLiveInputSettings(nextSettings);
-    if (areLiveInputSettingsEqual(state.liveInputSettings, normalized)) {
-      return cloneLiveInputSettings(state.liveInputSettings);
+    const normalized = normalizeLiveInputCaptureSettings(nextSettings);
+    if (areLiveInputCaptureSettingsEqual(state.liveInputSettings, normalized)) {
+      return cloneLiveInputCaptureSettings(state.liveInputSettings);
     }
 
     state.liveInputSettings = normalized;
     if (!state.gumStream?.active) {
-      return cloneLiveInputSettings(state.liveInputSettings);
+      return cloneLiveInputCaptureSettings(state.liveInputSettings);
     }
 
     while (
       state.gumStream?.active &&
-      !areLiveInputSettingsEqual(
+      !areLiveInputCaptureSettingsEqual(
         state.appliedLiveInputSettings,
         state.liveInputSettings,
       )
@@ -1703,7 +1617,9 @@ export function createAudioSession() {
         continue;
       }
 
-      const targetSettings = cloneLiveInputSettings(state.liveInputSettings);
+      const targetSettings = cloneLiveInputCaptureSettings(
+        state.liveInputSettings,
+      );
       activeLiveInputSettingsSync =
         applyLiveInputSettingsToActiveStream(targetSettings);
       try {
@@ -1713,15 +1629,15 @@ export function createAudioSession() {
       }
     }
 
-    return cloneLiveInputSettings(state.liveInputSettings);
+    return cloneLiveInputCaptureSettings(state.liveInputSettings);
   }
 
   function getLiveInputSettings() {
-    return cloneLiveInputSettings(state.liveInputSettings);
+    return cloneLiveInputCaptureSettings(state.liveInputSettings);
   }
 
   function getLiveInputAnalysisSettings() {
-    return cloneLiveInputAnalysisSettings(state.liveInputAnalysisSettings);
+    return normalizeLiveInputAnalysisSettings(state.liveInputAnalysisSettings);
   }
 
   function setLiveInputAnalysisSettings(nextSettings) {
@@ -1735,46 +1651,107 @@ export function createAudioSession() {
         normalized,
       )
     ) {
-      return cloneLiveInputAnalysisSettings(state.liveInputAnalysisSettings);
+      return normalizeLiveInputAnalysisSettings(
+        state.liveInputAnalysisSettings,
+      );
     }
 
     state.liveInputAnalysisSettings = normalized;
     if (
       state.gumStream?.active &&
-      normalizeLiveInputDeviceKind(state.liveInputKind) ===
+      normalizeLiveInputDeviceKind(state.liveInputDeviceKind) ===
         LIVE_INPUT_DEVICE_KINDS.acousticMic
     ) {
       state.liveInputCalibrationVersion += 1;
     }
-    return cloneLiveInputAnalysisSettings(state.liveInputAnalysisSettings);
+    return normalizeLiveInputAnalysisSettings(state.liveInputAnalysisSettings);
+  }
+
+  function installLiveInputStream(
+    stream,
+    { deviceId, liveInputDeviceKind, sessionId },
+  ) {
+    const audioCtx = ensureAudioContext();
+    let graph = null;
+
+    try {
+      graph = createLiveInputAnalysisGraph(audioCtx, stream, state.fftSize);
+      const track = stream.getAudioTracks?.()?.[0] ?? null;
+
+      if (
+        state.sourceSession.kind !== AUDIO_SOURCE_KINDS.system ||
+        state.sourceSession.phase !== AUDIO_SOURCE_PHASES.starting ||
+        state.sourceSession.sessionId !== sessionId
+      ) {
+        releaseLiveInputAnalysisGraph(graph);
+        stopMediaStreamTracks(stream);
+        return null;
+      }
+
+      // Acquire and build the replacement before releasing the current input.
+      // Once the replacement is known-good, this is the single cutover point
+      // for stream, analysis-tap, and System capture ownership.
+      clearLiveInputRuntimeState();
+      state.gumStream = stream;
+      state.liveInputNode = graph.sourceNode;
+      state.selectedLiveInputDeviceId = deviceId ?? null;
+      state.liveInputDeviceKind = liveInputDeviceKind;
+      state.selectedLiveInputDeviceLabel = String(track?.label ?? "").trim();
+      state.lastLiveInputInterruption = null;
+      replaceActiveAnalysisTap(graph.analysisTaps, "live");
+      attachLiveInputTrackListeners(track, sessionId);
+      state.appliedLiveInputSettings = cloneLiveInputCaptureSettings(
+        state.liveInputSettings,
+      );
+      transitionSource({
+        type: AUDIO_SOURCE_EVENTS.systemActive,
+        sessionId,
+        capture: {
+          deviceKind: liveInputDeviceKind,
+          deviceId: deviceId ?? null,
+          deviceLabel: state.selectedLiveInputDeviceLabel,
+        },
+      });
+      if (liveInputDeviceKind === LIVE_INPUT_DEVICE_KINDS.acousticMic) {
+        state.liveInputCalibrationVersion += 1;
+      }
+      return audioCtx;
+    } catch (error) {
+      if (state.gumStream === stream) {
+        clearLiveInputRuntimeState();
+      } else {
+        releaseLiveInputAnalysisGraph(graph);
+        stopMediaStreamTracks(stream);
+      }
+      throw error;
+    }
   }
 
   /**
    * @param {string | null | undefined} deviceId
-   * @param {import("./inputDeviceSemantics.js").LiveInputDeviceKind} [liveInputKind]
+   * @param {import("./inputDeviceSemantics.js").LiveInputDeviceKind} [liveInputDeviceKind]
    * @param {string | null | undefined} [deviceLabel]
    */
   async function startLiveInputStream(
     deviceId,
-    liveInputKind = LIVE_INPUT_DEVICE_KINDS.acousticMic,
+    liveInputDeviceKind = LIVE_INPUT_DEVICE_KINDS.acousticMic,
     deviceLabel = null,
   ) {
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error("getUserMedia not supported");
     }
 
-    if (
-      state.loadedPlaybackSourceKind !== "none" ||
-      state.playbackOffsetSeconds > 0
-    ) {
-      stopAudio();
-      clearLoadedPlaybackState();
+    if (state.activeBufferSource || isStreamSourcePlaying()) {
+      stopPlayback({ resetOffset: false });
     }
 
-    const requestId = ++liveInputStartRequestId;
+    const sourceRequest = beginSourceRequest(
+      { type: AUDIO_SOURCE_EVENTS.systemStarting },
+      AUDIO_SOURCE_PHASES.starting,
+    );
 
     const resolvedLiveInputDeviceKind =
-      normalizeLiveInputDeviceKind(liveInputKind);
+      normalizeLiveInputDeviceKind(liveInputDeviceKind);
     let resolvedDeviceId = deviceId ?? null;
     if (
       !isDefaultAudioInputDeviceId(resolvedDeviceId) &&
@@ -1784,7 +1761,7 @@ export function createAudioSession() {
         const availableAudioInputs = (
           await navigator.mediaDevices.enumerateDevices()
         ).filter((device) => device?.kind === "audioinput");
-        if (requestId !== liveInputStartRequestId) {
+        if (!isCurrentSourceRequest(sourceRequest)) {
           return false;
         }
         const hasExactDeviceId =
@@ -1808,6 +1785,9 @@ export function createAudioSession() {
         // Preserve the requested device id if local enumeration is unavailable.
       }
     }
+    if (!isCurrentSourceRequest(sourceRequest)) {
+      return false;
+    }
     const constraints = {
       audio: buildLiveInputConstraints(
         resolvedLiveInputDeviceKind,
@@ -1819,49 +1799,37 @@ export function createAudioSession() {
     try {
       stream = await navigator.mediaDevices.getUserMedia(constraints);
     } catch (error) {
-      if (requestId !== liveInputStartRequestId) {
+      if (
+        !failCurrentSystemRequest(
+          sourceRequest,
+          error instanceof Error ? error.message : "capture-error",
+        )
+      ) {
         return false;
       }
       throw error;
     }
-    if (requestId !== liveInputStartRequestId) {
-      const tracks = stream.getTracks?.() ?? stream.getAudioTracks?.() ?? [];
-      tracks.forEach((track) => track.stop?.());
+    if (!isCurrentSourceRequest(sourceRequest)) {
+      stopMediaStreamTracks(stream);
       return false;
     }
-    detachLiveInputTrackListeners();
-    clearLiveInputMuteTimeout();
-    clearLiveInputContextTimeout();
-    const liveInputSessionId = ++nextLiveInputSessionId;
-    state.gumStream = stream;
-    state.selectedLiveInputDeviceId = resolvedDeviceId ?? null;
-    state.liveInputKind = resolvedLiveInputDeviceKind;
-    state.selectedLiveInputDeviceLabel =
-      stream.getAudioTracks?.()?.[0]?.label?.trim?.() ?? "";
-    state.liveInputSessionId = liveInputSessionId;
-    state.lastLiveInputInterruption = null;
-    attachLiveInputTrackListeners(
-      stream.getAudioTracks?.()?.[0] ?? null,
-      liveInputSessionId,
-    );
-    if (resolvedLiveInputDeviceKind === LIVE_INPUT_DEVICE_KINDS.acousticMic) {
-      state.liveInputCalibrationVersion += 1;
+    let audioCtx;
+    try {
+      audioCtx = installLiveInputStream(stream, {
+        deviceId: resolvedDeviceId,
+        liveInputDeviceKind: resolvedLiveInputDeviceKind,
+        sessionId: sourceRequest.sessionId,
+      });
+    } catch (error) {
+      failCurrentSystemRequest(
+        sourceRequest,
+        error instanceof Error ? error.message : "capture-error",
+      );
+      throw error;
     }
-    state.appliedLiveInputSettings = cloneLiveInputSettings(
-      state.liveInputSettings,
-    );
-
-    const audioCtx = ensureAudioContext();
-    state.liveInputNode = audioCtx.createMediaStreamSource(state.gumStream);
-    replaceActiveAnalysisTap(
-      createSynchronizedAnalysisTaps(
-        audioCtx,
-        state.liveInputNode,
-        state.fftSize,
-      ),
-      "live",
-    );
-    setAudioInputMode(resolvedLiveInputDeviceKind);
+    if (!audioCtx) {
+      return false;
+    }
     if (audioCtx.state !== "running") {
       void maybeResumeAudioContext("start-mic-record").catch((error) => {
         console.warn("Audio context resume skipped during live-input start:", {
@@ -1873,23 +1841,39 @@ export function createAudioSession() {
   }
 
   function stopLiveInputStream() {
+    const sessionId = state.sourceSession.sessionId;
+    const ownsSystemSource =
+      state.sourceSession.kind === AUDIO_SOURCE_KINDS.system;
     clearLiveInputRuntimeState();
+    if (ownsSystemSource) {
+      transitionSource({
+        type: AUDIO_SOURCE_EVENTS.systemStopped,
+        sessionId,
+        reason: "stopped",
+      });
+    }
   }
 
   function resolveAnalysisSourceMode(status) {
-    if (status.analysisSource === "live") {
-      return "live";
+    if (status.sourceSession.kind === AUDIO_SOURCE_KINDS.system) {
+      if (!status.isLiveInputActive) {
+        return null;
+      }
+      return isLoopbackLiveInputDeviceKind(status.liveInputDeviceKind)
+        ? "system"
+        : "live";
     }
-    if (status.analysisSource !== "file") {
+
+    if (status.sourceSession.kind !== AUDIO_SOURCE_KINDS.file) {
       return null;
     }
-    const activeLiveInputDeviceKind =
-      status.liveInputDeviceKind ?? status.liveInputKind;
-    return isLoopbackLiveInputDeviceKind(activeLiveInputDeviceKind)
-      ? "system"
-      : state.loadedPlaybackSourceKind === "stream"
-        ? "stream"
-        : "file";
+    if (
+      status.analysisSource !== "file" &&
+      status.hasPreparedFileAnalysisSource !== true
+    ) {
+      return null;
+    }
+    return state.loadedPlaybackSourceKind === "stream" ? "stream" : "file";
   }
 
   function readFeatureAnalysisCapture({ includeStructural = false } = {}) {
@@ -1900,8 +1884,33 @@ export function createAudioSession() {
     }
 
     const captureTimestampMs = getTimingNowMs();
+    const observationTimeSeconds =
+      sourceMode === "file" || sourceMode === "stream"
+        ? clampPlaybackTime(getCurrentPlaybackTime())
+        : captureTimestampMs / 1000;
+    if (sourceMode === "file" && state.decodedAnalysisSource) {
+      const capture = state.decodedAnalysisSource.sample(
+        observationTimeSeconds,
+        { includeStructural },
+      );
+      return {
+        captureTimestampMs,
+        observationTimeSeconds,
+        fast: {
+          sourceMode,
+          ...capture.fast,
+        },
+        structural: capture.structural
+          ? {
+              sourceMode,
+              ...capture.structural,
+            }
+          : null,
+      };
+    }
     return {
       captureTimestampMs,
+      observationTimeSeconds,
       fast: {
         sourceMode,
         ...sampleAnalyser(state.activeAnalysisTaps?.fast?.reader),
@@ -1940,9 +1949,8 @@ export function createAudioSession() {
     releaseStreamBinding({ clearElement: true });
     disconnectAudioNode(state.playbackOutputGain);
     state.playbackOutputGain = null;
-    state.playbackAnalyser = null;
-    state.analyser = null;
     state.decodedBuffer = null;
+    state.decodedAnalysisSource = null;
     state.loadedPlaybackSourceKind = "none";
     state.playbackDurationSeconds = 0;
     state.sourceMetadata = {
@@ -1953,11 +1961,11 @@ export function createAudioSession() {
     state.audioCtx = null;
     state.audioContextState = "closed";
     state.audioContextStateListenerAttached = false;
-    isAudioLoaded = false;
     clockState.mode = "realtime";
     clockState.previousElapsedTime = 0;
     clockState.lastKnownAudioTime = 0;
-    setAudioInputMode("idle");
+    transitionSource({ type: AUDIO_SOURCE_EVENTS.reset });
+    state.cachedFileTimelineRevision = 0;
 
     if (audioCtx?.close) {
       try {
@@ -1981,9 +1989,9 @@ export function createAudioSession() {
   globalThis.addEventListener?.("pagehide", handlePageUnload);
 
   return {
-    attach,
     loadAudio,
     loadStream,
+    selectSource,
     playPauseAudio,
     stopAudio,
     createCaptureStream,
@@ -1994,8 +2002,6 @@ export function createAudioSession() {
     startLiveInputStream,
     stopLiveInputStream,
     setAudioEndedCallback,
-    getIsAudioLoaded: () => isAudioLoaded,
-    getAnalysisState,
     getStatus,
     getTransportState,
     getLiveInputSettings,
@@ -2007,30 +2013,8 @@ export function createAudioSession() {
   };
 }
 
-const _defaultInstance = createAudioSession();
-const defaultBindings = createDefaultAudioSessionBindings(_defaultInstance);
+const defaultAudioSession = createAudioSession();
 
 export function getDefaultAudioSession() {
-  return _defaultInstance;
+  return defaultAudioSession;
 }
-export const { attachAudio } = defaultBindings;
-export const { loadAudio } = defaultBindings;
-export const { loadStream } = defaultBindings;
-export const { playPauseAudio } = defaultBindings;
-export const { stopAudio } = defaultBindings;
-export const { getTransportState } = defaultBindings;
-export const { seekTo } = defaultBindings;
-export const { setAudioVolume } = defaultBindings;
-export const { setAudioMuted } = defaultBindings;
-export const { setLiveInputSettings } = defaultBindings;
-export const { startLiveInputStream } = defaultBindings;
-export const { stopLiveInputStream } = defaultBindings;
-export const { setAudioEndedCallback } = defaultBindings;
-export const { getIsAudioLoaded } = defaultBindings;
-export const { getAnalysisState } = defaultBindings;
-export const { getStatus } = defaultBindings;
-export const { getLiveInputSettings } = defaultBindings;
-export const { getLiveInputAnalysisSettings } = defaultBindings;
-export const { readClockSnapshot } = defaultBindings;
-export const { readFeatureAnalysisCapture } = defaultBindings;
-export const { disposeAudio } = defaultBindings;

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { devices, expect, test } from "@playwright/test";
 
 test.describe("Baryon production smoke", () => {
   test("switches floating chrome by viewport width instead of device type", async ({
@@ -11,13 +11,13 @@ test.describe("Baryon production smoke", () => {
     await page.goto("/");
     await expect(page.getByText("Baryon", { exact: true })).toHaveCount(0);
     await expect(
-      page.getByRole("button", { name: "Toggle advanced controls" }),
+      page.getByRole("button", { name: "Toggle settings" }),
     ).toBeVisible();
 
     await page.setViewportSize({ width: 640, height: 900 });
     await expect(page.getByText("Baryon", { exact: true })).toHaveCount(0);
     await expect(
-      page.getByRole("button", { name: "Toggle advanced controls" }),
+      page.getByRole("button", { name: "Toggle settings" }),
     ).toBeVisible();
   });
 
@@ -88,9 +88,11 @@ test.describe("Baryon production smoke", () => {
 
     await page.goto("/");
     await expect(page.locator("#root > div canvas").first()).toBeVisible();
-    await expect(page.getByText("Upload Audio")).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "Toggle advanced controls" }),
+      page.getByRole("button", { name: "Upload audio files" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Toggle settings" }),
     ).toBeVisible();
     await expect(page.getByTestId("advanced-controls-sidebar")).toHaveCount(0);
     await expect(page.getByText("Audit")).toHaveCount(0);
@@ -110,18 +112,18 @@ test.describe("Baryon production smoke", () => {
     await expect(page.getByTestId("diagnostics-hud")).toHaveCount(0);
 
     await page
-      .getByRole("button", { name: "Toggle advanced controls" })
+      .getByRole("button", { name: "Toggle settings" })
       .click();
     await expect(page.getByTestId("advanced-controls-sidebar")).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "Close advanced controls backdrop" }),
+      page.getByRole("button", { name: "Close settings backdrop" }),
     ).toHaveCount(0);
     await expect(
-      page.getByRole("button", { name: "Close advanced controls" }),
+      page.getByRole("button", { name: "Close settings" }),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Shape\s/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Volume\s/ })).toBeVisible();
     await expect(page.getByText("Audit")).toHaveCount(0);
-    await page.getByRole("button", { name: "Close advanced controls" }).click();
+    await page.getByRole("button", { name: "Close settings" }).click();
     await expect(page.getByTestId("advanced-controls-sidebar")).toBeHidden();
   });
 
@@ -133,25 +135,51 @@ test.describe("Baryon production smoke", () => {
 
     await page.goto("/");
     await page
-      .getByRole("button", { name: "Toggle advanced controls" })
+      .getByRole("button", { name: "Toggle settings" })
       .click();
-    await page.getByRole("button", { name: /^Shape\s/ }).click();
+    await page.getByRole("button", { name: /^Volume\s/ }).click();
 
-    const slider = page.getByRole("slider", { name: "Density" });
+    const slider = page.getByRole("slider", {
+      name: "Material Density slider",
+    });
     const helpTrigger = page.getByRole("button", {
-      name: "Show help for Density",
+      name: "Show help for Material Density",
+    });
+    const scrollPanel = page.locator(".baryon-controls-scroll");
+
+    await slider.evaluate(async (element) => {
+      const animations = [];
+      for (
+        let current = element;
+        current && !current.classList.contains("baryon-controls-scroll");
+        current = current.parentElement
+      ) {
+        animations.push(...current.getAnimations());
+      }
+      await Promise.allSettled(
+        animations.map((animation) => animation.finished),
+      );
     });
 
     const before = await slider.boundingBox();
+    const scrollTopBefore = await scrollPanel.evaluate(
+      (element) => element.scrollTop,
+    );
     expect(before).not.toBeNull();
 
-    await helpTrigger.hover();
+    await helpTrigger.evaluate((element) =>
+      element.focus({ preventScroll: true }),
+    );
     const tooltip = page.getByTestId("advanced-controls-help-tooltip");
     await expect(tooltip).toBeVisible();
-    await expect(tooltip).toContainText("Density");
+    await expect(tooltip).toContainText("Material Density");
 
     const after = await slider.boundingBox();
+    const scrollTopAfter = await scrollPanel.evaluate(
+      (element) => element.scrollTop,
+    );
     expect(after).not.toBeNull();
+    expect(scrollTopAfter).toBe(scrollTopBefore);
     expect(after?.x).toBeCloseTo(before?.x ?? 0, 1);
     expect(after?.y).toBeCloseTo(before?.y ?? 0, 1);
     expect(after?.width).toBeCloseTo(before?.width ?? 0, 1);
@@ -169,9 +197,9 @@ test.describe("Baryon production smoke", () => {
 
     await page.goto("/");
     await page
-      .getByRole("button", { name: "Toggle advanced controls" })
+      .getByRole("button", { name: "Toggle settings" })
       .click();
-    await page.getByRole("button", { name: /^Display\s/ }).click();
+    await page.getByRole("button", { name: /^Appearance\s/ }).click();
 
     const bloomToggle = page.locator("#baryon-control-bloomEnabled");
     await expect(bloomToggle).toBeChecked();
@@ -191,10 +219,13 @@ test.describe("Baryon production smoke", () => {
 
     await page.goto("/");
     await page
-      .getByRole("button", { name: "Toggle advanced controls" })
+      .getByRole("button", { name: "Toggle settings" })
       .click();
     await expect(page.getByTestId("advanced-controls-sidebar")).toBeVisible();
-    await expect(page.getByText("Upload Audio")).toBeVisible();
+    const uploadButton = page.getByRole("button", {
+      name: "Upload audio files",
+    });
+    await expect(uploadButton).toBeVisible();
 
     await page.keyboard.press("f");
     await expect
@@ -204,10 +235,10 @@ test.describe("Baryon production smoke", () => {
       .toBe(true);
 
     await expect(
-      page.getByRole("button", { name: "Toggle advanced controls" }),
+      page.getByRole("button", { name: "Toggle settings" }),
     ).toHaveCount(0);
     await expect(page.getByTestId("advanced-controls-sidebar")).toHaveCount(0);
-    await expect(page.getByText("Upload Audio")).toHaveCount(0);
+    await expect(uploadButton).toHaveCount(0);
 
     await page.keyboard.press("f");
     await expect
@@ -217,9 +248,44 @@ test.describe("Baryon production smoke", () => {
       .toBe(false);
 
     await expect(
-      page.getByRole("button", { name: "Toggle advanced controls" }),
+      page.getByRole("button", { name: "Toggle settings" }),
     ).toBeVisible();
     await expect(page.getByTestId("advanced-controls-sidebar")).toHaveCount(0);
-    await expect(page.getByText("Upload Audio")).toBeVisible();
+    await expect(uploadButton).toBeVisible();
+  });
+});
+
+test.describe("Baryon mobile compatibility gate", () => {
+  const pixel7 = devices["Pixel 7"];
+  test.use({
+    userAgent: pixel7.userAgent,
+    viewport: { width: 393, height: 852 },
+    screen: { width: 393, height: 852 },
+    deviceScaleFactor: pixel7.deviceScaleFactor,
+    isMobile: pixel7.isMobile,
+    hasTouch: pixel7.hasTouch,
+  });
+
+  test("directs mobile visitors to a Chromium-based desktop browser", async ({
+    page,
+  }) => {
+
+    await page.goto("/");
+
+    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Open Baryon on desktop" }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/Chromium-based desktop browser/i),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Diagnostic code: mobile-unsupported"),
+    ).toBeVisible();
+    await expect(page.getByTestId("mobile-demo-controls")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Play demo" }),
+    ).toHaveCount(0);
+    await expect(page.locator("canvas")).toHaveCount(0);
   });
 });

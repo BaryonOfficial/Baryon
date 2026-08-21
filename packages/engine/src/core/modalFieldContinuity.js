@@ -1,39 +1,28 @@
-import {
-  MODAL_BASIS_CACHE_RESOLUTION,
-  getModalBasisCacheMaxRepresentableModeIndex,
-} from "./modalBudgets.js";
 import { DEFAULT_EFFECTIVE_CAVITY_GEOMETRY } from "./cavityGeometry.js";
 import { getModalGeometryBackend } from "./modalGeometryBackend.js";
-import { normalizeModalTopologyCoordinate } from "./modalTopology.js";
+import {
+  buildModalTopologyModeKey,
+  normalizeModalTopologyCoordinate,
+} from "./modalTopology.js";
 import { clamp01 } from "../utils/math.js";
 
-const TOPOLOGY_ADMIT_EVIDENCE = 0.08;
-export const TOPOLOGY_PROMOTE_SECONDS = 0.05;
-const TOPOLOGY_RELEASE_EVIDENCE = 0.025;
-const TOPOLOGY_BOOTSTRAP_EVIDENCE = 0;
+const TOPOLOGY_CONFIDENCE_EVIDENCE = 0.08;
+export const TOPOLOGY_PROMOTE_SECONDS = 1 / 30;
 export const TOPOLOGY_RELEASE_SECONDS = 0.13;
-// Crossfade windows for admission/eviction transitions. When a mode carries
-// damping metadata the window derives from its own amplitude time constant
-// (tau = 1 / (2 * pi * f * zeta), equivalently Q / (pi * f)). These
-// constants are the fallback window and settle factor; the min/max clamps are
-// bookkeeping bounds (frame quantization and visible-slot budget), not physics.
-export const TOPOLOGY_ADMISSION_FADE_SECONDS = 0.08;
-export const TOPOLOGY_EVICTION_FADE_SECONDS = 0.08;
+// Modal coefficients arrive here after modalResponse has resolved the current
+// forced response and the Q-dependent stored residue. These
+// one-structural-frame ramps are numerical page-swap protection only; deriving
+// them from Q would damp the same coefficient twice and turn bass handoffs into
+// hundreds of milliseconds.
+export const TOPOLOGY_ADMISSION_FADE_SECONDS = 1 / 30;
+export const TOPOLOGY_EVICTION_FADE_SECONDS = 1 / 30;
 const TOPOLOGY_FADE_SETTLE_FACTOR = 3;
-const TOPOLOGY_FADE_MIN_SECONDS = 1 / 30;
-const TOPOLOGY_FADE_MAX_SECONDS = 0.25;
-export const BASIS_REASSIGN_MIN_SECONDS = 0.067;
-const STRUCTURAL_ADMISSION_REFERENCE_MODE_ORDER_FRACTION = 0.25;
+export const BASIS_REASSIGN_MIN_SECONDS = 1 / 30;
+const CONTINUITY_TIME_EPSILON_SEC = 1e-6;
 const TOPOLOGY_REPLACE_EVIDENCE_MARGIN = 0.08;
 const TOPOLOGY_REPLACE_EVIDENCE_RATIO = 1.35;
 const TOPOLOGY_REPLACE_MISSING_SHELL_SCORE_RATIO = 0.4;
 const TOPOLOGY_REPLACE_MAX_FRACTION = 0.4;
-const RETAINED_PAYLOAD_DROP_RATIO = 0.85;
-const STRUCTURAL_ADMISSION_COMPLIANCE_EXPONENT = 2;
-const STRUCTURAL_ADMISSION_MIN_COMPLIANCE = 0.12;
-const DETAIL_ADMISSION_MAX_FRACTION = 0.25;
-const DEFAULT_MAX_BASIS_MODE_ORDER =
-  getModalBasisCacheMaxRepresentableModeIndex(MODAL_BASIS_CACHE_RESOLUTION);
 
 function normalizeDeltaTimeSec(deltaTimeSec) {
   if (!Number.isFinite(deltaTimeSec) || deltaTimeSec <= 0) {
@@ -53,12 +42,6 @@ function normalizeModeCoordinate(value) {
   return normalizeModalTopologyCoordinate(value);
 }
 
-function buildModeKey(u, v, w) {
-  return `${normalizeModeCoordinate(u)}:${normalizeModeCoordinate(
-    v,
-  )}:${normalizeModeCoordinate(w)}`;
-}
-
 function getModeOrder(mode) {
   return Math.max(
     Math.abs(normalizeModeCoordinate(mode?.[0])),
@@ -67,42 +50,16 @@ function getModeOrder(mode) {
   );
 }
 
-function getModeSpatialWavenumber(mode) {
-  const u = normalizeModeCoordinate(mode?.[0]);
-  const v = normalizeModeCoordinate(mode?.[1]);
-  const w = normalizeModeCoordinate(mode?.[2]);
-  return Math.hypot(u, v, w);
+function normalizeMaxVisibleModeCount(maxVisibleModeCount) {
+  return Number.isFinite(maxVisibleModeCount)
+    ? Math.max(0, Math.floor(maxVisibleModeCount))
+    : Infinity;
 }
 
-function normalizeMaxBasisModeOrder(maxBasisModeOrder) {
-  return Number.isFinite(maxBasisModeOrder)
-    ? Math.max(0, Math.floor(maxBasisModeOrder))
-    : DEFAULT_MAX_BASIS_MODE_ORDER;
-}
-
-function deriveStructuralAdmissionReferenceModeOrder(maxBasisModeOrder) {
-  return Math.max(
-    1,
-    normalizeMaxBasisModeOrder(maxBasisModeOrder) *
-      STRUCTURAL_ADMISSION_REFERENCE_MODE_ORDER_FRACTION,
-  );
-}
-
-function deriveStructuralAdmissionCompliance(mode, maxBasisModeOrder) {
-  const spatialWavenumber = getModeSpatialWavenumber(mode);
-  if (!(spatialWavenumber > 0)) {
-    return 1;
-  }
-  const referenceModeOrder =
-    deriveStructuralAdmissionReferenceModeOrder(maxBasisModeOrder);
-  return clamp01(
-    1 /
-      (1 +
-        Math.pow(
-          spatialWavenumber / referenceModeOrder,
-          STRUCTURAL_ADMISSION_COMPLIANCE_EXPONENT,
-        )),
-  );
+function normalizeMaxHandoffModeCount(maxHandoffModeCount) {
+  return Number.isFinite(maxHandoffModeCount)
+    ? Math.max(0, Math.floor(maxHandoffModeCount))
+    : 0;
 }
 
 function cloneSlotQuad(source, offset) {
@@ -134,7 +91,6 @@ function readCandidateEntries(
   descriptorSource,
   {
     normalizeCandidateEvidence = false,
-    maxBasisModeOrder = Infinity,
     modalGeometryBackend = getModalGeometryBackend(
       DEFAULT_EFFECTIVE_CAVITY_GEOMETRY,
     ),
@@ -146,8 +102,6 @@ function readCandidateEntries(
     (descriptorSource?.modalFieldSlots?.length ?? 0) / 4,
   );
   const count = Math.min(activeCount, slotCount);
-  const normalizedMaxBasisModeOrder =
-    normalizeMaxBasisModeOrder(maxBasisModeOrder);
   let maxCoefficient = 0;
   if (normalizeCandidateEvidence) {
     for (let index = 0; index < count; index += 1) {
@@ -163,25 +117,19 @@ function readCandidateEntries(
     const offset = index * 4;
     const slot = cloneSlotQuad(descriptorSource.modalFieldSlots, offset);
     const phase = cloneSlotQuad(descriptorSource.modalFieldPhaseSlots, offset);
-    const color = cloneSlotQuad(descriptorSource.modalFieldColorSlots, offset);
-    const spectralLaneA = cloneSlotQuad(
-      descriptorSource.modalFieldSpectralLaneA,
-      offset,
-    );
-    const spectralLaneB = cloneSlotQuad(
-      descriptorSource.modalFieldSpectralLaneB,
-      offset,
-    );
-    const spectralMeta = cloneSlotQuad(
-      descriptorSource.modalFieldSpectralMeta,
+    const spectralMoment = cloneSlotQuad(
+      descriptorSource.modalFieldSpectralMomentSlots,
       offset,
     );
     const metadata = cloneSlotQuad(
       descriptorSource.modalFieldMetadataSlots,
       offset,
     );
-    const modeKey = buildModeKey(slot[0], slot[1], slot[2]);
+    const modeKey = buildModalTopologyModeKey(slot[0], slot[1], slot[2]);
     const coefficient = Math.max(0, slot[3] ?? 0);
+    if (!(coefficient > 0)) {
+      continue;
+    }
     const mode = [
       normalizeModeCoordinate(slot[0]),
       normalizeModeCoordinate(slot[1]),
@@ -190,22 +138,13 @@ function readCandidateEntries(
     const observedSupport = clamp01(metadata[3] ?? 0);
     const relativeEvidence =
       normalizeCandidateEvidence && maxCoefficient > 0
-        ? (coefficient / maxCoefficient) * TOPOLOGY_ADMIT_EVIDENCE
+        ? coefficient / maxCoefficient
         : 0;
     const evidenceScore = computeCandidateEvidenceScore({
       coefficient,
       observedSupport,
       relativeEvidence,
     });
-    const basisRepresentable =
-      getModeOrder(mode) <= normalizedMaxBasisModeOrder;
-    const structuralAdmissionCompliance = deriveStructuralAdmissionCompliance(
-      mode,
-      normalizedMaxBasisModeOrder,
-    );
-    const structuralAdmissionScore = basisRepresentable
-      ? clamp01(evidenceScore * structuralAdmissionCompliance)
-      : 0;
     const topologySource = { mode };
 
     entries.push({
@@ -215,10 +154,7 @@ function readCandidateEntries(
       topologyShellKey: modalGeometryBackend.getModeShellKey(topologySource),
       topologyFamilyKey: modalGeometryBackend.getModeFamilyKey(topologySource),
       candidateIndex: index,
-      basisRepresentable,
       evidenceScore,
-      structuralAdmissionScore,
-      structuralAdmissionCompliance,
       storedEnergySnapshot: coefficient * coefficient,
       observedSupport,
       payload: {
@@ -229,10 +165,7 @@ function readCandidateEntries(
           slot[3] ?? 0,
         ],
         phase,
-        color,
-        spectralLaneA,
-        spectralLaneB,
-        spectralMeta,
+        spectralMoment,
         metadata,
       },
     });
@@ -259,14 +192,11 @@ function createRecord(entry, nowSec) {
     evictionWindowSec: null,
     lastCoefficientSnapshot: entry.payload.slot[3] ?? 0,
     lastStoredEnergySnapshot: entry.storedEnergySnapshot,
-    structuralAdmissionScore: entry.structuralAdmissionScore,
-    structuralAdmissionCompliance: entry.structuralAdmissionCompliance,
     topologyGeometry: entry.topologyGeometry,
     topologyShellKey: entry.topologyShellKey,
     topologyFamilyKey: entry.topologyFamilyKey,
     eligibilityEpoch: 0,
     basisEligible: false,
-    basisRepresentable: entry.basisRepresentable,
     candidateIndex: entry.candidateIndex,
     payload: entry.payload,
     lastRenderablePayload: entry.payload,
@@ -277,7 +207,6 @@ function clearState(state) {
   state.recordsByModeKey.clear();
   state.visibleModeKeys = [];
   state.lastBasisReassignAtSec = Number.NEGATIVE_INFINITY;
-  state.eligibilityEpoch += 1;
 }
 
 export function createModalFieldContinuityState() {
@@ -288,7 +217,6 @@ export function createModalFieldContinuityState() {
     lastBasisReassignAtSec: Number.NEGATIVE_INFINITY,
     eligibilityEpoch: 0,
     lastResetToken: undefined,
-    diagnostics: null,
   };
 }
 
@@ -311,51 +239,14 @@ export function hasVisibleModalFieldContinuityPayload(state) {
 function canReassignBasis(state, nowSec) {
   return (
     state.visibleModeKeys.length === 0 ||
-    nowSec - state.lastBasisReassignAtSec >= BASIS_REASSIGN_MIN_SECONDS
+    nowSec - state.lastBasisReassignAtSec >=
+      BASIS_REASSIGN_MIN_SECONDS - CONTINUITY_TIME_EPSILON_SEC
   );
 }
 
 function markBasisChanged(state, nowSec) {
   state.lastBasisReassignAtSec = nowSec;
   state.eligibilityEpoch += 1;
-}
-
-/**
- * Fade window for a mode's admission/eviction envelope, derived from its own
- * damped-oscillator amplitude time constant when the descriptor carries
- * damping metadata: tau = 1 / (2 * pi * f * zeta), equivalently
- * Q / (pi * f) with zeta = 1 / (2 * Q). The window is
- * TOPOLOGY_FADE_SETTLE_FACTOR * tau, so e^(-t * settle / window) matches the
- * physical ring-down e^(-t / tau) whenever the clamp does not engage. The
- * clamp and fallback are bookkeeping (frame quantization and visible-slot
- * budget), not physics.
- *
- * @param {ArrayLike<number>|undefined} metadata
- *   [naturalFrequencyHz, qualityFactor, dampingRatio, observedSupport]
- * @param {number} fallbackSeconds Window when no usable damping metadata.
- */
-function deriveModalFadeWindowSeconds(metadata, fallbackSeconds) {
-  const naturalFrequencyHz = metadata?.[0] ?? 0;
-  const qualityFactor = metadata?.[1] ?? 0;
-  const dampingRatio = metadata?.[2] ?? 0;
-  let amplitudeTimeConstantSec = null;
-  if (naturalFrequencyHz > 0 && dampingRatio > 0) {
-    amplitudeTimeConstantSec =
-      1 / (2 * Math.PI * naturalFrequencyHz * dampingRatio);
-  } else if (naturalFrequencyHz > 0 && qualityFactor > 0) {
-    amplitudeTimeConstantSec = qualityFactor / (Math.PI * naturalFrequencyHz);
-  }
-  if (!Number.isFinite(amplitudeTimeConstantSec)) {
-    return fallbackSeconds;
-  }
-
-  return Math.min(
-    TOPOLOGY_FADE_MAX_SECONDS,
-    Math.max(
-      TOPOLOGY_FADE_MIN_SECONDS,
-      TOPOLOGY_FADE_SETTLE_FACTOR * amplitudeTimeConstantSec,
-    ),
-  );
 }
 
 function activateRecord(record, state, nowSec, { fadeIn = false } = {}) {
@@ -367,12 +258,7 @@ function activateRecord(record, state, nowSec, { fadeIn = false } = {}) {
   record.basisEligible = true;
   record.eligibilityEpoch = state.eligibilityEpoch + 1;
   record.fadeInStartedAtSec = fadeIn ? nowSec : null;
-  record.fadeInWindowSec = fadeIn
-    ? deriveModalFadeWindowSeconds(
-        record.payload?.metadata,
-        TOPOLOGY_ADMISSION_FADE_SECONDS,
-      )
-    : null;
+  record.fadeInWindowSec = fadeIn ? TOPOLOGY_ADMISSION_FADE_SECONDS : null;
   record.evictionStartedAtSec = null;
   record.evictionWindowSec = null;
   if (!state.visibleModeKeys.includes(record.modeKey)) {
@@ -383,21 +269,16 @@ function activateRecord(record, state, nowSec, { fadeIn = false } = {}) {
 function beginRecordEviction(record, nowSec) {
   if (record.evictionStartedAtSec == null) {
     record.evictionStartedAtSec = nowSec;
-    record.evictionWindowSec = deriveModalFadeWindowSeconds(
-      record.payload?.metadata,
-      TOPOLOGY_EVICTION_FADE_SECONDS,
-    );
+    record.evictionWindowSec = TOPOLOGY_EVICTION_FADE_SECONDS;
   }
 }
-
-const FADE_WINDOW_EPSILON_SEC = 1e-6;
 
 function isRecordEvictionComplete(record, nowSec) {
   return (
     record.evictionStartedAtSec != null &&
     nowSec - record.evictionStartedAtSec >=
       (record.evictionWindowSec ?? TOPOLOGY_EVICTION_FADE_SECONDS) -
-        FADE_WINDOW_EPSILON_SEC
+        CONTINUITY_TIME_EPSILON_SEC
   );
 }
 
@@ -419,17 +300,19 @@ const EVICTION_OUTPUT_SCALE_FLOOR = 1e-4;
 function getRecordOutputEnvelopeScale(record, nowSec, deltaTimeSec) {
   let scale = 1;
   if (record.fadeInStartedAtSec != null) {
-    // Driven-resonator rise toward steady state. The added
-    // deltaTimeSec spans the current frame so the admission tick is nonzero.
+    // One-frame numerical ramp. The present forced response is already in the
+    // coefficient; the added delta spans the current frame so the admission
+    // tick is nonzero without adding another response delay.
     const windowSec = record.fadeInWindowSec ?? TOPOLOGY_ADMISSION_FADE_SECONDS;
     const elapsedSec = nowSec - record.fadeInStartedAtSec + deltaTimeSec;
     scale *=
-      elapsedSec >= windowSec - FADE_WINDOW_EPSILON_SEC
+      elapsedSec >= windowSec - CONTINUITY_TIME_EPSILON_SEC
         ? 1
         : 1 - Math.exp((-TOPOLOGY_FADE_SETTLE_FACTOR * elapsedSec) / windowSec);
   }
   if (record.evictionStartedAtSec != null) {
-    // Ring-down truncated at the settle window.
+    // Numerical page retirement only; physical ring-down stays in the source
+    // coefficient and is never re-derived from metadata here.
     const windowSec =
       record.evictionWindowSec ?? TOPOLOGY_EVICTION_FADE_SECONDS;
     const elapsedSec = nowSec - record.evictionStartedAtSec;
@@ -447,54 +330,16 @@ function updateRecordSnapshot(record, entry, nowSec) {
   record.lastObservedAtSec = nowSec;
   record.lastCoefficientSnapshot = entry.payload.slot[3] ?? 0;
   record.lastStoredEnergySnapshot = entry.storedEnergySnapshot;
-  record.structuralAdmissionScore = entry.structuralAdmissionScore;
-  record.structuralAdmissionCompliance = entry.structuralAdmissionCompliance;
   record.topologyGeometry = entry.topologyGeometry;
   record.topologyShellKey = entry.topologyShellKey;
   record.topologyFamilyKey = entry.topologyFamilyKey;
-  record.basisRepresentable = entry.basisRepresentable;
   record.candidateIndex = entry.candidateIndex;
   record.payload = entry.payload;
   record.lastRenderablePayload = entry.payload;
 }
 
-function updateRecordEvidence(record, entry, nowSec) {
-  record.mode = entry.mode;
-  record.evidenceScore = entry.evidenceScore;
-  record.lastObservedAtSec = nowSec;
-  record.structuralAdmissionScore = entry.structuralAdmissionScore;
-  record.structuralAdmissionCompliance = entry.structuralAdmissionCompliance;
-  record.topologyGeometry = entry.topologyGeometry;
-  record.topologyShellKey = entry.topologyShellKey;
-  record.topologyFamilyKey = entry.topologyFamilyKey;
-  record.basisRepresentable = entry.basisRepresentable;
-  record.candidateIndex = entry.candidateIndex;
-}
-
 function scalePayloadValue(value, scale) {
   return Math.max(0, (Number.isFinite(value) ? value : 0) * scale);
-}
-
-function shouldRetainRenderablePayloadForRelease(record, entry) {
-  if (
-    !record?.basisEligible ||
-    entry.evidenceScore >= TOPOLOGY_RELEASE_EVIDENCE
-  ) {
-    return false;
-  }
-
-  const previousCoefficient = Math.max(
-    0,
-    record.lastRenderablePayload?.slot?.[3] ??
-      record.payload?.slot?.[3] ??
-      record.lastCoefficientSnapshot ??
-      0,
-  );
-  const currentCoefficient = Math.max(0, entry.payload?.slot?.[3] ?? 0);
-  return (
-    previousCoefficient > 0 &&
-    currentCoefficient < previousCoefficient * RETAINED_PAYLOAD_DROP_RATIO
-  );
 }
 
 function decayRecordLivePayload(
@@ -506,64 +351,32 @@ function decayRecordLivePayload(
     1 -
       record.lowEvidenceSec / Math.max(resolvedReleaseSeconds, Number.EPSILON),
   );
-  const sourcePayload = record.lastRenderablePayload ??
-    record.payload ?? {
-      slot: [
-        record.mode?.[0] ?? 0,
-        record.mode?.[1] ?? 0,
-        record.mode?.[2] ?? 0,
-        0,
-      ],
-    };
+  const sourcePayload = record.lastRenderablePayload ?? record.payload ?? {};
   const [u, v, w] = record.mode ?? [0, 0, 0];
-  const slot = sourcePayload.slot ?? [
-    u,
-    v,
-    w,
-    record.lastCoefficientSnapshot ?? 0,
-  ];
-  const phase = sourcePayload.phase ?? [0, 0, 0, 0];
-  const color = sourcePayload.color ?? [0, 0, 0, 0];
-  const spectral = sourcePayload.spectral ?? [0, 0, 0, 0];
-  const spectralLaneA = sourcePayload.spectralLaneA ?? [0, 0, 0, 0];
-  const spectralLaneB = sourcePayload.spectralLaneB ?? [0, 0, 0, 0];
-  const spectralMeta = sourcePayload.spectralMeta ?? [0, 0, 0, 0];
-  const metadata = sourcePayload.metadata ?? [0, 0, 0, 0];
-  const coefficient = scalePayloadValue(slot[3], releaseScale);
+  const slot = cloneSlotQuad(sourcePayload.slot, 0);
+  const phase = cloneSlotQuad(sourcePayload.phase, 0);
+  const spectralMoment = cloneSlotQuad(sourcePayload.spectralMoment, 0);
+  const metadata = cloneSlotQuad(sourcePayload.metadata, 0);
+  const coefficientSource = sourcePayload.slot
+    ? slot[3]
+    : (record.lastCoefficientSnapshot ?? 0);
+  const coefficient = scalePayloadValue(coefficientSource, releaseScale);
   record.lastCoefficientSnapshot = coefficient;
   record.lastStoredEnergySnapshot = coefficient * coefficient;
   record.payload = {
     slot: [u, v, w, coefficient],
-    phase: [
-      phase[0] ?? 0,
-      phase[1] ?? 0,
-      scalePayloadValue(phase[2], releaseScale),
-      scalePayloadValue(phase[3], releaseScale),
-    ],
-    color: [
-      color[0] ?? 0,
-      color[1] ?? 0,
-      color[2] ?? 0,
-      scalePayloadValue(color[3], releaseScale),
-    ],
-    spectral: [
-      spectral[0] ?? 0,
-      spectral[1] ?? 0,
-      spectral[2] ?? 0,
-      scalePayloadValue(spectral[3], releaseScale),
-    ],
-    spectralLaneA,
-    spectralLaneB,
-    spectralMeta: [
-      spectralMeta[0] ?? 0,
-      spectralMeta[1] ?? 0,
-      scalePayloadValue(spectralMeta[2], releaseScale),
-      scalePayloadValue(spectralMeta[3], releaseScale),
-    ],
+    // Phase coherence and authority describe the retained coefficient; they
+    // are not amplitude. Keep that evidence intact while the coefficient
+    // rings down so the analytic field does not drift toward an invented
+    // all-positive phase state during release.
+    phase,
+    // Pitch basis is a categorical descriptor of the retained response, not
+    // amplitude or confidence. It survives release unchanged.
+    spectralMoment,
     metadata: [
-      metadata[0] ?? 0,
-      metadata[1] ?? 0,
-      metadata[2] ?? 0,
+      metadata[0],
+      metadata[1],
+      metadata[2],
       scalePayloadValue(metadata[3], releaseScale),
     ],
   };
@@ -578,10 +391,17 @@ function updateLowEvidenceRecord(record, deltaTimeSec, nowSec) {
   }
 }
 
-function removeRecord(state, modeKey) {
-  state.recordsByModeKey.delete(modeKey);
+function removeRecords(state, modeKeys) {
+  if (modeKeys.length === 0) {
+    return;
+  }
+
+  const removedModeKeys = new Set(modeKeys);
+  for (const modeKey of removedModeKeys) {
+    state.recordsByModeKey.delete(modeKey);
+  }
   state.visibleModeKeys = state.visibleModeKeys.filter(
-    (key) => key !== modeKey,
+    (modeKey) => !removedModeKeys.has(modeKey),
   );
 }
 
@@ -609,20 +429,6 @@ function compareModeTuple(left, right) {
     }
   }
   return 0;
-}
-
-function getStructuralAdmissionScore(record) {
-  return Number.isFinite(record?.structuralAdmissionScore)
-    ? record.structuralAdmissionScore
-    : (record?.evidenceScore ?? 0);
-}
-
-function getAdmissionRole(record) {
-  return record?.basisRepresentable &&
-    (record?.structuralAdmissionCompliance ?? 0) >=
-      STRUCTURAL_ADMISSION_MIN_COMPLIANCE
-    ? "structural"
-    : "detail";
 }
 
 function canUseStoredTopologyKey(record, modalGeometryBackend) {
@@ -669,34 +475,7 @@ function buildRecordShellKeySet(records, modalGeometryBackend) {
   );
 }
 
-function getDetailAdmissionBudget(maxVisibleModeCount) {
-  if (!Number.isFinite(maxVisibleModeCount)) {
-    return Infinity;
-  }
-  return Math.max(
-    0,
-    Math.floor(maxVisibleModeCount * DETAIL_ADMISSION_MAX_FRACTION),
-  );
-}
-
-function countVisibleDetailRecords(state) {
-  return getBasisEligibleRecords(state).filter(
-    (record) => getAdmissionRole(record) === "detail",
-  ).length;
-}
-
 function compareAdmissionRecords(left, right) {
-  const roleDelta =
-    (getAdmissionRole(left) === "structural" ? 0 : 1) -
-    (getAdmissionRole(right) === "structural" ? 0 : 1);
-  if (roleDelta !== 0) {
-    return roleDelta;
-  }
-  const admissionDelta =
-    getStructuralAdmissionScore(right) - getStructuralAdmissionScore(left);
-  if (admissionDelta !== 0) {
-    return admissionDelta;
-  }
   const evidenceDelta = right.evidenceScore - left.evidenceScore;
   if (evidenceDelta !== 0) {
     return evidenceDelta;
@@ -725,17 +504,6 @@ function compareReplacementTargets(left, right) {
   if (stateDelta !== 0) {
     return stateDelta;
   }
-  const roleDelta =
-    (getAdmissionRole(left) === "detail" ? 0 : 1) -
-    (getAdmissionRole(right) === "detail" ? 0 : 1);
-  if (roleDelta !== 0) {
-    return roleDelta;
-  }
-  const admissionDelta =
-    getStructuralAdmissionScore(left) - getStructuralAdmissionScore(right);
-  if (admissionDelta !== 0) {
-    return admissionDelta;
-  }
   const evidenceDelta = left.evidenceScore - right.evidenceScore;
   if (evidenceDelta !== 0) {
     return evidenceDelta;
@@ -751,80 +519,57 @@ function compareReplacementTargets(left, right) {
 function selectAdmissionRecords({
   records,
   availableVisibleSlots,
-  maxDetailVisibleCount,
-  currentDetailVisibleCount,
   currentShellKeys = new Set(),
   modalGeometryBackend,
 }) {
   if (availableVisibleSlots <= 0) {
     return [];
   }
-  const orderedRecords = [...records].sort(compareAdmissionRecords);
-  const selectedRecords = [];
-  const selectedRecordKeys = new Set();
-  const coveredShellKeys = new Set(currentShellKeys);
-  let selectedDetailCount = 0;
-  const remainingDetailSlots =
-    Number.isFinite(maxDetailVisibleCount) ||
-    Number.isFinite(currentDetailVisibleCount)
-      ? Math.max(
-          0,
-          maxDetailVisibleCount - Math.max(0, currentDetailVisibleCount),
-        )
-      : Infinity;
-
-  const canSelectRecord = (record) => {
-    if (selectedRecordKeys.has(record.modeKey)) {
-      return false;
-    }
-    const isDetail = getAdmissionRole(record) === "detail";
-    if (isDetail && selectedDetailCount >= remainingDetailSlots) {
-      return false;
-    }
-    return true;
-  };
-  const selectRecord = (record) => {
-    selectedRecords.push(record);
-    selectedRecordKeys.add(record.modeKey);
-    coveredShellKeys.add(getRecordShellKey(record, modalGeometryBackend));
-    if (getAdmissionRole(record) === "detail") {
-      selectedDetailCount += 1;
-    }
-  };
-  const selectionFull = () =>
-    Number.isFinite(availableVisibleSlots) &&
-    selectedRecords.length >= availableVisibleSlots;
-
-  for (const record of orderedRecords) {
-    if (getAdmissionRole(record) !== "structural" || !canSelectRecord(record)) {
-      continue;
-    }
+  const shellsByKey = new Map();
+  for (const record of records) {
     const shellKey = getRecordShellKey(record, modalGeometryBackend);
-    if (coveredShellKeys.has(shellKey)) {
+    if (currentShellKeys.has(shellKey)) {
       continue;
     }
-    selectRecord(record);
-    if (selectionFull()) {
-      break;
-    }
+    const members = shellsByKey.get(shellKey) ?? [];
+    members.push(record);
+    shellsByKey.set(shellKey, members);
   }
+  const orderedShells = Array.from(shellsByKey, ([shellKey, members]) => ({
+    shellKey,
+    members: members.sort(
+      (left, right) =>
+        (left.candidateIndex ?? 0) - (right.candidateIndex ?? 0) ||
+        compareModeTuple(left, right),
+    ),
+    evidenceScore: members.reduce(
+      (total, member) => total + member.evidenceScore ** 2,
+      0,
+    ),
+    storedEnergy: members.reduce(
+      (total, member) => total + member.lastStoredEnergySnapshot,
+      0,
+    ),
+    strongestMember: [...members].sort(compareAdmissionRecords)[0],
+  })).sort(
+    (left, right) =>
+      right.evidenceScore - left.evidenceScore ||
+      right.storedEnergy - left.storedEnergy ||
+      compareAdmissionRecords(left.strongestMember, right.strongestMember) ||
+      left.shellKey.localeCompare(right.shellKey),
+  );
 
-  if (selectionFull()) {
-    return selectedRecords;
-  }
-
-  for (const record of orderedRecords) {
-    if (!canSelectRecord(record)) {
-      continue;
-    }
-    selectRecord(record);
+  const selectedRecords = [];
+  for (const shell of orderedShells) {
     if (
       Number.isFinite(availableVisibleSlots) &&
-      selectedRecords.length >= availableVisibleSlots
+      selectedRecords.length + shell.members.length > availableVisibleSlots
     ) {
-      break;
+      continue;
     }
+    selectedRecords.push(...shell.members);
   }
+
   return selectedRecords;
 }
 
@@ -879,9 +624,6 @@ function selectReplacementPairs({
         return false;
       }
 
-      const candidateRole = getAdmissionRole(candidate);
-      const targetRole = getAdmissionRole(record);
-
       const evidenceReplacement =
         candidate.evidenceScore >
         Math.max(
@@ -890,27 +632,19 @@ function selectReplacementPairs({
         );
 
       const coverageReplacement =
-        candidateRole === "structural" &&
-        targetRole === "structural" &&
-        candidate.evidenceScore >= TOPOLOGY_ADMIT_EVIDENCE &&
+        candidate.evidenceScore >= TOPOLOGY_CONFIDENCE_EVIDENCE &&
         !coveredShellKeys.has(candidateShellKey) &&
         (visibleShellCounts.get(
           getRecordShellKey(record, modalGeometryBackend),
         ) ?? 0) > 1 &&
-        getStructuralAdmissionScore(candidate) >=
-          getStructuralAdmissionScore(record) *
-            TOPOLOGY_REPLACE_MISSING_SHELL_SCORE_RATIO;
-
-      if (candidateRole === "detail" && targetRole === "detail") {
-        return evidenceReplacement;
-      }
+        candidate.evidenceScore >=
+          record.evidenceScore * TOPOLOGY_REPLACE_MISSING_SHELL_SCORE_RATIO;
 
       const structuralReplacement =
-        getStructuralAdmissionScore(candidate) >
+        candidate.evidenceScore >
         Math.max(
-          getStructuralAdmissionScore(record) +
-            TOPOLOGY_REPLACE_EVIDENCE_MARGIN,
-          getStructuralAdmissionScore(record) * TOPOLOGY_REPLACE_EVIDENCE_RATIO,
+          record.evidenceScore + TOPOLOGY_REPLACE_EVIDENCE_MARGIN,
+          record.evidenceScore * TOPOLOGY_REPLACE_EVIDENCE_RATIO,
         );
       return (
         structuralReplacement || evidenceReplacement || coverageReplacement
@@ -948,32 +682,21 @@ function selectReplacementPairs({
 function writeDescriptorSource(records, { nowSec = 0, deltaTimeSec = 0 } = {}) {
   const modalFieldSlots = new Float32Array(records.length * 4);
   const modalFieldPhaseSlots = new Float32Array(records.length * 4);
-  const modalFieldColorSlots = new Float32Array(records.length * 4);
-  const modalFieldSpectralLaneA = new Float32Array(records.length * 4);
-  const modalFieldSpectralLaneB = new Float32Array(records.length * 4);
-  const modalFieldSpectralMeta = new Float32Array(records.length * 4);
+  const modalFieldSpectralMomentSlots = new Float32Array(records.length * 4);
   const modalFieldMetadataSlots = new Float32Array(records.length * 4);
 
   records.forEach((record, index) => {
     const offset = index * 4;
     modalFieldSlots.set(record.payload.slot, offset);
     modalFieldPhaseSlots.set(record.payload.phase, offset);
-    modalFieldColorSlots.set(record.payload.color, offset);
-    modalFieldSpectralLaneA.set(
-      record.payload.spectralLaneA ?? [0, 0, 0, 0],
-      offset,
-    );
-    modalFieldSpectralLaneB.set(
-      record.payload.spectralLaneB ?? [0, 0, 0, 0],
-      offset,
-    );
-    modalFieldSpectralMeta.set(
-      record.payload.spectralMeta ?? [0, 0, 0, 0],
+    modalFieldSpectralMomentSlots.set(
+      record.payload.spectralMoment ?? [0, 0, 0, 0],
       offset,
     );
     modalFieldMetadataSlots.set(record.payload.metadata, offset);
 
-    // Crossfade envelope: same components the release path decays.
+    // The crossfade is an amplitude envelope. Phase coherence and authority
+    // stay attached to the mode until its basis identity leaves the handoff.
     const envelopeScale = getRecordOutputEnvelopeScale(
       record,
       nowSec,
@@ -981,11 +704,6 @@ function writeDescriptorSource(records, { nowSec = 0, deltaTimeSec = 0 } = {}) {
     );
     if (envelopeScale !== 1) {
       modalFieldSlots[offset + 3] *= envelopeScale;
-      modalFieldPhaseSlots[offset + 2] *= envelopeScale;
-      modalFieldPhaseSlots[offset + 3] *= envelopeScale;
-      modalFieldColorSlots[offset + 3] *= envelopeScale;
-      modalFieldSpectralMeta[offset + 2] *= envelopeScale;
-      modalFieldSpectralMeta[offset + 3] *= envelopeScale;
       modalFieldMetadataSlots[offset + 3] *= envelopeScale;
     }
   });
@@ -993,10 +711,7 @@ function writeDescriptorSource(records, { nowSec = 0, deltaTimeSec = 0 } = {}) {
   return {
     modalFieldSlots,
     modalFieldPhaseSlots,
-    modalFieldColorSlots,
-    modalFieldSpectralLaneA,
-    modalFieldSpectralLaneB,
-    modalFieldSpectralMeta,
+    modalFieldSpectralMomentSlots,
     modalFieldMetadataSlots,
     activeModalFieldModeCount: records.length,
   };
@@ -1012,7 +727,7 @@ function summarizeCandidateConfidence(candidateEntries) {
     const support = clamp01(entry?.observedSupport ?? 0);
     rawCandidateModalEnergy += coefficient * coefficient;
     confidenceWeightedCandidateEnergy += (support * coefficient) ** 2;
-    if ((entry?.evidenceScore ?? 0) >= TOPOLOGY_ADMIT_EVIDENCE) {
+    if ((entry?.evidenceScore ?? 0) >= TOPOLOGY_CONFIDENCE_EVIDENCE) {
       confidenceQualifiedCandidateModeCount += 1;
     }
   }
@@ -1030,44 +745,6 @@ function summarizeCandidateConfidence(candidateEntries) {
   };
 }
 
-function summarizeOverBandwidthCandidates(candidateEntries, maxBasisModeOrder) {
-  const maxRepresentableModeIndex =
-    normalizeMaxBasisModeOrder(maxBasisModeOrder);
-  let overBandwidthRejectedModeCount = 0;
-  let overBandwidthRejectedModalEnergy = 0;
-  let overBandwidthMaxRequestedModeIndex = 0;
-  let overBandwidthMaxRequestedMode = [0, 0, 0];
-
-  for (const entry of candidateEntries) {
-    const modeOrder = getModeOrder(entry?.mode);
-    if (modeOrder <= maxRepresentableModeIndex) {
-      continue;
-    }
-
-    overBandwidthRejectedModeCount += 1;
-    overBandwidthRejectedModalEnergy += Math.max(
-      0,
-      entry?.storedEnergySnapshot ?? 0,
-    );
-    if (modeOrder > overBandwidthMaxRequestedModeIndex) {
-      overBandwidthMaxRequestedModeIndex = modeOrder;
-      overBandwidthMaxRequestedMode = [
-        normalizeModeCoordinate(entry?.mode?.[0]),
-        normalizeModeCoordinate(entry?.mode?.[1]),
-        normalizeModeCoordinate(entry?.mode?.[2]),
-      ];
-    }
-  }
-
-  return {
-    maxRepresentableModeIndex,
-    overBandwidthRejectedModeCount,
-    overBandwidthRejectedModalEnergy,
-    overBandwidthMaxRequestedModeIndex,
-    overBandwidthMaxRequestedMode,
-  };
-}
-
 function buildDiagnostics({
   state,
   candidateEntries,
@@ -1076,7 +753,6 @@ function buildDiagnostics({
   admittedModeKeys,
   removedModeKeys,
   reset,
-  maxBasisModeOrder,
   modalGeometryBackend,
 }) {
   const outputModeKeys = outputRecords.map((record) => record.modeKey);
@@ -1111,10 +787,6 @@ function buildDiagnostics({
   const visibleTopology = summarizeRecords(outputRecords, modalGeometryBackend);
   const tailTopology = summarizeRecords(tailEntries, modalGeometryBackend);
   const candidateConfidence = summarizeCandidateConfidence(candidateEntries);
-  const overBandwidthCandidates = summarizeOverBandwidthCandidates(
-    candidateEntries,
-    maxBasisModeOrder,
-  );
 
   return {
     reset,
@@ -1123,7 +795,6 @@ function buildDiagnostics({
     eligibilityEpoch: state.eligibilityEpoch,
     candidateModeCount: candidateEntries.length,
     ...candidateConfidence,
-    ...overBandwidthCandidates,
     candidateShellCount: candidateTopology.shellCount,
     candidateSpatialFamilyCount: candidateTopology.familyCount,
     candidateDuplicateShellPressure: candidateTopology.duplicateShellPressure,
@@ -1151,7 +822,6 @@ function buildDormantResult({
   candidateEntries,
   previousVisibleKeys,
   reset,
-  maxBasisModeOrder,
   modalGeometryBackend,
 }) {
   const activeModeCount = countBasisEligibleRecords(state);
@@ -1160,10 +830,6 @@ function buildDormantResult({
     modalGeometryBackend,
   );
   const candidateConfidence = summarizeCandidateConfidence(candidateEntries);
-  const overBandwidthCandidates = summarizeOverBandwidthCandidates(
-    candidateEntries,
-    maxBasisModeOrder,
-  );
   const diagnostics = {
     reset,
     dormant: true,
@@ -1171,7 +837,6 @@ function buildDormantResult({
     eligibilityEpoch: state.eligibilityEpoch,
     candidateModeCount: candidateEntries.length,
     ...candidateConfidence,
-    ...overBandwidthCandidates,
     candidateShellCount: candidateTopology.shellCount,
     candidateSpatialFamilyCount: candidateTopology.familyCount,
     candidateDuplicateShellPressure: candidateTopology.duplicateShellPressure,
@@ -1194,11 +859,265 @@ function buildDormantResult({
     basisEligibleModeKeys: [],
     modeIdentityRetentionRatio: activeModeCount > 0 ? 1 : 0,
   };
-  state.diagnostics = diagnostics;
   return {
     descriptorSource: writeDescriptorSource([]),
     diagnostics,
   };
+}
+
+function beginModalFieldContinuityFrame(
+  state,
+  {
+    descriptorSource,
+    deltaTimeSec,
+    resetToken,
+    normalizeCandidateEvidence,
+    modalGeometryBackend,
+  },
+) {
+  const resolvedDeltaTimeSec = normalizeDeltaTimeSec(deltaTimeSec);
+  const hadResetToken = state.lastResetToken !== undefined;
+  const reset = hadResetToken && state.lastResetToken !== resetToken;
+  if (reset) {
+    clearState(state);
+  }
+
+  state.lastResetToken = resetToken;
+  state.currentTimeSec += resolvedDeltaTimeSec;
+  return {
+    allowBootstrapAdmission: !hadResetToken || reset,
+    candidateEntries: readCandidateEntries(descriptorSource, {
+      normalizeCandidateEvidence,
+      modalGeometryBackend,
+    }),
+    nowSec: state.currentTimeSec,
+    previousVisibleKeys: [...state.visibleModeKeys],
+    reset,
+    resolvedDeltaTimeSec,
+  };
+}
+
+function advanceCurrentCandidateRecords({
+  state,
+  candidateEntries,
+  nowSec,
+  deltaTimeSec,
+}) {
+  const currentEntryByModeKey = new Map();
+  for (const entry of candidateEntries) {
+    currentEntryByModeKey.set(entry.modeKey, entry);
+    let record = state.recordsByModeKey.get(entry.modeKey);
+    if (!record) {
+      record = createRecord(entry, nowSec);
+      state.recordsByModeKey.set(entry.modeKey, record);
+    }
+
+    updateRecordSnapshot(record, entry, nowSec);
+    record.lowEvidenceSec = 0;
+    record.releaseStartedAtSec = null;
+    if (record.basisEligible) {
+      record.state = "active";
+    }
+
+    if (!record.basisEligible) {
+      record.qualifyingEvidenceSec += deltaTimeSec;
+    }
+  }
+  return currentEntryByModeKey;
+}
+
+function collectCompletedEvictionKeys(state, nowSec) {
+  const modeKeys = [];
+  for (const [modeKey, record] of state.recordsByModeKey.entries()) {
+    if (record.basisEligible && isRecordEvictionComplete(record, nowSec)) {
+      modeKeys.push(modeKey);
+    }
+  }
+  return modeKeys;
+}
+
+function collectAdmissionEligibleRecords(state, allowBootstrapAdmission) {
+  const records = [];
+  for (const record of state.recordsByModeKey.values()) {
+    const hasQualifyingEvidence =
+      record.qualifyingEvidenceSec >= TOPOLOGY_PROMOTE_SECONDS ||
+      allowBootstrapAdmission;
+    if (!record.basisEligible && hasQualifyingEvidence) {
+      records.push(record);
+    }
+  }
+  return records;
+}
+
+function selectFrameAdmissions({
+  state,
+  eligibleRecords,
+  maxVisibleModeCount,
+  maxHandoffModeCount,
+  completedEviction,
+  modalGeometryBackend,
+}) {
+  const availableVisibleSlots = Number.isFinite(maxVisibleModeCount)
+    ? Math.max(0, maxVisibleModeCount - countBasisEligibleRecords(state))
+    : Infinity;
+  const selectedRecords = selectAdmissionRecords({
+    records: eligibleRecords,
+    availableVisibleSlots,
+    currentShellKeys: buildRecordShellKeySet(
+      getBasisEligibleRecords(state),
+      modalGeometryBackend,
+    ),
+    modalGeometryBackend,
+  });
+  const selectedRecordKeys = new Set(
+    selectedRecords.map((record) => record.modeKey),
+  );
+  const replacementPairs = completedEviction
+    ? []
+    : selectReplacementPairs({
+        state,
+        candidateRecords: eligibleRecords.filter(
+          (record) => !selectedRecordKeys.has(record.modeKey),
+        ),
+        maxVisibleModeCount,
+        maxHandoffModeCount,
+        alreadyAdmittedCount: selectedRecords.length,
+        modalGeometryBackend,
+      });
+  return { replacementPairs, selectedRecords };
+}
+
+function commitFrameAdmissions({
+  state,
+  selectedRecords,
+  replacementPairs,
+  previousVisibleKeys,
+  nowSec,
+}) {
+  const admittedModeKeys = [];
+  const fadeIn = previousVisibleKeys.length > 0;
+  for (const record of selectedRecords) {
+    activateRecord(record, state, nowSec, { fadeIn });
+    admittedModeKeys.push(record.modeKey);
+  }
+  // A provisioned handoff page keeps both signed modal contributions in the
+  // descriptor. The raymarch carrier therefore sums them coherently before
+  // any magnitude, density, or radiance transform.
+  for (const pair of replacementPairs) {
+    beginRecordEviction(pair.target, nowSec);
+    activateRecord(pair.candidate, state, nowSec, { fadeIn: true });
+    admittedModeKeys.push(pair.candidate.modeKey);
+  }
+  return admittedModeKeys;
+}
+
+function reassignVisibleModalBasis({
+  state,
+  nowSec,
+  previousVisibleKeys,
+  maxVisibleModeCount,
+  maxHandoffModeCount,
+  allowBootstrapAdmission,
+  modalGeometryBackend,
+}) {
+  if (!canReassignBasis(state, nowSec)) {
+    return { admittedModeKeys: [], removedModeKeys: [], basisChanged: false };
+  }
+
+  const removedModeKeys = collectCompletedEvictionKeys(state, nowSec);
+  removeRecords(state, removedModeKeys);
+  const eligibleRecords = collectAdmissionEligibleRecords(
+    state,
+    allowBootstrapAdmission && previousVisibleKeys.length === 0,
+  );
+  const { selectedRecords, replacementPairs } = selectFrameAdmissions({
+    state,
+    eligibleRecords,
+    maxVisibleModeCount,
+    maxHandoffModeCount,
+    completedEviction: removedModeKeys.length > 0,
+    modalGeometryBackend,
+  });
+  const admittedModeKeys = commitFrameAdmissions({
+    state,
+    selectedRecords,
+    replacementPairs,
+    previousVisibleKeys,
+    nowSec,
+  });
+  const basisChanged =
+    removedModeKeys.length > 0 || admittedModeKeys.length > 0;
+  return { admittedModeKeys, removedModeKeys, basisChanged };
+}
+
+function releaseExpiredModalRecords({
+  state,
+  currentEntryByModeKey,
+  deltaTimeSec,
+  nowSec,
+  releaseSeconds,
+  canReleaseVisibleBasis,
+}) {
+  const expiredVisibleModeKeys = [];
+  for (const [modeKey, record] of Array.from(
+    state.recordsByModeKey.entries(),
+  )) {
+    if (currentEntryByModeKey.has(modeKey)) {
+      continue;
+    }
+
+    if (!record.basisEligible) {
+      state.recordsByModeKey.delete(modeKey);
+      continue;
+    }
+
+    updateLowEvidenceRecord(record, deltaTimeSec, nowSec);
+    decayRecordLivePayload(record, releaseSeconds);
+    if (canReleaseVisibleBasis && record.lowEvidenceSec >= releaseSeconds) {
+      expiredVisibleModeKeys.push(modeKey);
+    }
+  }
+
+  if (expiredVisibleModeKeys.length > 0) {
+    removeRecords(state, expiredVisibleModeKeys);
+  }
+  return expiredVisibleModeKeys;
+}
+
+function buildActiveModalFieldContinuityResult({
+  state,
+  candidateEntries,
+  previousVisibleKeys,
+  admittedModeKeys,
+  removedModeKeys,
+  reset,
+  maxVisibleModeCount,
+  maxHandoffModeCount,
+  modalGeometryBackend,
+  nowSec,
+  deltaTimeSec,
+}) {
+  const outputRecords = getBasisEligibleRecords(state).slice(
+    0,
+    Number.isFinite(maxVisibleModeCount)
+      ? maxVisibleModeCount + maxHandoffModeCount
+      : undefined,
+  );
+  const descriptorSource = writeDescriptorSource(outputRecords, {
+    nowSec,
+    deltaTimeSec,
+  });
+  const diagnostics = buildDiagnostics({
+    state,
+    candidateEntries,
+    outputRecords,
+    previousVisibleKeys,
+    admittedModeKeys,
+    removedModeKeys,
+    reset,
+    modalGeometryBackend,
+  });
+  return { descriptorSource, diagnostics };
 }
 
 /**
@@ -1207,10 +1126,7 @@ function buildDormantResult({
  *   descriptorSource?: {
  *     modalFieldSlots?: Float32Array | number[],
  *     modalFieldPhaseSlots?: Float32Array | number[],
- *     modalFieldColorSlots?: Float32Array | number[],
- *     modalFieldSpectralLaneA?: Float32Array | number[],
- *     modalFieldSpectralLaneB?: Float32Array | number[],
- *     modalFieldSpectralMeta?: Float32Array | number[],
+ *     modalFieldSpectralMomentSlots?: Float32Array | number[],
  *     modalFieldMetadataSlots?: Float32Array | number[],
  *     activeModalFieldModeCount?: number,
  *   },
@@ -1219,9 +1135,7 @@ function buildDormantResult({
  *   renderAuthority?: boolean,
  *   maxVisibleModeCount?: number,
  *   maxHandoffModeCount?: number,
- *   maxBasisModeOrder?: number,
  *   releaseSeconds?: number,
- *   allowImmediateBootstrap?: boolean,
  *   normalizeCandidateEvidence?: boolean,
  *   cavityGeometry?: import("./cavityGeometry.js").CavityGeometry,
  * }} options
@@ -1235,238 +1149,81 @@ export function updateModalFieldContinuity(
     renderAuthority = true,
     maxVisibleModeCount = Infinity,
     maxHandoffModeCount = 0,
-    maxBasisModeOrder = Infinity,
     releaseSeconds = TOPOLOGY_RELEASE_SECONDS,
-    allowImmediateBootstrap = false,
     normalizeCandidateEvidence = false,
     cavityGeometry = DEFAULT_EFFECTIVE_CAVITY_GEOMETRY,
   } = {},
 ) {
   const modalGeometryBackend = getModalGeometryBackend(cavityGeometry);
-  const resolvedDeltaTimeSec = normalizeDeltaTimeSec(deltaTimeSec);
-  const normalizedMaxVisibleModeCount = Number.isFinite(maxVisibleModeCount)
-    ? Math.max(0, Math.floor(maxVisibleModeCount))
-    : Infinity;
-  const normalizedMaxHandoffModeCount = Number.isFinite(maxHandoffModeCount)
-    ? Math.max(0, Math.floor(maxHandoffModeCount))
-    : 0;
+  const normalizedMaxVisibleModeCount =
+    normalizeMaxVisibleModeCount(maxVisibleModeCount);
+  const normalizedMaxHandoffModeCount =
+    normalizeMaxHandoffModeCount(maxHandoffModeCount);
   const resolvedReleaseSeconds = normalizeReleaseSeconds(releaseSeconds);
-  const hadResetToken = state.lastResetToken !== undefined;
-  const reset = hadResetToken && state.lastResetToken !== resetToken;
-  if (reset) {
-    clearState(state);
-  }
-  state.lastResetToken = resetToken;
-  state.currentTimeSec += resolvedDeltaTimeSec;
-  const nowSec = state.currentTimeSec;
-  const previousVisibleKeys = [...state.visibleModeKeys];
-  const candidateEntries = readCandidateEntries(descriptorSource, {
+  const frame = beginModalFieldContinuityFrame(state, {
+    descriptorSource,
+    deltaTimeSec,
+    resetToken,
     normalizeCandidateEvidence,
-    maxBasisModeOrder,
     modalGeometryBackend,
   });
 
   if (!renderAuthority) {
+    if (frame.reset) {
+      markBasisChanged(state, frame.nowSec);
+    }
     return buildDormantResult({
       state,
-      candidateEntries,
-      previousVisibleKeys,
-      reset,
-      maxBasisModeOrder,
+      candidateEntries: frame.candidateEntries,
+      previousVisibleKeys: frame.previousVisibleKeys,
+      reset: frame.reset,
       modalGeometryBackend,
     });
   }
 
-  const currentEntryByModeKey = new Map();
-  for (const entry of candidateEntries) {
-    currentEntryByModeKey.set(entry.modeKey, entry);
-    let record = state.recordsByModeKey.get(entry.modeKey);
-    if (!record) {
-      record = createRecord(entry, nowSec);
-      state.recordsByModeKey.set(entry.modeKey, record);
-    }
-
-    const retainRenderablePayloadForRelease =
-      shouldRetainRenderablePayloadForRelease(record, entry);
-    if (retainRenderablePayloadForRelease) {
-      updateRecordEvidence(record, entry, nowSec);
-    } else {
-      updateRecordSnapshot(record, entry, nowSec);
-    }
-
-    if (entry.evidenceScore >= TOPOLOGY_RELEASE_EVIDENCE) {
-      record.lowEvidenceSec = 0;
-      record.releaseStartedAtSec = null;
-      if (record.basisEligible) {
-        record.state = "active";
-      }
-    } else {
-      updateLowEvidenceRecord(record, resolvedDeltaTimeSec, nowSec);
-      if (retainRenderablePayloadForRelease) {
-        decayRecordLivePayload(record, resolvedReleaseSeconds);
-      }
-    }
-
-    if (!record.basisEligible) {
-      if (entry.evidenceScore >= TOPOLOGY_ADMIT_EVIDENCE) {
-        record.qualifyingEvidenceSec += resolvedDeltaTimeSec;
-      } else {
-        record.qualifyingEvidenceSec = 0;
-      }
-    }
-  }
-
-  const admittedModeKeys = [];
-  const removedModeKeys = [];
-  const allowBootstrapAdmission =
-    allowImmediateBootstrap && previousVisibleKeys.length === 0;
-  if (canReassignBasis(state, nowSec)) {
-    let basisChanged = false;
-    let completedEviction = false;
-    // Complete evictions whose fade has elapsed before selecting admissions,
-    // so the freed slots are available to this same reassign event.
-    for (const [modeKey, record] of Array.from(
-      state.recordsByModeKey.entries(),
-    )) {
-      if (record.basisEligible && isRecordEvictionComplete(record, nowSec)) {
-        removeRecord(state, modeKey);
-        removedModeKeys.push(modeKey);
-        basisChanged = true;
-        completedEviction = true;
-      }
-    }
-
-    const eligibleRecords = [];
-    for (const record of state.recordsByModeKey.values()) {
-      if (
-        record.basisRepresentable &&
-        !record.basisEligible &&
-        (record.qualifyingEvidenceSec >= TOPOLOGY_PROMOTE_SECONDS ||
-          (allowBootstrapAdmission &&
-            record.evidenceScore > TOPOLOGY_BOOTSTRAP_EVIDENCE))
-      ) {
-        eligibleRecords.push(record);
-      }
-    }
-
-    const availableVisibleSlots = Number.isFinite(normalizedMaxVisibleModeCount)
-      ? Math.max(
-          0,
-          normalizedMaxVisibleModeCount - countBasisEligibleRecords(state),
-        )
-      : Infinity;
-    const selectedRecords = selectAdmissionRecords({
-      records: eligibleRecords,
-      availableVisibleSlots,
-      maxDetailVisibleCount: getDetailAdmissionBudget(
-        normalizedMaxVisibleModeCount,
-      ),
-      currentDetailVisibleCount: countVisibleDetailRecords(state),
-      currentShellKeys: buildRecordShellKeySet(
-        getBasisEligibleRecords(state),
-        modalGeometryBackend,
-      ),
-      modalGeometryBackend,
-    });
-    const selectedRecordKeys = new Set(
-      selectedRecords.map((record) => record.modeKey),
-    );
-    const replacementPairs = completedEviction
-      ? []
-      : selectReplacementPairs({
-          state,
-          candidateRecords: eligibleRecords.filter(
-            (record) => !selectedRecordKeys.has(record.modeKey),
-          ),
-          maxVisibleModeCount: normalizedMaxVisibleModeCount,
-          maxHandoffModeCount: normalizedMaxHandoffModeCount,
-          alreadyAdmittedCount: selectedRecords.length,
-          modalGeometryBackend,
-        });
-    if (selectedRecords.length > 0 || replacementPairs.length > 0) {
-      // Fade admissions in unless the field was empty: modes appearing out of
-      // silence pop in at full strength by design.
-      const fadeIn = previousVisibleKeys.length > 0;
-      for (const record of selectedRecords) {
-        activateRecord(record, state, nowSec, { fadeIn });
-        admittedModeKeys.push(record.modeKey);
-      }
-      // A provisioned handoff page keeps both signed modal contributions in
-      // the descriptor. The raymarch carrier therefore sums them coherently
-      // before any magnitude, density, or radiance transform.
-      for (const pair of replacementPairs) {
-        beginRecordEviction(pair.target, nowSec);
-        activateRecord(pair.candidate, state, nowSec, { fadeIn: true });
-        admittedModeKeys.push(pair.candidate.modeKey);
-      }
-      basisChanged = true;
-    }
-    if (basisChanged) {
-      markBasisChanged(state, nowSec);
-    }
-  }
-
-  for (const [modeKey, record] of Array.from(
-    state.recordsByModeKey.entries(),
-  )) {
-    if (currentEntryByModeKey.has(modeKey)) {
-      if (
-        record.basisEligible &&
-        record.lowEvidenceSec >= resolvedReleaseSeconds &&
-        canReassignBasis(state, nowSec)
-      ) {
-        removeRecord(state, modeKey);
-        removedModeKeys.push(modeKey);
-        markBasisChanged(state, nowSec);
-      }
-      continue;
-    }
-
-    if (!record.basisEligible) {
-      state.recordsByModeKey.delete(modeKey);
-      continue;
-    }
-
-    updateLowEvidenceRecord(record, resolvedDeltaTimeSec, nowSec);
-    decayRecordLivePayload(record, resolvedReleaseSeconds);
-    if (
-      record.lowEvidenceSec >= resolvedReleaseSeconds &&
-      canReassignBasis(state, nowSec)
-    ) {
-      removeRecord(state, modeKey);
-      removedModeKeys.push(modeKey);
-      markBasisChanged(state, nowSec);
-    }
-  }
-
-  const outputRecords = state.visibleModeKeys
-    .map((modeKey) => state.recordsByModeKey.get(modeKey))
-    .filter((record) => record?.basisEligible)
-    .slice(
-      0,
-      Number.isFinite(normalizedMaxVisibleModeCount)
-        ? normalizedMaxVisibleModeCount + normalizedMaxHandoffModeCount
-        : undefined,
-    );
-  const descriptorSourceOutput = writeDescriptorSource(outputRecords, {
-    nowSec,
-    deltaTimeSec: resolvedDeltaTimeSec,
-  });
-  const diagnostics = buildDiagnostics({
+  const currentEntryByModeKey = advanceCurrentCandidateRecords({
     state,
-    candidateEntries,
-    outputRecords,
-    previousVisibleKeys,
-    admittedModeKeys,
-    removedModeKeys,
-    reset,
-    maxBasisModeOrder,
+    candidateEntries: frame.candidateEntries,
+    nowSec: frame.nowSec,
+    deltaTimeSec: frame.resolvedDeltaTimeSec,
+  });
+  const basisTransition = reassignVisibleModalBasis({
+    state,
+    nowSec: frame.nowSec,
+    previousVisibleKeys: frame.previousVisibleKeys,
+    maxVisibleModeCount: normalizedMaxVisibleModeCount,
+    maxHandoffModeCount: normalizedMaxHandoffModeCount,
+    allowBootstrapAdmission: frame.allowBootstrapAdmission,
     modalGeometryBackend,
   });
-  state.diagnostics = diagnostics;
+  const releasedModeKeys = releaseExpiredModalRecords({
+    state,
+    currentEntryByModeKey,
+    deltaTimeSec: frame.resolvedDeltaTimeSec,
+    nowSec: frame.nowSec,
+    releaseSeconds: resolvedReleaseSeconds,
+    canReleaseVisibleBasis:
+      !frame.reset &&
+      !basisTransition.basisChanged &&
+      canReassignBasis(state, frame.nowSec),
+  });
+  const basisChanged =
+    frame.reset || basisTransition.basisChanged || releasedModeKeys.length > 0;
+  if (basisChanged) {
+    markBasisChanged(state, frame.nowSec);
+  }
 
-  return {
-    descriptorSource: descriptorSourceOutput,
-    diagnostics,
-  };
+  return buildActiveModalFieldContinuityResult({
+    state,
+    candidateEntries: frame.candidateEntries,
+    previousVisibleKeys: frame.previousVisibleKeys,
+    admittedModeKeys: basisTransition.admittedModeKeys,
+    removedModeKeys: [...basisTransition.removedModeKeys, ...releasedModeKeys],
+    reset: frame.reset,
+    maxVisibleModeCount: normalizedMaxVisibleModeCount,
+    maxHandoffModeCount: normalizedMaxHandoffModeCount,
+    modalGeometryBackend,
+    nowSec: frame.nowSec,
+    deltaTimeSec: frame.resolvedDeltaTimeSec,
+  });
 }

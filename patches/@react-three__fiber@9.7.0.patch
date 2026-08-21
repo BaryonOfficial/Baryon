@@ -1,0 +1,96 @@
+diff --git a/dist/events-156d8d12.esm.js b/dist/events-156d8d12.esm.js
+index 9681d0c62238d67f2d5ad389307dfd45ee8ba7ba..9f94a1e4b583068d6c6d544c65ddecc5590401ba 100644
+--- a/dist/events-156d8d12.esm.js
++++ b/dist/events-156d8d12.esm.js
+@@ -15696,8 +15696,16 @@ function createRoot(canvas) {
+   let lastCamera;
+   let configured = false;
+   let pending = null;
++  let configuring = null;
+   return {
+     async configure(props = {}) {
++      // Async renderer initialization can overlap when the Canvas owner
++      // re-renders. Serialize configure so one root never creates multiple
++      // renderers from the same pre-init state.
++      while (configuring) await configuring;
++      let finishConfiguring;
++      configuring = new Promise(_finish => finishConfiguring = _finish);
++      try {
+       let resolve;
+       pending = new Promise(_resolve => resolve = _resolve);
+       let {
+@@ -15922,6 +15930,10 @@ function createRoot(canvas) {
+       configured = true;
+       resolve();
+       return this;
++      } finally {
++        configuring = null;
++        finishConfiguring();
++      }
+     },
+     render(children) {
+       // The root has to be configured before it can be rendered
+diff --git a/dist/events-4c71f21f.cjs.prod.js b/dist/events-4c71f21f.cjs.prod.js
+index 65e702ef67d954387307b168529752690a586fd0..b906e846da0d375d33189bab239f9243ad0e2d6d 100644
+--- a/dist/events-4c71f21f.cjs.prod.js
++++ b/dist/events-4c71f21f.cjs.prod.js
+@@ -7524,8 +7524,16 @@ function createRoot(canvas) {
+   let lastCamera;
+   let configured = false;
+   let pending = null;
++  let configuring = null;
+   return {
+     async configure(props = {}) {
++      // Async renderer initialization can overlap when the Canvas owner
++      // re-renders. Serialize configure so one root never creates multiple
++      // renderers from the same pre-init state.
++      while (configuring) await configuring;
++      let finishConfiguring;
++      configuring = new Promise(_finish => finishConfiguring = _finish);
++      try {
+       let resolve;
+       pending = new Promise(_resolve => resolve = _resolve);
+       let {
+@@ -7750,6 +7758,10 @@ function createRoot(canvas) {
+       configured = true;
+       resolve();
+       return this;
++      } finally {
++        configuring = null;
++        finishConfiguring();
++      }
+     },
+     render(children) {
+       // The root has to be configured before it can be rendered
+diff --git a/dist/events-b1bdeb1a.cjs.dev.js b/dist/events-b1bdeb1a.cjs.dev.js
+index 7785529f79299cdefe706c0df1d5c756817ca274..2b94dfce96c8495b4d1245bfa18fa14d150f813e 100644
+--- a/dist/events-b1bdeb1a.cjs.dev.js
++++ b/dist/events-b1bdeb1a.cjs.dev.js
+@@ -15721,8 +15721,16 @@ function createRoot(canvas) {
+   let lastCamera;
+   let configured = false;
+   let pending = null;
++  let configuring = null;
+   return {
+     async configure(props = {}) {
++      // Async renderer initialization can overlap when the Canvas owner
++      // re-renders. Serialize configure so one root never creates multiple
++      // renderers from the same pre-init state.
++      while (configuring) await configuring;
++      let finishConfiguring;
++      configuring = new Promise(_finish => finishConfiguring = _finish);
++      try {
+       let resolve;
+       pending = new Promise(_resolve => resolve = _resolve);
+       let {
+@@ -15947,6 +15955,10 @@ function createRoot(canvas) {
+       configured = true;
+       resolve();
+       return this;
++      } finally {
++        configuring = null;
++        finishConfiguring();
++      }
+     },
+     render(children) {
+       // The root has to be configured before it can be rendered

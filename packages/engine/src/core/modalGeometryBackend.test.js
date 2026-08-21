@@ -16,32 +16,32 @@ describe("modal geometry backend", () => {
     expect(mode).toMatchObject({
       boundaryMode: "neumann",
       acousticSideLengthMeters: CAVITY_ACOUSTIC_DEFAULTS.sideLengthMeters,
-      subfloorProjectionActive: false,
     });
     expect(mode).not.toHaveProperty("acousticRadiusMeters");
     expect(mode.naturalFrequencyHz).toBeLessThanOrEqual(61);
   });
 
-  it("builds modal atlas entries with acoustic natural frequencies", () => {
+  it("enumerates the canonical finite rectangular mode lattice", () => {
     const backend = getModalGeometryBackend("rectangular");
-    const atlas = backend.buildAtlas({
+    const candidates = backend.enumerateAtlasCandidates({
       radius: SIMULATION_DEFAULTS.radius,
       acousticScale: CAVITY_ACOUSTIC_DEFAULTS,
       boundaryMode: SIMULATION_DEFAULTS.boundaryMode,
-      frequencyCenters: [{ centerHz: 60, familyWidth: 1 }],
-      buildModeKey: (u, v, w) => `${u}:${v}:${w}`,
-      createAtlasEntry({ candidate, naturalFrequencyHz }) {
-        return { candidate, naturalFrequencyHz };
-      },
+      maximumAxisOrder: 2,
     });
 
-    expect(atlas).toHaveLength(1);
-    expect(atlas[0].naturalFrequencyHz).toBeLessThanOrEqual(61);
-    expect(atlas[0].candidate).toMatchObject({
-      acousticSideLengthMeters: CAVITY_ACOUSTIC_DEFAULTS.sideLengthMeters,
-      subfloorProjectionActive: false,
+    expect(candidates).toHaveLength(9);
+    expect(candidates[0]).toMatchObject({
+      u: 0,
+      v: 0,
+      w: 1,
     });
-    expect(atlas[0].candidate).not.toHaveProperty("acousticRadiusMeters");
+    expect(candidates[0].naturalFrequencyHz).toBeCloseTo(59.2, 1);
+    expect(candidates.at(-1)).toMatchObject({
+      u: 2,
+      v: 2,
+      w: 2,
+    });
   });
 
   it("owns modal shell and family topology for rectangular modes", () => {

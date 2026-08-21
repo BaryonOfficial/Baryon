@@ -1,9 +1,21 @@
 import * as THREE from "three";
-import { REFERENCE_ABSORPTION_COEFFICIENT } from "@baryon/engine/core/raymarch/observationTransfer";
+import {
+  CYMATIC_PLASMA_BODY_RADIANCE_PER_EXTINCTION_LIMIT,
+  CYMATIC_PLASMA_CONTINUITY_SPINE_RADIANCE_PER_EXTINCTION_LIMIT,
+  CYMATIC_PLASMA_DETAIL_SPINE_RADIANCE_PER_EXTINCTION_LIMIT,
+  CYMATIC_PLASMA_EMISSION_COEFFICIENT,
+  CYMATIC_PLASMA_EXTINCTION_COEFFICIENT,
+  CYMATIC_PLASMA_RADIANCE_GAIN,
+} from "@baryon/engine/core/raymarch/cymaticPlasmaTransfer";
+import { CYMATIC_OBSERVER_REFERENCE } from "@baryon/engine/core/raymarch/cymaticObserverReference";
+import {
+  deriveSpectralSeedDirection,
+} from "@baryon/engine/utils/audio/spectralPhase";
 import {
   CHECKPOINT_AOV_MODES,
   CHECKPOINT_PRODUCTION_IDENTITIES,
   createCaptureOutputSession,
+  syncRenderOutputBloomUniforms,
   syncRenderOutputNodeTopology,
 } from "@baryon/engine/render/outputPipeline";
 
@@ -11,24 +23,6 @@ export const RAYMARCH_AUDIT_FIXTURE_RUNTIME_ADAPTER_KEY =
   "__baryonRaymarchAuditFixtureRuntimeAdapter";
 
 const FIXTURE_READY_TIMEOUT_MS = 12_000;
-// v1 frozen descriptors stored the former public Absorption setting, whose
-// shipped value 4 mapped linearly to the physical reference coefficient.
-const LEGACY_FIXTURE_ABSORPTION_REFERENCE = 4;
-
-function legacyFixtureAbsorptionToCoefficient(value) {
-  return (
-    Math.max(0, value) *
-    (REFERENCE_ABSORPTION_COEFFICIENT / LEGACY_FIXTURE_ABSORPTION_REFERENCE)
-  );
-}
-
-function coefficientToLegacyFixtureAbsorption(value) {
-  return (
-    Math.max(0, value) *
-    (LEGACY_FIXTURE_ABSORPTION_REFERENCE / REFERENCE_ABSORPTION_COEFFICIENT)
-  );
-}
-
 function cloneCameraState(camera) {
   return {
     matrixAutoUpdate: camera.matrixAutoUpdate,
@@ -73,18 +67,19 @@ function toFloat32(numericArray) {
   return new Float32Array(numericArray.values);
 }
 
-function createFixtureFeatureFrame(descriptor) {
-  const slots = toFloat32(descriptor.modal.slots);
+function createFixtureFeatureFrame(
+  descriptor,
+  { frameId, topologyRevision, basisIdentityHash },
+) {
+  const identitySlots = toFloat32(descriptor.modal.identitySlots);
+  const coefficientSlots = toFloat32(descriptor.modal.coefficientSlots);
   const phaseSlots = toFloat32(descriptor.modal.phaseSlots);
-  const colorSlots = toFloat32(descriptor.modal.colorSlots);
-  const spectralLaneA = toFloat32(descriptor.modal.spectralLaneA);
-  const spectralLaneB = toFloat32(descriptor.modal.spectralLaneB);
-  const spectralMeta = toFloat32(descriptor.modal.spectralMeta);
+  const spectralMomentSlots = toFloat32(descriptor.modal.spectralMomentSlots);
   const metadataSlots = toFloat32(descriptor.modal.metadataSlots);
   let projectedRenderEnergy = 0;
   let amplitudeTotal = 0;
   for (let index = 0; index < descriptor.modal.activeModeCount; index += 1) {
-    const amplitude = Math.max(0, slots[index * 4 + 3] ?? 0);
+    const amplitude = Math.max(0, coefficientSlots[index] ?? 0);
     amplitudeTotal += amplitude;
     projectedRenderEnergy += amplitude * amplitude;
   }
@@ -99,7 +94,6 @@ function createFixtureFeatureFrame(descriptor) {
     },
     capacity: {
       maxTotalModes: capacity,
-      basisAtlasPageCapacity: capacity,
     },
     diagnostics: {
       descriptorOverflow: false,
@@ -108,17 +102,18 @@ function createFixtureFeatureFrame(descriptor) {
       modalVarietyAudit: null,
     },
     slotViews: {
-      modalFieldSlots: slots,
+      modalIdentitySlots: identitySlots,
+      modalCoefficientSlots: coefficientSlots,
       modalFieldPhaseSlots: phaseSlots,
-      modalFieldColorSlots: colorSlots,
-      modalFieldSpectralLaneA: spectralLaneA,
-      modalFieldSpectralLaneB: spectralLaneB,
-      modalFieldSpectralMeta: spectralMeta,
+      modalFieldSpectralMomentSlots: spectralMomentSlots,
       modalFieldMetadataSlots: metadataSlots,
     },
   };
 
   return Object.freeze({
+    frameId,
+    topologyRevision,
+    basisIdentityHash,
     fieldState: "active",
     renderAuthority: true,
     sourceEvidence: {
@@ -130,16 +125,29 @@ function createFixtureFeatureFrame(descriptor) {
       renderEnergyEpsilon: 1e-6,
     },
     modalDescriptor,
-    modalFieldSlots: slots,
+    modalIdentitySlots: identitySlots,
+    modalCoefficientSlots: coefficientSlots,
     modalFieldPhaseSlots: phaseSlots,
-    modalFieldColorSlots: colorSlots,
-    modalFieldSpectralLaneA: spectralLaneA,
-    modalFieldSpectralLaneB: spectralLaneB,
-    modalFieldSpectralMeta: spectralMeta,
+    modalFieldSpectralMomentSlots: spectralMomentSlots,
+    modalFieldSpectralSeedDirection: new Float32Array(
+      deriveSpectralSeedDirection(
+        Array.from({ length: activeModeCount }, (_, index) => {
+          const offset = index * 4;
+          return {
+            naturalFrequencyHz: metadataSlots[offset],
+            responseFrequencyHz: metadataSlots[offset + 2],
+          };
+        }),
+      ),
+    ),
     modalFieldMetadataSlots: metadataSlots,
     activeModeCount,
     activeModalFieldModeCount: activeModeCount,
     modalPhaseAuthority: descriptor.phase.authority,
+    observationTimeSeconds: descriptor.phase.evaluationTimeSec,
+    observationAdvancing: false,
+    observationPaused: true,
+    observationSessionKey: `fixture:${descriptor.descriptorId}`,
     averageAmplitude: amplitudeTotal / Math.max(1, activeModeCount),
     modalResponseEnergy: Math.max(projectedRenderEnergy, 1e-5),
     observationEnergy: projectedRenderEnergy,
@@ -179,27 +187,16 @@ function waitFor(predicate, timeoutMessage) {
 }
 
 function snapshotFixtureSeal(state, runtimeState) {
+  const uploadState = runtimeState.raymarchUploadState;
   return {
     descriptorHash: state.descriptorHash,
-    modalGeneration: Math.max(
-      0,
-      Math.floor(runtimeState.activeModalRenderPacket?.generationId ?? 0),
-    ),
-    fieldGeneration: Math.max(
-      0,
-      Math.floor(runtimeState.liveFieldProjectionCache?.generation ?? 0),
-    ),
-    spectralGeneration: Math.max(
-      0,
-      Math.floor(runtimeState.spectralLaneCache?.generation ?? 0),
-    ),
+    modalGeneration: uploadState?.basisPlan?.revision ?? 0,
+    fieldGeneration: uploadState?.counters?.driveUpdateCount ?? 0,
+    spectralGeneration: uploadState?.basisPlan?.revision ?? 0,
     transportGeneration: null,
     aovGeneration: state.aovGeneration,
     kernelIdentity: state.descriptor.output.volumeKernelIdentity,
-    transportDispatchCount: Math.max(
-      0,
-      Math.floor(runtimeState.laserTransportCache?.dispatchCount ?? 0),
-    ),
+    transportDispatchCount: 0,
     producerEpoch: state.producerEpoch,
     phaseEvaluationTimeSec:
       runtimeState.modalPhaseEvaluationEpochSec ??
@@ -210,32 +207,14 @@ function snapshotFixtureSeal(state, runtimeState) {
 function fixtureIsReady(state, runtimeState) {
   if (
     !runtimeState.volumeMesh?.visible ||
-    runtimeState.modalBasisCache?.ready !== true ||
-    runtimeState.liveFieldProjectionCache?.ready !== true ||
-    !runtimeState.activeModalRenderPacket ||
+    !(runtimeState.uniforms?.uModalFieldModeCount?.value > 0) ||
+    !runtimeState.raymarchUploadState?.basisPlan ||
+    !runtimeState.raymarchUploadState?.driveFrame ||
     state.aovGeneration <= 0
   ) {
     return false;
   }
-  if (
-    state.descriptor.spectral.enabled &&
-    runtimeState.spectralLaneCache?.ready !== true
-  ) {
-    return false;
-  }
-  if (state.descriptor.checkpoint.mode === "current") {
-    // The current-accent checkpoint uses the existing transport owner; the
-    // fixture field commit may dispatch it once, after which the seal pins
-    // the count.
-    return (
-      runtimeState.laserTransportCache?.active === true &&
-      runtimeState.laserTransportCache?.ready === true
-    );
-  }
-  return (
-    (runtimeState.laserTransportCache?.dispatchCount ?? 0) ===
-    state.transportDispatchCountAtInstall
-  );
+  return true;
 }
 
 function applyFixtureMaterial(runtimeState, descriptor) {
@@ -257,23 +236,69 @@ function applyFixtureMaterial(runtimeState, descriptor) {
   ) {
     throw new Error("Fixture volume shape does not match the active runtime.");
   }
-  const baseOnlyCheckpoint = descriptor.checkpoint.mode === "base";
-  runtimeState.auditFixtureBaseOnly = baseOnlyCheckpoint;
+  runtimeState.auditFixtureBaseOnly = descriptor.checkpoint.mode === "base";
   runtimeState.baseDensityGain = descriptor.material.densityGain;
   uniforms.uDensityGain.value = descriptor.material.densityGain;
-  uniforms.uMaterialAbsorptionCoefficient.value =
-    legacyFixtureAbsorptionToCoefficient(descriptor.material.absorption);
-  uniforms.uCarrierCoreFwhmWorld.value =
-    descriptor.material.carrierCoreFwhmWorld;
-  uniforms.uContourSharpness.value = descriptor.material.contourSharpness;
-  uniforms.uHolographicBaseRadianceGain.value =
-    descriptor.material.holographicBaseRadianceGain;
-  if (baseOnlyCheckpoint) {
-    uniforms.uLaserCausticActive.value = 0;
+  if (
+    Math.abs(
+      descriptor.material.plasmaExtinctionCoefficient -
+        CYMATIC_PLASMA_EXTINCTION_COEFFICIENT,
+    ) > 1e-12
+  ) {
+    throw new Error(
+      "Fixture plasma extinction does not match the production kernel.",
+    );
   }
-  uniforms.uSpectralMix.value = descriptor.spectral.spectralMix;
-  runtimeState.spectralLight.colorMode = descriptor.spectral.colorMode;
-  runtimeState.spectralLight.spectralMix = descriptor.spectral.spectralMix;
+  if (
+    Math.abs(
+      descriptor.material.plasmaEmissionCoefficient -
+        CYMATIC_PLASMA_EMISSION_COEFFICIENT,
+    ) > 1e-12 ||
+    Math.abs(
+      descriptor.material.plasmaRadianceGain - CYMATIC_PLASMA_RADIANCE_GAIN,
+    ) > 1e-12 ||
+    Math.abs(
+      descriptor.material.plasmaContinuitySpineRadiancePerExtinctionLimit -
+        CYMATIC_PLASMA_CONTINUITY_SPINE_RADIANCE_PER_EXTINCTION_LIMIT,
+    ) > 1e-12 ||
+    Math.abs(
+      descriptor.material.plasmaDetailSpineRadiancePerExtinctionLimit -
+        CYMATIC_PLASMA_DETAIL_SPINE_RADIANCE_PER_EXTINCTION_LIMIT,
+    ) > 1e-12 ||
+    Math.abs(
+      descriptor.material.plasmaBodyRadiancePerExtinctionLimit -
+        CYMATIC_PLASMA_BODY_RADIANCE_PER_EXTINCTION_LIMIT,
+    ) > 1e-12 ||
+    Math.abs(
+      descriptor.material.observerFineApertureFwhmWorld -
+        CYMATIC_OBSERVER_REFERENCE.fineApertureFwhmWorld,
+    ) > 1e-12 ||
+    Math.abs(
+      descriptor.material.observerTopologyApertureFwhmWorld -
+        CYMATIC_OBSERVER_REFERENCE.topologyApertureFwhmWorld,
+    ) > 1e-12 ||
+    Math.abs(
+      descriptor.material.observerFineResidualScaleWorld -
+        CYMATIC_OBSERVER_REFERENCE.fineResidualScaleWorld,
+    ) > 1e-12 ||
+    Math.abs(
+      descriptor.material.observerFineResidualDetailLimit -
+        CYMATIC_OBSERVER_REFERENCE.fineResidualDetailLimit,
+    ) > 1e-12 ||
+    Math.abs(
+      descriptor.material.observerSheetFwhmWorld -
+        CYMATIC_OBSERVER_REFERENCE.sheetFwhmWorld,
+    ) > 1e-12
+  ) {
+    throw new Error(
+      "Fixture observer or plasma calibration does not match production.",
+    );
+  }
+  // Base checkpoints isolate the canonical plasma base lane through the
+  // baseRadiance AOV. No presentation gain or alternate material is installed.
+  uniforms.uSpectralPresentationEnabled.value =
+    descriptor.spectral.colorMode === "spectral" ? 1 : 0;
+  uniforms.uSpectralChroma.value = descriptor.spectral.spectralChroma;
   runtimeState.requestedRaymarchSteps = descriptor.output.raymarchSteps;
   runtimeState.effectiveRaymarchSteps = descriptor.output.raymarchSteps;
   runtimeState.volumeMesh.material.steps = descriptor.output.raymarchSteps;
@@ -293,6 +318,7 @@ export function createRaymarchAuditFixtureRuntimeDriver({
   invalidate,
   restoreControls,
   createCaptureSession = createCaptureOutputSession,
+  syncBloomUniforms = syncRenderOutputBloomUniforms,
   syncOutputTopology = syncRenderOutputNodeTopology,
 }) {
   const state = {
@@ -304,10 +330,10 @@ export function createRaymarchAuditFixtureRuntimeDriver({
     installError: null,
     captureSession: null,
     aovGeneration: 0,
+    fixtureFrameRevision: 0,
     producerEpoch: 0,
     authoritativeFrameSerial: 0,
     restoreRequiresFrameAfter: null,
-    transportDispatchCountAtInstall: 0,
     lastAuthoritativeFeatureFrame: null,
   };
 
@@ -327,8 +353,6 @@ export function createRaymarchAuditFixtureRuntimeDriver({
         camera: cloneCameraState(camera),
         authoritativeFrameSerial: state.authoritativeFrameSerial,
         baseDensityGain: runtimeState.baseDensityGain,
-        baseCarrierCoreFwhmWorld: runtimeState.baseCarrierCoreFwhmWorld,
-        spectralLight: { ...runtimeState.spectralLight },
         rendererExposure: gl.toneMappingExposure,
       };
     },
@@ -347,11 +371,12 @@ export function createRaymarchAuditFixtureRuntimeDriver({
       }
       state.descriptor = descriptor;
       state.descriptorHash = descriptorHash;
-      state.featureFrame = createFixtureFeatureFrame(descriptor);
-      state.transportDispatchCountAtInstall = Math.max(
-        0,
-        Math.floor(runtimeState.laserTransportCache?.dispatchCount ?? 0),
-      );
+      state.fixtureFrameRevision += 1;
+      state.featureFrame = createFixtureFeatureFrame(descriptor, {
+        frameId: state.fixtureFrameRevision,
+        topologyRevision: state.fixtureFrameRevision,
+        basisIdentityHash: descriptorHash,
+      });
       applyFixtureCamera(camera, descriptor);
       gl.toneMappingExposure = descriptor.post.exposure;
       state.ready = false;
@@ -407,9 +432,6 @@ export function createRaymarchAuditFixtureRuntimeDriver({
       const runtimeState = runtimeStateRef.current;
       if (runtimeState) {
         runtimeState.baseDensityGain = snapshot.baseDensityGain;
-        runtimeState.baseCarrierCoreFwhmWorld =
-          snapshot.baseCarrierCoreFwhmWorld;
-        runtimeState.spectralLight = { ...snapshot.spectralLight };
       }
       gl.toneMappingExposure = snapshot.rendererExposure;
       state.restoreRequiresFrameAfter = snapshot.authoritativeFrameSerial;
@@ -440,9 +462,8 @@ export function createRaymarchAuditFixtureRuntimeDriver({
           "No authoritative live feature frame has been observed yet.",
         );
       }
-      // The runtime's resolved descriptor carries the canonical joined slot
-      // views regardless of whether the frame arrived pre-joined or as
-      // separate identity and coefficient lanes.
+      // The authoritative descriptor carries immutable mode identities and
+      // the current drive coefficients as separate canonical lanes.
       const currentModalDescriptor = runtimeState.currentModalDescriptor;
       if (currentModalDescriptor?.fieldAuthority !== "complete") {
         throw new Error(
@@ -455,24 +476,31 @@ export function createRaymarchAuditFixtureRuntimeDriver({
       );
       const slotViews = currentModalDescriptor.slotViews ?? {};
       const modalArrays = {
-        slots: slotViews.modalFieldSlots,
+        identitySlots: slotViews.modalIdentitySlots,
+        coefficientSlots: slotViews.modalCoefficientSlots,
         phaseSlots: slotViews.modalFieldPhaseSlots,
-        colorSlots: slotViews.modalFieldColorSlots,
-        spectralLaneA: slotViews.modalFieldSpectralLaneA,
-        spectralLaneB: slotViews.modalFieldSpectralLaneB,
-        spectralMeta: slotViews.modalFieldSpectralMeta,
+        spectralMomentSlots: slotViews.modalFieldSpectralMomentSlots,
         metadataSlots: slotViews.modalFieldMetadataSlots,
       };
-      // Live views can carry arrays shorter than the runtime capacity; the
-      // shortest array is the whole-set capacity this descriptor can pin.
+      const slotStrides = {
+        identitySlots: 3,
+        coefficientSlots: 1,
+        phaseSlots: 4,
+        spectralMomentSlots: 4,
+        metadataSlots: 4,
+      };
+      // The shortest complete lane is the whole-set capacity this descriptor
+      // can pin.
       let frameCapacity = runtimeCapacity;
-      for (const [name, values] of Object.entries(modalArrays)) {
-        if (!values || values.length < 4) {
-          throw new Error(
-            `The live modal descriptor has no ${name} slot view.`,
-          );
+      for (const [name, stride] of Object.entries(slotStrides)) {
+        const values = modalArrays[name];
+        if (!values || values.length < stride) {
+          throw new Error(`The live modal descriptor has no ${name} view.`);
         }
-        frameCapacity = Math.min(frameCapacity, Math.floor(values.length / 4));
+        frameCapacity = Math.min(
+          frameCapacity,
+          Math.floor(values.length / stride),
+        );
       }
       const capacity = Math.max(1, frameCapacity);
       const elementCount = capacity * 4;
@@ -490,10 +518,12 @@ export function createRaymarchAuditFixtureRuntimeDriver({
       if (!Number.isFinite(phaseEvaluationTimeSec)) {
         throw new Error("The live modal phase evaluation time is unavailable.");
       }
-      const spectralColorMode = runtimeState.spectralLight?.colorMode ?? "";
-      const spectralMix = uniforms.uSpectralMix?.value ?? 0;
-      const spectralEnabled =
-        spectralColorMode === "spectral" && spectralMix > 0;
+      const spectralPresentationEnabled =
+        (uniforms.uSpectralPresentationEnabled?.value ?? 0) > 0;
+      const spectralColorMode = spectralPresentationEnabled
+        ? "spectral"
+        : "static";
+      const spectralChroma = uniforms.uSpectralChroma?.value ?? 1;
       const outputWidth = Math.max(1, Math.round(gl.domElement?.width ?? 0));
       const outputHeight = Math.max(1, Math.round(gl.domElement?.height ?? 0));
 
@@ -509,12 +539,16 @@ export function createRaymarchAuditFixtureRuntimeDriver({
               ),
             ),
           ),
-          slots: sliceModalArray(modalArrays.slots),
+          identitySlots: Array.from(
+            modalArrays.identitySlots.subarray(0, capacity * 3),
+          ),
+          coefficientSlots: Array.from(
+            modalArrays.coefficientSlots.subarray(0, capacity),
+          ),
           phaseSlots: sliceModalArray(modalArrays.phaseSlots),
-          colorSlots: sliceModalArray(modalArrays.colorSlots),
-          spectralLaneA: sliceModalArray(modalArrays.spectralLaneA),
-          spectralLaneB: sliceModalArray(modalArrays.spectralLaneB),
-          spectralMeta: sliceModalArray(modalArrays.spectralMeta),
+          spectralMomentSlots: sliceModalArray(
+            modalArrays.spectralMomentSlots,
+          ),
           metadataSlots: sliceModalArray(modalArrays.metadataSlots),
         },
         phase: {
@@ -537,22 +571,29 @@ export function createRaymarchAuditFixtureRuntimeDriver({
           },
         },
         material: {
-          holographicBaseRadianceGain:
-            uniforms.uHolographicBaseRadianceGain?.value,
           densityGain: uniforms.uDensityGain?.value,
-          // Preserve the v1 descriptor boundary while production uses the
-          // physical coefficient directly and exposes no Absorption control.
-          absorption: coefficientToLegacyFixtureAbsorption(
-            uniforms.uMaterialAbsorptionCoefficient?.value ??
-              REFERENCE_ABSORPTION_COEFFICIENT,
-          ),
-          carrierCoreFwhmWorld: uniforms.uCarrierCoreFwhmWorld?.value,
-          contourSharpness: uniforms.uContourSharpness?.value,
+          plasmaRadianceGain: CYMATIC_PLASMA_RADIANCE_GAIN,
+          plasmaExtinctionCoefficient: CYMATIC_PLASMA_EXTINCTION_COEFFICIENT,
+          plasmaEmissionCoefficient: CYMATIC_PLASMA_EMISSION_COEFFICIENT,
+          plasmaContinuitySpineRadiancePerExtinctionLimit:
+            CYMATIC_PLASMA_CONTINUITY_SPINE_RADIANCE_PER_EXTINCTION_LIMIT,
+          plasmaDetailSpineRadiancePerExtinctionLimit:
+            CYMATIC_PLASMA_DETAIL_SPINE_RADIANCE_PER_EXTINCTION_LIMIT,
+          plasmaBodyRadiancePerExtinctionLimit:
+            CYMATIC_PLASMA_BODY_RADIANCE_PER_EXTINCTION_LIMIT,
+          observerFineApertureFwhmWorld:
+            CYMATIC_OBSERVER_REFERENCE.fineApertureFwhmWorld,
+          observerTopologyApertureFwhmWorld:
+            CYMATIC_OBSERVER_REFERENCE.topologyApertureFwhmWorld,
+          observerFineResidualScaleWorld:
+            CYMATIC_OBSERVER_REFERENCE.fineResidualScaleWorld,
+          observerFineResidualDetailLimit:
+            CYMATIC_OBSERVER_REFERENCE.fineResidualDetailLimit,
+          observerSheetFwhmWorld: CYMATIC_OBSERVER_REFERENCE.sheetFwhmWorld,
         },
         spectral: {
-          enabled: spectralEnabled,
           colorMode: spectralColorMode,
-          spectralMix: spectralEnabled ? spectralMix : 0,
+          spectralChroma,
         },
         output: {
           volumeKernelIdentity:
@@ -577,23 +618,11 @@ export function createRaymarchAuditFixtureRuntimeDriver({
           opticalPsfEnabled: Boolean(postNodesRef.current?.opticalPsfPass),
         },
         transport: {
-          apparatusIdentity: runtimeState.laserTransportCache?.semantic ?? null,
-          cacheIdentity: runtimeState.laserTransportCache
-            ? [
-                runtimeState.laserTransportCache.semantic,
-                `res${runtimeState.laserTransportCache.resolution}`,
-                `rays${runtimeState.laserTransportCache.rayGridSize}`,
-                runtimeState.laserTransportCache.volumeShape,
-              ].join("/")
-            : null,
-          // Refracting the pinned fixture field permits exactly one
-          // dispatch during install; the seal pins the count afterwards.
-          expectedDispatchCount: 1,
+          apparatusIdentity: "analytic-weak-deflection-volumetric-cymascope",
+          cacheIdentity: null,
+          expectedDispatchCount: 0,
         },
-        transportDispatchCount: Math.max(
-          0,
-          Math.floor(runtimeState.laserTransportCache?.dispatchCount ?? 0),
-        ),
+        transportDispatchCount: 0,
       };
     },
   };
@@ -638,8 +667,8 @@ export function createRaymarchAuditFixtureRuntimeDriver({
       }
       const pipeline = ensurePipeline();
       if (pipeline) {
+        syncBloomUniforms(postNodesRef.current, { enabled: false });
         syncOutputTopology(pipeline, postNodesRef.current, {
-          bloomEnabled: false,
           outputMode: controlsRef.current.outputMode,
           temporalHistoryEnabled: false,
           smaaEnabled: false,

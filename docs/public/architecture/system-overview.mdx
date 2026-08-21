@@ -114,14 +114,25 @@ grant render authority.
 
 ### Spectral Light color
 
-Color is part of audio interpretation: it is produced before the render boundary and
-carried through the modal color slots, never reconstructed from raw FFT bins inside the
-renderer. A color value must not promote a mode on its own. The detailed Spectral Light
-architecture lives in the engine whitepaper.
+Audio interpretation produces additive first- and second-order circular pitch moments per
+modal term and carries them through spectral-moment slots. The persistent observer caches
+one resolved unit phase direction directly in appearance XY. On the same observer step it
+evaluates the constant-luminance two-harmonic mapping once and stores a derived RGB
+chromatic companion in organization RGB. The material fetches that companion from one nearest
+observer voxel, so RGB interpolation cannot cross grey. This adds no render target or palette
+lookup.
+The renderer never reconstructs pitch evidence from raw FFT bins. The plasma allocates
+its scalar radiance budget before applying that unit-luminance chromaticity, so pitch can
+change hue but not geometry, extinction, or brightness. A spectral moment must not promote
+a mode on its own. An explicit Spectral Chroma control may move that chromaticity toward
+equal-luminance neutral without blending in static colors or changing acoustic radiance.
+The detailed Spectral Light architecture lives in the engine whitepaper.
 
 ## Changing the engine safely
 
 Before moving a boundary, ask whether the change is **semantic** or an **implementation
 detail**, whether the value crosses persistence or host boundaries, and whether tests
 already assert its shape. Prefer normalization layers and dual-read compatibility over
-broad renames — string churn at these boundaries is how cross-host breakage happens.
+broad renames at genuine persistence or host boundaries. Inside the semantic core, use
+one canonical name and translate legacy values only at the boundary that still requires
+them.

@@ -1,0 +1,157 @@
+---
+title: "Release notes"
+description: "What changed in Baryon Desktop 1.2.0 and what to check before your next show."
+tag: "1.2.0"
+---
+
+## Baryon Desktop 1.2.0
+
+Released August 14, 2026.
+
+Baryon Desktop 1.2.0 adds two-way OSC and MIDI control, an OSCQuery-powered
+TouchDesigner surface, OSC Structure Export v4, expanded visual controls, and a
+more tightly synchronized Performer output path.
+
+<Warning>
+  Version 1.2.0 changes render defaults and the engine response. Recheck any
+  show-critical presets before performing. **Max Quality** is now the default
+  profile; switch to **Auto** when you prefer adaptive quality targeting 60 FPS.
+</Warning>
+
+## Control Baryon from OSC and MIDI
+
+The new **Control I/O** panel accepts OSC and MIDI control-change input in
+Performer Mode.
+
+- Learn knobs, faders, buttons, color controls, and camera targets from one
+  searchable MIDI target list.
+- Map an XY surface to independent horizontal and vertical orbit axes with
+  **Orbit XY** learning.
+- Control camera distance and trigger **Camera Home** or **Orbit Center**.
+- Choose **Session only** for temporary OSC/MIDI changes or **Remember** to save
+  changed visual settings.
+- Use **Immediate** takeover for synchronized or motorized controls. Use
+  **Pickup** for fixed physical faders when you want to avoid value jumps.
+
+MIDI notes, pitch bend, aftertouch, relative encoders, camera pan/roll, and
+camera-motion recording are not part of this release.
+
+See [Parameter automation](/public/desktop/parameter-automation) for setup,
+addresses, MIDI learning, takeover behavior, and camera ranges.
+
+## Keep external controls synchronized
+
+**Controller Output** sends Baryon's current control values back to compatible
+OSC and MIDI surfaces. A TouchOSC fader or XY marker can therefore follow a
+change made inside Baryon instead of displaying stale controller state.
+
+- MIDI returns the values for learned mappings to the selected output.
+- OSC returns every current-valued public automation target to the configured
+  output host and port.
+- Buttons and other actions have no persistent value to return.
+- Recent MIDI output is ignored if a virtual bus echoes it back as input,
+  including delayed or out-of-order fader values.
+
+Earlier camera-only feedback settings migrate to the broader Controller Output
+configuration where the saved transport information is still available.
+
+## TouchDesigner control surface
+
+The updated
+[baryon_osc.tox](https://downloads.baryon.live/touchdesigner/baryon_osc.tox)
+queries Baryon's OSCQuery server and creates TouchDesigner parameters for the
+current public control surface. Changes travel both ways when Controller Output
+is enabled.
+
+The component discovers Performance, Camera, Volume, Appearance, Motion, and
+Logo controls. It keeps Baryon's input port, OSCQuery endpoint, controller
+output receive port, Bonjour discovery, and generated controls together in one
+component.
+
+## OSC Structure Export v4
+
+OSC Data Out now supports up to 160 active modes at 15, 30, or 60 Hz. Protocol
+v4 adds transactional topology and state updates, bounded packet paging,
+recovery keyframes, explicit stream retirement, response-frequency metadata,
+and first and second circular spectral moments.
+
+<Warning>
+  Replace older OSC Structure receivers before enabling Data Out from 1.2.0. Use
+  the current
+  [baryon_osc_structure.tox](https://downloads.baryon.live/touchdesigner/baryon_osc_structure.tox)
+  or implement the v4 commit rules described in [OSC Structure
+  Export](/public/desktop/osc-structure-export).
+</Warning>
+
+The 160-mode setting is a transport and active-field capacity. It does not mean
+that every frame contains 160 modes or that the spatial field resolves every
+audible frequency.
+
+## Visual and engine changes
+
+Version 1.2.0 expands the shared control surface:
+
+- **Shape** switches between a spherical clip and the full cubic domain.
+- **Boundary** switches between reflective Neumann behavior and a fixed-node
+  Dirichlet boundary.
+- **Pattern Persistence** controls how long recognizable cymatic structure is
+  retained.
+- **Spectral Chroma** adjusts spectral color vividness without blending in the
+  configured static colors.
+- **Max Samples**, **Laser Bending**, **Caustic Strength**, and **Laser Focus**
+  expose the current presentation and optical controls.
+- **Max Quality** is the new default profile. **Auto** and **Custom** remain
+  available for adaptive frame-rate control.
+
+The audio-to-field and observer path also changed: modal source coupling,
+damping, spectral color, water-medium response, and field observation were
+revised. These changes can alter a saved look even when its stored control
+values are unchanged.
+
+See the [Control panel reference](/public/reference/controls) for the current
+labels and behavior.
+
+## Performer output and reliability
+
+Display, Syphon, and Spout now share one authoritative program-output state.
+The operator preview follows that stage instead of becoming a second output
+owner. Recovery, display disconnects, resolution changes, and helper restarts
+therefore preserve one clear live-output path.
+
+Performer output remains opaque over black. Use Add or Screen blending in a
+receiver when black should disappear. See [Program
+output](/public/desktop/program-output) for platform setup.
+
+Version 1.2.0 also improves:
+
+- MIDI device reconnect and unavailable-device recovery;
+- live-input status and file-playback recovery;
+- file queue and compact player behavior;
+- support diagnostics and renderer-memory reporting;
+- display precision for OSC float values such as `0.4`; and
+- WebGPU recovery and native-output diagnostics.
+
+## Upgrade checklist
+
+<Steps>
+  <Step title="Update the app and TouchDesigner components">
+    Install Baryon Desktop 1.2.0 and replace older copies of both TouchDesigner
+    `.tox` components.
+  </Step>
+  <Step title="Recheck render performance">
+    Open a representative preset. Keep **Max Quality** when the system holds the
+    desired cadence; otherwise select **Auto** or set a **Custom** FPS target.
+  </Step>
+  <Step title="Verify Control I/O routing">
+    Confirm OSC In, OSCQuery, Controller Output, MIDI input/output, and OSC Data
+    Out ports. Learned MIDI mappings are separate from OSC addresses.
+  </Step>
+  <Step title="Test the real receiver path">
+    Move controls in both directions, reconnect the controller, and verify a
+    real TouchDesigner, Syphon, or Spout receiver before a show.
+  </Step>
+</Steps>
+
+Listener Mode runs on macOS, Windows, and Linux. Performer Mode, stage output,
+OSC/MIDI automation, and the Baryon Pro trial remain available on macOS and
+Windows; Linux Performer support is not included in 1.2.0.

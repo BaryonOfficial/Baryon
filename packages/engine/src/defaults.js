@@ -1,6 +1,13 @@
+import {
+  DEFAULT_LIVE_INPUT_ACOUSTIC_INTENT,
+  DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
+} from "./core/audio/liveInputAnalysis.js";
 import { DEFAULT_REQUESTED_CAVITY_GEOMETRY } from "./core/cavityGeometry.js";
 import { VOLUME_SHAPES } from "./core/volumeShape.js";
-import { DEFAULT_PERFORMANCE_PROFILE } from "./render/outputProfilePolicy.js";
+import {
+  DEFAULT_PERFORMANCE_PROFILE,
+  DEFAULT_TRAA_ENABLED,
+} from "./render/outputProfilePolicy.js";
 
 const DEFAULT_MODAL_FIELD_CAPACITY = 160;
 export const DEFAULT_FFT_SIZE = 8192;
@@ -15,8 +22,8 @@ export const AUDIO_DEFAULTS = Object.freeze({
   echoCancellation: false,
   noiseSuppression: false,
   autoGainControl: false,
-  liveInputAnalysisClass: "auto",
-  liveInputAcousticIntent: "ambient",
+  liveInputAnalysisClass: DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
+  liveInputAcousticIntent: DEFAULT_LIVE_INPUT_ACOUSTIC_INTENT,
 });
 
 export const TEST_TONE_SIGNALS = Object.freeze({
@@ -25,19 +32,32 @@ export const TEST_TONE_SIGNALS = Object.freeze({
 });
 
 export const CAVITY_ACOUSTIC_DEFAULTS = Object.freeze({
+  acousticMedium: "water",
   sideLengthMeters: 12.5,
   soundSpeedMetersPerSecond: 1480,
-  subfloorPolicy: "project-subfundamental",
+  mediumDensityKgPerM3: 998,
+  // Distilled water near 20 C. B/A declares the quadratic equation-of-state
+  // nonlinearity; beta = 1 + B/(2A) is derived by the modal-drive owner.
+  equationOfStateNonlinearityBA: 5,
+  // Declared incident plane-wave peak pressure at the virtual drive plane for
+  // a full-scale captured waveform. 100 kPa is 220 dB re 1 µPa pressure
+  // amplitude; it is neither source level at 1 m nor a hardware measurement.
+  // Explicit null or zero disables finite-amplitude propagation and preserves
+  // the exact linear drive path.
+  incidentPeakPressurePascalAtFullScale: 100_000,
+  // Damping is part of the declared virtual apparatus. Side length and sound
+  // speed determine eigenfrequencies, but cannot determine Q without wall,
+  // support, transducer, and radiation-loss measurements. The declared load
+  // preserves the established broadband musical response; the fixed-aperture
+  // persistent cymatic observer owns visual legibility without changing modal
+  // admission.
+  modalIntrinsicQualityFactorAt100Hz: 164,
+  modalLoadLinewidthHz: 7,
 });
 
 export const SIMULATION_DEFAULTS = Object.freeze({
   radius: 3.0,
   cavityAcousticScale: CAVITY_ACOUSTIC_DEFAULTS,
-  // Fixed world-space FWHM of the resolved cymatic carrier core. This is a
-  // reference-apparatus dimension, not an audio- or frame-dependent threshold.
-  // The analytic interval integral resolves this width below the field-cache
-  // cell size without making the carrier depend on cache resolution.
-  carrierCoreFwhmWorld: 0.024,
   boundaryMode: "neumann",
   cavityGeometry: DEFAULT_REQUESTED_CAVITY_GEOMETRY,
   volumeShape: VOLUME_SHAPES.sphere,
@@ -45,27 +65,28 @@ export const SIMULATION_DEFAULTS = Object.freeze({
 
 export const RENDER_DEFAULTS = Object.freeze({
   rotationMode: "off",
-  rotationSpeed: 2.5,
+  rotationSpeed: 4.78,
   idleLogoIntensity: 0.04,
-  idleLogoAlpha: 0.08,
   idleLogoSize: 1.0,
   idleLogoColor: "#f7fdff",
+  idleLogoRotationMode: "manual",
+  idleLogoRotationSpeed: 2.5,
   backgroundColor: "#000000",
   renderQualityPreset: DEFAULT_PERFORMANCE_PROFILE,
   customTargetFps: 60,
   volumeColor: "#5be3f4",
   surfaceColor: "#5be3f4",
-  colorMode: /** @type {"static" | "spectral"} */ ("static"),
-  spectralMix: 0.96,
-  outputMode: "transparent",
+  colorMode: /** @type {"static" | "spectral"} */ ("spectral"),
+  spectralChroma: 1,
+  outputMode: "opaque",
   outputBackgroundColor: "#000000",
   bloomEnabled: true,
-  bloomStrength: 1.18,
+  bloomStrength: 0.5,
   bloomRadius: 0,
-  bloomThreshold: 0.5,
+  bloomThreshold: 1,
   smaaEnabled: true,
   performanceHudEnabled: false,
-  traaEnabled: true,
+  traaEnabled: DEFAULT_TRAA_ENABLED,
   cameraLocked: false,
 });
 
@@ -90,19 +111,29 @@ export const BEAT_DEFAULTS = Object.freeze({
 export const RAYMARCH_AVERAGE_AMPLITUDE_SHADER_REFERENCE = 96;
 
 export const RAYMARCH_DEFAULTS = Object.freeze({
-  raymarchSteps: 72,
-  densityGain: 4,
+  // Maximum presentation-quadrature budget on a diameter camera ray. Shorter
+  // chords and adaptive profiles may use fewer samples. The modal loop runs
+  // once per retained field-cache voxel and camera samples reconstruct that
+  // field, so this value controls only camera-integration accuracy, not
+  // physical spatial resolution or cache fidelity.
+  raymarchSteps: 70,
+  densityGain: 3.5,
+  // Lens strength trades fold definition against saturation: gentle
+  // displacement keeps the transmitted flood smooth and forms one clean fold
+  // per feature, while too strong a gain displaces all light and collapses the
+  // partial-stop observable into a structureless bright plate. 1.2 is the
+  // hand-tuned setting from the "New Default 02" look (2026-07-26); the
+  // transmission-photograph rework originally landed on 0.5.
   laserDeflectionGain: 1.2,
-  contourSharpness: 8,
   holographicIntensity: 1,
-  holographicFresnelPower: 2.4,
+  holographicFresnelPower: 10,
 });
 
 export const AUDIT_DEFAULTS = Object.freeze({
   auditEnabled: false,
   freezeModeSlots: false,
   forceWebGLFallbackTest: false,
-  lowLoadPlaybackDiagnostics: false,
+  suppressPlaybackTelemetry: false,
   injectTestTone: false,
   testToneSignal: TEST_TONE_SIGNALS.pureSine,
   testToneHz: 440,

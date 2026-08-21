@@ -1,11 +1,17 @@
 import { useRef, useCallback } from "react";
 import {
+  createFallbackRenderOutputPipeline,
   createRenderOutputPipeline,
   disposeRenderOutputPostNodes,
   getRenderQualityProfileKey,
 } from "@baryon/engine/render/outputPipeline";
 
-export function useBaryonPipeline(gl, scene, camera, renderProfile) {
+export function useBaryonPipeline(
+  gl,
+  scene,
+  camera,
+  renderProfile,
+) {
   const pipelineRef = useRef(null);
   const postNodesRef = useRef(null);
   const renderProfileRef = useRef(renderProfile);
@@ -22,12 +28,8 @@ export function useBaryonPipeline(gl, scene, camera, renderProfile) {
   }, []);
 
   const ensurePipeline = useCallback(() => {
-    if (gl?.backend?.isWebGLBackend === true) {
-      disposePipeline();
-      return null;
-    }
-
     const nextProfileKey = getRenderQualityProfileKey(renderProfileRef.current);
+
     if (
       pipelineRef.current &&
       pipelineProfileKeyRef.current === nextProfileKey
@@ -36,7 +38,16 @@ export function useBaryonPipeline(gl, scene, camera, renderProfile) {
     }
 
     disposePipeline();
-    const pipelineState = createRenderOutputPipeline(gl, scene, camera, {
+
+    // The WebGL fallback cannot run the full chain — TRAA needs a velocity MRT
+    // attachment and SMAA sits behind it — but it still owns display transfer,
+    // the optical PSF, and bloom. Both backends share this lifecycle and cache
+    // key; only the pipeline factory differs.
+    const createPipeline =
+      gl?.backend?.isWebGLBackend === true
+        ? createFallbackRenderOutputPipeline
+        : createRenderOutputPipeline;
+    const pipelineState = createPipeline(gl, scene, camera, {
       renderProfile: renderProfileRef.current,
     });
     if (!pipelineState) {

@@ -56,8 +56,9 @@ const defaultStageCameraConfig = (() => {
   });
 })();
 
-// The external output window is already sized to the selected framebuffer.
-// Keep the canvas pixel ratio fixed so display DPR cannot silently multiply it.
+// Most output hosts are already sized to the selected framebuffer. Windows OSR
+// supplies an explicit ratio because BrowserWindow geometry is measured in DIPs
+// while the shared compositor texture is measured in physical pixels.
 const EXTERNAL_OUTPUT_FRAMEBUFFER_PIXEL_RATIO = 1;
 const IGNORE_ENGINE_READY_CHANGE = () => {};
 
@@ -81,6 +82,7 @@ function resolveStageColor(value, fallback) {
  *     up?: { x?: number, y?: number, z?: number },
  *     fov?: number,
  *   } | null,
+ *   cameraCutNonce?: number | null,
  *   backgroundColor?: string,
  *   outputMode?: string,
  *   outputBackgroundColor?: string,
@@ -90,8 +92,13 @@ function resolveStageColor(value, fallback) {
  *   adaptiveResetNonce?: number,
  *   forceWebGLRenderer?: boolean,
  *   registerRenderRequester?: ((requester: (() => void) | null) => void) | null,
+ *   halfFloatOutput?: boolean,
+ *   outputCompositorFrameTransfer?: boolean,
+ *   framebufferPixelRatio?: number,
+ *   onOutputCompositorFrame?: ((frame: { width: number, height: number, bitmap: ImageBitmap }) => void) | null,
  *   onStageRender?: (payload: { frameSequence: number | null, qualityPreset: string | null }) => void,
  *   onFrameState?: ((state: Record<string, unknown>) => void) | null,
+ *   registerStructureExportSampleReader?: ((reader: Function | null) => void) | null,
  *   onLiveInputRuntimeStatusChange?: ((status: unknown) => void) | null,
  *   onPerformanceHudSnapshotChange?: ((snapshot: Record<string, unknown> | null) => void) | null,
  *   onAuditSnapshotChange?: ((state: { enabled: boolean, snapshot: Record<string, unknown> | null }) => void) | null,
@@ -105,6 +112,7 @@ export function OutputStageSurface({
   resolvedRenderProfile = null,
   externalFrameRef = null,
   cameraPose = null,
+  cameraCutNonce = null,
   backgroundColor: backgroundColorProp = null,
   outputMode: outputModeProp = null,
   outputBackgroundColor: outputBackgroundColorProp = null,
@@ -114,13 +122,24 @@ export function OutputStageSurface({
   adaptiveResetNonce = 0,
   forceWebGLRenderer = false,
   registerRenderRequester = null,
+  halfFloatOutput = false,
+  outputCompositorFrameTransfer = false,
+  framebufferPixelRatio = EXTERNAL_OUTPUT_FRAMEBUFFER_PIXEL_RATIO,
+  onOutputCompositorFrame = null,
   onStageRender = null,
   onFrameState = null,
+  registerStructureExportSampleReader = null,
   onLiveInputRuntimeStatusChange = null,
   onPerformanceHudSnapshotChange = null,
   onAuditSnapshotChange = null,
 }) {
   const [rendererError, setRendererError] = useState(null);
+  const normalizedFramebufferPixelRatio = Number(framebufferPixelRatio);
+  const resolvedFramebufferPixelRatio =
+    Number.isFinite(normalizedFramebufferPixelRatio) &&
+    normalizedFramebufferPixelRatio > 0
+      ? normalizedFramebufferPixelRatio
+      : EXTERNAL_OUTPUT_FRAMEBUFFER_PIXEL_RATIO;
   const resolvedCameraPose = cameraPose;
   const cameraConfig = /** @type {StageCameraConfig} */ (
     resolvedCameraPose == null
@@ -155,7 +174,7 @@ export function OutputStageSurface({
     resolvedOutputMode === OUTPUT_MODES.opaque
       ? resolvedOutputBackgroundColor
       : "transparent";
-  const traaEnabled = controlsRef.current?.traaEnabled !== false;
+  const traaEnabled = controlsRef.current?.traaEnabled === true;
   const customTargetFps = controlsRef.current?.customTargetFps ?? null;
 
   const handleCanvasError = (error) => {
@@ -206,7 +225,7 @@ export function OutputStageSurface({
               inset: 0,
               background: "transparent",
             }}
-            dpr={EXTERNAL_OUTPUT_FRAMEBUFFER_PIXEL_RATIO}
+            dpr={resolvedFramebufferPixelRatio}
             camera={{
               position: cameraConfig.position,
               up: cameraConfig.up,
@@ -217,7 +236,8 @@ export function OutputStageSurface({
             // @ts-ignore — WebGPURenderer is runtime-compatible; R3F types predate WebGPU
             gl={(glDefaults) =>
               createBaryonRenderer(glDefaults, forceWebGLRenderer, {
-                initialPixelRatio: EXTERNAL_OUTPUT_FRAMEBUFFER_PIXEL_RATIO,
+                initialPixelRatio: resolvedFramebufferPixelRatio,
+                halfFloatOutput,
               })
             }
           >
@@ -241,15 +261,22 @@ export function OutputStageSurface({
                 audioFeatureAuthorityRole={audioFeatureAuthorityRole}
                 externalFrameRef={externalFrameRef}
                 cameraPose={resolvedCameraPose}
-                basePixelRatio={EXTERNAL_OUTPUT_FRAMEBUFFER_PIXEL_RATIO}
+                cameraCutNonce={cameraCutNonce}
+                basePixelRatio={resolvedFramebufferPixelRatio}
                 onStageRender={onStageRender}
                 onFrameState={onFrameState}
+                registerStructureExportSampleReader={
+                  registerStructureExportSampleReader
+                }
                 cameraControlMode={CAMERA_CONTROL_MODES.externalSynced}
+                outputMode={resolvedOutputMode}
                 structuralControlVersion={structuralControlVersion}
                 liveControlSignalRef={liveControlSignalRef}
                 enableControlEventSync={enableControlEventSync}
                 adaptiveResetNonce={adaptiveResetNonce}
                 renderContext={RENDER_CONTEXTS.externalOutput}
+                outputCompositorFrameTransfer={outputCompositorFrameTransfer}
+                onOutputCompositorFrame={onOutputCompositorFrame}
               />
             </Suspense>
           </Canvas>

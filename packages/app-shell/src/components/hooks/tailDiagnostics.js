@@ -1,4 +1,5 @@
 import { hasRenderAuthority } from "@baryon/engine/core/renderAuthorityContract";
+import { RAYMARCH_OPTICAL_FIELD_REPRESENTATION } from "@baryon/engine/core/raymarch/quantityLedger";
 import {
   RENDER_PROBE_MATERIAL_FIELDS,
   buildRenderProbeSnapshot,
@@ -9,12 +10,9 @@ const DEFAULT_SAMPLE_INTERVAL_MS = 250;
 const DEFAULT_MAX_DURATION_MS = 60_000;
 const OBSERVER_MIN_RESONANCE_ENERGY = 1e-4;
 const FRAME_MIN_VISIBILITY_ENERGY = 0.02;
-const OBSERVATION_SAMPLED_MIN_DENSITY = 0.005;
+const PLASMA_PROBE_MIN_DENSITY = 0.005;
 const MATERIAL_PROBE_SPIKE_MIN_DELTA = 0.05;
 const MATERIAL_PROBE_SPIKE_RELATIVE_DELTA = 0.35;
-const SUPPORT_DOMINANCE_RATIO = 2;
-const SUPPORT_DOMINANCE_MIN_DELTA = 0.05;
-const CAUSTIC_COLLAPSE_RATIO = 0.5;
 
 /**
  * @typedef {{
@@ -78,8 +76,8 @@ function hasObservedModalResponse(observer = {}, frame = {}) {
     readFiniteNumber(frame.observationEnergy) >= FRAME_MIN_VISIBILITY_ENERGY ||
     readFiniteNumber(frame.modalResponseEnergy) >=
       FRAME_MIN_VISIBILITY_ENERGY ||
-    (readFiniteNumber(observer.observedResonanceModeCount) > 0 &&
-      readFiniteNumber(observer.observedResonanceEnergy) >
+    (readFiniteNumber(observer.resonantObservedModeCount) > 0 &&
+      readFiniteNumber(observer.resonantObservedEnergy) >
         OBSERVER_MIN_RESONANCE_ENERGY)
   );
 }
@@ -91,10 +89,10 @@ function hasFrameVisibility(frame = {}) {
   );
 }
 
-function hasObservationSampledDensity(render = {}) {
+function hasObservedPlasmaDensity(render = {}) {
   return (
-    readFiniteNumber(render.observationSampledDensityFloor) >=
-    OBSERVATION_SAMPLED_MIN_DENSITY
+    readFiniteNumber(render.plasmaProbeOrganizedDensity) >=
+    PLASMA_PROBE_MIN_DENSITY
   );
 }
 
@@ -165,52 +163,6 @@ function readMaterialProbeValues(samples, field) {
   return samples.map((sample) => readFiniteNumber(sample?.render?.[field]));
 }
 
-function summarizeMaterialProbeDominance(samples) {
-  const causticValues = readMaterialProbeValues(
-    samples,
-    "materialProbeCausticVisibleDensity",
-  );
-  const supportValues = readMaterialProbeValues(
-    samples,
-    "materialProbeSupportVisibleDensity",
-  );
-  const causticMedian = median(causticValues);
-  const supportMedian = median(supportValues);
-  let supportDominantSampleCount = 0;
-  let causticCollapseSampleCount = 0;
-
-  samples.forEach((sample) => {
-    const caustic = readFiniteNumber(
-      sample?.render?.materialProbeCausticVisibleDensity,
-    );
-    const support = readFiniteNumber(
-      sample?.render?.materialProbeSupportVisibleDensity,
-    );
-    if (
-      support > caustic * SUPPORT_DOMINANCE_RATIO &&
-      support - caustic >= SUPPORT_DOMINANCE_MIN_DELTA
-    ) {
-      supportDominantSampleCount += 1;
-    }
-    if (
-      causticMedian > 0 &&
-      supportMedian > 0 &&
-      caustic <= causticMedian * CAUSTIC_COLLAPSE_RATIO &&
-      support >= supportMedian
-    ) {
-      causticCollapseSampleCount += 1;
-    }
-  });
-
-  return {
-    supportToCausticMean:
-      summarizeNumericWindow(supportValues).mean /
-      Math.max(1e-6, summarizeNumericWindow(causticValues).mean),
-    supportDominantSampleCount,
-    causticCollapseSampleCount,
-  };
-}
-
 function countSampleClassifications(samples) {
   return samples.reduce((counts, sample) => {
     const classification = readString(sample?.classification, "unclassified");
@@ -226,12 +178,13 @@ function hasMaterialProbeSignal(sample) {
   }
   const render = sample?.render ?? {};
   return (
-    readFiniteNumber(render.materialProbePhysicalDensity) > 0 ||
-    readFiniteNumber(render.materialProbeCausticVisibleDensity) > 0 ||
-    readFiniteNumber(render.materialProbeSupportVisibleDensity) > 0 ||
-    readFiniteNumber(render.materialProbePreBloomRadiance) > 0 ||
-    readFiniteNumber(render.materialProbePostBloomRisk) > 0 ||
-    readFiniteNumber(render.materialProbeBloomAmplification, 1) !== 1
+    readFiniteNumber(render.plasmaProbeLocalRadiance) > 0 ||
+    readFiniteNumber(render.plasmaProbePersistence) > 0 ||
+    readFiniteNumber(render.plasmaProbeOrganizedDensity) > 0 ||
+    readFiniteNumber(render.plasmaProbeExtinction) > 0 ||
+    readFiniteNumber(render.plasmaProbePreBloomRadiance) > 0 ||
+    readFiniteNumber(render.plasmaProbePostBloomRisk) > 0 ||
+    readFiniteNumber(render.plasmaProbeBloomAmplification, 1) !== 1
   );
 }
 
@@ -250,7 +203,6 @@ function hasActiveProbeCandidate(sample) {
 
 function classifyMaterialProbeWindow({
   metrics,
-  dominance,
   sampleCount,
   probeSampleCount,
   activeProbeCandidateCount,
@@ -261,20 +213,14 @@ function classifyMaterialProbeWindow({
   if (probeSampleCount === 0 && activeProbeCandidateCount > 0) {
     return "probe-unavailable";
   }
-  if (metrics.materialProbePreBloomRadiance.spikeCount > 0) {
-    return "material-transfer";
+  if (metrics.plasmaProbePreBloomRadiance.spikeCount > 0) {
+    return "plasma-transfer";
   }
   if (
-    metrics.materialProbePostBloomRisk.spikeCount > 0 ||
-    metrics.materialProbeBloomAmplification.spikeCount > 0
+    metrics.plasmaProbePostBloomRisk.spikeCount > 0 ||
+    metrics.plasmaProbeBloomAmplification.spikeCount > 0
   ) {
     return "bloom-output";
-  }
-  if (dominance.causticCollapseSampleCount > 0) {
-    return "caustic-collapse";
-  }
-  if (dominance.supportDominantSampleCount >= Math.ceil(sampleCount / 2)) {
-    return "support-fill";
   }
   return "stable";
 }
@@ -292,8 +238,6 @@ export function summarizeTailDiagnosticWindow(samples = []) {
       summarizeNumericWindow(readMaterialProbeValues(safeSamples, field)),
     ]),
   );
-  const dominance = summarizeMaterialProbeDominance(safeSamples);
-
   return {
     sampleCount: safeSamples.length,
     probeSampleCount,
@@ -301,13 +245,11 @@ export function summarizeTailDiagnosticWindow(samples = []) {
     sampleClassifications,
     classification: classifyMaterialProbeWindow({
       metrics,
-      dominance,
       sampleCount: safeSamples.length,
       probeSampleCount,
       activeProbeCandidateCount,
     }),
     metrics,
-    dominance,
   };
 }
 
@@ -334,8 +276,8 @@ export function classifyTailDiagnosticSample(sample = {}) {
     return "render-hidden";
   }
 
-  if (!hasObservationSampledDensity(sample.render)) {
-    return "observation-transfer-drop";
+  if (!hasObservedPlasmaDensity(sample.render)) {
+    return "plasma-transfer-drop";
   }
 
   return "unknown";
@@ -370,13 +312,13 @@ function buildTailDiagnosticSample({
       sourceMode: modalFreshness.sourceMode ?? featureFrame?.sourceMode ?? null,
     },
     observer: {
-      observedResonanceModeCount: readFiniteNumber(
-        modalFreshness.observedResonanceModeCount,
+      resonantObservedModeCount: readFiniteNumber(
+        modalFreshness.resonantObservedModeCount,
       ),
-      observedResonanceEnergy: readFiniteNumber(
-        modalFreshness.observedResonanceEnergy,
+      resonantObservedEnergy: readFiniteNumber(
+        modalFreshness.resonantObservedEnergy,
       ),
-      highQRingSupport: readFiniteNumber(modalFreshness.highQRingSupport),
+      resonantRingSupport: readFiniteNumber(modalFreshness.resonantRingSupport),
       modeCoherence: readFiniteNumber(modalFreshness.modeCoherence),
       modalPhaseAuthority: readFiniteNumber(modalFreshness.modalPhaseAuthority),
     },
@@ -399,21 +341,21 @@ function buildTailDiagnosticSample({
           modalFreshness.activeModeCount,
       ),
       totalSlotAmplitude: readFiniteNumber(
-        runtimeState?.uniforms?.uTotalSlotAmplitude?.value ??
+        runtimeState?.raymarchStructuralProjection?.amplitudeSum ??
           raymarchDebug.totalSlotAmplitude ??
           render.totalSlotAmplitude ??
           modalFreshness.totalSlotAmplitude ??
           featureFrame?.debug?.totalSlotAmplitude,
       ),
       structuralProjectionDrive: readFiniteNumber(
-        runtimeState?.uniforms?.uStructuralProjectionDrive?.value ??
+        runtimeState?.raymarchStructuralProjection?.projectionEnergyDrive ??
           raymarchDebug.structuralProjectionDrive ??
           render.structuralProjectionDrive ??
           modalFreshness.structuralProjectionDrive ??
           featureFrame?.debug?.structuralProjectionDrive,
       ),
       structuralProjectionConcentration: readFiniteNumber(
-        runtimeState?.uniforms?.uStructuralProjectionConcentration?.value ??
+        runtimeState?.raymarchStructuralProjection?.structuralConcentration ??
           raymarchDebug.structuralProjectionConcentration ??
           render.structuralProjectionConcentration ??
           modalFreshness.structuralProjectionConcentration ??
@@ -460,68 +402,43 @@ function buildTailDiagnosticSample({
     render: {
       volumeVisible: readBoolean(debugSnapshot.volumeVisible, true),
       idleOverlayVisible: readBoolean(debugSnapshot.idleOverlayVisible),
-      observationEnergy: readFiniteNumber(
-        render.observationEnergy ?? raymarchDebug.observationEnergy,
+      observerGeometryExposureSeconds: readFiniteNumber(
+        render.observerGeometryExposureSeconds ??
+          raymarchDebug.observerGeometryExposureSeconds,
       ),
-      observationReferenceAnchor: readFiniteNumber(
-        render.observationReferenceAnchor ??
-          raymarchDebug.observationReferenceAnchor,
+      observerRadianceExposureSeconds: readFiniteNumber(
+        render.observerRadianceExposureSeconds ??
+          raymarchDebug.observerRadianceExposureSeconds,
       ),
-      observationReferenceSupport: readFiniteNumber(
-        render.observationReferenceSupport ??
-          raymarchDebug.observationReferenceSupport,
+      observerSpectralExposureSeconds: readFiniteNumber(
+        render.observerSpectralExposureSeconds ??
+          raymarchDebug.observerSpectralExposureSeconds,
       ),
-      observationReferenceDensityFloor: readFiniteNumber(
-        render.observationReferenceDensityFloor ??
-          raymarchDebug.observationReferenceDensityFloor,
+      plasmaProbeLocalRadiance: readFiniteNumber(
+        render.plasmaProbeLocalRadiance ??
+          raymarchDebug.plasmaProbeLocalRadiance,
       ),
-      observationReferenceContourSupport: readFiniteNumber(
-        render.observationReferenceContourSupport ??
-          raymarchDebug.observationReferenceContourSupport,
+      plasmaProbePersistence: readFiniteNumber(
+        render.plasmaProbePersistence ?? raymarchDebug.plasmaProbePersistence,
       ),
-      observationSampledAnchor: readFiniteNumber(
-        render.observationSampledAnchor ??
-          raymarchDebug.observationSampledAnchor,
+      plasmaProbeOrganizedDensity: readFiniteNumber(
+        render.plasmaProbeOrganizedDensity ??
+          raymarchDebug.plasmaProbeOrganizedDensity,
       ),
-      observationSampledSignedAuthority: readFiniteNumber(
-        render.observationSampledSignedAuthority ??
-          raymarchDebug.observationSampledSignedAuthority,
+      plasmaProbeExtinction: readFiniteNumber(
+        render.plasmaProbeExtinction ?? raymarchDebug.plasmaProbeExtinction,
       ),
-      observationSampledSupport: readFiniteNumber(
-        render.observationSampledSupport ??
-          raymarchDebug.observationSampledSupport,
+      plasmaProbePreBloomRadiance: readFiniteNumber(
+        render.plasmaProbePreBloomRadiance ??
+          raymarchDebug.plasmaProbePreBloomRadiance,
       ),
-      observationSampledDensityFloor: readFiniteNumber(
-        render.observationSampledDensityFloor ??
-          raymarchDebug.observationSampledDensityFloor,
+      plasmaProbePostBloomRisk: readFiniteNumber(
+        render.plasmaProbePostBloomRisk ??
+          raymarchDebug.plasmaProbePostBloomRisk,
       ),
-      observationSampledContourSupport: readFiniteNumber(
-        render.observationSampledContourSupport ??
-          raymarchDebug.observationSampledContourSupport,
-      ),
-      materialProbePhysicalDensity: readFiniteNumber(
-        render.materialProbePhysicalDensity ??
-          raymarchDebug.materialProbePhysicalDensity,
-      ),
-      materialProbeCausticVisibleDensity: readFiniteNumber(
-        render.materialProbeCausticVisibleDensity ??
-          raymarchDebug.materialProbeCausticVisibleDensity,
-      ),
-      materialProbeSupportVisibleDensity: readFiniteNumber(
-        render.materialProbeSupportVisibleDensity ??
-          raymarchDebug.materialProbeSupportVisibleDensity,
-      ),
-      materialProbePreBloomRadiance: readFiniteNumber(
-        render.materialProbePreBloomRadiance ??
-          raymarchDebug.materialProbePreBloomRadiance,
-      ),
-      materialProbePostBloomRisk: readFiniteNumber(
-        render.materialProbePostBloomRisk ??
-          raymarchDebug.materialProbePostBloomRisk,
-      ),
-      materialProbeBloomAmplification: readFiniteNumber(
-        render.materialProbeBloomAmplification ??
-          raymarchDebug.materialProbeBloomAmplification,
+      plasmaProbeBloomAmplification: readFiniteNumber(
+        render.plasmaProbeBloomAmplification ??
+          raymarchDebug.plasmaProbeBloomAmplification,
         1,
       ),
       renderQuantityLedgerVersion: readString(
@@ -533,73 +450,59 @@ function buildTailDiagnosticSample({
           raymarchDebug.renderQuantityForbiddenConsumers,
       ),
       totalSlotAmplitude: readFiniteNumber(
-        runtimeState?.uniforms?.uTotalSlotAmplitude?.value ??
+        runtimeState?.raymarchStructuralProjection?.amplitudeSum ??
           raymarchDebug.totalSlotAmplitude ??
           render.totalSlotAmplitude ??
           modalFreshness.totalSlotAmplitude ??
           featureFrame?.debug?.totalSlotAmplitude,
       ),
       structuralProjectionDrive: readFiniteNumber(
-        runtimeState?.uniforms?.uStructuralProjectionDrive?.value ??
+        runtimeState?.raymarchStructuralProjection?.projectionEnergyDrive ??
           raymarchDebug.structuralProjectionDrive ??
           render.structuralProjectionDrive ??
           modalFreshness.structuralProjectionDrive ??
           featureFrame?.debug?.structuralProjectionDrive,
       ),
       structuralProjectionConcentration: readFiniteNumber(
-        runtimeState?.uniforms?.uStructuralProjectionConcentration?.value ??
+        runtimeState?.raymarchStructuralProjection?.structuralConcentration ??
           raymarchDebug.structuralProjectionConcentration ??
           render.structuralProjectionConcentration ??
           modalFreshness.structuralProjectionConcentration ??
           featureFrame?.debug?.structuralProjectionConcentration,
       ),
-      modalBasisCacheReady: readBoolean(render.modalBasisCacheReady),
-      modalBasisCacheSupportReady: readBoolean(
-        render.modalBasisCacheSupportReady ??
-          raymarchDebug.modalBasisCacheSupportReady,
+      opticalFieldRepresentation: readString(
+        render.opticalFieldRepresentation ??
+          raymarchDebug.opticalFieldRepresentation,
+        RAYMARCH_OPTICAL_FIELD_REPRESENTATION,
       ),
-      modalBasisCacheSupportSemantic: readString(
-        render.modalBasisCacheSupportSemantic ??
-          raymarchDebug.modalBasisCacheSupportSemantic,
-        "coefficient-invariant-basis-support",
+      radiationPotentialModeCapacity: readFiniteNumber(
+        render.radiationPotentialModeCapacity ??
+          raymarchDebug.radiationPotentialModeCapacity ??
+          runtimeState?.modalFieldCapacity,
       ),
-      liveSynthesisUnsignedSupportMean: readFiniteNumber(
-        render.liveSynthesisUnsignedSupportMean ??
-          raymarchDebug.liveSynthesisUnsignedSupportMean,
+      radiationPotentialObservedCoefficientEnergy: readFiniteNumber(
+        runtimeState?.radiationPotentialCoefficientFrame
+          ?.observedCoefficientEnergy ??
+          render.radiationPotentialObservedCoefficientEnergy ??
+          raymarchDebug.radiationPotentialObservedCoefficientEnergy,
       ),
-      liveSynthesisCancellationRatioMean: readFiniteNumber(
-        render.liveSynthesisCancellationRatioMean ??
-          raymarchDebug.liveSynthesisCancellationRatioMean,
+      radiationPotentialObservedCoefficientNorm: readFiniteNumber(
+        runtimeState?.radiationPotentialCoefficientFrame
+          ?.observedCoefficientNorm ??
+          render.radiationPotentialObservedCoefficientNorm ??
+          raymarchDebug.radiationPotentialObservedCoefficientNorm,
       ),
-      liveSynthesisCancellationRatioMax: readFiniteNumber(
-        render.liveSynthesisCancellationRatioMax ??
-          raymarchDebug.liveSynthesisCancellationRatioMax,
+      radiationPotentialNormalizedEnergyNorm: readFiniteNumber(
+        render.radiationPotentialNormalizedEnergyNorm ??
+          raymarchDebug.radiationPotentialNormalizedEnergyNorm,
       ),
-      liveSynthesisSupportDiagnosticSampleCount: readFiniteNumber(
-        render.liveSynthesisSupportDiagnosticSampleCount ??
-          raymarchDebug.liveSynthesisSupportDiagnosticSampleCount,
+      radiationPotentialBakeModeCount: readFiniteNumber(
+        render.radiationPotentialBakeModeCount ??
+          raymarchDebug.radiationPotentialBakeModeCount,
       ),
-      liveSynthesisSupportDiagnosticSupportedSampleCount: readFiniteNumber(
-        render.liveSynthesisSupportDiagnosticSupportedSampleCount ??
-          raymarchDebug.liveSynthesisSupportDiagnosticSupportedSampleCount,
-      ),
-      liveSynthesisSupportDiagnosticCoverage: readFiniteNumber(
-        render.liveSynthesisSupportDiagnosticCoverage ??
-          raymarchDebug.liveSynthesisSupportDiagnosticCoverage,
-      ),
-      modalBasisCacheZeroAmplitudeSkippedModeCount: readFiniteNumber(
-        render.modalBasisCacheZeroAmplitudeSkippedModeCount ??
-          raymarchDebug.modalBasisCacheZeroAmplitudeSkippedModeCount,
-      ),
-      modalBasisCacheDescriptorStaleReason: readString(
-        render.modalBasisCacheDescriptorStaleReason ??
-          raymarchDebug.modalBasisCacheDescriptorStaleReason,
-      ),
-      modalBasisCacheRebuildPending: readBoolean(
-        render.modalBasisCacheRebuildPending,
-      ),
-      modalBasisCachePhaseAuthority: readFiniteNumber(
-        render.modalBasisCachePhaseAuthority,
+      radiationPotentialExposureDrive: readFiniteNumber(
+        render.radiationPotentialExposureDrive ??
+          raymarchDebug.radiationPotentialExposureDrive,
       ),
       bloomEnabled: readBoolean(render.bloomEnabled),
       bloomResponseSignal: readFiniteNumber(modalFreshness.bloomResponseSignal),
@@ -609,7 +512,9 @@ function buildTailDiagnosticSample({
   const probe = buildRenderProbeSnapshot({
     renderDiagnostics: {
       ...sample.render,
-      observationEnergy: sample.frame.observationEnergy,
+      plasmaProbeLocalRadiance:
+        sample.render.plasmaProbeLocalRadiance ||
+        sample.frame.observationEnergy,
       activeModeCount: sample.frame.activeModeCount,
     },
     debugSnapshot,

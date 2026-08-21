@@ -22,8 +22,11 @@ function PreferenceProbe({ onValue }) {
 
 let container = null;
 let root = null;
+let originalActEnvironment;
 
 beforeEach(() => {
+  originalActEnvironment = globalThis.IS_REACT_ACT_ENVIRONMENT;
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   installLocalStorageMock();
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -38,6 +41,11 @@ afterEach(() => {
   container?.remove();
   container = null;
   vi.unstubAllGlobals();
+  if (originalActEnvironment === undefined) {
+    delete globalThis.IS_REACT_ACT_ENVIRONMENT;
+  } else {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = originalActEnvironment;
+  }
 });
 
 test("fullscreen UI defaults hidden and persists only direct opt-in changes", () => {

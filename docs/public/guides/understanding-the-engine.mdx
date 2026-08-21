@@ -16,6 +16,12 @@ At a high level:
 
 That means the meaningful state is not a list of screen coordinates. The meaningful state is the current modal field: which modes are active, how strongly they are excited, and how the renderer samples the resulting volume.
 
+## How physical is the water model?
+
+Baryon's modal backend declares a bounded water cavity rather than treating the image as arbitrary audio-reactive geometry. Its default apparatus uses a 12.5 m acoustic side length, water density and sound speed, and a declared incident-pressure reference at its virtual drive plane. That reference adds weak, physically derived waveform steepening and harmonic generation before the audio drives the modes.
+
+The pressure is a property of the virtual apparatus, not a source level or hardware calibration; Baryon does not claim to measure the pressure produced by your speakers. The engine also does not simulate turbulence, flowing material, cavitation, or the full motion of a laboratory water surface. It is a bounded-water modal model with a restrained finite-amplitude correction, followed by an artistic volumetric observation of the resulting field.
+
 ## Why settings matter
 
 Most controls are either analysis controls, field controls, render controls, or camera controls.
@@ -24,9 +30,9 @@ Most controls are either analysis controls, field controls, render controls, or 
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | **Audio Input Profile**            | How Baryon interprets the source before it becomes a modal field.                                      |
 | **Boundary**                       | The modal family. `Neumann` behaves like a reflective boundary; `Dirichlet` behaves like a fixed node. |
-| **Material Density**               | Scales organized material before its fixed scattering, absorption, and laser-emission response.        |
+| **Material Density**               | Scales uniform tracer scattering and absorption without changing acoustic or caustic topology.          |
 | **Laser Bending**                  | Changes caustic placement and concentration without becoming a general brightness control.             |
-| **Fresnel controls**               | Set the color, strength, and edge tightness of grazing-angle laser energy.                              |
+| **Caustic controls**               | Set the color, detector gain, and finite-source focus of camera-visible laser caustics.                  |
 | **Color Mode**                     | Whether color is manually chosen or promoted from the audio spectrum.                                  |
 | **Rotation Mode**                  | Whether the cymatic volume is stationary, audio-driven, or manually spun.                              |
 | **Performance Profile**            | How Baryon adapts raymarch steps against the frame budget without changing resolution or DPR.          |
@@ -55,7 +61,7 @@ For the most faithful result:
 
 - Use a clean recording or a direct feed when possible.
 - Keep echo cancellation, noise suppression, and auto gain off for line feeds or clean files; turn them on only when a noisy room makes capture difficult.
-- Start with lower **Material Density** and **Fresnel Strength**, then raise them until the field reads clearly without flattening into a bright sheet.
+- Start with lower **Material Density** and **Caustic Strength**, then raise them until the field reads clearly without flattening into a bright sheet.
 - Save a preset per source so you can return to a look instantly.
 
 ## What coordinates would mean
