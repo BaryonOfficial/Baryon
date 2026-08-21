@@ -1,4 +1,3 @@
-import { instancedArray } from "three/tsl";
 import {
   DEFAULT_REQUESTED_CAVITY_GEOMETRY,
   normalizeCavityGeometry,
@@ -15,17 +14,15 @@ import {
   createRaymarchVolumeMesh,
   createIdleOverlay,
 } from "./raymarch/material.js";
-import {
-  createRaymarchLiveFieldProjectionCache,
-  createRaymarchModalBasisCache,
-  createRaymarchSpectralLaneCache,
-} from "./raymarch/fieldCache.js";
-import { createRaymarchLaserTransportCache } from "./raymarch/laserTransport.js";
+import { createPortableModalUniformBuffer } from "./raymarch/portableModalUniforms.js";
+import { createModalFieldCache } from "./raymarch/fieldCacheBake.js";
+import { createCymaticPlasmaProfileLookup } from "./raymarch/cymaticPlasmaProfileLookup.js";
 import { estimateProjectedSphereStats } from "./raymarch/intersection.js";
 import { RAYMARCH_DEFAULTS } from "../defaults.js";
 import {
   createRaymarchSceneRoot,
   disposeRaymarchRuntime,
+  prepareRaymarchRuntime,
   tickRaymarchRuntime,
 } from "./raymarch/runtime.js";
 import { createVisualizationUniforms } from "./visualizationUniforms.js";
@@ -35,12 +32,10 @@ import {
   STEP_REFERENCE,
 } from "./raymarch/stepStability.js";
 import { VISUALIZATION_METHODS } from "../visualization/types.js";
+import { CYMATIC_OBSERVER_REFERENCE } from "./raymarch/cymaticObserverReference.js";
 
 function createModeBuffer(capacity) {
-  const modeBuffer = instancedArray(capacity, "vec4");
-  modeBuffer.value.array.fill(0);
-  modeBuffer.value.needsUpdate = true;
-  return modeBuffer;
+  return createPortableModalUniformBuffer(capacity);
 }
 
 function resolveLayerCapacity(
@@ -59,7 +54,7 @@ function resolveLayerCapacity(
 
 /**
  * @param {object | null} baryonGeometry
- * @param {{ radius?: number, carrierCoreFwhmWorld?: number, cavityGeometry?: string, volumeShape?: string }} parameters
+ * @param {{ radius?: number, cavityGeometry?: string, volumeShape?: string }} parameters
  * @param {{ capacity?: number, modalFieldCapacity?: number, fftSize?: number, sampleRate?: number }} audioConfig
  * @param {{ method?: string }} [options]
  */
@@ -83,41 +78,37 @@ export function setupRaymarch(
     AUDIO_DEFAULTS.maxModalFieldDescriptorModes,
   );
   const modalFieldModeBuffer = createModeBuffer(modalFieldCapacity);
-  const modalFieldColorBuffer = createModeBuffer(modalFieldCapacity);
-  const modalFieldSpectralLaneABuffer = createModeBuffer(modalFieldCapacity);
-  const modalFieldSpectralLaneBBuffer = createModeBuffer(modalFieldCapacity);
-  const modalFieldSpectralMetaBuffer = createModeBuffer(modalFieldCapacity);
-  const modalFieldMetadataBuffer = createModeBuffer(modalFieldCapacity);
-  const modalFieldPhaseBuffer = createModeBuffer(modalFieldCapacity);
+  const modalFieldSpectralMomentBuffer = createModeBuffer(modalFieldCapacity);
+  // One vec4 per admitted basis family carries its shell-projected pressure
+  // amplitude and family scalars. The bake coherently accumulates consecutive
+  // exact-eigenvalue members before squaring; detector exposure stays separate.
   const modalFieldCoefficientBuffer = createModeBuffer(modalFieldCapacity);
-  const modalBasisCache = createRaymarchModalBasisCache();
-  const liveFieldProjectionCache = createRaymarchLiveFieldProjectionCache({
-    resolution: modalBasisCache.resolution,
-  });
-  const spectralLaneCache = createRaymarchSpectralLaneCache({
-    resolution: modalBasisCache.resolution,
-  });
+  // Renderer-only response metadata stays separate from the public mode
+  // packet: x = response/natural frequency, y = exact-shell end marker.
+  const modalFieldResponseBuffer = createModeBuffer(modalFieldCapacity);
   const volumeShape = normalizeVolumeShape(parameters.volumeShape);
-  const laserTransportCache = createRaymarchLaserTransportCache({
-    resolution: modalBasisCache.resolution,
-    volumeShape,
+  // The modal packet is evaluated once per voxel into this cache, and the
+  // march reads it back. Both the bake and the march are built against the
+  // same uniform buffers, so there is still exactly one modal packet.
+  const fieldCache = createModalFieldCache({
+    modalFieldModeUniforms: modalFieldModeBuffer.uniforms,
+    modalFieldCoefficientUniforms: modalFieldCoefficientBuffer.uniforms,
+    modalFieldResponseUniforms: modalFieldResponseBuffer.uniforms,
+    modalFieldSpectralMomentUniforms: modalFieldSpectralMomentBuffer.uniforms,
+    modalFieldModeCount: uniforms.uModalFieldModeCount,
+    radius: uniforms.uRadius,
+  });
+  const plasmaProfileLookup = createCymaticPlasmaProfileLookup({
+    // At the generic minimum one march step can span the whole radius. The
+    // lookup therefore covers radius, not only the current quality profile's
+    // narrower step interval.
+    maximumIntervalWidthWorld: Math.max(parameters.radius, 1e-4),
   });
   const volumeMesh = createRaymarchVolumeMesh({
     radius: parameters.radius,
-    modalBasisAtlasTexture: modalBasisCache.texture,
-    modalLiveFieldTexture: liveFieldProjectionCache.fieldTexture,
-    modalLiveSupportTexture: liveFieldProjectionCache.supportTexture,
-    modalPressureRadiationTexture:
-      liveFieldProjectionCache.pressureRadiationTexture,
-    modalPhaseInterferenceTexture:
-      liveFieldProjectionCache.phaseInterferenceTexture,
-    laserIrradianceTexture: laserTransportCache.irradianceTexture,
-    spectralLaneTextureA: spectralLaneCache.spectralLaneTextureA,
-    spectralLaneTextureB: spectralLaneCache.spectralLaneTextureB,
-    spectralLaneStatsTexture: spectralLaneCache.spectralLaneStatsTexture,
-    modalFieldModeBuffer,
-    modalFieldCoefficientBuffer,
-    modalFieldCapacity: modalBasisCache.liveSynthesisModeCount,
+    fieldCache,
+    plasmaProfileLookup,
+    modalFieldCapacity,
     uniforms,
     cavityGeometry: effectiveCavityGeometry,
     volumeShape,
@@ -129,6 +120,7 @@ export function setupRaymarch(
   const {
     root: points,
     visualRoot,
+    cymaticRoot,
     sceneLighting,
   } = createRaymarchSceneRoot({
     volumeMesh,
@@ -141,22 +133,17 @@ export function setupRaymarch(
     points,
     object: points,
     visualRoot,
+    cymaticRoot,
     sceneLighting,
     volumeMesh,
     idleOverlay,
     uniforms,
+    fieldCache,
+    plasmaProfileLookup,
     modalFieldModeBuffer,
-    modalFieldColorBuffer,
-    modalFieldSpectralLaneABuffer,
-    modalFieldSpectralLaneBBuffer,
-    modalFieldSpectralMetaBuffer,
-    modalFieldMetadataBuffer,
-    modalFieldPhaseBuffer,
+    modalFieldSpectralMomentBuffer,
     modalFieldCoefficientBuffer,
-    modalBasisCache,
-    liveFieldProjectionCache,
-    spectralLaneCache,
-    laserTransportCache,
+    modalFieldResponseBuffer,
     modalFieldCapacity,
     requestedCavityGeometry,
     effectiveCavityGeometry,
@@ -167,6 +154,10 @@ export function setupRaymarch(
     }),
     reactivityTuning: {
       motionAmount: REACTIVITY_DEFAULTS.motionAmount,
+    },
+    cymaticObserverTuning: {
+      geometryExposureSeconds:
+        CYMATIC_OBSERVER_REFERENCE.geometryExposureSeconds,
     },
     bloomTuning: {
       stepReference: STEP_REFERENCE,
@@ -182,29 +173,23 @@ export function setupRaymarch(
       effectiveThreshold: RENDER_DEFAULTS.bloomThreshold,
     },
     baseDensityGain: uniforms.uDensityGain.value,
-    baseCarrierCoreFwhmWorld: uniforms.uCarrierCoreFwhmWorld.value,
-    baseContourSharpness: uniforms.uContourSharpness.value,
-    spectralLight: {
-      colorMode: RENDER_DEFAULTS.colorMode,
-      spectralMix:
-        RENDER_DEFAULTS.colorMode === "spectral"
-          ? RENDER_DEFAULTS.spectralMix
-          : 0,
-    },
     sceneMotion: {
       yaw: 0,
       angularVelocity: 0,
       targetAngularVelocity: 0,
       lastMotionSignal: 0,
       lastBeatPulseId: 0,
-      idleLogoYaw: 0,
+    },
+    idleLogoMotion: {
+      yaw: 0,
+      angularVelocity: 0,
+      targetAngularVelocity: 0,
     },
     responseEnvelope: 0,
+    summaryResponseEnvelope: 0,
     accentEnvelope: 0,
     beatPulseEnvelope: 0,
     shaderBeatPhase: null,
-    keyHue: 0,
-    keyModeSmooth: 0,
     motionSignal: 0,
     scaleSignal: 0,
     bloomResponseSignal: 0,
@@ -213,18 +198,30 @@ export function setupRaymarch(
 }
 
 export function tickRaymarch(
-  renderer,
   raymarchState,
   featureFrame,
   time,
   deltaTime,
+  renderer = null,
 ) {
   tickRaymarchRuntime(raymarchState, featureFrame, time, deltaTime, renderer);
 }
 
+export function prepareRaymarch(
+  raymarchState,
+  featureFrame,
+  renderer,
+  { camera = null, scene = null } = {},
+) {
+  return prepareRaymarchRuntime(raymarchState, featureFrame, renderer, {
+    camera,
+    scene,
+  });
+}
+
 export function failClosedRaymarch(
   raymarchState,
-  { status = null, time = 0, deltaTime = 0, renderer = null } = {},
+  { status = null, time = 0, deltaTime = 0 } = {},
 ) {
   tickRaymarchRuntime(
     raymarchState,
@@ -242,7 +239,6 @@ export function failClosedRaymarch(
     },
     time,
     deltaTime,
-    renderer,
   );
 }
 

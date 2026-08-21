@@ -4,6 +4,7 @@ import {
   createControlState,
   getControlFolders,
   getControlsForFolder,
+  isControlSurface,
 } from "@baryon/engine/controls/schema";
 import {
   deserializeControlSettings,
@@ -18,11 +19,21 @@ export const PRESETS_KEY = "baryon:presets";
 const CONTROLS_PERSIST_DELAY_MS = 500;
 const PRESETS_AREA_GROUP = "PresetsArea";
 const PRESETS_AREA_CONTROL_ORDER = Object.freeze([]);
+function assertSettingsSurface(surface) {
+  if (!isControlSurface(surface)) {
+    throw new TypeError(`Invalid settings surface: ${String(surface)}`);
+  }
+}
 
-function createOperatorControlKeySet(operatorControlKeys = []) {
+export function controlMatchesSettingsSurface(definition, surface) {
+  assertSettingsSurface(surface);
+  return definition?.surfaces?.includes(surface) === true;
+}
+
+function createControlKeySet(controlKeys = []) {
   return new Set(
-    Array.isArray(operatorControlKeys)
-      ? operatorControlKeys.filter((key) => typeof key === "string")
+    Array.isArray(controlKeys)
+      ? controlKeys.filter((key) => typeof key === "string")
       : [],
   );
 }
@@ -42,15 +53,19 @@ function controlMatchesVisibleWhen(definition, controlsState) {
 function createVisibleFolderGroups({
   controlsState,
   devtoolsEnabled,
+  surface,
   method = DEFAULT_VISUALIZATION_METHOD,
   operatorControlKeys = [],
+  hiddenControlKeys = [],
 }) {
   const resolvedControlsState = controlsState ?? createControlState();
-  const operatorControlKeySet =
-    createOperatorControlKeySet(operatorControlKeys);
+  const operatorControlKeySet = createControlKeySet(operatorControlKeys);
+  const hiddenControlKeySet = createControlKeySet(hiddenControlKeys);
   return getControlFolders(method).flatMap((title) => {
     const controls = getControlsForFolder(title, method).filter(
       (definition) =>
+        controlMatchesSettingsSurface(definition, surface) &&
+        !hiddenControlKeySet.has(definition.key) &&
         controlMatchesVisibleWhen(definition, resolvedControlsState) &&
         (devtoolsEnabled ||
           operatorControlKeySet.has(definition.key) ||
@@ -191,15 +206,20 @@ export function loadStoredPresets(storage) {
 export function getVisibleControlLayout({
   controlsState = null,
   devtoolsEnabled,
+  surface,
   method = DEFAULT_VISUALIZATION_METHOD,
   operatorControlKeys = [],
+  hiddenControlKeys = [],
 }) {
+  assertSettingsSurface(surface);
   return splitPresentationGroups(
     createVisibleFolderGroups({
       controlsState,
       devtoolsEnabled,
+      surface,
       method,
       operatorControlKeys,
+      hiddenControlKeys,
     }),
   );
 }

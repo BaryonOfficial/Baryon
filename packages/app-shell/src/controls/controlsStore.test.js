@@ -238,13 +238,13 @@ describe("createControlsStore", () => {
   it("flushes pending remembered control changes when disposed", () => {
     const store = createControlsStore();
 
-    store.updateControl("bloomStrength", 1.4, {
+    store.updateControl("bloomStrength", 0.8, {
       persistMode: "debounced",
     });
     store.dispose();
 
     const restoredStore = createControlsStore();
-    expect(restoredStore.controlsRef.current.bloomStrength).toBe(1.4);
+    expect(restoredStore.controlsRef.current.bloomStrength).toBe(0.8);
   });
 
   it("persists unchanged non-default updates by adding explicit ownership", () => {
@@ -285,42 +285,20 @@ describe("createControlsStore", () => {
     expect(readStoredSettings()).toEqual({ version: 6, controls: {} });
   });
 
-  it("does not make derived Spectral Light mix explicit", () => {
-    const store = createControlsStore();
-
-    store.updateControl("colorMode", "static", {
-      persistMode: "none",
-    });
-    store.updateControl("spectralMix", 0, {
-      persistMode: "none",
-    });
-    store.updateControl("colorMode", "spectral", {
-      persistMode: "immediate",
-    });
-
-    expect(store.controlsRef.current.spectralMix).toBe(0.96);
-    // "spectral" is an explicit non-default choice under the static baseline;
-    // the derived spectralMix repair must still stay out of storage.
-    expect(readStoredSettings()).toEqual({
-      version: 6,
-      controls: { colorMode: "spectral" },
-    });
-  });
-
   it("keeps non-persistent updates out of storage and explicit ownership", () => {
     const store = createControlsStore();
 
     store.updateControl("backgroundColor", "#445566", {
       persistMode: "none",
     });
-    store.updateControl("bloomStrength", 1.4, {
+    store.updateControl("bloomStrength", 0.8, {
       persistMode: "immediate",
     });
 
     expect(readStoredSettings()).toEqual({
       version: 6,
       controls: {
-        bloomStrength: 1.4,
+        bloomStrength: 0.8,
       },
     });
   });
@@ -345,21 +323,21 @@ describe("createControlsStore", () => {
     });
   });
 
-  it("seeds a positive Spectral Light mix when selecting Spectral mode", () => {
+  it("uses color mode as the sole static-versus-Spectral owner", () => {
     const store = createControlsStore();
 
     store.updateControl("colorMode", "static");
-    store.updateControl("spectralMix", 0);
     expect(store.controlsRef.current.colorMode).toBe("static");
-    expect(store.controlsRef.current.spectralMix).toBe(0);
+    expect(store.controlsRef.current).not.toHaveProperty("spectralMix");
+    expect(() => store.updateControl("spectralMix", 0)).toThrow(
+      "Unknown control key: spectralMix",
+    );
 
     store.updateControl("colorMode", "spectral");
 
     expect(store.controlsRef.current.colorMode).toBe("spectral");
-    expect(store.controlsRef.current.spectralMix).toBe(0.96);
     expect(store.getSnapshot().controlsState).toMatchObject({
       colorMode: "spectral",
-      spectralMix: 0.96,
     });
   });
 

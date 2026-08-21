@@ -164,9 +164,17 @@ class MockAudioContext {
     return destination;
   }
 
-  decodeAudioData = vi.fn(async () => ({
-    duration: 5,
-  }));
+  decodeAudioData = vi.fn(async () => {
+    const samples = new Float32Array(DEFAULT_FFT_SIZE * 2);
+    samples.fill(0.25);
+    return {
+      duration: 5,
+      sampleRate: this.sampleRate,
+      length: samples.length,
+      numberOfChannels: 1,
+      getChannelData: () => samples,
+    };
+  });
 
   dispatchStateChange(nextState) {
     this.state = nextState;
@@ -333,29 +341,35 @@ describe("audio session", () => {
     ({ createAudioSession } = await import("./audioSetup.js"));
   });
 
-  function createAttachedSession() {
-    const session = createAudioSession();
-    session.attach({ add: vi.fn(), remove: vi.fn() });
-    return session;
+  function createSession() {
+    return createAudioSession();
   }
 
   it("tracks file lifecycle through explicit status", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     await session.loadAudio("good");
 
     expect(fetchMock).toHaveBeenCalledWith("good");
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "file",
+      sourceSession: { kind: "file", phase: "ready" },
       isAudioLoaded: true,
       isPlaying: false,
       isPlaybackPaused: false,
       analysisSource: "idle",
+      hasPreparedFileAnalysisSource: true,
       capacity: AUDIO_SLOT_CAPACITY,
+    });
+    expect(
+      session.readFeatureAnalysisCapture({ includeStructural: true }),
+    ).toMatchObject({
+      observationTimeSeconds: 0,
+      fast: { sourceMode: "file", rms: 0.25 },
+      structural: { sourceMode: "file", rms: 0.25 },
     });
 
     await session.playPauseAudio();
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "file",
+      sourceSession: { kind: "file", phase: "active" },
       isPlaying: true,
       analysisSource: "file",
       playbackSessionId: 1,
@@ -402,15 +416,15 @@ describe("audio session", () => {
 
     await session.playPauseAudio();
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "idle",
+      sourceSession: { kind: "file", phase: "paused" },
       isPlaying: false,
-      isPlaybackPaused: false,
+      isPlaybackPaused: true,
       analysisSource: "idle",
     });
   });
 
   it("discards an older file load that finishes after a newer load", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     const firstResponse = createDeferred();
     const secondResponse = createDeferred();
     fetchMock.mockImplementation((url) =>
@@ -434,11 +448,115 @@ describe("audio session", () => {
     });
     await expect(firstLoad).resolves.toBe(false);
 
-    expect(session.getStatus().playbackSourceSessionId).toBe(1);
+    expect(session.getStatus().sourceSession).toMatchObject({
+      kind: "file",
+      phase: "ready",
+      sessionId: 2,
+    });
+  });
+
+  it("lets live input supersede a pending file decode", async () => {
+    const session = createSession();
+    const pendingArrayBuffer = createDeferred();
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      arrayBuffer: () => pendingArrayBuffer.promise,
+    });
+
+    const fileLoad = session.loadAudio("pending-demo");
+    await Promise.resolve();
+
+    await expect(
+      session.startLiveInputStream("device-1", "system"),
+    ).resolves.toBe(true);
+
+    pendingArrayBuffer.resolve(new ArrayBuffer(32));
+    await expect(fileLoad).resolves.toBe(false);
+    expect(session.getStatus()).toMatchObject({
+      sourceSession: { kind: "system", phase: "active" },
+      isAudioLoaded: false,
+      isLiveInputActive: true,
+    });
+  });
+
+  it("never exposes cached File analysis while System owns the source", async () => {
+    const session = createSession();
+    await session.loadAudio("good");
+    await session.playPauseAudio();
+    lastAudioContext.currentTime += 1;
+
+    session.selectSource("system");
+
+    expect(session.getStatus()).toMatchObject({
+      sourceSession: { kind: "system", phase: "ready" },
+      isAudioLoaded: true,
+      isLiveInputActive: false,
+      analysisSource: "idle",
+    });
+    expect(session.readFeatureAnalysisCapture()).toBeNull();
+
+    const deferredStream = createDeferred();
+    navigator.mediaDevices.enumerateDevices = undefined;
+    getUserMediaMock.mockReturnValue(deferredStream.promise);
+    const liveStart = session.startLiveInputStream("device-1", "system");
+    await Promise.resolve();
+
+    expect(session.getStatus().sourceSession).toMatchObject({
+      kind: "system",
+      phase: "starting",
+    });
+    expect(session.readFeatureAnalysisCapture()).toBeNull();
+
+    deferredStream.resolve({
+      active: true,
+      getTracks: () => [mockTrack],
+      getAudioTracks: getAudioTracksMock,
+    });
+    await expect(liveStart).resolves.toBe(true);
+    expect(session.readFeatureAnalysisCapture()).toMatchObject({
+      fast: { sourceMode: "system" },
+    });
+
+    session.stopLiveInputStream();
+    expect(session.readFeatureAnalysisCapture()).toBeNull();
+
+    session.selectSource("file");
+    expect(session.getStatus()).toMatchObject({
+      sourceSession: { kind: "file", phase: "ready" },
+      isPlaybackPaused: false,
+    });
+    expect(session.getTransportState().currentTimeSeconds).toBe(1);
+  });
+
+  it("lets a file load supersede a pending live input capture", async () => {
+    const session = createSession();
+    const deferredStream = createDeferred();
+    navigator.mediaDevices.enumerateDevices = undefined;
+    getUserMediaMock.mockReturnValue(deferredStream.promise);
+
+    const liveStart = session.startLiveInputStream("device-1", "system");
+    await Promise.resolve();
+
+    await expect(session.loadAudio("selected-file")).resolves.toBe(true);
+
+    deferredStream.resolve({
+      active: true,
+      getTracks: () => [mockTrack],
+      getAudioTracks: getAudioTracksMock,
+    });
+
+    await expect(liveStart).resolves.toBe(false);
+    expect(mockTrackStop).toHaveBeenCalledTimes(1);
+    expect(session.getStatus()).toMatchObject({
+      sourceSession: { kind: "file", phase: "ready" },
+      isAudioLoaded: true,
+      isLiveInputActive: false,
+    });
   });
 
   it("rejects and closes a live stream that resolves after stop", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     const deferredStream = createDeferred();
     navigator.mediaDevices.enumerateDevices = undefined;
     getUserMediaMock.mockReturnValue(deferredStream.promise);
@@ -456,8 +574,168 @@ describe("audio session", () => {
     expect(session.getStatus().isLiveInputActive).toBe(false);
   });
 
+  it("rolls back an acquired stream and partial taps when live analysis setup fails", async () => {
+    let shouldFailAnalysisSetup = true;
+    Object.defineProperty(globalThis, "AudioContext", {
+      configurable: true,
+      value: class extends MockAudioContext {
+        constructor() {
+          super();
+          lastAudioContext = this;
+        }
+
+        createAnalyser() {
+          if (shouldFailAnalysisSetup && this.createdAnalysers.length === 1) {
+            shouldFailAnalysisSetup = false;
+            throw new Error("analysis graph unavailable");
+          }
+          return super.createAnalyser();
+        }
+      },
+    });
+    const session = createSession();
+
+    await expect(
+      session.startLiveInputStream("device-1", "system"),
+    ).rejects.toThrow("analysis graph unavailable");
+
+    expect(mockTrackStop).toHaveBeenCalledTimes(1);
+    expect(
+      lastAudioContext.createdAnalysers[0].disconnect,
+    ).toHaveBeenCalledTimes(1);
+    expect(session.getStatus()).toMatchObject({
+      sourceSession: {
+        kind: "system",
+        phase: "error",
+        sessionId: 1,
+      },
+      isLiveInputActive: false,
+      selectedLiveInputDeviceId: null,
+      selectedLiveInputDeviceLabel: "",
+    });
+
+    await expect(
+      session.startLiveInputStream("device-1", "system"),
+    ).resolves.toBe(true);
+    expect(mockTrackStop).toHaveBeenCalledTimes(1);
+    expect(session.getStatus()).toMatchObject({
+      sourceSession: {
+        kind: "system",
+        phase: "active",
+        sessionId: 2,
+      },
+      isLiveInputActive: true,
+      selectedLiveInputDeviceId: "device-1",
+    });
+  });
+
+  it("atomically replaces an active live stream without leaking its track", async () => {
+    const firstTrackStop = vi.fn();
+    const secondTrackStop = vi.fn();
+    const firstTrack = {
+      ...mockTrack,
+      id: "track-first",
+      label: "First Input",
+      stop: firstTrackStop,
+    };
+    const secondTrack = {
+      ...mockTrack,
+      id: "track-second",
+      label: "Second Input",
+      stop: secondTrackStop,
+    };
+    getUserMediaMock
+      .mockResolvedValueOnce({
+        active: true,
+        getAudioTracks: () => [firstTrack],
+      })
+      .mockResolvedValueOnce({
+        active: true,
+        getAudioTracks: () => [secondTrack],
+      });
+    const session = createSession();
+
+    await expect(
+      session.startLiveInputStream("device-1", "system"),
+    ).resolves.toBe(true);
+    await expect(
+      session.startLiveInputStream("device-2", "system"),
+    ).resolves.toBe(true);
+
+    expect(firstTrackStop).toHaveBeenCalledTimes(1);
+    expect(secondTrackStop).not.toHaveBeenCalled();
+    expect(session.getStatus()).toMatchObject({
+      sourceSession: {
+        kind: "system",
+        phase: "active",
+        sessionId: 2,
+      },
+      isLiveInputActive: true,
+      selectedLiveInputDeviceId: "device-2",
+      selectedLiveInputDeviceLabel: "Second Input",
+      liveInputTrack: { id: "track-second" },
+    });
+  });
+
+  it("fails closed when replacement analysis setup fails", async () => {
+    const activeTrackStop = vi.fn();
+    const replacementTrackStop = vi.fn();
+    const activeTrack = {
+      ...mockTrack,
+      id: "track-active",
+      label: "Active Input",
+      stop: activeTrackStop,
+    };
+    const replacementTrack = {
+      ...mockTrack,
+      id: "track-replacement",
+      label: "Replacement Input",
+      stop: replacementTrackStop,
+    };
+    getUserMediaMock
+      .mockResolvedValueOnce({
+        active: true,
+        getAudioTracks: () => [activeTrack],
+      })
+      .mockResolvedValueOnce({
+        active: true,
+        getAudioTracks: () => [replacementTrack],
+      });
+    const session = createSession();
+    await session.startLiveInputStream("device-1", "system");
+
+    const createAnalyser =
+      lastAudioContext.createAnalyser.bind(lastAudioContext);
+    let replacementAnalyserCallCount = 0;
+    lastAudioContext.createAnalyser = vi.fn(() => {
+      replacementAnalyserCallCount += 1;
+      if (replacementAnalyserCallCount === 2) {
+        throw new Error("replacement analysis unavailable");
+      }
+      return createAnalyser();
+    });
+
+    await expect(
+      session.startLiveInputStream("device-2", "system"),
+    ).rejects.toThrow("replacement analysis unavailable");
+
+    expect(activeTrackStop).toHaveBeenCalledTimes(1);
+    expect(replacementTrackStop).toHaveBeenCalledTimes(1);
+    expect(session.getStatus()).toMatchObject({
+      sourceSession: {
+        kind: "system",
+        phase: "error",
+        sessionId: 2,
+      },
+      isLiveInputActive: false,
+      selectedLiveInputDeviceId: null,
+      selectedLiveInputDeviceLabel: "",
+      liveInputTrack: { present: false, streamActive: false },
+    });
+  });
+
   it("captures playback audio through a disconnectable media-stream tap", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     await session.loadAudio("good");
 
     const capture = session.createCaptureStream();
@@ -502,13 +780,13 @@ describe("audio session", () => {
       },
     });
 
-    const session = createAttachedSession();
+    const session = createSession();
     await session.loadAudio("good");
     expect(session.createCaptureStream()).toBeNull();
   });
 
   it("tracks native stream lifecycle through the shared playback graph", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     const mediaElement = new MockMediaElement({
       duration: 9,
       currentTime: 0,
@@ -522,8 +800,7 @@ describe("audio session", () => {
     });
 
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "file",
-      sourceKind: "stream",
+      sourceSession: { kind: "file", phase: "ready" },
       sourceLabel: "Remote Stream",
       isAudioLoaded: true,
       isPlaying: false,
@@ -534,10 +811,18 @@ describe("audio session", () => {
 
     expect(mediaElement.play).toHaveBeenCalledTimes(1);
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "file",
+      sourceSession: { kind: "file", phase: "active" },
       isPlaying: true,
-      sourceKind: "stream",
       analysisSource: "file",
+      playbackSessionId: 1,
+      lastPlaybackDiagnostics: {
+        playbackSessionId: 1,
+        sourceKind: "stream",
+        offsetSeconds: 0,
+        durationSeconds: 9,
+        audioContextStateAtStart: "running",
+        latestAudioContextState: "running",
+      },
     });
     expect(session.readFeatureAnalysisCapture()).toMatchObject({
       fast: {
@@ -557,9 +842,8 @@ describe("audio session", () => {
     await session.playPauseAudio();
     expect(mediaElement.pause).toHaveBeenCalledTimes(1);
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "idle",
+      sourceSession: { kind: "file", phase: "paused" },
       isPlaying: false,
-      sourceKind: "stream",
     });
     expect(session.readClockSnapshot(3)).toMatchObject({
       clockMode: "paused-playback",
@@ -569,8 +853,9 @@ describe("audio session", () => {
   });
 
   it("reports seekable transport state for finite files and updates paused offsets", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     await session.loadAudio("good");
+    expect(session.getStatus().sourceSession.timelineRevision).toBe(0);
 
     expect(session.getTransportState()).toEqual({
       currentTimeSeconds: 0,
@@ -580,6 +865,7 @@ describe("audio session", () => {
 
     await session.seekTo(2.5);
 
+    expect(session.getStatus().sourceSession.timelineRevision).toBe(1);
     expect(session.getTransportState()).toEqual({
       currentTimeSeconds: 2.5,
       durationSeconds: 5,
@@ -593,7 +879,7 @@ describe("audio session", () => {
   });
 
   it("reports seekable transport state for finite streams and updates current time", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     const mediaElement = new MockMediaElement({
       duration: 9,
       currentTime: 0,
@@ -614,6 +900,7 @@ describe("audio session", () => {
 
     await session.seekTo(4.5);
 
+    expect(session.getStatus().sourceSession.timelineRevision).toBe(1);
     expect(mediaElement.currentTime).toBe(4.5);
     expect(session.getTransportState()).toEqual({
       currentTimeSeconds: 4.5,
@@ -623,7 +910,7 @@ describe("audio session", () => {
   });
 
   it("tracks live input lifecycle and clears state on stop", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     await session.startLiveInputStream("device-1");
 
     expect(getUserMediaMock).toHaveBeenLastCalledWith({
@@ -636,9 +923,8 @@ describe("audio session", () => {
     });
     expect(session.getStatus().liveInputCalibrationVersion).toBeGreaterThan(0);
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "live",
+      sourceSession: { kind: "system", phase: "active", sessionId: 1 },
       isLiveInputActive: true,
-      liveInputSessionId: 1,
       analysisSource: "live",
       liveInputTrack: {
         present: true,
@@ -680,28 +966,27 @@ describe("audio session", () => {
     session.stopLiveInputStream();
     expect(mockTrackStop).toHaveBeenCalledTimes(1);
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "idle",
+      sourceSession: { kind: "system", phase: "stopped" },
       isLiveInputActive: false,
-      liveInputSessionId: null,
       analysisSource: "idle",
       lastLiveInputInterruption: null,
     });
   });
 
   it("assigns a new owner session id after a live-input reconnect", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     await session.startLiveInputStream("device-1");
-    const firstSessionId = session.getStatus().liveInputSessionId;
+    const firstSessionId = session.getStatus().sourceSession.sessionId;
 
     session.stopLiveInputStream();
     await session.startLiveInputStream("device-1");
 
     expect(firstSessionId).toBe(1);
-    expect(session.getStatus().liveInputSessionId).toBe(2);
+    expect(session.getStatus().sourceSession.sessionId).toBe(2);
   });
 
   it("treats the browser default input id as an unconstrained device choice", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     await session.startLiveInputStream("default");
 
     expect(enumerateDevicesMock).not.toHaveBeenCalled();
@@ -713,21 +998,21 @@ describe("audio session", () => {
       },
     });
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "live",
+      sourceSession: { kind: "system", phase: "active" },
       isLiveInputActive: true,
       selectedLiveInputDeviceId: "default",
     });
   });
 
   it("recovers live input when the media stream track ends unexpectedly", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     await session.startLiveInputStream("device-1");
 
     mockTrack.dispatchEvent("ended");
 
     expect(mockTrackStop).not.toHaveBeenCalled();
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "idle",
+      sourceSession: { kind: "system", phase: "error" },
       isLiveInputActive: false,
       analysisSource: "idle",
       selectedLiveInputDeviceId: null,
@@ -743,7 +1028,7 @@ describe("audio session", () => {
   it("recovers live input after a sustained track mute but ignores a transient mute", async () => {
     vi.useFakeTimers();
     try {
-      const session = createAttachedSession();
+      const session = createSession();
       await session.startLiveInputStream("device-1");
 
       mockTrack.muted = true;
@@ -751,7 +1036,7 @@ describe("audio session", () => {
       await vi.advanceTimersByTimeAsync(1499);
 
       expect(session.getStatus()).toMatchObject({
-        audioInputMode: "live",
+        sourceSession: { kind: "system", phase: "active" },
         isLiveInputActive: true,
         lastLiveInputInterruption: null,
       });
@@ -761,7 +1046,7 @@ describe("audio session", () => {
       await vi.advanceTimersByTimeAsync(2);
 
       expect(session.getStatus()).toMatchObject({
-        audioInputMode: "live",
+        sourceSession: { kind: "system", phase: "active" },
         isLiveInputActive: true,
         lastLiveInputInterruption: null,
       });
@@ -771,7 +1056,7 @@ describe("audio session", () => {
       await vi.advanceTimersByTimeAsync(1500);
 
       expect(session.getStatus()).toMatchObject({
-        audioInputMode: "idle",
+        sourceSession: { kind: "system", phase: "error" },
         isLiveInputActive: false,
         analysisSource: "idle",
         lastLiveInputInterruption: {
@@ -785,13 +1070,13 @@ describe("audio session", () => {
   });
 
   it("recovers live input when the live audio context is interrupted", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     await session.startLiveInputStream("device-1");
 
     lastAudioContext.dispatchStateChange("interrupted");
 
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "idle",
+      sourceSession: { kind: "system", phase: "error" },
       isLiveInputActive: false,
       analysisSource: "idle",
       lastLiveInputInterruption: {
@@ -801,19 +1086,16 @@ describe("audio session", () => {
     });
   });
 
-  it("replaces the active analysis tap when switching sources", async () => {
-    const session = createAttachedSession();
+  it("uses decoded analysis for files and reserves analyser taps for live input", async () => {
+    const session = createSession();
     await session.loadAudio("good");
     await session.playPauseAudio();
 
-    const playbackAnalysers = lastAudioContext.createdAnalysers.slice(-2);
+    expect(lastAudioContext.createdAnalysers).toHaveLength(0);
 
     await session.startLiveInputStream("device-1");
 
-    expect(playbackAnalysers).toHaveLength(2);
-    for (const analyser of playbackAnalysers) {
-      expect(analyser.disconnect).toHaveBeenCalledTimes(1);
-    }
+    expect(lastAudioContext.createdAnalysers).toHaveLength(2);
     expect(session.readFeatureAnalysisCapture()).toMatchObject({
       fast: {
         sourceMode: "live",
@@ -824,7 +1106,7 @@ describe("audio session", () => {
   });
 
   it("treats system-classified live input as file-style analysis", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     await session.setLiveInputSettings({
       echoCancellation: true,
       noiseSuppression: true,
@@ -841,15 +1123,19 @@ describe("audio session", () => {
         autoGainControl: false,
       },
     });
-    expect(session.getStatus()).toMatchObject({
-      audioInputMode: "system",
+    const status = session.getStatus();
+    expect(status).toMatchObject({
+      sourceSession: {
+        kind: "system",
+        phase: "active",
+        systemCapture: { deviceKind: "system" },
+      },
       isLiveInputActive: true,
       liveInputDeviceKind: "system",
-      liveInputKind: "system",
       liveInputCalibrationVersion: 0,
-      sourceKind: "system",
       analysisSource: "file",
     });
+    expect(status).not.toHaveProperty("liveInputKind");
     expect(session.readFeatureAnalysisCapture()).toMatchObject({
       fast: {
         sourceMode: "system",
@@ -886,7 +1172,7 @@ describe("audio session", () => {
       ],
     });
 
-    const session = createAttachedSession();
+    const session = createSession();
     await session.startLiveInputStream(
       "main-window-device-9",
       "system",
@@ -902,7 +1188,7 @@ describe("audio session", () => {
       },
     });
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "system",
+      sourceSession: { kind: "system", phase: "active" },
       isLiveInputActive: true,
       selectedLiveInputDeviceId: "stage-device-1",
       selectedLiveInputDeviceLabel: "BlackHole 2ch (Virtual)",
@@ -923,7 +1209,7 @@ describe("audio session", () => {
       },
     });
 
-    const session = createAttachedSession();
+    const session = createSession();
     const result = await Promise.race([
       session.startLiveInputStream("device-1", "system").then(() => "started"),
       new Promise((resolve) => setTimeout(() => resolve("timeout"), 50)),
@@ -932,7 +1218,7 @@ describe("audio session", () => {
     expect(result).toBe("started");
     expect(lastAudioContext.resume).toHaveBeenCalledTimes(1);
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "system",
+      sourceSession: { kind: "system", phase: "active" },
       isLiveInputActive: true,
       analysisSource: "file",
       selectedLiveInputDeviceId: "device-1",
@@ -940,14 +1226,14 @@ describe("audio session", () => {
   });
 
   it("disposes host state deterministically", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     await session.loadAudio("good");
     await session.playPauseAudio();
 
     await session.dispose();
 
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "idle",
+      sourceSession: { kind: "file", phase: "empty" },
       isAudioLoaded: false,
       isPlaying: false,
       analysisSource: "idle",
@@ -957,7 +1243,7 @@ describe("audio session", () => {
   });
 
   it("reports clock snapshots from playback, paused-playback, and realtime modes", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
 
     expect(session.readClockSnapshot(1)).toMatchObject({
       clockMode: "realtime",
@@ -992,8 +1278,8 @@ describe("audio session", () => {
     });
   });
 
-  it("resets to unloaded state after a failed audio load", async () => {
-    const session = createAttachedSession();
+  it("reports the canonical File error state after a failed audio load", async () => {
+    const session = createSession();
 
     await expect(session.loadAudio("bad")).rejects.toThrow(
       "Failed to load audio: 500",
@@ -1002,12 +1288,12 @@ describe("audio session", () => {
     expect(session.getStatus()).toMatchObject({
       isAudioLoaded: false,
       isPlaying: false,
-      audioInputMode: "idle",
+      sourceSession: { kind: "file", phase: "error" },
     });
   });
 
   it("returns to stopped when stopAudio is called while playing", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     await session.loadAudio("good");
     await session.playPauseAudio();
 
@@ -1015,14 +1301,14 @@ describe("audio session", () => {
 
     expect(session.getStatus()).toMatchObject({
       isPlaying: false,
-      audioInputMode: "stopped",
+      sourceSession: { kind: "file", phase: "stopped" },
       analysisSource: "idle",
       lastPlaybackEndReason: "stopped",
     });
   });
 
   it("resets native stream playback when stopAudio is called", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     const mediaElement = new MockMediaElement({
       duration: 7,
       currentTime: 1.75,
@@ -1041,15 +1327,14 @@ describe("audio session", () => {
     expect(mediaElement.pause).toHaveBeenCalledTimes(1);
     expect(mediaElement.currentTime).toBe(0);
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "stopped",
+      sourceSession: { kind: "file", phase: "stopped" },
       isPlaying: false,
-      sourceKind: "stream",
       analysisSource: "idle",
     });
   });
 
   it("clears explicit stop diagnostics when native stream playback resumes", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     const mediaElement = new MockMediaElement({
       duration: 7,
       currentTime: 1.75,
@@ -1065,7 +1350,7 @@ describe("audio session", () => {
 
     session.stopAudio();
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "stopped",
+      sourceSession: { kind: "file", phase: "stopped" },
       isPlaying: false,
       lastPlaybackEndReason: "stopped",
     });
@@ -1074,16 +1359,15 @@ describe("audio session", () => {
 
     expect(mediaElement.play).toHaveBeenCalledTimes(1);
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "file",
+      sourceSession: { kind: "file", phase: "active" },
       isPlaying: true,
-      sourceKind: "stream",
       lastPlaybackEndReason: null,
     });
     expect(session.getStatus().playbackSessionId).not.toBeNull();
   });
 
   it("keeps analysis captures active at zero volume and while muted", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     await session.loadAudio("good");
     await session.playPauseAudio();
 
@@ -1102,7 +1386,7 @@ describe("audio session", () => {
   });
 
   it("preserves playback offset across pause and resume", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     await session.loadAudio("good");
     await session.playPauseAudio();
 
@@ -1125,18 +1409,22 @@ describe("audio session", () => {
   });
 
   it("restarts active file playback from the requested seek offset", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     await session.loadAudio("good");
     await session.playPauseAudio();
-    const sourceSessionId = session.getStatus().playbackSourceSessionId;
+    const sourceSession = session.getStatus().sourceSession;
     const playbackSessionId = session.getStatus().playbackSessionId;
 
     await session.seekTo(3.25);
 
     expect(session.getStatus()).toMatchObject({
       isPlaying: true,
-      audioInputMode: "file",
-      playbackSourceSessionId: sourceSessionId,
+      sourceSession: {
+        kind: "file",
+        phase: "active",
+        sessionId: sourceSession.sessionId,
+        timelineRevision: sourceSession.timelineRevision + 1,
+      },
     });
     expect(session.getStatus().playbackSessionId).not.toBe(playbackSessionId);
     expect(lastAudioContext.createdBufferSources).toHaveLength(2);
@@ -1154,7 +1442,7 @@ describe("audio session", () => {
   });
 
   it("updates active native stream playback without interrupting play state", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     const mediaElement = new MockMediaElement({
       duration: 8,
       currentTime: 1,
@@ -1174,7 +1462,7 @@ describe("audio session", () => {
     expect(mediaElement.currentTime).toBe(5.5);
     expect(session.getStatus()).toMatchObject({
       isPlaying: true,
-      sourceKind: "stream",
+      sourceSession: { kind: "file", phase: "active" },
     });
     expect(session.getTransportState()).toMatchObject({
       currentTimeSeconds: 5.5,
@@ -1184,7 +1472,7 @@ describe("audio session", () => {
   });
 
   it("resets playback state cleanly when a new file is loaded during playback", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     await session.loadAudio("good");
     await session.playPauseAudio();
 
@@ -1192,7 +1480,7 @@ describe("audio session", () => {
     await session.loadAudio("good");
 
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "file",
+      sourceSession: { kind: "file", phase: "ready" },
       isAudioLoaded: true,
       isPlaying: false,
       analysisSource: "idle",
@@ -1214,7 +1502,7 @@ describe("audio session", () => {
   });
 
   it("clears paused file playback state when switching to live input", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     await session.loadAudio("good");
     await session.playPauseAudio();
 
@@ -1228,7 +1516,7 @@ describe("audio session", () => {
     await session.startLiveInputStream("device-1");
 
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "live",
+      sourceSession: { kind: "system", phase: "active" },
       isLiveInputActive: true,
       isPlaying: false,
       analysisSource: "live",
@@ -1247,8 +1535,8 @@ describe("audio session", () => {
     });
   });
 
-  it("clears loaded stream playback state when switching to live input", async () => {
-    const session = createAttachedSession();
+  it("keeps a loaded File source passive while System input is active", async () => {
+    const session = createSession();
     const mediaElement = new MockMediaElement({
       duration: 8,
       currentTime: 0,
@@ -1263,19 +1551,18 @@ describe("audio session", () => {
 
     await session.startLiveInputStream("device-1");
 
-    expect(mediaElement.pause).toHaveBeenCalledTimes(2);
+    expect(mediaElement.pause).not.toHaveBeenCalled();
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "live",
+      sourceSession: { kind: "system", phase: "active" },
       isLiveInputActive: true,
       isPlaying: false,
-      sourceKind: "live",
       analysisSource: "live",
-      isAudioLoaded: false,
+      isAudioLoaded: true,
     });
   });
 
   it("marks unloaded and live input sources as non-seekable", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
 
     expect(session.getTransportState()).toEqual({
       currentTimeSeconds: 0,
@@ -1294,8 +1581,8 @@ describe("audio session", () => {
     await expect(session.seekTo(1)).resolves.toBe(false);
   });
 
-  it("applies the ended callback even when registered before attach", async () => {
-    const session = createAttachedSession();
+  it("applies an ended callback registered before playback", async () => {
+    const session = createSession();
     const callback = vi.fn();
 
     session.setAudioEndedCallback(callback);
@@ -1310,14 +1597,14 @@ describe("audio session", () => {
 
     expect(callback).toHaveBeenCalledTimes(1);
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "stopped",
+      sourceSession: { kind: "file", phase: "ended" },
       isPlaying: false,
       lastPlaybackEndReason: "natural",
     });
   });
 
   it("classifies early buffer endings as premature and preserves playback offset", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     const callback = vi.fn();
 
     session.setAudioEndedCallback(callback);
@@ -1330,7 +1617,7 @@ describe("audio session", () => {
 
     expect(callback).not.toHaveBeenCalled();
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "idle",
+      sourceSession: { kind: "file", phase: "paused" },
       isPlaying: false,
       isPlaybackPaused: false,
       lastPlaybackEndReason: "premature",
@@ -1350,7 +1637,7 @@ describe("audio session", () => {
   });
 
   it("keeps file analysis active across audio context interruptions", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     await session.loadAudio("good");
     await session.playPauseAudio();
 
@@ -1360,7 +1647,8 @@ describe("audio session", () => {
       isPlaying: true,
       analysisSource: "file",
       hasAnalysisSource: true,
-      hasPlaybackAnalysisSource: true,
+      hasPlaybackAnalysisSource: false,
+      hasPreparedFileAnalysisSource: true,
       lastPlaybackEndReason: null,
     });
     expect(session.readFeatureAnalysisCapture()).toMatchObject({
@@ -1394,7 +1682,7 @@ describe("audio session", () => {
   });
 
   it("does not misclassify pause, resume, and seek as playback interruptions", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     await session.loadAudio("good");
     await session.playPauseAudio();
 
@@ -1413,7 +1701,7 @@ describe("audio session", () => {
   });
 
   it("applies the ended callback for native stream playback", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     const callback = vi.fn();
     const mediaElement = new MockMediaElement({
       duration: 6,
@@ -1436,22 +1724,21 @@ describe("audio session", () => {
     expect(callback).toHaveBeenCalledTimes(1);
     expect(mediaElement.currentTime).toBe(0);
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "stopped",
+      sourceSession: { kind: "file", phase: "ended" },
       isPlaying: false,
-      sourceKind: "stream",
       lastPlaybackEndReason: "natural",
     });
   });
 
   it("releases live input resources and closes the audio context on dispose", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     await session.startLiveInputStream("device-1");
 
     await session.dispose();
 
     expect(mockTrackStop).toHaveBeenCalledTimes(1);
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "idle",
+      sourceSession: { kind: "file", phase: "empty" },
       isLiveInputActive: false,
       isPlaying: false,
       analysisSource: "idle",
@@ -1460,7 +1747,7 @@ describe("audio session", () => {
   });
 
   it("requests live input with the selected device and current DSP settings", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     await session.setLiveInputSettings({
       echoCancellation: true,
       noiseSuppression: true,
@@ -1485,7 +1772,7 @@ describe("audio session", () => {
   });
 
   it("applies updated live input DSP settings to the active track", async () => {
-    const session = createAttachedSession();
+    const session = createSession();
     await session.startLiveInputStream("device-1");
 
     await session.setLiveInputSettings({
@@ -1507,14 +1794,14 @@ describe("audio session", () => {
   });
 
   it("allows repeated create and dispose cycles without retaining playback state", async () => {
-    const firstSession = createAttachedSession();
+    const firstSession = createSession();
     await firstSession.loadAudio("good");
     await firstSession.playPauseAudio();
     await firstSession.dispose();
 
-    const secondSession = createAttachedSession();
+    const secondSession = createSession();
     expect(secondSession.getStatus()).toMatchObject({
-      audioInputMode: "idle",
+      sourceSession: { kind: "file", phase: "empty" },
       isAudioLoaded: false,
       isPlaying: false,
       analysisSource: "idle",
@@ -1522,7 +1809,7 @@ describe("audio session", () => {
 
     await secondSession.loadAudio("good");
     expect(secondSession.getStatus()).toMatchObject({
-      audioInputMode: "file",
+      sourceSession: { kind: "file", phase: "ready" },
       isAudioLoaded: true,
       isPlaying: false,
     });

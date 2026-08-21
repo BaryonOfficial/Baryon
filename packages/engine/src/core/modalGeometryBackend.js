@@ -9,7 +9,9 @@ import {
   getUniquePermutationCount,
   normalizeBoundaryMode,
 } from "./modeFamily.js";
+import { computeRectangularModalSourceCoupling } from "./modalSourceCoupling.js";
 import {
+  evaluatePermutationFamilyAxisPathIntegratedHessiansNodeForBoundary,
   evaluatePermutationFamilyFieldNodeForBoundary,
   evaluatePermutationFamilyNodeForBoundary,
 } from "./modeFamilyNode.js";
@@ -19,11 +21,7 @@ import {
   summarizeModalSlotTopologyRange,
   summarizeModalTopology,
 } from "./modalTopology.js";
-
-function getRectangularModeShellKey(source) {
-  const [u, v, w] = readModalTopologyMode(source).map(Math.abs);
-  return `rect:${u * u + v * v + w * w}`;
-}
+import { getRectangularModeShellKey } from "./modalShell.js";
 
 function getRectangularModeFamilyKey(source) {
   return readModalTopologyMode(source)
@@ -54,57 +52,38 @@ const RECTANGULAR_MODE_BACKEND = Object.freeze({
   getModeFamilyKey: getRectangularModeFamilyKey,
   summarizeModalTopology: summarizeRectangularModalTopology,
   summarizeModalSlotTopologyRange: summarizeRectangularModalSlotTopologyRange,
-  buildAtlas({
+  enumerateAtlasCandidates({
     radius,
     acousticScale = null,
     boundaryMode = null,
-    frequencyCenters,
-    buildModeKey,
-    createAtlasEntry,
+    maximumAxisOrder,
   }) {
-    const entriesByKey = new Map();
     const modeOptions = resolveModalSolveOptions({
       radius,
       acousticScale,
       boundaryMode,
     });
+    const maximumOrder = Math.max(0, Math.floor(maximumAxisOrder ?? 0));
+    const minimumOrder =
+      normalizeBoundaryMode(modeOptions.boundaryMode) === "dirichlet" ? 1 : 0;
+    const candidates = [];
 
-    for (const entry of frequencyCenters) {
-      const centerHz =
-        typeof entry === "number" ? entry : Number(entry?.centerHz ?? 0);
-      const familyWidth =
-        typeof entry === "number" ? 1 : Number(entry?.familyWidth ?? 1);
-      const family = resolveCavityModeFamilyForPitch(
-        centerHz,
-        modeOptions,
-        familyWidth,
-      );
-      for (const candidate of family) {
-        const modeKey = buildModeKey(candidate.u, candidate.v, candidate.w);
-        if (entriesByKey.has(modeKey)) {
-          continue;
+    for (let u = minimumOrder; u <= maximumOrder; u += 1) {
+      for (let v = u; v <= maximumOrder; v += 1) {
+        for (let w = v; w <= maximumOrder; w += 1) {
+          if (u === 0 && v === 0 && w === 0) {
+            continue;
+          }
+          candidates.push({
+            u,
+            v,
+            w,
+            naturalFrequencyHz: getCavityModeFrequency(u, v, w, modeOptions),
+          });
         }
-
-        const naturalFrequencyHz = getCavityModeFrequency(
-          candidate.u,
-          candidate.v,
-          candidate.w,
-          modeOptions,
-        );
-        entriesByKey.set(
-          modeKey,
-          createAtlasEntry({
-            candidate,
-            modeKey,
-            naturalFrequencyHz,
-          }),
-        );
       }
     }
-
-    return Array.from(entriesByKey.values()).sort(
-      (left, right) => left.naturalFrequencyHz - right.naturalFrequencyHz,
-    );
+    return candidates;
   },
   solveTermsForPitch({
     pitch,
@@ -131,6 +110,15 @@ const RECTANGULAR_MODE_BACKEND = Object.freeze({
       boundaryMode,
     });
   },
+  computeSourceCoupling({ u, v, w, boundaryMode, sourceProfile }) {
+    return computeRectangularModalSourceCoupling({
+      u,
+      v,
+      w,
+      boundaryMode,
+      sourceProfile,
+    });
+  },
   evaluateModeNode({
     u,
     v,
@@ -143,6 +131,28 @@ const RECTANGULAR_MODE_BACKEND = Object.freeze({
     boundaryMode,
   }) {
     return evaluatePermutationFamilyNodeForBoundary({
+      u,
+      v,
+      w,
+      xCoord,
+      yCoord,
+      zCoord,
+      scale: scale ?? float(Math.PI).div(uRadius.max(float(1e-4))),
+      boundaryMode,
+    });
+  },
+  evaluateModeAxisPathIntegratedHessiansNode({
+    u,
+    v,
+    w,
+    xCoord,
+    yCoord,
+    zCoord,
+    scale = null,
+    uRadius = null,
+    boundaryMode,
+  }) {
+    return evaluatePermutationFamilyAxisPathIntegratedHessiansNodeForBoundary({
       u,
       v,
       w,

@@ -19,6 +19,29 @@ module.exports = {
       "to": {
         "path": "^apps/"
       }
+    },
+    {
+      "name": "no-engine-root-barrel",
+      "severity": "error",
+      "comment": "Engine consumers must name the owning public subpath instead of importing an aggregate root barrel.",
+      "from": {
+        "path": "^(apps|packages)/",
+        "pathNot": "^packages/engine/"
+      },
+      "to": {
+        "path": "^@baryon/engine$"
+      }
+    },
+    {
+      "name": "engine-no-react-ui",
+      "severity": "error",
+      "comment": "The engine is headless; React lifecycle and presentation belong to app-shell.",
+      "from": {
+        "path": "^packages/engine/"
+      },
+      "to": {
+        "path": "^(react|react-dom)(/|$)"
+      }
     }
   ],
   "options": {

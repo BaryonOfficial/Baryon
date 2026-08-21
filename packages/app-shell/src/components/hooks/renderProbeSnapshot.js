@@ -1,12 +1,18 @@
-export const RENDER_PROBE_SCHEMA_VERSION = "baryon-render-probe-v1";
+import {
+  RAYMARCH_OPTICAL_FIELD_REPRESENTATION,
+  RAYMARCH_SPECTRAL_PHASE_REPRESENTATION,
+} from "@baryon/engine/core/raymarch/quantityLedger";
+
+export const RENDER_PROBE_SCHEMA_VERSION = "baryon-render-probe-v2";
 
 export const RENDER_PROBE_MATERIAL_FIELDS = Object.freeze([
-  "materialProbePhysicalDensity",
-  "materialProbeCausticVisibleDensity",
-  "materialProbeSupportVisibleDensity",
-  "materialProbePreBloomRadiance",
-  "materialProbePostBloomRisk",
-  "materialProbeBloomAmplification",
+  "plasmaProbeLocalRadiance",
+  "plasmaProbePersistence",
+  "plasmaProbeOrganizedDensity",
+  "plasmaProbeExtinction",
+  "plasmaProbePreBloomRadiance",
+  "plasmaProbePostBloomRisk",
+  "plasmaProbeBloomAmplification",
 ]);
 
 function readFiniteNumber(value, fallback = 0) {
@@ -48,7 +54,7 @@ function hasRaymarchProbe(debugSnapshot = null) {
     (Object.prototype.hasOwnProperty.call(raymarchDebug, "renderAuthority") ||
       Object.prototype.hasOwnProperty.call(
         raymarchDebug,
-        "materialProbePreBloomRadiance",
+        "plasmaProbePreBloomRadiance",
       ) ||
       Object.prototype.hasOwnProperty.call(raymarchDebug, "avgDensity"))
   );
@@ -81,9 +87,9 @@ export function buildRenderProbeSnapshot({
     featureFrame?.energyLedger?.projectedRenderEnergy,
     raymarchDebug.projectedRenderEnergy,
   );
-  const observationEnergy = readFirstFinite(
-    render.observationEnergy,
-    raymarchDebug.observationEnergy,
+  const observerLocalRadiance = readFirstFinite(
+    render.plasmaProbeLocalRadiance,
+    raymarchDebug.plasmaProbeLocalRadiance,
     featureFrame?.observationEnergy,
   );
   const volumeVisible = readBoolean(
@@ -93,7 +99,7 @@ export function buildRenderProbeSnapshot({
   const activeCandidate =
     volumeVisible === true &&
     renderAuthority === true &&
-    (projectedRenderEnergy > 0 || observationEnergy > 0);
+    (projectedRenderEnergy > 0 || observerLocalRadiance > 0);
   const status = available ? "available" : "unavailable";
 
   return {
@@ -131,25 +137,56 @@ export function buildRenderProbeSnapshot({
         render.visibilityGateBlockedReason ??
           raymarchDebug.visibilityGateBlockedReason,
       ),
-      spectralLightEnabled: readBoolean(
-        render.spectralLightEnabled ?? raymarchDebug.spectralLightEnabled,
+      spectralPresentationEnabled: readBoolean(
+        render.spectralPresentationEnabled ??
+          raymarchDebug.spectralPresentationEnabled,
       ),
-      spectralLightLaneDrawable: readBoolean(
-        render.spectralLightLaneDrawable ??
-          raymarchDebug.spectralLightLaneDrawable,
+      spectralColorFieldImplementationState: readString(
+        render.spectralColorFieldImplementationState ??
+          raymarchDebug.spectralColorFieldImplementationState,
+        RAYMARCH_SPECTRAL_PHASE_REPRESENTATION,
+      ),
+      opticalFieldRepresentation: readString(
+        render.opticalFieldRepresentation ??
+          raymarchDebug.opticalFieldRepresentation,
+        RAYMARCH_OPTICAL_FIELD_REPRESENTATION,
       ),
       totalSlotAmplitude: readFiniteNumber(
-        runtimeState?.uniforms?.uTotalSlotAmplitude?.value ??
+        runtimeState?.raymarchStructuralProjection?.amplitudeSum ??
           raymarchDebug.totalSlotAmplitude ??
           render.totalSlotAmplitude,
       ),
       structuralProjectionDrive: readFiniteNumber(
-        runtimeState?.uniforms?.uStructuralProjectionDrive?.value ??
+        runtimeState?.raymarchStructuralProjection?.projectionEnergyDrive ??
           raymarchDebug.structuralProjectionDrive ??
           render.structuralProjectionDrive,
       ),
+      radiationPotentialObservedCoefficientEnergy: readFiniteNumber(
+        runtimeState?.radiationPotentialCoefficientFrame
+          ?.observedCoefficientEnergy ??
+          raymarchDebug.radiationPotentialObservedCoefficientEnergy ??
+          render.radiationPotentialObservedCoefficientEnergy,
+      ),
+      radiationPotentialObservedCoefficientNorm: readFiniteNumber(
+        runtimeState?.radiationPotentialCoefficientFrame
+          ?.observedCoefficientNorm ??
+          raymarchDebug.radiationPotentialObservedCoefficientNorm ??
+          render.radiationPotentialObservedCoefficientNorm,
+      ),
+      radiationPotentialNormalizedEnergyNorm: readFiniteNumber(
+        raymarchDebug.radiationPotentialNormalizedEnergyNorm ??
+          render.radiationPotentialNormalizedEnergyNorm,
+      ),
+      radiationPotentialBakeModeCount: readFiniteNumber(
+        raymarchDebug.radiationPotentialBakeModeCount ??
+          render.radiationPotentialBakeModeCount,
+      ),
+      radiationPotentialExposureDrive: readFiniteNumber(
+        raymarchDebug.radiationPotentialExposureDrive ??
+          render.radiationPotentialExposureDrive,
+      ),
       structuralProjectionConcentration: readFiniteNumber(
-        runtimeState?.uniforms?.uStructuralProjectionConcentration?.value ??
+        runtimeState?.raymarchStructuralProjection?.structuralConcentration ??
           raymarchDebug.structuralProjectionConcentration ??
           render.structuralProjectionConcentration,
       ),
@@ -163,38 +200,40 @@ export function buildRenderProbeSnapshot({
       ),
     },
     material: {
-      observationEnergy,
-      observationSampledDensityFloor: readFiniteNumber(
-        render.observationSampledDensityFloor ??
-          raymarchDebug.observationSampledDensityFloor,
+      observerLocalRadiance,
+      observerGeometryExposureSeconds: readFiniteNumber(
+        render.observerGeometryExposureSeconds ??
+          raymarchDebug.observerGeometryExposureSeconds,
       ),
-      observationSampledContourSupport: readFiniteNumber(
-        render.observationSampledContourSupport ??
-          raymarchDebug.observationSampledContourSupport,
+      observerRadianceExposureSeconds: readFiniteNumber(
+        render.observerRadianceExposureSeconds ??
+          raymarchDebug.observerRadianceExposureSeconds,
       ),
-      materialProbePhysicalDensity: readFiniteNumber(
-        render.materialProbePhysicalDensity ??
-          raymarchDebug.materialProbePhysicalDensity,
+      observerSpectralExposureSeconds: readFiniteNumber(
+        render.observerSpectralExposureSeconds ??
+          raymarchDebug.observerSpectralExposureSeconds,
       ),
-      materialProbeCausticVisibleDensity: readFiniteNumber(
-        render.materialProbeCausticVisibleDensity ??
-          raymarchDebug.materialProbeCausticVisibleDensity,
+      plasmaProbePersistence: readFiniteNumber(
+        render.plasmaProbePersistence ?? raymarchDebug.plasmaProbePersistence,
       ),
-      materialProbeSupportVisibleDensity: readFiniteNumber(
-        render.materialProbeSupportVisibleDensity ??
-          raymarchDebug.materialProbeSupportVisibleDensity,
+      plasmaProbeOrganizedDensity: readFiniteNumber(
+        render.plasmaProbeOrganizedDensity ??
+          raymarchDebug.plasmaProbeOrganizedDensity,
       ),
-      materialProbePreBloomRadiance: readFiniteNumber(
-        render.materialProbePreBloomRadiance ??
-          raymarchDebug.materialProbePreBloomRadiance,
+      plasmaProbeExtinction: readFiniteNumber(
+        render.plasmaProbeExtinction ?? raymarchDebug.plasmaProbeExtinction,
       ),
-      materialProbePostBloomRisk: readFiniteNumber(
-        render.materialProbePostBloomRisk ??
-          raymarchDebug.materialProbePostBloomRisk,
+      plasmaProbePreBloomRadiance: readFiniteNumber(
+        render.plasmaProbePreBloomRadiance ??
+          raymarchDebug.plasmaProbePreBloomRadiance,
       ),
-      materialProbeBloomAmplification: readFiniteNumber(
-        render.materialProbeBloomAmplification ??
-          raymarchDebug.materialProbeBloomAmplification,
+      plasmaProbePostBloomRisk: readFiniteNumber(
+        render.plasmaProbePostBloomRisk ??
+          raymarchDebug.plasmaProbePostBloomRisk,
+      ),
+      plasmaProbeBloomAmplification: readFiniteNumber(
+        render.plasmaProbeBloomAmplification ??
+          raymarchDebug.plasmaProbeBloomAmplification,
         1,
       ),
     },

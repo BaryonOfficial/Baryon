@@ -17,33 +17,35 @@ test("default Baryon geometry stays inside web and packaged renderer roots", () 
   );
 });
 
-test("prepareBaryonGeometryFromScene clones mesh geometry and bakes scale", () => {
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute(
-    "position",
-    new THREE.Float32BufferAttribute([1, 2, 3, -4, 5, -6], 3),
-  );
-
-  const mesh = new THREE.Mesh(geometry);
+test("prepareBaryonGeometryFromScene merges transformed meshes into one normalized source", () => {
   const scene = new THREE.Scene();
-  scene.add(mesh);
+  const left = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+  const right = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+  left.position.x = -2;
+  right.position.x = 2;
+  scene.add(left, right);
 
-  const preparedGeometry = prepareBaryonGeometryFromScene(scene);
-  const preparedPositions = preparedGeometry.attributes.position.array;
-  const sourcePositions = geometry.attributes.position.array;
-  const expectedPositions = [0.2, 0.4, 0.6, -0.8, 1, -1.2];
+  const prepared = prepareBaryonGeometryFromScene(scene);
+  const size = prepared.boundingBox.getSize(new THREE.Vector3());
+  const center = prepared.boundingBox.getCenter(new THREE.Vector3());
 
-  expect(preparedGeometry).not.toBe(geometry);
-  expect(Array.from(sourcePositions)).toStrictEqual([1, 2, 3, -4, 5, -6]);
-  Array.from(preparedPositions).forEach((value, index) => {
-    expect(Math.abs(value - expectedPositions[index]) < 1e-6).toBe(true);
-  });
+  expect(prepared).not.toBe(left.geometry);
+  expect(prepared).not.toBe(right.geometry);
+  expect(prepared.index).toBeNull();
+  expect(prepared.attributes.position.count).toBe(
+    left.geometry.index.count + right.geometry.index.count,
+  );
+  expect(prepared.attributes.normal.count).toBe(
+    prepared.attributes.position.count,
+  );
+  expect(Math.max(size.x, size.y, size.z)).toBeCloseTo(1.2);
+  expect(center.length()).toBeCloseTo(0);
 });
 
 test("prepareBaryonGeometryFromScene throws when no mesh is present", () => {
   const scene = new THREE.Scene();
 
   expect(() => prepareBaryonGeometryFromScene(scene)).toThrow(
-    /does not contain a mesh geometry/,
+    /does not contain mesh triangle geometry/,
   );
 });

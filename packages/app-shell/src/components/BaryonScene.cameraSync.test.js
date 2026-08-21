@@ -151,7 +151,7 @@ test("camera pose application stays fixed with real three-stdlib damping residue
 
 test("camera pose preset helper still produces canonical side and top-down poses", () => {
   expect(resolvePresetCameraPose("side")).toMatchObject({
-    position: { x: 0, y: 0, z: 9 },
+    position: { x: 0, y: 0, z: Math.hypot(4.5, 4.5, 4.5) },
     target: { x: 0, y: 0, z: 0 },
     up: { x: 0, y: 1, z: 0 },
     fov: 65,
@@ -159,7 +159,7 @@ test("camera pose preset helper still produces canonical side and top-down poses
   expect(resolvePresetCameraPose("top-down")).toMatchObject({
     position: {
       x: 0,
-      y: 9,
+      y: Math.hypot(4.5, 4.5, 4.5),
       z: 0,
     },
     target: { x: 0, y: 0, z: 0 },

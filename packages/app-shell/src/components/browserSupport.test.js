@@ -36,6 +36,16 @@ test("detects mobile browsers", () => {
   ).toBe(true);
 });
 
+test("detects iPadOS when Safari uses its desktop user agent", () => {
+  expect(
+    isMobileDevice({
+      maxTouchPoints: 5,
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15",
+    }),
+  ).toBe(true);
+});
+
 test("detects Linux platform and Chromium browser family", () => {
   const navigatorObject = {
     userAgent:
@@ -350,11 +360,61 @@ test("formats clipboard diagnostics with guidance and steps", () => {
   expect(clipboardText).toMatch(/Suggested next steps:/);
 });
 
-test("allows the forced WebGL fallback test path", async () => {
-  expect(getInitialBrowserSupportStatus(true)).toBe(
-    BROWSER_SUPPORT_STATUS.supported,
-  );
-  await expect(getBrowserSupportStatus(true, {})).resolves.toBe(
-    BROWSER_SUPPORT_STATUS.supported,
-  );
+function stubDocumentWithWebGL2(context) {
+  vi.stubGlobal("document", {
+    createElement: () => ({ getContext: () => context }),
+  });
+}
+
+test("allows the forced WebGL fallback test path once WebGL2 answers", async () => {
+  stubDocumentWithWebGL2({ getExtension: () => null });
+
+  try {
+    // The WebGL path is measured, never assumed, so it starts in checking.
+    expect(getInitialBrowserSupportStatus(true)).toBe(
+      BROWSER_SUPPORT_STATUS.checking,
+    );
+    await expect(getBrowserSupportStatus(true, {})).resolves.toBe(
+      BROWSER_SUPPORT_STATUS.supported,
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test("reports the WebGL renderer as unsupported when webgl2 has no context", async () => {
+  stubDocumentWithWebGL2(null);
+
+  try {
+    const result = await probeBrowserSupport(true, {
+      userAgent:
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+    });
+
+    expect(result.status).toBe(BROWSER_SUPPORT_STATUS.unsupported);
+    expect(result.failureCode).toBe(BROWSER_FAILURE_CODES.webgl2Missing);
+    expect(result.platform).toBe(BROWSER_PLATFORM.ios);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test("guides iOS visitors to exclude the site from Lockdown Mode", async () => {
+  stubDocumentWithWebGL2(null);
+  vi.stubGlobal("WebAssembly", undefined);
+
+  try {
+    const result = await probeBrowserSupport(true, {
+      userAgent:
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+    });
+
+    expect(result.guidance.summary).toMatch(/Lockdown Mode/i);
+    expect(result.guidance.steps.join(" ")).toMatch(/Website Settings/i);
+    expect(result.diagnostics).toContain(
+      '`canvas.getContext("webgl2")` returned no context.',
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });

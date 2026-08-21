@@ -1,7 +1,6 @@
 import {
   deserializeControls,
   isDefaultControlSettingValue,
-  normalizeSpectralLightActivationControls,
 } from "@baryon/engine/controls/persistence";
 import {
   CONTROL_DEFINITIONS,
@@ -65,22 +64,11 @@ function findPreset(userPresets, name) {
 }
 
 function applyControlUpdate(controls, key, value) {
-  let changed = false;
   if (!Object.is(controls[key], value)) {
     controls[key] = value;
-    changed = true;
+    return true;
   }
-
-  const normalizedControls = normalizeSpectralLightActivationControls(
-    controls,
-    CONTROL_DEFINITIONS,
-  );
-  if (normalizedControls !== controls) {
-    Object.assign(controls, normalizedControls);
-    changed = true;
-  }
-
-  return changed;
+  return false;
 }
 
 const LIVE_CONTROL_SETTING_KEYS = new Set(

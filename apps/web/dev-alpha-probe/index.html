@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Baryon transparent-output alpha probe</title>
+    <style>
+      body {
+        margin: 0;
+        background: #244; /* non-black page background so transparent canvas pixels are visually obvious */
+        color: #eee;
+        font-family: monospace;
+      }
+      #stage {
+        width: 512px;
+        height: 512px;
+        display: block;
+      }
+      pre {
+        white-space: pre-wrap;
+        padding: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="stage" width="512" height="512"></canvas>
+    <pre id="report">booting…</pre>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

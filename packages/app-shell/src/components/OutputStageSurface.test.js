@@ -157,6 +157,28 @@ describe("OutputStageSurface", () => {
     expect(baryonSceneSpy.mock.calls[0][0].basePixelRatio).toBe(1);
   });
 
+  it("renders a physical-pixel Windows compositor frame at the supplied ratio", () => {
+    const glDefaults = { canvas: document.createElement("canvas") };
+
+    renderToStaticMarkup(
+      React.createElement(OutputStageSurface, {
+        controlsRef: { current: { backgroundColor: "#000000" } },
+        visualizationMethod: "raymarch",
+        framebufferPixelRatio: 1.5,
+        halfFloatOutput: true,
+        outputCompositorFrameTransfer: true,
+      }),
+    );
+
+    expect(canvasSpy.mock.calls.at(-1)?.[0].dpr).toBe(1.5);
+    expect(baryonSceneSpy.mock.calls.at(-1)?.[0].basePixelRatio).toBe(1.5);
+    canvasSpy.mock.calls.at(-1)?.[0].gl(glDefaults);
+    expect(createBaryonRendererSpy).toHaveBeenCalledWith(glDefaults, false, {
+      initialPixelRatio: 1.5,
+      halfFloatOutput: true,
+    });
+  });
+
   it("can force the external output renderer onto the WebGL backend", () => {
     const glDefaults = { canvas: document.createElement("canvas") };
 
@@ -172,6 +194,7 @@ describe("OutputStageSurface", () => {
 
     expect(createBaryonRendererSpy).toHaveBeenCalledWith(glDefaults, true, {
       initialPixelRatio: 1,
+      halfFloatOutput: false,
     });
   });
 
@@ -196,6 +219,9 @@ describe("OutputStageSurface", () => {
     );
     expect(stageRoot?.dataset.outputMode).toBe("transparent");
     expect(stageRoot?.style.backgroundColor).toBe("transparent");
+    expect(baryonSceneSpy.mock.calls.at(-1)?.[0].outputMode).toBe(
+      "transparent",
+    );
   });
 
   it("fills output stage roots only for opaque output mode", async () => {
@@ -244,6 +270,7 @@ describe("OutputStageSurface", () => {
     );
     expect(stageRoot?.dataset.outputMode).toBe("opaque");
     expect(stageRoot?.style.backgroundColor).toBe("rgb(18, 52, 86)");
+    expect(baryonSceneSpy.mock.calls.at(-1)?.[0].outputMode).toBe("opaque");
   });
 
   it("passes the output control target FPS to the render scene", () => {
@@ -269,6 +296,30 @@ describe("OutputStageSurface", () => {
     });
   });
 
+  it("does not infer half-float precision from compositor transfer", () => {
+    const onOutputCompositorFrame = vi.fn();
+    const glDefaults = { canvas: document.createElement("canvas") };
+
+    renderToStaticMarkup(
+      React.createElement(OutputStageSurface, {
+        controlsRef: { current: { backgroundColor: "#000000" } },
+        visualizationMethod: "raymarch",
+        outputCompositorFrameTransfer: true,
+        onOutputCompositorFrame,
+      }),
+    );
+
+    canvasSpy.mock.calls.at(-1)?.[0].gl(glDefaults);
+    expect(createBaryonRendererSpy).toHaveBeenCalledWith(glDefaults, false, {
+      initialPixelRatio: 1,
+      halfFloatOutput: false,
+    });
+    expect(baryonSceneSpy.mock.calls.at(-1)?.[0]).toMatchObject({
+      outputCompositorFrameTransfer: true,
+      onOutputCompositorFrame,
+    });
+  });
+
   it("uses cameraPose directly for external output", async () => {
     const cameraPose = {
       position: { x: 0, y: 9, z: 0.001 },
@@ -283,12 +334,16 @@ describe("OutputStageSurface", () => {
           controlsRef: { current: { backgroundColor: "#000000" } },
           visualizationMethod: "raymarch",
           cameraPose,
+          cameraCutNonce: 4,
         }),
       );
     });
 
     expect(baryonSceneSpy).toHaveBeenCalled();
-    expect(baryonSceneSpy.mock.calls.at(-1)?.[0]).toMatchObject({ cameraPose });
+    expect(baryonSceneSpy.mock.calls.at(-1)?.[0]).toMatchObject({
+      cameraPose,
+      cameraCutNonce: 4,
+    });
   });
 
   it("passes frame-state updates through unchanged", async () => {

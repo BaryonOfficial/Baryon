@@ -5,6 +5,12 @@ import {
 import { usesRaymarchVolumePipeline } from "@baryon/engine/visualization/types";
 import { TOP_RIGHT_OVERLAY_PANEL_WIDTH } from "./topRightOverlayLayout.js";
 
+const compactCountFormatter = new Intl.NumberFormat("en-US", {
+  notation: "compact",
+  compactDisplay: "short",
+  maximumFractionDigits: 1,
+});
+
 function formatFiniteNumber(value, digits = 1) {
   if (
     typeof value !== "number" ||
@@ -19,6 +25,12 @@ function formatFiniteNumber(value, digits = 1) {
 
 function formatNumber(value, digits = 1) {
   return formatFiniteNumber(value, digits) ?? "n/a";
+}
+
+function formatCompactCount(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? compactCountFormatter.format(Math.round(value))
+    : "0";
 }
 
 function formatFps(value) {
@@ -90,18 +102,6 @@ function buildOutputCadenceLabel(metrics) {
   return null;
 }
 
-function shouldShowPublishSummary(metrics) {
-  const attempts = metrics.outputPublishAttemptCount;
-  const successes = metrics.outputSuccessfulPublishCount;
-
-  return (
-    (attempts != null && successes != null && attempts !== successes) ||
-    shouldShowNonZeroCount(metrics.outputDroppedPublishCount) ||
-    shouldShowNonZeroCount(metrics.outputFailedPublishCount) ||
-    Boolean(metrics.outputLastPublishDropReason)
-  );
-}
-
 function buildOutputQueueLabel(metrics) {
   const deferred = shouldShowNonZeroCount(metrics.outputDeferredPublishCount)
     ? `${Math.round(metrics.outputDeferredPublishCount)} deferred`
@@ -137,6 +137,7 @@ export default function PerformanceHud({
   top = "1rem",
   right = "1rem",
   stacked = false,
+  showPublishSummary = false,
 }) {
   if (!metrics) {
     return null;
@@ -171,10 +172,10 @@ export default function PerformanceHud({
     metrics.qualityPreset === "custom";
   const targetFpsLabel = "Target";
 
-  const showRaymarchSteps =
+  const showRaymarchSamples =
     usesRaymarchVolumePipeline(metrics.visualizationMethod) &&
     metrics.requestedRaymarchSteps > 0;
-  const raymarchStepsLabel = showRaymarchSteps
+  const raymarchSamplesLabel = showRaymarchSamples
     ? `${Math.round(metrics.effectiveRaymarchSteps)} / ${Math.round(metrics.requestedRaymarchSteps)}`
     : null;
   const renderSurfaceLabel = formatRenderSurfaceLabel(metrics.renderSurface);
@@ -185,11 +186,11 @@ export default function PerformanceHud({
   const outputCadenceLabel = buildOutputCadenceLabel(metrics);
   const renderToPaintLabel = formatMs(metrics.renderCompletedToPaintMs);
   const outputQueueLabel = buildOutputQueueLabel(metrics);
-  const publishSummary =
+  const publishSummaryLabel =
     metrics.outputPublishAttemptCount != null ||
     metrics.outputSuccessfulPublishCount != null
-      ? `${Math.round(metrics.outputSuccessfulPublishCount ?? 0)} / ${Math.round(metrics.outputPublishAttemptCount ?? 0)}`
-      : null;
+      ? `${formatCompactCount(metrics.outputSuccessfulPublishCount ?? 0)} / ${formatCompactCount(metrics.outputPublishAttemptCount ?? 0)}`
+      : "n/a";
   const showPixelRatioLabel =
     typeof metrics.currentPixelRatio === "number" &&
     typeof metrics.basePixelRatio === "number" &&
@@ -262,8 +263,8 @@ export default function PerformanceHud({
           <div>Stage: {stageCadenceLabel}</div>
           {outputCadenceLabel ? <div>Output: {outputCadenceLabel}</div> : null}
           {renderToPaintLabel ? <div>Latency: {renderToPaintLabel}</div> : null}
-          {publishSummary && shouldShowPublishSummary(metrics) ? (
-            <div>Publish: {publishSummary}</div>
+          {showPublishSummary ? (
+            <div>Publish: {publishSummaryLabel}</div>
           ) : null}
           {outputQueueLabel ? <div>Queue: {outputQueueLabel}</div> : null}
           {shouldShowNonZeroCount(metrics.outputDroppedPublishCount) ? (
@@ -282,9 +283,12 @@ export default function PerformanceHud({
         <>
           <div>FPS: {formatNumber(metrics.fps, 1)}</div>
           <div>Frame ms: {formatNumber(metrics.smoothedFrameTimeMs, 2)}</div>
+          {showPublishSummary ? (
+            <div>Publish: {publishSummaryLabel}</div>
+          ) : null}
         </>
       )}
-      {raymarchStepsLabel ? <div>Steps: {raymarchStepsLabel}</div> : null}
+      {raymarchSamplesLabel ? <div>Samples: {raymarchSamplesLabel}</div> : null}
       {showResolutionFields ? (
         <>
           <PerformanceHudDivider />

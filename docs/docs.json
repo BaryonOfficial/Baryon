@@ -36,8 +36,8 @@
     ],
     "primary": {
       "type": "button",
-      "label": "Baryon site",
-      "href": "https://baryon.live/"
+      "label": "Download",
+      "href": "https://baryon.live/download"
     }
   },
   "footer": {
@@ -107,6 +107,8 @@
             "group": "Baryon Desktop",
             "pages": [
               "public/desktop/overview",
+              "public/desktop/release-notes",
+              "public/desktop/program-output",
               "public/desktop/parameter-automation",
               "public/desktop/osc-structure-export",
               "public/desktop/licensing"

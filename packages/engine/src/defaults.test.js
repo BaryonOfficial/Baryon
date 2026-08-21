@@ -13,7 +13,10 @@ import {
   SIMULATION_DEFAULTS,
   CAVITY_ACOUSTIC_DEFAULTS,
 } from "./defaults.js";
-import { DEFAULT_PERFORMANCE_PROFILE } from "./render/outputProfilePolicy.js";
+import {
+  DEFAULT_PERFORMANCE_PROFILE,
+  PERFORMANCE_PROFILES,
+} from "./render/outputProfilePolicy.js";
 
 describe("defaults compatibility surface", () => {
   const domainDefaults = [
@@ -64,7 +67,8 @@ describe("defaults compatibility surface", () => {
     expect(DEFAULTS).not.toHaveProperty("structurePersistence");
   });
 
-  it("uses the canonical auto render profile for live defaults", () => {
+  it("uses the ND 08 max-quality render profile for live defaults", () => {
+    expect(DEFAULT_PERFORMANCE_PROFILE).toBe(PERFORMANCE_PROFILES.maxQuality);
     expect(RENDER_DEFAULTS.renderQualityPreset).toBe(
       DEFAULT_PERFORMANCE_PROFILE,
     );
@@ -73,10 +77,9 @@ describe("defaults compatibility surface", () => {
 
   it("keeps promoted live raymarch defaults on the initialized app baseline", () => {
     expect(DEFAULTS.raymarchSteps).toBe(RAYMARCH_DEFAULTS.raymarchSteps);
-    expect(SIMULATION_DEFAULTS.carrierCoreFwhmWorld).toBe(0.024);
-    expect(DEFAULTS.carrierCoreFwhmWorld).toBe(
-      SIMULATION_DEFAULTS.carrierCoreFwhmWorld,
-    );
+    expect(SIMULATION_DEFAULTS).not.toHaveProperty("carrierCoreFwhmWorld");
+    expect(DEFAULTS).not.toHaveProperty("carrierCoreFwhmWorld");
+    expect(RAYMARCH_DEFAULTS).not.toHaveProperty("contourSharpness");
     expect(DEFAULTS.densityGain).toBe(RAYMARCH_DEFAULTS.densityGain);
     expect(DEFAULTS).not.toHaveProperty("absorption");
     expect(DEFAULTS).not.toHaveProperty("opacityGain");
@@ -87,17 +90,20 @@ describe("defaults compatibility surface", () => {
     expect(DEFAULTS.bloomThreshold).toBe(RENDER_DEFAULTS.bloomThreshold);
     expect(DEFAULTS.colorMode).toBe(RENDER_DEFAULTS.colorMode);
     expect(RENDER_DEFAULTS.performanceHudEnabled).toBe(false);
-    expect(RENDER_DEFAULTS.traaEnabled).toBe(true);
+    expect(RENDER_DEFAULTS.traaEnabled).toBe(false);
     expect(DEFAULTS.cavityGeometry).toBe(SIMULATION_DEFAULTS.cavityGeometry);
     expect(DEFAULTS.volumeShape).toBe("sphere");
     expect(DEFAULTS).toMatchObject({
+      // ND 08 shipping baseline.
+      rotationSpeed: 4.78,
+      densityGain: 3.5,
       laserDeflectionGain: 1.2,
       surfaceColor: "#5be3f4",
       holographicIntensity: 1,
-      holographicFresnelPower: 2.4,
-      bloomStrength: 1.18,
+      holographicFresnelPower: 10,
+      bloomStrength: 0.5,
       bloomRadius: 0,
-      bloomThreshold: 0.5,
+      bloomThreshold: 1,
     });
   });
 
@@ -107,9 +113,14 @@ describe("defaults compatibility surface", () => {
       CAVITY_ACOUSTIC_DEFAULTS,
     );
     expect(SIMULATION_DEFAULTS.cavityAcousticScale).toMatchObject({
+      acousticMedium: "water",
       sideLengthMeters: expect.any(Number),
       soundSpeedMetersPerSecond: 1480,
-      subfloorPolicy: "project-subfundamental",
+      mediumDensityKgPerM3: 998,
+      equationOfStateNonlinearityBA: 5,
+      incidentPeakPressurePascalAtFullScale: 100_000,
+      modalIntrinsicQualityFactorAt100Hz: 164,
+      modalLoadLinewidthHz: 7,
     });
     expect(SIMULATION_DEFAULTS.cavityAcousticScale).not.toHaveProperty(
       "radiusMeters",

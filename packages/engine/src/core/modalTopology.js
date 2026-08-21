@@ -21,6 +21,52 @@ export function normalizeModalTopologyCoordinate(value) {
   return Number.isFinite(value) ? Math.round(value) : 0;
 }
 
+export function buildModalTopologyModeKey(u, v, w) {
+  return `${normalizeModalTopologyCoordinate(u)}:${normalizeModalTopologyCoordinate(
+    v,
+  )}:${normalizeModalTopologyCoordinate(w)}`;
+}
+
+/**
+ * @param {Float32Array} slots
+ * @param {number} [offset]
+ */
+export function buildModalTopologySlotKey(slots, offset = 0) {
+  const slotOffset = Math.max(0, Math.floor(offset ?? 0));
+  return buildModalTopologyModeKey(
+    slots?.[slotOffset],
+    slots?.[slotOffset + 1],
+    slots?.[slotOffset + 2],
+  );
+}
+
+/**
+ * Collect the identities carried by positive-coefficient packed modal slots.
+ * The fourth slot component gates membership but is not part of the identity.
+ *
+ * @param {Float32Array | null | undefined} slots
+ * @param {number} [capacity]
+ */
+export function collectActiveModalTopologyModeKeys(slots, capacity) {
+  const modeKeys = new Set();
+  if (!(slots instanceof Float32Array)) {
+    return modeKeys;
+  }
+
+  const availableSlotCount = Math.floor(slots.length / 4);
+  const slotLimit = Number.isFinite(capacity)
+    ? Math.min(availableSlotCount, Math.max(0, Math.floor(capacity)))
+    : availableSlotCount;
+  for (let index = 0; index < slotLimit; index += 1) {
+    const offset = index * 4;
+    if ((slots[offset + 3] ?? 0) > 0) {
+      modeKeys.add(buildModalTopologySlotKey(slots, offset));
+    }
+  }
+
+  return modeKeys;
+}
+
 export function readModalTopologyMode(source) {
   const directMode =
     source?.mode ??

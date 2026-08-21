@@ -5,6 +5,7 @@ import {
   FAST_MODAL_DRIVE_WINDOW_SAMPLES,
   createFastModalDriveEstimator,
 } from "../src/utils/audio/fastModalDriveEstimator.js";
+import { createFastModalBenchmarkCommittedModes } from "../src/testing/fastModalBenchmarkFixture.js";
 
 const SAMPLE_RATES = [44100, 48000];
 const WARMUP_FRAMES = 100;
@@ -20,15 +21,7 @@ function percentile(sortedValues, proportion) {
 }
 
 function buildFixture(sampleRate) {
-  const modes = Array.from(
-    { length: FAST_MODAL_DRIVE_PROBE_LIMIT },
-    (_, index) => ({
-      modeKey: `benchmark:${String(index).padStart(2, "0")}`,
-      naturalFrequencyHz: 55 + index * 420,
-      targetEnergy: 1 - index / (FAST_MODAL_DRIVE_PROBE_LIMIT * 2),
-      physicalTransfer: 0.55 + (index % 5) * 0.1,
-    }),
-  );
+  const modes = createFastModalBenchmarkCommittedModes();
   const samples = new Float32Array(FAST_MODAL_DRIVE_WINDOW_SAMPLES);
   for (let sampleIndex = 0; sampleIndex < samples.length; sampleIndex += 1) {
     let value = 0;

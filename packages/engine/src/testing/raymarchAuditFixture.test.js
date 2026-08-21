@@ -1,10 +1,44 @@
 import { describe, expect, it, vi } from "vitest";
+import { CYMATIC_OBSERVER_REFERENCE } from "../core/raymarch/cymaticObserverReference.js";
+import {
+  CYMATIC_PLASMA_BODY_RADIANCE_PER_EXTINCTION_LIMIT,
+  CYMATIC_PLASMA_CONTINUITY_SPINE_RADIANCE_PER_EXTINCTION_LIMIT,
+  CYMATIC_PLASMA_DETAIL_SPINE_RADIANCE_PER_EXTINCTION_LIMIT,
+  CYMATIC_PLASMA_EMISSION_COEFFICIENT,
+  CYMATIC_PLASMA_EXTINCTION_COEFFICIENT,
+  CYMATIC_PLASMA_RADIANCE_GAIN,
+} from "../core/raymarch/cymaticPlasmaTransfer.js";
 import {
   buildRaymarchAuditFixtureDescriptorFromSources,
   createRaymarchAuditFixtureController,
   hashRaymarchAuditNumericArray,
   validateRaymarchAuditFixtureDescriptor,
 } from "./raymarchAuditFixture.js";
+
+function createMaterial(deterministicSeed = 0) {
+  return {
+    densityGain: 1,
+    plasmaRadianceGain: CYMATIC_PLASMA_RADIANCE_GAIN,
+    plasmaExtinctionCoefficient: CYMATIC_PLASMA_EXTINCTION_COEFFICIENT,
+    plasmaEmissionCoefficient: CYMATIC_PLASMA_EMISSION_COEFFICIENT,
+    plasmaContinuitySpineRadiancePerExtinctionLimit:
+      CYMATIC_PLASMA_CONTINUITY_SPINE_RADIANCE_PER_EXTINCTION_LIMIT,
+    plasmaDetailSpineRadiancePerExtinctionLimit:
+      CYMATIC_PLASMA_DETAIL_SPINE_RADIANCE_PER_EXTINCTION_LIMIT,
+    plasmaBodyRadiancePerExtinctionLimit:
+      CYMATIC_PLASMA_BODY_RADIANCE_PER_EXTINCTION_LIMIT,
+    observerFineApertureFwhmWorld:
+      CYMATIC_OBSERVER_REFERENCE.fineApertureFwhmWorld,
+    observerTopologyApertureFwhmWorld:
+      CYMATIC_OBSERVER_REFERENCE.topologyApertureFwhmWorld,
+    observerFineResidualScaleWorld:
+      CYMATIC_OBSERVER_REFERENCE.fineResidualScaleWorld,
+    observerFineResidualDetailLimit:
+      CYMATIC_OBSERVER_REFERENCE.fineResidualDetailLimit,
+    observerSheetFwhmWorld: CYMATIC_OBSERVER_REFERENCE.sheetFwhmWorld,
+    deterministicSeed,
+  };
+}
 
 async function numericArray(values) {
   return {
@@ -16,11 +50,12 @@ async function numericArray(values) {
 
 async function createDescriptor(overrides = {}) {
   const capacity = 2;
-  const slots = [1, 2, 3, 0.8, 2, 3, 4, 0.4];
+  const identitySlots = [1, 2, 3, 2, 3, 4];
+  const coefficientSlots = [0.8, 0.4];
   const zeroSlots = new Array(capacity * 4).fill(0);
   const identityMatrix = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
   const descriptor = {
-    kind: "baryon-raymarch-audit-fixture/v1",
+    kind: "baryon-raymarch-audit-fixture/v6",
     descriptorId: "base-front-v1",
     checkpoint: {
       mode: "base",
@@ -30,12 +65,10 @@ async function createDescriptor(overrides = {}) {
       fieldAuthority: "complete",
       activeModeCount: 2,
       capacity,
-      slots: await numericArray(slots),
+      identitySlots: await numericArray(identitySlots),
+      coefficientSlots: await numericArray(coefficientSlots),
       phaseSlots: await numericArray(zeroSlots),
-      colorSlots: await numericArray([1, 0.2, 0.1, 1, 0.1, 0.5, 1, 1]),
-      spectralLaneA: await numericArray(zeroSlots),
-      spectralLaneB: await numericArray(zeroSlots),
-      spectralMeta: await numericArray(zeroSlots),
+      spectralMomentSlots: await numericArray([1, 0.2, 0.1, 1, 0.1, 0.5, 1, 1]),
       metadataSlots: await numericArray(zeroSlots),
     },
     phase: {
@@ -56,9 +89,8 @@ async function createDescriptor(overrides = {}) {
       prototype: null,
     },
     spectral: {
-      enabled: true,
       colorMode: "spectral",
-      spectralMix: 1,
+      spectralChroma: 1,
     },
     camera: {
       viewPreset: "front",
@@ -66,17 +98,9 @@ async function createDescriptor(overrides = {}) {
       projectionMatrix: await numericArray(identityMatrix),
       viewport: { width: 640, height: 640, dpr: 1 },
     },
-    material: {
-      holographicBaseRadianceGain: 0.25,
-      laserAccentAuthority: 0,
-      densityGain: 1,
-      absorption: 0.5,
-      carrierCoreFwhmWorld: 0.024,
-      contourSharpness: 1,
-      deterministicSeed: 7,
-    },
+    material: createMaterial(7),
     output: {
-      volumeKernelIdentity: "safe-volumetric-lighting-model/v1",
+      volumeKernelIdentity: "safe-volumetric-carrier-emission-extinction/v2",
       stepControllerIdentity: "adaptive-raymarch/v1",
       attachmentFormat: "rgba16float",
       aovIdentities: ["baseRadiance", "transmittance", "coverage"],
@@ -102,7 +126,7 @@ function createSeal(descriptorHash, overrides = {}) {
     spectralGeneration: 5,
     transportGeneration: null,
     aovGeneration: 6,
-    kernelIdentity: "safe-volumetric-lighting-model/v1",
+    kernelIdentity: "safe-volumetric-carrier-emission-extinction/v2",
     transportDispatchCount: 0,
     producerEpoch: 9,
     phaseEvaluationTimeSec: 2.5,
@@ -150,10 +174,10 @@ describe("raymarch audit fixture", () => {
     const validated = await validateRaymarchAuditFixtureDescriptor(descriptor);
     expect(validated.descriptorHash).toMatch(/^[a-f0-9]{64}$/);
 
-    descriptor.modal.slots.values[0] = 99;
+    descriptor.modal.identitySlots.values[0] = 99;
     await expect(
       validateRaymarchAuditFixtureDescriptor(descriptor),
-    ).rejects.toThrow("modal.slots.sha256 does not match values");
+    ).rejects.toThrow("modal.identitySlots.sha256 does not match values");
   });
 
   it("installs atomically in owner order and seals the checkpoint", async () => {
@@ -285,12 +309,10 @@ describe("raymarch audit fixture", () => {
       modal: {
         capacity,
         activeModeCount: 2,
-        slots: new Float32Array([1, 2, 3, 0.8, 2, 3, 4, 0.4]),
+        identitySlots: new Float32Array([1, 2, 3, 2, 3, 4]),
+        coefficientSlots: new Float32Array([0.8, 0.4]),
         phaseSlots: zeroSlots,
-        colorSlots: [1, 0.2, 0.1, 1, 0.1, 0.5, 1, 1],
-        spectralLaneA: zeroSlots,
-        spectralLaneB: zeroSlots,
-        spectralMeta: zeroSlots,
+        spectralMomentSlots: [1, 0.2, 0.1, 1, 0.1, 0.5, 1, 1],
         metadataSlots: zeroSlots,
       },
       phase: { evaluationTimeSec: 4.25, authority: 1 },
@@ -300,21 +322,18 @@ describe("raymarch audit fixture", () => {
         cavityGeometry: "sphere",
         volumeShape: "sphere",
       },
-      spectral: { enabled: true, colorMode: "spectral", spectralMix: 0.92 },
+      spectral: {
+        colorMode: "spectral",
+        spectralChroma: 0.78,
+      },
       camera: {
         viewMatrix: identityMatrix,
         projectionMatrix: identityMatrix,
         viewport: { width: 640, height: 480, dpr: 1 },
       },
-      material: {
-        holographicBaseRadianceGain: 0.25,
-        densityGain: 1,
-        absorption: 0.5,
-        carrierCoreFwhmWorld: 0.024,
-        contourSharpness: 1,
-      },
+      material: createMaterial(),
       output: {
-        volumeKernelIdentity: "safe-volumetric-emission-absorption/v1",
+        volumeKernelIdentity: "safe-volumetric-carrier-emission-extinction/v2",
         stepControllerIdentity: "adaptive-error-half-step/v1",
         attachmentFormat: "rgba16float",
         aovIdentities: ["baseRadiance", "transmittance", "coverage"],
@@ -335,15 +354,19 @@ describe("raymarch audit fixture", () => {
       { descriptorId: "front-frozen-v1", viewPreset: "front" },
     );
 
-    expect(built.descriptor.kind).toBe("baryon-raymarch-audit-fixture/v1");
+    expect(built.descriptor.kind).toBe("baryon-raymarch-audit-fixture/v6");
+    expect(built.descriptor.spectral.spectralChroma).toBe(0.78);
     expect(built.descriptor.checkpoint).toEqual({
       mode: "base",
       decisionManifestSha256: null,
     });
     expect(built.descriptor.transport.mode).toBe("off");
-    expect(built.descriptor.material.laserAccentAuthority).toBe(0);
-    expect(built.descriptor.modal.slots.sha256).toBe(
-      await hashRaymarchAuditNumericArray([1, 2, 3, 0.8, 2, 3, 4, 0.4]),
+    expect(built.descriptor.material).toEqual(createMaterial());
+    expect(built.descriptor.modal.identitySlots.sha256).toBe(
+      await hashRaymarchAuditNumericArray([1, 2, 3, 2, 3, 4]),
+    );
+    expect(built.descriptor.modal.coefficientSlots.sha256).toBe(
+      await hashRaymarchAuditNumericArray([0.8, 0.4]),
     );
     const revalidated = await validateRaymarchAuditFixtureDescriptor(
       built.descriptor,
@@ -359,12 +382,10 @@ describe("raymarch audit fixture", () => {
       modal: {
         capacity,
         activeModeCount: 2,
-        slots: [1, 2, 3, 0.8, 2, 3, 4, 0.4],
+        identitySlots: [1, 2, 3, 2, 3, 4],
+        coefficientSlots: [0.8, 0.4],
         phaseSlots: zeroSlots,
-        colorSlots: zeroSlots,
-        spectralLaneA: zeroSlots,
-        spectralLaneB: zeroSlots,
-        spectralMeta: zeroSlots,
+        spectralMomentSlots: zeroSlots,
         metadataSlots: zeroSlots,
       },
       phase: { evaluationTimeSec: 4.25, authority: 1 },
@@ -379,21 +400,18 @@ describe("raymarch audit fixture", () => {
         cacheIdentity: "acousto-optic/res64/rays48/sphere",
         expectedDispatchCount: 1,
       },
-      spectral: { enabled: false, colorMode: "static", spectralMix: 0 },
+      spectral: {
+        colorMode: "static",
+        spectralChroma: 1,
+      },
       camera: {
         viewMatrix: identityMatrix,
         projectionMatrix: identityMatrix,
         viewport: { width: 640, height: 480, dpr: 1 },
       },
-      material: {
-        holographicBaseRadianceGain: 1,
-        densityGain: 1,
-        absorption: 0.5,
-        carrierCoreFwhmWorld: 0.024,
-        contourSharpness: 1,
-      },
+      material: createMaterial(),
       output: {
-        volumeKernelIdentity: "safe-volumetric-emission-absorption/v1",
+        volumeKernelIdentity: "safe-volumetric-carrier-emission-extinction/v2",
         stepControllerIdentity: "adaptive-error-half-step/v1",
         attachmentFormat: "rgba16float",
         aovIdentities: ["baseRadiance", "transmittance", "coverage"],
@@ -422,7 +440,7 @@ describe("raymarch audit fixture", () => {
       expectedDispatchCount: 1,
       prototype: null,
     });
-    expect(built.descriptor.material.laserAccentAuthority).toBe(1);
+    expect(built.descriptor.material).toEqual(createMaterial());
     expect(built.descriptor.output.aovIdentities).toEqual([
       "baseRadiance",
       "transmittance",

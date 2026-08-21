@@ -9,7 +9,15 @@ import {
 
 test("AR lab preview camera uses the regular app default camera pose", () => {
   assert.equal(AR_LAB_PREVIEW_CAMERA_POSE, DEFAULT_ACTIVE_CAMERA_POSE);
-  assert.deepEqual(AR_LAB_PREVIEW_CAMERA.position, [5, 5, 5]);
-  assert.deepEqual(AR_LAB_PREVIEW_CAMERA_TARGET, [0, 0, 0]);
-  assert.equal(AR_LAB_PREVIEW_CAMERA.fov, 65);
+  assert.deepEqual(AR_LAB_PREVIEW_CAMERA.position, [
+    DEFAULT_ACTIVE_CAMERA_POSE.position.x,
+    DEFAULT_ACTIVE_CAMERA_POSE.position.y,
+    DEFAULT_ACTIVE_CAMERA_POSE.position.z,
+  ]);
+  assert.deepEqual(AR_LAB_PREVIEW_CAMERA_TARGET, [
+    DEFAULT_ACTIVE_CAMERA_POSE.target.x,
+    DEFAULT_ACTIVE_CAMERA_POSE.target.y,
+    DEFAULT_ACTIVE_CAMERA_POSE.target.z,
+  ]);
+  assert.equal(AR_LAB_PREVIEW_CAMERA.fov, DEFAULT_ACTIVE_CAMERA_POSE.fov);
 });

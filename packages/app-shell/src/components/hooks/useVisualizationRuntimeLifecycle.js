@@ -6,17 +6,17 @@ import {
 } from "@baryon/engine/audio-features";
 import {
   CAVITY_ACOUSTIC_DEFAULTS,
-  RENDER_DEFAULTS,
   SIMULATION_DEFAULTS,
 } from "@baryon/engine/defaults";
+import { buildAuditControlSnapshot } from "@baryon/engine/controls/runtime";
 import { createLiveInputRuntimeStatus } from "../../context/liveInputRuntimeStatus.js";
 import { subscribeControlsChanged } from "../../controls/controlsEvents.js";
 import {
   clearFrameCache,
-  clearAdaptiveRaymarchResumeState,
   createEmptyControlSnapshots,
   createRuntimeDiagnostics,
   initializeAdaptiveRaymarchRuntimeState,
+  resetAdaptiveRaymarchControllerState,
 } from "./baryonEngineRuntimeState.js";
 
 function buildAudioFeatureRuntimeConfiguration(controls = {}) {
@@ -26,20 +26,7 @@ function buildAudioFeatureRuntimeConfiguration(controls = {}) {
     boundaryMode: controls.boundaryMode ?? SIMULATION_DEFAULTS.boundaryMode,
     cavityGeometry:
       controls.cavityGeometry ?? SIMULATION_DEFAULTS.cavityGeometry,
-    includeSpectralLight:
-      controls.colorMode === "spectral" &&
-      (controls.spectralMix ?? RENDER_DEFAULTS.spectralMix) > 0,
-    auditSettings: {
-      enabled: controls.auditEnabled === true,
-      freezeModeSlots: controls.freezeModeSlots === true,
-      forceWebGLFallbackTest: controls.forceWebGLFallbackTest === true,
-      lowLoadPlaybackDiagnostics: controls.lowLoadPlaybackDiagnostics === true,
-      injectTestTone: controls.injectTestTone === true,
-      testToneHz: controls.testToneHz,
-      testToneSignal: controls.testToneSignal,
-      testToneAmplitude: controls.testToneAmplitude,
-      logEveryFrames: controls.logEveryFrames,
-    },
+    auditSettings: buildAuditControlSnapshot(controls),
   };
 }
 
@@ -47,7 +34,6 @@ export function useVisualizationRuntimeLifecycle({
   audioRef,
   baryonGeometry,
   controlsRef,
-  visualizationMethod,
   audioFeatureAuthorityRole = AUDIO_FEATURE_AUTHORITY_ROLES.localProducer,
   audioFeatureConfigurationVersion = 0,
   setIsEngineReady,
@@ -193,14 +179,11 @@ export function useVisualizationRuntimeLifecycle({
     setPoints(null);
 
     try {
-      const runtime = createVisualizationRuntime(visualizationMethod);
+      const runtime = createVisualizationRuntime();
       runtimeRef.current = runtime;
       const audioStatus = audio.getStatus();
       const parameters = {
         radius: SIMULATION_DEFAULTS.radius,
-        // This is apparatus calibration, not user state. Keeping it outside
-        // the control snapshot makes sharpness invariant across sessions.
-        carrierCoreFwhmWorld: SIMULATION_DEFAULTS.carrierCoreFwhmWorld,
         volumeShape:
           initialControlsSnapshot?.volumeShape ??
           SIMULATION_DEFAULTS.volumeShape,
@@ -237,22 +220,19 @@ export function useVisualizationRuntimeLifecycle({
         delete (/** @type {any} */ (window).__baryonPerfMetrics);
       }
       if (runtimeStateRef.current) {
-        clearAdaptiveRaymarchResumeState(runtimeStateRef.current);
+        resetAdaptiveRaymarchControllerState(runtimeStateRef.current);
         runtime.dispose(runtimeStateRef.current);
         runtimeStateRef.current = null;
+      }
+      if (runtimeRef.current === runtime) {
+        runtimeRef.current = null;
       }
       clearFrameCache(frameCacheRefs);
       lastLiveInputRuntimeStatusRef.current = null;
       cachedControlSnapshotsRef.current = createEmptyControlSnapshots(null);
       setLiveInputRuntimeStatusRef.current?.(createLiveInputRuntimeStatus());
     };
-  }, [
-    audioRef,
-    baryonGeometry,
-    controlsRef,
-    frameCacheRefs,
-    visualizationMethod,
-  ]);
+  }, [audioRef, baryonGeometry, controlsRef, frameCacheRefs]);
 
   return {
     points,

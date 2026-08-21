@@ -6,7 +6,6 @@ import {
   stepAudioSceneMotion,
   stepManualSceneMotion,
   stepSettlingSceneMotion,
-  syncIdleOverlayRotation,
 } from "./sceneMotion.js";
 
 describe("scene motion helpers", () => {
@@ -219,19 +218,5 @@ describe("scene motion helpers", () => {
     const change = primed - sceneMotion.motionAmountEnvelope;
     // Release should move the envelope very little per frame (< 0.01)
     expect(change).toBeLessThan(0.01);
-  });
-
-  it("keeps the idle overlay synced to manual velocity", () => {
-    const runtimeState = {
-      idleOverlay: {
-        rotation: { y: 0 },
-      },
-    };
-    const sceneMotion = createSceneMotionState(0);
-
-    syncIdleOverlayRotation(runtimeState, sceneMotion, -1, 0.5);
-
-    expect(sceneMotion.idleLogoYaw).toBeCloseTo(-0.5);
-    expect(runtimeState.idleOverlay.rotation.y).toBeCloseTo(-0.5);
   });
 });

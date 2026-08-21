@@ -2,11 +2,38 @@
   "name": "dense-polyphonic-12s",
   "durationMs": 12000,
   "description": "Deterministic dense polyphonic analysis fixture for caustic material-transfer visual acceptance.",
+  "segments": [
+    {
+      "startMs": 0,
+      "endMs": 4000,
+      "frequenciesHz": [440, 622.253967]
+    },
+    {
+      "startMs": 4000,
+      "endMs": 10000,
+      "equalPitchClasses": {
+        "referenceHz": 220,
+        "count": 12
+      }
+    },
+    {
+      "startMs": 10000,
+      "endMs": 12000,
+      "frequenciesHz": [196, 246.9417, 311.127, 369.994, 466.164, 587.33]
+    }
+  ],
   "frames": [
     {
       "frameTimeMs": 0,
       "status": {
-        "audioInputMode": "file",
+        "sourceSession": {
+          "kind": "file",
+          "phase": "active",
+          "sessionId": 1,
+          "timelineRevision": 0,
+          "terminalReason": null,
+          "systemCapture": null
+        },
         "analysisSource": "file",
         "isPlaying": true,
         "isAudioLoaded": true,
@@ -30,7 +57,14 @@
     {
       "frameTimeMs": 6000,
       "status": {
-        "audioInputMode": "file",
+        "sourceSession": {
+          "kind": "file",
+          "phase": "active",
+          "sessionId": 1,
+          "timelineRevision": 0,
+          "terminalReason": null,
+          "systemCapture": null
+        },
         "analysisSource": "file",
         "isPlaying": true,
         "isAudioLoaded": true,
@@ -54,7 +88,14 @@
     {
       "frameTimeMs": 12000,
       "status": {
-        "audioInputMode": "file",
+        "sourceSession": {
+          "kind": "file",
+          "phase": "active",
+          "sessionId": 1,
+          "timelineRevision": 0,
+          "terminalReason": null,
+          "systemCapture": null
+        },
         "analysisSource": "file",
         "isPlaying": true,
         "isAudioLoaded": true,

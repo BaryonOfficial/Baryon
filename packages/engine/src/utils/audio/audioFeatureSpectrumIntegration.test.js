@@ -13,7 +13,14 @@ const SAMPLE_RATE = 44100;
 
 function createStatus(sessionKey) {
   return {
-    audioInputMode: "file",
+    sourceSession: {
+      kind: "file",
+      phase: "active",
+      sessionId: 1,
+      timelineRevision: 0,
+      terminalReason: null,
+      systemCapture: null,
+    },
     analysisSource: "file",
     pitchSourceMode: "spectral",
     fftSize: 8192,
@@ -25,7 +32,6 @@ function createStatus(sessionKey) {
     isPlaybackPaused: false,
     isLiveInputActive: false,
     hasAnalysisSource: true,
-    playbackSourceSessionId: 1,
     playbackSessionId: 1,
     sessionKey,
     lastPlaybackEndReason: null,
@@ -156,7 +162,7 @@ describe("linear spectrum worker integration", () => {
 
       expect(run.latestTopology).not.toBeNull();
       expect(["complete", "capacity-limited"]).toContain(
-        run.state.latestFeatureFrame.modalDescriptor.fieldAuthority,
+        run.state.latestTopologyFrame.modalDescriptor.fieldAuthority,
       );
       expect(run.result.drivePacket.activeModeCount).toBeGreaterThan(0);
       expect(

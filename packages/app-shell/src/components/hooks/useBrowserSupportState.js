@@ -18,8 +18,8 @@ function getUnsupportedReason(probe) {
     : "browser";
 }
 
-function getInitialSupportProbe(forceWebGLFallbackTest) {
-  if (forceWebGLFallbackTest || !isMobileDevice()) {
+function getInitialSupportProbe(useWebGLRenderer) {
+  if (useWebGLRenderer || !isMobileDevice()) {
     return null;
   }
 
@@ -30,15 +30,15 @@ function getInitialSupportProbe(forceWebGLFallbackTest) {
 }
 
 /**
- * Owns the browser capability probe that gates WebGPU startup and powers
+ * Owns the browser capability probe that gates renderer startup and powers
  * user-facing diagnostics for unsupported environments.
  */
-export function useBrowserSupportState(forceWebGLFallbackTest) {
+export function useBrowserSupportState(useWebGLRenderer) {
   const [browserSupportStatus, setBrowserSupportStatus] = useState(() =>
-    getInitialBrowserSupportStatus(forceWebGLFallbackTest),
+    getInitialBrowserSupportStatus(useWebGLRenderer),
   );
   const [supportProbe, setSupportProbe] = useState(() =>
-    getInitialSupportProbe(forceWebGLFallbackTest),
+    getInitialSupportProbe(useWebGLRenderer),
   );
 
   useEffect(() => {
@@ -57,13 +57,7 @@ export function useBrowserSupportState(forceWebGLFallbackTest) {
   useEffect(() => {
     let isCancelled = false;
 
-    if (forceWebGLFallbackTest) {
-      setBrowserSupportStatus(BROWSER_SUPPORT_STATUS.supported);
-      setSupportProbe(null);
-      return undefined;
-    }
-
-    if (isMobileDevice()) {
+    if (!useWebGLRenderer && isMobileDevice()) {
       setBrowserSupportStatus(BROWSER_SUPPORT_STATUS.unsupported);
       setSupportProbe(
         createFailureProbe({
@@ -78,7 +72,7 @@ export function useBrowserSupportState(forceWebGLFallbackTest) {
     setSupportProbe(null);
 
     void (async () => {
-      const probe = await probeBrowserSupport(forceWebGLFallbackTest);
+      const probe = await probeBrowserSupport(useWebGLRenderer);
       if (!isCancelled) {
         setBrowserSupportStatus(probe.status);
         setSupportProbe(probe);
@@ -88,7 +82,7 @@ export function useBrowserSupportState(forceWebGLFallbackTest) {
     return () => {
       isCancelled = true;
     };
-  }, [forceWebGLFallbackTest]);
+  }, [useWebGLRenderer]);
 
   const markRendererInitUnsupported = (error) => {
     setBrowserSupportStatus(BROWSER_SUPPORT_STATUS.unsupported);

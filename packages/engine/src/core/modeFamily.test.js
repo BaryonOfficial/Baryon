@@ -3,12 +3,16 @@ import { describe, expect, it } from "vitest";
 import {
   BOUNDARY_MODES,
   PERMUTATION_ORDERS,
+  evaluateBoundaryAxisBasis,
+  evaluatePermutationFamilyAxisPathIntegratedHessian,
   evaluatePermutationFamilyMode,
   evaluateSinglePermutationMode,
   getBoundaryModeFromValue,
   getBoundaryModeValue,
+  deriveModeFamilyEvaluationScalars,
   getPermutationFamily,
   getUniquePermutationCount,
+  integrateBoundaryAxisBasisPropagationKernel,
   normalizeBoundaryMode,
 } from "./modeFamily.js";
 
@@ -140,16 +144,24 @@ describe("mode family helpers", () => {
     expect(positiveFace.field).toBeCloseTo(0, 6);
   });
 
-  it("keeps the TSL Dirichlet basis shifted with the CPU basis", () => {
+  // Both boundary families must read the same centered cavity phase. A
+  // Neumann basis written as cos(index·scale·coordinate) about the cavity
+  // centre still satisfies the wall condition, but it is the even-parity half
+  // of the eigenbasis only: every mode would then peak at the centre, the
+  // field would carry three forced mirror planes regardless of the audio, and
+  // the wavenumber would be twice the f = c|n| / (2L) atlas.
+  it("keeps both TSL boundary bases on the shared centered cavity phase", () => {
     const source = readFileSync(
       new URL("./modeFamilyNode.js", import.meta.url),
       "utf8",
     );
 
-    expect(source).toContain("createCenteredDirichletArgumentNode");
+    expect(source).toContain("createCenteredCavityArgumentNode");
     expect(source).toContain(
       "coordinate.mul(scale).add(float(Math.PI)).mul(float(0.5))",
     );
+    expect(source).not.toMatch(/cos\(\s*index\.mul\(scale\)\.mul\(coordinate\)/);
+    expect(source).not.toMatch(/const argument = coordinates\.mul\(angularScale\)/);
   });
 
   it("normalizes family energy relative to the old single-term kernel", () => {
@@ -297,6 +309,39 @@ describe("permutation family gradients", () => {
     });
   }
 
+  it.each([BOUNDARY_MODES.dirichlet, BOUNDARY_MODES.neumann])(
+    "matches central-difference pressure Hessians for %s families",
+    (boundaryMode) => {
+      const args = {
+        u: 2,
+        v: 3,
+        w: 5,
+        x: 0.21,
+        y: -0.17,
+        z: 0.39,
+        scale: Math.PI,
+        boundaryMode,
+      };
+      const analytic = evaluatePermutationFamilyMode(args);
+      const derivativeOf = (component, axis) => {
+        const at = (delta) =>
+          evaluatePermutationFamilyMode({
+            ...args,
+            [axis]: args[axis] + delta,
+          })[component];
+        return (at(step) - at(-step)) / (2 * step);
+      };
+
+      expect(analytic.hessianXX).toBeCloseTo(derivativeOf("gradX", "x"), 3);
+      expect(analytic.hessianYY).toBeCloseTo(derivativeOf("gradY", "y"), 3);
+      expect(analytic.hessianZZ).toBeCloseTo(derivativeOf("gradZ", "z"), 3);
+      expect(analytic.hessianXY).toBeCloseTo(derivativeOf("gradX", "y"), 3);
+      expect(analytic.hessianXY).toBeCloseTo(derivativeOf("gradY", "x"), 3);
+      expect(analytic.hessianXZ).toBeCloseTo(derivativeOf("gradX", "z"), 3);
+      expect(analytic.hessianYZ).toBeCloseTo(derivativeOf("gradY", "z"), 3);
+    },
+  );
+
   it("satisfies the Neumann zero-normal-derivative condition at the faces", () => {
     for (const x of [-1, 1]) {
       const face = evaluatePermutationFamilyMode({
@@ -311,6 +356,153 @@ describe("permutation family gradients", () => {
       });
       expect(face.gradX).toBeCloseTo(0, 6);
     }
+  });
+});
+
+describe("path-integrated modal curvature", () => {
+  it("keeps antipodal Neumann paths distinct when a longitudinal zero mode is present", () => {
+    const common = {
+      u: 0,
+      v: 1,
+      w: 2,
+      x: 0.35,
+      y: -0.2,
+      z: 0.4,
+      propagationAxis: 0,
+      scale: Math.PI,
+      boundaryMode: BOUNDARY_MODES.neumann,
+    };
+    const negativeFace = evaluatePermutationFamilyAxisPathIntegratedHessian({
+      ...common,
+      sourceCoordinate: -1,
+    });
+    const positiveFace = evaluatePermutationFamilyAxisPathIntegratedHessian({
+      ...common,
+      sourceCoordinate: 1,
+    });
+
+    expect(negativeFace.h11).not.toBeCloseTo(positiveFace.h11, 6);
+    expect(negativeFace.h22).not.toBeCloseTo(positiveFace.h22, 6);
+    expect(negativeFace.h12).not.toBeCloseTo(positiveFace.h12, 6);
+  });
+
+  // Centered Neumann eigenfunctions carry the parity of their index: even
+  // orders take the same value at both cavity faces, odd orders flip sign, and
+  // the zero order contributes no oscillatory term at all. The permutation
+  // family puts every index on the longitudinal axis in turn, so the two
+  // antipodal sources see identical curvature only when the whole triple is
+  // even and nonzero. An all-cosine basis about the cavity centre would make
+  // every triple symmetric here, which is exactly the degeneracy that
+  // collapsed the render into a mirror-symmetric shell.
+  it.each([
+    { triple: { u: 2, v: 2, w: 4 }, shared: true },
+    { triple: { u: 2, v: 4, w: 6 }, shared: true },
+    { triple: { u: 1, v: 2, w: 3 }, shared: false },
+    { triple: { u: 2, v: 3, w: 5 }, shared: false },
+    { triple: { u: 4, v: 5, w: 6 }, shared: false },
+  ])(
+    "shares antipodal Neumann curvature for $triple only when every order is even and nonzero",
+    ({ triple, shared }) => {
+      const common = {
+        ...triple,
+        x: 0.35,
+        y: -0.2,
+        z: 0.4,
+        propagationAxis: 0,
+        scale: Math.PI,
+        boundaryMode: BOUNDARY_MODES.neumann,
+      };
+      const negativeFace = evaluatePermutationFamilyAxisPathIntegratedHessian({
+        ...common,
+        sourceCoordinate: -1,
+      });
+      const positiveFace = evaluatePermutationFamilyAxisPathIntegratedHessian({
+        ...common,
+        sourceCoordinate: 1,
+      });
+
+      // Individual tensor components can coincide by accident, so the claim is
+      // about the curvature tensor as a whole.
+      const components = ["h11", "h22", "h12"];
+      const matches = components.filter(
+        (component) =>
+          Math.abs(negativeFace[component] - positiveFace[component]) < 5e-7,
+      );
+
+      expect(matches).toEqual(shared ? components : expect.not.arrayContaining(components));
+    },
+  );
+
+  it.each([BOUNDARY_MODES.dirichlet, BOUNDARY_MODES.neumann])(
+    "matches numerical paraxial integration for %s families",
+    (boundaryMode) => {
+      const point = { x: 0.27, y: -0.18, z: 0.31 };
+      const sourceCoordinate = -0.83;
+      const analytic = evaluatePermutationFamilyAxisPathIntegratedHessian({
+        u: boundaryMode === BOUNDARY_MODES.dirichlet ? 1 : 0,
+        v: 2,
+        w: 4,
+        ...point,
+        sourceCoordinate,
+        propagationAxis: 0,
+        scale: Math.PI,
+        boundaryMode,
+      });
+      const sampleCount = 20_000;
+      const length = point.x - sourceCoordinate;
+      const step = length / sampleCount;
+      const numerical = { h11: 0, h22: 0, h12: 0 };
+
+      for (let index = 0; index < sampleCount; index += 1) {
+        const distanceFromSource = (index + 0.5) * step;
+        const sample = evaluatePermutationFamilyMode({
+          u: boundaryMode === BOUNDARY_MODES.dirichlet ? 1 : 0,
+          v: 2,
+          w: 4,
+          x: sourceCoordinate + distanceFromSource,
+          y: point.y,
+          z: point.z,
+          scale: Math.PI,
+          boundaryMode,
+        });
+        const remainingDistance = length - distanceFromSource;
+        numerical.h11 += remainingDistance * sample.hessianYY * step;
+        numerical.h22 += remainingDistance * sample.hessianZZ * step;
+        numerical.h12 += remainingDistance * sample.hessianYZ * step;
+      }
+
+      expect(analytic.h11).toBeCloseTo(numerical.h11, 5);
+      expect(analytic.h22).toBeCloseTo(numerical.h22, 5);
+      expect(analytic.h12).toBeCloseTo(numerical.h12, 5);
+    },
+  );
+
+  it("cancels rapid longitudinal oscillation instead of converting it to shells", () => {
+    const common = {
+      coordinate: 0.37,
+      sourceCoordinate: -0.91,
+      scale: Math.PI,
+      boundaryMode: BOUNDARY_MODES.neumann,
+    };
+    const highOrder = integrateBoundaryAxisBasisPropagationKernel({
+      ...common,
+      index: 16,
+    });
+    const pathLength = common.coordinate - common.sourceCoordinate;
+    const localLensShortcut =
+      evaluateBoundaryAxisBasis({
+        index: 16,
+        coordinate: common.coordinate,
+        scale: common.scale,
+        boundaryMode: common.boundaryMode,
+      }).value *
+      0.5 *
+      pathLength *
+      pathLength;
+
+    expect(Math.abs(highOrder)).toBeLessThan(
+      Math.abs(localLensShortcut) * 0.08,
+    );
   });
 });
 
@@ -380,6 +572,63 @@ describe("GPU permutation-family mask parity", () => {
           );
         }
       }
+    }
+  });
+});
+
+describe("mode family evaluation scalars", () => {
+  // One triple per equality class, plus zero-index cases that exercise the
+  // Neumann constant eigenfunction.
+  const TRIPLES = [
+    [2, 2, 2],
+    [1, 1, 3],
+    [1, 3, 3],
+    [1, 2, 3],
+    [0, 0, 0],
+    [0, 0, 2],
+    [0, 2, 2],
+    [0, 1, 2],
+  ];
+
+  it("matches the enumerated permutation family it replaces", () => {
+    for (const boundaryMode of [BOUNDARY_MODES.neumann, BOUNDARY_MODES.dirichlet]) {
+      for (const [u, v, w] of TRIPLES) {
+        const scalars = deriveModeFamilyEvaluationScalars(u, v, w, boundaryMode);
+        const uniqueCount = getPermutationFamily(u, v, w).length;
+
+        // The six ordered weights the shader applies are [1, A, B, A, B, A*B].
+        // Their sum must be the number of distinct permutations, otherwise the
+        // masked six-term loop is not summing the same family.
+        const { threeTermUVMask: a, threeTermVWMask: b } = scalars;
+        const weightSum = 1 + a + b + a + b + a * b;
+        expect(weightSum).toBe(uniqueCount);
+        expect(uniqueCount).toBe(getUniquePermutationCount(u, v, w));
+
+        // familyScale folds the family normalization together with the three
+        // per-axis energy normalizations that used to be applied per basis.
+        const axisEnergy = (index) =>
+          boundaryMode === BOUNDARY_MODES.dirichlet || index !== 0
+            ? Math.SQRT2
+            : 1;
+        const expectedScale =
+          (axisEnergy(u) * axisEnergy(v) * axisEnergy(w)) /
+          Math.sqrt(uniqueCount);
+        expect(scalars.familyScale).toBeCloseTo(expectedScale, 12);
+      }
+    }
+  });
+
+  it("is invariant to index order, like the family itself", () => {
+    const canonical = deriveModeFamilyEvaluationScalars(1, 2, 3);
+    for (const [u, v, w] of [
+      [1, 3, 2],
+      [2, 1, 3],
+      [3, 2, 1],
+    ]) {
+      expect(deriveModeFamilyEvaluationScalars(u, v, w).familyScale).toBeCloseTo(
+        canonical.familyScale,
+        12,
+      );
     }
   });
 });

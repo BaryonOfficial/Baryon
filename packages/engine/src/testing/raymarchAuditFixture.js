@@ -1,4 +1,4 @@
-const FIXTURE_KIND = "baryon-raymarch-audit-fixture/v1";
+const FIXTURE_KIND = "baryon-raymarch-audit-fixture/v6";
 const FIXTURE_PHASES = Object.freeze({
   idle: "idle",
   installing: "installing",
@@ -124,7 +124,7 @@ export async function hashRaymarchAuditNumericArray(values) {
   return digestSha256(bytes);
 }
 
-export async function hashRaymarchAuditFixtureDescriptor(descriptor) {
+async function hashRaymarchAuditFixtureDescriptor(descriptor) {
   return digestSha256(new TextEncoder().encode(canonicalJson(descriptor)));
 }
 
@@ -170,12 +170,10 @@ async function validateModal(modal) {
     "fieldAuthority",
     "activeModeCount",
     "capacity",
-    "slots",
+    "identitySlots",
+    "coefficientSlots",
     "phaseSlots",
-    "colorSlots",
-    "spectralLaneA",
-    "spectralLaneB",
-    "spectralMeta",
+    "spectralMomentSlots",
     "metadataSlots",
   ]);
   assert(
@@ -186,17 +184,19 @@ async function validateModal(modal) {
   assertInteger(modal.activeModeCount, "modal.activeModeCount", {
     max: modal.capacity,
   });
+  await validateNumericArray(
+    modal.identitySlots,
+    "modal.identitySlots",
+    modal.capacity * 3,
+  );
+  await validateNumericArray(
+    modal.coefficientSlots,
+    "modal.coefficientSlots",
+    modal.capacity,
+  );
   const elementCount = modal.capacity * 4;
   await Promise.all(
-    [
-      "slots",
-      "phaseSlots",
-      "colorSlots",
-      "spectralLaneA",
-      "spectralLaneB",
-      "spectralMeta",
-      "metadataSlots",
-    ].map((key) =>
+    ["phaseSlots", "spectralMomentSlots", "metadataSlots"].map((key) =>
       validateNumericArray(modal[key], `modal.${key}`, elementCount),
     ),
   );
@@ -253,31 +253,29 @@ function validateTransport(transport, checkpointMode) {
       "current transport prototype must be null",
     );
     assertString(transport.apparatusIdentity, "transport.apparatusIdentity");
-    assertString(transport.cacheIdentity, "transport.cacheIdentity");
+    // A cache identity names a dispatch-based transport cache. The analytic
+    // apparatus dispatches nothing and owns no cache, so the identity is
+    // exactly as present as the cache itself.
+    if (transport.expectedDispatchCount > 0) {
+      assertString(transport.cacheIdentity, "transport.cacheIdentity");
+    } else {
+      assert(
+        transport.cacheIdentity === null,
+        "transport.cacheIdentity must be null without transport dispatches",
+      );
+    }
   } else {
     assertPlainObject(transport.prototype, "transport.prototype");
   }
 }
 
 function validateSpectral(spectral) {
-  assertExactKeys(spectral, "spectral", [
-    "enabled",
-    "colorMode",
-    "spectralMix",
-  ]);
-  assert(
-    typeof spectral.enabled === "boolean",
-    "spectral.enabled must be boolean",
-  );
+  assertExactKeys(spectral, "spectral", ["colorMode", "spectralChroma"]);
   assertString(spectral.colorMode, "spectral.colorMode");
-  assertFinite(spectral.spectralMix, "spectral.spectralMix", {
+  assertFinite(spectral.spectralChroma, "spectral.spectralChroma", {
     min: 0,
     max: 1,
   });
-  assert(
-    spectral.enabled || spectral.spectralMix === 0,
-    "spectralMix must be zero when spectral is disabled",
-  );
 }
 
 async function validateCamera(camera) {
@@ -306,33 +304,39 @@ async function validateCamera(camera) {
   });
 }
 
-function validateMaterial(material, checkpointMode) {
+function validateMaterial(material) {
   assertExactKeys(material, "material", [
-    "holographicBaseRadianceGain",
-    "laserAccentAuthority",
     "densityGain",
-    "absorption",
-    "carrierCoreFwhmWorld",
-    "contourSharpness",
+    "plasmaRadianceGain",
+    "plasmaExtinctionCoefficient",
+    "plasmaEmissionCoefficient",
+    "plasmaContinuitySpineRadiancePerExtinctionLimit",
+    "plasmaDetailSpineRadiancePerExtinctionLimit",
+    "plasmaBodyRadiancePerExtinctionLimit",
+    "observerFineApertureFwhmWorld",
+    "observerTopologyApertureFwhmWorld",
+    "observerFineResidualScaleWorld",
+    "observerFineResidualDetailLimit",
+    "observerSheetFwhmWorld",
     "deterministicSeed",
   ]);
   for (const key of [
-    "holographicBaseRadianceGain",
-    "laserAccentAuthority",
     "densityGain",
-    "absorption",
-    "carrierCoreFwhmWorld",
-    "contourSharpness",
+    "plasmaRadianceGain",
+    "plasmaExtinctionCoefficient",
+    "plasmaEmissionCoefficient",
+    "plasmaContinuitySpineRadiancePerExtinctionLimit",
+    "plasmaDetailSpineRadiancePerExtinctionLimit",
+    "plasmaBodyRadiancePerExtinctionLimit",
+    "observerFineApertureFwhmWorld",
+    "observerTopologyApertureFwhmWorld",
+    "observerFineResidualScaleWorld",
+    "observerFineResidualDetailLimit",
+    "observerSheetFwhmWorld",
   ]) {
     assertFinite(material[key], `material.${key}`, { min: 0 });
   }
   assertInteger(material.deterministicSeed, "material.deterministicSeed");
-  if (checkpointMode === "base") {
-    assert(
-      material.laserAccentAuthority === 0,
-      "base laser accent authority must be zero",
-    );
-  }
 }
 
 function validateOutput(output, checkpointMode) {
@@ -432,7 +436,7 @@ export async function validateRaymarchAuditFixtureDescriptor(descriptor) {
   validateTransport(descriptor.transport, descriptor.checkpoint.mode);
   validateSpectral(descriptor.spectral);
   await validateCamera(descriptor.camera);
-  validateMaterial(descriptor.material, descriptor.checkpoint.mode);
+  validateMaterial(descriptor.material);
   validateOutput(descriptor.output, descriptor.checkpoint.mode);
   validatePost(descriptor.post, descriptor.checkpoint.mode);
   const normalizedDescriptor = deepFreeze(cloneFixtureValue(descriptor));
@@ -510,26 +514,21 @@ export async function buildRaymarchAuditFixtureDescriptorFromSources(
       fieldAuthority: "complete",
       activeModeCount: modal.activeModeCount,
       capacity: modal.capacity,
-      slots: await numericArray(modal.slots, "sources.modal.slots"),
+      identitySlots: await numericArray(
+        modal.identitySlots,
+        "sources.modal.identitySlots",
+      ),
+      coefficientSlots: await numericArray(
+        modal.coefficientSlots,
+        "sources.modal.coefficientSlots",
+      ),
       phaseSlots: await numericArray(
         modal.phaseSlots,
         "sources.modal.phaseSlots",
       ),
-      colorSlots: await numericArray(
-        modal.colorSlots,
-        "sources.modal.colorSlots",
-      ),
-      spectralLaneA: await numericArray(
-        modal.spectralLaneA,
-        "sources.modal.spectralLaneA",
-      ),
-      spectralLaneB: await numericArray(
-        modal.spectralLaneB,
-        "sources.modal.spectralLaneB",
-      ),
-      spectralMeta: await numericArray(
-        modal.spectralMeta,
-        "sources.modal.spectralMeta",
+      spectralMomentSlots: await numericArray(
+        modal.spectralMomentSlots,
+        "sources.modal.spectralMomentSlots",
       ),
       metadataSlots: await numericArray(
         modal.metadataSlots,
@@ -563,9 +562,8 @@ export async function buildRaymarchAuditFixtureDescriptorFromSources(
             prototype: null,
           },
     spectral: {
-      enabled: sources.spectral?.enabled,
       colorMode: sources.spectral?.colorMode,
-      spectralMix: sources.spectral?.spectralMix,
+      spectralChroma: sources.spectral?.spectralChroma,
     },
     camera: {
       viewPreset,
@@ -584,13 +582,26 @@ export async function buildRaymarchAuditFixtureDescriptorFromSources(
       },
     },
     material: {
-      holographicBaseRadianceGain:
-        sources.material?.holographicBaseRadianceGain,
-      laserAccentAuthority: checkpointMode === "current" ? 1 : 0,
       densityGain: sources.material?.densityGain,
-      absorption: sources.material?.absorption,
-      carrierCoreFwhmWorld: sources.material?.carrierCoreFwhmWorld,
-      contourSharpness: sources.material?.contourSharpness,
+      plasmaRadianceGain: sources.material?.plasmaRadianceGain,
+      plasmaExtinctionCoefficient:
+        sources.material?.plasmaExtinctionCoefficient,
+      plasmaEmissionCoefficient: sources.material?.plasmaEmissionCoefficient,
+      plasmaContinuitySpineRadiancePerExtinctionLimit:
+        sources.material?.plasmaContinuitySpineRadiancePerExtinctionLimit,
+      plasmaDetailSpineRadiancePerExtinctionLimit:
+        sources.material?.plasmaDetailSpineRadiancePerExtinctionLimit,
+      plasmaBodyRadiancePerExtinctionLimit:
+        sources.material?.plasmaBodyRadiancePerExtinctionLimit,
+      observerFineApertureFwhmWorld:
+        sources.material?.observerFineApertureFwhmWorld,
+      observerTopologyApertureFwhmWorld:
+        sources.material?.observerTopologyApertureFwhmWorld,
+      observerFineResidualScaleWorld:
+        sources.material?.observerFineResidualScaleWorld,
+      observerFineResidualDetailLimit:
+        sources.material?.observerFineResidualDetailLimit,
+      observerSheetFwhmWorld: sources.material?.observerSheetFwhmWorld,
       deterministicSeed,
     },
     output: {
@@ -830,5 +841,3 @@ export function createRaymarchAuditFixtureController({
     teardown,
   });
 }
-
-export { FIXTURE_KIND as RAYMARCH_AUDIT_FIXTURE_KIND };

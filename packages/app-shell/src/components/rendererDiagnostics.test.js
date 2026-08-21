@@ -3,11 +3,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const rendererMocks = vi.hoisted(() => ({
   defaultOnDeviceLost: vi.fn(),
   defaultOnError: vi.fn(),
+  popErrorScope: vi.fn(),
 }));
 
 vi.mock("three/webgpu", () => {
   class WebGPUBackend {
     isWebGLBackend = false;
+
+    constructor() {
+      this.device = {
+        popErrorScope: (...args) => rendererMocks.popErrorScope(...args),
+        pushErrorScope: vi.fn(),
+      };
+    }
   }
 
   class WebGLBackend {
@@ -17,6 +25,7 @@ vi.mock("three/webgpu", () => {
   class WebGPURenderer {
     constructor(parameters) {
       this.parameters = parameters;
+      this.domElement = parameters.canvas;
       this.backend =
         parameters.forceWebGL === true
           ? new WebGLBackend()
@@ -36,7 +45,9 @@ vi.mock("three/webgpu", () => {
 import {
   clearRendererDiagnostics,
   createBaryonRenderer,
+  WEBGPU_RENDERER_RUNTIME_LOSS_ERROR,
 } from "./rendererDiagnostics.js";
+import { HalfFloatType } from "three";
 
 const originalWindowDescriptor = Object.getOwnPropertyDescriptor(
   globalThis,
@@ -45,6 +56,10 @@ const originalWindowDescriptor = Object.getOwnPropertyDescriptor(
 const originalCustomEventDescriptor = Object.getOwnPropertyDescriptor(
   globalThis,
   "CustomEvent",
+);
+const originalNavigatorDescriptor = Object.getOwnPropertyDescriptor(
+  globalThis,
+  "navigator",
 );
 
 class TestCustomEvent extends Event {
@@ -73,6 +88,13 @@ function installTestWindow() {
   }
 }
 
+function installTestNavigator(userAgent) {
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: { userAgent },
+  });
+}
+
 function restoreGlobalProperty(name, descriptor) {
   if (descriptor) {
     Object.defineProperty(globalThis, name, descriptor);
@@ -94,12 +116,15 @@ describe("renderer diagnostics", () => {
   beforeEach(() => {
     rendererMocks.defaultOnDeviceLost.mockClear();
     rendererMocks.defaultOnError.mockClear();
+    rendererMocks.popErrorScope.mockReset();
+    rendererMocks.popErrorScope.mockResolvedValue(null);
     installTestWindow();
   });
 
   afterEach(() => {
     clearRendererDiagnostics();
     restoreGlobalProperty("CustomEvent", originalCustomEventDescriptor);
+    restoreGlobalProperty("navigator", originalNavigatorDescriptor);
     restoreGlobalProperty("window", originalWindowDescriptor);
   });
 
@@ -169,6 +194,49 @@ describe("renderer diagnostics", () => {
     );
   });
 
+  it("turns a rejected WebGPU error scope into one reported runtime loss", async () => {
+    const onRuntimeFailure = vi.fn();
+    const renderer = await createBaryonRenderer(
+      { canvas: createCanvas() },
+      false,
+      { onRuntimeFailure },
+    );
+    const scopeError = new Error("Instance dropped in popErrorScope");
+    scopeError.name = "OperationError";
+    rendererMocks.popErrorScope.mockRejectedValueOnce(scopeError);
+
+    await renderer.backend.device.popErrorScope();
+    await vi.waitFor(() => {
+      expect(onRuntimeFailure).toHaveBeenCalledOnce();
+    });
+
+    expect(rendererMocks.defaultOnError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        api: "WebGPU",
+        message: "Instance dropped in popErrorScope",
+        reason: "error-scope-rejected",
+        type: "OperationError",
+      }),
+    );
+    expect(onRuntimeFailure.mock.calls[0][0]).toMatchObject({
+      name: WEBGPU_RENDERER_RUNTIME_LOSS_ERROR,
+      cause: scopeError,
+    });
+    expect(window.__baryonRendererInfo.gpuErrors.at(-1)).toMatchObject({
+      kind: "error-scope-rejected",
+    });
+    expect(window.__baryonRendererInfo.gpuErrors.at(-1)).not.toHaveProperty(
+      "pipelineKind",
+    );
+
+    rendererMocks.popErrorScope.mockRejectedValueOnce(scopeError);
+    await renderer.backend.device.popErrorScope();
+    await vi.waitFor(() => {
+      expect(rendererMocks.defaultOnError).toHaveBeenCalledTimes(2);
+    });
+    expect(onRuntimeFailure).toHaveBeenCalledOnce();
+  });
+
   it("keeps existing callers working without xrMode and preserves WebGPU backends with it", async () => {
     const defaultRenderer = await createBaryonRenderer(
       { canvas: createCanvas() },
@@ -189,6 +257,65 @@ describe("renderer diagnostics", () => {
     });
   });
 
+  it("requests the high-performance GPU where Chromium can honor it", async () => {
+    installTestNavigator(
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/145.0.0.0 Safari/537.36",
+    );
+    const webGpuCanvas = createCanvas();
+    const webGpuRenderer = await createBaryonRenderer(
+      { canvas: webGpuCanvas },
+      false,
+    );
+
+    expect(webGpuRenderer.parameters.powerPreference).toBe("high-performance");
+    expect(webGpuCanvas.getContext).not.toHaveBeenCalled();
+    expect(webGpuRenderer.backend.isWebGLBackend).toBe(false);
+
+    const webGlCanvas = createCanvas();
+    const webGlRenderer = await createBaryonRenderer(
+      { canvas: webGlCanvas },
+      true,
+    );
+
+    expect(webGlCanvas.getContext).toHaveBeenCalledWith("webgl2", {
+      alpha: true,
+      antialias: true,
+      powerPreference: "high-performance",
+    });
+    expect(webGlRenderer.parameters).toMatchObject({
+      forceWebGL: true,
+      powerPreference: "high-performance",
+    });
+    expect(webGlRenderer.backend.isWebGLBackend).toBe(true);
+  });
+
+  it("omits only the ignored Windows Chromium WebGPU power preference", async () => {
+    installTestNavigator(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/145.0.0.0 Safari/537.36",
+    );
+    const webGpuCanvas = createCanvas();
+    const webGpuRenderer = await createBaryonRenderer(
+      { canvas: webGpuCanvas },
+      false,
+    );
+
+    expect(webGpuRenderer.parameters).not.toHaveProperty("powerPreference");
+    expect(webGpuCanvas.getContext).not.toHaveBeenCalled();
+
+    const webGlCanvas = createCanvas();
+    const webGlRenderer = await createBaryonRenderer(
+      { canvas: webGlCanvas },
+      true,
+    );
+
+    expect(webGlCanvas.getContext).toHaveBeenCalledWith("webgl2", {
+      alpha: true,
+      antialias: true,
+      powerPreference: "high-performance",
+    });
+    expect(webGlRenderer.parameters.powerPreference).toBe("high-performance");
+  });
+
   it("supports opaque preview canvases without changing transparent output defaults", async () => {
     const defaultRenderer = await createBaryonRenderer(
       { canvas: createCanvas() },
@@ -202,6 +329,32 @@ describe("renderer diagnostics", () => {
 
     expect(defaultRenderer.parameters.alpha).toBe(true);
     expect(previewRenderer.parameters.alpha).toBe(false);
+    expect(defaultRenderer.setClearColor).toHaveBeenLastCalledWith(0x000000, 0);
+    expect(previewRenderer.setClearColor).toHaveBeenLastCalledWith(0x000000, 1);
+  });
+
+  it("uses the compositor-visible canvas as the WebGPU render target", async () => {
+    const sourceCanvas = createCanvas();
+    sourceCanvas.width = 1920;
+    sourceCanvas.height = 1080;
+
+    const renderer = await createBaryonRenderer(
+      { canvas: sourceCanvas },
+      false,
+    );
+
+    expect(renderer.parameters.canvas).toBe(sourceCanvas);
+    expect(renderer.setSize).toHaveBeenCalledWith(800, 450, false);
+  });
+
+  it("uses a half-float WebGPU canvas for high-precision output", async () => {
+    const renderer = await createBaryonRenderer(
+      { canvas: createCanvas() },
+      false,
+      { halfFloatOutput: true },
+    );
+
+    expect(renderer.parameters.outputType).toBe(HalfFloatType);
   });
 
   it("rejects WebGL backends in xrMode with the renderer init error name", async () => {

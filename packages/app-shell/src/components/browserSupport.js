@@ -6,6 +6,7 @@ export const BROWSER_SUPPORT_STATUS = {
 
 export const BROWSER_FAILURE_CODES = {
   mobileUnsupported: "mobile-unsupported",
+  webgl2Missing: "webgl2-missing",
   gpuMissing: "gpu-missing",
   requestAdapterMissing: "request-adapter-missing",
   adapterNull: "adapter-null",
@@ -57,7 +58,20 @@ function getUserAgentBrands(navigatorObject = globalThis.navigator) {
 }
 
 export function isMobileDevice(navigatorObject = globalThis.navigator) {
-  return /Android|iPhone|iPad|iPod|Mobile/i.test(getUserAgent(navigatorObject));
+  const navigatorWithMobileHints =
+    /** @type {{ maxTouchPoints?: number, userAgentData?: { mobile?: boolean } } | undefined} */ (
+      navigatorObject
+    );
+  const userAgent = getUserAgent(navigatorObject);
+  const isIpadDesktopMode =
+    /Macintosh/i.test(userAgent) &&
+    Number(navigatorWithMobileHints?.maxTouchPoints) > 1;
+
+  return (
+    navigatorWithMobileHints?.userAgentData?.mobile === true ||
+    /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent) ||
+    isIpadDesktopMode
+  );
 }
 
 export function detectPlatform(navigatorObject = globalThis.navigator) {
@@ -137,6 +151,48 @@ function getLockdownModeDiagnostic() {
 
   return [
     "`WebAssembly` is also missing; Safari's Lockdown Mode removes both WebGPU and WebAssembly.",
+  ];
+}
+
+/**
+ * The WebGL renderer path is the only renderer mobile ever gets, so its
+ * availability has to be measured rather than assumed: Safari's Lockdown Mode
+ * removes WebGL and WebGL2 outright, and a canvas that can never acquire a
+ * context leaves the demo stuck on a black frame with no explanation.
+ */
+function canCreateWebGL2Context(documentObject = globalThis.document) {
+  const canvas = documentObject?.createElement?.("canvas");
+  if (typeof canvas?.getContext !== "function") {
+    return false;
+  }
+
+  let context = null;
+  try {
+    context = canvas.getContext("webgl2");
+  } catch {
+    return false;
+  }
+
+  if (!context) {
+    return false;
+  }
+
+  // Probing burns a real GPU context; hand it back before the renderer asks
+  // for its own.
+  context.getExtension?.("WEBGL_lose_context")?.loseContext?.();
+  return true;
+}
+
+function getWebAudioDiagnostic(globalScope = globalThis) {
+  if (
+    typeof globalScope.AudioContext === "function" ||
+    typeof globalScope.webkitAudioContext === "function"
+  ) {
+    return [];
+  }
+
+  return [
+    "The Web Audio API is also missing, so the demo has no analysis source.",
   ];
 }
 
@@ -242,6 +298,20 @@ function buildMacSafariLockdownGuidance() {
   };
 }
 
+function buildIosLockdownGuidance() {
+  return {
+    summary:
+      "Lockdown Mode is on for this site, and it blocks the WebGL and Web Audio APIs the demo runs on.",
+    steps: [
+      'Tap the "AA" button at the left of Safari\'s address bar.',
+      'Choose "Website Settings", turn off "Lockdown Mode", then tap Done.',
+      "Reload this page — the demo starts on its own.",
+    ],
+    caveat:
+      "This excludes only this site. Lockdown Mode stays on everywhere else.",
+  };
+}
+
 function buildMobileGuidance() {
   return {
     summary:
@@ -261,7 +331,16 @@ export function buildBrowserGuidance({
     return null;
   }
 
-  if (failureCode === BROWSER_FAILURE_CODES.mobileUnsupported) {
+  // Lockdown Mode is the one mobile failure the visitor can actually fix, so it
+  // outranks the generic "use a desktop" advice.
+  if (lockdownSuspected && platform === BROWSER_PLATFORM.ios) {
+    return buildIosLockdownGuidance();
+  }
+
+  if (
+    failureCode === BROWSER_FAILURE_CODES.mobileUnsupported ||
+    failureCode === BROWSER_FAILURE_CODES.webgl2Missing
+  ) {
     return buildMobileGuidance();
   }
 
@@ -395,11 +474,11 @@ export function createRendererInitFailureProbe(
 }
 
 export function getInitialBrowserSupportStatus(
-  forceWebGLFallbackTest,
+  useWebGLRenderer,
   navigatorObject = globalThis.navigator,
 ) {
-  if (forceWebGLFallbackTest) {
-    return BROWSER_SUPPORT_STATUS.supported;
+  if (useWebGLRenderer) {
+    return BROWSER_SUPPORT_STATUS.checking;
   }
 
   if (isMobileDevice(navigatorObject)) {
@@ -410,7 +489,7 @@ export function getInitialBrowserSupportStatus(
 }
 
 export async function probeBrowserSupport(
-  forceWebGLFallbackTest,
+  useWebGLRenderer,
   navigatorObject = globalThis.navigator,
 ) {
   const runtimeNavigator = /** @type {Navigator & {
@@ -418,7 +497,19 @@ export async function probeBrowserSupport(
    *     requestAdapter?: () => Promise<any>,
    *   },
    * }} */ (navigatorObject ?? {});
-  if (forceWebGLFallbackTest) {
+  if (useWebGLRenderer) {
+    if (!canCreateWebGL2Context()) {
+      return createFailureProbe({
+        failureCode: BROWSER_FAILURE_CODES.webgl2Missing,
+        navigatorObject: runtimeNavigator,
+        diagnostics: [
+          '`canvas.getContext("webgl2")` returned no context.',
+          ...getWebAudioDiagnostic(),
+          ...getLockdownModeDiagnostic(),
+        ],
+      });
+    }
+
     return createProbe({
       status: BROWSER_SUPPORT_STATUS.supported,
       navigatorObject: runtimeNavigator,
@@ -486,12 +577,9 @@ export async function probeBrowserSupport(
 }
 
 export async function getBrowserSupportStatus(
-  forceWebGLFallbackTest,
+  useWebGLRenderer,
   navigatorObject = globalThis.navigator,
 ) {
-  const probe = await probeBrowserSupport(
-    forceWebGLFallbackTest,
-    navigatorObject,
-  );
+  const probe = await probeBrowserSupport(useWebGLRenderer, navigatorObject);
   return probe.status;
 }

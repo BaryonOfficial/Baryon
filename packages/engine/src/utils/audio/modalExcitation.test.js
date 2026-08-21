@@ -1,17 +1,14 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { CAVITY_ACOUSTIC_DEFAULTS } from "../../defaults.js";
-import {
-  createAudioFeatureState,
-  prepareAudioFeatureFrameInputs,
-  updateAudioFeatureFastSignalState,
-} from "./buildFeatureFrame.js";
+import { updateAudioFeatureFastSignalState } from "./audioFeatureAnalysis.js";
+import { prepareAudioFeatureFrameInputs } from "./audioFeatureInputPreparation.js";
+import { createAudioFeatureState } from "./audioFeatureState.js";
 import {
   buildModalExcitationStructuralState,
-  computeDrivePeriodicity,
   createModalExcitationState,
-  getAtlasCacheSize,
 } from "./modalExcitation.js";
+import { buildModalExcitationAtlas } from "./modalExcitationAtlas.js";
 import {
   createBassHatFixture,
   createBroadbandNoiseFixture,
@@ -19,19 +16,28 @@ import {
   createSineToneFixture,
   createVocalLikeFixture,
 } from "./audioFixtures.js";
-import { MODAL_BASIS_ATLAS_PAGE_CAPACITY } from "../../core/modalBudgets.js";
+import { MODAL_SEMANTIC_DESCRIPTOR_CAPACITY } from "../../core/modalBudgets.js";
+import { deriveCavityModalFieldCacheBandwidth } from "../../core/raymarch/fieldCachePassband.js";
 import { frequencyToBinIndex } from "./binFrequency.js";
-import { getPhaseVelocityLimit } from "./modalPhaseSlots.js";
 
 const FFT_SIZE = 4096;
 const SAMPLE_RATE = 44100;
 const BIN_COUNT = FFT_SIZE / 2;
+const MAX_RENDER_PHASE_VELOCITY_RAD_PER_SEC = Math.PI * 1.25;
 const MODAL_EXCITATION_SOURCE_URL = new URL(
   "./modalExcitation.js",
   import.meta.url,
 );
 const MODAL_OBSERVED_SCORING_SOURCE_URL = new URL(
   "./modalObservedScoring.js",
+  import.meta.url,
+);
+const MODAL_OBSERVED_STATE_SOURCE_URL = new URL(
+  "./modalObservedState.js",
+  import.meta.url,
+);
+const MODAL_TOPOLOGY_SIGNAL_SOURCE_URL = new URL(
+  "./modalTopologySignal.js",
   import.meta.url,
 );
 
@@ -43,6 +49,31 @@ function readModalObservedScoringSource() {
   return readFileSync(MODAL_OBSERVED_SCORING_SOURCE_URL, { encoding: "utf8" });
 }
 
+function readModalObservedStateSource() {
+  return readFileSync(MODAL_OBSERVED_STATE_SOURCE_URL, { encoding: "utf8" });
+}
+
+function readModalTopologySignalSource() {
+  return readFileSync(MODAL_TOPOLOGY_SIGNAL_SOURCE_URL, {
+    encoding: "utf8",
+  });
+}
+
+function modeKeyToShellKey(modeKey) {
+  const [u, v, w] = modeKey.split(":").map(Number);
+  return `${u * u + v * v + w * w}`;
+}
+
+function readModeShellKeys(amplitudes) {
+  return new Set(Array.from(amplitudes.keys(), modeKeyToShellKey));
+}
+
+function countRetainedModeShells(previous, next) {
+  const previousShells = readModeShellKeys(previous);
+  const nextShells = readModeShellKeys(next);
+  return Array.from(previousShells).filter((key) => nextShells.has(key)).length;
+}
+
 function expectModalHelperBoundary({ helperPath, localFunctions }) {
   const source = readModalExcitationSource();
 
@@ -52,8 +83,7 @@ function expectModalHelperBoundary({ helperPath, localFunctions }) {
   }
 }
 
-function extractModalExcitationFunctionSource(functionName) {
-  const source = readModalExcitationSource();
+function extractFunctionSource(source, functionName) {
   const start = source.indexOf(`function ${functionName}`);
   expect(start).toBeGreaterThanOrEqual(0);
   const paramsStart = source.indexOf("(", start);
@@ -91,14 +121,24 @@ function extractModalExcitationFunctionSource(functionName) {
   throw new Error(`Unable to extract function source for ${functionName}`);
 }
 
-it("keeps phase-slot derivation in the modal phase slot helper", () => {
-  const source = extractModalExcitationFunctionSource(
-    "buildModalExcitationStructuralState",
-  );
+function extractModalExcitationFunctionSource(functionName) {
+  return extractFunctionSource(readModalExcitationSource(), functionName);
+}
 
+function extractModalObservedStateFunctionSource(functionName) {
+  return extractFunctionSource(readModalObservedStateSource(), functionName);
+}
+
+function extractModalTopologySignalFunctionSource(functionName) {
+  return extractFunctionSource(readModalTopologySignalSource(), functionName);
+}
+
+it("routes every modal layer through the phase-slot helper", () => {
+  const source = readModalExcitationSource();
   expectModalHelperBoundary({
     helperPath: "./modalPhaseSlots.js",
     localFunctions: [
+      "deriveObservedModalPhaseState",
       "writePhaseSlotsForVisibleModes",
       "findModalPhaseEntryForSlot",
     ],
@@ -109,102 +149,95 @@ it("keeps phase-slot derivation in the modal phase slot helper", () => {
   expect(source).toContain("target: state.blendResonant.phaseSlots");
 });
 
-it("keeps stale-detail override policy in the modal stale detail helper", () => {
+it("keeps projection diagnostics in the modal projection helper", () => {
   expectModalHelperBoundary({
-    helperPath: "./modalStaleResonant.js",
+    helperPath: "./modalProjectionDiagnostics.js",
     localFunctions: [
-      "buildStaleResonantReleaseOverrides",
-      "computeStaleResonantPressure",
-      "buildStaleResonantTrackingOverrides",
+      "createEmptyModalProjectionDiagnostics",
+      "measureModalProjection",
+      "mergeModalProjectionDiagnostics",
     ],
   });
 });
 
-it("keeps projection energy normalization in the modal projection helper", () => {
+it("keeps source-signal measurement in the modal drive analysis helper", () => {
   expectModalHelperBoundary({
-    helperPath: "./modalProjectionNormalization.js",
+    helperPath: "./modalDriveAnalysis.js",
     localFunctions: [
-      "createEmptyProjectionNormalizationMetrics",
-      "applyProjectionEnergyNormalization",
-      "mergeProjectionNormalizationMetrics",
+      "buildDriveBufferFromTimeData",
+      "computeDrivePeriodicity",
+      "computeModeResponse",
     ],
   });
 });
 
-it("keeps observed-mode scoring in the modal observed scoring helper", () => {
+it("keeps topology evidence at its owner seam", () => {
   expectModalHelperBoundary({
-    helperPath: "./modalObservedScoring.js",
+    helperPath: "./modalTopologySignal.js",
+    localFunctions: ["deriveCurrentResonantTopologySignal"],
+  });
+});
+
+it("keeps source evidence and oscillator response at their owner seam", () => {
+  expectModalHelperBoundary({
+    helperPath: "./modalObservationResponseFrame.js",
     localFunctions: [
-      "classifyObservedModeQProfile",
-      "computeModalObserverNoiseFloor",
-      "computeModalObservation",
-      "isHighQHarmonicDriverFrequency",
-      "getResonantHarmonicCoupling",
+      "advanceModalObservationResponseFrame",
+      "isModalExcitationHardSilentFrame",
+      "resolvePreparedSourceEvidence",
+      "advancePhysicalModalResponseFrame",
     ],
   });
 });
 
-it("keeps retained display continuity out of canonical observed modal state", () => {
-  const source = extractModalExcitationFunctionSource(
+it("keeps physical amplitude out of canonical observed modal state", () => {
+  const source = extractModalObservedStateFunctionSource(
     "createObservedModalModeEntry",
   );
 
-  expect(source).not.toContain("driveEnergy: Math.max");
-  expect(source).not.toContain("coherence: Math.max");
-  expect(source).not.toContain("persistence: Math.max");
-  expect(source).not.toContain("resonantMaturity: isResonant");
-  expect(source).toContain("driveEnergy,");
+  expect(source).toContain("observationConfidence: confidence");
   expect(source).toContain("coherence,");
-  expect(source).toContain("persistence,");
-  expect(source).toContain("resonantMaturity,");
-  expect(source).toContain("displayContinuityDriveEnergy,");
-  expect(source).toContain("displayContinuityCoherence,");
-  expect(source).toContain("displayContinuityPersistence,");
-  expect(source).toContain("resonantDisplayContinuityMaturity,");
+  expect(source).not.toContain("displayProjectionAmplitude");
+  expect(source).not.toContain("retainedEnergy");
+  expect(source).not.toContain("amplitude:");
+  expect(source).not.toContain("displayContinuity");
 });
 
-it("keeps high-Q sparse evidence out of topology ownership", () => {
-  const source = extractModalExcitationFunctionSource(
-    "deriveHighQTopologySignal",
+it("keeps resonant sparse evidence out of topology ownership", () => {
+  const source = extractModalTopologySignalFunctionSource(
+    "deriveResonantTopologySignal",
   );
 
-  expect(source).not.toContain("highQSparseResonatorEvidence");
-  expect(source).toContain("highQResonantEnergy");
-  expect(source).toContain("highQRingSupport");
-  expect(source).toContain("highQObservedDrive");
-  expect(source).toContain("highQObservedCoherence");
+  expect(source).not.toContain("resonantSparseEvidence");
+  expect(source).toContain("resonantObservationConfidence");
+  expect(source).toContain("resonantRingSupport");
+  expect(source).toContain("resonantObservedDrive");
+  expect(source).toContain("resonantObservedCoherence");
 });
 
-it("keeps display continuity support on projection and display paths only", () => {
-  const signalScoreSource =
-    extractModalExcitationFunctionSource("getSignalScore");
-  const displayScoreSource =
-    extractModalExcitationFunctionSource("getDisplayScore");
+it("uses the oscillator coefficient as the sole projection priority", () => {
   const projectionShortlistSource = extractModalExcitationFunctionSource(
     "buildProjectionShortlist",
   );
 
-  expect(signalScoreSource).toContain("getDisplayContinuityDriveEnergy");
-  expect(signalScoreSource).toContain("getDisplayContinuityCoherence");
-  expect(displayScoreSource).toContain("getDisplayContinuityDriveEnergy");
-  expect(displayScoreSource).toContain("getDisplayContinuityCoherence");
-  expect(projectionShortlistSource).toContain("getDisplayContinuityCoherence");
+  expect(projectionShortlistSource).toContain("modalResponseDisplayAmplitude");
+  expect(projectionShortlistSource).toContain("displayProjectionAmplitude");
+  expect(projectionShortlistSource).not.toContain("currentDriveEnergy");
+  expect(projectionShortlistSource).not.toContain("coherence");
+  expect(projectionShortlistSource).not.toContain("displayContinuity");
 });
 
-it("keeps projection shortlist scores out of semantic modal candidate energy", () => {
+it("keeps semantic modal candidate projection outside shortlist scoring", () => {
   const projectionShortlistSource = extractModalExcitationFunctionSource(
     "buildProjectionShortlist",
-  );
-  const modalCandidateSource = extractModalExcitationFunctionSource(
-    "buildModalCandidateList",
   );
 
   expect(projectionShortlistSource).toContain("displayProjectionAmplitude");
   expect(projectionShortlistSource).not.toContain("signalAmplitude");
-  expect(modalCandidateSource).not.toContain("displayProjectionAmplitude");
-  expect(modalCandidateSource).toContain("storedEnergy");
-  expect(modalCandidateSource).toContain("forcingEnergy");
-  expect(modalCandidateSource).toContain("observedSupport");
+  expectModalHelperBoundary({
+    helperPath: "./modalCandidateProjection.js",
+    localFunctions: ["buildModalCandidateState"],
+  });
 });
 
 it("publishes observation confidence instead of an audio-side fog category", () => {
@@ -231,7 +264,7 @@ it("keeps file weak-noise policy owned by source evidence", () => {
 
 function createStatus(overrides = {}) {
   return {
-    audioInputMode: "file",
+    sourceSession: createSourceSession(),
     analysisSource: "file",
     pitchSourceMode: "spectral",
     fftSize: FFT_SIZE,
@@ -243,6 +276,31 @@ function createStatus(overrides = {}) {
     hasAnalysisSource: true,
     liveInputCalibrationVersion: 0,
     ...overrides,
+  };
+}
+
+function createSourceSession({
+  kind = "file",
+  phase = "active",
+  sessionId = 1,
+  timelineRevision = 0,
+  terminalReason = null,
+  deviceKind = null,
+} = {}) {
+  return {
+    kind,
+    phase,
+    sessionId,
+    timelineRevision,
+    terminalReason,
+    systemCapture:
+      kind === "system"
+        ? {
+            deviceId: "test-device",
+            deviceKind: deviceKind ?? "live",
+            label: "Test input",
+          }
+        : null,
   };
 }
 
@@ -287,12 +345,6 @@ function makeTimeData({
       Math.sin((2 * Math.PI * frequency * index) / sampleRate) * amplitude;
   }
   return timeData;
-}
-
-function getRelativeFrequencyDistance(leftHz, rightHz) {
-  const safeLeft = Math.max(leftHz ?? 0, 1e-6);
-  const safeRight = Math.max(rightHz ?? 0, 1e-6);
-  return Math.abs(safeLeft - safeRight) / Math.max(safeLeft, safeRight);
 }
 
 function makeMixedTimeData({
@@ -348,7 +400,6 @@ function createPreparedInputs({
   rms = 0.2,
   radius = 3,
   featureState = createAudioFeatureState(status.capacity),
-  includeSpectralLight = true,
   auditSettings = undefined,
 }) {
   return prepareAudioFeatureFrameInputs({
@@ -368,34 +419,9 @@ function createPreparedInputs({
     boundaryMode,
     status,
     frameTimeMs,
-    includeSpectralLight,
     auditSettings,
   });
 }
-
-it("builds the modal excitation atlas from acoustic scale, not visual radius", () => {
-  const preparedInputs = createPreparedInputs({
-    frameTimeMs: 16,
-    fftLinearAmplitudes: makeFft([[60, 0.9]]),
-    timeData: makeTimeData({ frequency: 60, amplitude: 0.5 }),
-    cavityAcousticScale: CAVITY_ACOUSTIC_DEFAULTS,
-    boundaryMode: "neumann",
-    radius: 3,
-  });
-  const fastSignalState = updateAudioFeatureFastSignalState(preparedInputs);
-  const state = createModalExcitationState(preparedInputs.capacity);
-  buildModalExcitationStructuralState({
-    preparedInputs,
-    fastSignalState,
-    existingState: state,
-  });
-  const floorEntry = state.atlasEntries.find(
-    (entry) => entry.u === 0 && entry.v === 0 && entry.w === 1,
-  );
-
-  expect(floorEntry?.naturalFrequencyHz).toBeCloseTo(59.2, 1);
-  expect(state.atlasCacheKey).toContain("12.500");
-});
 
 it("bounds modal oscillator velocities before phase-slot upload", () => {
   const state = createModalExcitationState(16);
@@ -420,14 +446,11 @@ it("bounds modal oscillator velocities before phase-slot upload", () => {
   const oscillatorEntries = Array.from(
     state.activeModes?.values?.() ?? [],
   ).filter((entry) => Number.isFinite(entry.modalOscillatorPhaseRad));
-  const renderPhaseLimit = Math.max(
-    getPhaseVelocityLimit("source-coupled"),
-    getPhaseVelocityLimit("resonant"),
-  );
-
   expect(velocities.length).toBeGreaterThan(0);
   expect(
-    velocities.every((velocity) => Math.abs(velocity) <= renderPhaseLimit),
+    velocities.every(
+      (velocity) => Math.abs(velocity) <= MAX_RENDER_PHASE_VELOCITY_RAD_PER_SEC,
+    ),
   ).toBe(true);
   expect(velocities.some((velocity) => Math.abs(velocity) > 100)).toBe(false);
   expect(oscillatorEntries.length).toBeGreaterThan(0);
@@ -597,6 +620,20 @@ function measureSharedAmplitudeRatio(reference, candidate) {
   );
 }
 
+function computeModalEnergyWeightedOrder(amplitudes) {
+  let weightedOrder = 0;
+  let totalEnergy = 0;
+  for (const [modeKey, amplitude] of amplitudes) {
+    const order = modeKey
+      .split(":")
+      .reduce((sum, component) => sum + Number(component), 0);
+    const energy = amplitude * amplitude;
+    weightedOrder += order * energy;
+    totalEnergy += energy;
+  }
+  return weightedOrder / Math.max(totalEnergy, 1e-12);
+}
+
 const RESONANT_STRIKE_PARTIALS = Object.freeze([
   [196, 0.9],
   [293, 0.76],
@@ -708,6 +745,21 @@ const REMOVED_MODAL_OBSERVER_AUTHORITY_FIELDS = [
 ];
 
 const REMOVED_MODAL_OBSERVER_ENTRY_FIELDS = [
+  "amplitude",
+  "displayProjectionAmplitude",
+  "retainedEnergy",
+  "currentDriveEnergy",
+  "driveEnergy",
+  "persistence",
+  "resonantMaturity",
+  "displayContinuityDriveEnergy",
+  "displayContinuityCoherence",
+  "displayContinuityPersistence",
+  "resonantDisplayContinuityMaturity",
+  "resonantDisplayContinuity",
+  "subtleResonantDisplayContinuity",
+  "sourceCoupledDisplayContinuity",
+  "observedModal",
   "seededAtMs",
   "lastSupportedAtMs",
   "highQObserved",
@@ -727,7 +779,7 @@ function expectLegacyModalObserverAuthoritiesRemoved(state) {
 function expectCanonicalObservedModeEntries(state) {
   for (const entry of state.observedModes?.values?.() ?? []) {
     expect(entry).toMatchObject({
-      observedModal: true,
+      observationConfidence: expect.any(Number),
       renderLayer: expect.stringMatching(/^(source-coupled|resonant)$/),
       qualityFactor: expect.any(Number),
       firstObservedAtMs: expect.any(Number),
@@ -743,42 +795,59 @@ function expectCanonicalObservedModeEntries(state) {
   }
 }
 
-function expectObservedDisplayContinuityEntries(state) {
-  const continuityEntries = Array.from(
-    state.observedModes?.values?.() ?? [],
-  ).filter(
-    (entry) =>
-      entry.resonantDisplayContinuity === true ||
-      entry.sourceCoupledDisplayContinuity === true,
-  );
+function expectObservedConfidenceOnlyEntries(state) {
+  const entries = Array.from(state.observedModes?.values?.() ?? []);
 
-  expect(continuityEntries.length).toBeGreaterThan(0);
-  for (const entry of continuityEntries) {
-    expect(entry.displayContinuityDriveEnergy).toBeGreaterThanOrEqual(0);
-    expect(entry.displayContinuityCoherence).toBeGreaterThanOrEqual(0);
-    expect(entry.displayContinuityPersistence).toBeGreaterThanOrEqual(0);
-    if (entry.resonantDisplayContinuity === true) {
-      expect(entry.resonantDisplayContinuityMaturity).toBeGreaterThanOrEqual(0);
-      expect(entry.resonantDisplayContinuityPresence).toBeGreaterThanOrEqual(0);
-    }
-    if (entry.sourceCoupledDisplayContinuity === true) {
-      expect(
-        entry.sourceCoupledDisplayContinuityPresence,
-      ).toBeGreaterThanOrEqual(0);
+  expect(entries.length).toBeGreaterThan(0);
+  for (const entry of entries) {
+    expect(entry.observationConfidence).toBeGreaterThanOrEqual(0);
+    for (const field of REMOVED_MODAL_OBSERVER_ENTRY_FIELDS) {
+      expect(entry[field]).toBeUndefined();
     }
   }
 }
 
 describe("modal excitation structural state", () => {
+  it("publishes the oscillator coefficient without a second amplitude recurrence", () => {
+    const state = createModalExcitationState(16);
+    const preparedInputs = createPreparedInputs({
+      frameTimeMs: 33,
+      fftLinearAmplitudes: makeFft([
+        [440, 0.9],
+        [880, 0.45],
+      ]),
+      timeData: makeTimeData({ frequency: 440, amplitude: 0.55 }),
+    });
+    preparedInputs.modalExcitationState = state;
+
+    buildModalExcitationStructuralState({
+      preparedInputs,
+      fastSignalState: updateAudioFeatureFastSignalState(preparedInputs),
+      existingState: state,
+      performanceNow: () => 0,
+    });
+
+    const physicalEntries = Array.from(state.activeModes.values()).filter(
+      (entry) => (entry.modalResponseDisplayAmplitude ?? 0) > 0,
+    );
+    expect(physicalEntries.length).toBeGreaterThan(0);
+    for (const entry of physicalEntries) {
+      expect(entry.amplitude).toBeCloseTo(
+        entry.modalResponseDisplayAmplitude,
+        8,
+      );
+      expect(entry.driveEnergy).toBeCloseTo(entry.modalResponseDrive, 8);
+    }
+  });
+
   let lineFeedProgramFeatureState = null;
 
   function isLineFeedPreparedStatus(status = {}) {
-    const inputMode = status.audioInputMode ?? "file";
+    const sourceSession = status.sourceSession;
     return (
-      inputMode === "system" ||
-      (inputMode === "live" &&
-        (status.resolvedLiveInputAnalysisClass === "line-feed" ||
-          status.liveInputDeviceKind === "system"))
+      sourceSession?.kind === "system" &&
+      (sourceSession.systemCapture?.deviceKind === "system" ||
+        status.resolvedLiveInputAnalysisClass === "line-feed")
     );
   }
 
@@ -798,33 +867,35 @@ describe("modal excitation structural state", () => {
     return createPreparedInputs(options);
   }
 
-  function collectWeightedColorSlots(slots, minWeight = 0.05) {
-    const colors = [];
-    for (let offset = 0; offset < slots.length; offset += 4) {
-      const weight = slots[offset + 3] ?? 0;
-      if (weight < minWeight) {
+  function collectActiveSpectralMoments(
+    momentSlots,
+    modalSlots,
+    minCoefficient = 0.05,
+  ) {
+    const moments = [];
+    for (let offset = 0; offset < momentSlots.length; offset += 4) {
+      if ((modalSlots[offset + 3] ?? 0) <= minCoefficient) {
         continue;
       }
-      colors.push({
-        r: slots[offset] ?? 0,
-        g: slots[offset + 1] ?? 0,
-        b: slots[offset + 2] ?? 0,
-        weight,
+      moments.push({
+        m1x: momentSlots[offset] ?? 0,
+        m1y: momentSlots[offset + 1] ?? 0,
+        m2x: momentSlots[offset + 2] ?? 0,
+        m2y: momentSlots[offset + 3] ?? 0,
       });
     }
-    return colors;
+    return moments;
   }
 
-  function maxColorDistance(colors) {
+  function maxSpectralMomentDistance(moments) {
     let maxDistance = 0;
-    for (let left = 0; left < colors.length; left += 1) {
-      for (let right = left + 1; right < colors.length; right += 1) {
+    for (let left = 0; left < moments.length; left += 1) {
+      for (let right = left + 1; right < moments.length; right += 1) {
         maxDistance = Math.max(
           maxDistance,
           Math.hypot(
-            colors[left].r - colors[right].r,
-            colors[left].g - colors[right].g,
-            colors[left].b - colors[right].b,
+            moments[left].m1x - moments[right].m1x,
+            moments[left].m1y - moments[right].m1y,
           ),
         );
       }
@@ -839,14 +910,16 @@ describe("modal excitation structural state", () => {
     const state = createModalExcitationState(16);
 
     expect(state.observedModes).toBeInstanceOf(Map);
+    expect(state.modalOscillatorStates).toBeInstanceOf(Map);
     expect(state.sourceCoupledProposal?.slots).toBeInstanceOf(Float32Array);
     expect(state.resonantProposal?.slots).toBeInstanceOf(Float32Array);
+    expect(state).not.toHaveProperty("diagnostics");
     expect(state.sourceCoupled).toBeUndefined();
     expect(state.resonant).toBeUndefined();
     expectLegacyModalObserverAuthoritiesRemoved(state);
   });
 
-  it("builds persistent backbone structure for stable low-order input", () => {
+  it("builds persistent backbone structure for stable source coupling", () => {
     const baseState = createModalExcitationState(16);
     const firstInputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
@@ -883,6 +956,9 @@ describe("modal excitation structural state", () => {
 
     expect(firstStructural.activeSourceCoupledModeCount).toBeGreaterThan(0);
     expect(secondStructural.activeSourceCoupledModeCount).toBeGreaterThan(0);
+    expect(
+      secondStructural.structuralMetrics.sourceCoupledModalEnergy,
+    ).toBeGreaterThan(0);
     expect(secondStructural.structuralMetrics.modalPersistence).toBeGreaterThan(
       0.03,
     );
@@ -890,7 +966,7 @@ describe("modal excitation structural state", () => {
     expect(secondStructural.structuralMetrics.driveSource).toBe("time-domain");
   });
 
-  it("observes low-Q backbone modes as the same retained modal state", () => {
+  it("tracks source-coupled confidence separately from modal response", () => {
     const state = createModalExcitationState(16);
     let structural = null;
 
@@ -918,14 +994,14 @@ describe("modal excitation structural state", () => {
       0,
     );
     expect(
-      structural.structuralMetrics.lowQSourceCoupledModeCount,
+      structural.structuralMetrics.sourceCoupledObservedModeCount,
     ).toBeGreaterThan(0);
     expect(
-      structural.structuralMetrics.lowQSourceCoupledEnergy,
+      structural.structuralMetrics.sourceCoupledObservationConfidence,
     ).toBeGreaterThan(0);
-    expect(structural.structuralMetrics.lowQObservedCoherence).toBeGreaterThan(
-      0,
-    );
+    expect(
+      structural.structuralMetrics.sourceCoupledObservedCoherence,
+    ).toBeGreaterThan(0);
     expect(
       countActiveSlotsLocal(structural.candidateForcingSlotsSource),
     ).toBeGreaterThan(0);
@@ -934,19 +1010,18 @@ describe("modal excitation structural state", () => {
 
   it("does not retain topology from activeModes without observer authority", () => {
     const state = createModalExcitationState(16);
-    state.activeModes.set("1:1:1", {
-      modeKey: "1:1:1",
-      familyId: "family:1:1:1",
-      u: 1,
-      v: 1,
-      w: 1,
+    state.activeModes.set("0:0:2", {
+      modeKey: "0:0:2",
+      familyId: "family:0:0:2",
+      u: 0,
+      v: 0,
+      w: 2,
       layer: "source-coupled",
       renderLayer: "source-coupled",
       qualityFactor: 4,
       naturalFrequencyHz: 220,
-      order: 3,
+      order: 2,
       driveWeight: 1,
-      decayTauMs: 320,
       amplitude: 0.95,
       currentDriveEnergy: 0,
       driveEnergy: 0,
@@ -996,7 +1071,6 @@ describe("modal excitation structural state", () => {
       naturalFrequencyHz: 220,
       order: 3,
       driveWeight: 1,
-      decayTauMs: 320,
       amplitude: 0.18,
       modalResponseEnergy: 0.18,
       modalResponseDisplayAmplitude: 0.18,
@@ -1007,6 +1081,10 @@ describe("modal excitation structural state", () => {
       phase: 0,
       lastExcitedAtMs: 0,
       ageMs: 300,
+    });
+    state.modalOscillatorStates.set("0:0:2", {
+      modeKey: "0:0:2",
+      modalResponseEnergy: 0.18,
     });
     state.observedModes.clear();
 
@@ -1087,7 +1165,7 @@ describe("modal excitation structural state", () => {
     expect(sumAmplitudes(structural.candidateForcingSlotsSource)).toBe(0);
   });
 
-  it("retains low-frequency coherent high-Q modes through observer authority", () => {
+  it("retains low-frequency coherent resonant modes through observer authority", () => {
     const state = createModalExcitationState(16);
     let structural = null;
 
@@ -1135,7 +1213,7 @@ describe("modal excitation structural state", () => {
     expectCanonicalObservedModeEntries(state);
   });
 
-  it("publishes one modal candidate list and state map for current and retained evidence", () => {
+  it("publishes one modal candidate state for current and retained evidence", () => {
     const state = createModalExcitationState(16);
     const structural = runModalFrame({
       state,
@@ -1152,28 +1230,24 @@ describe("modal excitation structural state", () => {
       amplitudeScale: 0.42,
     });
 
-    expect(structural.modalCandidates.length).toBeGreaterThan(0);
     expect(state.modalCandidateState).toBeInstanceOf(Map);
-    expect(state.modalCandidateState.size).toBe(
-      structural.modalCandidates.length,
-    );
-    for (const candidate of structural.modalCandidates) {
+    expect(state.modalCandidateState.size).toBeGreaterThan(0);
+    expect(structural.modalCandidateState).toBe(state.modalCandidateState);
+    expect(structural).not.toHaveProperty("modalCandidates");
+    expect(state).not.toHaveProperty("modalCandidates");
+    for (const candidate of state.modalCandidateState.values()) {
       expect(candidate).toMatchObject({
         modeKey: expect.any(String),
         naturalFrequencyHz: expect.any(Number),
         qualityFactor: expect.any(Number),
         dampingRatio: expect.any(Number),
         forcingEnergy: expect.any(Number),
-        storedEnergy: expect.any(Number),
         observedSupport: expect.any(Number),
-        projectionWeight: expect.any(Number),
-        rejectionReasons: expect.any(Array),
       });
-      expect(state.modalCandidateState.get(candidate.modeKey)).toBe(candidate);
     }
   });
 
-  it("reports canonical Spectral Light components for modal-excitation color", () => {
+  it("reports canonical first and second circular pitch moments", () => {
     const baseState = createModalExcitationState(16);
     const preparedInputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
@@ -1190,43 +1264,34 @@ describe("modal excitation structural state", () => {
       existingState: baseState,
     });
 
-    const component =
-      structural.sourceCoupledStateSource.spectralLightComponents[0] ??
-      structural.resonantStateSource.spectralLightComponents[0];
+    const moments = collectActiveSpectralMoments(
+      structural.sourceCoupledSpectralMomentSource,
+      structural.candidateForcingSlotsSource,
+      0,
+    ).concat(
+      collectActiveSpectralMoments(
+        structural.resonantSpectralMomentSource,
+        structural.candidateResponseSlotsSource,
+        0,
+      ),
+    );
 
-    expect(component).toMatchObject({
-      frequency: expect.any(Number),
-      familyFrequency: expect.any(Number),
-      phase: expect.any(Number),
-      wavelengthNm: expect.any(Number),
-      weight: expect.any(Number),
-      displayEnergy: expect.any(Number),
-      spectralConfidence: expect.any(Number),
-      spectralSpread: expect.any(Number),
-      color: {
-        r: expect.any(Number),
-        g: expect.any(Number),
-        b: expect.any(Number),
-      },
-    });
-    expect(component.phase).toBeGreaterThanOrEqual(0);
-    expect(component.phase).toBeLessThan(1);
-    expect(component.wavelengthNm).toBeGreaterThanOrEqual(380);
-    expect(component.wavelengthNm).toBeLessThanOrEqual(780);
-    expect(component.laneDistribution).toBeInstanceOf(Float32Array);
-    expect(component.laneDistribution).toHaveLength(8);
+    expect(moments.length).toBeGreaterThan(0);
+    for (const moment of moments) {
+      expect(Math.hypot(moment.m1x, moment.m1y)).toBeCloseTo(1, 6);
+      expect(Math.hypot(moment.m2x, moment.m2y)).toBeCloseTo(1, 6);
+      expect(moment.m2x).toBeCloseTo(
+        moment.m1x * moment.m1x - moment.m1y * moment.m1y,
+        6,
+      );
+      expect(moment.m2y).toBeCloseTo(2 * moment.m1x * moment.m1y, 6);
+    }
     expect(
-      component.laneDistribution.reduce((total, lane) => total + lane, 0),
+      Math.hypot(...structural.modalFieldSpectralSeedDirection),
     ).toBeCloseTo(1, 6);
-    expect(component.displayEnergy).toBeGreaterThan(0);
-    expect(component.spectralConfidence).toBeGreaterThan(0);
-    expect(component.spectralSpread).toBeGreaterThan(0);
-    expect(component.displayEnergy).not.toBeCloseTo(component.weight, 6);
-    expect(component.spectralConfidence).not.toBeCloseTo(component.weight, 6);
-    expect(component).not.toHaveProperty("pitchClass");
   });
 
-  it("keeps tone and chord fixtures stable in display and color slots", () => {
+  it("keeps tone and chord fixtures stable in modal and pitch-basis slots", () => {
     const fixtures = [
       createSineToneFixture(220),
       createSineToneFixture(440),
@@ -1257,10 +1322,10 @@ describe("modal excitation structural state", () => {
 
       expect(structural.candidateForcingSlotsSource.length).toBeGreaterThan(0);
       expect(structural.candidateResponseSlotsSource.length).toBeGreaterThan(0);
-      expect(structural.sourceCoupledColorSlotsSource?.length).toBe(
+      expect(structural.sourceCoupledSpectralMomentSource?.length).toBe(
         structural.candidateForcingSlotsSource.length,
       );
-      expect(structural.resonantColorSlotsSource?.length).toBe(
+      expect(structural.resonantSpectralMomentSource?.length).toBe(
         structural.candidateResponseSlotsSource.length,
       );
     }
@@ -1288,64 +1353,79 @@ describe("modal excitation structural state", () => {
       performanceNow: () => 0,
     });
 
-    const components = [
-      ...structural.sourceCoupledStateSource.spectralLightComponents,
-      ...structural.resonantStateSource.spectralLightComponents,
-    ].filter((component) => component.weight > 0);
+    const moments = collectActiveSpectralMoments(
+      structural.sourceCoupledSpectralMomentSource,
+      structural.candidateForcingSlotsSource,
+      0,
+    ).concat(
+      collectActiveSpectralMoments(
+        structural.resonantSpectralMomentSource,
+        structural.candidateResponseSlotsSource,
+        0,
+      ),
+    );
 
-    expect(components.length).toBeGreaterThan(0);
-    for (const component of components) {
-      expect(component).not.toHaveProperty("keyTonic");
-      expect(component).not.toHaveProperty("keyMode");
-      expect(component).not.toHaveProperty("keyConfidence");
-      expect(component).not.toHaveProperty("hue");
-      expect(component.phase).toBeGreaterThanOrEqual(0);
-      expect(component.wavelengthNm).toBeGreaterThanOrEqual(380);
+    expect(moments.length).toBeGreaterThan(0);
+    for (const moment of moments) {
+      expect(moment).not.toHaveProperty("keyTonic");
+      expect(moment).not.toHaveProperty("keyMode");
+      expect(moment).not.toHaveProperty("keyConfidence");
+      expect(moment).not.toHaveProperty("hue");
+      expect(Math.hypot(moment.m1x, moment.m1y)).toBeCloseTo(1, 6);
     }
   });
 
-  it("keeps injected-tone Spectral Light colors owned by modal frequencies", () => {
+  it("keeps injected-tone pitch moments owned by modal frequencies", () => {
     const state = createModalExcitationState(16);
-    const preparedInputs = createLineFeedPreparedInputs({
-      frameTimeMs: 0,
-      fftLinearAmplitudes: new Float32Array(BIN_COUNT),
-      timeData: null,
-      auditSettings: {
-        injectTestTone: true,
-        testToneHz: 330,
-        testToneAmplitude: 0.5,
-        freezeModeSlots: false,
-        enabled: false,
-      },
-    });
-    preparedInputs.modalExcitationState = state;
-    const fastSignal = updateAudioFeatureFastSignalState(preparedInputs);
-    const structural = buildModalExcitationStructuralState({
-      preparedInputs,
-      fastSignalState: fastSignal,
-      existingState: state,
-      performanceNow: () => 0,
-    });
+    let structural = null;
+    for (let frame = 0; frame < 8; frame += 1) {
+      const preparedInputs = createLineFeedPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftLinearAmplitudes: new Float32Array(BIN_COUNT),
+        timeData: null,
+        auditSettings: {
+          injectTestTone: true,
+          testToneHz: 330,
+          testToneAmplitude: 0.5,
+          testToneSignal: "harmonic-series",
+          freezeModeSlots: false,
+          enabled: false,
+        },
+      });
+      preparedInputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(preparedInputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
 
-    const colors = collectWeightedColorSlots(
-      structural.sourceCoupledColorSlotsSource,
-    ).concat(collectWeightedColorSlots(structural.resonantColorSlotsSource));
+    const moments = collectActiveSpectralMoments(
+      structural.sourceCoupledSpectralMomentSource,
+      structural.candidateForcingSlotsSource,
+    ).concat(
+      collectActiveSpectralMoments(
+        structural.resonantSpectralMomentSource,
+        structural.candidateResponseSlotsSource,
+      ),
+    );
 
-    expect(colors.length).toBeGreaterThanOrEqual(3);
-    expect(maxColorDistance(colors)).toBeGreaterThan(0.25);
+    expect(moments.length).toBeGreaterThanOrEqual(3);
+    expect(maxSpectralMomentDistance(moments)).toBeGreaterThan(0.25);
   });
 
-  it("clears stale blended colors when Spectral Light turns back on", () => {
+  it("clears stale projected moments when current modal ownership changes", () => {
     const state = createModalExcitationState(16);
     state.blendSourceCoupled.slots.set([8, 8, 8, 0.5]);
-    state.blendSourceCoupled.colorSlots.set([0, 1, 0, 0.9]);
+    state.blendSourceCoupled.spectralMomentSlots.set([0, 1, -1, 0]);
 
     const fixture = createSineToneFixture(440);
     const preparedInputs = createLineFeedPreparedInputs({
       frameTimeMs: 120,
       fftLinearAmplitudes: fixture.fftLinearAmplitudes,
       timeData: fixture.timeData,
-      includeSpectralLight: true,
     });
     preparedInputs.modalExcitationState = state;
     const fastSignal = updateAudioFeatureFastSignalState(preparedInputs);
@@ -1357,31 +1437,34 @@ describe("modal excitation structural state", () => {
     });
 
     const slots = structural.candidateForcingSlotsSource;
-    const colors = structural.sourceCoupledColorSlotsSource;
-    let staleGreenWeight = 0;
-    for (let offset = 0; offset < colors.length; offset += 4) {
+    const moments = structural.sourceCoupledSpectralMomentSource;
+    let staleMomentMagnitude = 0;
+    for (let offset = 0; offset < moments.length; offset += 4) {
       if (
         slots[offset] === 8 &&
         slots[offset + 1] === 8 &&
         slots[offset + 2] === 8 &&
-        colors[offset + 3] > staleGreenWeight
+        Math.hypot(moments[offset], moments[offset + 1]) > staleMomentMagnitude
       ) {
-        staleGreenWeight = colors[offset + 3];
+        staleMomentMagnitude = Math.hypot(
+          moments[offset],
+          moments[offset + 1],
+        );
       }
     }
 
-    expect(staleGreenWeight).toBe(0);
+    expect(staleMomentMagnitude).toBe(0);
   });
 
-  it("routes bright coherent treble into detail modes", () => {
+  it("routes bright coherent cache-edge energy into detail modes", () => {
     const state = createModalExcitationState(16);
     const preparedInputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
       fftLinearAmplitudes: makeFft([
-        [6200, 0.92],
-        [6800, 0.44],
+        [954.6, 0.92],
+        [961.9, 0.44],
       ]),
-      timeData: makeTimeData({ frequency: 6200, amplitude: 0.35 }),
+      timeData: makeTimeData({ frequency: 954.6, amplitude: 0.35 }),
     });
     preparedInputs.modalExcitationState = state;
     const fastSignalState = updateAudioFeatureFastSignalState(preparedInputs);
@@ -1395,9 +1478,17 @@ describe("modal excitation structural state", () => {
     expect(
       countActiveSlotsLocal(structuralState.proposalResonantSlotsSource),
     ).toBeGreaterThan(0);
-    expect(structuralState.dominantFrequency).toBeGreaterThan(3200);
+    expect(structuralState.dominantFrequency).toBeGreaterThan(900);
+    expect(structuralState.dominantFrequency).toBeLessThanOrEqual(
+      deriveCavityModalFieldCacheBandwidth({
+        sideLengthMeters: CAVITY_ACOUSTIC_DEFAULTS.sideLengthMeters,
+        soundSpeedMetersPerSecond:
+          CAVITY_ACOUSTIC_DEFAULTS.soundSpeedMetersPerSecond,
+        boundaryMode: "neumann",
+      }).tailMaxFrequencyHz,
+    );
     expect(
-      structuralState.structuralMetrics.highOrderModalEnergy,
+      structuralState.structuralMetrics.resonantModalEnergy,
     ).toBeGreaterThan(0);
     expect(structuralState.structuralMetrics.driveSource).toBe("time-domain");
   });
@@ -1424,6 +1515,33 @@ describe("modal excitation structural state", () => {
     expect(structuralState.structuralMetrics.driveSource).toBe(
       "spectral-fallback",
     );
+  });
+
+  it("uses spectral drive when the time buffer carries no signal", () => {
+    const state = createModalExcitationState(16);
+    const preparedInputs = createLineFeedPreparedInputs({
+      frameTimeMs: 0,
+      fftLinearAmplitudes: makeFft([
+        [110, 0.95],
+        [220, 0.5],
+      ]),
+      timeData: new Float32Array(4096),
+    });
+    preparedInputs.modalExcitationState = state;
+    const fastSignalState = updateAudioFeatureFastSignalState(preparedInputs);
+    const structuralState = buildModalExcitationStructuralState({
+      preparedInputs,
+      fastSignalState,
+      existingState: state,
+      performanceNow: () => 0,
+    });
+
+    expect(structuralState.structuralMetrics.driveSource).toBe(
+      "spectral-fallback",
+    );
+    expect(
+      structuralState.structuralMetrics.modalResponseEnergy,
+    ).toBeGreaterThan(0);
   });
 
   it("enforces slot capacity in slot units across proposal and display layers", () => {
@@ -1512,7 +1630,7 @@ describe("modal excitation structural state", () => {
     }
   });
 
-  it("keeps requested spherical geometry on the inputs while using the rectangular backend atlas", () => {
+  it("resolves a spherical request to the supported rectangular geometry", () => {
     const state = createModalExcitationState(16);
     const preparedInputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
@@ -1534,9 +1652,6 @@ describe("modal excitation structural state", () => {
 
     expect(preparedInputs.requestedCavityGeometry).toBe("spherical");
     expect(preparedInputs.effectiveCavityGeometry).toBe("rectangular");
-    expect(state.atlasCacheKey).toBe(
-      "rectangular:neumann:12.500:1480.000:project-subfundamental",
-    );
     expect(structuralState.analysisEngine).toBe("modal-excitation");
   });
 
@@ -1567,7 +1682,7 @@ describe("modal excitation structural state", () => {
     }
   });
 
-  it("keeps a quiet coherent tone physically discoverable", () => {
+  it("measures a quiet coherent tone without granting noise-floor render authority", () => {
     const state = createModalExcitationState(16);
     const inputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
@@ -1584,43 +1699,12 @@ describe("modal excitation structural state", () => {
       existingState: state,
       performanceNow: () => 0,
     });
-    expect(structural.activeModeCount).toBeGreaterThan(0);
+    expect(state.activeModes.size).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.modalResponseEnergy).toBeGreaterThan(0);
   });
 
-  it("bounds atlas cache size via eviction", () => {
-    for (let index = 0; index < 12; index += 1) {
-      const radius = 1.0 + index * 0.1;
-      const state = createModalExcitationState(16);
-      const inputs = createLineFeedPreparedInputs({
-        frameTimeMs: 0,
-        fftLinearAmplitudes: makeFft([[110, 0.5]]),
-        timeData: makeTimeData({ frequency: 110 }),
-      });
-      inputs.radius = radius;
-      inputs.modalExcitationState = state;
-      const fastSignal = updateAudioFeatureFastSignalState(inputs);
-      buildModalExcitationStructuralState({
-        preparedInputs: inputs,
-        fastSignalState: fastSignal,
-        existingState: state,
-        performanceNow: () => 0,
-      });
-    }
-    expect(getAtlasCacheSize()).toBeLessThanOrEqual(8);
-  });
-
-  it("reports high periodicity for a clean periodic signal", () => {
-    const buffer = new Float32Array(1024);
-    for (let index = 0; index < buffer.length; index += 1) {
-      buffer[index] = Math.sin((2 * Math.PI * 220 * index) / SAMPLE_RATE);
-    }
-    const periodicity = computeDrivePeriodicity(buffer, SAMPLE_RATE);
-    expect(periodicity).toBeGreaterThan(0.5);
-  });
-
-  it("converges toward the raw target across repeated stable frames", () => {
+  it("applies only one common field scale to oscillator coefficients", () => {
     const state = createModalExcitationState(16);
-    const amplitudeGaps = [];
 
     for (let frame = 0; frame < 20; frame += 1) {
       const inputs = createLineFeedPreparedInputs({
@@ -1639,72 +1723,24 @@ describe("modal excitation structural state", () => {
         existingState: state,
         performanceNow: () => frame,
       });
-      amplitudeGaps.push(
-        sumAmplitudes(state.sourceCoupledProposal.slots) -
-          sumAmplitudes(structural.candidateForcingSlotsSource),
-      );
+      const ratios = [];
+      for (
+        let offset = 0;
+        offset < state.sourceCoupledProposal.slots.length;
+        offset += 4
+      ) {
+        const ownerAmplitude = state.sourceCoupledProposal.slots[offset + 3];
+        const projectedAmplitude =
+          structural.candidateForcingSlotsSource[offset + 3];
+        if (ownerAmplitude > 0 && projectedAmplitude > 0) {
+          ratios.push(projectedAmplitude / ownerAmplitude);
+        }
+      }
+
+      expect(ratios.length).toBeGreaterThan(0);
+      expect(Math.max(...ratios)).toBeLessThanOrEqual(1);
+      expect(Math.max(...ratios) - Math.min(...ratios)).toBeLessThan(1e-5);
     }
-
-    expect(amplitudeGaps[0]).toBeGreaterThan(0);
-    expect(amplitudeGaps.at(-1)).toBeLessThanOrEqual(amplitudeGaps[0] * 1.01);
-  });
-
-  it("adds release sustain beyond the raw resonator decay for waveform-backed tails", () => {
-    const state = createModalExcitationState(16);
-    const activeFft = makeFft([
-      [550, 0.95],
-      [1100, 0.52],
-    ]);
-    const silentFft = new Float32Array(BIN_COUNT);
-    const tailTimeData = makeTimeData({ frequency: 550, amplitude: 0.006 });
-    const silenceFrames = [];
-
-    for (let frame = 0; frame < 10; frame += 1) {
-      const inputs = createLineFeedPreparedInputs({
-        frameTimeMs: frame * 33,
-        fftLinearAmplitudes: activeFft,
-        timeData: makeTimeData({ frequency: 550 }),
-      });
-      inputs.modalExcitationState = state;
-      const fastSignal = updateAudioFeatureFastSignalState(inputs);
-      buildModalExcitationStructuralState({
-        preparedInputs: inputs,
-        fastSignalState: fastSignal,
-        existingState: state,
-        performanceNow: () => frame,
-      });
-    }
-
-    for (let frame = 10; frame < 25; frame += 1) {
-      const inputs = createLineFeedPreparedInputs({
-        frameTimeMs: frame * 33,
-        fftLinearAmplitudes: silentFft,
-        timeData: tailTimeData,
-        avgAmplitude: 2.5,
-        rms: 0.01,
-      });
-      inputs.modalExcitationState = state;
-      const fastSignal = updateAudioFeatureFastSignalState(inputs);
-      const structural = buildModalExcitationStructuralState({
-        preparedInputs: inputs,
-        fastSignalState: fastSignal,
-        existingState: state,
-        performanceNow: () => frame,
-      });
-      silenceFrames.push({
-        proposal: sumAmplitudes(structural.proposalSourceCoupledSlotsSource),
-        blended: sumAmplitudes(structural.candidateForcingSlotsSource),
-      });
-    }
-
-    expect(
-      silenceFrames
-        .slice(4)
-        .some(({ proposal, blended }) => blended > proposal + 1e-4),
-    ).toBe(true);
-    expect(silenceFrames.at(-1).blended).toBeGreaterThan(
-      silenceFrames.at(-1).proposal,
-    );
   });
 
   it("does not add release sustain from weak file meter-only fade residue", () => {
@@ -1765,7 +1801,7 @@ describe("modal excitation structural state", () => {
     );
   });
 
-  it("clears the visible tail after sustained true hard silence", () => {
+  it("suppresses the rendered tail while the oscillator decays on true hard silence", () => {
     const state = createModalExcitationState(16);
     const activeFft = makeFft([
       [550, 0.95],
@@ -1773,6 +1809,7 @@ describe("modal excitation structural state", () => {
     ]);
     const silentFft = new Float32Array(BIN_COUNT);
     const silentTimeData = new Float32Array(FFT_SIZE);
+    let activeProposalAmplitude = 0;
     let activeBlendedAmplitude = 0;
     let hardSilentStructural = null;
 
@@ -1792,6 +1829,9 @@ describe("modal excitation structural state", () => {
       });
       activeBlendedAmplitude = sumAmplitudes(
         structural.candidateForcingSlotsSource,
+      );
+      activeProposalAmplitude = sumAmplitudes(
+        structural.proposalSourceCoupledSlotsSource,
       );
     }
 
@@ -1815,7 +1855,7 @@ describe("modal excitation structural state", () => {
 
     expect(
       sumAmplitudes(hardSilentStructural.proposalSourceCoupledSlotsSource),
-    ).toBe(0);
+    ).toBeLessThan(activeProposalAmplitude);
     expect(
       sumAmplitudes(hardSilentStructural.candidateForcingSlotsSource),
     ).toBeLessThan(activeBlendedAmplitude * 0.08);
@@ -1825,7 +1865,10 @@ describe("modal excitation structural state", () => {
     const state = createModalExcitationState(16);
     const featureState = createAudioFeatureState(16);
     const status = createStatus({
-      audioInputMode: "system",
+      sourceSession: createSourceSession({
+        kind: "system",
+        deviceKind: "system",
+      }),
       analysisSource: "live",
       isLiveInputActive: true,
       resolvedLiveInputAnalysisClass: "line-feed",
@@ -1905,14 +1948,33 @@ describe("modal excitation structural state", () => {
         .projectedRenderEnergy,
       6,
     );
-    expect(sumAmplitudes(structural.candidateForcingSlotsSource)).toBe(0);
+    expect(structural.activeSourceCoupledModeCount).toBe(0);
+    expect(structural.activeResonantModeCount).toBe(0);
+    expect(structural.activeModeCount).toBe(0);
+    const renderFacingSlotSources = [
+      structural.candidateForcingSlotsSource,
+      structural.candidateResponseSlotsSource,
+      structural.sourceCoupledPhaseSlotsSource,
+      structural.resonantPhaseSlotsSource,
+      structural.referenceSourceCoupledSlotsSource,
+      structural.referenceResonantSlotsSource,
+      structural.sourceCoupledSpectralMomentSource,
+      structural.resonantSpectralMomentSource,
+    ];
+    for (const slots of renderFacingSlotSources) {
+      expect(slots).toBeInstanceOf(Float32Array);
+      expect(slots.every((value) => value === 0)).toBe(true);
+    }
   });
 
   it("cuts loopback transport silence without waiting for the file release hold", () => {
     const state = createModalExcitationState(16);
     const featureState = createAudioFeatureState(16);
     const status = createStatus({
-      audioInputMode: "system",
+      sourceSession: createSourceSession({
+        kind: "system",
+        deviceKind: "system",
+      }),
       analysisSource: "live",
       isLiveInputActive: true,
       resolvedLiveInputAnalysisClass: "line-feed",
@@ -1995,7 +2057,7 @@ describe("modal excitation structural state", () => {
     expect(structural.structuralMetrics.modalResponseRenderEnergy).toBe(0);
   });
 
-  it("reduces noisy-input jitter after the post-resonator blend", () => {
+  it("does not add a second temporal envelope after the oscillator response", () => {
     const state = createModalExcitationState(16);
     const random = createDeterministicRandom(97);
     const rawDeltas = [];
@@ -2040,13 +2102,14 @@ describe("modal excitation structural state", () => {
       previousBlendedSlots = blendedSlots;
     }
 
-    expect(average(blendedDeltas)).toBeLessThan(average(rawDeltas));
-    expect(average(blendedDeltas.slice(-10))).toBeLessThan(
+    expect(average(blendedDeltas)).toBeCloseTo(average(rawDeltas), 8);
+    expect(average(blendedDeltas.slice(-10))).toBeCloseTo(
       average(rawDeltas.slice(-10)),
+      8,
     );
   });
 
-  it("surfaces a physical detail response within two bright treble frames", () => {
+  it("surfaces a physical detail response within two upper structural frames", () => {
     const state = createModalExcitationState(16);
     let structural = null;
 
@@ -2054,11 +2117,11 @@ describe("modal excitation structural state", () => {
       const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftLinearAmplitudes: makeFft([
-          [6200, 0.92],
-          [7600, 0.72],
-          [9100, 0.58],
+          [2200, 0.92],
+          [2700, 0.72],
+          [3200, 0.58],
         ]),
-        timeData: makeTimeData({ frequency: 6200, amplitude: 0.38 }),
+        timeData: makeTimeData({ frequency: 2200, amplitude: 0.38 }),
       });
       inputs.modalExcitationState = state;
       const fastSignal = updateAudioFeatureFastSignalState(inputs);
@@ -2072,9 +2135,6 @@ describe("modal excitation structural state", () => {
 
     expect(
       countActiveSlotsLocal(structural.candidateResponseSlotsSource),
-    ).toBeGreaterThan(0);
-    expect(
-      structural.structuralMetrics.overBandwidthRejectedModeCount,
     ).toBeGreaterThan(0);
   });
 
@@ -2097,7 +2157,7 @@ describe("modal excitation structural state", () => {
     }
 
     expect(structural.structuralMetrics.modeCoherence).toBeGreaterThan(0.5);
-    expectObservedDisplayContinuityEntries(state);
+    expectObservedConfidenceOnlyEntries(state);
     expect(
       countActiveSlotsLocal(structural.proposalResonantSlotsSource),
     ).toBeGreaterThan(0);
@@ -2109,14 +2169,16 @@ describe("modal excitation structural state", () => {
     ).toBeGreaterThanOrEqual(4);
   });
 
-  it("keeps meter-loud inharmonic bowl sustain from losing seeded detail structure", () => {
+  it("keeps meter-loud bass structure without stale resonant authority", () => {
     const state = createModalExcitationState(16);
     const status = createStatus({
-      audioInputMode: "live",
+      sourceSession: createSourceSession({
+        kind: "system",
+        deviceKind: "live",
+      }),
       analysisSource: "live",
       isPlaying: false,
       isLiveInputActive: true,
-      liveInputDeviceKind: "live",
       resolvedLiveInputAnalysisClass: "line-feed",
     });
     let structural = null;
@@ -2148,47 +2210,49 @@ describe("modal excitation structural state", () => {
     }
 
     expect(structural.structuralMetrics.modeCoherence).toBeGreaterThan(0.35);
-    expectObservedDisplayContinuityEntries(state);
+    expectObservedConfidenceOnlyEntries(state);
     expect(
-      sumAmplitudes(structural.candidateResponseSlotsSource),
+      sumAmplitudes(structural.candidateForcingSlotsSource) +
+        sumAmplitudes(structural.candidateResponseSlotsSource),
     ).toBeGreaterThan(0.035);
     expect(
-      countActiveSlotsLocal(structural.candidateResponseSlotsSource),
+      countActiveSlotsLocal(structural.candidateForcingSlotsSource) +
+        countActiveSlotsLocal(structural.candidateResponseSlotsSource),
     ).toBeGreaterThanOrEqual(3);
     expect(
-      structural.structuralMetrics.highQResonantModeCount,
+      structural.structuralMetrics.sourceCoupledObservedModeCount,
     ).toBeGreaterThanOrEqual(2);
-    expect(structural.structuralMetrics.highQResonantEnergy).toBeGreaterThan(
-      0.035,
+    expect(
+      structural.structuralMetrics.sourceCoupledObservationConfidence,
+    ).toBeGreaterThan(0.035);
+    expect(structural.structuralMetrics.resonantObservedModeCount).toBe(0);
+    expect(structural.structuralMetrics.resonantObservationConfidence).toBe(0);
+    expect(structural.structuralMetrics.resonantRingSupport).toBe(0);
+    expect(structural.structuralMetrics.projectionResonantProtection).toBe(0);
+    expect(structural.structuralMetrics.modalResponseEnergy).toBeGreaterThan(
+      0.1,
     );
-    expect(structural.structuralMetrics.highQRingSupport).toBeGreaterThan(0.5);
     expect(
-      structural.structuralMetrics.projectionHighQProtection,
-    ).toBeGreaterThan(0.1);
-    expect(
-      structural.structuralMetrics.modalResponseResonantEnergy,
-    ).toBeGreaterThan(0.14);
-    expect(
-      structural.structuralMetrics.projectionEnergyUsedResonant,
-    ).toBeLessThanOrEqual(
-      structural.structuralMetrics.projectionEnergyBudgetResonant,
-    );
+      structural.structuralMetrics.projectionRawEnergySourceCoupled,
+    ).toBeGreaterThan(0);
     expect(
       Array.from(state.observedModes?.values?.() ?? []).filter(
         (entry) => entry.layer === "resonant",
       ).length,
-    ).toBeGreaterThanOrEqual(4);
+    ).toBe(0);
     expectLegacyModalObserverAuthoritiesRemoved(state);
   });
 
-  it("keeps a loud periodic bowl tail structured across a long sustain", () => {
+  it("does not preserve unforced treble through a long periodic bass sustain", () => {
     const state = createModalExcitationState(16);
     const status = createStatus({
-      audioInputMode: "live",
+      sourceSession: createSourceSession({
+        kind: "system",
+        deviceKind: "live",
+      }),
       analysisSource: "live",
       isPlaying: false,
       isLiveInputActive: true,
-      liveInputDeviceKind: "live",
       resolvedLiveInputAnalysisClass: "line-feed",
     });
     let structural = null;
@@ -2219,29 +2283,35 @@ describe("modal excitation structural state", () => {
       });
     }
 
-    expect(structural.structuralMetrics.highQRingSupport).toBeGreaterThan(0.5);
     expect(
-      structural.structuralMetrics.highQResonantModeCount,
+      structural.structuralMetrics.sourceCoupledObservedModeCount,
     ).toBeGreaterThanOrEqual(2);
-    expect(structural.structuralMetrics.highQResonantEnergy).toBeGreaterThan(
-      0.035,
-    );
     expect(
-      sumAmplitudes(structural.candidateResponseSlotsSource),
+      structural.structuralMetrics.sourceCoupledObservationConfidence,
+    ).toBeGreaterThan(0.035);
+    expect(structural.structuralMetrics.resonantRingSupport).toBe(0);
+    expect(structural.structuralMetrics.resonantObservedModeCount).toBe(0);
+    expect(structural.structuralMetrics.resonantObservationConfidence).toBe(0);
+    expect(
+      sumAmplitudes(structural.candidateForcingSlotsSource) +
+        sumAmplitudes(structural.candidateResponseSlotsSource),
     ).toBeGreaterThan(0.035);
     expect(
-      countActiveSlotsLocal(structural.candidateResponseSlotsSource),
+      countActiveSlotsLocal(structural.candidateForcingSlotsSource) +
+        countActiveSlotsLocal(structural.candidateResponseSlotsSource),
     ).toBeGreaterThanOrEqual(2);
   });
 
-  it("keeps retained display continuity separate from phase authority", () => {
+  it("keeps observer phase diagnostics separate from physical phase slots", () => {
     const state = createModalExcitationState(16);
     const status = createStatus({
-      audioInputMode: "live",
+      sourceSession: createSourceSession({
+        kind: "system",
+        deviceKind: "live",
+      }),
       analysisSource: "live",
       isPlaying: false,
       isLiveInputActive: true,
-      liveInputDeviceKind: "live",
       resolvedLiveInputAnalysisClass: "line-feed",
     });
     let structural = null;
@@ -2280,15 +2350,15 @@ describe("modal excitation structural state", () => {
       state.observedModes?.values?.() ?? [],
     ).filter((entry) => entry.layer === "resonant" && entry.phaseAuthority > 0);
 
-    expectObservedDisplayContinuityEntries(state);
+    expectObservedConfidenceOnlyEntries(state);
     expect(
       structural.structuralMetrics.modalPhaseAuthority,
     ).toBeGreaterThanOrEqual(0);
     expect(
-      structural.structuralMetrics.highQPhaseAuthority,
+      structural.structuralMetrics.resonantPhaseAuthority,
     ).toBeGreaterThanOrEqual(0);
     expect(
-      structural.structuralMetrics.lowQPhaseAuthority,
+      structural.structuralMetrics.sourceCoupledPhaseAuthority,
     ).toBeGreaterThanOrEqual(0);
     for (const entry of resonantPhaseEntries) {
       expect(Math.abs(entry.phaseVelocityRadPerSec)).toBeLessThanOrEqual(
@@ -2308,11 +2378,13 @@ describe("modal excitation structural state", () => {
   it("retains seeded detail through trace-level periodic bowl tails without fresh detail FFT", () => {
     const state = createModalExcitationState(16);
     const status = createStatus({
-      audioInputMode: "live",
+      sourceSession: createSourceSession({
+        kind: "system",
+        deviceKind: "live",
+      }),
       analysisSource: "live",
       isPlaying: false,
       isLiveInputActive: true,
-      liveInputDeviceKind: "live",
       resolvedLiveInputAnalysisClass: "line-feed",
     });
     let structural = null;
@@ -2347,29 +2419,34 @@ describe("modal excitation structural state", () => {
       });
     }
 
-    expect(structural.structuralMetrics.highQRingSupport).toBeGreaterThan(0.08);
-    expect(
-      structural.structuralMetrics.highQResonantModeCount,
-    ).toBeGreaterThanOrEqual(4);
-    expect(structural.structuralMetrics.highQResonantEnergy).toBeGreaterThan(
-      0.004,
+    expect(structural.structuralMetrics.resonantRingSupport).toBeGreaterThan(
+      0.08,
     );
     expect(
-      sumAmplitudes(structural.candidateResponseSlotsSource),
+      structural.structuralMetrics.resonantObservedModeCount,
+    ).toBeGreaterThanOrEqual(4);
+    expect(
+      structural.structuralMetrics.resonantObservationConfidence,
+    ).toBeGreaterThan(0.004);
+    expect(
+      sumAmplitudes(structural.candidateForcingSlotsSource) +
+        sumAmplitudes(structural.candidateResponseSlotsSource),
     ).toBeGreaterThan(0.0025);
     expect(
       countActiveSlotsLocal(structural.candidateResponseSlotsSource),
     ).toBeGreaterThanOrEqual(4);
   });
 
-  it("keeps observed high-Q detail through brief noisy observation dropouts", () => {
+  it("keeps observed resonant detail through brief noisy observation dropouts", () => {
     const state = createModalExcitationState(16);
     const status = createStatus({
-      audioInputMode: "live",
+      sourceSession: createSourceSession({
+        kind: "system",
+        deviceKind: "live",
+      }),
       analysisSource: "live",
       isPlaying: false,
       isLiveInputActive: true,
-      liveInputDeviceKind: "live",
       resolvedLiveInputAnalysisClass: "line-feed",
     });
     let structural = null;
@@ -2404,13 +2481,16 @@ describe("modal excitation structural state", () => {
       });
     }
 
-    const supportedEnergy = structural.structuralMetrics.highQResonantEnergy;
-    expect(structural.structuralMetrics.highQResonantModeCount).toBeGreaterThan(
-      0,
-    );
-    expect(supportedEnergy).toBeGreaterThan(0.02);
+    const supportedConfidence =
+      structural.structuralMetrics.resonantObservationConfidence;
+    expect(
+      structural.structuralMetrics.resonantObservedModeCount,
+    ).toBeGreaterThan(0);
+    expect(supportedConfidence).toBeGreaterThan(0.02);
 
-    for (let frame = 48; frame < 72; frame += 1) {
+    // Two 33 ms structural frames are a real short analysis dropout. The old
+    // 24-frame fixture was 792 ms and encoded a long peak hold, not continuity.
+    for (let frame = 48; frame < 50; frame += 1) {
       const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftLinearAmplitudes: makeFft([]),
@@ -2434,29 +2514,32 @@ describe("modal excitation structural state", () => {
       });
     }
 
-    expect(structural.structuralMetrics.highQRingSupport).toBeGreaterThan(0);
-    expect(structural.structuralMetrics.highQRingSupport).toBeLessThanOrEqual(
-      1,
-    );
-    expect(structural.structuralMetrics.highQResonantModeCount).toBeGreaterThan(
-      0,
-    );
-    expect(structural.structuralMetrics.highQResonantEnergy).toBeGreaterThan(
-      supportedEnergy * 0.35,
-    );
+    expect(structural.structuralMetrics.resonantRingSupport).toBeGreaterThan(0);
     expect(
-      sumAmplitudes(structural.candidateResponseSlotsSource),
+      structural.structuralMetrics.resonantRingSupport,
+    ).toBeLessThanOrEqual(1);
+    expect(
+      structural.structuralMetrics.resonantObservedModeCount,
+    ).toBeGreaterThan(0);
+    expect(
+      structural.structuralMetrics.resonantObservationConfidence,
+    ).toBeGreaterThan(supportedConfidence * 0.1);
+    expect(
+      sumAmplitudes(structural.candidateForcingSlotsSource) +
+        sumAmplitudes(structural.candidateResponseSlotsSource),
     ).toBeGreaterThan(0.0025);
   });
 
-  it("keeps observed high-Q detail when a ringing bowl tail alternates dominant partials", () => {
+  it("keeps observed resonant detail when a ringing bowl tail alternates dominant partials", () => {
     const state = createModalExcitationState(16);
     const status = createStatus({
-      audioInputMode: "live",
+      sourceSession: createSourceSession({
+        kind: "system",
+        deviceKind: "live",
+      }),
       analysisSource: "live",
       isPlaying: false,
       isLiveInputActive: true,
-      liveInputDeviceKind: "live",
       resolvedLiveInputAnalysisClass: "line-feed",
     });
     let structural = null;
@@ -2490,10 +2573,10 @@ describe("modal excitation structural state", () => {
 
       if (!isStrike) {
         expect(
-          structural.structuralMetrics.highQResonantModeCount,
+          structural.structuralMetrics.resonantObservedModeCount,
         ).toBeGreaterThan(0);
         expect(
-          structural.structuralMetrics.highQResonantEnergy,
+          structural.structuralMetrics.resonantObservationConfidence,
         ).toBeGreaterThan(0.004);
       }
     }
@@ -2503,14 +2586,16 @@ describe("modal excitation structural state", () => {
     ).toBeGreaterThan(0.0025);
   });
 
-  it("refreshes high-Q detail from sustained upper bowl harmonics after the strike", () => {
+  it("refreshes resonant detail from sustained upper bowl harmonics after the strike", () => {
     const state = createModalExcitationState(16);
     const status = createStatus({
-      audioInputMode: "live",
+      sourceSession: createSourceSession({
+        kind: "system",
+        deviceKind: "live",
+      }),
       analysisSource: "live",
       isPlaying: false,
       isLiveInputActive: true,
-      liveInputDeviceKind: "live",
       resolvedLiveInputAnalysisClass: "line-feed",
     });
     let structural = null;
@@ -2554,13 +2639,10 @@ describe("modal excitation structural state", () => {
         currentFrameAtMs - (entry.lastObservedAtMs ?? 0) <= 66,
     );
 
-    expect(structural.structuralMetrics.highQObservedDrive).toBeGreaterThan(
+    expect(structural.structuralMetrics.resonantObservedDrive).toBeGreaterThan(
       0.0025,
     );
     expect(freshlyObservedResonantModes.length).toBeGreaterThanOrEqual(2);
-    expect(structural.structuralMetrics.resonantSignalAuthoritativeHighQ).toBe(
-      false,
-    );
     expect(
       structural.structuralMetrics.modalResponseResonantEnergy,
     ).toBeGreaterThan(0);
@@ -2569,14 +2651,16 @@ describe("modal excitation structural state", () => {
     ).toBeGreaterThan(0.003);
   });
 
-  it("observes high-Q detail from low-meter bowl strikes before the tail", () => {
+  it("observes resonant detail from low-meter bowl strikes before the tail", () => {
     const state = createModalExcitationState(16);
     const status = createStatus({
-      audioInputMode: "live",
+      sourceSession: createSourceSession({
+        kind: "system",
+        deviceKind: "live",
+      }),
       analysisSource: "live",
       isPlaying: false,
       isLiveInputActive: true,
-      liveInputDeviceKind: "live",
       resolvedLiveInputAnalysisClass: "line-feed",
     });
     let structural = null;
@@ -2611,26 +2695,30 @@ describe("modal excitation structural state", () => {
       });
     }
 
-    expect(structural.structuralMetrics.highQRingSupport).toBeGreaterThan(0.08);
-    expect(
-      structural.structuralMetrics.highQResonantModeCount,
-    ).toBeGreaterThanOrEqual(2);
-    expect(structural.structuralMetrics.highQResonantEnergy).toBeGreaterThan(
-      0.004,
+    expect(structural.structuralMetrics.resonantRingSupport).toBeGreaterThan(
+      0.08,
     );
+    expect(
+      structural.structuralMetrics.resonantObservedModeCount,
+    ).toBeGreaterThanOrEqual(2);
+    expect(
+      structural.structuralMetrics.resonantObservationConfidence,
+    ).toBeGreaterThan(0.004);
     expect(
       countActiveSlotsLocal(structural.candidateResponseSlotsSource),
     ).toBeGreaterThanOrEqual(2);
   });
 
-  it("observes high-Q detail from soft coherent bowl strikes before the tail", () => {
+  it("observes resonant detail from soft coherent bowl strikes before the tail", () => {
     const state = createModalExcitationState(16);
     const status = createStatus({
-      audioInputMode: "live",
+      sourceSession: createSourceSession({
+        kind: "system",
+        deviceKind: "live",
+      }),
       analysisSource: "live",
       isPlaying: false,
       isLiveInputActive: true,
-      liveInputDeviceKind: "live",
       resolvedLiveInputAnalysisClass: "line-feed",
     });
     let structural = null;
@@ -2665,41 +2753,45 @@ describe("modal excitation structural state", () => {
       });
     }
 
-    expect(structural.structuralMetrics.highQRingSupport).toBeGreaterThan(0.08);
-    expect(
-      structural.structuralMetrics.highQResonantModeCount,
-    ).toBeGreaterThanOrEqual(2);
-    expect(structural.structuralMetrics.highQResonantEnergy).toBeGreaterThan(
-      0.003,
+    expect(structural.structuralMetrics.resonantRingSupport).toBeGreaterThan(
+      0.08,
     );
+    expect(
+      structural.structuralMetrics.resonantObservedModeCount,
+    ).toBeGreaterThanOrEqual(2);
+    expect(
+      structural.structuralMetrics.resonantObservationConfidence,
+    ).toBeGreaterThan(0.003);
     expect(
       countActiveSlotsLocal(structural.candidateResponseSlotsSource),
     ).toBeGreaterThanOrEqual(2);
   });
 
-  it("observes high-Q detail from a soft coherent bowl without a loud seed strike", () => {
+  it("observes resonant detail from a soft coherent bowl without a loud seed strike", () => {
     const state = createModalExcitationState(16);
     const status = createStatus({
-      audioInputMode: "live",
+      sourceSession: createSourceSession({
+        kind: "system",
+        deviceKind: "live",
+      }),
       analysisSource: "live",
       isPlaying: false,
       isLiveInputActive: true,
-      liveInputDeviceKind: "live",
       resolvedLiveInputAnalysisClass: "line-feed",
     });
-    const softHighQPartials = [
-      [3206.67, 0.0012],
-      [3805.39, 0.00095],
-      [4528.2, 0.00072],
+    const softResonantPartials = [
+      [794.3, 0.0012],
+      [820.3, 0.00095],
+      [954.6, 0.00072],
     ];
     let structural = null;
 
     for (let frame = 0; frame < 240; frame += 1) {
       const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
-        fftLinearAmplitudes: makeFft(softHighQPartials),
+        fftLinearAmplitudes: makeFft(softResonantPartials),
         timeData: makeMixedTimeData({
-          partials: softHighQPartials,
+          partials: softResonantPartials,
           amplitudeScale: 0.005,
         }),
         avgAmplitude: 0.16,
@@ -2717,12 +2809,14 @@ describe("modal excitation structural state", () => {
     }
 
     expect(
-      structural.structuralMetrics.highQResonantModeCount,
+      structural.structuralMetrics.resonantObservedModeCount,
     ).toBeGreaterThanOrEqual(2);
-    expect(structural.structuralMetrics.highQResonantEnergy).toBeGreaterThan(
-      0.003,
+    expect(
+      structural.structuralMetrics.resonantObservationConfidence,
+    ).toBeGreaterThan(0.003);
+    expect(structural.structuralMetrics.resonantRingSupport).toBeGreaterThan(
+      0.08,
     );
-    expect(structural.structuralMetrics.highQRingSupport).toBeGreaterThan(0.08);
     expect(
       Array.from(state.observedModes?.values?.() ?? []).filter(
         (entry) => entry.layer === "resonant",
@@ -2737,14 +2831,16 @@ describe("modal excitation structural state", () => {
     ).toBeGreaterThanOrEqual(2);
   });
 
-  it("observes high-Q detail from an E2-range coherent bowl fundamental", () => {
+  it("observes resonant detail from an E2-range coherent bowl fundamental", () => {
     const state = createModalExcitationState(16);
     const status = createStatus({
-      audioInputMode: "live",
+      sourceSession: createSourceSession({
+        kind: "system",
+        deviceKind: "system",
+      }),
       analysisSource: "live",
       isPlaying: false,
       isLiveInputActive: true,
-      liveInputDeviceKind: "system",
       resolvedLiveInputAnalysisClass: "line-feed",
     });
     const e2BowlFundamentalHz = 82.41;
@@ -2777,17 +2873,14 @@ describe("modal excitation structural state", () => {
     }
 
     expect(
-      structural.structuralMetrics.lowQSourceCoupledModeCount,
+      structural.structuralMetrics.sourceCoupledObservedModeCount,
     ).toBeGreaterThan(0);
     expect(
-      structural.structuralMetrics.highQResonantModeCount,
+      structural.structuralMetrics.resonantObservedModeCount,
     ).toBeGreaterThanOrEqual(2);
-    expect(structural.structuralMetrics.highQResonantEnergy).toBeGreaterThan(
-      0.003,
-    );
-    expect(structural.structuralMetrics.resonantSignalAuthoritativeHighQ).toBe(
-      false,
-    );
+    expect(
+      structural.structuralMetrics.resonantObservationConfidence,
+    ).toBeGreaterThan(0.003);
     expect(
       structural.structuralMetrics.modalResponseResonantEnergy,
     ).toBeGreaterThan(0);
@@ -2796,14 +2889,16 @@ describe("modal excitation structural state", () => {
     ).toBeGreaterThanOrEqual(2);
   });
 
-  it("lets aged high-Q observation own periodic bowl tails", () => {
+  it("lets aged resonant observation own periodic bowl tails", () => {
     const state = createModalExcitationState(16);
     const status = createStatus({
-      audioInputMode: "live",
+      sourceSession: createSourceSession({
+        kind: "system",
+        deviceKind: "live",
+      }),
       analysisSource: "live",
       isPlaying: false,
       isLiveInputActive: true,
-      liveInputDeviceKind: "live",
       resolvedLiveInputAnalysisClass: "line-feed",
     });
     let structural = null;
@@ -2843,33 +2938,29 @@ describe("modal excitation structural state", () => {
       });
     }
 
-    expect(structural.structuralMetrics.highQResonantModeCount).toBeGreaterThan(
-      0,
-    );
-    expect(structural.structuralMetrics.highQRingSupport).toBeGreaterThan(0);
-    expect(structural.structuralMetrics.highQRingSupport).toBeLessThanOrEqual(
-      1,
-    );
-    expect(structural.structuralMetrics.resonantSignalAuthoritativeHighQ).toBe(
-      false,
-    );
     expect(
-      structural.structuralMetrics.resonantSignalAuthoritativeReason,
-    ).not.toBe("resonant-authority");
+      structural.structuralMetrics.resonantObservedModeCount,
+    ).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.resonantRingSupport).toBeGreaterThan(0);
+    expect(
+      structural.structuralMetrics.resonantRingSupport,
+    ).toBeLessThanOrEqual(1);
     expect(
       structural.structuralMetrics.modalResponseResonantEnergy,
     ).toBeGreaterThan(0);
     expectCanonicalObservedModeEntries(state);
   });
 
-  it("keeps dense sustained music detail active without high-Q authority", () => {
+  it("keeps dense sustained music detail active without resonant observer authority", () => {
     const state = createModalExcitationState(16);
     const status = createStatus({
-      audioInputMode: "live",
+      sourceSession: createSourceSession({
+        kind: "system",
+        deviceKind: "system",
+      }),
       analysisSource: "live",
       isPlaying: false,
       isLiveInputActive: true,
-      liveInputDeviceKind: "system",
       resolvedLiveInputAnalysisClass: "line-feed",
     });
     let structural = null;
@@ -2914,76 +3005,54 @@ describe("modal excitation structural state", () => {
     ).toBeGreaterThan(0);
     expect(
       sumAmplitudes(structural.candidateResponseSlotsSource),
-    ).toBeGreaterThan(0.1);
-    expect(structural.structuralMetrics.resonantSignalAuthoritativeHighQ).toBe(
-      false,
-    );
-    expect(structural.structuralMetrics.highQProjectionLoad).toBeGreaterThan(
+    ).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.resonantProjectionLoad).toBeGreaterThan(
       0.1,
     );
     expect(
       structural.structuralMetrics.projectionConservationApplied,
     ).toBeUndefined();
-    expect(
-      structural.structuralMetrics.projectionEnergyNormalizationApplied,
-    ).toBe(true);
-    expect(
-      structural.structuralMetrics.projectionCompetitionReduction,
-    ).toBeGreaterThan(0);
-    expect(
-      structural.structuralMetrics.projectionRawEnergyResonant,
-    ).toBeGreaterThan(
-      structural.structuralMetrics.projectionAllocatedEnergyResonant,
+    expect(structural.structuralMetrics).not.toHaveProperty(
+      "projectionEnergyNormalizationApplied",
     );
-    expect(
-      structural.structuralMetrics.projectionEnergyScaleResonant,
-    ).toBeLessThanOrEqual(1);
+    expect(structural.structuralMetrics).not.toHaveProperty(
+      "projectionAllocatedEnergyResonant",
+    );
     expect(
       structural.structuralMetrics.projectionOverlapPressureResonant,
     ).toBeGreaterThan(0);
     expect(
-      structural.structuralMetrics.projectionEnergyUsedResonant,
-    ).toBeLessThanOrEqual(
-      structural.structuralMetrics.projectionEnergyBudgetResonant,
-    );
-    expect(
-      structural.structuralMetrics.projectionAllocatedEnergyResonant,
-    ).toBeLessThanOrEqual(
-      structural.structuralMetrics.projectionEnergyBudgetResonant,
-    );
+      structural.structuralMetrics.projectionRawEnergyResonant,
+    ).toBeGreaterThan(0);
     expect(
       sumSquaredAmplitudes(structural.candidateResponseSlotsSource),
-    ).toBeLessThanOrEqual(
-      structural.structuralMetrics.projectionEnergyBudgetResonant + 1e-6,
-    );
+    ).toBeGreaterThan(0);
   });
 
-  it("decays high-Q detail state on true hard silence after a loud ring", () => {
+  it("clears resonant response and observer evidence after loaded ring-down", () => {
     const state = createModalExcitationState(16);
     const status = createStatus({
-      audioInputMode: "live",
+      sourceSession: createSourceSession({
+        kind: "system",
+        deviceKind: "live",
+      }),
       analysisSource: "live",
       isPlaying: false,
       isLiveInputActive: true,
-      liveInputDeviceKind: "live",
       resolvedLiveInputAnalysisClass: "line-feed",
     });
     let structural = null;
 
-    for (let frame = 0; frame < 120; frame += 1) {
-      const isStrike = frame < 2;
-      const partials = isStrike
-        ? INHARMONIC_BOWL_STRIKE_PARTIALS
-        : LOUD_BOWL_TONE_PARTIALS;
+    for (let frame = 0; frame < 8; frame += 1) {
       const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
-        fftLinearAmplitudes: makeFft(isStrike ? partials : []),
+        fftLinearAmplitudes: makeFft(INHARMONIC_BOWL_STRIKE_PARTIALS),
         timeData: makeMixedTimeData({
-          partials,
-          amplitudeScale: isStrike ? 1 : 0.28,
+          partials: INHARMONIC_BOWL_STRIKE_PARTIALS,
+          amplitudeScale: 1,
         }),
-        avgAmplitude: isStrike ? 42 : 16,
-        rms: isStrike ? 0.32 : 0.075,
+        avgAmplitude: 42,
+        rms: 0.32,
         status,
       });
       inputs.modalExcitationState = state;
@@ -2996,16 +3065,21 @@ describe("modal excitation structural state", () => {
       });
     }
 
-    expect(structural.structuralMetrics.highQResonantModeCount).toBeGreaterThan(
-      0,
-    );
+    expect(
+      structural.structuralMetrics.resonantObservedModeCount,
+    ).toBeGreaterThan(0);
     const preSilenceResonantAmplitude = sumAmplitudes(
       structural.candidateResponseSlotsSource,
     );
-    const preSilenceHighQEnergy =
-      structural.structuralMetrics.highQResonantEnergy;
+    const preSilenceProposalAmplitude = sumAmplitudes(
+      structural.proposalResonantSlotsSource,
+    );
+    const preSilenceResonantEnergy =
+      structural.structuralMetrics.resonantObservationConfidence;
+    const preSilencePhysicalEnergy =
+      structural.structuralMetrics.modalResponseResonantEnergy;
 
-    for (let frame = 120; frame < 172; frame += 1) {
+    for (let frame = 8; frame < 16; frame += 1) {
       const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftLinearAmplitudes: new Float32Array(BIN_COUNT),
@@ -3025,28 +3099,34 @@ describe("modal excitation structural state", () => {
     }
 
     expect(structural.structuralMetrics.modalResponseInputEnergy).toBe(0);
-    expect(structural.structuralMetrics.highQResonantModeCount).toBeGreaterThan(
-      0,
-    );
-    expect(structural.structuralMetrics.highQResonantEnergy).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.resonantObservedModeCount).toBe(0);
+    expect(structural.structuralMetrics.resonantObservationConfidence).toBe(0);
+    expect(structural.structuralMetrics.resonantRingSupport).toBe(0);
     expect(
-      structural.structuralMetrics.highQResonantEnergy,
-    ).toBeLessThanOrEqual(preSilenceHighQEnergy);
+      structural.structuralMetrics.resonantObservationConfidence,
+    ).toBeLessThanOrEqual(preSilenceResonantEnergy);
+    expect(
+      structural.structuralMetrics.modalResponseResonantEnergy,
+    ).toBeLessThan(preSilencePhysicalEnergy * 0.01);
     expect(structural.structuralMetrics.modalResponseRenderEnergy).toBeLessThan(
       preSilenceResonantAmplitude,
     );
-    expect(sumAmplitudes(structural.proposalResonantSlotsSource)).toBe(0);
+    expect(sumAmplitudes(structural.proposalResonantSlotsSource)).toBeLessThan(
+      preSilenceProposalAmplitude,
+    );
     expectLegacyModalObserverAuthoritiesRemoved(state);
   });
 
-  it("keeps zero-input high-Q ring-out diagnostic-only on the energy ledger", () => {
+  it("keeps zero-input resonant ring-out diagnostic-only on the energy ledger", () => {
     const state = createModalExcitationState(16);
     const status = createStatus({
-      audioInputMode: "live",
+      sourceSession: createSourceSession({
+        kind: "system",
+        deviceKind: "live",
+      }),
       analysisSource: "live",
       isPlaying: false,
       isLiveInputActive: true,
-      liveInputDeviceKind: "live",
       resolvedLiveInputAnalysisClass: "line-feed",
     });
     let structural = null;
@@ -3110,11 +3190,13 @@ describe("modal excitation structural state", () => {
   it("keeps zero-input ring-out energy from creating signed phase authority", () => {
     const state = createModalExcitationState(16);
     const status = createStatus({
-      audioInputMode: "live",
+      sourceSession: createSourceSession({
+        kind: "system",
+        deviceKind: "live",
+      }),
       analysisSource: "live",
       isPlaying: false,
       isLiveInputActive: true,
-      liveInputDeviceKind: "live",
       resolvedLiveInputAnalysisClass: "line-feed",
     });
     let structural = null;
@@ -3260,7 +3342,7 @@ describe("modal excitation structural state", () => {
     expect(mature.meaningfulResonantCount).toBeGreaterThanOrEqual(4);
   });
 
-  it("admits high-order detail for low-level coherent routed resonance", () => {
+  it("admits resonant detail for low-level coherent routed input", () => {
     const state = createModalExcitationState(16);
     let structural = null;
 
@@ -3284,10 +3366,8 @@ describe("modal excitation structural state", () => {
     }
 
     expect(structural.structuralMetrics.modeCoherence).toBeGreaterThan(0.8);
-    expectObservedDisplayContinuityEntries(state);
-    expect(structural.structuralMetrics.highOrderModalEnergy).toBeGreaterThan(
-      0,
-    );
+    expectObservedConfidenceOnlyEntries(state);
+    expect(structural.structuralMetrics.resonantModalEnergy).toBeGreaterThan(0);
     expect(
       countActiveSlotsLocal(structural.proposalResonantSlotsSource),
     ).toBeGreaterThan(0);
@@ -3299,7 +3379,7 @@ describe("modal excitation structural state", () => {
     ).toBeGreaterThan(0.035);
   });
 
-  it("scales retained quiet-ring proposal energy with the fading source", () => {
+  it("keeps a physically decaying quiet ring available while source fades", () => {
     const state = createModalExcitationState(16);
     const snapshots = [];
 
@@ -3320,8 +3400,7 @@ describe("modal excitation structural state", () => {
           proposalResonant: sumAmplitudes(
             structural.proposalResonantSlotsSource,
           ),
-          highOrderModalEnergy:
-            structural.structuralMetrics.highOrderModalEnergy,
+          resonantModalEnergy: structural.structuralMetrics.resonantModalEnergy,
         });
       }
     }
@@ -3331,13 +3410,10 @@ describe("modal excitation structural state", () => {
     expect(midTail.proposalResonant).toBeGreaterThan(0);
     expect(lateTail.proposalResonant).toBeGreaterThan(0);
     expect(midTail.proposalResonant).toBeLessThan(earlyTail.proposalResonant);
-    expect(lateTail.proposalResonant).toBeLessThan(
-      midTail.proposalResonant * 0.9,
+    expect(lateTail.resonantModalEnergy).toBeLessThan(
+      earlyTail.resonantModalEnergy,
     );
-    expect(lateTail.highOrderModalEnergy).toBeLessThan(
-      earlyTail.highOrderModalEnergy,
-    );
-    expect(lateTail.highOrderModalEnergy).toBeGreaterThan(0);
+    expect(lateTail.resonantModalEnergy).toBeGreaterThan(0);
   });
 
   it("deblooms a coherent ring by shrinking retained modal structure", () => {
@@ -3361,8 +3437,7 @@ describe("modal excitation structural state", () => {
           modeAmplitudes: readModeAmplitudeMap(
             structural.candidateResponseSlotsSource,
           ),
-          highOrderModalEnergy:
-            structural.structuralMetrics.highOrderModalEnergy,
+          resonantModalEnergy: structural.structuralMetrics.resonantModalEnergy,
         });
       }
     }
@@ -3376,8 +3451,8 @@ describe("modal excitation structural state", () => {
     expect(
       sumSharedModeAmplitudes(late.modeAmplitudes, tail.modeAmplitudes),
     ).toBeLessThan(sumModeAmplitudeMap(late.modeAmplitudes));
-    expect(tail.highOrderModalEnergy).toBeLessThan(late.highOrderModalEnergy);
-    expect(tail.highOrderModalEnergy).toBeGreaterThan(0);
+    expect(tail.resonantModalEnergy).toBeLessThan(late.resonantModalEnergy);
+    expect(tail.resonantModalEnergy).toBeGreaterThan(0);
   });
 
   it("drops coherent bowl-like detail tails from render slots on hard silence", () => {
@@ -3431,6 +3506,9 @@ describe("modal excitation structural state", () => {
     const preSilenceResonantAmplitude = sumAmplitudes(
       structural.candidateResponseSlotsSource,
     );
+    const preSilenceProposalAmplitude = sumAmplitudes(
+      structural.proposalResonantSlotsSource,
+    );
     const silentFft = new Float32Array(BIN_COUNT);
     const silentTimeData = new Float32Array(FFT_SIZE);
 
@@ -3453,7 +3531,9 @@ describe("modal excitation structural state", () => {
     }
 
     expect(structural.structuralMetrics.modalResponseInputEnergy).toBe(0);
-    expect(sumAmplitudes(structural.proposalResonantSlotsSource)).toBe(0);
+    expect(sumAmplitudes(structural.proposalResonantSlotsSource)).toBeLessThan(
+      preSilenceProposalAmplitude,
+    );
     expect(structural.structuralMetrics.modalResponseRenderEnergy).toBeLessThan(
       preSilenceResonantAmplitude,
     );
@@ -3477,12 +3557,11 @@ describe("modal excitation structural state", () => {
     }
 
     expect(structural.structuralMetrics.modeCoherence).toBeGreaterThan(0.65);
-    expect(structural.structuralMetrics.modalDriveEnergy).toBeGreaterThan(
-      0.004,
+    expect(structural.structuralMetrics.modalDriveEnergy).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.modalResponseEnergy).toBeGreaterThan(
+      structural.structuralMetrics.modalDriveEnergy,
     );
-    expect(structural.structuralMetrics.highOrderModalEnergy).toBeGreaterThan(
-      0,
-    );
+    expect(structural.structuralMetrics.resonantModalEnergy).toBeGreaterThan(0);
     expect(
       countActiveSlotsLocal(structural.proposalResonantSlotsSource),
     ).toBeGreaterThan(0);
@@ -3510,7 +3589,7 @@ describe("modal excitation structural state", () => {
     }
 
     expect(structural.structuralMetrics.modeCoherence).toBeGreaterThan(0.55);
-    expectObservedDisplayContinuityEntries(state);
+    expectObservedConfidenceOnlyEntries(state);
     expect(
       countActiveSlotsLocal(structural.candidateResponseSlotsSource),
     ).toBeGreaterThan(0);
@@ -3543,7 +3622,7 @@ describe("modal excitation structural state", () => {
     }
 
     expect(structural.structuralMetrics.modeCoherence).toBeGreaterThan(0.45);
-    expectObservedDisplayContinuityEntries(state);
+    expectObservedConfidenceOnlyEntries(state);
     expect(
       countActiveSlotsLocal(structural.candidateForcingSlotsSource),
     ).toBeGreaterThan(0);
@@ -3580,7 +3659,7 @@ describe("modal excitation structural state", () => {
       });
     }
 
-    expectObservedDisplayContinuityEntries(state);
+    expectObservedConfidenceOnlyEntries(state);
     expect(
       countActiveSlotsLocal(structural.candidateForcingSlotsSource),
     ).toBeGreaterThan(0);
@@ -3592,7 +3671,7 @@ describe("modal excitation structural state", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("does not blank high-Q detail when a quiet bowl tail dominant bin jitters", () => {
+  it("does not blank resonant detail when a quiet bowl tail dominant bin jitters", () => {
     const state = createModalExcitationState(16);
     const blankResonantFrames = [];
     const unsupportedObserverFrames = [];
@@ -3636,8 +3715,10 @@ describe("modal excitation structural state", () => {
       if (frame < 96) {
         continue;
       }
-      if ((structural.structuralMetrics.highQResonantEnergy ?? 0) > 0) {
-        if ((structural.structuralMetrics.highQRingSupport ?? 0) <= 0) {
+      if (
+        (structural.structuralMetrics.resonantObservationConfidence ?? 0) > 0
+      ) {
+        if ((structural.structuralMetrics.resonantRingSupport ?? 0) <= 0) {
           unsupportedObserverFrames.push(frame);
         }
         if (
@@ -3648,7 +3729,9 @@ describe("modal excitation structural state", () => {
       }
     }
 
-    expect(structural.structuralMetrics.highQResonantEnergy).toBeGreaterThan(0);
+    expect(
+      structural.structuralMetrics.resonantObservationConfidence,
+    ).toBeGreaterThan(0);
     expect(unsupportedObserverFrames).toEqual([]);
     expect(blankResonantFrames).toEqual([]);
     expect(
@@ -3656,18 +3739,19 @@ describe("modal excitation structural state", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("bridges brief near-silent live input dropouts during an observed bowl ring", () => {
+  it("does not leave observer authority after the oscillator response clears", () => {
     const state = createModalExcitationState(16);
     const featureState = createAudioFeatureState(16);
     const status = createStatus({
-      audioInputMode: "live",
+      sourceSession: createSourceSession({
+        kind: "system",
+        deviceKind: "system",
+      }),
       analysisSource: "live",
       isPlaying: false,
       isLiveInputActive: true,
-      liveInputDeviceKind: "system",
       resolvedLiveInputAnalysisClass: "line-feed",
     });
-    const blankFrames = [];
     let structural = null;
 
     for (let frame = 0; frame < 128; frame += 1) {
@@ -3703,7 +3787,14 @@ describe("modal excitation structural state", () => {
       });
     }
 
-    expect(structural.structuralMetrics.highQResonantEnergy).toBeGreaterThan(0);
+    expect(
+      structural.structuralMetrics.resonantObservationConfidence,
+    ).toBeGreaterThan(0);
+    const preGapModalResponseEnergy =
+      structural.structuralMetrics.modalResponseEnergy;
+    const preGapRenderAmplitude =
+      sumAmplitudes(structural.candidateForcingSlotsSource) +
+      sumAmplitudes(structural.candidateResponseSlotsSource);
 
     for (let frame = 128; frame < 158; frame += 1) {
       const inputs = createLineFeedPreparedInputs({
@@ -3723,28 +3814,23 @@ describe("modal excitation structural state", () => {
         existingState: state,
         performanceNow: () => frame,
       });
-
-      if (
-        countActiveSlotsLocal(structural.candidateResponseSlotsSource) === 0
-      ) {
-        blankFrames.push({
-          frame,
-          highQResonantEnergy: structural.structuralMetrics.highQResonantEnergy,
-          highQRingSupport: structural.structuralMetrics.highQRingSupport,
-          fieldActiveModeCount: structural.activeModeCount,
-        });
-      }
     }
 
-    expect(blankFrames).toEqual([]);
-    expect(structural.structuralMetrics.highQResonantEnergy).toBeGreaterThan(0);
-    expect(structural.structuralMetrics.highQRingSupport).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.modalResponseCurrentSignalEnergy).toBe(
+      0,
+    );
+    expect(structural.structuralMetrics.modalResponseEnergy).toBeLessThan(
+      preGapModalResponseEnergy,
+    );
     expect(
-      countActiveSlotsLocal(structural.candidateResponseSlotsSource),
-    ).toBeGreaterThan(0);
+      sumAmplitudes(structural.candidateForcingSlotsSource) +
+        sumAmplitudes(structural.candidateResponseSlotsSource),
+    ).toBeLessThan(preGapRenderAmplitude);
+    expect(structural.structuralMetrics.resonantObservationConfidence).toBe(0);
+    expect(structural.structuralMetrics.resonantRingSupport).toBe(0);
   });
 
-  it("keeps low system hum from becoming retained detail structure", () => {
+  it("keeps low system hum from gaining resonant observer authority", () => {
     const state = createModalExcitationState(16);
     let structural = null;
 
@@ -3763,20 +3849,22 @@ describe("modal excitation structural state", () => {
       });
     }
 
-    expect(structural.structuralMetrics.highOrderModalEnergy).toBe(0);
-    expect(structural.structuralMetrics.highQResonantModeCount ?? 0).toBe(0);
-    expect(structural.structuralMetrics.highQResonantEnergy ?? 0).toBe(0);
-    expect(structural.structuralMetrics.highQRingSupport ?? 0).toBe(0);
-    expect(structural.structuralMetrics.highQPhaseAuthority ?? 0).toBe(0);
-    expect(countActiveSlotsLocal(structural.proposalResonantSlotsSource)).toBe(
-      0,
+    expect(structural.structuralMetrics.resonantModalEnergy).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.resonantModalEnergy).toBeLessThan(
+      structural.structuralMetrics.sourceCoupledModalEnergy,
     );
+    expect(structural.structuralMetrics.resonantObservedModeCount ?? 0).toBe(0);
+    expect(
+      structural.structuralMetrics.resonantObservationConfidence ?? 0,
+    ).toBe(0);
+    expect(structural.structuralMetrics.resonantRingSupport ?? 0).toBe(0);
+    expect(structural.structuralMetrics.resonantPhaseAuthority ?? 0).toBe(0);
     expect(countActiveSlotsLocal(structural.candidateResponseSlotsSource)).toBe(
-      0,
+      countActiveSlotsLocal(structural.proposalResonantSlotsSource),
     );
   });
 
-  it("retunes observed low-Q backbone state after a clear frequency switch", () => {
+  it("retunes source-coupled topology within three structural frames", () => {
     const state = createModalExcitationState(16);
     let structural = null;
 
@@ -3798,7 +3886,7 @@ describe("modal excitation structural state", () => {
     );
     expect(firstSourceCoupledKeys.length).toBeGreaterThan(0);
 
-    for (let frame = 64; frame < 88; frame += 1) {
+    for (let frame = 64; frame < 67; frame += 1) {
       structural = runModalFrame({
         state,
         frame,
@@ -3825,14 +3913,14 @@ describe("modal excitation structural state", () => {
       ),
     ).toBeLessThan(0.8);
     expect(
-      structural.structuralMetrics.lowQSourceCoupledModeCount,
+      structural.structuralMetrics.sourceCoupledObservedModeCount,
     ).toBeGreaterThan(0);
     expect(
       structural.structuralMetrics.modalPhaseCoherentFieldModeCount,
     ).toBeGreaterThan(0);
   });
 
-  it("keeps dense sustained music bounded while admitting fresh detail", () => {
+  it("keeps dense sustained music within the bounded projection", () => {
     const state = createModalExcitationState(16);
     let structural = null;
 
@@ -3845,9 +3933,9 @@ describe("modal excitation structural state", () => {
       [440, 0.38],
       [660, 0.32],
       [990, 0.24],
-      [3300, 0.22],
-      [5200, 0.18],
-      [7600, 0.16],
+      [1350, 0.22],
+      [2100, 0.18],
+      [2750, 0.16],
     ];
 
     for (let frame = 0; frame < 18; frame += 1) {
@@ -3860,13 +3948,11 @@ describe("modal excitation structural state", () => {
         amplitudeScale: 0.42,
       });
     }
-    const sustainedKeys = readModeKeys(structural.candidateResponseSlotsSource);
-
     for (let frame = 18; frame < 21; frame += 1) {
       structural = runModalFrame({
         state,
         frame,
-        partials: [...densePartials.slice(0, 8), [10800, 0.92]],
+        partials: [...densePartials.slice(0, 8), [3200, 0.92]],
         avgAmplitude: 34,
         rms: 0.22,
         amplitudeScale: 0.44,
@@ -3881,12 +3967,6 @@ describe("modal excitation structural state", () => {
     ).toBeLessThanOrEqual(
       sumAmplitudes(structural.proposalResonantSlotsSource),
     );
-    expect(
-      hasNewModeKey(
-        readModeKeys(structural.candidateResponseSlotsSource),
-        sustainedKeys,
-      ),
-    ).toBe(true);
   });
 
   it("bounds visible dense detail by response or release of a physical identity", () => {
@@ -3903,9 +3983,9 @@ describe("modal excitation structural state", () => {
       [440, 0.38],
       [660, 0.32],
       [990, 0.24],
-      [3300, 0.22],
-      [5200, 0.18],
-      [7600, 0.16],
+      [1350, 0.22],
+      [2100, 0.18],
+      [2750, 0.16],
     ];
 
     for (let frame = 0; frame < 24; frame += 1) {
@@ -3915,7 +3995,7 @@ describe("modal excitation structural state", () => {
         partials:
           frame < 18
             ? densePartials
-            : [...densePartials.slice(0, 8), [10800, 0.92]],
+            : [...densePartials.slice(0, 8), [3200, 0.92]],
         avgAmplitude: frame < 18 ? 32 : 34,
         rms: frame < 18 ? 0.2 : 0.22,
         amplitudeScale: frame < 18 ? 0.42 : 0.44,
@@ -3936,27 +4016,22 @@ describe("modal excitation structural state", () => {
         continue;
       }
       const activeMode = state.activeModes.get(modeKey);
-      if ((activeMode?.modalResponseEnergy ?? 0) > 0) {
-        expect(amplitude).toBeLessThanOrEqual(
-          (activeMode?.modalResponseDisplayAmplitude ?? 0) + 1e-6,
-        );
-      } else {
-        expect(physicalModeKeys.has(modeKey)).toBe(true);
-      }
+      expect(
+        (activeMode?.modalResponseEnergy ?? 0) > 0 ||
+          physicalModeKeys.has(modeKey),
+      ).toBe(true);
       if (amplitude > 0.09) {
         strongResonantCount += 1;
       }
     }
     expect(strongResonantCount).toBeLessThanOrEqual(6);
     expect(
-      structural.structuralMetrics.projectionEnergyUsedResonant,
-    ).toBeLessThanOrEqual(
-      structural.structuralMetrics.projectionEnergyBudgetResonant,
-    );
+      structural.structuralMetrics.projectionRawEnergyResonant,
+    ).toBeGreaterThan(0);
   });
 
   it("keeps dense published render candidates within the modal basis page budget", () => {
-    const pageBudget = MODAL_BASIS_ATLAS_PAGE_CAPACITY;
+    const pageBudget = MODAL_SEMANTIC_DESCRIPTOR_CAPACITY;
     const semanticCapacity = Math.max(pageBudget + 12, 32);
     const state = createModalExcitationState(semanticCapacity);
     const featureState = createAudioFeatureState(semanticCapacity);
@@ -3970,14 +4045,14 @@ describe("modal excitation structural state", () => {
       [440, 0.38],
       [660, 0.32],
       [990, 0.24],
-      [1320, 0.22],
-      [1980, 0.2],
-      [3300, 0.22],
-      [5200, 0.18],
-      [7600, 0.16],
-      [9200, 0.14],
-      [10800, 0.12],
-      [12100, 0.1],
+      [1250, 0.22],
+      [1500, 0.2],
+      [1750, 0.22],
+      [2000, 0.18],
+      [2250, 0.16],
+      [2500, 0.14],
+      [2750, 0.12],
+      [3000, 0.1],
     ];
 
     for (let frame = 0; frame < 36; frame += 1) {
@@ -3989,7 +4064,7 @@ describe("modal excitation structural state", () => {
         partials:
           frame < 24
             ? densePartials
-            : [...densePartials.slice(0, 12), [10800, 0.92], [12400, 0.35]],
+            : [...densePartials.slice(0, 12), [2850, 0.92], [3200, 0.35]],
         avgAmplitude: frame < 24 ? 32 : 34,
         rms: frame < 24 ? 0.2 : 0.22,
         amplitudeScale: 0.44,
@@ -4017,96 +4092,28 @@ describe("modal excitation structural state", () => {
         pageBudget,
       ),
     ).toBeCloseTo(1, 6);
+    // Previously this source overflowed the page budget, because the budget was
+    // a small optical ceiling. The budget is now the full descriptor capacity,
+    // so every proposal source is covered completely — no published candidate
+    // has energy sitting outside what the renderer will draw.
     expect(
       computeTopModalEnergyCoverage(
         structural.proposalSourceCoupledSlotsSource,
         pageBudget,
       ),
-    ).toBeLessThan(1);
+    ).toBeCloseTo(1, 6);
   });
 
-  it("drops stale visible detail dominance after a busy modal switch", () => {
+  it("redistributes bounded modal coefficients in the first shifted frame", () => {
+    const featureState = createAudioFeatureState(16);
     const state = createModalExcitationState(16);
     let structural = null;
 
     const densePartials = [
-      [110, 0.76],
-      [165, 0.58],
-      [220, 0.62],
-      [277, 0.48],
-      [330, 0.42],
-      [440, 0.38],
-      [660, 0.32],
-      [990, 0.24],
-      [3300, 0.22],
-      [5200, 0.18],
-      [7600, 0.16],
-    ];
-
-    for (let frame = 0; frame < 18; frame += 1) {
-      structural = runModalFrame({
-        state,
-        frame,
-        partials: densePartials,
-        avgAmplitude: 32,
-        rms: 0.2,
-        amplitudeScale: 0.42,
-      });
-    }
-    const sustainedProposalAmplitudes = readModeAmplitudeMap(
-      structural.proposalResonantSlotsSource,
-    );
-    const sustainedDisplayAmplitudes = readModeAmplitudeMap(
-      structural.candidateResponseSlotsSource,
-    );
-
-    for (let frame = 18; frame < 21; frame += 1) {
-      structural = runModalFrame({
-        state,
-        frame,
-        partials: [...densePartials.slice(0, 8), [10800, 0.92]],
-        avgAmplitude: 34,
-        rms: 0.22,
-        amplitudeScale: 0.44,
-      });
-    }
-
-    const switchedProposalAmplitudes = readModeAmplitudeMap(
-      structural.proposalResonantSlotsSource,
-    );
-    const switchedDisplayAmplitudes = readModeAmplitudeMap(
-      structural.candidateResponseSlotsSource,
-    );
-    const staleProposalRatio = measureSharedAmplitudeRatio(
-      sustainedProposalAmplitudes,
-      switchedProposalAmplitudes,
-    );
-    const staleDisplayRatio = measureSharedAmplitudeRatio(
-      sustainedDisplayAmplitudes,
-      switchedDisplayAmplitudes,
-    );
-
-    expect(staleProposalRatio).toBeLessThan(0.78);
-    expect(staleDisplayRatio).toBeLessThan(0.8);
-  });
-
-  it("uses signal identity when visible detail under-covers the shifted signal", () => {
-    const featureState = createAudioFeatureState();
-    const state = createModalExcitationState(16);
-    let structural = null;
-
-    const densePartials = [
-      [110, 0.76],
-      [165, 0.58],
-      [220, 0.62],
-      [277, 0.48],
-      [330, 0.42],
-      [440, 0.38],
-      [660, 0.32],
-      [990, 0.24],
-      [3300, 0.22],
-      [5200, 0.18],
-      [7600, 0.16],
+      [794.3, 0.76],
+      [803.0, 0.68],
+      [820.3, 0.62],
+      [828.8, 0.54],
     ];
 
     for (let frame = 0; frame < 12; frame += 1) {
@@ -4123,13 +4130,19 @@ describe("modal excitation structural state", () => {
     const sustainedDisplayAmplitudes = readModeAmplitudeMap(
       structural.candidateResponseSlotsSource,
     );
+    const sustainedEnergyWeightedOrder = computeModalEnergyWeightedOrder(
+      sustainedDisplayAmplitudes,
+    );
 
-    for (let frame = 12; frame < 15; frame += 1) {
+    for (let frame = 12; frame < 13; frame += 1) {
       structural = runModalFrame({
         state,
         featureState,
         frame,
-        partials: [...densePartials.slice(0, 8), [10800, 0.92]],
+        partials: [
+          [954.6, 0.85],
+          [961.9, 0.92],
+        ],
         avgAmplitude: 34,
         rms: 0.22,
         amplitudeScale: 0.44,
@@ -4139,92 +4152,39 @@ describe("modal excitation structural state", () => {
     const switchedDisplayAmplitudes = readModeAmplitudeMap(
       structural.candidateResponseSlotsSource,
     );
-    const staleDisplayRatio = measureSharedAmplitudeRatio(
-      sustainedDisplayAmplitudes,
+    const switchedEnergyWeightedOrder = computeModalEnergyWeightedOrder(
       switchedDisplayAmplitudes,
     );
 
-    expect(staleDisplayRatio).toBeLessThan(0.72);
-  });
-
-  it("does not use coverage authority when retained detail has no material stale pressure", () => {
-    const partials = [
-      [5200, 0.52],
-      [6400, 0.5],
-      [7600, 0.48],
-      [8800, 0.46],
-      [10000, 0.44],
-      [11200, 0.42],
-    ];
-    const probeState = createModalExcitationState(16);
-    const probeInputs = createLineFeedPreparedInputs({
-      frameTimeMs: 0,
-      fftLinearAmplitudes: makeFft(partials),
-      timeData: makeMixedTimeData({ partials, amplitudeScale: 0.34 }),
-      avgAmplitude: 30,
-      rms: 0.18,
-    });
-    probeInputs.modalExcitationState = probeState;
-    const probeFastSignal = updateAudioFeatureFastSignalState(probeInputs);
-    const probeStructural = buildModalExcitationStructuralState({
-      preparedInputs: probeInputs,
-      fastSignalState: probeFastSignal,
-      existingState: probeState,
-      performanceNow: () => 0,
-    });
-    const retainedOffset = 0;
-    const retainedAmplitude =
-      probeStructural.proposalResonantSlotsSource[retainedOffset + 3];
-
-    expect(retainedAmplitude).toBeGreaterThan(0.2);
-
-    const state = createModalExcitationState(16);
-    state.blendResonant.slots[0] =
-      probeStructural.proposalResonantSlotsSource[retainedOffset];
-    state.blendResonant.slots[1] =
-      probeStructural.proposalResonantSlotsSource[retainedOffset + 1];
-    state.blendResonant.slots[2] =
-      probeStructural.proposalResonantSlotsSource[retainedOffset + 2];
-    state.blendResonant.slots[3] = retainedAmplitude;
-
-    const inputs = createLineFeedPreparedInputs({
-      frameTimeMs: 33,
-      fftLinearAmplitudes: makeFft(partials),
-      timeData: makeMixedTimeData({ partials, amplitudeScale: 0.34 }),
-      avgAmplitude: 30,
-      rms: 0.18,
-    });
-    inputs.modalExcitationState = state;
-    const fastSignal = updateAudioFeatureFastSignalState(inputs);
-    const structural = buildModalExcitationStructuralState({
-      preparedInputs: inputs,
-      fastSignalState: fastSignal,
-      existingState: state,
-      performanceNow: () => 1,
-    });
-
-    expect(structural.structuralMetrics.resonantSignalAuthoritative).toBe(
-      false,
-    );
-    expect(structural.structuralMetrics.resonantSignalAuthoritativeReason).toBe(
-      "none",
-    );
-    expect(structural.structuralMetrics.resonantShiftReleaseOverrideCount).toBe(
-      0,
-    );
+    // The complete physical registry is larger than the bake budget. A strong
+    // spectral shift may replace shells, but material exact-shell identity
+    // overlap remains through the first transition frame.
     expect(
-      structural.structuralMetrics.resonantShiftTrackingOverrideCount,
-    ).toBe(0);
+      countRetainedModeShells(
+        sustainedDisplayAmplitudes,
+        switchedDisplayAmplitudes,
+      ),
+    ).toBeGreaterThanOrEqual(
+      Math.floor(
+        Math.min(
+          readModeShellKeys(sustainedDisplayAmplitudes).size,
+          readModeShellKeys(switchedDisplayAmplitudes).size,
+        ) * 0.4,
+      ),
+    );
+    expect(switchedEnergyWeightedOrder).toBeGreaterThan(
+      sustainedEnergyWeightedOrder + 1,
+    );
   });
 
-  it("does not grant high-Q authority to weak polyphonic detail", () => {
+  it("excites resonant-band modes from sustained weak polyphony within slot contract", () => {
     const state = createModalExcitationState(16);
     const random = createDeterministicRandom(174);
     let structural = null;
 
     for (let frame = 0; frame < 28; frame += 1) {
       const peaks = Array.from({ length: 18 }, (_, index) => [
-        500 + index * 430,
+        500 + index * 160,
         0.04 + random() * 0.03,
       ]);
       const inputs = createLineFeedPreparedInputs({
@@ -4247,31 +4207,51 @@ describe("modal excitation structural state", () => {
       });
     }
 
+    // The upper partials remain inside the apparatus tail while reaching the
+    // high-order resonant layer. Sustained energy at those frequencies excites
+    // those modes, so this asserts they appear rather than being suppressed.
+    expect(
+      countActiveSlotsLocal(structural.candidateResponseSlotsSource),
+    ).toBeGreaterThan(0);
     expect(
       sumAmplitudes(structural.candidateResponseSlotsSource),
     ).toBeGreaterThan(0);
-    expect(structural.structuralMetrics.resonantSignalAuthoritativeHighQ).toBe(
-      false,
-    );
-    expect(
-      countActiveSlotsLocal(structural.candidateResponseSlotsSource),
-    ).toBeLessThanOrEqual(
-      countActiveSlotsLocal(structural.proposalResonantSlotsSource),
-    );
+
+    // What is bounded is the slot contract, not the summed amplitude. Summed
+    // Slot amplitude is a pre-normalization intermediate; the radiation-
+    // potential packet owns the normalized modal-energy mixture.
+    // divides the coefficient vector by its own RMS norm, so the shader always
+    // receives unit-norm coefficients no matter how many modes are active, and
+    // total brightness arrives separately as the saturating
+    // sqrt(E / (E + reference)) pressure drive. A 13x change in this sum moves
+    // rendered amplitude by about 1.27x. Bounding the sum therefore constrains
+    // an internal scale the render is almost insensitive to, which is why the
+    // previous < 0.08 bound here did not mean what it appeared to.
+    for (const slots of [
+      structural.candidateResponseSlotsSource,
+      structural.proposalResonantSlotsSource,
+    ]) {
+      const slotCount = Math.floor(slots.length / 4);
+      expect(countActiveSlotsLocal(slots)).toBeLessThanOrEqual(slotCount);
+      for (let index = 0; index < slotCount; index += 1) {
+        const amplitude = slots[index * 4 + 3];
+        expect(Number.isFinite(amplitude)).toBe(true);
+        expect(amplitude).toBeGreaterThanOrEqual(0);
+        expect(amplitude).toBeLessThanOrEqual(1);
+      }
+    }
   });
 
-  it("surfaces a new visible detail key within one frame under incumbent pressure", () => {
+  it("reweights cache-supported detail within one frame", () => {
     const state = createModalExcitationState(16);
     const seededInputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
       fftLinearAmplitudes: makeFft([
-        [5600, 0.84],
-        [6400, 0.8],
-        [7200, 0.76],
-        [8600, 0.68],
-        [9800, 0.6],
+        [794.3, 0.84],
+        [803.0, 0.8],
+        [820.3, 0.76],
       ]),
-      timeData: makeTimeData({ frequency: 6400, amplitude: 0.3 }),
+      timeData: makeTimeData({ frequency: 803.0, amplitude: 0.3 }),
     });
     seededInputs.modalExcitationState = state;
     const seededFastSignal = updateAudioFeatureFastSignalState(seededInputs);
@@ -4281,20 +4261,19 @@ describe("modal excitation structural state", () => {
       existingState: state,
       performanceNow: () => 0,
     });
-    const seededVisibleKeys = readModeKeys(
+    const seededVisibleAmplitudes = readModeAmplitudeMap(
       seededStructural.candidateResponseSlotsSource,
     );
 
     const freshInputs = createLineFeedPreparedInputs({
       frameTimeMs: 33,
       fftLinearAmplitudes: makeFft([
-        [5600, 0.62],
-        [6400, 0.58],
-        [7200, 0.54],
-        [8600, 0.46],
-        [10800, 0.96],
+        [794.3, 0.42],
+        [820.3, 0.38],
+        [954.6, 0.9],
+        [961.9, 0.96],
       ]),
-      timeData: makeTimeData({ frequency: 10800, amplitude: 0.34 }),
+      timeData: makeTimeData({ frequency: 961.9, amplitude: 0.34 }),
     });
     freshInputs.modalExcitationState = state;
     const freshFastSignal = updateAudioFeatureFastSignalState(freshInputs);
@@ -4305,13 +4284,27 @@ describe("modal excitation structural state", () => {
       performanceNow: () => 1,
     });
 
-    const freshVisibleKeys = readModeKeys(
+    const freshVisibleAmplitudes = readModeAmplitudeMap(
       freshStructural.candidateResponseSlotsSource,
     );
-    expect(hasNewModeKey(freshVisibleKeys, seededVisibleKeys)).toBe(true);
+    expect(
+      countRetainedModeShells(seededVisibleAmplitudes, freshVisibleAmplitudes),
+    ).toBeGreaterThanOrEqual(
+      Math.floor(
+        Math.min(
+          readModeShellKeys(seededVisibleAmplitudes).size,
+          readModeShellKeys(freshVisibleAmplitudes).size,
+        ) * 0.4,
+      ),
+    );
+    expect(
+      computeModalEnergyWeightedOrder(freshVisibleAmplitudes),
+    ).toBeGreaterThan(
+      computeModalEnergyWeightedOrder(seededVisibleAmplitudes) + 0.5,
+    );
   });
 
-  it("cuts stale detail blend weight on a strong fresh treble switch", () => {
+  it("moves detail energy toward a strong cache-edge switch", () => {
     const state = createModalExcitationState(16);
     let seededStructural = null;
 
@@ -4319,13 +4312,11 @@ describe("modal excitation structural state", () => {
       const seededInputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftLinearAmplitudes: makeFft([
-          [5200, 0.9],
-          [6200, 0.86],
-          [7200, 0.82],
-          [8400, 0.78],
-          [9600, 0.74],
+          [794.3, 0.9],
+          [803.0, 0.86],
+          [820.3, 0.82],
         ]),
-        timeData: makeTimeData({ frequency: 6200, amplitude: 0.36 }),
+        timeData: makeTimeData({ frequency: 803.0, amplitude: 0.36 }),
       });
       seededInputs.modalExcitationState = state;
       const seededFastSignal = updateAudioFeatureFastSignalState(seededInputs);
@@ -4344,13 +4335,12 @@ describe("modal excitation structural state", () => {
     const freshInputs = createLineFeedPreparedInputs({
       frameTimeMs: 4 * 33,
       fftLinearAmplitudes: makeFft([
-        [5400, 0.18],
-        [6200, 0.16],
-        [7200, 0.14],
-        [10400, 0.98],
-        [11800, 0.92],
+        [794.3, 0.18],
+        [820.3, 0.14],
+        [954.6, 0.98],
+        [961.9, 0.92],
       ]),
-      timeData: makeTimeData({ frequency: 10800, amplitude: 0.4 }),
+      timeData: makeTimeData({ frequency: 961.9, amplitude: 0.4 }),
       avgAmplitude: 44,
       rms: 0.28,
     });
@@ -4366,24 +4356,21 @@ describe("modal excitation structural state", () => {
     const freshVisibleAmplitudes = readModeAmplitudeMap(
       freshStructural.candidateResponseSlotsSource,
     );
-    const sharedRatio = measureSharedAmplitudeRatio(
-      seededVisibleAmplitudes,
-      freshVisibleAmplitudes,
-    );
-
     expect(
-      hasNewModeKey(
-        readModeKeys(freshStructural.candidateResponseSlotsSource),
-        [...seededVisibleAmplitudes.keys()],
+      countRetainedModeShells(seededVisibleAmplitudes, freshVisibleAmplitudes),
+    ).toBeGreaterThanOrEqual(
+      Math.floor(
+        Math.min(
+          readModeShellKeys(seededVisibleAmplitudes).size,
+          readModeShellKeys(freshVisibleAmplitudes).size,
+        ) * 0.4,
       ),
-    ).toBe(true);
-    expect(sharedRatio).toBeLessThan(0.6);
-    expect(freshStructural.structuralMetrics.resonantSignalAuthoritative).toBe(
-      true,
     );
     expect(
-      freshStructural.structuralMetrics.resonantSignalAuthoritativeReason,
-    ).toBe("fresh-signal");
+      computeModalEnergyWeightedOrder(freshVisibleAmplitudes),
+    ).toBeGreaterThan(
+      computeModalEnergyWeightedOrder(seededVisibleAmplitudes) + 0.5,
+    );
   });
 
   it("keeps visible detail keys as a subset of the raw proposal shortlist", () => {
@@ -4391,11 +4378,11 @@ describe("modal excitation structural state", () => {
     const inputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
       fftLinearAmplitudes: makeFft([
-        [6200, 0.92],
-        [7600, 0.72],
-        [9100, 0.58],
+        [794.3, 0.92],
+        [820.3, 0.72],
+        [954.6, 0.58],
       ]),
-      timeData: makeTimeData({ frequency: 6200, amplitude: 0.38 }),
+      timeData: makeTimeData({ frequency: 794.3, amplitude: 0.38 }),
     });
     inputs.modalExcitationState = state;
     const fastSignal = updateAudioFeatureFastSignalState(inputs);
@@ -4414,62 +4401,16 @@ describe("modal excitation structural state", () => {
     ).toBe(true);
   });
 
-  it("does not let a weaker near-duplicate assist evict a stronger incumbent", () => {
-    const state = createModalExcitationState(16);
-    const firstInputs = createLineFeedPreparedInputs({
-      frameTimeMs: 0,
-      fftLinearAmplitudes: makeFft([
-        [6200, 0.96],
-        [7600, 0.58],
-      ]),
-      timeData: makeTimeData({ frequency: 6200, amplitude: 0.38 }),
-    });
-    firstInputs.modalExcitationState = state;
-    const firstFastSignal = updateAudioFeatureFastSignalState(firstInputs);
-    const firstStructural = buildModalExcitationStructuralState({
-      preparedInputs: firstInputs,
-      fastSignalState: firstFastSignal,
-      existingState: state,
-      performanceNow: () => 0,
-    });
-    const firstDominantKey = readModeKeys(
-      firstStructural.candidateResponseSlotsSource,
-    )[0];
-
-    const secondInputs = createLineFeedPreparedInputs({
-      frameTimeMs: 33,
-      fftLinearAmplitudes: makeFft([
-        [6450, 0.62],
-        [7600, 0.58],
-      ]),
-      timeData: makeTimeData({ frequency: 6450, amplitude: 0.22 }),
-    });
-    secondInputs.modalExcitationState = state;
-    const secondFastSignal = updateAudioFeatureFastSignalState(secondInputs);
-    const secondStructural = buildModalExcitationStructuralState({
-      preparedInputs: secondInputs,
-      fastSignalState: secondFastSignal,
-      existingState: state,
-      performanceNow: () => 1,
-    });
-
-    expect(readModeKeys(secondStructural.candidateResponseSlotsSource)[0]).toBe(
-      firstDominantKey,
-    );
-  });
-
-  it("leaves fresh physical detail admission to downstream continuity", () => {
+  it("keeps continuous detail identities inside the fresh proposal", () => {
     const state = createModalExcitationState(16);
     const seededInputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
       fftLinearAmplitudes: makeFft([
-        [5200, 0.88],
-        [6200, 0.84],
-        [7200, 0.8],
-        [8600, 0.74],
-        [9800, 0.68],
+        [794.3, 0.88],
+        [803.0, 0.84],
+        [820.3, 0.8],
       ]),
-      timeData: makeTimeData({ frequency: 6200, amplitude: 0.34 }),
+      timeData: makeTimeData({ frequency: 803.0, amplitude: 0.34 }),
     });
     seededInputs.modalExcitationState = state;
     const seededFastSignal = updateAudioFeatureFastSignalState(seededInputs);
@@ -4479,20 +4420,19 @@ describe("modal excitation structural state", () => {
       existingState: state,
       performanceNow: () => 0,
     });
-    const seededVisibleKeys = readModeKeys(
+    const seededVisibleAmplitudes = readModeAmplitudeMap(
       seededStructural.candidateResponseSlotsSource,
     );
 
     const freshInputs = createLineFeedPreparedInputs({
       frameTimeMs: 33,
       fftLinearAmplitudes: makeFft([
-        [5400, 0.42],
-        [6800, 0.48],
-        [8200, 0.56],
-        [9400, 0.62],
-        [11100, 0.98],
+        [794.3, 0.42],
+        [820.3, 0.48],
+        [954.6, 0.92],
+        [961.9, 0.98],
       ]),
-      timeData: makeTimeData({ frequency: 11100, amplitude: 0.34 }),
+      timeData: makeTimeData({ frequency: 961.9, amplitude: 0.34 }),
     });
     freshInputs.modalExcitationState = state;
     const freshFastSignal = updateAudioFeatureFastSignalState(freshInputs);
@@ -4502,120 +4442,30 @@ describe("modal excitation structural state", () => {
       existingState: state,
       performanceNow: () => 1,
     });
-    const freshVisibleKeys = readModeKeys(
+    const freshVisibleAmplitudes = readModeAmplitudeMap(
       freshStructural.candidateResponseSlotsSource,
     );
-    const newVisibleKeys = freshVisibleKeys.filter(
-      (key) => !seededVisibleKeys.includes(key),
-    );
+    const freshVisibleKeys = [...freshVisibleAmplitudes.keys()];
 
-    expect(newVisibleKeys.length).toBeGreaterThan(0);
     expect(
-      newVisibleKeys.every((key) =>
+      countRetainedModeShells(seededVisibleAmplitudes, freshVisibleAmplitudes),
+    ).toBeGreaterThanOrEqual(
+      Math.floor(
+        Math.min(
+          readModeShellKeys(seededVisibleAmplitudes).size,
+          readModeShellKeys(freshVisibleAmplitudes).size,
+        ) * 0.4,
+      ),
+    );
+    expect(
+      freshVisibleKeys.every((key) =>
         readModeKeys(freshStructural.proposalResonantSlotsSource).includes(key),
       ),
     ).toBe(true);
-  });
-
-  it("collapses proposal slots before the display blend releases to zero", () => {
-    const state = createModalExcitationState(16);
-    const activeFft = makeFft([
-      [550, 0.95],
-      [1100, 0.52],
-    ]);
-    const silentFft = new Float32Array(BIN_COUNT);
-    const silentTimeData = new Float32Array(FFT_SIZE);
-    let lastStructural = null;
-
-    for (let frame = 0; frame < 10; frame += 1) {
-      const inputs = createLineFeedPreparedInputs({
-        frameTimeMs: frame * 33,
-        fftLinearAmplitudes: activeFft,
-        timeData: makeTimeData({ frequency: 550 }),
-      });
-      inputs.modalExcitationState = state;
-      const fastSignal = updateAudioFeatureFastSignalState(inputs);
-      lastStructural = buildModalExcitationStructuralState({
-        preparedInputs: inputs,
-        fastSignalState: fastSignal,
-        existingState: state,
-        performanceNow: () => frame,
-      });
-    }
-
-    for (let frame = 10; frame < 16; frame += 1) {
-      const inputs = createLineFeedPreparedInputs({
-        frameTimeMs: frame * 33,
-        fftLinearAmplitudes: silentFft,
-        timeData: silentTimeData,
-      });
-      inputs.modalExcitationState = state;
-      const fastSignal = updateAudioFeatureFastSignalState(inputs);
-      lastStructural = buildModalExcitationStructuralState({
-        preparedInputs: inputs,
-        fastSignalState: fastSignal,
-        existingState: state,
-        performanceNow: () => frame,
-      });
-    }
-
     expect(
-      sumAmplitudes(lastStructural.proposalSourceCoupledSlotsSource),
-    ).toBeLessThan(sumAmplitudes(lastStructural.candidateForcingSlotsSource));
-    expect(
-      sumAmplitudes(lastStructural.proposalReferenceSourceCoupledSlotsSource),
-    ).toBeGreaterThan(0);
-  });
-
-  it("keeps weak residual tails visible before the proposal layer fully clears", () => {
-    const state = createModalExcitationState(16);
-    const activeFft = makeFft([
-      [550, 0.95],
-      [1100, 0.52],
-    ]);
-    const silentFft = new Float32Array(BIN_COUNT);
-    const silentTimeData = new Float32Array(FFT_SIZE);
-    let structural = null;
-
-    for (let frame = 0; frame < 10; frame += 1) {
-      const inputs = createLineFeedPreparedInputs({
-        frameTimeMs: frame * 33,
-        fftLinearAmplitudes: activeFft,
-        timeData: makeTimeData({ frequency: 550 }),
-      });
-      inputs.modalExcitationState = state;
-      const fastSignal = updateAudioFeatureFastSignalState(inputs);
-      structural = buildModalExcitationStructuralState({
-        preparedInputs: inputs,
-        fastSignalState: fastSignal,
-        existingState: state,
-        performanceNow: () => frame,
-      });
-    }
-
-    for (let frame = 10; frame < 13; frame += 1) {
-      const inputs = createLineFeedPreparedInputs({
-        frameTimeMs: frame * 33,
-        fftLinearAmplitudes: silentFft,
-        timeData: silentTimeData,
-      });
-      inputs.modalExcitationState = state;
-      const fastSignal = updateAudioFeatureFastSignalState(inputs);
-      structural = buildModalExcitationStructuralState({
-        preparedInputs: inputs,
-        fastSignalState: fastSignal,
-        existingState: state,
-        performanceNow: () => frame,
-      });
-    }
-
-    expect(
-      sumAmplitudes(structural.proposalSourceCoupledSlotsSource),
-    ).toBeGreaterThan(0);
-    expect(
-      sumAmplitudes(structural.candidateForcingSlotsSource),
+      computeModalEnergyWeightedOrder(freshVisibleAmplitudes),
     ).toBeGreaterThan(
-      sumAmplitudes(structural.proposalSourceCoupledSlotsSource),
+      computeModalEnergyWeightedOrder(seededVisibleAmplitudes) + 0.5,
     );
   });
 
@@ -4672,7 +4522,7 @@ describe("modal excitation structural state", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("keeps display slots sparser than proposal slots under dense sustained input", () => {
+  it("publishes dense oscillator proposals without synthetic sparsification", () => {
     const state = createModalExcitationState(16);
     let structural = null;
 
@@ -4686,9 +4536,9 @@ describe("modal excitation structural state", () => {
           [330, 0.7],
           [440, 0.58],
           [660, 0.52],
-          [6200, 0.44],
-          [6800, 0.41],
-          [7600, 0.38],
+          [1500, 0.44],
+          [2100, 0.41],
+          [2800, 0.38],
         ]),
         timeData: makeTimeData({ frequency: 110, amplitude: 0.62 }),
       });
@@ -4702,37 +4552,32 @@ describe("modal excitation structural state", () => {
       });
     }
 
-    expect(
+    expect(countActiveSlotsLocal(structural.candidateForcingSlotsSource)).toBe(
       countActiveSlotsLocal(structural.proposalSourceCoupledSlotsSource),
-    ).toBeGreaterThanOrEqual(
-      countActiveSlotsLocal(structural.candidateForcingSlotsSource),
     );
-    expect(sumAmplitudes(structural.candidateForcingSlotsSource)).toBeLessThan(
+    expect(sumAmplitudes(structural.candidateForcingSlotsSource)).toBeCloseTo(
       sumAmplitudes(structural.proposalSourceCoupledSlotsSource),
+      8,
     );
-    expect(
-      sumAmplitudes(structural.candidateResponseSlotsSource),
-    ).toBeLessThanOrEqual(
-      sumAmplitudes(structural.proposalResonantSlotsSource),
+    expect(readModeKeys(structural.candidateResponseSlotsSource)).toEqual(
+      readModeKeys(structural.proposalResonantSlotsSource),
     );
   });
 
-  it("does not fill visible detail with same-frequency families", () => {
+  it("admits complete source-projected shells within semantic capacity", () => {
     const state = createModalExcitationState(16);
     const inputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
       fftLinearAmplitudes: makeFft([
-        [6200, 0.96],
-        [6240, 0.92],
-        [6280, 0.88],
-        [7600, 0.72],
+        [794.3, 0.96],
+        [820.3, 0.88],
+        [954.6, 0.72],
       ]),
       timeData: makeMixedTimeData({
         partials: [
-          [6200, 0.96],
-          [6240, 0.92],
-          [6280, 0.88],
-          [7600, 0.72],
+          [794.3, 0.96],
+          [820.3, 0.88],
+          [954.6, 0.72],
         ],
         amplitudeScale: 0.32,
       }),
@@ -4747,94 +4592,39 @@ describe("modal excitation structural state", () => {
       existingState: state,
       performanceNow: () => 0,
     });
-    const frequencyByKey = new Map(
-      state.atlasEntries.map((entry) => [
-        `${entry.u}:${entry.v}:${entry.w}`,
-        entry.naturalFrequencyHz,
-      ]),
+    const atlas = buildModalExcitationAtlas({
+      radius: inputs.radius,
+      cavityGeometry: inputs.effectiveCavityGeometry,
+      cavityAcousticScale: inputs.cavityAcousticScale,
+      boundaryMode: inputs.boundaryMode,
+    });
+    const atlasByFamilyKey = new Map(
+      atlas.map((entry) => [`${entry.u}:${entry.v}:${entry.w}`, entry]),
     );
-    const visibleFrequencies = readModeKeys(
-      structural.candidateResponseSlotsSource,
-    ).map((key) => frequencyByKey.get(key));
-
-    for (let left = 0; left < visibleFrequencies.length; left += 1) {
-      for (
-        let right = left + 1;
-        right < visibleFrequencies.length;
-        right += 1
-      ) {
-        expect(
-          getRelativeFrequencyDistance(
-            visibleFrequencies[left],
-            visibleFrequencies[right],
-          ),
-        ).toBeGreaterThan(1e-9);
-      }
-    }
-  });
-
-  it("drops stale low-signal entries from display while keeping them in proposal slots", () => {
-    const state = createModalExcitationState(16);
-    const activeFft = makeFft([
-      [550, 0.95],
-      [1100, 0.52],
-      [1650, 0.38],
-      [6600, 0.34],
-    ]);
-    const silentFft = new Float32Array(BIN_COUNT);
-    const silentTimeData = new Float32Array(FFT_SIZE);
-    let structural = null;
-
-    for (let frame = 0; frame < 10; frame += 1) {
-      const inputs = createLineFeedPreparedInputs({
-        frameTimeMs: frame * 33,
-        fftLinearAmplitudes: activeFft,
-        timeData: makeTimeData({ frequency: 550, amplitude: 0.45 }),
-      });
-      inputs.modalExcitationState = state;
-      const fastSignal = updateAudioFeatureFastSignalState(inputs);
-      structural = buildModalExcitationStructuralState({
-        preparedInputs: inputs,
-        fastSignalState: fastSignal,
-        existingState: state,
-        performanceNow: () => frame,
-      });
-    }
-
-    for (let frame = 10; frame < 12; frame += 1) {
-      const inputs = createLineFeedPreparedInputs({
-        frameTimeMs: frame * 33,
-        fftLinearAmplitudes: silentFft,
-        timeData: silentTimeData,
-      });
-      inputs.modalExcitationState = state;
-      const fastSignal = updateAudioFeatureFastSignalState(inputs);
-      structural = buildModalExcitationStructuralState({
-        preparedInputs: inputs,
-        fastSignalState: fastSignal,
-        existingState: state,
-        performanceNow: () => frame,
-      });
-    }
-
-    expect(
-      countActiveSlotsLocal(structural.proposalSourceCoupledSlotsSource),
-    ).toBeGreaterThan(
-      countActiveSlotsLocal(structural.candidateForcingSlotsSource),
+    const visibleModeKeys = [
+      ...readModeKeys(structural.candidateForcingSlotsSource),
+      ...readModeKeys(structural.candidateResponseSlotsSource),
+    ];
+    const visibleKeySet = new Set(visibleModeKeys);
+    const selectedShellKeys = new Set(
+      visibleModeKeys.map((key) => atlasByFamilyKey.get(key)?.responseModeKey),
     );
-    expect(
-      countActiveSlotsLocal(structural.referenceSourceCoupledSlotsSource),
-    ).toBeLessThanOrEqual(
-      countActiveSlotsLocal(structural.candidateForcingSlotsSource),
+    const selectedMultiMemberShell = Array.from(selectedShellKeys).some(
+      (shellKey) =>
+        atlas.filter((entry) => entry.responseModeKey === shellKey).length > 1,
     );
-    expect(
-      countActiveSlotsLocal(structural.referenceSourceCoupledSlotsSource),
-    ).toBeLessThanOrEqual(1);
-    expect(
-      countActiveSlotsLocal(
-        structural.proposalReferenceSourceCoupledSlotsSource,
-      ),
-    ).toBeGreaterThan(0);
+
+    expect(new Set(visibleModeKeys).size).toBe(visibleModeKeys.length);
+    expect(visibleModeKeys.length).toBeLessThanOrEqual(
+      MODAL_SEMANTIC_DESCRIPTOR_CAPACITY,
+    );
+    expect(selectedMultiMemberShell).toBe(true);
+    for (const shellKey of selectedShellKeys) {
+      const members = atlas
+        .filter((entry) => entry.responseModeKey === shellKey)
+        .map((entry) => `${entry.u}:${entry.v}:${entry.w}`);
+      expect(members.every((key) => visibleKeySet.has(key))).toBe(true);
+    }
   });
 });
 

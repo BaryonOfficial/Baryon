@@ -3,7 +3,7 @@ title: "Control panel reference"
 description: "Reference for the Baryon GUI controls and diagnostic settings."
 ---
 
-The Baryon GUI (top-right corner) lets you shape the visualizer in real time. Hover over any control in the panel to see its tooltip. This document provides the full reference for every user-facing control, organized by folder.
+The Baryon GUI (top-right corner) lets you shape the visualizer in real time. Hover over any control in the panel to see its tooltip. This document covers the shared visual controls and marks controls that appear only in the web app or Listener Mode.
 
 For a practical walkthrough, start with [First session guide](/public/guides/first-session). For the conceptual model behind these settings, see [Understanding the engine](/public/guides/understanding-the-engine). Desktop OSC, OSCQuery, and MIDI control-input setup lives in [Parameter Automation](/public/desktop/parameter-automation); outbound modal-structure data lives in [OSC Structure Export](/public/desktop/osc-structure-export).
 
@@ -14,6 +14,7 @@ For a practical walkthrough, start with [First session guide](/public/guides/fir
 | Task                               | Controls to use                                                                                     |
 | ---------------------------------- | --------------------------------------------------------------------------------------------------- |
 | Manually rotate the cymatic volume | Set **Rotation Mode** to `Manual`, then adjust **Manual Rotation** in **Motion**.                   |
+| Rotate the idle logo independently | Set **Logo Rotation** to `Manual`, then adjust **Logo Rotation Speed** in **Logo**.                 |
 | Keep the scene stationary          | Set **Rotation Mode** to `Off`.                                                                     |
 | Let audio drive scene movement     | Set **Rotation Mode** to `Audio`, then tune **Motion Scale**.                                       |
 | Change viewpoint                   | Use the floating camera controls or orbit drag while the camera is unlocked.                        |
@@ -59,22 +60,25 @@ Controls for live-input analysis and browser microphone processing.
 
 Controls for render cadence, adaptive quality, and the performance HUD.
 
-| Label          | Description                                                                                                               |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| **Profile**    | `Auto` adapts raymarch steps toward 60 FPS, `Custom` uses Target FPS, and `Max Quality` leaves raymarch steps ungoverned. |
-| **Target FPS** | Performer cadence and adaptive raymarch target used when Profile is `Custom`.                                             |
-| **HUD**        | Shows FPS and render resolution on screen.                                                                                |
+| Label          | Description                                                                                                                                                                                                       |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Profile**    | `Auto` adapts raymarch steps toward 60 FPS, `Custom` uses Target FPS, and `Max Quality` leaves raymarch steps ungoverned. Version 1.2.0 defaults to `Max Quality`; use `Auto` when you want adaptive performance. |
+| **Target FPS** | Performer cadence and adaptive raymarch target used when Profile is `Custom`.                                                                                                                                     |
+| **HUD**        | Shows FPS and render resolution on screen.                                                                                                                                                                        |
 
 ---
 
 ## Output
 
-Controls for the published output mode and opaque output fill.
+This control sets the opaque background used by the web app and Listener Mode.
 
-| Label            | Description                                                                 |
-| ---------------- | --------------------------------------------------------------------------- |
-| **Output Mode**  | `Transparent` composites over other content. `Opaque` renders solid output. |
-| **Output Color** | Background fill color used in Opaque output mode.                           |
+| Label            | Description                           |
+| ---------------- | ------------------------------------- |
+| **Output Color** | Background fill color for the output. |
+
+Performer does not expose this control. Display, Syphon, and Spout always
+receive an opaque image over black; see [Program
+output](/public/desktop/program-output).
 
 ---
 
@@ -82,44 +86,45 @@ Controls for the published output mode and opaque output fill.
 
 Controls for the raymarched modal volume.
 
-| Label                | Description                                                                                                                 |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **Shape**            | Show the rectangular cymatic field through a spherical clip or across its full cubic domain.                                |
-| **Boundary**         | Choose whether the modal family behaves like a reflective boundary (`Neumann`) or a fixed node.                             |
-| **Material Density** | Scale the organized cymatic material before its fixed scattering, absorption, and laser-emission response.                  |
-| **Laser Bending**    | Change how strongly laser rays bend through the acoustic pressure field, affecting caustic placement and concentration.      |
-| **Max Steps**        | Set the maximum raymarch quality budget. `Auto` and `Custom` performance profiles may use fewer steps to hold their target. |
+| Label                | Description                                                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Shape**            | Show the rectangular cymatic field through a spherical clip or across its full cubic domain.                                                |
+| **Boundary**         | Choose whether the modal family behaves like a reflective boundary (`Neumann`) or a fixed node.                                             |
+| **Material Density** | Scale the uniform optical tracer that reveals caustic irradiance. This changes scattering and absorption, not acoustic or caustic topology. |
+| **Laser Bending**    | Change how strongly laser rays bend through the acoustic pressure field, affecting caustic placement and concentration.                     |
+| **Max Samples**      | Set the maximum analytic camera-ray sample budget. `Auto` and `Custom` performance profiles may use fewer samples to hold their target.     |
 
 ---
 
 ## Appearance
 
-Controls for volume color, Spectral Light transfer, surface sheen, and bloom.
+Controls for tracer color, focused-light transfer, and bloom.
 
-| Label                 | Description                                                                                                    |
-| --------------------- | -------------------------------------------------------------------------------------------------------------- |
-| **Color Mode**        | `Static` uses the chosen colors. `Spectral` colors promoted cymatic modes from the audio spectrum.             |
-| **Volume**            | Main color of the volume interior.                                                                             |
-| **Fresnel Color**     | Color of the grazing-angle laser energy emitted at field edges.                                                |
-| **Color Mix**         | Continuous static-to-Spectral-Light color blend when Color Mode is `Spectral`.                                 |
-| **Fresnel Strength**  | Strength of the grazing-angle laser energy emitted at field edges.                                             |
-| **Fresnel Tightness** | How tightly Fresnel energy hugs the edge — higher values confine it to a thinner rim.                          |
-| **Bloom**             | Toggle the optional soft optical halo around bright parts of the volume.                                       |
-| **Bloom Strength**    | How bright the bloom halo is.                                                                                  |
-| **Bloom Radius**      | How far the bloom spreads from bright areas.                                                                   |
-| **Bloom Threshold**   | Minimum brightness before a region contributes to bloom — raise to limit it to the brightest highlights.       |
+| Label                | Description                                                                                                             |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **Color Mode**       | `Static` uses the chosen colors. `Spectral` colors promoted cymatic modes from the audio spectrum.                      |
+| **Volume Color**     | Main color of the volume interior.                                                                                      |
+| **Caustic Color**    | Color of focused laser irradiance revealed by the tracer.                                                               |
+| **Spectral Chroma**  | Adjust spectral color vividness at constant luminance without blending in the configured static colors.                 |
+| **Caustic Strength** | Camera-visible focused-light gain. It does not change acoustic topology, ray bending, or material extinction.           |
+| **Laser Focus**      | Inverse finite-source angular spread. Higher values produce narrower caustic folds without changing the acoustic field. |
+| **Bloom**            | Toggle the optional soft optical halo around bright parts of the volume.                                                |
+| **Bloom Strength**   | How bright the bloom halo is.                                                                                           |
+| **Bloom Radius**     | How far the bloom spreads from bright areas.                                                                            |
+| **Bloom Threshold**  | Minimum brightness before a region contributes to bloom — raise to limit it to the brightest highlights.                |
 
 ---
 
 ## Motion
 
-Controls for scene movement.
+Controls for cymatic-render movement. These settings do not rotate the idle logo.
 
-| Label               | Description                                                                                    |
-| ------------------- | ---------------------------------------------------------------------------------------------- |
-| **Rotation Mode**   | `Audio` rotates the shape with music, `Manual` uses Manual Rotation, and `Off` keeps it still. |
-| **Manual Rotation** | Spin speed in Manual rotation mode — negative values reverse direction.                        |
-| **Motion Scale**    | Scales the auto-calibrated rotation in Audio mode. It has no effect in Manual rotation mode.   |
+| Label                   | Description                                                                                                                      |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| **Rotation Mode**       | `Audio` rotates the cymatic render with music, `Manual` uses Manual Rotation, and `Off` keeps it still.                          |
+| **Manual Rotation**     | Spin speed in Manual rotation mode — negative values reverse direction.                                                          |
+| **Motion Scale**        | Scales the auto-calibrated rotation in Audio mode. It has no effect in Manual rotation mode.                                     |
+| **Pattern Persistence** | Sets the cymatic geometry exposure from 0.05 to 2 seconds. Higher values retain recognizable structures longer but overlap more. |
 
 ---
 
@@ -127,28 +132,30 @@ Controls for scene movement.
 
 Idle-state overlay controls.
 
-| Label              | Description                                                    |
-| ------------------ | -------------------------------------------------------------- |
-| **Logo Intensity** | Brightness of the idle logo shown when no audio is playing.    |
-| **Logo Size**      | Size of the idle logo overlay shown when no audio is playing.  |
-| **Logo Color**     | Color of the idle logo overlay shown when no audio is playing. |
+| Label                   | Description                                                              |
+| ----------------------- | ------------------------------------------------------------------------ |
+| **Logo Intensity**      | Brightness of the idle logo shown when no audio is playing.              |
+| **Logo Size**           | Size of the 3D idle logo shown when no audio is playing.                 |
+| **Logo Color**          | Color of the 3D idle logo shown when no audio is playing.                |
+| **Logo Rotation**       | `Manual` rotates the idle logo independently; `Off` keeps it stationary. |
+| **Logo Rotation Speed** | Idle-logo spin speed in Manual mode — negative values reverse direction. |
 
 ## Diagnostics
 
 Diagnostic controls help isolate render, audio, and analysis behavior. Debug-only controls require devtools (`DEVTOOLS_ENABLED`).
 
-| Label                  | Description                                                                                                                          |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **TRAA**               | Toggle temporal anti-aliasing for diagnostics when isolating render latency, shimmer, or post-process cost.                          |
-| **Capture Debug Data** | Record per-frame debug data for the active analysis and renderer.                                                                    |
-| **Freeze Pattern**     | Hold the current modal pattern in place instead of updating it from live audio.                                                      |
-| **Force WebGL2**       | Restart the renderer on the WebGL2 fallback path for compatibility testing. This remounts the canvas.                                |
-| **Low-load Playback**  | Reduce render overhead during playback diagnostics so you can inspect behavior on slower systems or heavier songs.                   |
-| **Inject Tone**        | Replace live audio with a synthetic test tone so you can inspect a known, repeatable input.                                          |
-| **Tone Hz**            | Frequency of the injected test tone in Hz. Low values inspect renderable patterns; high values exercise bandwidth-limit diagnostics. |
-| **Tone Signal**        | Choose whether the injected test signal is a pure sine or an explicit harmonic series.                                               |
-| **Tone Amp**           | Amplitude of the injected test tone — lower values produce subtler pattern excitation.                                               |
-| **Log Frames**         | Write a debug snapshot to the browser console every N frames. Use 1 for every frame.                                                 |
+| Label                           | Description                                                                                                                          |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **TRAA**                        | Toggle temporal anti-aliasing for diagnostics when isolating render latency, shimmer, or post-process cost.                          |
+| **Capture Debug Data**          | Record per-frame debug data for the active analysis and renderer.                                                                    |
+| **Freeze Pattern**              | Hold the current modal pattern in place instead of updating it from live audio.                                                      |
+| **Force WebGL2**                | Restart the renderer on the WebGL2 fallback path for compatibility testing. This remounts the canvas.                                |
+| **Suppress Playback Telemetry** | Pause per-frame devtools snapshots and console audit logs during playback. Rendering quality and frame cadence are unchanged.        |
+| **Inject Tone**                 | Replace live audio with a synthetic test tone so you can inspect a known, repeatable input.                                          |
+| **Tone Hz**                     | Frequency of the injected test tone in Hz. Low values inspect renderable patterns; high values exercise bandwidth-limit diagnostics. |
+| **Tone Signal**                 | Choose whether the injected test signal is a pure sine or an explicit harmonic series.                                               |
+| **Tone Amp**                    | Amplitude of the injected test tone — lower values produce subtler pattern excitation.                                               |
+| **Log Frames**                  | Write a debug snapshot to the browser console every N frames. Use 1 for every frame.                                                 |
 
 ---
 

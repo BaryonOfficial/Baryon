@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 
 const {
   mockBloom,
-  mockCompressPremultipliedDisplayRadiance,
+  mockCompressDisplayRadiance,
   mockConvertToTexture,
   mockFixedOpticalPsf,
   mockMix,
@@ -20,13 +20,21 @@ const {
     strength,
     radius,
     threshold,
-    rgb: { kind: "bloomRgb" },
+    rgb: {
+      kind: "bloomRgb",
+      mul: vi.fn((enabled) => ({
+        kind: "gatedBloomRgb",
+        enabled,
+        r: 0.3,
+        g: 0.3,
+        b: 0.3,
+      })),
+    },
     dispose: vi.fn(),
   })),
-  mockCompressPremultipliedDisplayRadiance: vi.fn((node, alpha) => ({
+  mockCompressDisplayRadiance: vi.fn((node) => ({
     kind: "compressedRadiance",
     node,
-    alpha,
   })),
   mockConvertToTexture: vi.fn((node) => ({
     kind: "linearTexture",
@@ -68,7 +76,6 @@ const {
   mockRaymarchAovNodes: {
     baseRadiance: { kind: "raymarchBaseRadiance" },
     transmittance: { kind: "raymarchTransmittance" },
-    coverage: { kind: "raymarchCoverage" },
   },
   renderPipelineInstances: [],
 }));
@@ -80,7 +87,14 @@ vi.mock("three/webgpu", () => ({
       this.gl = gl;
       this.outputNode = null;
       this.needsUpdate = false;
+      this.renderCallCount = 0;
+      this.renderSpy = vi.fn();
       renderPipelineInstances.push(this);
+    }
+
+    render() {
+      this.renderCallCount += 1;
+      this.renderSpy();
     }
   },
   RenderTarget: class RenderTarget {},
@@ -111,19 +125,18 @@ vi.mock("three/tsl", () => ({
 vi.mock("../core/raymarch/SafeVolumetricLightingModel.js", () => ({
   raymarchBaseLightNode: mockRaymarchAovNodes.baseRadiance,
   raymarchTransmittanceNode: mockRaymarchAovNodes.transmittance,
-  raymarchCoverageNode: mockRaymarchAovNodes.coverage,
 }));
 
 vi.mock("three/examples/jsm/tsl/display/TRAANode.js", () => ({
   traa: mockTraa,
 }));
 
-vi.mock("three/examples/jsm/tsl/display/BloomNode.js", () => ({
-  bloom: mockBloom,
+vi.mock("./pairedBloomNode.js", () => ({
+  pairedBloom: mockBloom,
 }));
 
-vi.mock("three/examples/jsm/tsl/display/SMAANode.js", () => ({
-  smaa: mockSmaa,
+vi.mock("./fusedSmaaNode.js", () => ({
+  fusedSmaa: mockSmaa,
 }));
 
 vi.mock("./displayRadiance.js", () => ({
@@ -139,12 +152,7 @@ vi.mock("./displayRadiance.js", () => ({
       bloomRgb,
     })),
   })),
-  compressDisplayRadianceNode: vi.fn((node) => ({
-    kind: "compressedRadiance",
-    node,
-  })),
-  compressPremultipliedDisplayRadianceNode:
-    mockCompressPremultipliedDisplayRadiance,
+  compressDisplayRadianceNode: mockCompressDisplayRadiance,
   sampleFixedOpticalPsfNode: mockFixedOpticalPsf,
 }));
 
@@ -156,6 +164,7 @@ import {
   composeRenderOutputNode,
   consumeRenderOutputVisualIdle,
   createCaptureOutputSession,
+  createFallbackRenderOutputPipeline,
   createRenderOutputPipeline,
   disposeRenderOutputPostNodes,
   getRenderOutputCarrierTruthEnabled,
@@ -166,7 +175,7 @@ import {
   normalizeOutputMode,
   readRenderOutputCheckpointAovsAsync,
   resolveRenderQualityProfile,
-  syncRenderOutputBloomPassUniforms,
+  syncRenderOutputBloomUniforms,
   syncRenderOutputNodeTopology,
 } from "./outputPipeline.js";
 
@@ -174,7 +183,7 @@ describe("outputPipeline compatibility surface", () => {
   beforeEach(() => {
     renderPipelineInstances.length = 0;
     mockBloom.mockClear();
-    mockCompressPremultipliedDisplayRadiance.mockClear();
+    mockCompressDisplayRadiance.mockClear();
     mockConvertToTexture.mockClear();
     mockFixedOpticalPsf.mockClear();
     mockMix.mockClear();
@@ -193,6 +202,7 @@ describe("outputPipeline compatibility surface", () => {
   it("re-exports render profile policy from the public outputPipeline path", () => {
     expect(OUTPUT_MODES.transparent).toBe("transparent");
     expect(normalizeOutputMode("opaque")).toBe("opaque");
+    expect(normalizeOutputMode()).toBe("opaque");
     expect(
       resolveRenderQualityProfile({
         qualityPreset: "auto",
@@ -204,6 +214,23 @@ describe("outputPipeline compatibility surface", () => {
   it("keeps renderer entrypoints on the public outputPipeline path", () => {
     expect(typeof createRenderOutputPipeline).toBe("function");
     expect(typeof createCaptureOutputSession).toBe("function");
+  });
+
+  it("keeps the WebGL fallback scene pass color-only", () => {
+    createFallbackRenderOutputPipeline(
+      { backend: { isWebGLBackend: true } },
+      {},
+      {},
+      {
+        renderProfile: {
+          qualityPreset: "max-quality",
+          traaEnabled: false,
+          bloomAllowed: false,
+        },
+      },
+    );
+
+    expect(mockPass).toHaveBeenCalledWith({}, {}, { depthBuffer: false });
   });
 
   it("adds base radiance, transmittance, and coverage to the production scene pass on demand", () => {
@@ -352,7 +379,7 @@ describe("outputPipeline compatibility surface", () => {
       sceneColor: { rgb: sceneRgb, a: sceneAlpha },
       opticalPsfPass: null,
       bloomPass: null,
-      bloomEnabled: false,
+      bloomEnabledNode: { value: 0 },
       outputMode: "opaque",
       outputBackgroundNode,
     });
@@ -369,10 +396,10 @@ describe("outputPipeline compatibility surface", () => {
       a: 1,
       alpha: 1,
     });
-    expect(mockCompressPremultipliedDisplayRadiance).not.toHaveBeenCalled();
+    expect(mockCompressDisplayRadiance).toHaveBeenCalledWith(sceneRgb);
   });
 
-  it("compresses transparent radiance before restoring premultiplied alpha", () => {
+  it("uses the preview display transform for transparent program RGB", () => {
     const sceneRgb = { kind: "sceneRgb" };
     const sceneAlpha = { kind: "sceneAlpha" };
 
@@ -380,28 +407,24 @@ describe("outputPipeline compatibility surface", () => {
       sceneColor: { rgb: sceneRgb, a: sceneAlpha },
       opticalPsfPass: null,
       bloomPass: null,
-      bloomEnabled: false,
+      bloomEnabledNode: { value: 0 },
       outputMode: "transparent",
       outputBackgroundNode: {},
     });
 
-    expect(mockCompressPremultipliedDisplayRadiance).toHaveBeenCalledWith(
-      sceneRgb,
-      sceneAlpha,
-    );
+    expect(mockCompressDisplayRadiance).toHaveBeenCalledWith(sceneRgb);
     expect(outputNode).toEqual({
       kind: "vec4",
       rgb: {
         kind: "compressedRadiance",
         node: sceneRgb,
-        alpha: sceneAlpha,
       },
       a: sceneAlpha,
       alpha: sceneAlpha,
     });
   });
 
-  it("keeps the fixed PSF active while the Bloom toggle gates additive bloom", () => {
+  it("keeps the fixed PSF active while a uniform gates additive bloom", () => {
     const sceneColor = {
       rgb: { kind: "sceneRgb" },
       a: { kind: "sceneAlpha" },
@@ -414,31 +437,33 @@ describe("outputPipeline compatibility surface", () => {
         mul: vi.fn(() => ({ r: 0.01, g: 0.01, b: 0.01 })),
       },
     };
-    const bloomPass = {
-      rgb: { kind: "bloomRgb", r: 0.3, g: 0.3, b: 0.3 },
+    const gatedBloomRgb = {
+      kind: "gatedBloomRgb",
+      r: 0.3,
+      g: 0.3,
+      b: 0.3,
     };
+    const bloomPass = {
+      rgb: {
+        kind: "bloomRgb",
+        mul: vi.fn(() => gatedBloomRgb),
+      },
+    };
+    const bloomEnabledNode = { kind: "bloomEnabledUniform", value: 1 };
 
-    const withoutBloom = composeRenderOutputNode({
-      sceneColor,
-      opticalPsfPass,
-      bloomPass,
-      bloomEnabled: false,
-      outputMode: "transparent",
-      outputBackgroundNode: {},
-    });
     const withBloom = composeRenderOutputNode({
       sceneColor,
       opticalPsfPass,
       bloomPass,
-      bloomEnabled: true,
+      bloomEnabledNode,
       outputMode: "transparent",
       outputBackgroundNode: {},
     });
 
-    expect(withoutBloom.rgb.node.kind).toBe("fixedOpticalPsf");
+    expect(bloomPass.rgb.mul).toHaveBeenCalledWith(bloomEnabledNode);
     expect(withBloom.rgb.node).toMatchObject({
       kind: "fixedOpticalPsfWithBloom",
-      bloomRgb: bloomPass.rgb,
+      bloomRgb: gatedBloomRgb,
     });
   });
 
@@ -458,9 +483,8 @@ describe("outputPipeline compatibility surface", () => {
 
     expect(mockFixedOpticalPsf).toHaveBeenCalledTimes(1);
     expect(mockBloom).not.toHaveBeenCalled();
-    expect(pipelineState.postNodes.opticalPsfPass).toBe(
-      pipelineState.postNodes.rawSceneOpticalPsfPass,
-    );
+    expect(pipelineState.postNodes.opticalPsfPass).toBeTruthy();
+    expect(pipelineState.postNodes.bloomPasses).toHaveLength(0);
     expect(getRenderOutputCarrierTruthEnabled(pipelineState.postNodes)).toBe(
       false,
     );
@@ -486,13 +510,62 @@ describe("outputPipeline compatibility surface", () => {
     );
     expect(pipelineState.postNodes.carrierTruthEnabled).toBe(true);
     expect(pipelineState.postNodes.traaNode).toBeNull();
+    expect(mockPass).toHaveBeenCalledWith({}, {}, { depthBuffer: false });
     expect(mockTraa).not.toHaveBeenCalled();
     expect(mockFixedOpticalPsf).not.toHaveBeenCalled();
     expect(mockBloom).not.toHaveBeenCalled();
     expect(mockSmaa).not.toHaveBeenCalled();
     expect(renderPipelineInstances[0].outputNode).toMatchObject({
       kind: "vec4",
-      rgb: { kind: "compressedRadiance" },
+      rgb: {
+        kind: "opaqueBackground",
+        node: { kind: "compressedRadiance" },
+      },
+    });
+  });
+
+  it("keeps current-frame scene coverage alpha out of the TRAA resolve", () => {
+    // TRAA's resolve quad is an opaque NodeMaterial, so Three forces its
+    // alpha to 1. Temporal output must mix radiance only and take alpha from
+    // the scene pass, or transparent external output loses all coverage.
+    const sceneColorNode = {
+      kind: "texture:output",
+      rgb: { kind: "sceneRgb" },
+      a: { kind: "sceneAlpha" },
+    };
+    mockPass.mockImplementation(() => ({
+      setMRT: vi.fn(),
+      getTextureNode: vi.fn((name = "color") =>
+        name === "output" ? sceneColorNode : { kind: `texture:${name}` },
+      ),
+    }));
+    const traaColorNode = { kind: "traaColor", rgb: { kind: "traaRgb" } };
+    mockTraa.mockImplementationOnce(() => ({
+      edgeDepthDiff: null,
+      useSubpixelCorrection: true,
+      dispose: vi.fn(),
+      getTextureNode: vi.fn(() => traaColorNode),
+    }));
+
+    const pipelineState = createRenderOutputPipeline(
+      {},
+      {},
+      {},
+      {
+        renderProfile: {
+          qualityPreset: "max-quality",
+          traaEnabled: true,
+          bloomAllowed: false,
+        },
+      },
+    );
+
+    expect(mockMix.mock.calls[0][0]).toBe(sceneColorNode.rgb);
+    expect(mockMix.mock.calls[0][1]).toBe(traaColorNode.rgb);
+    expect(pipelineState.postNodes.outputSceneColor).toMatchObject({
+      kind: "vec4",
+      rgb: { kind: "mixedOutput" },
+      a: { kind: "sceneAlpha" },
     });
   });
 
@@ -511,18 +584,24 @@ describe("outputPipeline compatibility surface", () => {
     );
     const scenePass = mockPass.mock.results[0].value;
 
+    expect(mockPass).toHaveBeenCalledWith({}, {}, { depthBuffer: true });
     expect(mockMrt).toHaveBeenCalledTimes(1);
     expect(scenePass.setMRT).toHaveBeenCalledTimes(1);
     expect(mockTraa).toHaveBeenCalledTimes(1);
-    expect(mockMix).toHaveBeenCalledTimes(2);
+    // Only the scene color is blended now; the optics read that result rather
+    // than each running their own parallel blend.
+    expect(mockMix).toHaveBeenCalledTimes(1);
     expect(pipelineState.postNodes.traaNode).toBe(
       mockTraa.mock.results[0].value,
     );
     expect(pipelineState.postNodes.renderProfile.traaEnabled).toBe(true);
+    expect(mockConvertToTexture.mock.calls[0][3]).toMatchObject({
+      depthBuffer: false,
+    });
     expect(renderPipelineInstances).toHaveLength(1);
   });
 
-  it("samples a fixed full-resolution optical PSF on both temporal paths", () => {
+  it("runs one optics lane fed by the already-blended temporal color", () => {
     const pipelineState = createRenderOutputPipeline(
       {},
       {},
@@ -535,24 +614,22 @@ describe("outputPipeline compatibility surface", () => {
         },
       },
     );
-    const sceneColor = pipelineState.postNodes.sceneColor;
-    const traaColor = pipelineState.postNodes.traaColor;
-
-    expect(mockFixedOpticalPsf).toHaveBeenCalledTimes(2);
-    expect(mockFixedOpticalPsf).toHaveBeenNthCalledWith(1, sceneColor);
-    expect(mockFixedOpticalPsf).toHaveBeenNthCalledWith(2, traaColor);
-    expect(pipelineState.postNodes.rawSceneOpticalPsfPass).toBe(
+    // The temporal blend is binary, so mix(f(raw), f(traa), t) collapses to
+    // f(blended). One PSF kernel and one bloom pyramid, not two of each.
+    expect(mockFixedOpticalPsf).toHaveBeenCalledTimes(1);
+    expect(mockBloom).toHaveBeenCalledTimes(1);
+    expect(pipelineState.postNodes.opticalPsfPass).toBe(
       mockFixedOpticalPsf.mock.results[0].value,
     );
-    expect(pipelineState.postNodes.opticalPsfPass).toBeTruthy();
-    expect(mockBloom).toHaveBeenCalledTimes(2);
-    expect(pipelineState.postNodes.rawSceneBloomPass).toBe(
+    expect(pipelineState.postNodes.bloomPass).toBe(
       mockBloom.mock.results[0].value,
     );
-    expect(pipelineState.postNodes.bloomPass).toBe(
-      mockBloom.mock.results[1].value,
-    );
-    expect(pipelineState.postNodes.bloomPasses).toHaveLength(2);
+    expect(pipelineState.postNodes.bloomPasses).toHaveLength(1);
+
+    // Both lanes read the same source, and it is not the unblended scene pass.
+    const psfSource = mockFixedOpticalPsf.mock.calls[0][0];
+    expect(mockBloom.mock.calls[0][0]).toBe(psfSource);
+    expect(psfSource).not.toBe(pipelineState.postNodes.sceneColor);
   });
 
   it("uses one fixed optical PSF path when temporal history is disabled", () => {
@@ -571,8 +648,10 @@ describe("outputPipeline compatibility surface", () => {
 
     expect(mockFixedOpticalPsf).toHaveBeenCalledTimes(1);
     expect(mockBloom).toHaveBeenCalledTimes(1);
-    expect(pipelineState.postNodes.opticalPsfPass).toBe(
-      pipelineState.postNodes.rawSceneOpticalPsfPass,
+    // With no temporal path there is nothing to blend, so the optics read the
+    // scene pass directly rather than a materialized copy of it.
+    expect(mockFixedOpticalPsf).toHaveBeenCalledWith(
+      pipelineState.postNodes.sceneColor,
     );
   });
 
@@ -588,11 +667,16 @@ describe("outputPipeline compatibility surface", () => {
       threshold: { value: 0 },
     };
 
-    syncRenderOutputBloomPassUniforms(
-      { bloomPasses: [firstPass, secondPass] },
-      { strength: 0.8, radius: 0.25, threshold: 0.4 },
+    const enabled = { value: 1 };
+    syncRenderOutputBloomUniforms(
+      {
+        bloomUniforms: { enabled },
+        bloomPasses: [firstPass, secondPass],
+      },
+      { enabled: false, strength: 0.8, radius: 0.25, threshold: 0.4 },
     );
 
+    expect(enabled.value).toBe(0);
     for (const bloomPass of [firstPass, secondPass]) {
       expect(bloomPass.strength.value).toBe(0.8);
       expect(bloomPass.radius.value).toBe(0.25);
@@ -685,17 +769,16 @@ describe("outputPipeline compatibility surface", () => {
       depthBuffer: false,
     });
     expect(smaaInput).toBe(displayLinearTextureNode);
-    expect(mockCompressPremultipliedDisplayRadiance).not.toHaveBeenCalled();
+    expect(mockCompressDisplayRadiance).toHaveBeenCalledTimes(1);
     expect(renderPipelineInstances[0].outputNode).toBe(smaaNode);
 
     const withoutSmaa = pipelineState.postNodes.composeOutputNode({
-      bloomEnabled: false,
       outputMode: "opaque",
       temporalHistoryEnabled: false,
       smaaEnabled: false,
     });
 
-    expect(mockCompressPremultipliedDisplayRadiance).not.toHaveBeenCalled();
+    expect(mockCompressDisplayRadiance).toHaveBeenCalledTimes(2);
     expect(mockConvertToTexture).toHaveBeenCalledTimes(1);
     expect(withoutSmaa).toBe(displayLinearTextureNode);
   });
@@ -723,7 +806,6 @@ describe("outputPipeline compatibility surface", () => {
 
     expect(
       syncRenderOutputNodeTopology(pipeline, postNodes, {
-        bloomEnabled: true,
         outputMode: "opaque",
         temporalHistoryEnabled: true,
         smaaEnabled: false,
@@ -731,7 +813,6 @@ describe("outputPipeline compatibility surface", () => {
     ).toBe(true);
 
     expect(composeOutputNode).toHaveBeenLastCalledWith({
-      bloomEnabled: true,
       outputMode: "opaque",
       temporalHistoryEnabled: false,
       smaaEnabled: false,
@@ -748,7 +829,6 @@ describe("outputPipeline compatibility surface", () => {
 
     expect(
       syncRenderOutputNodeTopology(pipeline, postNodes, {
-        bloomEnabled: true,
         outputMode: "opaque",
         temporalHistoryEnabled: false,
         smaaEnabled: true,
@@ -756,7 +836,6 @@ describe("outputPipeline compatibility surface", () => {
     ).toBe(true);
 
     expect(composeOutputNode).toHaveBeenLastCalledWith({
-      bloomEnabled: true,
       outputMode: "opaque",
       temporalHistoryEnabled: false,
       smaaEnabled: true,
@@ -775,6 +854,58 @@ describe("outputPipeline compatibility surface", () => {
     expect(postNodes.smaaNodes.size).toBe(0);
   });
 
+  it("toggles bloom without changing output topology or cached display state", () => {
+    const pipelineState = createRenderOutputPipeline(
+      {},
+      {},
+      {},
+      {
+        renderProfile: {
+          qualityPreset: "max-quality",
+          traaEnabled: false,
+          bloomAllowed: true,
+        },
+      },
+    );
+    const pipeline = pipelineState.pipeline;
+    const postNodes = pipelineState.postNodes;
+    const initialOutputNode = pipeline.outputNode;
+    const initialDisplayTextureCount = postNodes.displayLinearTextureNodes.size;
+
+    pipeline.needsUpdate = false;
+
+    expect(postNodes.bloomUniforms.enabled.value).toBe(1);
+    syncRenderOutputBloomUniforms(postNodes, { enabled: false });
+    expect(
+      syncRenderOutputNodeTopology(pipeline, postNodes, {
+        outputMode: "opaque",
+        temporalHistoryEnabled: false,
+        smaaEnabled: true,
+      }),
+    ).toBe(false);
+    expect(postNodes.bloomUniforms.enabled.value).toBe(0);
+    expect(pipeline.outputNode).toBe(initialOutputNode);
+    expect(pipeline.needsUpdate).toBe(false);
+    expect(postNodes.displayLinearTextureNodes.size).toBe(
+      initialDisplayTextureCount,
+    );
+
+    syncRenderOutputBloomUniforms(postNodes, { enabled: true });
+    expect(
+      syncRenderOutputNodeTopology(pipeline, postNodes, {
+        outputMode: "opaque",
+        temporalHistoryEnabled: false,
+        smaaEnabled: true,
+      }),
+    ).toBe(false);
+    expect(postNodes.bloomUniforms.enabled.value).toBe(1);
+    expect(pipeline.outputNode).toBe(initialOutputNode);
+    expect(pipeline.needsUpdate).toBe(false);
+    expect(postNodes.displayLinearTextureNodes.size).toBe(
+      initialDisplayTextureCount,
+    );
+  });
+
   it("bypasses SMAA for transparent program output", () => {
     const pipelineState = createRenderOutputPipeline(
       {},
@@ -790,31 +921,29 @@ describe("outputPipeline compatibility surface", () => {
       },
     );
 
-    expect(mockSmaa).not.toHaveBeenCalled();
-    expect(getRenderOutputSmaaGraphEnabled(pipelineState.postNodes)).toBe(
-      false,
-    );
-    expect(pipelineState.pipeline.outputNode).toBe(
-      mockConvertToTexture.mock.results[0].value,
-    );
-    pipelineState.postNodes.outputUniforms.backgroundColor.add = vi.fn(
-      (node) => ({ kind: "opaqueBackground", node }),
-    );
+    expect(mockSmaa).toHaveBeenCalledTimes(1);
+    expect(getRenderOutputSmaaGraphEnabled(pipelineState.postNodes)).toBe(true);
 
     expect(
       syncRenderOutputNodeTopology(
         pipelineState.pipeline,
         pipelineState.postNodes,
         {
-          bloomEnabled: false,
-          outputMode: "opaque",
+          outputMode: "transparent",
           temporalHistoryEnabled: false,
           smaaEnabled: true,
         },
       ),
     ).toBe(true);
     expect(mockSmaa).toHaveBeenCalledTimes(1);
-    expect(getRenderOutputSmaaGraphEnabled(pipelineState.postNodes)).toBe(true);
+    expect(getRenderOutputSmaaGraphEnabled(pipelineState.postNodes)).toBe(
+      false,
+    );
+    expect(pipelineState.pipeline.outputNode).toBe(
+      pipelineState.postNodes.displayLinearTextureNodes.get(
+        "current:transparent",
+      ),
+    );
   });
 
   it("skips the TRAA post-process node when TRAA is disabled", () => {
@@ -832,6 +961,7 @@ describe("outputPipeline compatibility surface", () => {
     );
     const scenePass = mockPass.mock.results[0].value;
 
+    expect(mockPass).toHaveBeenCalledWith({}, {}, { depthBuffer: false });
     expect(mockMrt).not.toHaveBeenCalled();
     expect(scenePass.setMRT).not.toHaveBeenCalled();
     expect(mockTraa).not.toHaveBeenCalled();
@@ -968,15 +1098,12 @@ describe("outputPipeline compatibility surface", () => {
     expect(linearComposeStart).toBeGreaterThanOrEqual(0);
     expect(displayComposeStart).toBeGreaterThan(linearComposeStart);
     expect(compatibilityComposeStart).toBeGreaterThan(displayComposeStart);
-    const opaqueCompressionIndex = displayComposeSource.indexOf(
-      "compressDisplayRadianceNode",
-    );
-    const transparentCompressionIndex = displayComposeSource.indexOf(
+    expect(
+      displayComposeSource.match(/compressDisplayRadianceNode/g),
+    ).toHaveLength(1);
+    expect(displayComposeSource).not.toContain(
       "compressPremultipliedDisplayRadianceNode",
     );
-
-    expect(opaqueCompressionIndex).toBeGreaterThanOrEqual(0);
-    expect(transparentCompressionIndex).toBeGreaterThanOrEqual(0);
     expect(source).toContain("composeFixedOpticalPsfRadianceNode");
     expect(source).toContain("sampleFixedOpticalPsfNode");
     expect(source).toContain("FIXED_OPTICAL_PSF_HALO_FRACTION");
@@ -984,27 +1111,30 @@ describe("outputPipeline compatibility surface", () => {
       "composeFixedOpticalPsfRadianceNode",
     );
     const bloomCompositionIndex = linearComposeSource.indexOf(
-      "psfRadiance.add(bloomPass.rgb)",
+      "psfRadiance.add(bloomRadiance)",
     );
 
     expect(psfCompositionIndex).toBeGreaterThanOrEqual(0);
     expect(bloomCompositionIndex).toBeGreaterThanOrEqual(0);
-    expect(linearComposeSource).not.toContain("compressDisplayRadianceNode");
-    expect(linearComposeSource).not.toContain(
-      "compressPremultipliedDisplayRadianceNode",
+    expect(linearComposeSource).toContain(
+      "bloomPass.rgb.mul(bloomEnabledNode)",
     );
-    expect(source).toContain("BloomNode.js");
+    expect(linearComposeSource).not.toContain("compressDisplayRadianceNode");
+    expect(source).toContain("pairedBloomNode.js");
     expect(source).toContain("bloomUniforms");
   });
 
-  it("keeps a raw-scene optical PSF path for temporal-history bypass frames", () => {
+  it("keeps one optics lane instead of a parallel raw-scene chain", () => {
     const source = readFileSync(
       new URL("./outputPipeline.js", import.meta.url),
       "utf8",
     );
 
-    expect(source).toContain("rawSceneOpticalPsfPass");
-    expect(source).toContain("rawSceneBloomPass");
+    // The bypass is served by blending the optics input, not by building a
+    // second bloom pyramid and PSF kernel whose output is scaled by zero.
+    expect(source).not.toContain("rawSceneOpticalPsfPass");
+    expect(source).not.toContain("rawSceneBloomPass");
+    expect(source).toContain("const opticsSourceColor =");
     expect(source).toContain("temporalHistoryEnabled && traaNode");
     expect(source).toContain("bloomPasses:");
   });

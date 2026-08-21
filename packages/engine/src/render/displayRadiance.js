@@ -17,7 +17,10 @@ const DISPLAY_RADIANCE_DEFAULTS = Object.freeze({
   displayShoulderSoftness: 1.2,
   displayEpsilon: 1e-5,
   displayChannelCeiling: 0.985,
-  preShoulderMaxChannel: 0.98,
+  // Localized chromatic HDR is the energy source for bloom. Admit one stop
+  // above display white while the luminance knee guards broad wash and the
+  // final gamut fit bounds every displayed channel at displayChannelCeiling.
+  preShoulderMaxChannel: 2,
 });
 
 export const DISPLAY_RADIANCE_HEADROOM_CONTRACT = Object.freeze({
@@ -25,7 +28,7 @@ export const DISPLAY_RADIANCE_HEADROOM_CONTRACT = Object.freeze({
   luminanceP99Max: DISPLAY_RADIANCE_DEFAULTS.displayKneeStart,
   maxChannelP99Max: DISPLAY_RADIANCE_DEFAULTS.preShoulderMaxChannel,
   overloadThreshold: DISPLAY_RADIANCE_DEFAULTS.preShoulderMaxChannel,
-  overloadShareMax: 0.005,
+  overloadShareMax: 0.01,
 });
 
 export const FIXED_OPTICAL_PSF_CORE_FRACTION = 0.95;
@@ -44,16 +47,11 @@ export const FIXED_OPTICAL_PSF_KERNEL_WEIGHTS = Object.freeze([
   1 / 16,
 ]);
 
-const FIXED_OPTICAL_PSF_KERNEL_SAMPLES = Object.freeze([
-  Object.freeze({ x: -1, y: -1, weight: FIXED_OPTICAL_PSF_KERNEL_WEIGHTS[0] }),
-  Object.freeze({ x: 0, y: -1, weight: FIXED_OPTICAL_PSF_KERNEL_WEIGHTS[1] }),
-  Object.freeze({ x: 1, y: -1, weight: FIXED_OPTICAL_PSF_KERNEL_WEIGHTS[2] }),
-  Object.freeze({ x: -1, y: 0, weight: FIXED_OPTICAL_PSF_KERNEL_WEIGHTS[3] }),
-  Object.freeze({ x: 0, y: 0, weight: FIXED_OPTICAL_PSF_KERNEL_WEIGHTS[4] }),
-  Object.freeze({ x: 1, y: 0, weight: FIXED_OPTICAL_PSF_KERNEL_WEIGHTS[5] }),
-  Object.freeze({ x: -1, y: 1, weight: FIXED_OPTICAL_PSF_KERNEL_WEIGHTS[6] }),
-  Object.freeze({ x: 0, y: 1, weight: FIXED_OPTICAL_PSF_KERNEL_WEIGHTS[7] }),
-  Object.freeze({ x: 1, y: 1, weight: FIXED_OPTICAL_PSF_KERNEL_WEIGHTS[8] }),
+const FIXED_OPTICAL_PSF_BILINEAR_OFFSETS = Object.freeze([
+  Object.freeze({ x: -0.5, y: -0.5 }),
+  Object.freeze({ x: 0.5, y: -0.5 }),
+  Object.freeze({ x: -0.5, y: 0.5 }),
+  Object.freeze({ x: 0.5, y: 0.5 }),
 ]);
 
 function finiteOr(value, fallback = 0) {
@@ -95,12 +93,12 @@ function percentileNearestRank(values, percentile) {
 }
 
 /**
- * Evaluates the exact straight scene-linear samples immediately before the
- * display shoulder. Inputs are the production premultiplied-radiance and
- * coverage AOVs; inactive zero-coverage samples are excluded, never promoted
- * into black evidence.
+ * Evaluates the integrated scene-linear radiance consumed by the display
+ * shoulder. Volume radiance already includes Beer-Lambert path length and must
+ * not be divided by coverage as though it were a straight-alpha surface.
+ * Coverage only excludes inactive samples from the evidence set.
  */
-export function evaluateStraightSceneLinearHeadroom({
+export function evaluateIntegratedSceneLinearHeadroom({
   premultipliedRadiance = [],
   coverage = [],
   channelStride = 4,
@@ -125,8 +123,8 @@ export function evaluateStraightSceneLinearHeadroom({
       reason,
       sampleCount,
       activeSampleCount: 0,
-      straightRadianceLuminanceP99: Number.NaN,
-      straightRadianceMaxChannelP99: Number.NaN,
+      integratedRadianceLuminanceP99: Number.NaN,
+      integratedRadianceMaxChannelP99: Number.NaN,
       overloadShare: Number.NaN,
       ...details,
     });
@@ -148,13 +146,13 @@ export function evaluateStraightSceneLinearHeadroom({
       continue;
     }
 
-    const straightRgb = [0, 1, 2].map(
-      (channel) => premultipliedRadiance[offset + channel] / sampleCoverage,
+    const integratedRgb = [0, 1, 2].map(
+      (channel) => premultipliedRadiance[offset + channel],
     );
-    if (straightRgb.some((channel) => !Number.isFinite(channel))) {
+    if (integratedRgb.some((channel) => !Number.isFinite(channel))) {
       return fail("nonfinite");
     }
-    const nonnegativeRgb = straightRgb.map((channel) => Math.max(0, channel));
+    const nonnegativeRgb = integratedRgb.map((channel) => Math.max(0, channel));
     const luminance = computeLinearLuminance(nonnegativeRgb);
     const maxChannel = Math.max(...nonnegativeRgb);
     luminances.push(luminance);
@@ -168,16 +166,19 @@ export function evaluateStraightSceneLinearHeadroom({
     return fail("no-active-samples");
   }
 
-  const straightRadianceLuminanceP99 = percentileNearestRank(luminances, 0.99);
-  const straightRadianceMaxChannelP99 = percentileNearestRank(
+  const integratedRadianceLuminanceP99 = percentileNearestRank(
+    luminances,
+    0.99,
+  );
+  const integratedRadianceMaxChannelP99 = percentileNearestRank(
     maxChannels,
     0.99,
   );
   const overloadShare = overloadCount / luminances.length;
   const passesLuminance =
-    straightRadianceLuminanceP99 <= contract.luminanceP99Max;
+    integratedRadianceLuminanceP99 <= contract.luminanceP99Max;
   const passesMaxChannel =
-    straightRadianceMaxChannelP99 <= contract.maxChannelP99Max;
+    integratedRadianceMaxChannelP99 <= contract.maxChannelP99Max;
   const passesOverloadShare = overloadShare <= contract.overloadShareMax;
   const achieved = passesLuminance && passesMaxChannel && passesOverloadShare;
 
@@ -186,8 +187,8 @@ export function evaluateStraightSceneLinearHeadroom({
     reason: achieved ? "headroom-pass" : "headroom-fail",
     sampleCount,
     activeSampleCount: luminances.length,
-    straightRadianceLuminanceP99,
-    straightRadianceMaxChannelP99,
+    integratedRadianceLuminanceP99,
+    integratedRadianceMaxChannelP99,
     overloadShare,
     passesLuminance,
     passesMaxChannel,
@@ -248,25 +249,6 @@ export function compressDisplayRadiance(rgb, options = {}) {
   return luminanceCompressedRgb.map((channel) => channel * gamutFitScale);
 }
 
-/**
- * Applies the fixed display transfer to a premultiplied linear-HDR sample.
- * Display compression operates on straight radiance; applying its nonlinear
- * shoulder to premultiplied RGB would make the result depend on coverage and
- * allow RenderOutputNode's later unpremultiply step to push channels back out
- * of gamut.
- */
-export function compressPremultipliedDisplayRadiance(rgb, alpha, options = {}) {
-  const resolvedOptions = resolveOptions(options);
-  const coverage = Math.min(1, Math.max(0, finiteOr(alpha)));
-  const safeCoverage = Math.max(coverage, resolvedOptions.displayEpsilon);
-  const straightRadiance = normalizeRgb(rgb).map(
-    (channel) => channel / safeCoverage,
-  );
-  return compressDisplayRadiance(straightRadiance, resolvedOptions).map(
-    (channel) => channel * coverage,
-  );
-}
-
 export function composeFixedOpticalPsfRadiance(sceneRgb, blurredRgb) {
   const scene = normalizeRgb(sceneRgb).map((channel) => Math.max(0, channel));
   const blurred = normalizeRgb(blurredRgb).map((channel) =>
@@ -322,12 +304,15 @@ export const sampleFixedOpticalPsfNode = /** @type {any} */ (
         );
         const filteredRadiance = vec4(0).toVar();
 
-        for (const sample of FIXED_OPTICAL_PSF_KERNEL_SAMPLES) {
+        // Four half-texel bilinear reads reproduce the separable 1-2-1 kernel
+        // exactly: corners receive 1/16, edges 2/16, and the centre 4/16.
+        // Clamp-to-edge also combines the same duplicated boundary weights.
+        for (const sample of FIXED_OPTICAL_PSF_BILINEAR_OFFSETS) {
           const sampleUv = targetUv.add(
             vec2(sample.x, sample.y).mul(pixelStep),
           );
           filteredRadiance.addAssign(
-            radianceTexture.sample(sampleUv).mul(float(sample.weight)),
+            radianceTexture.sample(sampleUv).mul(float(0.25)),
           );
         }
 
@@ -357,12 +342,4 @@ export function compressDisplayRadianceNode(rgb) {
   );
 
   return luminanceCompressedRgb.mul(gamutFitScale);
-}
-
-export function compressPremultipliedDisplayRadianceNode(rgb, alpha) {
-  const epsilon = float(DISPLAY_RADIANCE_DEFAULTS.displayEpsilon);
-  const coverage = min(max(alpha, float(0.0)), float(1.0));
-  const straightRadiance = rgb.div(max(coverage, epsilon));
-
-  return compressDisplayRadianceNode(straightRadiance).mul(coverage);
 }

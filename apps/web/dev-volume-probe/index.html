@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Baryon 3D-vs-atlas sampling probe</title>
+    <style>
+      body {
+        background: #0b0d10;
+        color: #d7dde4;
+        font:
+          13px/1.55 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+        margin: 0;
+        padding: 20px;
+      }
+      pre {
+        white-space: pre-wrap;
+      }
+      .pass {
+        color: #6ee7a8;
+      }
+      .fail {
+        color: #ff8080;
+      }
+      .note {
+        color: #8b98a5;
+      }
+      canvas {
+        display: block;
+        width: 256px;
+        height: 256px;
+        margin-top: 16px;
+        border: 1px solid #232a33;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="report">running…</pre>
+    <canvas id="stage" width="256" height="256"></canvas>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

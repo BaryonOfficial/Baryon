@@ -97,6 +97,7 @@ const recoveryStepsStyle = {
   ...recommendationStyle,
   display: "grid",
   gap: "8px",
+  listStyleType: "decimal",
   listStylePosition: "outside",
   paddingLeft: "30px",
 };
@@ -157,6 +158,12 @@ const LINUX_CHROMIUM_RECOVERY_STEPS = [
   "Relaunch the browser, then return to Baryon.",
 ];
 
+const IOS_LOCKDOWN_RECOVERY_STEPS = [
+  'Tap the "AA" button at the left of Safari\'s address bar.',
+  'Choose "Website Settings", turn off "Lockdown Mode", then tap Done.',
+  "Reload this page — the demo starts on its own.",
+];
+
 const DEFAULT_WARNING_COPY = {
   eyebrow: "Compatibility",
   title: "Open Baryon on desktop",
@@ -170,6 +177,21 @@ function resolveWarningContent(reason, probe) {
   const platform = probe?.platform;
   const browserFamily = probe?.browserFamily;
   const guidanceSummary = probe?.guidance?.summary ?? "";
+
+  // Lockdown Mode is recoverable on the device the visitor is holding, so it is
+  // resolved before the generic "open this on desktop" fallbacks.
+  if (
+    platform === BROWSER_PLATFORM.ios &&
+    /Lockdown Mode/i.test(guidanceSummary)
+  ) {
+    return {
+      eyebrow: "Lockdown Mode",
+      title: "Allow this site to run the demo",
+      message:
+        "Lockdown Mode is on for this site. It blocks WebGL and Web Audio, which the demo needs to render sound.",
+      recoverySteps: probe?.guidance?.steps ?? IOS_LOCKDOWN_RECOVERY_STEPS,
+    };
+  }
 
   if (
     reason === "mobile" ||

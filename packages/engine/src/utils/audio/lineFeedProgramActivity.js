@@ -1,4 +1,5 @@
 import { clamp01, smoothstep } from "../math.js";
+import { computeEmaAlpha } from "./analysisTiming.js";
 
 /**
  * Line-feed upstream program activity: separates virtual-device meter floor
@@ -18,14 +19,6 @@ const LINE_FEED_PROGRAM_FLOOR_UPDATE_MAX_EXCITATION = 0.14;
 const LINE_FEED_PROGRAM_MIN_FLOOR_RMS = 0.0008;
 const LINE_FEED_PROGRAM_EXCESS_RMS_SCALE = 0.14;
 const LINE_FEED_PROGRAM_TIME_DOMAIN_SIGNAL_PEAK = 1e-5;
-
-function computeEmaAlpha(deltaMs, smoothingMs) {
-  if (!(deltaMs > 0) || !(smoothingMs > 0)) {
-    return 1;
-  }
-
-  return 1 - Math.exp(-deltaMs / smoothingMs);
-}
 
 /**
  * @param {any} bandState

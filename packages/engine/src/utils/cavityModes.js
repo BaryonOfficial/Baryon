@@ -1,20 +1,15 @@
+import { CAVITY_ACOUSTIC_DEFAULTS } from "../defaults.js";
 import { frequencyToBinIndex } from "./audio/binFrequency.js";
 
-const SOUND_SPEED_WATER = 1480;
+// One owner for the water analogy. Both fallbacks below and the atlas cache
+// key read it, so changing the analogy cannot leave a path on the old speed.
+const SOUND_SPEED_WATER = CAVITY_ACOUSTIC_DEFAULTS.soundSpeedMetersPerSecond;
 const MIN_CAVITY_INDEX = 1;
 const MIN_CAVITY_MAGNITUDE = Math.sqrt(3);
 const MIN_NEUMANN_MAGNITUDE = 1;
 const INITIAL_SHELL_HALF_WIDTH = 0.5;
 const SHELL_HALF_WIDTH_STEP = 0.5;
 const MAX_SHELL_EXPANSIONS = 32;
-const DEFAULT_SUBFLOOR_POLICY = "project-subfundamental";
-const LEGACY_SUBFLOOR_POLICY = "project-low-q";
-
-const CAVITY_SUBFLOOR_POLICIES = Object.freeze({
-  projectSubfundamental: DEFAULT_SUBFLOOR_POLICY,
-  diagnoseSubfloor: "diagnose-subfloor",
-  rejectSubfloor: "reject-subfloor",
-});
 
 function isOptionsObject(value) {
   return value != null && typeof value === "object";
@@ -25,26 +20,6 @@ function normalizeBoundaryMode(value, legacyNumericSideLength) {
     return value;
   }
   return legacyNumericSideLength ? "dirichlet" : "neumann";
-}
-
-function normalizeSubfloorPolicy(value) {
-  if (value === LEGACY_SUBFLOOR_POLICY) {
-    return DEFAULT_SUBFLOOR_POLICY;
-  }
-  if (value === "diagnose-only") {
-    return CAVITY_SUBFLOOR_POLICIES.diagnoseSubfloor;
-  }
-  if (value === "reject") {
-    return CAVITY_SUBFLOOR_POLICIES.rejectSubfloor;
-  }
-  if (
-    value === CAVITY_SUBFLOOR_POLICIES.projectSubfundamental ||
-    value === CAVITY_SUBFLOOR_POLICIES.diagnoseSubfloor ||
-    value === CAVITY_SUBFLOOR_POLICIES.rejectSubfloor
-  ) {
-    return value;
-  }
-  return DEFAULT_SUBFLOOR_POLICY;
 }
 
 function normalizeCavityOptions(sideLengthOrOptions) {
@@ -62,17 +37,11 @@ function normalizeCavityOptions(sideLengthOrOptions) {
     sideLengthOrOptions?.boundaryMode,
     legacyNumericSideLength,
   );
-  const subfloorPolicy = normalizeSubfloorPolicy(
-    acousticScale?.subfloorPolicy ??
-      sideLengthOrOptions?.subfloorPolicy ??
-      DEFAULT_SUBFLOOR_POLICY,
-  );
 
   return {
     sideLengthMeters,
     soundSpeedMetersPerSecond,
     boundaryMode,
-    subfloorPolicy,
     legacyNumericSideLength,
   };
 }
@@ -224,14 +193,6 @@ function resolveNearestCavityModes(pitch, sideLengthOrOptions, count) {
 
   const targetMagnitude = getTargetMagnitude(pitch, options);
   const targetFrequency = pitch;
-  const subfloorFrequencyHz = getMinimumCavityFrequency(options);
-  const subfloorProjectionActive = targetFrequency < subfloorFrequencyHz;
-  if (
-    subfloorProjectionActive &&
-    options.subfloorPolicy === CAVITY_SUBFLOOR_POLICIES.rejectSubfloor
-  ) {
-    return [];
-  }
   let shellHalfWidth = INITIAL_SHELL_HALF_WIDTH;
   let candidates = [];
 
@@ -248,9 +209,6 @@ function resolveNearestCavityModes(pitch, sideLengthOrOptions, count) {
         acousticSideLengthMeters: options.sideLengthMeters,
         soundSpeedMetersPerSecond: options.soundSpeedMetersPerSecond,
         boundaryMode: options.boundaryMode,
-        subfloorFrequencyHz,
-        subfloorPolicy: options.subfloorPolicy,
-        subfloorProjectionActive,
       }));
     }
     shellHalfWidth += SHELL_HALF_WIDTH_STEP;
@@ -261,9 +219,6 @@ function resolveNearestCavityModes(pitch, sideLengthOrOptions, count) {
     acousticSideLengthMeters: options.sideLengthMeters,
     soundSpeedMetersPerSecond: options.soundSpeedMetersPerSecond,
     boundaryMode: options.boundaryMode,
-    subfloorFrequencyHz,
-    subfloorPolicy: options.subfloorPolicy,
-    subfloorProjectionActive,
   }));
 }
 

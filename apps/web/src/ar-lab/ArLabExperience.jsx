@@ -9,6 +9,8 @@ import {
 } from "react";
 import { Canvas } from "@react-three/fiber";
 import { XR, createXRStore } from "@react-three/xr";
+import { AUDIO_SOURCE_KINDS } from "@baryon/engine/audio";
+import { CONTROL_SURFACES } from "@baryon/engine/controls/schema";
 import {
   AmbientLight,
   DirectionalLight,
@@ -65,7 +67,7 @@ const CAMERA_BACKGROUND_MODES = Object.freeze({
   custom: "custom",
 });
 /** @typedef {(typeof CAMERA_BACKGROUND_MODES)[keyof typeof CAMERA_BACKGROUND_MODES]} CameraBackgroundMode */
-const ADVANCED_CONTROLS_DOCK_WIDTH = "min(17.5rem, calc(100vw - 2.4rem))";
+const ADVANCED_CONTROLS_DOCK_WIDTH = "min(23rem, calc(100vw - 2.4rem))";
 
 const AR_CAMERA_PRESENTATION_CSS = `
 .arl-camera-feed {
@@ -258,7 +260,7 @@ function ArOrbExperience({ xrStore, canEnterAr }) {
     liveInputUiState,
     liveInputErrorCode,
   } = useAudioScene();
-  const { isLiveInputActive, selectedLiveDeviceId, selectedSource } =
+  const { isLiveInputActive, selectedLiveDeviceId, sourceSession } =
     useAudio();
   const anchorStateRef = useRef(createIdleHandAnchorState());
   const selectedLiveDeviceIdRef = useRef(selectedLiveDeviceId);
@@ -294,7 +296,7 @@ function ArOrbExperience({ xrStore, canEnterAr }) {
   const showCameraAudioControls = mode === "camera";
   const showLiveInputPanel =
     showCameraAudioControls &&
-    (selectedSource === "system" || isLiveInputActive);
+    (sourceSession.kind === AUDIO_SOURCE_KINDS.system || isLiveInputActive);
 
   useEffect(() => {
     if (xrSession && cameraRequested) {
@@ -527,12 +529,13 @@ function ArOrbExperience({ xrStore, canEnterAr }) {
                 visualizationMethod={controlsState.visualizationMethod}
                 performanceProfile={controlsState.renderQualityPreset}
                 customTargetFps={controlsState.customTargetFps}
-                traaEnabled={controlsState.traaEnabled !== false}
+                traaEnabled={controlsState.traaEnabled === true}
                 onPerformanceHudSnapshotChange={null}
                 audioFeatureAuthorityRole={
                   AUDIO_FEATURE_AUTHORITY_ROLES.localProducer
                 }
                 cameraControlMode={CAMERA_CONTROL_MODES.spatialSession}
+                outputMode="transparent"
               />
             </Suspense>
           </ArOrbRig>
@@ -577,6 +580,7 @@ function ArOrbExperience({ xrStore, canEnterAr }) {
       {showCameraAudioControls ? (
         <>
           <AdvancedControlsDock
+            surface={CONTROL_SURFACES.listener}
             visible
             dockWidth={ADVANCED_CONTROLS_DOCK_WIDTH}
             brandAccessory={<ArLabBrand />}

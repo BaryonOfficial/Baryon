@@ -1,9 +1,17 @@
-import { buildAnalysisSessionKey } from "./analysisSession.js";
+import {
+  buildAnalysisSessionKey,
+  buildAnalysisSourceKey,
+} from "./analysisSession.js";
 import {
   createAudioFeaturePacketJoiner,
   createBoundedAudioInputTransport,
 } from "./audioFeaturePackets.js";
 import { normalizeAudioFeatureRuntimeSettings } from "./audioFeatureEngineShared.js";
+import {
+  AUDIO_SOURCE_KINDS,
+  isPreparedFileAwaitingPlayback,
+} from "../../core/audio/audioSourceSession.js";
+import { hasPreparationAuthority } from "../../core/renderAuthorityContract.js";
 
 export {
   DEFAULT_AUDIO_FEATURE_RUNTIME_SETTINGS,
@@ -48,7 +56,6 @@ function normalizeRuntimeConfiguration(config = {}) {
       : null,
     boundaryMode: config.boundaryMode ?? null,
     cavityGeometry: config.cavityGeometry ?? null,
-    includeSpectralLight: config.includeSpectralLight !== false,
     auditSettings: config.auditSettings ? { ...config.auditSettings } : null,
     beatSettings: config.beatSettings ? { ...config.beatSettings } : null,
     liveInputAnalysisSettings: config.liveInputAnalysisSettings
@@ -58,6 +65,48 @@ function normalizeRuntimeConfiguration(config = {}) {
 }
 
 function isActiveSource(status, configuration) {
+  const ownsPreparedFile =
+    status?.sourceSession?.kind === AUDIO_SOURCE_KINDS.file &&
+    status?.hasPreparedFileAnalysisSource === true;
+  return Boolean(
+    status?.isPlaying ||
+    status?.isLiveInputActive ||
+    ownsPreparedFile ||
+    configuration?.auditSettings?.injectTestTone,
+  );
+}
+
+function isExplicitPausedFile(status) {
+  return status?.isPlaybackPaused === true;
+}
+
+function shouldRetainFileModel(status) {
+  return (
+    status?.sourceSession?.kind === AUDIO_SOURCE_KINDS.file &&
+    status?.isLiveInputActive !== true
+  );
+}
+
+function hasPreparedFeatureModel(model) {
+  if (!model?.topology || !model?.drive) {
+    return false;
+  }
+  return hasPreparationAuthority({
+    ...model.drive.renderState,
+    modalDescriptor: model.topology.modalDescriptor,
+  });
+}
+
+function hasCurrentPlaybackEndReason(status, reason) {
+  const playbackSessionId = status?.playbackSessionId;
+  return (
+    playbackSessionId != null &&
+    status?.lastPlaybackEndReason === reason &&
+    status?.lastPlaybackDiagnostics?.playbackSessionId === playbackSessionId
+  );
+}
+
+function hasPlaybackEndSupersedingSource(status, configuration) {
   return Boolean(
     status?.isPlaying ||
     status?.isLiveInputActive ||
@@ -65,18 +114,32 @@ function isActiveSource(status, configuration) {
   );
 }
 
-function isActivePlaybackAnalysis(status) {
-  return Boolean(
-    status?.isPlaying === true &&
-    status?.isLiveInputActive !== true &&
-    status?.hasPlaybackAnalysisSource === true &&
-    status?.analysisSource === "file" &&
-    status?.playbackSessionId != null,
+function captureFastPayloadShape(payload, fallbackFftSize) {
+  const fftSize = Math.max(
+    2,
+    Math.floor(payload?.timeData?.length ?? fallbackFftSize ?? 2048),
   );
+  const spectrumSize = Math.max(
+    1,
+    Math.floor(payload?.fftLinearAmplitudes?.length ?? fftSize / 2),
+  );
+  return {
+    sourceMode: payload?.sourceMode ?? "file",
+    fftSize,
+    spectrumSize,
+  };
 }
 
-function isExplicitPausedFile(status) {
-  return status?.isPlaybackPaused === true;
+function createZeroFastPayload(shape) {
+  return {
+    sourceMode: shape?.sourceMode ?? "file",
+    avgAmplitude: 0,
+    rms: 0,
+    spectralCentroid: 0,
+    spectralFlux: 0,
+    fftLinearAmplitudes: new Float32Array(shape?.spectrumSize ?? 1024),
+    timeData: new Float32Array(shape?.fftSize ?? 2048),
+  };
 }
 
 function createInitialStatus() {
@@ -91,8 +154,12 @@ function createInitialStatus() {
     latestDriveCaptureTimestampMs: null,
     latestDriveProcessingTimestampMs: null,
     latestDriveAgeMs: null,
+    latestDriveStale: false,
+    latestObservationTimeSeconds: null,
+    latestCaptureRms: null,
+    naturalRingdownActive: false,
+    naturalRingdownSessionId: null,
     renderAuthorityRevoked: false,
-    playbackAnalysisPending: false,
     workerRestartCount: 0,
     sourceBootstrapCount: 0,
     configurationReplayCount: 0,
@@ -134,18 +201,24 @@ export function createAudioFeatureRuntime(settings = {}, dependencies = {}) {
   let configuration = normalizeRuntimeConfiguration();
   let configurationSignature = stableSerialize(configuration);
   let forceStructuralCapture = true;
+  let capturePreparedPausedFile = false;
   let lastStructuralCaptureAtMs = Number.NEGATIVE_INFINITY;
   let lastSourceSessionKey = null;
   let lastAcceptedDriveAtMs = null;
+  let workerAdvancementGraceStartedAtMs = null;
   let workerStartedAtMs = null;
   let workerCreationFailedAtMs = null;
   let restartedForSourceGeneration = false;
   let workerCreationAttemptedForSourceGeneration = false;
   let lastSourceStatus = null;
-  // Loaded-source identity survives pause/restart. Analysis readiness does not:
-  // each playback analyser activation must publish one structural drive before
-  // presentation leaves the safe pre-playback frame.
-  let pendingPlaybackAnalysis = null;
+  let lastFastPayloadShape = null;
+  let lastCaptureTimestampMs = null;
+  let lastObservationTimeSeconds = null;
+  let naturalRingdownState = null;
+  let lastCompletedNaturalRingdownSessionId = null;
+  // Worker generations are replaceable implementation state. Preserve the
+  // immutable file model until the owning source generation actually changes.
+  let retainedFileModel = null;
   let status = createInitialStatus();
 
   const joiner = createAudioFeaturePacketJoiner({
@@ -158,37 +231,15 @@ export function createAudioFeatureRuntime(settings = {}, dependencies = {}) {
     status = { ...status, ...patch };
   };
 
-  const clearPendingPlaybackAnalysis = () => {
-    if (!pendingPlaybackAnalysis && status.playbackAnalysisPending !== true) {
-      return false;
+  const retainPublishedFileModel = (result) => {
+    if (result.published && shouldRetainFileModel(lastSourceStatus)) {
+      retainedFileModel = result.model;
     }
-    pendingPlaybackAnalysis = null;
-    updateStatus({ playbackAnalysisPending: false });
-    return true;
   };
 
-  const beginPendingPlaybackAnalysis = (audioStatus) => {
-    pendingPlaybackAnalysis = {
-      playbackSessionId: audioStatus.playbackSessionId,
-      structuralCaptureTimestampMs: null,
-    };
-    forceStructuralCapture = true;
-    updateStatus({ playbackAnalysisPending: true });
-  };
-
-  const resolvePendingPlaybackAnalysis = (publishedDrive) => {
-    if (
-      !pendingPlaybackAnalysis ||
-      !Number.isFinite(pendingPlaybackAnalysis.structuralCaptureTimestampMs) ||
-      !Number.isFinite(publishedDrive?.captureTimestampMs) ||
-      publishedDrive.captureTimestampMs <
-        pendingPlaybackAnalysis.structuralCaptureTimestampMs
-    ) {
-      return false;
-    }
-    clearPendingPlaybackAnalysis();
-    return true;
-  };
+  const isAcousticStateAdvancing = () =>
+    naturalRingdownState != null ||
+    isActiveSource(lastSourceStatus, configuration);
 
   const postWorkerMessage = (message) => {
     if (!worker) {
@@ -218,6 +269,7 @@ export function createAudioFeatureRuntime(settings = {}, dependencies = {}) {
       topologyRevision: 0,
       latestAcceptedFrameId: 0,
       latestDriveAgeMs: null,
+      latestDriveStale: false,
       renderAuthorityRevoked: false,
       queueDepth: 0,
     });
@@ -236,6 +288,58 @@ export function createAudioFeatureRuntime(settings = {}, dependencies = {}) {
         configurationReplayCount: status.configurationReplayCount + 1,
       });
     }
+  };
+
+  const advanceSourceGeneration = (
+    reason,
+    {
+      preserveCompletedNaturalRingdownSession = false,
+      renderAuthorityRevoked = false,
+    } = {},
+  ) => {
+    naturalRingdownState = null;
+    if (!preserveCompletedNaturalRingdownSession) {
+      lastCompletedNaturalRingdownSessionId = null;
+    }
+    sourceGeneration += 1;
+    restartedForSourceGeneration = false;
+    workerCreationAttemptedForSourceGeneration = false;
+    forceStructuralCapture = true;
+    lastStructuralCaptureAtMs = Number.NEGATIVE_INFINITY;
+    lastAcceptedDriveAtMs = null;
+    retainedFileModel = null;
+    workerAdvancementGraceStartedAtMs = null;
+    workerCreationFailedAtMs = null;
+    syncGenerationOwners();
+    sendInit();
+    updateStatus({
+      reason,
+      naturalRingdownActive: false,
+      naturalRingdownSessionId: null,
+      renderAuthorityRevoked,
+      sourceBootstrapCount: status.sourceBootstrapCount + 1,
+    });
+  };
+
+  const completeNaturalPlayback = (
+    reason,
+    playbackSessionId = naturalRingdownState?.playbackSessionId,
+  ) => {
+    lastCompletedNaturalRingdownSessionId =
+      playbackSessionId ?? lastCompletedNaturalRingdownSessionId;
+    advanceSourceGeneration(reason, {
+      preserveCompletedNaturalRingdownSession: true,
+      renderAuthorityRevoked: true,
+    });
+  };
+
+  const cancelNaturalRingdown = (reason) => {
+    naturalRingdownState = null;
+    updateStatus({
+      naturalRingdownActive: false,
+      naturalRingdownSessionId: null,
+      reason,
+    });
   };
 
   const handleWorkerMessage = (event) => {
@@ -269,7 +373,7 @@ export function createAudioFeatureRuntime(settings = {}, dependencies = {}) {
       const result = joiner.acceptTopology(payload.packet);
       const joinStatus = joiner.getStatus();
       const publishedDrive = result.published ? result.model?.drive : null;
-      resolvePendingPlaybackAnalysis(publishedDrive);
+      retainPublishedFileModel(result);
       updateStatus({
         topologyRevision: joinStatus.topologyRevision,
         latestAcceptedFrameId: joinStatus.latestAcceptedFrameId,
@@ -285,19 +389,29 @@ export function createAudioFeatureRuntime(settings = {}, dependencies = {}) {
         renderAuthorityRevoked: result.published
           ? false
           : status.renderAuthorityRevoked,
+        latestDriveStale: result.published ? false : status.latestDriveStale,
       });
       if (result.published) {
         lastAcceptedDriveAtMs = now();
+        workerAdvancementGraceStartedAtMs = null;
+      }
+      if (
+        result.published &&
+        naturalRingdownState &&
+        publishedDrive?.renderState?.renderAuthority !== true
+      ) {
+        completeNaturalPlayback("natural-ringdown-complete");
       }
       return;
     }
     if (payload.type === "drive-packet") {
       const result = joiner.acceptDrive(payload.packet);
       const joinStatus = joiner.getStatus();
+      retainPublishedFileModel(result);
       if (result.published) {
         lastAcceptedDriveAtMs = now();
+        workerAdvancementGraceStartedAtMs = null;
       }
-      resolvePendingPlaybackAnalysis(result.published ? payload.packet : null);
       updateStatus({
         state: result.accepted ? "ready" : status.state,
         reason: result.reason,
@@ -313,7 +427,15 @@ export function createAudioFeatureRuntime(settings = {}, dependencies = {}) {
         renderAuthorityRevoked: result.published
           ? false
           : status.renderAuthorityRevoked,
+        latestDriveStale: result.published ? false : status.latestDriveStale,
       });
+      if (
+        result.published &&
+        naturalRingdownState &&
+        payload.packet?.renderState?.renderAuthority !== true
+      ) {
+        completeNaturalPlayback("natural-ringdown-complete");
+      }
     }
   };
 
@@ -335,23 +457,6 @@ export function createAudioFeatureRuntime(settings = {}, dependencies = {}) {
       return;
     }
     restartWorker("worker-error");
-  };
-
-  const advanceSourceGeneration = (reason) => {
-    clearPendingPlaybackAnalysis();
-    sourceGeneration += 1;
-    restartedForSourceGeneration = false;
-    workerCreationAttemptedForSourceGeneration = false;
-    forceStructuralCapture = true;
-    lastStructuralCaptureAtMs = Number.NEGATIVE_INFINITY;
-    lastAcceptedDriveAtMs = null;
-    workerCreationFailedAtMs = null;
-    syncGenerationOwners();
-    sendInit();
-    updateStatus({
-      reason,
-      sourceBootstrapCount: status.sourceBootstrapCount + 1,
-    });
   };
 
   const restartWorker = (reason) => {
@@ -424,14 +529,14 @@ export function createAudioFeatureRuntime(settings = {}, dependencies = {}) {
   };
 
   const maybeRestartStalledWorker = (currentTimeMs) => {
-    if (
-      !isActiveSource(lastSourceStatus, configuration) ||
-      isExplicitPausedFile(lastSourceStatus)
-    ) {
+    if (!isAcousticStateAdvancing() || isExplicitPausedFile(lastSourceStatus)) {
       return false;
     }
     const advancementAnchor =
-      lastAcceptedDriveAtMs ?? workerStartedAtMs ?? workerCreationFailedAtMs;
+      workerAdvancementGraceStartedAtMs ??
+      lastAcceptedDriveAtMs ??
+      workerStartedAtMs ??
+      workerCreationFailedAtMs;
     if (
       Number.isFinite(advancementAnchor) &&
       currentTimeMs - advancementAnchor >=
@@ -453,44 +558,165 @@ export function createAudioFeatureRuntime(settings = {}, dependencies = {}) {
 
     const currentTimeMs = now();
     const audioStatus = audioSession?.getStatus?.() ?? {};
-    const previousSourceStatus = lastSourceStatus;
+    const previousAudioStatus = lastSourceStatus;
+    if (
+      isPreparedFileAwaitingPlayback(previousAudioStatus) &&
+      audioStatus?.isPlaying === true
+    ) {
+      // A static prepared file can legitimately hold longer than the worker
+      // advancement timeout. Give the existing worker one live cadence window
+      // before liveness checks. The prepared topology also satisfies the first
+      // structural cadence; playback can begin on the fast lane alone.
+      workerAdvancementGraceStartedAtMs = currentTimeMs;
+      lastStructuralCaptureAtMs = currentTimeMs;
+    }
+    const playbackEndSuperseded = hasPlaybackEndSupersedingSource(
+      audioStatus,
+      configuration,
+    );
+    const naturalCompletion =
+      !playbackEndSuperseded &&
+      hasCurrentPlaybackEndReason(audioStatus, "natural");
+    const explicitStop =
+      !playbackEndSuperseded &&
+      hasCurrentPlaybackEndReason(audioStatus, "stopped");
     lastSourceStatus = audioStatus;
+    const sourceKey = buildAnalysisSourceKey(audioStatus);
     const sourceSessionKey = buildAnalysisSessionKey(audioStatus);
     const sourceActive = isActiveSource(audioStatus, configuration);
-    const activePlaybackAnalysis = isActivePlaybackAnalysis(audioStatus);
+    const injectedTestToneActive =
+      configuration?.auditSettings?.injectTestTone === true;
+
+    if (
+      naturalRingdownState &&
+      (audioStatus?.isPlaying === true ||
+        audioStatus?.isLiveInputActive === true ||
+        isExplicitPausedFile(audioStatus) ||
+        !naturalCompletion ||
+        audioStatus?.playbackSessionId !==
+          naturalRingdownState.playbackSessionId)
+    ) {
+      cancelNaturalRingdown("natural-ringdown-cancelled");
+    }
+
+    const latestModel = joiner.readLatestModel();
+    if (
+      !naturalRingdownState &&
+      previousAudioStatus?.isPlaying === true &&
+      naturalCompletion &&
+      latestModel?.drive?.renderState?.renderAuthority === true &&
+      lastFastPayloadShape
+    ) {
+      naturalRingdownState = {
+        playbackSessionId: audioStatus.playbackSessionId,
+        sourceKey: buildAnalysisSourceKey(previousAudioStatus),
+        sessionKey:
+          lastSourceSessionKey ?? buildAnalysisSessionKey(previousAudioStatus),
+        captureTimestampMs: Number.isFinite(lastCaptureTimestampMs)
+          ? lastCaptureTimestampMs
+          : currentTimeMs - normalizedSettings.fastCadenceMs,
+        observationTimeSeconds: Number.isFinite(lastObservationTimeSeconds)
+          ? lastObservationTimeSeconds
+          : Math.max(0, currentTimeMs / 1000),
+        fastPayload: createZeroFastPayload(lastFastPayloadShape),
+      };
+      updateStatus({
+        naturalRingdownActive: true,
+        naturalRingdownSessionId: audioStatus.playbackSessionId,
+        reason: "natural-ringdown-started",
+      });
+    }
+
+    if (naturalRingdownState) {
+      if (!ensureWorker() && !maybeRestartStalledWorker(currentTimeMs)) {
+        return;
+      }
+      naturalRingdownState.captureTimestampMs +=
+        normalizedSettings.fastCadenceMs;
+      naturalRingdownState.observationTimeSeconds +=
+        normalizedSettings.fastCadenceMs / 1000;
+      const offerResult = transport.offer({
+        captureTimestampMs: naturalRingdownState.captureTimestampMs,
+        fastPayload: naturalRingdownState.fastPayload,
+        structuralPayload: null,
+        structuralRequested: false,
+        status: {
+          ...audioStatus,
+          hasAnalysisSource: true,
+          sourceKey: naturalRingdownState.sourceKey,
+          sessionKey: naturalRingdownState.sessionKey,
+          naturalRingdownActive: true,
+          observationTimeSeconds: naturalRingdownState.observationTimeSeconds,
+          observationAdvancing: true,
+          observationPaused: false,
+        },
+      });
+      const transportStatus = transport.getStatus();
+      updateStatus({
+        reason: offerResult.sent
+          ? "natural-ringdown-input-sent"
+          : offerResult.reason,
+        latestObservationTimeSeconds:
+          naturalRingdownState.observationTimeSeconds,
+        latestCaptureRms: 0,
+        queueDepth: transportStatus.queueDepth,
+        inputReplacementCount: transportStatus.replacementCount,
+      });
+      maybeRestartStalledWorker(currentTimeMs);
+      return;
+    }
+
+    if (naturalCompletion) {
+      if (
+        lastCompletedNaturalRingdownSessionId !== audioStatus.playbackSessionId
+      ) {
+        completeNaturalPlayback(
+          "natural-ringdown-empty",
+          audioStatus.playbackSessionId,
+        );
+      }
+      return;
+    }
+
+    if (explicitStop) {
+      if (!hasCurrentPlaybackEndReason(previousAudioStatus, "stopped")) {
+        advanceSourceGeneration("explicit-stop-hold");
+      } else {
+        updateStatus({
+          naturalRingdownActive: false,
+          naturalRingdownSessionId: null,
+          reason: "explicit-stop-hold",
+        });
+      }
+      return;
+    }
+
     if (
       lastSourceSessionKey !== null &&
       sourceSessionKey !== lastSourceSessionKey
     ) {
       lastSourceSessionKey = sourceSessionKey;
+      capturePreparedPausedFile = Boolean(
+        audioStatus?.isPlaybackPaused === true &&
+        audioStatus?.hasPreparedFileAnalysisSource === true,
+      );
       advanceSourceGeneration("source-session-changed");
-      if (activePlaybackAnalysis) {
-        beginPendingPlaybackAnalysis(audioStatus);
-      }
       return;
     }
     lastSourceSessionKey = sourceSessionKey;
 
     if (
-      pendingPlaybackAnalysis &&
-      (!activePlaybackAnalysis ||
-        pendingPlaybackAnalysis.playbackSessionId !==
-          audioStatus.playbackSessionId)
+      isExplicitPausedFile(audioStatus) &&
+      capturePreparedPausedFile !== true
     ) {
-      clearPendingPlaybackAnalysis();
-    }
-
-    const playbackAnalysisActivated =
-      activePlaybackAnalysis &&
-      (!isActivePlaybackAnalysis(previousSourceStatus) ||
-        previousSourceStatus?.playbackSessionId !==
-          audioStatus.playbackSessionId);
-    if (playbackAnalysisActivated) {
-      beginPendingPlaybackAnalysis(audioStatus);
-    }
-
-    if (isExplicitPausedFile(audioStatus)) {
       updateStatus({ reason: "paused-file-hold" });
+      return;
+    }
+    if (
+      isPreparedFileAwaitingPlayback(audioStatus) &&
+      hasPreparedFeatureModel(latestModel)
+    ) {
+      updateStatus({ reason: "prepared-file-hold" });
       return;
     }
     if (!ensureWorker() && !maybeRestartStalledWorker(currentTimeMs)) {
@@ -504,23 +730,24 @@ export function createAudioFeatureRuntime(settings = {}, dependencies = {}) {
     const capture = audioSession?.readFeatureAnalysisCapture?.({
       includeStructural,
     });
+    const transportState = audioSession?.getTransportState?.() ?? null;
+    const observationTimeSeconds = injectedTestToneActive
+      ? currentTimeMs / 1000
+      : Number.isFinite(capture?.observationTimeSeconds)
+        ? Math.max(0, capture.observationTimeSeconds)
+        : Number.isFinite(transportState?.currentTimeSeconds) &&
+            audioStatus?.isAudioLoaded
+          ? Math.max(0, transportState.currentTimeSeconds)
+          : currentTimeMs / 1000;
     const structuralCaptureSatisfied = Boolean(
       includeStructural &&
-      (capture?.structural != null ||
-        configuration?.auditSettings?.injectTestTone === true),
+      (capture?.structural != null || injectedTestToneActive),
     );
     // A null capture cannot satisfy bootstrap. Keep the force armed, but let an
     // inactive source retry at structural cadence until its analyser activates.
     if (structuralCaptureSatisfied) {
       forceStructuralCapture = false;
       lastStructuralCaptureAtMs = currentTimeMs;
-      if (
-        pendingPlaybackAnalysis &&
-        !Number.isFinite(pendingPlaybackAnalysis.structuralCaptureTimestampMs)
-      ) {
-        pendingPlaybackAnalysis.structuralCaptureTimestampMs =
-          capture?.captureTimestampMs ?? currentTimeMs;
-      }
     } else if (includeStructural && !sourceActive) {
       lastStructuralCaptureAtMs = currentTimeMs;
     }
@@ -532,12 +759,33 @@ export function createAudioFeatureRuntime(settings = {}, dependencies = {}) {
       structuralRequested: includeStructural,
       status: {
         ...audioStatus,
+        sourceKey,
         sessionKey: sourceSessionKey,
+        observationTimeSeconds,
+        observationAdvancing:
+          injectedTestToneActive ||
+          audioStatus?.isPlaying === true ||
+          audioStatus?.isLiveInputActive === true,
+        observationPaused:
+          !injectedTestToneActive && audioStatus?.isPlaybackPaused === true,
       },
     });
+    if (capture?.fast) {
+      lastFastPayloadShape = captureFastPayloadShape(
+        capture.fast,
+        audioStatus?.fastFftSize,
+      );
+    }
+    lastCaptureTimestampMs = capture?.captureTimestampMs ?? currentTimeMs;
+    lastObservationTimeSeconds = observationTimeSeconds;
+    capturePreparedPausedFile = false;
     const transportStatus = transport.getStatus();
     updateStatus({
       reason: offerResult.sent ? "input-sent" : offerResult.reason,
+      latestObservationTimeSeconds: observationTimeSeconds,
+      latestCaptureRms: Number.isFinite(capture?.fast?.rms)
+        ? Math.max(0, capture.fast.rms)
+        : null,
       queueDepth: transportStatus.queueDepth,
       inputReplacementCount: transportStatus.replacementCount,
     });
@@ -620,7 +868,11 @@ export function createAudioFeatureRuntime(settings = {}, dependencies = {}) {
     },
 
     readLatestFeatureModel() {
-      const model = joiner.readLatestModel();
+      const fileModelRetentionActive =
+        shouldRetainFileModel(lastSourceStatus);
+      const model =
+        joiner.readLatestModel() ??
+        (fileModelRetentionActive ? retainedFileModel : null);
       if (!model) {
         return null;
       }
@@ -629,21 +881,24 @@ export function createAudioFeatureRuntime(settings = {}, dependencies = {}) {
       }
 
       const currentTimeMs = now();
-      const active = isActiveSource(lastSourceStatus, configuration);
+      const active = isAcousticStateAdvancing();
       const paused = isExplicitPausedFile(lastSourceStatus);
       const latestDriveAgeMs = Number.isFinite(lastAcceptedDriveAtMs)
         ? Math.max(0, currentTimeMs - lastAcceptedDriveAtMs)
         : null;
-      const stale =
+      const latestDriveStale =
         active &&
         !paused &&
         latestDriveAgeMs !== null &&
         latestDriveAgeMs > normalizedSettings.staleDriveTimeoutMs;
+      const renderAuthorityRevoked =
+        latestDriveStale && !fileModelRetentionActive;
       updateStatus({
         latestDriveAgeMs,
-        renderAuthorityRevoked: stale,
+        latestDriveStale,
+        renderAuthorityRevoked,
       });
-      return stale ? null : model;
+      return renderAuthorityRevoked ? null : model;
     },
 
     getStatus() {
@@ -676,6 +931,7 @@ export function createAudioFeatureRuntime(settings = {}, dependencies = {}) {
       }
       transport?.clear();
       joiner.clear();
+      naturalRingdownState = null;
       stopWorker();
       updateStatus({ state: "terminated", reason: "disposed" });
     },

@@ -1,12 +1,10 @@
 import * as THREE from "three";
-import { CONTROL_HANDLERS } from "./schema.js";
+import { BLOOM_ENHANCER_LIMITS, CONTROL_HANDLERS } from "./schema.js";
 import { DEFAULT_VISUALIZATION_METHOD } from "../visualization/types.js";
 import {
   AUDIO_DEFAULTS,
-  RAYMARCH_DEFAULTS,
   REACTIVITY_DEFAULTS,
   RENDER_DEFAULTS,
-  SIMULATION_DEFAULTS,
 } from "../defaults.js";
 import {
   normalizeCavityGeometry,
@@ -19,7 +17,7 @@ import {
 } from "../render/outputProfilePolicy.js";
 import {
   markRenderOutputContentChange,
-  syncRenderOutputBloomPassUniforms,
+  syncRenderOutputBloomUniforms,
   syncRenderOutputNodeTopology,
 } from "../render/outputPipeline.js";
 import {
@@ -37,38 +35,30 @@ import {
   setRaymarchCavityGeometry,
   setRaymarchBoundaryMode,
   setRaymarchVolumeShape,
+  syncIdleOverlayMaterial,
   syncRaymarchMaterialSteps,
 } from "../core/raymarch/material.js";
-import { setRaymarchLaserTransportVolumeShape } from "../core/raymarch/laserTransport.js";
 import {
   buildSceneSnapshot,
+  createIdleLogoMotionState,
   createSceneMotionState,
   deriveAutoMotionAmount,
   deriveSceneSignals,
+  getIdleLogoManualVelocity,
   getManualVelocity,
   getMotionAmount,
+  normalizeIdleLogoRotationMode,
   normalizeRotationMode,
   stepAudioSceneMotion,
+  stepIdleLogoMotion,
   stepManualSceneMotion,
   stepSettlingSceneMotion,
   stopAudioSceneMotion,
-  syncIdleOverlayRotation,
 } from "./sceneMotion.js";
-import { clamp01 } from "../utils/math.js";
+import { clamp, clamp01 } from "../utils/math.js";
+import { clampCymaticObserverGeometryExposureSeconds } from "../core/raymarch/cymaticObserverReference.js";
 
-const IDLE_LOGO_ALPHA_RATIO =
-  RENDER_DEFAULTS.idleLogoIntensity > 0
-    ? RENDER_DEFAULTS.idleLogoAlpha / RENDER_DEFAULTS.idleLogoIntensity
-    : 1;
 const TRANSPARENT_CLEAR_COLOR = new THREE.Color(0x000000);
-
-function deriveIdleLogoAlpha(intensity) {
-  return Math.min(1, intensity * IDLE_LOGO_ALPHA_RATIO);
-}
-
-function derivePerceptualSpectralMix(mix) {
-  return Math.sqrt(clamp01(mix));
-}
 
 function deriveBloomResponse(controls, stepBudget) {
   const lowStepBloomGuard = deriveLowStepBloomGuard(stepBudget);
@@ -77,12 +67,17 @@ function deriveBloomResponse(controls, stepBudget) {
     stepReference: STEP_REFERENCE,
     stepCompensation,
     lowStepBloomGuard,
-    strength: Math.max(
-      0,
+    strength: clamp(
       controls.bloomStrength * (1 - lowStepBloomGuard * 0.12),
+      0,
+      BLOOM_ENHANCER_LIMITS.maximumStrength,
     ),
-    radius: Math.max(0, controls.bloomRadius),
-    threshold: Math.min(1, controls.bloomThreshold + lowStepBloomGuard * 0.05),
+    radius: clamp(controls.bloomRadius, 0, BLOOM_ENHANCER_LIMITS.maximumRadius),
+    threshold: clamp(
+      controls.bloomThreshold + lowStepBloomGuard * 0.05,
+      BLOOM_ENHANCER_LIMITS.minimumThreshold,
+      1,
+    ),
   };
 }
 
@@ -104,7 +99,6 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "cameraLocked",
   ]),
   [CONTROL_HANDLERS.output]: Object.freeze([
-    "outputMode",
     "outputBackgroundColor",
     "smaaEnabled",
   ]),
@@ -112,7 +106,7 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "volumeColor",
     "surfaceColor",
     "colorMode",
-    "spectralMix",
+    "spectralChroma",
     "volumeShape",
     "boundaryMode",
     "cavityGeometry",
@@ -124,6 +118,7 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "idleLogoIntensity",
     "idleLogoSize",
     "idleLogoColor",
+    "patternPersistenceSeconds",
   ]),
   [CONTROL_HANDLERS.bloom]: Object.freeze([
     "bloomEnabled",
@@ -134,13 +129,15 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
   [CONTROL_HANDLERS.scene]: Object.freeze([
     "rotationMode",
     "rotationSpeed",
+    "idleLogoRotationMode",
+    "idleLogoRotationSpeed",
     "motionAmount",
   ]),
   [CONTROL_HANDLERS.audit]: Object.freeze([
     "auditEnabled",
     "freezeModeSlots",
     "forceWebGLFallbackTest",
-    "lowLoadPlaybackDiagnostics",
+    "suppressPlaybackTelemetry",
     "injectTestTone",
     "testToneHz",
     "testToneSignal",
@@ -192,7 +189,7 @@ export function applySharedControls(gl, controls) {
     ),
     customTargetFps:
       controls.customTargetFps ?? RENDER_DEFAULTS.customTargetFps,
-    traaEnabled: controls.traaEnabled !== false,
+    traaEnabled: controls.traaEnabled === true,
     clearAlpha,
     visualizationMethod: controls.visualizationMethod,
     cameraLocked: Boolean(controls.cameraLocked),
@@ -218,10 +215,16 @@ export function applyOutputControls(pipelineState, controls) {
     };
   }
 
-  postNodes.outputUniforms?.backgroundColor?.value?.set(outputBackgroundColor);
-  markRenderOutputContentChange(postNodes);
-  // Output node topology is managed by applyBloomControls (runs after this),
-  // which owns pipeline.outputNode and pipeline.needsUpdate.
+  const backgroundColorUniform = postNodes.outputUniforms?.backgroundColor;
+  if (backgroundColorUniform?.value) {
+    const nextBackgroundColor = new THREE.Color(outputBackgroundColor);
+    if (!backgroundColorUniform.value.equals(nextBackgroundColor)) {
+      backgroundColorUniform.value.copy(nextBackgroundColor);
+      markRenderOutputContentChange(postNodes);
+    }
+  }
+  // Output graph selection and bloom's presentation uniform are synchronized
+  // by applyBloomControls after this snapshot is applied.
 
   return {
     bloomEnabled: effectiveBloomEnabled,
@@ -233,17 +236,14 @@ export function applyOutputControls(pipelineState, controls) {
 
 function applyCommonVisualizationControls(runtimeState, controls) {
   const uniforms = runtimeState.uniforms;
-  const idleLogoAlpha = deriveIdleLogoAlpha(controls.idleLogoIntensity);
   const stepBudget = normalizeStepBudget(
     controls.raymarchSteps ?? STEP_REFERENCE,
   );
   const colorMode = controls.colorMode === "spectral" ? "spectral" : "static";
-  const spectralMix =
-    colorMode === "spectral"
-      ? derivePerceptualSpectralMix(
-          controls.spectralMix ?? RENDER_DEFAULTS.spectralMix,
-        )
-      : 0;
+  const spectralPresentationEnabled = colorMode === "spectral" ? 1 : 0;
+  const spectralChroma = clamp01(
+    controls.spectralChroma ?? RENDER_DEFAULTS.spectralChroma,
+  );
   const boundaryMode = normalizeBoundaryMode(controls.boundaryMode);
   const volumeShape = normalizeVolumeShape(controls.volumeShape);
   const requestedCavityGeometry = normalizeCavityGeometry(
@@ -254,34 +254,27 @@ function applyCommonVisualizationControls(runtimeState, controls) {
   );
 
   uniforms.uColor.value.set(controls.volumeColor);
-  uniforms.uSurfaceColor.value.set(controls.surfaceColor);
-  uniforms.uSpectralMix.value = spectralMix;
-  // Carrier width is a fixed reference-apparatus calibration. Creative
-  // controls must not turn the resolved nodal sheet into a broad gas volume.
-  uniforms.uCarrierCoreFwhmWorld.value =
-    SIMULATION_DEFAULTS.carrierCoreFwhmWorld;
+  uniforms.uCausticColor.value.set(controls.surfaceColor);
+  uniforms.uSpectralPresentationEnabled.value = spectralPresentationEnabled;
+  uniforms.uSpectralChroma.value = spectralChroma;
   if (uniforms.uBoundaryMode) {
     uniforms.uBoundaryMode.value = getBoundaryModeValue(boundaryMode);
   }
   setRaymarchBoundaryMode(runtimeState?.volumeMesh, boundaryMode);
   setRaymarchVolumeShape(runtimeState?.volumeMesh, volumeShape);
-  setRaymarchLaserTransportVolumeShape(
-    runtimeState?.laserTransportCache,
-    volumeShape,
-  );
   setRaymarchCavityGeometry(runtimeState?.volumeMesh, effectiveCavityGeometry);
   uniforms.uIdleLogoIntensity.value = controls.idleLogoIntensity;
-  uniforms.uIdleLogoAlpha.value = idleLogoAlpha;
   uniforms.uIdleLogoSize.value = controls.idleLogoSize;
   uniforms.uIdleLogoColor.value.set(controls.idleLogoColor);
   uniforms.uDensityGain.value = controls.densityGain;
-  uniforms.uContourSharpness.value = RAYMARCH_DEFAULTS.contourSharpness;
   runtimeState.baseDensityGain = controls.densityGain;
-  runtimeState.baseCarrierCoreFwhmWorld =
-    SIMULATION_DEFAULTS.carrierCoreFwhmWorld;
-  runtimeState.baseContourSharpness = RAYMARCH_DEFAULTS.contourSharpness;
   runtimeState.reactivityTuning = {
     motionAmount: controls.motionAmount ?? REACTIVITY_DEFAULTS.motionAmount,
+  };
+  runtimeState.cymaticObserverTuning = {
+    geometryExposureSeconds: clampCymaticObserverGeometryExposureSeconds(
+      controls.patternPersistenceSeconds,
+    ),
   };
   runtimeState.requestedRaymarchSteps = stepBudget;
   runtimeState.requestedCavityGeometry = requestedCavityGeometry;
@@ -293,28 +286,19 @@ function applyCommonVisualizationControls(runtimeState, controls) {
     lowStepBloomGuard: deriveLowStepBloomGuard(stepBudget),
   };
   applyEffectiveRaymarchStepBudget(runtimeState, controls, stepBudget);
-  runtimeState.spectralLight = {
-    ...(runtimeState.spectralLight ?? {}),
-    colorMode,
-    spectralMix,
-  };
-
   if (runtimeState.idleOverlay) {
     runtimeState.idleOverlay.scale.setScalar(controls.idleLogoSize);
-    if (runtimeState.idleOverlay.material?.color) {
-      runtimeState.idleOverlay.material.color.set(controls.idleLogoColor);
-    }
-    if ("opacity" in (runtimeState.idleOverlay.material ?? {})) {
-      runtimeState.idleOverlay.material.opacity = idleLogoAlpha;
-    }
+    syncIdleOverlayMaterial(runtimeState.idleOverlay, {
+      color: controls.idleLogoColor,
+      intensity: controls.idleLogoIntensity,
+    });
   }
 
   return {
     uniforms,
-    idleLogoAlpha,
     stepBudget,
     colorMode,
-    spectralMix,
+    spectralChroma,
     boundaryMode,
     volumeShape,
     requestedCavityGeometry,
@@ -364,9 +348,8 @@ function buildVisualizationControlSnapshot({
   controls,
   runtimeState,
   uniforms,
-  idleLogoAlpha,
   colorMode,
-  spectralMix,
+  spectralChroma,
   boundaryMode,
   volumeShape,
   requestedCavityGeometry,
@@ -378,18 +361,15 @@ function buildVisualizationControlSnapshot({
       volumeColor: controls.volumeColor,
       surfaceColor: controls.surfaceColor,
       colorMode,
-      spectralMix,
+      spectralChroma,
       boundaryMode,
       volumeShape,
       requestedCavityGeometry,
       effectiveCavityGeometry,
-      carrierCoreFwhmWorld: uniforms.uCarrierCoreFwhmWorld.value,
       idleLogoIntensity: uniforms.uIdleLogoIntensity.value,
-      idleLogoAlpha,
       idleLogoSize: uniforms.uIdleLogoSize.value,
       idleLogoColor: controls.idleLogoColor,
       densityGain: uniforms.uDensityGain.value,
-      contourSharpness: uniforms.uContourSharpness.value,
       motionAmount: runtimeState.reactivityTuning?.motionAmount,
       ...extraUniforms,
     },
@@ -397,15 +377,18 @@ function buildVisualizationControlSnapshot({
       visible: runtimeState.idleOverlay?.visible ?? false,
       scale: runtimeState.idleOverlay?.scale?.x ?? controls.idleLogoSize,
     },
+    observer: {
+      patternPersistenceSeconds:
+        runtimeState.cymaticObserverTuning.geometryExposureSeconds,
+    },
   };
 }
 
 export function applyRaymarchControls(runtimeState, controls) {
   const {
     uniforms,
-    idleLogoAlpha,
     colorMode,
-    spectralMix,
+    spectralChroma,
     boundaryMode,
     volumeShape,
     requestedCavityGeometry,
@@ -413,24 +396,25 @@ export function applyRaymarchControls(runtimeState, controls) {
   } = applyCommonVisualizationControls(runtimeState, controls);
 
   uniforms.uLaserDeflectionGain.value = controls.laserDeflectionGain;
-  uniforms.uHolographicIntensity.value = controls.holographicIntensity;
-  uniforms.uHolographicFresnelPower.value = controls.holographicFresnelPower;
+  // The public keys are retained as preset/OSC boundary contracts. The
+  // analytic optical core owns them by their physical quantities.
+  uniforms.uCausticStrength.value = controls.holographicIntensity;
+  uniforms.uLaserFocus.value = controls.holographicFresnelPower;
 
   return buildVisualizationControlSnapshot({
     controls,
     runtimeState,
     uniforms,
-    idleLogoAlpha,
     colorMode,
-    spectralMix,
+    spectralChroma,
     boundaryMode,
     volumeShape,
     requestedCavityGeometry,
     effectiveCavityGeometry,
     extraUniforms: {
       laserDeflectionGain: uniforms.uLaserDeflectionGain.value,
-      holographicIntensity: uniforms.uHolographicIntensity.value,
-      holographicFresnelPower: uniforms.uHolographicFresnelPower.value,
+      causticStrength: uniforms.uCausticStrength.value,
+      laserFocus: uniforms.uLaserFocus.value,
       raymarchSteps: Math.round(runtimeState.volumeMesh.material.steps),
     },
   });
@@ -494,15 +478,14 @@ export function applyBloomControls(pipelineState, controls) {
 
   // Traditional bloom is a separate additive post-process. The fixed optical
   // PSF remains immutable and is never parameterized by these controls.
-  syncRenderOutputBloomPassUniforms(postNodes, {
+  syncRenderOutputBloomUniforms(postNodes, {
+    enabled: effectiveBloomEnabled,
     strength: effective.strength,
     radius: effective.radius,
     threshold: effective.threshold,
   });
-  // Control changes request a topology sync; the output-pipeline owner preserves
-  // the current temporal-history graph state unless the render loop overrides it.
+  // Only actual graph changes such as output mode or SMAA rebuild topology.
   syncRenderOutputNodeTopology(pipeline, postNodes, {
-    bloomEnabled: effectiveBloomEnabled,
     outputMode,
     smaaEnabled: controls.smaaEnabled !== false,
   });
@@ -518,26 +501,28 @@ export function applyBloomControls(pipelineState, controls) {
   };
 }
 
-export function applyAuditControls(featureState, controls) {
-  if (!featureState?.audit?.settings) {
-    return {};
-  }
-
-  Object.assign(featureState.audit.settings, {
-    enabled: controls.auditEnabled,
-    freezeModeSlots: controls.freezeModeSlots,
-    forceWebGLFallbackTest: controls.forceWebGLFallbackTest,
-    lowLoadPlaybackDiagnostics: controls.lowLoadPlaybackDiagnostics,
-    injectTestTone: controls.injectTestTone,
+export function buildAuditControlSnapshot(controls) {
+  return {
+    enabled: controls.auditEnabled === true,
+    freezeModeSlots: controls.freezeModeSlots === true,
+    forceWebGLFallbackTest: controls.forceWebGLFallbackTest === true,
+    suppressPlaybackTelemetry: controls.suppressPlaybackTelemetry === true,
+    injectTestTone: controls.injectTestTone === true,
     testToneHz: controls.testToneHz,
     testToneSignal: controls.testToneSignal,
     testToneAmplitude: controls.testToneAmplitude,
     logEveryFrames: controls.logEveryFrames,
-  });
-
-  return {
-    ...featureState.audit.settings,
   };
+}
+
+export function applyAuditControls(featureState, controls) {
+  const snapshot = buildAuditControlSnapshot(controls);
+  if (!featureState?.audit?.settings) {
+    return snapshot;
+  }
+
+  Object.assign(featureState.audit.settings, snapshot);
+  return snapshot;
 }
 
 const SCENE_MOTION_MAX_DELTA_TIME = 1 / 30;
@@ -553,13 +538,19 @@ function normalizeSceneMotionDeltaTime(deltaTime) {
 
 export function applySceneControls(target, controls, deltaTime, featureFrame) {
   const runtimeState = target?.points ? target : null;
-  const points = runtimeState?.points ?? target;
-  if (!points?.rotation) return null;
+  const cymaticRoot =
+    runtimeState?.cymaticRoot ?? runtimeState?.volumeMesh ?? target;
+  if (!cymaticRoot?.rotation) return null;
 
   const sceneMotion =
-    runtimeState?.sceneMotion ?? createSceneMotionState(points.rotation.y ?? 0);
+    runtimeState?.sceneMotion ??
+    createSceneMotionState(cymaticRoot.rotation.y ?? 0);
   const rotationMode = normalizeRotationMode(controls.rotationMode);
   const manualVelocity = getManualVelocity(controls);
+  const idleLogoRotationMode = normalizeIdleLogoRotationMode(
+    controls.idleLogoRotationMode,
+  );
+  const idleLogoManualVelocity = getIdleLogoManualVelocity(controls);
   const userScale = getMotionAmount(controls, runtimeState);
   const audioMotionDriven = allowsAudioMotion(featureFrame);
   const sceneDeltaTime = normalizeSceneMotionDeltaTime(deltaTime);
@@ -569,12 +560,12 @@ export function applySceneControls(target, controls, deltaTime, featureFrame) {
     sceneMotion.lastMotionSignal,
   );
 
-  sceneMotion.pitch = Number.isFinite(points.rotation.x)
-    ? points.rotation.x
+  sceneMotion.pitch = Number.isFinite(cymaticRoot.rotation.x)
+    ? cymaticRoot.rotation.x
     : (sceneMotion.pitch ?? 0);
-  sceneMotion.yaw = points.rotation.y ?? sceneMotion.yaw ?? 0;
-  sceneMotion.roll = Number.isFinite(points.rotation.z)
-    ? points.rotation.z
+  sceneMotion.yaw = cymaticRoot.rotation.y ?? sceneMotion.yaw ?? 0;
+  sceneMotion.roll = Number.isFinite(cymaticRoot.rotation.z)
+    ? cymaticRoot.rotation.z
     : (sceneMotion.roll ?? 0);
 
   let effectiveMotionAmount;
@@ -612,17 +603,29 @@ export function applySceneControls(target, controls, deltaTime, featureFrame) {
   }
   sceneMotion.lastMotionSignal = signals.motionSignal;
 
-  points.rotation.x = sceneMotion.pitch;
-  points.rotation.y = sceneMotion.yaw;
-  points.rotation.z = sceneMotion.roll;
-  syncIdleOverlayRotation(
-    runtimeState,
-    sceneMotion,
-    manualVelocity,
-    sceneDeltaTime,
-  );
+  cymaticRoot.rotation.x = sceneMotion.pitch;
+  cymaticRoot.rotation.y = sceneMotion.yaw;
+  cymaticRoot.rotation.z = sceneMotion.roll;
+
+  const idleLogoRotation = runtimeState?.idleOverlay?.rotation ?? null;
+  const idleLogoMotion =
+    runtimeState?.idleLogoMotion ??
+    createIdleLogoMotionState(idleLogoRotation?.y ?? 0);
+  if (idleLogoRotation) {
+    idleLogoMotion.yaw = Number.isFinite(idleLogoRotation.y)
+      ? idleLogoRotation.y
+      : idleLogoMotion.yaw;
+    stepIdleLogoMotion(
+      idleLogoMotion,
+      idleLogoRotationMode,
+      idleLogoManualVelocity,
+      sceneDeltaTime,
+    );
+    idleLogoRotation.y = idleLogoMotion.yaw;
+  }
   if (runtimeState) {
     runtimeState.sceneMotion = sceneMotion;
+    runtimeState.idleLogoMotion = idleLogoMotion;
   }
 
   return buildSceneSnapshot({
@@ -631,10 +634,14 @@ export function applySceneControls(target, controls, deltaTime, featureFrame) {
     motionAmount: effectiveMotionAmount,
     signals,
     sceneMotion,
-    rotationX: points.rotation.x,
-    rotationY: points.rotation.y,
-    rotationZ: points.rotation.z,
-    idleOverlayRotationY: runtimeState?.idleOverlay?.rotation?.y,
+    rotationX: cymaticRoot.rotation.x,
+    rotationY: cymaticRoot.rotation.y,
+    rotationZ: cymaticRoot.rotation.z,
+    idleLogoRotationMode,
+    idleLogoRotationSpeed:
+      controls.idleLogoRotationSpeed ?? RENDER_DEFAULTS.idleLogoRotationSpeed,
+    idleLogoMotion,
+    idleLogoRotationY: idleLogoRotation?.y ?? idleLogoMotion.yaw,
   });
 }
 

@@ -1,185 +1,54 @@
 import * as THREE from "three";
-import { VolumeNodeMaterial } from "three/webgpu";
-import { RAYMARCH_DEFAULTS } from "../../defaults.js";
+import { MeshBasicNodeMaterial, VolumeNodeMaterial } from "three/webgpu";
+import { RAYMARCH_DEFAULTS, RENDER_DEFAULTS } from "../../defaults.js";
 import {
-  If,
-  Loop,
+  abs,
   clamp,
   dot,
   float,
+  fract,
   max,
   mix,
-  modelWorldMatrixInverse,
-  int,
-  texture3D,
+  normalView,
+  positionLocal,
+  positionView,
+  pow,
+  sin,
+  smoothstep,
   vec3,
-  vec4,
 } from "three/tsl";
-import { MODAL_BASIS_CACHE_ENERGY_EPSILON } from "./fieldCache.js";
-import SafeVolumetricLightingModel, {
-  createSafeVolumetricOutputNode,
-} from "./SafeVolumetricLightingModel.js";
+import { createSafeVolumetricOutputNode } from "./SafeVolumetricLightingModel.js";
 import { normalizeCavityGeometry } from "../cavityGeometry.js";
+import { MODAL_SEMANTIC_DESCRIPTOR_CAPACITY } from "../modalBudgets.js";
 import { BOUNDARY_MODES, normalizeBoundaryMode } from "../modeFamily.js";
 import { VOLUME_SHAPES, normalizeVolumeShape } from "../volumeShape.js";
-import { SPECTRAL_LIGHT_LANE_DISPLAY_RGB } from "../../utils/audio/spectralLight.js";
-import { deriveFixedWorldSpaceCarrierDensityNode } from "./carrierDensityNode.js";
 import {
-  deriveAcousticEnergyMaterialTransferNode,
-  deriveBoundedCausticAccentAuthorityNode,
-} from "./observationTransferNode.js";
-import { LASER_REFERENCE_APPARATUS_PROFILE } from "./laserTransport.js";
+  deriveCymaticPlasmaTransferNode,
+  prepareCymaticPlasmaTransferUniformsNode,
+} from "./cymaticPlasmaTransferNode.js";
 import {
-  REFERENCE_LASER_EXCITED_EMISSION_COEFFICIENT,
-  REFERENCE_SCATTERING_COEFFICIENT,
-} from "./observationTransfer.js";
-import { RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT } from "./fieldCache.js";
+  deriveCymaticPlasmaCarrierNode,
+  deriveCymaticPlasmaProfileSampleNode,
+} from "./cymaticPlasmaCarrierNode.js";
+import { createFieldCacheSampler } from "./fieldCacheSampling.js";
 
 /** @typedef {"dirichlet" | "neumann"} BoundaryMode */
 /** @typedef {import("../volumeShape.js").VolumeShape} VolumeShape */
 
 const DEFAULT_VOLUME_SHAPE = /** @type {VolumeShape} */ (VOLUME_SHAPES.sphere);
 
-/** @type {{ off: string, laneCache: string }} */
-export const RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES = Object.freeze({
-  off: "off",
-  laneCache: "lane-cache",
-});
-
-function normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) {
-  if (
-    spectralLightEvaluationMode ===
-    RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.laneCache
-  ) {
-    return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.laneCache;
-  }
-  return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off;
-}
-
-/**
- * @typedef {{
- *   positionRay: any,
- *   positionRayLocal: any,
- *   rayDirLocal: any,
- *   stepSize: any
- * }} ScatteringNodeInputs
- */
-
 /**
  * @typedef {import("three/webgpu").VolumeNodeMaterial & {
  *   steps: number,
  *   radiusNode?: any,
  *   domainHalfExtentsNode?: any,
- *   scatteringNode?: any,
- *   spectralLightEvaluationMode?: string,
- *   modalBasisAtlasTexture?: any,
- *   modalLiveFieldTexture?: any,
- *   modalLiveSupportTexture?: any,
- *   modalPressureRadiationTexture?: any,
- *   modalPhaseInterferenceTexture?: any,
- *   spectralLaneTextureA?: any,
- *   spectralLaneTextureB?: any,
- *   spectralLaneStatsTexture?: any,
- *   raymarchBoundaryMode?: BoundaryMode,
+ *   createOpticalTransferRaySampler?: any,
  *   raymarchVolumeShape?: VolumeShape,
- *   modalFieldModeBuffer?: any,
- *   modalFieldCoefficientBuffer?: any,
+ *   fieldCache?: any,
  *   modalFieldCapacity?: number,
+ *   plasmaProfileLookup?: any,
  * }} BaryonVolumeMaterial
  */
-
-class BaryonVolumeNodeMaterial extends VolumeNodeMaterial {
-  setupLightingModel() {
-    return new SafeVolumetricLightingModel();
-  }
-}
-
-function getBasisLocalUvNode({ localPosition, uRadius }) {
-  const normalizedSamplePosition = localPosition.div(uRadius);
-  return clamp(
-    normalizedSamplePosition.mul(float(0.5)).add(vec3(0.5)),
-    vec3(0.0),
-    vec3(1.0),
-  );
-}
-
-function getBasisAtlasUvNode({
-  basisUv,
-  basisSlot,
-  invLiveSynthesisModeCount,
-}) {
-  const atlasZ = float(basisSlot).add(basisUv.z);
-  return vec3(
-    basisUv.x,
-    basisUv.y,
-    atlasZ.mul(float(invLiveSynthesisModeCount)),
-  );
-}
-
-function getTexture3DNode(textureLike) {
-  if (!textureLike) {
-    return null;
-  }
-  return textureLike.isTexture3DNode === true
-    ? textureLike
-    : texture3D(textureLike);
-}
-
-function sampleBasisAtlasPageNode({
-  basisUv,
-  basisSlot,
-  invLiveSynthesisModeCount,
-  modalBasisAtlasTexture,
-}) {
-  const atlasUv = getBasisAtlasUvNode({
-    basisUv,
-    basisSlot,
-    invLiveSynthesisModeCount,
-  });
-  const basisSample = getTexture3DNode(modalBasisAtlasTexture).sample(atlasUv);
-
-  return {
-    field: basisSample.x,
-    gradient: vec3(basisSample.y, basisSample.z, basisSample.w),
-  };
-}
-
-function sampleLiveFieldProjectionCacheNode({
-  basisUv,
-  modalLiveFieldTexture,
-}) {
-  const fieldSample = texture3D(modalLiveFieldTexture).sample(basisUv);
-
-  // One texture stores the matched linear pressure/gradient tuple. The local
-  // zero-set distance is invariant to amplitude only when both quantities have
-  // undergone exactly the same normalization.
-  return {
-    field: fieldSample.x,
-    gradient: vec3(fieldSample.y, fieldSample.z, fieldSample.w),
-  };
-}
-
-function samplePhaseInterferenceCarrierNode({
-  basisUv,
-  modalPhaseInterferenceTexture,
-}) {
-  const interferenceSample = texture3D(modalPhaseInterferenceTexture).sample(
-    basisUv,
-  );
-  return {
-    detectorIntegratedSpatialEnergy: clamp(
-      interferenceSample.y,
-      float(0.0),
-      float(1.0),
-    ),
-    authority: clamp(interferenceSample.z, float(0.0), float(1.0)),
-    independentSpatialEnergy: clamp(
-      interferenceSample.w,
-      float(0.0),
-      float(1.0),
-    ),
-  };
-}
 
 const LINEAR_RGB_LUMINANCE = Object.freeze([0.2126, 0.7152, 0.0722]);
 
@@ -196,442 +65,147 @@ function normalizeMaterialChromaticityNode(color) {
   return nonnegativeColor.div(max(luminance, float(1e-6)));
 }
 
-function projectSpectralLaneRadianceToRgbNode({
-  laneA,
-  laneB,
-  total,
-  fallbackColor,
-}) {
-  const laneRgb0 = SPECTRAL_LIGHT_LANE_DISPLAY_RGB[0];
-  const laneRgb1 = SPECTRAL_LIGHT_LANE_DISPLAY_RGB[1];
-  const laneRgb2 = SPECTRAL_LIGHT_LANE_DISPLAY_RGB[2];
-  const laneRgb3 = SPECTRAL_LIGHT_LANE_DISPLAY_RGB[3];
-  const laneRgb4 = SPECTRAL_LIGHT_LANE_DISPLAY_RGB[4];
-  const laneRgb5 = SPECTRAL_LIGHT_LANE_DISPLAY_RGB[5];
-  const laneRgb6 = SPECTRAL_LIGHT_LANE_DISPLAY_RGB[6];
-  const laneRgb7 = SPECTRAL_LIGHT_LANE_DISPLAY_RGB[7];
-  const laneRgbNode0 = vec3(
-    float(laneRgb0.r),
-    float(laneRgb0.g),
-    float(laneRgb0.b),
-  );
-  const laneRgbNode1 = vec3(
-    float(laneRgb1.r),
-    float(laneRgb1.g),
-    float(laneRgb1.b),
-  );
-  const laneRgbNode2 = vec3(
-    float(laneRgb2.r),
-    float(laneRgb2.g),
-    float(laneRgb2.b),
-  );
-  const laneRgbNode3 = vec3(
-    float(laneRgb3.r),
-    float(laneRgb3.g),
-    float(laneRgb3.b),
-  );
-  const laneRgbNode4 = vec3(
-    float(laneRgb4.r),
-    float(laneRgb4.g),
-    float(laneRgb4.b),
-  );
-  const laneRgbNode5 = vec3(
-    float(laneRgb5.r),
-    float(laneRgb5.g),
-    float(laneRgb5.b),
-  );
-  const laneRgbNode6 = vec3(
-    float(laneRgb6.r),
-    float(laneRgb6.g),
-    float(laneRgb6.b),
-  );
-  const laneRgbNode7 = vec3(
-    float(laneRgb7.r),
-    float(laneRgb7.g),
-    float(laneRgb7.b),
-  );
-  const safeTotal = max(total, float(1e-6));
-  const spectralRgb = laneRgbNode0
-    .mul(laneA.x)
-    .add(laneRgbNode1.mul(laneA.y))
-    .add(laneRgbNode2.mul(laneA.z))
-    .add(laneRgbNode3.mul(laneA.w))
-    .add(laneRgbNode4.mul(laneB.x))
-    .add(laneRgbNode5.mul(laneB.y))
-    .add(laneRgbNode6.mul(laneB.z))
-    .add(laneRgbNode7.mul(laneB.w))
-    .div(safeTotal);
-  const spectralChromaticity = normalizeMaterialChromaticityNode(spectralRgb);
-  const fallbackChromaticity = normalizeMaterialChromaticityNode(fallbackColor);
-
-  // Spectral lanes own chromaticity only. Detector-integrated acoustic energy
-  // and laser irradiance own radiance, so changing pitch/lane occupancy cannot
-  // silently brighten or dim the same structure.
-  return total
-    .greaterThan(float(1e-6))
-    .select(spectralChromaticity, fallbackChromaticity);
-}
-
-function sampleSpectralLaneCacheNode({
-  basisUv,
-  spectralLaneTextureA,
-  spectralLaneTextureB,
-  spectralLaneStatsTexture,
-  fallbackColor,
-}) {
-  const laneA = texture3D(spectralLaneTextureA).sample(basisUv);
-  const laneB = texture3D(spectralLaneTextureB).sample(basisUv);
-  const stats = texture3D(spectralLaneStatsTexture).sample(basisUv);
-  const total = max(stats.x, float(0.0));
-
-  return {
-    rgb: projectSpectralLaneRadianceToRgbNode({
-      laneA,
-      laneB,
-      total,
-      fallbackColor,
-    }),
-    total,
-  };
-}
-
-function computeLiveModalCoefficientNodes(modeSlot, coefficientSlot = null) {
-  if (coefficientSlot) {
-    return { coefficient: coefficientSlot.x };
-  }
-
-  const coefficient = modeSlot.w.toVar();
-
-  return { coefficient };
-}
-
-function synthesizeLiveModalFieldNode({
-  localPosition,
-  uRadius,
-  basisUv = null,
-  uModalFieldModeCount,
-  modalEnergyAmplitude,
-  modalBasisAtlasTexture,
-  modalFieldModeBuffer,
-  modalFieldCoefficientBuffer = null,
-  liveSynthesisModeCount = RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
-}) {
-  const field = float(0.0).toVar();
-  const gradient = vec3(0.0).toVar();
-  const normalizedLiveSynthesisModeCount = Math.max(
-    1,
-    Math.round(liveSynthesisModeCount || RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT),
-  );
-  const invLiveSynthesisModeCount = 1 / normalizedLiveSynthesisModeCount;
-
-  if (modalBasisAtlasTexture && modalFieldModeBuffer) {
-    const resolvedBasisUv =
-      basisUv ??
-      getBasisLocalUvNode({
-        localPosition,
-        uRadius,
-      });
-    const activeModeCount = int(uModalFieldModeCount);
-
-    Loop(
-      {
-        start: int(0),
-        end: int(normalizedLiveSynthesisModeCount),
-        type: "int",
-        condition: "<",
-      },
-      ({ i }) => {
-        If(i.greaterThanEqual(activeModeCount), () => {}).Else(() => {
-          const modeSlot = modalFieldModeBuffer.element(i);
-          const coefficientSlot =
-            modalFieldCoefficientBuffer?.element(i) ?? null;
-          const { coefficient } = computeLiveModalCoefficientNodes(
-            modeSlot,
-            coefficientSlot,
-          );
-          const basisSample = sampleBasisAtlasPageNode({
-            basisUv: resolvedBasisUv,
-            basisSlot: i,
-            invLiveSynthesisModeCount,
-            modalBasisAtlasTexture,
-          });
-          field.addAssign(coefficient.mul(basisSample.field));
-          gradient.addAssign(basisSample.gradient.mul(coefficient));
-        });
-      },
-    );
-  }
-
-  const normalizedField = field.div(modalEnergyAmplitude).toVar();
-  const normalizedGradient = gradient.div(modalEnergyAmplitude).toVar();
-
-  return {
-    field: normalizedField,
-    gradient: normalizedGradient,
-  };
-}
-
 /**
  * @param {{
  *   uniforms: any,
- *   boundaryMode?: BoundaryMode,
- *   modalBasisAtlasTexture?: any,
- *   modalLiveFieldTexture?: any,
- *   modalLiveSupportTexture?: any,
- *   modalPressureRadiationTexture?: any,
- *   modalPhaseInterferenceTexture?: any,
- *   laserIrradianceTexture?: any,
- *   spectralLaneTextureA?: any,
- *   spectralLaneTextureB?: any,
- *   spectralLaneStatsTexture?: any,
- *   spectralLightEvaluationMode?: string,
- *   volumeShape?: VolumeShape,
- *   modalFieldModeBuffer?: any,
- *   modalFieldCoefficientBuffer?: any,
- *   liveSynthesisModeCount?: number,
+ *   fieldCache?: {
+ *     observerGeometryTexture: any,
+ *     observerOpticalPairTexture: any,
+ *     observerOrganizationTexture: any,
+ *   } | null,
+ *   plasmaProfileLookup?: any,
  * }} options
  */
-function createScatteringNode({
+function createVolumetricOpticalModel({
   uniforms,
-  modalBasisAtlasTexture = null,
-  modalLiveFieldTexture = null,
-  modalPhaseInterferenceTexture = null,
-  laserIrradianceTexture = null,
-  spectralLaneTextureA = null,
-  spectralLaneTextureB = null,
-  spectralLaneStatsTexture = null,
-  spectralLightEvaluationMode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
-  modalFieldModeBuffer = null,
-  modalFieldCoefficientBuffer = null,
-  liveSynthesisModeCount = RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
+  fieldCache = null,
+  plasmaProfileLookup = null,
 }) {
   const {
     uRadius,
-    uCarrierCoreFwhmWorld,
-    uModalFieldModeCount,
     uColor,
-    uSurfaceColor,
-    uSpectralMix,
+    uCausticColor,
+    uSpectralPresentationEnabled,
+    uSpectralChroma,
     uDensityGain,
-    uMaterialAbsorptionCoefficient,
-    uModalEnergyAmplitude,
-    uStructuralProjectionDrive,
-    uCarrierColumnDensityScale,
-    uLiveFieldCacheActive,
-    uHolographicBaseRadianceGain,
-    uHolographicIntensity,
-    uHolographicFresnelPower,
-    uLaserCausticActive,
+    uLaserDeflectionGain,
+    uCausticStrength,
+    uLaserFocus,
   } = uniforms;
-  const modalBasisAtlasTextureNode = getTexture3DNode(modalBasisAtlasTexture);
-  const modalCoefficientEnergy = clamp(
-    uStructuralProjectionDrive,
+  const tracerDensityScale = max(uDensityGain, float(0.0))
+    .div(float(RAYMARCH_DEFAULTS.densityGain))
+    .toVar();
+  const spectralPresentationEnabled = clamp(
+    uSpectralPresentationEnabled,
     float(0.0),
     float(1.0),
-  );
-  const modalEnergyAmplitude = max(
-    uModalEnergyAmplitude,
-    float(MODAL_BASIS_CACHE_ENERGY_EPSILON),
-  );
-  const activeMask = uModalFieldModeCount
-    .greaterThan(int(0))
-    .select(float(1.0), float(0.0));
-  const materialDensityScale = max(uDensityGain, float(0.0)).div(
-    float(RAYMARCH_DEFAULTS.densityGain),
-  );
-  const spectralMix = clamp(uSpectralMix, float(0.0), float(1.0));
-  const spectralLaneTransferEnabled = Boolean(
-    normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) ===
-      RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.laneCache &&
-    spectralLaneTextureA &&
-    spectralLaneTextureB &&
-    spectralLaneStatsTexture,
-  );
+  ).toVar();
+  const spectralChroma = clamp(uSpectralChroma, float(0.0), float(1.0)).toVar();
+  const hasModalResources = Boolean(fieldCache);
+  const fieldCacheSampler = hasModalResources
+    ? createFieldCacheSampler(fieldCache)
+    : null;
+  const materialColor = normalizeMaterialChromaticityNode(uColor).toVar();
+  const accentColor = normalizeMaterialChromaticityNode(uCausticColor).toVar();
+  const reciprocalRadius = float(1)
+    .div(max(uRadius, float(1e-4)))
+    .toVar();
+  const plasmaTransferUniforms = prepareCymaticPlasmaTransferUniformsNode({
+    materialDensityScale: tracerDensityScale,
+    tangentAuthority: uCausticStrength,
+    tangentPower: uLaserFocus,
+    audioAccentGain: uLaserDeflectionGain,
+  });
 
-  // Plain node-graph closure (not Fn): the volume loop consumes separate
-  // base and accent source lanes plus one shared extinction per sample, so
-  // the sample contract is a struct of nodes rather than one packed vec4.
-  return (
+  // The persistent observer owns topology, motion, local radiance, and local
+  // phase. Presentation alone maps that phase into fixed optical
+  // layers. Empty space contributes neither radiance nor parallel extinction.
+  const createOpticalTransferRaySampler =
     /**
-     * @param {ScatteringNodeInputs} args
+     * @param {{rayOriginLocal: any, unitRayDirLocal: any}} args
      */
-    ({ positionRay, positionRayLocal, rayDirLocal, stepSize }) => {
-      const localPosition =
-        positionRayLocal ??
-        modelWorldMatrixInverse.mul(vec4(positionRay, 1.0)).xyz;
-      const basisUv = getBasisLocalUvNode({
-        localPosition,
-        uRadius,
-      });
-      const field = float(0.0).toVar();
-      const gradX = float(0.0).toVar();
-      const gradY = float(0.0).toVar();
-      const gradZ = float(0.0).toVar();
-      const phaseInterferenceCarrier = modalPhaseInterferenceTexture
-        ? samplePhaseInterferenceCarrierNode({
-            basisUv,
-            modalPhaseInterferenceTexture,
-          })
-        : {
-            detectorIntegratedSpatialEnergy: float(1.0),
-            authority: float(0.0),
-            independentSpatialEnergy: float(1.0),
-          };
-      const phaseEnergyCarrierAuthority = modalPhaseInterferenceTexture
-        ? clamp(uLiveFieldCacheActive, float(0.0), float(1.0)).mul(
-            phaseInterferenceCarrier.authority,
-          )
-        : float(0.0);
-      // The phase-interference cache already owns the finite detector-window
-      // integration and normalizes both spatial-energy fields against the same
-      // global modal coefficient energy. Reconstruct local observed energy
-      // from those fields rather than applying contrast to a uniform volume.
-      const detectorIntegratedAcousticEnergy = modalCoefficientEnergy.mul(
-        mix(
-          phaseInterferenceCarrier.independentSpatialEnergy,
-          phaseInterferenceCarrier.detectorIntegratedSpatialEnergy,
-          phaseEnergyCarrierAuthority,
-        ),
-      );
-      const assignLiveFieldSample = (liveFieldSample) => {
-        field.assign(liveFieldSample.field);
-        gradX.assign(liveFieldSample.gradient.x);
-        gradY.assign(liveFieldSample.gradient.y);
-        gradZ.assign(liveFieldSample.gradient.z);
-      };
-      const canSynthesizeLiveField =
-        modalBasisAtlasTextureNode && modalFieldModeBuffer;
-      const assignSynthesizedLiveField = () => {
-        assignLiveFieldSample(
-          synthesizeLiveModalFieldNode({
-            localPosition,
-            basisUv,
-            uRadius,
-            uModalFieldModeCount,
-            modalEnergyAmplitude,
-            modalBasisAtlasTexture: modalBasisAtlasTextureNode,
-            modalFieldModeBuffer,
-            modalFieldCoefficientBuffer,
-            liveSynthesisModeCount,
-          }),
-        );
-      };
-      if (modalLiveFieldTexture) {
-        If(uLiveFieldCacheActive.greaterThan(float(0.5)), () => {
-          assignLiveFieldSample(
-            sampleLiveFieldProjectionCacheNode({
-              basisUv,
-              modalLiveFieldTexture,
-            }),
-          );
-        }).Else(() => {
-          if (canSynthesizeLiveField) {
-            assignSynthesizedLiveField();
-          }
+    ({ rayOriginLocal, unitRayDirLocal }) => {
+      if (!hasModalResources) {
+        return () => ({
+          baseRadiance: vec3(0.0),
+          accentRadiance: vec3(0.0),
+          extinction: float(0.0),
         });
-      } else if (canSynthesizeLiveField) {
-        assignSynthesizedLiveField();
       }
 
-      const gradient = vec3(gradX, gradY, gradZ).toVar();
-      const carrier = deriveFixedWorldSpaceCarrierDensityNode({
-        fieldValue: field,
-        gradient,
-        rayDirLocal,
-        stepSize,
-        coreFwhmWorld: uCarrierCoreFwhmWorld,
-      });
-      const coreDensity = carrier.coreDensity.mul(activeMask);
-      const sheathDensity = carrier.sheathDensity.mul(activeMask);
-      const staticMaterialColor = normalizeMaterialChromaticityNode(uColor);
-      const surfaceMaterialColor =
-        normalizeMaterialChromaticityNode(uSurfaceColor);
-
-      // Selected production accent authority: ready current transport,
-      // bounded by the caustic compression knee. It multiplies accent source
-      // radiance and can never create carrier support.
-      const laserOrderSample = laserIrradianceTexture
-        ? texture3D(laserIrradianceTexture).sample(basisUv).toVar()
-        : null;
-      const laserAccentAuthority = laserOrderSample
-        ? deriveBoundedCausticAccentAuthorityNode({
-            totalIrradiance: laserOrderSample.x,
-            zeroOrderIrradiance: laserOrderSample.y,
-            zeroOrderPowerFraction: float(
-              LASER_REFERENCE_APPARATUS_PROFILE.zeroOrderPowerFraction,
-            ),
-            transportReady: uLaserCausticActive,
-          }).accentAuthority
-        : float(0.0);
-
-      if (spectralLaneTransferEnabled) {
-        const spectralLaneTransfer = sampleSpectralLaneCacheNode({
-          basisUv,
-          spectralLaneTextureA,
-          spectralLaneTextureB,
-          spectralLaneStatsTexture,
-          fallbackColor: uColor,
+      const observerRaySampler =
+        fieldCacheSampler.createCymaticObserverRaySampler({
+          rayOriginLocal,
+          unitRayDirLocal,
+          reciprocalRadius,
         });
-        const spectralMaterialColor = mix(
-          staticMaterialColor,
-          spectralLaneTransfer.rgb,
-          spectralMix,
+
+      return ({ sampleDistance, stepSize }) => {
+        const observerGeometry =
+          observerRaySampler.sampleCymaticObserverGeometry(sampleDistance);
+        const profileSample = deriveCymaticPlasmaProfileSampleNode({
+          signedDistanceWorld: observerGeometry.signedDistanceWorld,
+          profileLookup: plasmaProfileLookup,
+          surfaceNormalWorld: observerGeometry.surfaceNormalWorld,
+          surfaceNormalSquaredMagnitude:
+            observerGeometry.surfaceNormalSquaredMagnitude,
+          unitRayDirLocal,
+          stepSize,
+        });
+
+        const observer = fieldCacheSampler.sampleCymaticObserverOpticalState(
+          observerGeometry.footprint,
         );
-        const spectralObservationRadiance =
-          deriveAcousticEnergyMaterialTransferNode({
-            detectorIntegratedEnergy: detectorIntegratedAcousticEnergy,
-            coreDensity,
-            sheathDensity,
-            materialColor: spectralMaterialColor,
-            surfaceColor: surfaceMaterialColor,
-            materialDensityScale,
-            carrierColumnDensityScale: uCarrierColumnDensityScale,
-            scatteringCoefficient: float(REFERENCE_SCATTERING_COEFFICIENT),
-            absorptionCoefficient: uMaterialAbsorptionCoefficient,
-            laserExcitedEmissionCoefficient: float(
-              REFERENCE_LASER_EXCITED_EMISSION_COEFFICIENT,
-            ),
-            holographicIntensity: uHolographicIntensity,
-            holographicFresnelPower: uHolographicFresnelPower,
-            normalDotRay: carrier.normalDotRay,
-            holographicBaseRadianceGain: uHolographicBaseRadianceGain,
-            laserAccentAuthority,
-          });
+        const localSpectralChromaticity = observer.localSpectralChromaticity;
+        // Chroma is an explicit operator choice over unit-luminance
+        // presentation. Both endpoints have Rec.709 luminance 1, so this
+        // cannot become a hidden brightness owner or reveal either configured
+        // static color.
+        const presentedSpectralChromaticity = mix(
+          vec3(1.0),
+          localSpectralChromaticity,
+          spectralChroma,
+        );
+        // Color mode is the sole static-versus-spectral owner. This value is
+        // binary at the runtime boundary; the branchless mix avoids shader
+        // specialization without changing either presentation endpoint.
+        const sampleMaterialColor = mix(
+          materialColor,
+          presentedSpectralChromaticity,
+          spectralPresentationEnabled,
+        );
+        const sampleAccentColor = mix(
+          accentColor,
+          presentedSpectralChromaticity,
+          spectralPresentationEnabled,
+        );
+        const carrier = deriveCymaticPlasmaCarrierNode({
+          profileSample,
+          surfaceSupport: observer.localSurfaceSupport,
+          fineDetailAuthority: observer.localFineDetailAuthority,
+        });
+        const opticalTransfer = deriveCymaticPlasmaTransferNode({
+          localRadiance: observer.localRadiance,
+          continuitySpineDensity: carrier.continuitySpineDensity,
+          detailSpineDensity: carrier.detailSpineDensity,
+          coreDensity: carrier.coreDensity,
+          sheathDensity: carrier.sheathDensity,
+          materialColor: sampleMaterialColor,
+          tangentColor: sampleAccentColor,
+          normalDotRay: carrier.normalDotRay,
+          preparedUniforms: plasmaTransferUniforms,
+        });
         return {
-          baseRadiance: spectralObservationRadiance.baseRadiance,
-          accentRadiance: spectralObservationRadiance.accentRadiance,
-          extinction: spectralObservationRadiance.extinction,
+          baseRadiance: opticalTransfer.baseRadiance,
+          accentRadiance: opticalTransfer.accentRadiance,
+          extinction: opticalTransfer.extinction,
         };
-      }
-
-      const observationRadiance = deriveAcousticEnergyMaterialTransferNode({
-        detectorIntegratedEnergy: detectorIntegratedAcousticEnergy,
-        coreDensity,
-        sheathDensity,
-        materialColor: staticMaterialColor,
-        surfaceColor: surfaceMaterialColor,
-        materialDensityScale,
-        carrierColumnDensityScale: uCarrierColumnDensityScale,
-        scatteringCoefficient: float(REFERENCE_SCATTERING_COEFFICIENT),
-        absorptionCoefficient: uMaterialAbsorptionCoefficient,
-        laserExcitedEmissionCoefficient: float(
-          REFERENCE_LASER_EXCITED_EMISSION_COEFFICIENT,
-        ),
-        holographicIntensity: uHolographicIntensity,
-        holographicFresnelPower: uHolographicFresnelPower,
-        normalDotRay: carrier.normalDotRay,
-        holographicBaseRadianceGain: uHolographicBaseRadianceGain,
-        laserAccentAuthority,
-      });
-      return {
-        baseRadiance: observationRadiance.baseRadiance,
-        accentRadiance: observationRadiance.accentRadiance,
-        extinction: observationRadiance.extinction,
       };
-    }
-  );
+    };
+  return {
+    createOpticalTransferRaySampler,
+  };
 }
-
 const RAYMARCH_DOMAIN_GEOMETRY_MARGIN = 1.01;
 function createVolumeDomainGeometry(radius, volumeShape) {
   const hullRadius = radius * RAYMARCH_DOMAIN_GEOMETRY_MARGIN;
@@ -647,66 +221,36 @@ function resolveMaterialStepBudget(steps) {
   return Math.max(1, Math.round(Number.isFinite(steps) ? steps : 1));
 }
 
-function getRaymarchMaterialVariantKey(
-  spectralLightEvaluationMode,
-  volumeShape,
-) {
-  const normalizedSpectralLightEvaluationMode =
-    normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode);
-  const normalizedVolumeShape = normalizeVolumeShape(volumeShape);
-  return normalizedVolumeShape === VOLUME_SHAPES.sphere
-    ? normalizedSpectralLightEvaluationMode
-    : `${normalizedSpectralLightEvaluationMode}:${normalizedVolumeShape}`;
-}
-
 export function createRaymarchVolumeMesh({
   radius,
-  modalBasisAtlasTexture = null,
-  modalLiveFieldTexture = null,
-  modalLiveSupportTexture = null,
-  modalPressureRadiationTexture = null,
-  modalPhaseInterferenceTexture = null,
-  laserIrradianceTexture = null,
-  spectralLaneTextureA = null,
-  spectralLaneTextureB = null,
-  spectralLaneStatsTexture = null,
-  modalFieldModeBuffer = null,
-  modalFieldCoefficientBuffer = null,
-  modalFieldCapacity = RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
+  fieldCache = null,
+  plasmaProfileLookup = null,
+  modalFieldCapacity = MODAL_SEMANTIC_DESCRIPTOR_CAPACITY,
   uniforms,
   cavityGeometry = "rectangular",
-  spectralLightEvaluationMode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
   volumeShape = DEFAULT_VOLUME_SHAPE,
 }) {
+  if (fieldCache && !plasmaProfileLookup) {
+    throw new TypeError(
+      "plasmaProfileLookup is required when fieldCache is present",
+    );
+  }
   const initialVolumeShape = normalizeVolumeShape(volumeShape);
+  const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
   const geometry = createVolumeDomainGeometry(radius, initialVolumeShape);
-  const modalBasisAtlasTextureNode = getTexture3DNode(modalBasisAtlasTexture);
   const modalResourceBindings = {
-    modalBasisAtlasTexture,
-    modalBasisAtlasTextureNode,
-    modalLiveFieldTexture,
-    modalLiveSupportTexture,
-    modalPressureRadiationTexture,
-    modalPhaseInterferenceTexture,
-    laserIrradianceTexture,
-    spectralLaneTextureA,
-    spectralLaneTextureB,
-    spectralLaneStatsTexture,
-    modalFieldModeBuffer,
-    modalFieldCoefficientBuffer,
+    fieldCache,
     modalFieldCapacity,
   };
-  const createMaterialForBoundaryMode = (
-    boundaryMode,
-    spectralLightEvaluationMode,
-    volumeShape = DEFAULT_VOLUME_SHAPE,
-  ) => {
-    const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
-    const normalizedSpectralLightEvaluationMode =
-      normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode);
+  // Volume shape is the only thing that still specializes this shader: the cube
+  // variant carries domainHalfExtentsNode. Boundary family selects which field
+  // the BAKE writes and the march reads whatever is in the cache; cavity
+  // geometry never reached the shader at all, even before the cache. Both are
+  // recorded as runtime state instead of compiled into duplicate materials.
+  const createMaterialForVolumeShape = (volumeShape = DEFAULT_VOLUME_SHAPE) => {
     const normalizedVolumeShape = normalizeVolumeShape(volumeShape);
     const material = /** @type {BaryonVolumeMaterial} */ (
-      new BaryonVolumeNodeMaterial()
+      new VolumeNodeMaterial()
     );
     material.transparent = true;
     // The emission-absorption integrator already returns premultiplied scene
@@ -726,103 +270,34 @@ export function createRaymarchVolumeMesh({
     // Build the production traversal as the explicit fragment output so its
     // execution cannot be gated by Three's optional scene-light lifecycle.
     material.lights = false;
-    material.outputNode = createSafeVolumetricOutputNode(material);
     material.steps = resolveMaterialStepBudget(uniforms.uRaymarchSteps.value);
     material.radiusNode = uniforms.uRadius;
     if (normalizedVolumeShape === VOLUME_SHAPES.cube) {
       material.domainHalfExtentsNode = vec3(uniforms.uRadius);
     }
-    material.scatteringNode = createScatteringNode({
+    const opticalModel = createVolumetricOpticalModel({
       uniforms,
-      boundaryMode: normalizedBoundaryMode,
-      modalBasisAtlasTexture: modalResourceBindings.modalBasisAtlasTextureNode,
-      modalLiveFieldTexture: modalResourceBindings.modalLiveFieldTexture,
-      modalLiveSupportTexture: modalResourceBindings.modalLiveSupportTexture,
-      modalPressureRadiationTexture:
-        modalResourceBindings.modalPressureRadiationTexture,
-      modalPhaseInterferenceTexture:
-        modalResourceBindings.modalPhaseInterferenceTexture,
-      laserIrradianceTexture: modalResourceBindings.laserIrradianceTexture,
-      spectralLaneTextureA: modalResourceBindings.spectralLaneTextureA,
-      spectralLaneTextureB: modalResourceBindings.spectralLaneTextureB,
-      spectralLaneStatsTexture: modalResourceBindings.spectralLaneStatsTexture,
-      spectralLightEvaluationMode: normalizedSpectralLightEvaluationMode,
-      volumeShape: normalizedVolumeShape,
-      modalFieldModeBuffer: modalResourceBindings.modalFieldModeBuffer,
-      modalFieldCoefficientBuffer:
-        modalResourceBindings.modalFieldCoefficientBuffer,
-      liveSynthesisModeCount: modalResourceBindings.modalFieldCapacity,
+      fieldCache: modalResourceBindings.fieldCache,
+      plasmaProfileLookup,
     });
-    material.spectralLightEvaluationMode =
-      normalizedSpectralLightEvaluationMode;
-    material.raymarchBoundaryMode = normalizedBoundaryMode;
+    material.createOpticalTransferRaySampler =
+      opticalModel.createOpticalTransferRaySampler;
+    material.outputNode = createSafeVolumetricOutputNode(material);
     material.raymarchVolumeShape = normalizedVolumeShape;
-    material.modalBasisAtlasTexture =
-      modalResourceBindings.modalBasisAtlasTexture;
-    material.modalLiveFieldTexture =
-      modalResourceBindings.modalLiveFieldTexture;
-    material.modalLiveSupportTexture =
-      modalResourceBindings.modalLiveSupportTexture;
-    material.modalPressureRadiationTexture =
-      modalResourceBindings.modalPressureRadiationTexture;
-    material.modalPhaseInterferenceTexture =
-      modalResourceBindings.modalPhaseInterferenceTexture;
-    material.spectralLaneTextureA = modalResourceBindings.spectralLaneTextureA;
-    material.spectralLaneTextureB = modalResourceBindings.spectralLaneTextureB;
-    material.spectralLaneStatsTexture =
-      modalResourceBindings.spectralLaneStatsTexture;
-    material.modalFieldModeBuffer = modalResourceBindings.modalFieldModeBuffer;
-    material.modalFieldCoefficientBuffer =
-      modalResourceBindings.modalFieldCoefficientBuffer;
+    material.fieldCache = modalResourceBindings.fieldCache;
     material.modalFieldCapacity = modalResourceBindings.modalFieldCapacity;
+    material.plasmaProfileLookup = plasmaProfileLookup;
     return material;
   };
-  const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
-  const initialSpectralLightEvaluationMode =
-    normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode);
-  const initialMaterialKey = getRaymarchMaterialVariantKey(
-    initialSpectralLightEvaluationMode,
-    initialVolumeShape,
-  );
   const materialCache = {
-    [BOUNDARY_MODES.dirichlet]: {
-      [initialMaterialKey]: createMaterialForBoundaryMode(
-        BOUNDARY_MODES.dirichlet,
-        initialSpectralLightEvaluationMode,
-        initialVolumeShape,
-      ),
-    },
-    [BOUNDARY_MODES.neumann]: {
-      [initialMaterialKey]: createMaterialForBoundaryMode(
-        BOUNDARY_MODES.neumann,
-        initialSpectralLightEvaluationMode,
-        initialVolumeShape,
-      ),
-    },
+    [initialVolumeShape]: createMaterialForVolumeShape(initialVolumeShape),
   };
-  const mesh = new THREE.Mesh(
-    geometry,
-    materialCache[BOUNDARY_MODES.neumann][initialMaterialKey],
-  );
+  const mesh = new THREE.Mesh(geometry, materialCache[initialVolumeShape]);
   mesh.userData.raymarchMaterialCache = materialCache;
-  mesh.userData.raymarchCreateMaterialVariant = createMaterialForBoundaryMode;
+  mesh.userData.raymarchCreateMaterialVariant = createMaterialForVolumeShape;
   mesh.userData.raymarchBoundaryMode = BOUNDARY_MODES.neumann;
-  mesh.userData.raymarchSpectralLightEvaluationMode =
-    initialSpectralLightEvaluationMode;
   mesh.userData.raymarchVolumeShape = initialVolumeShape;
-  mesh.userData.raymarchModalBasisAtlasTexture = modalBasisAtlasTexture;
-  mesh.userData.raymarchModalLiveFieldTexture = modalLiveFieldTexture;
-  mesh.userData.raymarchModalLiveSupportTexture = modalLiveSupportTexture;
-  mesh.userData.raymarchModalPressureRadiationTexture =
-    modalPressureRadiationTexture;
-  mesh.userData.raymarchModalPhaseInterferenceTexture =
-    modalPhaseInterferenceTexture;
-  mesh.userData.raymarchSpectralLaneTextureA = spectralLaneTextureA;
-  mesh.userData.raymarchSpectralLaneTextureB = spectralLaneTextureB;
-  mesh.userData.raymarchSpectralLaneStatsTexture = spectralLaneStatsTexture;
-  mesh.userData.raymarchModalFieldModeBuffer = modalFieldModeBuffer;
-  mesh.userData.raymarchModalFieldCoefficientBuffer =
-    modalFieldCoefficientBuffer;
+  mesh.userData.raymarchFieldCache = fieldCache;
   mesh.userData.raymarchModalFieldCapacity = modalFieldCapacity;
   mesh.userData.raymarchModalResourceBindings = modalResourceBindings;
   mesh.userData.raymarchCavityGeometry = normalizedCavityGeometry;
@@ -839,93 +314,17 @@ export function getRaymarchMaterialCache(mesh) {
   return mesh?.userData?.raymarchMaterialCache ?? null;
 }
 
-export function setRaymarchModalBasisAtlasTexture(mesh, texture) {
-  if (!mesh?.userData) {
-    return;
-  }
-
-  mesh.userData.raymarchModalBasisAtlasTexture = texture;
-  const bindings = mesh.userData.raymarchModalResourceBindings;
-  if (bindings) {
-    bindings.modalBasisAtlasTexture = texture;
-    if (!bindings.modalBasisAtlasTextureNode && texture) {
-      bindings.modalBasisAtlasTextureNode = texture3D(texture);
-    }
-    if (bindings.modalBasisAtlasTextureNode) {
-      bindings.modalBasisAtlasTextureNode.value = texture;
-    }
-  }
-
-  const materialCache = getRaymarchMaterialCache(mesh);
-  if (!materialCache) {
-    if (mesh.material) {
-      mesh.material.modalBasisAtlasTexture = texture;
-    }
-    return;
-  }
-
-  Object.values(materialCache).forEach((boundaryMaterials) => {
-    Object.values(boundaryMaterials).forEach((material) => {
-      if (material) {
-        material.modalBasisAtlasTexture = texture;
-      }
-    });
-  });
-}
-
-function raymarchMaterialMatchesVariant(
-  material,
-  boundaryMode,
-  spectralLightEvaluationMode,
-  volumeShape,
-) {
-  if (!material) {
-    return false;
-  }
-
-  return (
-    normalizeBoundaryMode(material.raymarchBoundaryMode) ===
-      normalizeBoundaryMode(boundaryMode) &&
-    normalizeSpectralLightEvaluationMode(
-      material.spectralLightEvaluationMode,
-    ) === normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) &&
-    normalizeVolumeShape(material.raymarchVolumeShape) ===
-      normalizeVolumeShape(volumeShape)
-  );
-}
-
-function getOrCreateRaymarchMaterial(
-  mesh,
-  boundaryMode,
-  spectralLightEvaluationMode,
-  volumeShape = DEFAULT_VOLUME_SHAPE,
-) {
+function getOrCreateRaymarchMaterial(mesh, volumeShape = DEFAULT_VOLUME_SHAPE) {
   const materialCache = getRaymarchMaterialCache(mesh);
   if (!materialCache) {
     return null;
   }
 
-  const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
-  const boundaryMaterials = materialCache[normalizedBoundaryMode];
-  if (!boundaryMaterials) {
-    return null;
-  }
-
-  const normalizedSpectralLightEvaluationMode =
-    normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode);
   const normalizedVolumeShape = normalizeVolumeShape(volumeShape);
-  const materialKey = getRaymarchMaterialVariantKey(
-    normalizedSpectralLightEvaluationMode,
-    normalizedVolumeShape,
-  );
-  const cachedMaterial = boundaryMaterials[materialKey];
+  const cachedMaterial = materialCache[normalizedVolumeShape];
   if (
-    raymarchMaterialMatchesVariant(
-      cachedMaterial,
-      normalizedBoundaryMode,
-      normalizedSpectralLightEvaluationMode,
-      normalizedVolumeShape,
-    )
+    normalizeVolumeShape(cachedMaterial?.raymarchVolumeShape) ===
+    normalizedVolumeShape
   ) {
     return cachedMaterial;
   }
@@ -935,77 +334,23 @@ function getOrCreateRaymarchMaterial(
     return null;
   }
 
-  const material = createMaterialVariant(
-    normalizedBoundaryMode,
-    normalizedSpectralLightEvaluationMode,
-    normalizedVolumeShape,
-  );
-  boundaryMaterials[materialKey] = material;
+  const material = createMaterialVariant(normalizedVolumeShape);
+  materialCache[normalizedVolumeShape] = material;
   return material;
 }
 
+/**
+ * Record which boundary family the cache should be filled from.
+ *
+ * This no longer swaps materials. The march reads the baked field, so the
+ * family is a property of what the bake writes, and the bake reads it from
+ * here on the frame it runs.
+ */
 export function setRaymarchBoundaryMode(mesh, boundaryMode) {
-  const materialCache = getRaymarchMaterialCache(mesh);
-  if (!materialCache) {
+  if (!mesh?.userData) {
     return;
   }
-
-  const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
-  const spectralLightEvaluationMode = normalizeSpectralLightEvaluationMode(
-    mesh?.userData?.raymarchSpectralLightEvaluationMode,
-  );
-  const volumeShape = normalizeVolumeShape(mesh?.userData?.raymarchVolumeShape);
-  const nextMaterial = getOrCreateRaymarchMaterial(
-    mesh,
-    normalizedBoundaryMode,
-    spectralLightEvaluationMode,
-    volumeShape,
-  );
-  if (!nextMaterial || mesh.material === nextMaterial) {
-    mesh.userData.raymarchBoundaryMode = normalizedBoundaryMode;
-    return;
-  }
-
-  nextMaterial.steps = resolveMaterialStepBudget(
-    mesh.userData.raymarchRequestedSteps ?? mesh.material?.steps,
-  );
-  mesh.material = nextMaterial;
-  mesh.userData.raymarchBoundaryMode = normalizedBoundaryMode;
-}
-
-export function setRaymarchSpectralLightEvaluationMode(
-  mesh,
-  spectralLightEvaluationMode,
-) {
-  const materialCache = getRaymarchMaterialCache(mesh);
-  if (!materialCache) {
-    return;
-  }
-
-  const normalizedSpectralLightEvaluationMode =
-    normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode);
-  const normalizedBoundaryMode = normalizeBoundaryMode(
-    mesh?.userData?.raymarchBoundaryMode,
-  );
-  const volumeShape = normalizeVolumeShape(mesh?.userData?.raymarchVolumeShape);
-  const nextMaterial = getOrCreateRaymarchMaterial(
-    mesh,
-    normalizedBoundaryMode,
-    normalizedSpectralLightEvaluationMode,
-    volumeShape,
-  );
-  if (!nextMaterial || mesh.material === nextMaterial) {
-    mesh.userData.raymarchSpectralLightEvaluationMode =
-      normalizedSpectralLightEvaluationMode;
-    return;
-  }
-
-  nextMaterial.steps = resolveMaterialStepBudget(
-    mesh.userData.raymarchRequestedSteps ?? mesh.material?.steps,
-  );
-  mesh.material = nextMaterial;
-  mesh.userData.raymarchSpectralLightEvaluationMode =
-    normalizedSpectralLightEvaluationMode;
+  mesh.userData.raymarchBoundaryMode = normalizeBoundaryMode(boundaryMode);
 }
 
 export function setRaymarchVolumeShape(mesh, volumeShape) {
@@ -1027,18 +372,7 @@ export function setRaymarchVolumeShape(mesh, volumeShape) {
     return;
   }
 
-  const normalizedBoundaryMode = normalizeBoundaryMode(
-    mesh.userData.raymarchBoundaryMode,
-  );
-  const spectralLightEvaluationMode = normalizeSpectralLightEvaluationMode(
-    mesh.userData.raymarchSpectralLightEvaluationMode,
-  );
-  const nextMaterial = getOrCreateRaymarchMaterial(
-    mesh,
-    normalizedBoundaryMode,
-    spectralLightEvaluationMode,
-    normalizedVolumeShape,
-  );
+  const nextMaterial = getOrCreateRaymarchMaterial(mesh, normalizedVolumeShape);
   if (!nextMaterial) {
     return;
   }
@@ -1063,11 +397,18 @@ export function setRaymarchVolumeShape(mesh, volumeShape) {
   previousGeometry?.dispose?.();
 }
 
+/**
+ * Record which cavity geometry the mode atlas was resolved against.
+ *
+ * Cavity geometry has never reached the shader — it selects the atlas on the
+ * CPU — so this was already only ever bookkeeping.
+ */
 export function setRaymarchCavityGeometry(mesh, cavityGeometry) {
-  if (mesh?.userData) {
-    mesh.userData.raymarchCavityGeometry =
-      normalizeCavityGeometry(cavityGeometry);
+  if (!mesh?.userData) {
+    return;
   }
+  mesh.userData.raymarchCavityGeometry =
+    normalizeCavityGeometry(cavityGeometry);
 }
 
 export function syncRaymarchMaterialSteps(mesh, steps) {
@@ -1082,27 +423,212 @@ export function syncRaymarchMaterialSteps(mesh, steps) {
     return;
   }
 
-  Object.values(materialCache).forEach((boundaryMaterials) => {
-    Object.values(boundaryMaterials).forEach((material) => {
-      if (material) {
-        material.steps = resolveMaterialStepBudget(steps);
-      }
-    });
+  Object.values(materialCache).forEach((material) => {
+    if (material) {
+      material.steps = resolveMaterialStepBudget(steps);
+    }
   });
 }
 
-export function createIdleOverlay({ baryonGeometry, uniforms }) {
-  const geometry = new THREE.EdgesGeometry(baryonGeometry);
-  const overlay = new THREE.LineSegments(
-    geometry,
-    new THREE.LineBasicMaterial({
-      color: uniforms.uIdleLogoColor.value.clone(),
-      transparent: true,
-      opacity: uniforms.uIdleLogoAlpha.value,
-    }),
+const IDLE_LOGO_CORE_LAYER = "core";
+const IDLE_LOGO_ENERGY_SHELL_LAYER = "energy-shell";
+const IDLE_LOGO_SHELL_SCALE = 1.018;
+// View-space raster pitch in radians per world unit: ~36 lines across the
+// default 1.2-unit logo span, fine enough to read as projection texture
+// rather than stripes.
+const IDLE_LOGO_SCAN_FREQUENCY = 190;
+
+export function syncIdleOverlayMaterial(overlay, { color, intensity }) {
+  const colorUniform = overlay?.userData?.idleLogoColorUniform;
+  const intensityUniform = overlay?.userData?.idleLogoIntensityUniform;
+  if (!colorUniform?.value?.isColor || !intensityUniform) {
+    return;
+  }
+
+  colorUniform.value.set(color);
+  intensityUniform.value = Math.max(0, intensity);
+}
+
+function resolveIdleLogoHeightExtents(geometry) {
+  if (!geometry.boundingBox) {
+    geometry.computeBoundingBox();
+  }
+  const minY = geometry.boundingBox.min.y;
+  const spanY = Math.max(geometry.boundingBox.max.y - minY, 1e-6);
+  return { minY, spanY };
+}
+
+function deriveIdleLogoVisibilityNodes(uniforms) {
+  // The control schema owns the upper bound; the material only closes negative
+  // input so the full accepted brightness range remains visually meaningful.
+  const normalizedIntensity = max(
+    uniforms.uIdleLogoIntensity.div(float(RENDER_DEFAULTS.idleLogoIntensity)),
+    float(0),
   );
+  return {
+    normalizedIntensity,
+    visibility: pow(normalizedIntensity, float(0.5)),
+  };
+}
+
+function deriveIdleLogoNormalizedHeightNode({ minY, spanY }) {
+  return clamp(
+    positionLocal.y.sub(float(minY)).div(float(spanY)),
+    float(0),
+    float(1),
+  );
+}
+
+function createIdleLogoCoreMaterial(uniforms, heightExtents) {
+  const { normalizedIntensity, visibility } =
+    deriveIdleLogoVisibilityNodes(uniforms);
+  const grazing = float(1).sub(abs(normalView.z));
+  const silhouette = pow(grazing, float(1.6));
+  const normalizedHeight = deriveIdleLogoNormalizedHeightNode(heightExtents);
+  const pulse = sin(uniforms.uTime.mul(float(0.55)))
+    .mul(float(0.025))
+    .add(float(0.975));
+  // Cool cast is a per-channel filter so saturated user colors keep their hue.
+  const bodyColor = uniforms.uIdleLogoColor.mul(vec3(0.82, 0.93, 1.05));
+  const projectorGrade = float(1.12).sub(normalizedHeight.mul(float(0.22)));
+
+  const material = new MeshBasicNodeMaterial();
+  material.name = "BaryonIdleLogoCoreMaterial";
+  material.colorNode = bodyColor.mul(
+    pulse
+      .mul(projectorGrade)
+      .mul(float(0.34).add(normalizedIntensity.mul(float(0.05)))),
+  );
+  material.opacityNode = clamp(
+    float(0.12)
+      .add(silhouette.mul(float(0.3)))
+      .mul(visibility),
+    float(0),
+    float(0.55),
+  );
+  material.transparent = true;
+  material.depthWrite = false;
+  material.side = THREE.DoubleSide;
+  material.toneMapped = false;
+  return material;
+}
+
+function createIdleLogoEnergyShellMaterial(uniforms, heightExtents) {
+  const { normalizedIntensity, visibility } =
+    deriveIdleLogoVisibilityNodes(uniforms);
+  const grazing = float(1).sub(abs(normalView.z));
+  const rim = pow(grazing, float(2.6));
+  const normalizedHeight = deriveIdleLogoNormalizedHeightNode(heightExtents);
+
+  const scan = sin(
+    positionView.y
+      .mul(float(IDLE_LOGO_SCAN_FREQUENCY))
+      .add(uniforms.uTime.mul(float(1.4))),
+  )
+    .mul(float(0.5))
+    .add(float(0.5));
+  const scanShade = mix(float(0.9), float(1.06), scan);
+
+  const sweepPhase = fract(
+    normalizedHeight.mul(float(0.42)).sub(uniforms.uTime.mul(float(0.06))),
+  );
+  const sweep = smoothstep(float(0.3), float(0.46), sweepPhase).mul(
+    float(1).sub(smoothstep(float(0.46), float(0.66), sweepPhase)),
+  );
+
+  const shimmer = float(1).sub(
+    sin(uniforms.uTime.mul(float(9.3)))
+      .mul(float(0.5))
+      .add(float(0.5))
+      .mul(
+        sin(uniforms.uTime.mul(float(17.1)))
+          .mul(float(0.5))
+          .add(float(0.5)),
+      )
+      .mul(float(0.05)),
+  );
+
+  // Hue-preserving palette: facing surfaces get a deep cool filter over the
+  // user color, the rim lifts toward white, and extreme grazing whitens like
+  // a hot edge — no fixed hue is ever mixed in.
+  const facingTint = uniforms.uIdleLogoColor.mul(vec3(0.55, 0.75, 1.08));
+  const rimTint = mix(
+    uniforms.uIdleLogoColor,
+    vec3(1.0, 1.0, 1.0),
+    float(0.45),
+  );
+  const grazeTint = mix(
+    mix(facingTint, rimTint, rim),
+    vec3(0.95, 0.97, 1.05),
+    pow(rim, float(3)).mul(float(0.3)),
+  );
+
+  const material = new MeshBasicNodeMaterial();
+  material.name = "BaryonIdleLogoEnergyShellMaterial";
+  material.colorNode = grazeTint
+    .mul(
+      float(0.35)
+        .add(rim.mul(float(1.6)))
+        .add(sweep.mul(float(0.5))),
+    )
+    .mul(shimmer)
+    .mul(scanShade)
+    .mul(float(0.75).add(normalizedIntensity.mul(float(0.25))));
+  material.opacityNode = clamp(
+    float(0.03)
+      .add(rim.mul(float(0.42)))
+      .add(sweep.mul(float(0.07)))
+      .mul(mix(float(0.94), float(1.06), scan))
+      .mul(visibility),
+    float(0),
+    float(0.7),
+  );
+  material.transparent = true;
+  material.depthWrite = false;
+  material.blending = THREE.AdditiveBlending;
+  material.side = THREE.DoubleSide;
+  material.toneMapped = false;
+  return material;
+}
+
+export function createIdleOverlay({ baryonGeometry, uniforms }) {
+  if (!baryonGeometry?.attributes?.position?.count) {
+    throw new Error("Idle logo requires mesh geometry");
+  }
+
+  const heightExtents = resolveIdleLogoHeightExtents(baryonGeometry);
+  const overlay = new THREE.Group();
+  overlay.name = "BaryonIdleLogoHologram";
   overlay.scale.setScalar(uniforms.uIdleLogoSize.value);
-  overlay.frustumCulled = false;
+  overlay.userData.holographicIdleLogo = true;
+  overlay.userData.idleLogoColorUniform = uniforms.uIdleLogoColor;
+  overlay.userData.idleLogoIntensityUniform = uniforms.uIdleLogoIntensity;
+
+  const core = new THREE.Mesh(
+    baryonGeometry.clone(),
+    createIdleLogoCoreMaterial(uniforms, heightExtents),
+  );
+  core.name = "BaryonIdleLogoCore";
+  core.frustumCulled = false;
+  core.renderOrder = 1;
+  core.userData.idleLogoLayer = IDLE_LOGO_CORE_LAYER;
+  overlay.add(core);
+
+  const energyShell = new THREE.Mesh(
+    baryonGeometry.clone(),
+    createIdleLogoEnergyShellMaterial(uniforms, heightExtents),
+  );
+  energyShell.name = "BaryonIdleLogoEnergyShell";
+  energyShell.scale.setScalar(IDLE_LOGO_SHELL_SCALE);
+  energyShell.frustumCulled = false;
+  energyShell.renderOrder = 2;
+  energyShell.userData.idleLogoLayer = IDLE_LOGO_ENERGY_SHELL_LAYER;
+  overlay.add(energyShell);
+
+  syncIdleOverlayMaterial(overlay, {
+    color: uniforms.uIdleLogoColor.value,
+    intensity: uniforms.uIdleLogoIntensity.value,
+  });
 
   return overlay;
 }

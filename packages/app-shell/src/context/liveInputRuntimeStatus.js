@@ -21,7 +21,7 @@ import {
  */
 
 /**
- * @typedef {"none" | "permission-denied" | "device-missing" | "device-disconnected" | "start-failed" | "calibration-invalid"} LiveInputErrorCode
+ * @typedef {"none" | "permission-denied" | "device-missing" | "device-unavailable" | "device-disconnected" | "start-failed" | "calibration-invalid"} LiveInputErrorCode
  */
 
 /**
@@ -75,16 +75,11 @@ export const LIVE_INPUT_ERROR_CODES = Object.freeze({
   none: "none",
   permissionDenied: "permission-denied",
   deviceMissing: "device-missing",
+  deviceUnavailable: "device-unavailable",
   deviceDisconnected: "device-disconnected",
   startFailed: "start-failed",
   calibrationInvalid: "calibration-invalid",
 });
-
-function getResolvedAnalysisStatusLabel(status) {
-  return status.resolvedAnalysisClass === "line-feed"
-    ? "Live Input: Line Feed"
-    : "Live Input: Acoustic Mic";
-}
 
 /**
  * @param {unknown} value
@@ -106,6 +101,7 @@ function normalizeUiState(value) {
 function normalizeErrorCode(value) {
   return value === LIVE_INPUT_ERROR_CODES.permissionDenied ||
     value === LIVE_INPUT_ERROR_CODES.deviceMissing ||
+    value === LIVE_INPUT_ERROR_CODES.deviceUnavailable ||
     value === LIVE_INPUT_ERROR_CODES.deviceDisconnected ||
     value === LIVE_INPUT_ERROR_CODES.startFailed ||
     value === LIVE_INPUT_ERROR_CODES.calibrationInvalid
@@ -172,10 +168,23 @@ export function mapLiveInputStartError(error) {
   if (
     name === "NotFoundError" ||
     name === "DevicesNotFoundError" ||
-    message.includes("device") ||
-    message.includes("input")
+    message.includes("device not found") ||
+    message.includes("no input")
   ) {
     return LIVE_INPUT_ERROR_CODES.deviceMissing;
+  }
+
+  if (
+    name === "NotReadableError" ||
+    name === "TrackStartError" ||
+    message.includes("could not start audio source") ||
+    message.includes("could not start video source") ||
+    message.includes("already in use") ||
+    message.includes("device is in use") ||
+    message.includes("hardware unavailable") ||
+    message.includes("failed to allocate")
+  ) {
+    return LIVE_INPUT_ERROR_CODES.deviceUnavailable;
   }
 
   return LIVE_INPUT_ERROR_CODES.startFailed;
@@ -397,48 +406,4 @@ export function isLiveInputTransitionLocked(runtimeStatus) {
   return (
     phase === LIVE_INPUT_PHASES.starting || phase === LIVE_INPUT_PHASES.stopping
   );
-}
-
-/**
- * @param {Partial<LiveInputRuntimeStatus> | null | undefined} runtimeStatus
- * @returns {string}
- */
-export function getLiveInputStatusLabel(runtimeStatus) {
-  const status = createLiveInputRuntimeStatus(runtimeStatus);
-
-  if (status.errorCode === LIVE_INPUT_ERROR_CODES.permissionDenied) {
-    return "Microphone permission blocked";
-  }
-  if (
-    status.errorCode === LIVE_INPUT_ERROR_CODES.deviceMissing ||
-    status.errorCode === LIVE_INPUT_ERROR_CODES.deviceDisconnected
-  ) {
-    return "Selected device unavailable";
-  }
-  if (
-    status.errorCode === LIVE_INPUT_ERROR_CODES.calibrationInvalid ||
-    status.signalState === LIVE_INPUT_SIGNAL_STATES.clipped
-  ) {
-    return "Mic signal looks clipped";
-  }
-  if (status.phase === LIVE_INPUT_PHASES.calibrating) {
-    return "Calibrating mic";
-  }
-  if (status.phase === LIVE_INPUT_PHASES.weakSignal) {
-    if (
-      status.resolvedAnalysisClass === "line-feed" &&
-      status.signalState === LIVE_INPUT_SIGNAL_STATES.silent
-    ) {
-      return "Line feed silent";
-    }
-    return "Input too weak";
-  }
-  if (!status.active) {
-    return "";
-  }
-  if (status.phase === LIVE_INPUT_PHASES.listening) {
-    return getResolvedAnalysisStatusLabel(status);
-  }
-
-  return "";
 }

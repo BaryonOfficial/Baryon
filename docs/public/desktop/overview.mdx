@@ -1,17 +1,23 @@
 ---
 title: "Baryon Desktop"
-description: "The desktop app for live performance — free to explore, with a paid Baryon Pro license for professional shows."
+description: "The desktop app for live performance, with professional show rights during the Pro trial and paid entitlement."
 ---
 
 <Info>
-  Baryon Desktop is in active development and is **not downloadable yet**. It is
-  launching soon — [join the waitlist](https://baryon.live) for early access.
-  Details on this page describe the planned product and may change before launch.
+  [Download Baryon Desktop](https://baryon.live/download) for macOS, Windows, or
+  Linux. The 10-day Baryon Pro trial is available on macOS and Windows.
 </Info>
 
 Baryon Desktop runs the same WebGPU cymatic engine as the [web app](https://app.baryon.live),
 packaged for the stage: lower-latency live input, output to your existing video
 setup, and controls built for performing rather than evaluating.
+
+<Info>
+  Baryon Desktop 1.2.0 adds two-way OSC/MIDI control, TouchDesigner control and
+  structure components, expanded visual controls, and synchronized Performer
+  output. Read the [1.2.0 release notes](/public/desktop/release-notes) before
+  upgrading a show setup.
+</Info>
 
 ## Free to explore, paid to perform
 
@@ -19,29 +25,64 @@ The app itself is **free to download and evaluate** — no account required. You
 open it, feed it audio or a microphone, and run the full real-time visualizer to
 decide whether it belongs in your show.
 
-A paid **Baryon Pro license** unlocks professional live use: Performer Mode,
-external display output into your VJ or production tools, and the right to use
-Baryon in paid shows. See [Plans & licensing](/public/desktop/licensing) for
-the full breakdown.
+An active **Baryon Pro entitlement** unlocks professional live use: Performer
+Mode, fullscreen Display output, Syphon or Spout publishing, OSC/MIDI control,
+and the right to use Baryon in paid shows. The 10-day Pro trial includes those
+rights for its active term. See [Plans & licensing](/public/desktop/licensing)
+for the full breakdown.
 
-The boundary is simple: **free to explore, paid to perform professionally.**
+Free Listener Mode covers evaluation and personal use. An active Baryon Pro
+entitlement, including the trial, covers professional performance.
 
 ## Same engine as the web app
 
-Desktop and web share one engine, so the visualizer itself behaves the same in
-both. The hands-on guidance in the **Using Baryon** track applies to either:
+Desktop and web share the same render engine and core visual controls. Their
+output controls differ: the web app and Listener Mode can render a transparent
+background, while Performer always sends an opaque image over black. The
+hands-on guidance in the **Using Baryon** track applies to both unless a guide
+marks a host-specific control.
 
 <CardGroup cols={2}>
-  <Card title="First session" icon="compass" href="/public/guides/first-session">
+  <Card
+    title="Release notes"
+    icon="newspaper"
+    href="/public/desktop/release-notes"
+  >
+    What changed in 1.2.0 and what to recheck before a show.
+  </Card>
+  <Card
+    title="First session"
+    icon="compass"
+    href="/public/guides/first-session"
+  >
     Connect audio, frame the scene, and save a setup.
   </Card>
-  <Card title="Control panel reference" icon="sliders" href="/public/reference/controls">
-    Every control the visualizer exposes.
+  <Card
+    title="Control panel reference"
+    icon="sliders"
+    href="/public/reference/controls"
+  >
+    Shared controls and host-specific output settings.
   </Card>
-  <Card title="Parameter automation" icon="radio" href="/public/desktop/parameter-automation">
+  <Card
+    title="Program output"
+    icon="monitor"
+    href="/public/desktop/program-output"
+  >
+    Route Performer to a display, Syphon, or Spout.
+  </Card>
+  <Card
+    title="Parameter automation"
+    icon="radio"
+    href="/public/desktop/parameter-automation"
+  >
     Drive Baryon Desktop from OSC, OSCQuery-aware tools, and MIDI CC hardware.
   </Card>
-  <Card title="OSC structure export" icon="network" href="/public/desktop/osc-structure-export">
+  <Card
+    title="OSC structure export"
+    icon="network"
+    href="/public/desktop/osc-structure-export"
+  >
     Send Baryon's modal structure to TouchDesigner or another OSC receiver.
   </Card>
 </CardGroup>
@@ -54,13 +95,17 @@ Performer Mode, parameter automation, OSC structure export, and live output.
 - **Platforms:** macOS, Windows, and Linux. Listener Mode runs on all three;
   Performer Mode (stage output, OSC/MIDI) is macOS and Windows today and is
   coming to Linux later.
-- **Live output:** send the visual into VJ and production tools through Syphon on
-  macOS and Spout on Windows (Baryon Pro license).
+- **Program output:** send Performer fullscreen to another display on macOS or
+  Windows, or publish it through Syphon on macOS or Spout on Windows. One
+  destination is active at a time.
+- **Output appearance:** Performer output is always opaque and black-backed. In
+  a receiving tool, use Add or Screen blending when black should disappear.
 - **Offline-friendly licensing:** your license is verified locally, so a network
   outage at a venue never blocks a performance. See [Plans &
   licensing](/public/desktop/licensing).
 
-## Get early access
+## Download Baryon Desktop
 
-Baryon Desktop ships first to the waitlist. [Join at baryon.live](https://baryon.live)
-to be notified and receive an early invite.
+[Download the current release](https://baryon.live/download). Listener Mode is
+available on macOS, Windows, and Linux. Performer Mode and the Baryon Pro trial
+are available on macOS and Windows.

@@ -1,6 +1,5 @@
 import {
   LIVE_INPUT_DEVICE_KINDS,
-  isLoopbackLiveInputDeviceKind,
   normalizeLiveInputDeviceKind,
 } from "./inputDeviceSemantics.js";
 
@@ -133,6 +132,57 @@ export function normalizeLiveInputAnalysisOverrides(overrides) {
   return normalizedOverrides;
 }
 
+/**
+ * Canonical runtime representation of live-input analysis settings.
+ *
+ * @param {{
+ *   analysisClass?: unknown,
+ *   acousticIntent?: unknown,
+ *   overrides?: Record<string, unknown> | null,
+ * } | null} [settings]
+ * @param {{
+ *   analysisClass?: unknown,
+ *   acousticIntent?: unknown,
+ *   overrides?: Record<string, unknown> | null,
+ * } | null} [previous]
+ */
+export function normalizeLiveInputAnalysisSettings(
+  settings = undefined,
+  previous = undefined,
+) {
+  return {
+    analysisClass: normalizeLiveInputAnalysisClass(
+      settings?.analysisClass ?? previous?.analysisClass,
+    ),
+    acousticIntent: normalizeLiveInputAcousticIntent(
+      settings?.acousticIntent ?? previous?.acousticIntent,
+    ),
+    overrides: normalizeLiveInputAnalysisOverrides(
+      settings?.overrides ?? previous?.overrides,
+    ),
+  };
+}
+
+export function areLiveInputAnalysisSettingsEqual(left, right) {
+  const normalizedLeft = normalizeLiveInputAnalysisSettings(left);
+  const normalizedRight = normalizeLiveInputAnalysisSettings(right);
+  if (
+    normalizedLeft.analysisClass !== normalizedRight.analysisClass ||
+    normalizedLeft.acousticIntent !== normalizedRight.acousticIntent
+  ) {
+    return false;
+  }
+
+  const leftKeys = Object.keys(normalizedLeft.overrides);
+  const rightKeys = Object.keys(normalizedRight.overrides);
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every(
+      (key) => normalizedLeft.overrides[key] === normalizedRight.overrides[key],
+    )
+  );
+}
+
 export function isLikelyLineFeedDeviceLabel(label = "") {
   const normalizedLabel = String(label).trim().toLowerCase();
   if (!normalizedLabel) {
@@ -146,7 +196,6 @@ export function isLikelyLineFeedDeviceLabel(label = "") {
 
 /**
  * @param {{
- *   liveInputKind?: import("./inputDeviceSemantics.js").LiveInputDeviceKind | null,
  *   liveInputDeviceKind?: import("./inputDeviceSemantics.js").LiveInputDeviceKind | null,
  *   selectedDeviceId?: string | null,
  *   selectedDeviceLabel?: string,
@@ -156,8 +205,7 @@ export function isLikelyLineFeedDeviceLabel(label = "") {
  * @returns {ResolvedLiveInputAnalysisClass}
  */
 export function resolveLiveInputAnalysisClass({
-  liveInputKind = null,
-  liveInputDeviceKind = liveInputKind,
+  liveInputDeviceKind = null,
   selectedDeviceId = null,
   selectedDeviceLabel = "",
   analysisClass = DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
@@ -168,10 +216,7 @@ export function resolveLiveInputAnalysisClass({
       ? null
       : normalizeLiveInputDeviceKind(liveInputDeviceKind);
 
-  if (
-    resolvedLiveInputDeviceKind === LIVE_INPUT_DEVICE_KINDS.loopback ||
-    isLoopbackLiveInputDeviceKind(liveInputKind)
-  ) {
+  if (resolvedLiveInputDeviceKind === LIVE_INPUT_DEVICE_KINDS.loopback) {
     return LIVE_INPUT_ANALYSIS_CLASSES.lineFeed;
   }
 

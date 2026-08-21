@@ -12,7 +12,7 @@ describe("audio source evidence", () => {
     [
       "file playing",
       {
-        inputMode: "file",
+        sourceKind: "file",
         hasAnalysisSource: true,
         isPlaying: true,
         metrics: {
@@ -32,7 +32,7 @@ describe("audio source evidence", () => {
     [
       "file paused",
       {
-        inputMode: "file",
+        sourceKind: "file",
         hasAnalysisSource: true,
         isPlaying: false,
         fileMuted: true,
@@ -53,7 +53,7 @@ describe("audio source evidence", () => {
     [
       "acoustic mic hard silence",
       {
-        inputMode: "live",
+        sourceKind: "system",
         hasAnalysisSource: true,
         isLiveInputActive: true,
         isAcousticLiveInput: true,
@@ -66,7 +66,7 @@ describe("audio source evidence", () => {
         },
       },
       {
-        sourceKind: "mic",
+        sourceKind: "system",
         analysisClass: "acoustic-mic",
         sourceBoundaryState: "muted",
         currentSourceEvidence: false,
@@ -75,7 +75,7 @@ describe("audio source evidence", () => {
     [
       "system line-feed active",
       {
-        inputMode: "system",
+        sourceKind: "system",
         hasAnalysisSource: true,
         isLiveInputActive: true,
         isLineFeedLiveInput: true,
@@ -97,7 +97,7 @@ describe("audio source evidence", () => {
     [
       "system line-feed paused",
       {
-        inputMode: "system",
+        sourceKind: "system",
         hasAnalysisSource: true,
         isLiveInputActive: true,
         isLineFeedLiveInput: true,
@@ -119,7 +119,7 @@ describe("audio source evidence", () => {
     [
       "absent input",
       {
-        inputMode: "idle",
+        sourceKind: "file",
         hasAnalysisSource: false,
         metrics: {
           avgAmplitude: 0,
@@ -129,8 +129,8 @@ describe("audio source evidence", () => {
         },
       },
       {
-        sourceKind: "none",
-        analysisClass: "none",
+        sourceKind: "file",
+        analysisClass: "file",
         sourceBoundaryState: "absent",
         currentSourceEvidence: false,
       },
@@ -138,7 +138,7 @@ describe("audio source evidence", () => {
     [
       "test tone",
       {
-        inputMode: "idle",
+        sourceKind: "file",
         hasAnalysisSource: false,
         injectTestTone: true,
         metrics: {
@@ -149,7 +149,7 @@ describe("audio source evidence", () => {
         },
       },
       {
-        sourceKind: "test",
+        sourceKind: "file",
         analysisClass: "test",
         sourceBoundaryState: "live",
         currentSourceEvidence: true,
@@ -169,7 +169,7 @@ describe("audio source evidence", () => {
 
   it("does not let observer continuity reopen a muted system boundary", () => {
     const evidence = buildAudioSourceEvidenceFrame({
-      inputMode: "system",
+      sourceKind: "system",
       hasAnalysisSource: true,
       isLiveInputActive: true,
       isLineFeedLiveInput: true,
@@ -233,7 +233,7 @@ describe("audio source evidence", () => {
 
   it("uses modal response only after spectral source evidence remains live", () => {
     const quietLiveEvidence = buildAudioSourceEvidenceFrame({
-      inputMode: "file",
+      sourceKind: "file",
       hasAnalysisSource: true,
       isPlaying: true,
       metrics: {
@@ -260,7 +260,7 @@ describe("audio source evidence", () => {
 
   it("treats weak file meter-only fade residue as zero source evidence", () => {
     const fadeResidueEvidence = buildAudioSourceEvidenceFrame({
-      inputMode: "file",
+      sourceKind: "file",
       hasAnalysisSource: true,
       isPlaying: true,
       metrics: {
@@ -296,7 +296,7 @@ describe("audio source evidence", () => {
 
   it("keeps waveform-backed file evidence live after FFT detail disappears", () => {
     const waveformEvidence = buildAudioSourceEvidenceFrame({
-      inputMode: "file",
+      sourceKind: "file",
       hasAnalysisSource: true,
       isPlaying: true,
       metrics: {
@@ -317,7 +317,7 @@ describe("audio source evidence", () => {
 
   it("treats file analyser residue without meter or spectrum as zero source evidence", () => {
     const residualEvidence = buildAudioSourceEvidenceFrame({
-      inputMode: "file",
+      sourceKind: "file",
       hasAnalysisSource: true,
       isPlaying: true,
       metrics: {
@@ -338,7 +338,7 @@ describe("audio source evidence", () => {
 
   it("owns weak file modal suppression policy at the source boundary", () => {
     const weakFileEvidence = buildAudioSourceEvidenceFrame({
-      inputMode: "file",
+      sourceKind: "file",
       hasAnalysisSource: true,
       isPlaying: true,
       metrics: {
@@ -349,7 +349,7 @@ describe("audio source evidence", () => {
       },
     });
     const strongFileEvidence = buildAudioSourceEvidenceFrame({
-      inputMode: "file",
+      sourceKind: "file",
       hasAnalysisSource: true,
       isPlaying: true,
       metrics: {
@@ -360,7 +360,7 @@ describe("audio source evidence", () => {
       },
     });
     const lineFeedEvidence = buildAudioSourceEvidenceFrame({
-      inputMode: "system",
+      sourceKind: "system",
       hasAnalysisSource: true,
       isLiveInputActive: true,
       isLineFeedLiveInput: true,
@@ -386,7 +386,7 @@ describe("audio source evidence", () => {
 
   it("lets the line-feed activity owner bridge brief zero-valued frames", () => {
     const evidence = buildAudioSourceEvidenceFrame({
-      inputMode: "system",
+      sourceKind: "system",
       hasAnalysisSource: true,
       isLiveInputActive: true,
       isLineFeedLiveInput: true,
@@ -410,7 +410,7 @@ describe("audio source evidence", () => {
 
   it("keeps retained modal energy diagnostic-only when current source evidence is zero", () => {
     const zeroEvidence = buildAudioSourceEvidenceFrame({
-      inputMode: "file",
+      sourceKind: "file",
       hasAnalysisSource: true,
       isPlaying: true,
       metrics: {
@@ -439,10 +439,56 @@ describe("audio source evidence", () => {
     });
   });
 
+  it("keeps a naturally completed file open as zero force during modal ring-down", () => {
+    const collected = collectAudioSourceEvidenceInputs({
+      sourceKind: "file",
+      status: {
+        hasAnalysisSource: true,
+        isPlaying: false,
+        lastPlaybackEndReason: "natural",
+        naturalRingdownActive: true,
+      },
+      metrics: {
+        avgAmplitude: 0,
+        analyserRms: 0,
+        fftPeakAmplitude: 0,
+        timeDomainPeakAmplitude: 0,
+        spectralEffectiveBinCount: 0,
+      },
+    });
+    const evidence = buildAudioSourceEvidenceFrame(collected);
+
+    expect(collected.naturalRingdownActive).toBe(true);
+    expect(evidence).toMatchObject({
+      sourceKind: "file",
+      sourceBoundaryState: "zero",
+      currentSourceEvidence: false,
+      transport: {
+        naturalRingdownActive: true,
+        fileMuted: false,
+      },
+    });
+    expect(
+      resolveAudioRenderBoundary({
+        sourceEvidence: evidence,
+        modalResponse: {
+          modalResponseEnergy: 0.4,
+          modalResponseInputEnergy: 0,
+        },
+      }),
+    ).toMatchObject({
+      rawSourceBoundaryState: "zero",
+      renderBoundaryState: "zero",
+      sourceBoundaryState: "zero",
+      currentSourceEvidence: false,
+      sourceEnergy: 0,
+    });
+  });
+
   it("collects transport facts before semantic source evidence resolution", () => {
     const fftLinearAmplitudes = new Float32Array([0, 0.4, 0, 0.2]);
     const collected = collectAudioSourceEvidenceInputs({
-      inputMode: "system",
+      sourceKind: "system",
       status: {
         hasAnalysisSource: false,
         isPlaying: false,
@@ -461,7 +507,7 @@ describe("audio source evidence", () => {
     });
 
     expect(collected).toMatchObject({
-      inputMode: "system",
+      sourceKind: "system",
       hasAnalysisSource: true,
       isPlaying: false,
       isLiveInputActive: true,
@@ -484,7 +530,7 @@ describe("audio source evidence", () => {
 
   it("carries explicit playback stop through transport evidence", () => {
     const collected = collectAudioSourceEvidenceInputs({
-      inputMode: "stopped",
+      sourceKind: "file",
       status: {
         hasAnalysisSource: false,
         isPlaying: false,
@@ -494,14 +540,14 @@ describe("audio source evidence", () => {
     });
 
     expect(collected).toMatchObject({
-      inputMode: "stopped",
+      sourceKind: "file",
       hasAnalysisSource: false,
       isPlaying: false,
       isLiveInputActive: false,
       playbackEndReason: "stopped",
     });
     expect(buildAudioSourceEvidenceFrame(collected)).toMatchObject({
-      sourceKind: "none",
+      sourceKind: "file",
       sourceBoundaryState: "absent",
       currentSourceEvidence: false,
       transport: {

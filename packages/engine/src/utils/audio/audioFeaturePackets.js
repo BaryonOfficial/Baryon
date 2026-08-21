@@ -1,95 +1,10 @@
-export const AUDIO_FEATURE_PROTOCOL_VERSION = 1;
-
-const TOPOLOGY_SLOT_ARRAY_KEYS = Object.freeze([
-  "modalFieldColorSlots",
-  "modalFieldSpectralLaneA",
-  "modalFieldSpectralLaneB",
-  "modalFieldSpectralMeta",
-  "modalFieldMetadataSlots",
-]);
-
-function isPositiveInteger(value) {
-  return Number.isInteger(value) && value > 0;
-}
-
-function isNonNegativeInteger(value) {
-  return Number.isInteger(value) && value >= 0;
-}
-
-function isFloat32ArrayOfLength(value, length) {
-  return value instanceof Float32Array && value.length === length;
-}
-
-function hasValidTopologyShape(packet) {
-  const activeModeCount = packet?.activeModeCount;
-  const committedModeCount = packet?.committedModeCount;
-  if (
-    !isNonNegativeInteger(activeModeCount) ||
-    !isNonNegativeInteger(committedModeCount) ||
-    activeModeCount > committedModeCount ||
-    !isFloat32ArrayOfLength(packet?.modalIdentitySlots, activeModeCount * 3) ||
-    !isFloat32ArrayOfLength(
-      packet?.committedModeIdentitySlots,
-      committedModeCount * 3,
-    ) ||
-    !isFloat32ArrayOfLength(
-      packet?.committedModeFrequenciesHz,
-      committedModeCount,
-    ) ||
-    !(packet?.modalRoleMetadata instanceof Uint8Array) ||
-    packet.modalRoleMetadata.length !== activeModeCount ||
-    !(packet?.committedModeRoleMetadata instanceof Uint8Array) ||
-    packet.committedModeRoleMetadata.length !== committedModeCount ||
-    !(packet?.fastProbeModeIndices instanceof Uint16Array)
-  ) {
-    return false;
-  }
-  for (let index = 0; index < activeModeCount * 3; index += 1) {
-    if (
-      packet.modalIdentitySlots[index] !==
-      packet.committedModeIdentitySlots[index]
-    ) {
-      return false;
-    }
-  }
-  for (const key of TOPOLOGY_SLOT_ARRAY_KEYS) {
-    if (!isFloat32ArrayOfLength(packet[key], activeModeCount * 4)) {
-      return false;
-    }
-  }
-  for (const probeModeIndex of packet.fastProbeModeIndices) {
-    if (probeModeIndex >= committedModeCount) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function hasValidDriveShape(packet) {
-  const activeModeCount = packet?.activeModeCount;
-  const committedModeCount = packet?.committedModeCount;
-  return (
-    isNonNegativeInteger(activeModeCount) &&
-    isNonNegativeInteger(committedModeCount) &&
-    activeModeCount <= committedModeCount &&
-    isFloat32ArrayOfLength(packet?.modalCoefficients, committedModeCount) &&
-    isFloat32ArrayOfLength(packet?.phaseSlots, committedModeCount * 4) &&
-    isFloat32ArrayOfLength(packet?.bandEnergies, 4) &&
-    isFloat32ArrayOfLength(packet?.spectralBandEnergies, 4) &&
-    packet?.renderState !== null &&
-    typeof packet?.renderState === "object" &&
-    !Array.isArray(packet.renderState)
-  );
-}
-
-function driveMatchesTopologyShape(drive, topology) {
-  return (
-    hasValidDriveShape(drive) &&
-    hasValidTopologyShape(topology) &&
-    drive.activeModeCount === topology.activeModeCount &&
-    drive.committedModeCount === topology.committedModeCount
-  );
-}
+import {
+  AUDIO_FEATURE_PROTOCOL_VERSION,
+  audioFeatureDriveMatchesTopology,
+  isAudioFeatureDrivePacket,
+  isAudioFeatureTopologyPacket,
+  isPositiveProtocolInteger,
+} from "../../contracts/audioFeatureProtocol.js";
 
 function freezePacket(packet) {
   return packet && typeof packet === "object" && !Object.isFrozen(packet)
@@ -166,7 +81,7 @@ export function createAudioFeaturePacketJoiner({
       ) {
         return reject("generation-mismatch");
       }
-      if (!isPositiveInteger(packet.topologyRevision)) {
+      if (!isPositiveProtocolInteger(packet.topologyRevision)) {
         return reject("invalid-topology-revision");
       }
       if (
@@ -175,7 +90,7 @@ export function createAudioFeaturePacketJoiner({
       ) {
         return reject("non-increasing-topology-revision");
       }
-      if (!hasValidTopologyShape(packet)) {
+      if (!isAudioFeatureTopologyPacket(packet)) {
         return reject("invalid-topology-shape");
       }
 
@@ -190,7 +105,7 @@ export function createAudioFeaturePacketJoiner({
       if (heldFutureDrivePacket?.topologyRevision === packet.topologyRevision) {
         const heldDrive = heldFutureDrivePacket;
         heldFutureDrivePacket = null;
-        if (!driveMatchesTopologyShape(heldDrive, topologyPacket)) {
+        if (!audioFeatureDriveMatchesTopology(heldDrive, topologyPacket)) {
           rejectedPacketCount += 1;
           return {
             accepted: true,
@@ -217,12 +132,12 @@ export function createAudioFeaturePacketJoiner({
         return reject("generation-mismatch");
       }
       if (
-        !isPositiveInteger(packet.topologyRevision) ||
-        !isPositiveInteger(packet.frameId)
+        !isPositiveProtocolInteger(packet.topologyRevision) ||
+        !isPositiveProtocolInteger(packet.frameId)
       ) {
         return reject("invalid-drive-packet");
       }
-      if (!hasValidDriveShape(packet)) {
+      if (!isAudioFeatureDrivePacket(packet)) {
         return reject("invalid-drive-shape");
       }
       if (packet.frameId <= latestAcceptedFrameId) {
@@ -231,7 +146,7 @@ export function createAudioFeaturePacketJoiner({
 
       const topologyRevision = topologyPacket?.topologyRevision ?? 0;
       if (packet.topologyRevision === topologyRevision) {
-        if (!driveMatchesTopologyShape(packet, topologyPacket)) {
+        if (!audioFeatureDriveMatchesTopology(packet, topologyPacket)) {
           return reject("drive-topology-shape-mismatch");
         }
         return publish(packet);

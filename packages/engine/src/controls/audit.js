@@ -6,6 +6,7 @@ import {
 } from "./schema.js";
 import { CONTROL_RUNTIME_COVERAGE } from "./runtime.js";
 import { isVisualizationMethod } from "../visualization/types.js";
+import { getParameterAutomationDefinitionIssues } from "./automation.js";
 
 const CONTROL_TARGET_TYPE_SET = new Set(Object.values(CONTROL_TARGET_TYPES));
 const CONTROL_HANDLER_SET = new Set(Object.values(CONTROL_HANDLERS));
@@ -59,6 +60,7 @@ export function auditControlSchema(
     if (!CONTROL_STATUS_SET.has(definition.status)) {
       issues.push(`Control ${definition.key} has invalid status`);
     }
+    issues.push(...getParameterAutomationDefinitionIssues(definition));
     if (!Array.isArray(definition.methods) || definition.methods.length === 0) {
       issues.push(`Control ${definition.key} is missing visualization methods`);
       continue;
@@ -71,6 +73,23 @@ export function auditControlSchema(
     const coveredKeys = runtimeCoverageByHandler.get(definition.handler);
     if (!coveredKeys?.has(definition.key)) {
       issues.push(`Control ${definition.key} is missing runtime coverage`);
+    }
+  }
+
+  for (const [handler, coveredKeys] of runtimeCoverageByHandler) {
+    for (const key of coveredKeys) {
+      const definition = definitions.find((candidate) => candidate.key === key);
+      if (!definition) {
+        issues.push(
+          `Runtime coverage ${handler}.${key} has no control definition`,
+        );
+        continue;
+      }
+      if (definition.handler !== handler) {
+        issues.push(
+          `Runtime coverage ${handler}.${key} conflicts with schema handler ${definition.handler}`,
+        );
+      }
     }
   }
 

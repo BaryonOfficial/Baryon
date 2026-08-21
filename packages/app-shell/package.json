@@ -1,6 +1,6 @@
 {
   "name": "@baryon/app-shell",
-  "version": "1.0.1",
+  "version": "1.2.0",
   "private": true,
   "license": "LicenseRef-PolyForm-Strict-1.0",
   "type": "module",
@@ -11,6 +11,7 @@
   "exports": {
     ".": "./src/index.js",
     "./camera-control-model": "./src/components/cameraControlModel.js",
+    "./camera-orbit-model": "./src/components/cameraOrbitModel.js",
     "./camera-pose-presets": "./src/components/cameraPosePresets.js",
     "./controls-store": "./src/controls/controlsStore.js",
     "./index.css": "./src/index.css",
@@ -19,16 +20,17 @@
   },
   "dependencies": {
     "@baryon/engine": "workspace:*",
+    "metal-fx": "1.0.4",
     "tailwindcss-animate": "^1.0.7"
   },
   "peerDependencies": {
     "@react-three/drei": "^10.7.7",
-    "@react-three/fiber": "^9.6.0",
+    "@react-three/fiber": "9.7.0",
     "@tailwindcss/vite": "^4.3.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "tailwindcss": "^4.3.1",
-    "three": "^0.185.0"
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@baryon/config": "workspace:*",

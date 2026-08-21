@@ -33,7 +33,7 @@ describe("SourceSelector", () => {
   function renderSelector(props, audioOverrides = {}) {
     const audio = {
       platform: "desktop",
-      selectedSource: "file",
+      sourceSession: { kind: "file" },
       handleSourceChange: vi.fn(),
       isLiveInputActive: false,
       liveInputDeviceKind: "system",
@@ -75,7 +75,7 @@ describe("SourceSelector", () => {
   it("still hides the system source when it is explicitly disabled", () => {
     renderSelector(
       { showLiveButton: false, allowSystemSource: false },
-      { selectedSource: "system" },
+      { sourceSession: { kind: "system" } },
     );
 
     const fileTab = container.querySelector('[data-testid="file-source-tab"]');
@@ -107,7 +107,7 @@ describe("SourceSelector", () => {
   }`);
   });
 
-  it("uses the shared Baryon pill metrics for selector geometry", () => {
+  it("uses restrained rounded-rectangle metrics for selector geometry", () => {
     renderSelector({ showLiveButton: false });
 
     const fileTab = container.querySelector('[data-testid="file-source-tab"]');
@@ -137,7 +137,7 @@ describe("SourceSelector", () => {
         .getPropertyValue("--tab-system-width"),
     ).toBe("4rem");
     expect(injectedCss).toContain(
-      "border-radius: var(--baryon-source-selector-radius);",
+      "border-radius: var(--baryon-source-selector-segment-radius);",
     );
     expect(injectedCss).toContain(
       "min-height: var(--baryon-source-selector-inner-min-height);",

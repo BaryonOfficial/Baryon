@@ -3,6 +3,7 @@ import {
   allowsModalDescriptorRenderAuthority,
   allowsAudioMotion,
   allowsCurrentLiveRenderFrame,
+  hasPreparationAuthority,
   hasRenderAuthority,
 } from "./renderAuthorityContract.js";
 
@@ -189,6 +190,32 @@ describe("render authority contract", () => {
         },
       }),
     ).toBe(false);
+  });
+
+  it("keeps decoded file preparation authoritative only for cache seeding", () => {
+    const preparedFrame = {
+      energyLedger: {
+        projectedRenderEnergy: 0.08,
+        renderEnergyEpsilon: 1e-6,
+      },
+      modalDescriptor: {
+        fieldAuthority: "complete",
+      },
+      sourceEvidence: {
+        sourceKind: "file",
+        sourceBoundaryState: "prepared",
+        currentSourceEvidence: false,
+        transport: {
+          playing: false,
+          preparationOnly: true,
+        },
+      },
+    };
+
+    expect(hasPreparationAuthority(preparedFrame)).toBe(true);
+    expect(hasRenderAuthority(preparedFrame)).toBe(false);
+    expect(allowsAudioMotion(preparedFrame)).toBe(false);
+    expect(allowsCurrentLiveRenderFrame(preparedFrame)).toBe(false);
   });
 
   it("does not infer authority from stale render-shaped fields", () => {
