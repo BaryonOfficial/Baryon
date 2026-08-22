@@ -7,7 +7,7 @@ import App from "./App.jsx";
 // Hidden WebXR AR lab. Branches before AudioProvider/ControlsProvider so the
 // lab owns its own provider composition.
 import ArLabApp from "./ar-lab/ArLabAppLazy.jsx";
-import { isArLabPath } from "./ar-lab/arLabRoute.js";
+import { shouldOpenArLab } from "./ar-lab/arLabRoute.js";
 import "./index.css";
 
 if (
@@ -26,7 +26,7 @@ if (!rootElement) {
 
 ReactDOM.createRoot(rootElement).render(
   <AppErrorBoundary surfaceName="Baryon Web">
-    {isArLabPath(window.location.pathname) ? (
+    {shouldOpenArLab(window.location.pathname) ? (
       <Suspense fallback={null}>
         <ArLabApp />
       </Suspense>

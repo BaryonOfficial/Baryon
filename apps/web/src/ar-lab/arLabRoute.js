@@ -1,5 +1,9 @@
 export const AR_LAB_PATH = "/ar-lab";
 
+// Product availability gate. Keep the AR implementation in the tree while it
+// is not reliable enough to expose in the web app.
+export const AR_LAB_ACCESS_ENABLED = false;
+
 export const AR_LAB_MODES = Object.freeze({
   // Milestone 0 hardware proof: WebGPU + XR host with one inert sphere and
   // no Baryon pipeline, providers, audio, controls, hands, or recording.
@@ -19,6 +23,14 @@ export function isArLabPath(pathname) {
 
   const normalized = pathname.replace(/\/+$/, "") || "/";
   return normalized === AR_LAB_PATH;
+}
+
+/**
+ * @param {string | null | undefined} pathname
+ * @returns {boolean}
+ */
+export function shouldOpenArLab(pathname) {
+  return AR_LAB_ACCESS_ENABLED && isArLabPath(pathname);
 }
 
 /**
