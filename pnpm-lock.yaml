@@ -3195,8 +3195,8 @@ packages:
   ts-proto-descriptors@2.1.0:
     resolution: {integrity: sha512-S5EZYEQ6L9KLFfjSRpZWDIXDV/W7tAj8uW7pLsihIxyr62EAVSiKuVPwE8iWnr849Bqa53enex1jhDUcpgquzA==}
 
-  ts-proto@2.12.0:
-    resolution: {integrity: sha512-ezMxg57ZiK/ZTW14U7y38+qyWHJr8cn8ELKuppANER666YnUteuNFO/mM1qI+9/wAHoTAfRadnIwtVdp1xw0jQ==}
+  ts-proto@2.12.1:
+    resolution: {integrity: sha512-IEFvmib22yVlXbagL/UXcfliCPilgqXs3J0/ajDhUslfezMRhhhZvwgc63W0ZrKxCj+8jMHxvrN6G13A5UGFVg==}
     hasBin: true
 
   tsconfig-paths-webpack-plugin@4.2.0:
@@ -3903,7 +3903,7 @@ snapshots:
     dependencies:
       iwer: 2.3.0
       three: 0.165.0
-      ts-proto: 2.12.0
+      ts-proto: 2.12.1
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
@@ -6338,7 +6338,7 @@ snapshots:
     dependencies:
       '@bufbuild/protobuf': 2.14.0
 
-  ts-proto@2.12.0:
+  ts-proto@2.12.1:
     dependencies:
       '@bufbuild/protobuf': 2.14.0
       case-anything: 2.1.13

@@ -13,6 +13,7 @@ import {
   useFullscreenUiPreference,
 } from "@baryon/app-shell";
 import ArLabLaunchButton from "./ar-lab/ArLabLaunchButton.jsx";
+import { AR_LAB_ACCESS_ENABLED } from "./ar-lab/arLabRoute.js";
 
 // Sits clear of the demo note: safe area + the note's 0.85rem offset, its
 // ~1.6rem box, and a gap.
@@ -46,7 +47,9 @@ export default function App() {
             }
             liveInputPanel={mobileDemoMode ? null : { showAction: true }}
             controlsBrandAccessory={
-              mobileDemoMode ? null : <ArLabLaunchButton />
+              mobileDemoMode || !AR_LAB_ACCESS_ENABLED ? null : (
+                <ArLabLaunchButton />
+              )
             }
             controlsDockVisible={!mobileDemoMode}
             cameraControlsVisible

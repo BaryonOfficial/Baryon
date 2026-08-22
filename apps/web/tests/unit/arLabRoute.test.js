@@ -1,10 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  AR_LAB_ACCESS_ENABLED,
   AR_LAB_MODES,
   isArLabPath,
   resolveArLabMode,
+  shouldOpenArLab,
 } from "../../src/ar-lab/arLabRoute.js";
+
+test("keeps AR Lab access disabled", () => {
+  assert.equal(AR_LAB_ACCESS_ENABLED, false);
+  assert.equal(shouldOpenArLab("/ar-lab"), false);
+  assert.equal(shouldOpenArLab("/ar-lab/"), false);
+});
 
 test("matches /ar-lab with and without a trailing slash", () => {
   assert.equal(isArLabPath("/ar-lab"), true);
