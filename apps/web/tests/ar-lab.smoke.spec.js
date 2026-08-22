@@ -1,7 +1,10 @@
 import { Buffer } from "node:buffer";
 import { expect, test } from "@playwright/test";
+import { AR_LAB_ACCESS_ENABLED } from "../src/ar-lab/arLabRoute.js";
 
-test.describe("Baryon AR lab smoke", () => {
+test.describe("Baryon AR implementation smoke", () => {
+  test.skip(!AR_LAB_ACCESS_ENABLED, "AR Lab access is disabled");
+
   test("loads /ar-lab without crashing and previews when only AR is missing", async ({
     page,
     browserName,
@@ -265,6 +268,36 @@ test.describe("Baryon AR lab smoke", () => {
     await expect(page.getByTestId("live-input-status-panel")).toBeVisible();
     await expect(
       page.getByTestId("ar-lab-live-input-device-select"),
+    ).toBeVisible();
+  });
+});
+
+test.describe("Baryon AR access", () => {
+  test.skip(AR_LAB_ACCESS_ENABLED, "AR Lab access is enabled");
+
+  test("does not expose the AR launch control", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.goto("/");
+    await expect(
+      page.getByRole("button", { name: "Toggle settings" }),
+    ).toBeVisible();
+    await expect(page.getByTestId("ar-lab-launch-button")).toHaveCount(0);
+  });
+
+  test("does not open AR from the direct route", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.goto("/ar-lab");
+    await expect(page.getByTestId("ar-lab-root")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Toggle settings" }),
     ).toBeVisible();
   });
 });
