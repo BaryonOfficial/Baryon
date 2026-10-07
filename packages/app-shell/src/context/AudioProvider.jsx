@@ -35,6 +35,8 @@ import {
   buildLiveInputRuntimeStatus,
   createLiveInputRuntimeStatus,
   mapLiveInputStartError,
+  normalizeLiveInputUiState,
+  normalizeLiveInputErrorCode,
 } from "./liveInputRuntimeStatus.js";
 import { useAudioLogic } from "../components/hooks/useAudioLogic";
 import {
@@ -231,26 +233,6 @@ function persistLiveInputAcousticIntent(storage, acousticIntent) {
   });
 }
 
-function normalizeProviderLiveInputUiState(value) {
-  return value === LIVE_INPUT_UI_STATES.starting ||
-    value === LIVE_INPUT_UI_STATES.active ||
-    value === LIVE_INPUT_UI_STATES.stopping ||
-    value === LIVE_INPUT_UI_STATES.error
-    ? value
-    : LIVE_INPUT_UI_STATES.idle;
-}
-
-function normalizeProviderLiveInputErrorCode(value) {
-  return value === LIVE_INPUT_ERROR_CODES.permissionDenied ||
-    value === LIVE_INPUT_ERROR_CODES.deviceMissing ||
-    value === LIVE_INPUT_ERROR_CODES.deviceUnavailable ||
-    value === LIVE_INPUT_ERROR_CODES.deviceDisconnected ||
-    value === LIVE_INPUT_ERROR_CODES.startFailed ||
-    value === LIVE_INPUT_ERROR_CODES.calibrationInvalid
-    ? value
-    : LIVE_INPUT_ERROR_CODES.none;
-}
-
 function isSteadyFrameDerivedLiveInputPhase(phase) {
   return (
     phase === LIVE_INPUT_PHASES.calibrating ||
@@ -266,13 +248,12 @@ function shouldPreserveFrameDerivedLiveInputRuntimeStatus({
   liveInputErrorCode,
 }) {
   if (
-    normalizeProviderLiveInputUiState(liveInputUiState) !==
-    LIVE_INPUT_UI_STATES.active
+    normalizeLiveInputUiState(liveInputUiState) !== LIVE_INPUT_UI_STATES.active
   ) {
     return false;
   }
   if (
-    normalizeProviderLiveInputErrorCode(liveInputErrorCode) !==
+    normalizeLiveInputErrorCode(liveInputErrorCode) !==
     LIVE_INPUT_ERROR_CODES.none
   ) {
     return false;
@@ -607,10 +588,9 @@ export function AudioProvider({
       statusOverride = undefined,
     ) => {
       /** @type {import("./liveInputRuntimeStatus.js").LiveInputUiState} */
-      const normalizedUiState = normalizeProviderLiveInputUiState(nextUiState);
+      const normalizedUiState = normalizeLiveInputUiState(nextUiState);
       /** @type {import("./liveInputRuntimeStatus.js").LiveInputErrorCode} */
-      const normalizedErrorCode =
-        normalizeProviderLiveInputErrorCode(nextErrorCode);
+      const normalizedErrorCode = normalizeLiveInputErrorCode(nextErrorCode);
       liveInputUiStateRef.current = normalizedUiState;
       liveInputErrorCodeRef.current = normalizedErrorCode;
       setLiveInputUiState(normalizedUiState);

@@ -10,7 +10,6 @@ import {
   max,
   min,
   mrt,
-  screenUV,
   struct,
   texture,
   uniform,
@@ -29,13 +28,13 @@ import {
   FIELD_CACHE_BAKE_GATE_HALF_EXTENT,
   FIELD_CACHE_CELL_SIZE,
   FIELD_CACHE_DOMAINS,
-  FIELD_CACHE_DOMAIN_HALF_EXTENT,
   FIELD_CACHE_RESOLUTION,
-  FIELD_CACHE_TILES_X,
   createFieldCacheDomainGeometry,
 } from "./fieldCacheGeometry.js";
 import {
   createSparseResolvedFieldCacheFootprintNode,
+  deriveFieldCacheFragmentVoxelIndexNode,
+  toFieldCacheVoxelPositionNode,
   sampleFieldCacheAtlasAtVoxelCenterNode,
   sampleSparseFieldCacheVectorLaneNode,
   sampleSparseResolvedFieldCacheLaneNode,
@@ -91,34 +90,6 @@ const SparseObserverExpansionPayload = struct(
 );
 
 /**
- * Integer voxel index this fragment owns.
- *
- * The atlas lays the z slices out as a grid of tiles, so the tile a fragment
- * falls in IS its slice index. A fragment centre sits at pixel + 0.5, so the
- * floor of the in-tile pixel coordinate is the voxel index exactly.
- */
-function deriveBakedVoxelIndexNode() {
-  const pixelX = screenUV.x.mul(float(FIELD_CACHE_ATLAS_WIDTH));
-  const pixelY = screenUV.y.mul(float(FIELD_CACHE_ATLAS_HEIGHT));
-  const tileSpan = float(FIELD_CACHE_RESOLUTION);
-  const tileX = pixelX.div(tileSpan).floor();
-  const tileY = pixelY.div(tileSpan).floor();
-  return vec3(
-    pixelX.sub(tileX.mul(tileSpan)).floor(),
-    pixelY.sub(tileY.mul(tileSpan)).floor(),
-    tileY.mul(float(FIELD_CACHE_TILES_X)).add(tileX),
-  );
-}
-
-/** Normalized cavity coordinate of a voxel centre. */
-function toBakedVoxelPositionNode(voxelIndex) {
-  return voxelIndex
-    .add(0.5)
-    .mul(float(FIELD_CACHE_CELL_SIZE))
-    .sub(float(FIELD_CACHE_DOMAIN_HALF_EXTENT));
-}
-
-/**
  * Zero the mode loop outside the region any ray can reach, plus the stencil
  * slack. Exact rather than approximate: those voxels are neither sampled nor
  * read, so not evaluating them changes nothing but the bill.
@@ -163,8 +134,8 @@ function createFieldCacheBakeMaterial({
   // construction time they are silently dropped, leaving a shader that writes
   // its initial values and costs nothing.
   const payload = Fn(() => {
-    const voxelIndex = deriveBakedVoxelIndexNode();
-    const position = toBakedVoxelPositionNode(voxelIndex);
+    const voxelIndex = deriveFieldCacheFragmentVoxelIndexNode();
+    const position = toFieldCacheVoxelPositionNode(voxelIndex);
     const observed = evaluateAnalyticWaterRadiationPotentialNode({
       voxelIndex,
       basisLookup,
@@ -308,7 +279,7 @@ function createFieldCacheApertureMaterial({
   const apertureWeights = createApertureKernelWeightNodes(radius);
 
   const payload = Fn(() => {
-    const voxelIndex = deriveBakedVoxelIndexNode();
+    const voxelIndex = deriveFieldCacheFragmentVoxelIndexNode();
     const directionNode = vec3(...direction);
     const fineFieldSum = vec3(0).toVar();
     const topologyPotentialSum = float(0).toVar();
@@ -370,7 +341,7 @@ function createFieldCacheResolveMaterial({
   material.depthWrite = false;
 
   const payload = Fn(() => {
-    const voxelIndex = deriveBakedVoxelIndexNode();
+    const voxelIndex = deriveFieldCacheFragmentVoxelIndexNode();
     const sampleField = (index) => {
       const texel = toSparseFieldCacheAtlasTexelNode(
         index,
@@ -622,7 +593,7 @@ function createObserverSparseExpansionMaterial({
   const organizationNode = texture(organizationTexture);
   const payload = Fn(() => {
     const footprint = createSparseResolvedFieldCacheFootprintNode(
-      deriveBakedVoxelIndexNode(),
+      deriveFieldCacheFragmentVoxelIndexNode(),
     );
     return SparseObserverExpansionPayload(
       sampleSparseFieldCacheVectorLaneNode(geometryNode, footprint),
@@ -657,7 +628,7 @@ function createObserverOpticalPairMaterial(appearanceTexture) {
 
   const appearanceNode = fixedRenderTargetTexture(appearanceTexture);
   material.colorNode = Fn(() => {
-    const voxelIndex = deriveBakedVoxelIndexNode().toVar();
+    const voxelIndex = deriveFieldCacheFragmentVoxelIndexNode().toVar();
     const upperVoxelIndex = vec3(
       voxelIndex.xy,
       min(voxelIndex.z.add(float(1)), float(FIELD_CACHE_RESOLUTION - 1)),

@@ -9,7 +9,6 @@ import {
   applyRaymarchControls,
   applySharedControls,
   applySceneControls,
-  applySimulationControls,
   buildControlInspectionSnapshot,
   CONTROL_RUNTIME_COVERAGE,
 } from "./runtime.js";
@@ -181,7 +180,7 @@ describe("control runtime sync", () => {
     });
   });
 
-  it("applies raymarch controls through the default simulation helper", () => {
+  it("applies raymarch controls to the active and cached materials", () => {
     const controls = createControlState();
     controls.idleLogoIntensity = 0.42;
     controls.idleLogoSize = 1.4;
@@ -196,14 +195,9 @@ describe("control runtime sync", () => {
     controls.colorMode = "spectral";
     controls.spectralChroma = 0.74;
 
-    const gl = {
-      setClearColor: vi.fn(),
-    };
     const runtimeState = createRaymarchHarness();
-    const snapshot = applySimulationControls(gl, runtimeState, controls);
+    const snapshot = applyRaymarchControls(runtimeState, controls);
 
-    expect(gl.setClearColor).toHaveBeenCalledTimes(1);
-    expect(gl.setClearColor).toHaveBeenCalledWith(expect.any(THREE.Color), 0);
     expect(runtimeState.uniforms).not.toHaveProperty("uCarrierCoreFwhmWorld");
     expect(runtimeState.uniforms.uIdleLogoIntensity.value).toBe(0.42);
     expect(runtimeState.uniforms.uIdleLogoSize.value).toBe(1.4);
@@ -331,7 +325,7 @@ describe("control runtime sync", () => {
     expect(snapshot.uniforms.effectiveCavityGeometry).toBe("rectangular");
   });
 
-  it("applies shared and raymarch controls through method-aware helpers", () => {
+  it("applies shared and raymarch controls independently", () => {
     const controls = createControlState();
     controls.backgroundColor = "#123456";
     controls.boundaryMode = "dirichlet";
@@ -342,13 +336,9 @@ describe("control runtime sync", () => {
     };
     const runtimeState = createRaymarchHarness();
     const sharedSnapshot = applySharedControls(gl, controls);
-    const raymarchSnapshot = applySimulationControls(
-      gl,
-      runtimeState,
-      controls,
-    );
+    const raymarchSnapshot = applyRaymarchControls(runtimeState, controls);
 
-    expect(gl.setClearColor).toHaveBeenCalledTimes(2);
+    expect(gl.setClearColor).toHaveBeenCalledTimes(1);
     expect(gl.setClearColor).toHaveBeenNthCalledWith(
       1,
       expect.any(THREE.Color),

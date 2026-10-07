@@ -22,7 +22,7 @@ import {
   hasRenderAuthority,
 } from "@baryon/engine/core/renderAuthorityContract";
 import * as raymarchFieldAnalysisModule from "@baryon/engine/core/raymarch/fieldAnalysis";
-import { usesRaymarchVolumePipeline } from "@baryon/engine/visualization/types";
+import { isVisualizationMethod } from "@baryon/engine/visualization/types";
 import { resolveTemporalReprojectionPolicy } from "@baryon/engine/render/temporalReprojectionPolicy";
 import {
   DEFAULT_PERFORMANCE_TARGET_FPS,
@@ -1449,7 +1449,7 @@ export function updateAdaptiveRaymarchStepBudget({
     effectiveFrame?.modalDescriptor?.slotViews?.modalCoefficientSlots ??
     effectiveFrame?.modalCoefficientSlots;
   const activeRaymarchFrame = Boolean(
-    usesRaymarchVolumePipeline(runtime?.method) &&
+    isVisualizationMethod(runtime?.method) &&
     allowsCurrentLiveRenderFrame(effectiveFrame) &&
     Math.max(frameModeCount, uploadedModeCount) > 0,
   );
@@ -1799,7 +1799,7 @@ export function resolveFeatureFrame(
       : featureRuntimeStatus;
   const naturalRingdownActive = Boolean(
     resolvedFeatureRuntimeStatus?.naturalRingdownActive === true &&
-      resolvedFeatureRuntimeStatus?.naturalRingdownSessionId ===
+    resolvedFeatureRuntimeStatus?.naturalRingdownSessionId ===
       getPlaybackSessionId(status),
   );
   const shouldReuseStaticIdleFrame =

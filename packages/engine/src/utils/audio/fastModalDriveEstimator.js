@@ -96,7 +96,7 @@ function readModeQualityFactor(mode, index) {
  * @param {FastModalCommittedMode} mode
  * @param {number} sampleRate
  */
-export function isFastModalProbeableMode(mode, sampleRate) {
+function isFastModalProbeableMode(mode, sampleRate) {
   const frequencyHz = mode?.naturalFrequencyHz;
   return (
     Number.isFinite(sampleRate) &&

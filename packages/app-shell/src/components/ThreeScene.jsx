@@ -1,11 +1,4 @@
-import {
-  Suspense,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { AUDIO_SOURCE_KINDS } from "@baryon/engine/audio";
 import { AUDIO_FEATURE_AUTHORITY_ROLES } from "@baryon/engine/audio-features";
@@ -21,18 +14,13 @@ import {
   useControlsSnapshot,
   useControlsStore,
 } from "../controls/useControlsStore.js";
+import { useCameraModel } from "./useCameraModel.js";
 import FloatingCameraControls from "./FloatingCameraControls.jsx";
 import {
-  CAMERA_VIEW_PRESETS,
   DEFAULT_ACTIVE_CAMERA_POSE,
   normalizeCameraCoordinateForDisplay,
-  resolvePresetCameraPose,
-  scaleCameraPoseDistance,
 } from "./cameraPosePresets.js";
-import {
-  createCameraPresetCommand,
-  deriveCameraControlState,
-} from "./cameraControlModel.js";
+import { deriveCameraControlState } from "./cameraControlModel.js";
 import { dispatchCameraControlCommand } from "./cameraControlEvents.js";
 import DiagnosticsHud from "./DiagnosticsHud.jsx";
 import PerformanceHud from "./PerformanceHud.jsx";
@@ -111,33 +99,6 @@ function resolveCanvasDevicePixelRatio() {
   }
 
   return Math.max(1, window.devicePixelRatio || 1);
-}
-
-function resolveDefaultCameraViewPreset({
-  liveInputUiState = "idle",
-  fieldState = null,
-} = {}) {
-  if (fieldState === "idle") {
-    return CAMERA_VIEW_PRESETS.side;
-  }
-
-  if (fieldState && fieldState !== "idle") {
-    return CAMERA_VIEW_PRESETS.topDown;
-  }
-
-  return liveInputUiState === "idle"
-    ? CAMERA_VIEW_PRESETS.side
-    : CAMERA_VIEW_PRESETS.topDown;
-}
-
-function resolveEffectiveCameraViewPreset({
-  shouldUseIdleCameraDefault,
-  defaultCameraViewPreset,
-  cameraViewPreset,
-}) {
-  return shouldUseIdleCameraDefault
-    ? defaultCameraViewPreset
-    : cameraViewPreset;
 }
 
 function formatCameraCoordinate(value) {
@@ -257,13 +218,8 @@ const ThreeScene = ({
     /** @type {any} */ (controlsRef.current).forceWebGLFallbackTest,
   );
   const [performanceHudMetrics, setPerformanceHudMetrics] = useState(null);
-  const [appliedCameraViewPreset, setAppliedCameraViewPreset] = useState(
-    CAMERA_VIEW_PRESETS.topDown,
-  );
-  const [cameraPoseOverride, setCameraPoseOverride] = useState(null);
   const [latestFrameCameraPose, setLatestFrameCameraPose] = useState(null);
   const latestFrameCameraPoseKeyRef = useRef(null);
-  const [cameraResetNonce, setCameraResetNonce] = useState(0);
   const [frameFieldState, setFrameFieldState] = useState("idle");
   const frameFieldStateRef = useRef("idle");
   const [appliedDiagnosticControlState, setAppliedDiagnosticControlState] =
@@ -312,36 +268,14 @@ const ThreeScene = ({
     previewState,
     authoritativeStageStatus,
   });
-  const defaultCameraViewPreset = resolveDefaultCameraViewPreset({
-    liveInputUiState,
-    fieldState: resolvedFrameFieldState,
+  const cameraModel = useCameraModel({
+    active: liveInputUiState !== "idle" || resolvedFrameFieldState !== "idle",
+    activePose: activeCameraPose,
+    distanceScale: cameraDistanceScale,
+    onCommand: dispatchCameraControlCommand,
   });
-  const shouldUseIdleCameraDefault =
-    liveInputUiState === "idle" && resolvedFrameFieldState === "idle";
-  const effectiveCameraViewPreset = resolveEffectiveCameraViewPreset({
-    shouldUseIdleCameraDefault,
-    defaultCameraViewPreset,
-    cameraViewPreset: appliedCameraViewPreset,
-  });
-  const defaultCameraPose = useMemo(
-    () =>
-      scaleCameraPoseDistance(
-        shouldUseIdleCameraDefault
-          ? resolvePresetCameraPose(effectiveCameraViewPreset)
-          : activeCameraPose,
-        cameraDistanceScale,
-      ),
-    [
-      activeCameraPose,
-      cameraDistanceScale,
-      effectiveCameraViewPreset,
-      shouldUseIdleCameraDefault,
-    ],
-  );
-  const effectiveCameraPose = useMemo(
-    () => cameraPoseOverride ?? defaultCameraPose,
-    [cameraPoseOverride, defaultCameraPose],
-  );
+  const effectiveCameraPose = cameraModel.desiredCameraPose;
+  const cameraResetNonce = cameraModel.resetNonce;
   const displayedCameraPose = latestFrameCameraPose ?? effectiveCameraPose;
   const cameraConfig = /** @type {{
     position: [number, number, number],
@@ -390,7 +324,6 @@ const ThreeScene = ({
   const cameraControlState = deriveCameraControlState({
     available: cameraControlsAvailable,
     appliedCameraPose: displayedCameraPose,
-    fallbackPreset: effectiveCameraViewPreset,
   });
   const useAuthoritativePerformanceHud = shouldUseAuthoritativePerformanceHud({
     previewState,
@@ -463,28 +396,21 @@ const ThreeScene = ({
   }, []);
 
   const applyCameraPreset = (preset) => {
-    const presetCommand = createCameraPresetCommand(preset);
-    const command = {
-      ...presetCommand,
-      cameraPose: scaleCameraPoseDistance(
-        presetCommand.cameraPose,
-        cameraDistanceScale,
-      ),
-    };
     applyLatestFrameCameraPose(null);
-    setCameraPoseOverride(command.cameraPose);
-    setAppliedCameraViewPreset(preset);
-    setCameraResetNonce((current) => current + 1);
-    dispatchCameraControlCommand(command);
+    cameraModel.selectPreset(preset);
   };
 
   const resetCameraPreset = () => {
-    const command = { cameraPose: defaultCameraPose };
     applyLatestFrameCameraPose(null);
-    setCameraPoseOverride(null);
-    setCameraResetNonce((current) => current + 1);
-    dispatchCameraControlCommand(command);
+    cameraModel.resetCamera();
   };
+  const { recordCameraPose } = cameraModel;
+  const handleCameraPoseChange = useCallback(
+    (event) => {
+      if (event?.phase === "end") recordCameraPose(event.cameraPose);
+    },
+    [recordCameraPose],
+  );
 
   useEffect(() => {
     if (!DEVTOOLS_ENABLED || typeof window === "undefined") {
@@ -497,8 +423,7 @@ const ThreeScene = ({
       },
       setPose(cameraPose) {
         applyLatestFrameCameraPose(null);
-        setCameraPoseOverride(cameraPose);
-        setCameraResetNonce((current) => current + 1);
+        cameraModel.selectPose(cameraPose, { dispatch: false });
       },
     };
 
@@ -699,6 +624,7 @@ const ThreeScene = ({
                   AUDIO_FEATURE_AUTHORITY_ROLES.localProducer
                 }
                 cameraControlMode={CAMERA_CONTROL_MODES.previewLocal}
+                onCameraPoseChange={handleCameraPoseChange}
                 cameraPose={effectiveCameraPose}
                 cameraResetNonce={cameraResetNonce}
                 cameraLocked={controlsState.cameraLocked === true}

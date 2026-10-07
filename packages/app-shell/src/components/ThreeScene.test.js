@@ -842,9 +842,48 @@ describe("ThreeScene render behavior", () => {
 
     expect(dispatchCameraControlCommandSpy.mock.calls).toStrictEqual([
       [{ cameraPose: resolvePresetCameraPose("side") }],
-      [{ cameraPose: DEFAULT_ACTIVE_CAMERA_POSE }],
+      [{ cameraPose: DEFAULT_ACTIVE_CAMERA_POSE, cameraReset: true }],
     ]);
     expect(sideButton.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("uses side for the idle logo and clears a manual view when audio stops", async () => {
+    const controlsStore = createControlsStore();
+    const renderScene = async (active) => {
+      audioSceneState.liveInputUiState = active ? "active" : "idle";
+      await act(async () =>
+        root.render(
+          React.createElement(
+            ControlsProvider,
+            { store: controlsStore },
+            React.createElement(ThreeScene),
+          ),
+        ),
+      );
+    };
+    await renderScene(false);
+    expect(baryonSceneSpy.mock.calls.at(-1)[0].cameraPose).toEqual(
+      resolvePresetCameraPose("side"),
+    );
+    await renderScene(true);
+    expect(baryonSceneSpy.mock.calls.at(-1)[0].cameraPose).toEqual(
+      DEFAULT_ACTIVE_CAMERA_POSE,
+    );
+    await act(async () =>
+      container.querySelector('[data-testid="camera-top-view-button"]').click(),
+    );
+    expect(baryonSceneSpy.mock.calls.at(-1)[0].cameraPose).toEqual(
+      resolvePresetCameraPose("top-down"),
+    );
+    await renderScene(false);
+    expect(baryonSceneSpy.mock.calls.at(-1)[0].cameraPose).toEqual(
+      resolvePresetCameraPose("side"),
+    );
+    await renderScene(true);
+    expect(baryonSceneSpy.mock.calls.at(-1)[0].cameraPose).toEqual(
+      DEFAULT_ACTIVE_CAMERA_POSE,
+    );
+    expect(dispatchCameraControlCommandSpy).toHaveBeenCalledTimes(1);
   });
 
   it("uses the diagonal default camera view for active preview", async () => {

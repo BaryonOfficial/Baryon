@@ -4,6 +4,9 @@ import { normalizeCameraOrbitCommand } from "./cameraOrbitModel.js";
 export const CAMERA_CONTROL_COMMAND_EVENT = "__baryon-camera-command";
 
 export function createCameraControlCommand(command = {}) {
+  if (command?.cameraReset === true) {
+    return { cameraReset: true };
+  }
   const cameraOrbit = normalizeCameraOrbitCommand(command?.cameraOrbit);
   if (cameraOrbit) {
     return { cameraOrbit };
