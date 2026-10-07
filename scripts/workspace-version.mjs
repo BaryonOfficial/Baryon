@@ -1,3 +1,4 @@
+import { listWorkspaceManifestPaths } from "./lib/workspace-manifests.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -6,34 +7,10 @@ import { fileURLToPath } from "node:url";
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(scriptDir, "..");
 
-function findWorkspaceManifestPaths() {
-  const workspaceRoots = ["apps", "packages"];
-  const manifestPaths = ["package.json"];
-
-  for (const workspaceRoot of workspaceRoots) {
-    const workspaceRootPath = path.join(rootDir, workspaceRoot);
-    if (!fs.existsSync(workspaceRootPath)) {
-      continue;
-    }
-
-    for (const entry of fs.readdirSync(workspaceRootPath, {
-      withFileTypes: true,
-    })) {
-      if (!entry.isDirectory()) {
-        continue;
-      }
-
-      const manifestPath = path.join(workspaceRoot, entry.name, "package.json");
-      if (fs.existsSync(path.join(rootDir, manifestPath))) {
-        manifestPaths.push(manifestPath);
-      }
-    }
-  }
-
-  return manifestPaths.sort();
-}
-
-const existingManifestPaths = findWorkspaceManifestPaths();
+const existingManifestPaths = [
+  "package.json",
+  ...listWorkspaceManifestPaths(rootDir),
+].sort();
 
 const args = process.argv.slice(2);
 const checkOnly = args.includes("--check");

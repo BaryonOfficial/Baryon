@@ -1,3 +1,4 @@
+import { resolveCoverSourceRect } from "../../src/ar-lab/coverSourceRect.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -5,7 +6,6 @@ import {
   RECORDING_SURFACE_DIMENSIONS,
   createRecordingComposer,
   resolveComposedDimensions,
-  resolveCoverSourceRect,
 } from "../../src/ar-lab/recordingComposer.js";
 
 function createFakeCanvas() {

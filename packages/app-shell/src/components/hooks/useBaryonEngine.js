@@ -22,7 +22,7 @@ import {
   applyAudioControls,
   applySceneControls,
 } from "@baryon/engine/controls/runtime";
-import { usesRaymarchVolumePipeline } from "@baryon/engine/visualization/types";
+import { isVisualizationMethod } from "@baryon/engine/visualization/types";
 import { getDefaultAudioSession } from "@baryon/engine/audio";
 import {
   DEVTOOLS_ENABLED,
@@ -1115,7 +1115,7 @@ export function useBaryonEngine({
         Math.round(controls.raymarchSteps ?? 0);
       runtimeDiagnostics.render.effectiveRaymarchSteps =
         runtimeState?.effectiveRaymarchSteps ?? effectiveRaymarchSteps;
-      runtimeDiagnostics.render.raymarchStepBudget = usesRaymarchVolumePipeline(
+      runtimeDiagnostics.render.raymarchStepBudget = isVisualizationMethod(
         runtime.method,
       )
         ? runtimeDiagnostics.render.effectiveRaymarchSteps

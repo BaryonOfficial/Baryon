@@ -85,7 +85,7 @@ export const LIVE_INPUT_ERROR_CODES = Object.freeze({
  * @param {unknown} value
  * @returns {LiveInputUiState}
  */
-function normalizeUiState(value) {
+export function normalizeLiveInputUiState(value) {
   return value === LIVE_INPUT_UI_STATES.starting ||
     value === LIVE_INPUT_UI_STATES.active ||
     value === LIVE_INPUT_UI_STATES.stopping ||
@@ -98,7 +98,7 @@ function normalizeUiState(value) {
  * @param {unknown} value
  * @returns {LiveInputErrorCode}
  */
-function normalizeErrorCode(value) {
+export function normalizeLiveInputErrorCode(value) {
   return value === LIVE_INPUT_ERROR_CODES.permissionDenied ||
     value === LIVE_INPUT_ERROR_CODES.deviceMissing ||
     value === LIVE_INPUT_ERROR_CODES.deviceUnavailable ||
@@ -313,7 +313,7 @@ export function buildLiveInputRuntimeStatus({
 } = {}) {
   const debug = featureFrame?.debug ?? null;
   const active = Boolean(status?.isLiveInputActive);
-  const normalizedUiState = normalizeUiState(liveInputUiState);
+  const normalizedUiState = normalizeLiveInputUiState(liveInputUiState);
   const requestedAnalysisClass = normalizeLiveInputAnalysisClass(
     status?.liveInputAnalysisClass,
   );
@@ -328,7 +328,7 @@ export function buildLiveInputRuntimeStatus({
   const lineFeedSourceLive =
     resolvedAnalysisClass === "line-feed" &&
     hasLiveSourceBoundary(sourceEvidence);
-  const providerErrorCode = normalizeErrorCode(
+  const providerErrorCode = normalizeLiveInputErrorCode(
     liveInputErrorCode !== LIVE_INPUT_ERROR_CODES.none
       ? liveInputErrorCode
       : calibrationInvalid

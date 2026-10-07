@@ -211,7 +211,7 @@ export function normalizeStructureExportModeCap(value) {
   );
 }
 
-export function normalizeStructureExportAppliedControls(controls = null) {
+function normalizeStructureExportAppliedControls(controls = null) {
   const colorMode = VALID_COLOR_MODES.has(controls?.colorMode)
     ? controls.colorMode
     : "static";
@@ -551,10 +551,7 @@ function projectNormalizedState(sample, appliedControls, modeCount) {
       });
     } else {
       spectralFirstMoments[index * 2] = finiteFloat(moments[offset], 0);
-      spectralFirstMoments[index * 2 + 1] = finiteFloat(
-        moments[offset + 1],
-        0,
-      );
+      spectralFirstMoments[index * 2 + 1] = finiteFloat(moments[offset + 1], 0);
       spectralSecondMoments[index * 2] = finiteFloat(moments[offset + 2], 0);
       spectralSecondMoments[index * 2 + 1] = finiteFloat(
         moments[offset + 3],

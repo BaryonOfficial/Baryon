@@ -242,10 +242,7 @@ export function computeModalObservation({
   };
 }
 
-export function getResonantHarmonicCoupling(
-  naturalFrequencyHz,
-  dominantFrequencyHz,
-) {
+function getResonantHarmonicCoupling(naturalFrequencyHz, dominantFrequencyHz) {
   if (naturalFrequencyHz <= 0 || dominantFrequencyHz <= 0) {
     return 0;
   }

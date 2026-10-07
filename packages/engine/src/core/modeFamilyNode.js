@@ -132,30 +132,12 @@ function createFixedBoundaryBasisNode(
   return createNeumannBasisNode(index, coordinate, scale);
 }
 
-// When the caller supplies a precomputed family scale, the per-axis energy
-// normalizations are already folded into it, so the basis is built raw and the
-// scale is applied once to the summed family instead of per axis per sample.
-function createDirichletBasisVectorNode(
-  index,
-  coordinates,
-  scale,
-  { normalizeEnergy = true } = {},
-) {
+function createDirichletBasisVectorNode(index, coordinates, scale) {
   const angularScale = index.mul(scale);
   const centeredAngularScale = angularScale.mul(float(0.5));
   const centeredArgument = index.mul(
     coordinates.mul(scale).add(float(Math.PI)).mul(float(0.5)),
   );
-
-  if (!normalizeEnergy) {
-    return {
-      value: sin(centeredArgument).toVar(),
-      derivative: cos(centeredArgument).mul(centeredAngularScale).toVar(),
-      secondDerivativeScale: centeredAngularScale
-        .mul(centeredAngularScale)
-        .negate(),
-    };
-  }
 
   const energyNormalization = createDirichletBasisEnergyNormalizationNode();
 
@@ -171,29 +153,11 @@ function createDirichletBasisVectorNode(
   };
 }
 
-function createNeumannBasisVectorNode(
-  index,
-  coordinates,
-  scale,
-  { normalizeEnergy = true } = {},
-) {
+function createNeumannBasisVectorNode(index, coordinates, scale) {
   const centeredAngularScale = index.mul(scale).mul(float(0.5));
   const centeredArgument = index.mul(
     coordinates.mul(scale).add(float(Math.PI)).mul(float(0.5)),
   );
-
-  if (!normalizeEnergy) {
-    return {
-      value: cos(centeredArgument).toVar(),
-      derivative: sin(centeredArgument)
-        .mul(centeredAngularScale)
-        .negate()
-        .toVar(),
-      secondDerivativeScale: centeredAngularScale
-        .mul(centeredAngularScale)
-        .negate(),
-    };
-  }
 
   const energyNormalization = createNeumannBasisEnergyNormalizationNode(index);
 
@@ -701,40 +665,6 @@ function evaluatePermutationFamilyFieldGradientFromBasisGrid({
     gradZ: gradientSum.z.mul(normalization),
     permutationCount: uniquePermutationCount,
   };
-}
-
-/**
- * Evaluate one mode's permutation family and its gradient.
- *
- * `familyScalars` carries the position-invariant part of the evaluation —
- * see deriveModeFamilyEvaluationScalars in modeFamily.js. Supplying it skips
- * the per-sample signature derivation (two smoothsteps, a sqrt and a divide)
- * and the three per-axis energy normalizations (a smoothstep each), which are
- * otherwise recomputed for every mode at every volume sample.
- */
-export function evaluatePermutationFamilyFieldGradientVectorNodeForBoundary({
-  u,
-  v,
-  w,
-  coordinates,
-  scale,
-  boundaryMode = BOUNDARY_MODES.neumann,
-  familyScalars = null,
-}) {
-  const basisOptions = familyScalars ? { normalizeEnergy: false } : undefined;
-  const basisVectors = [u, v, w].map((index) =>
-    normalizeBoundaryMode(boundaryMode) === BOUNDARY_MODES.dirichlet
-      ? createDirichletBasisVectorNode(index, coordinates, scale, basisOptions)
-      : createNeumannBasisVectorNode(index, coordinates, scale, basisOptions),
-  );
-  const signature = familyScalars
-    ? createPreparedPermutationFamilySignature(familyScalars)
-    : createPermutationFamilySignature({ u, v, w });
-
-  return evaluatePermutationFamilyFieldGradientFromBasisGrid({
-    basisGrid: createPermutationBasisGridFromVectors(basisVectors),
-    ...signature,
-  });
 }
 
 /**

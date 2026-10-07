@@ -8,26 +8,18 @@ import {
   max,
   mix,
   mrt,
-  screenUV,
   smoothstep,
   sqrt,
   struct,
   texture as textureNode,
   uniform,
   vec2,
-  vec3,
   vec4,
 } from "three/tsl";
 import {
-  FIELD_CACHE_ATLAS_HEIGHT,
-  FIELD_CACHE_ATLAS_WIDTH,
-  FIELD_CACHE_CELL_SIZE,
-  FIELD_CACHE_DOMAIN_HALF_EXTENT,
-  FIELD_CACHE_RESOLUTION,
-  FIELD_CACHE_TILES_X,
-} from "./fieldCacheGeometry.js";
-import {
   createFieldCacheSamplingFootprintNode,
+  deriveFieldCacheFragmentVoxelIndexNode,
+  toFieldCacheVoxelPositionNode,
   createSparseResolvedFieldCacheFootprintNode,
   sampleFieldCacheAtlasAtFootprintNode,
   sampleSparseResolvedFieldCacheLaneNode,
@@ -41,26 +33,6 @@ const CymaticObserverPayload = struct(
   { geometry: "vec4", appearance: "vec4", organization: "vec4" },
   "BaryonCymaticObserverPayload",
 );
-
-function deriveObserverVoxelIndexNode() {
-  const pixelX = screenUV.x.mul(float(FIELD_CACHE_ATLAS_WIDTH));
-  const pixelY = screenUV.y.mul(float(FIELD_CACHE_ATLAS_HEIGHT));
-  const tileSpan = float(FIELD_CACHE_RESOLUTION);
-  const tileX = pixelX.div(tileSpan).floor();
-  const tileY = pixelY.div(tileSpan).floor();
-  return vec3(
-    pixelX.sub(tileX.mul(tileSpan)).floor(),
-    pixelY.sub(tileY.mul(tileSpan)).floor(),
-    tileY.mul(float(FIELD_CACHE_TILES_X)).add(tileX),
-  );
-}
-
-function toObserverVoxelPositionNode(voxelIndex) {
-  return voxelIndex
-    .add(0.5)
-    .mul(float(FIELD_CACHE_CELL_SIZE))
-    .sub(float(FIELD_CACHE_DOMAIN_HALF_EXTENT));
-}
 
 function deriveCurrentObservationSource({
   currentTopologyField,
@@ -321,8 +293,8 @@ export function createCymaticObserverMaterial({
   const currentFieldMix = currentFieldEndpoint ? null : uniform(1);
 
   const payload = Fn(() => {
-    const voxelIndex = deriveObserverVoxelIndexNode().toVar();
-    const position = toObserverVoxelPositionNode(voxelIndex);
+    const voxelIndex = deriveFieldCacheFragmentVoxelIndexNode().toVar();
+    const position = toFieldCacheVoxelPositionNode(voxelIndex);
     const sparseResolvedFootprint =
       createSparseResolvedFieldCacheFootprintNode(voxelIndex);
     const resolvedCurrentTopologyField =

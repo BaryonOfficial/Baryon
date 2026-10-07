@@ -420,23 +420,6 @@ export function applyRaymarchControls(runtimeState, controls) {
   });
 }
 
-export function applyVisualizationControls(method, runtimeState, controls) {
-  if (!runtimeState) {
-    return null;
-  }
-
-  return applyRaymarchControls(runtimeState, controls);
-}
-
-export const applySimulationControls = (gl, runtimeState, controls) => ({
-  ...applySharedControls(gl, controls),
-  ...applyVisualizationControls(
-    runtimeState?.method ?? DEFAULT_VISUALIZATION_METHOD,
-    runtimeState,
-    controls,
-  ),
-});
-
 export function applyBloomControls(pipelineState, controls) {
   const stepBudget = normalizeStepBudget(
     controls.raymarchSteps ??
