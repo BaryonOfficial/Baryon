@@ -180,12 +180,9 @@ describe("raymarch volume material", () => {
     ).toHaveLength(1);
     expect(
       samplerBlock.match(/sampleFieldCacheAtlasAtFootprintNode/g),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
     expect(samplerBlock.match(/fixedRenderTargetTexture\(/g)).toHaveLength(1);
-    expect(samplerBlock).toContain(
-      "fixedRenderTargetTextureLoadAtKnownHeight(",
-    );
-    expect(samplerBlock).toContain("footprint.nearestTexel");
+    expect(samplerBlock).not.toContain("footprint.nearestTexel");
     expect(samplerBlock).not.toContain(
       "sampleFieldCacheAtlasNearestAtFootprintNode(",
     );
@@ -198,7 +195,10 @@ describe("raymarch volume material", () => {
     ).toHaveLength(1);
     expect(
       observerPayloadBlock.match(/sampleFieldCacheAtlasAtFootprintNode/g),
-    ).toHaveLength(3);
+    ).toHaveLength(2);
+    expect(
+      observerPayloadBlock.match(/sampleAvailableObserverGeometryNode/g),
+    ).toHaveLength(1);
     expect(
       observerPayloadBlock.match(
         /createSparseResolvedFieldCacheFootprintNode/g,
@@ -547,13 +547,12 @@ describe("raymarch volume material", () => {
       uniforms: makeMeshUniforms(),
       fieldCache,
       plasmaProfileLookup,
-      modalFieldCapacity: 4,
     });
 
     expect(mesh.userData.raymarchFieldCache).toBe(fieldCache);
     expect(mesh.material.fieldCache).toBe(fieldCache);
     expect(mesh.material.plasmaProfileLookup).toBe(plasmaProfileLookup);
-    expect(mesh.material.modalFieldCapacity).toBe(4);
+    expect(mesh.material).not.toHaveProperty("modalFieldCapacity");
     expect(mesh.material).not.toHaveProperty("modalObservedFieldTexture");
     expect(mesh.material).not.toHaveProperty("laserIrradianceTexture");
   });
@@ -590,7 +589,6 @@ describe("raymarch volume material", () => {
       uniforms: makeMeshUniforms(),
       fieldCache,
       plasmaProfileLookup,
-      modalFieldCapacity: 4,
     });
 
     // Boundary family selects what the bake writes, not what the march reads,
@@ -708,7 +706,12 @@ describe("raymarch volume mesh disposal", () => {
     };
     const group = new THREE.Group();
     group.add(mesh);
-    disposeRaymarchRuntime({ points: group, plasmaProfileLookup: lookup });
+    disposeRaymarchRuntime({
+      points: group,
+      plasmaProfileLookup: lookup,
+      fieldCache: { dispose() {} },
+      fieldSource: { dispose() {} },
+    });
 
     expect(disposeCalls).toBe(1);
   });
@@ -737,7 +740,13 @@ describe("raymarch volume mesh disposal", () => {
 
     const group = new THREE.Group();
     group.add(mesh);
-    expect(() => disposeRaymarchRuntime({ points: group })).not.toThrow();
+    expect(() =>
+      disposeRaymarchRuntime({
+        points: group,
+        fieldCache: { dispose() {} },
+        fieldSource: { dispose() {} },
+      }),
+    ).not.toThrow();
 
     for (const readCalls of disposed) {
       expect(readCalls()).toBe(1);

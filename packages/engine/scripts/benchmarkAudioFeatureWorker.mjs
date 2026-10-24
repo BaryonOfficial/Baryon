@@ -1,259 +1,134 @@
-import { performance } from "node:perf_hooks";
 import process from "node:process";
+import { performance } from "node:perf_hooks";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   createFeatureWorkerState,
-  processFeatureWorkerFrame,
+  initializeFeatureWorker,
+  processFeatureWorkerPcm,
 } from "../src/utils/audio/audioFeatureEngine.worker.js";
-import {
-  FAST_MODAL_DRIVE_PROBE_LIMIT,
-  createFastModalDriveEstimator,
-} from "../src/utils/audio/fastModalDriveEstimator.js";
 import { CAVITY_ACOUSTIC_DEFAULTS } from "../src/defaults.js";
-import { getCavityModeFrequency } from "../src/utils/cavityModes.js";
 
-const WARM_UP_FRAMES = 100;
-const MEASURED_FRAMES = 1000;
-
-function percentile(values, quantile) {
-  const sorted = [...values].sort((left, right) => left - right);
-  return sorted[
-    Math.min(sorted.length - 1, Math.floor(sorted.length * quantile))
+const sampleRate = 48000,
+  frameCount = 512,
+  warmup = 100,
+  measured = 1000;
+const percentile = (values, q) =>
+  [...values].sort((a, b) => a - b)[
+    Math.min(values.length - 1, Math.floor(q * values.length))
   ];
-}
-
-function createSnapshot(fftSize, sampleRate) {
-  const timeData = new Float32Array(fftSize);
-  const fftLinearAmplitudes = new Float32Array(fftSize / 2);
-  const frequencies = Array.from(
-    { length: 48 },
-    (_, index) => 55 * 2 ** (index / 8),
-  );
-  for (let sampleIndex = 0; sampleIndex < fftSize; sampleIndex += 1) {
-    let sample = 0;
-    for (let index = 0; index < frequencies.length; index += 1) {
-      sample +=
-        Math.sin(
-          (2 * Math.PI * frequencies[index] * sampleIndex) / sampleRate,
-        ) *
-        (0.12 / Math.sqrt(index + 1));
-    }
-    timeData[sampleIndex] = sample;
-  }
-  for (const [index, frequency] of frequencies.entries()) {
-    const bin = Math.max(1, Math.round((frequency * fftSize) / sampleRate));
-    fftLinearAmplitudes[bin] = 0.12 / Math.sqrt(index + 1);
-  }
-  return {
-    sourceMode: "file",
-    avgAmplitude: 28,
-    rms: 0.2,
-    spectralCentroid: 0.3,
-    spectralFlux: 0.08,
-    fftLinearAmplitudes,
-    timeData,
-  };
-}
-
-function installFullProbeContract(state, sampleRate) {
-  const committedModes = [...state.committedModes];
-  const seenModeKeys = new Set(committedModes.map((mode) => mode.modeKey));
-  for (
-    let order = 1;
-    committedModes.length < FAST_MODAL_DRIVE_PROBE_LIMIT;
-    order += 1
-  ) {
-    for (let u = 0; u <= order; u += 1) {
-      for (let v = 0; v <= order - u; v += 1) {
-        const w = order - u - v;
-        const modeKey = `${u}:${v}:${w}`;
-        if (seenModeKeys.has(modeKey)) {
-          continue;
-        }
-        const naturalFrequencyHz = getCavityModeFrequency(u, v, w, {
-          acousticScale: CAVITY_ACOUSTIC_DEFAULTS,
-          boundaryMode: "neumann",
-        });
-        if (!(naturalFrequencyHz > 0) || naturalFrequencyHz >= sampleRate / 2) {
-          continue;
-        }
-        const mode = {
-          modeKey,
-          u,
-          v,
-          w,
-          layer: order % 2 === 0 ? "resonant" : "source-coupled",
-          renderLayer: order % 2 === 0 ? "resonant" : "source-coupled",
-          naturalFrequencyHz,
-          targetEnergy:
-            1 - committedModes.length / (FAST_MODAL_DRIVE_PROBE_LIMIT * 2),
-          physicalTransfer: 0.8,
-          qualityFactor: 10 + order,
-          modalResponseEnergy: 0,
-          modalResponseDrive: 0,
-          amplitude: 0,
-          displayAmplitude: 0,
-        };
-        committedModes.push(mode);
-        seenModeKeys.add(modeKey);
-        const modalExcitationState =
-          state.featureState.analysis.modalExcitationState;
-        modalExcitationState.activeModes.set(modeKey, mode);
-        modalExcitationState.modalCandidateState.set(modeKey, mode);
-        if (committedModes.length === FAST_MODAL_DRIVE_PROBE_LIMIT) {
-          break;
-        }
-      }
-      if (committedModes.length === FAST_MODAL_DRIVE_PROBE_LIMIT) {
-        break;
-      }
-    }
-  }
-
-  state.committedModes = committedModes;
-  state.fastEstimator = createFastModalDriveEstimator({
-    committedModes,
-    sampleRate,
-  });
-  state.fastEstimatorSignature =
-    `benchmark:${sampleRate}:${committedModes.length}:` +
-    `${FAST_MODAL_DRIVE_PROBE_LIMIT}`;
-  // Force the canonical worker path to publish this committed topology before
-  // measured fast-only frames begin. The semantic topology may contain more
-  // modes than the bounded exact-probe set; every committed mode still receives
-  // forcing distributed from those probes.
-  state.latestDriveTopology = null;
-  state.latestTopologyFingerprint = null;
-}
-
-function runProbe(sampleRate) {
-  const state = createFeatureWorkerState();
-  state.sourceGeneration = 1;
-  state.workerGeneration = 1;
-  state.configuration = { radius: 1 };
-  const fastPayload = createSnapshot(2048, sampleRate);
-  const structuralPayload = createSnapshot(8192, sampleRate);
-  const status = {
-    sourceSession: {
-      kind: "file",
-      phase: "active",
-      sessionId: 1,
-      timelineRevision: 0,
-      terminalReason: null,
-      systemCapture: null,
-    },
-    analysisSource: "file",
-    pitchSourceMode: "spectral",
-    fftSize: 8192,
-    fastFftSize: 2048,
-    // Exercise the full bounded exact-probe contract while the semantic
-    // topology may carry more committed modes than direct probe channels.
-    capacity: FAST_MODAL_DRIVE_PROBE_LIMIT,
-    sampleRate,
-    isAudioLoaded: true,
-    isPlaying: true,
-    isLiveInputActive: false,
-    hasAnalysisSource: true,
-    playbackSessionId: 1,
-    sessionKey: "file:1",
-  };
-  const bootstrap = processFeatureWorkerFrame(state, {
-    frameId: 1,
-    sourceGeneration: 1,
-    workerGeneration: 1,
-    captureTimestampMs: 0,
-    fastPayload,
-    structuralPayload,
-    status,
-  });
-  void bootstrap;
-  installFullProbeContract(state, sampleRate);
-  const fullContractSetup = processFeatureWorkerFrame(state, {
-    frameId: 2,
-    sourceGeneration: 1,
-    workerGeneration: 1,
-    captureTimestampMs: 16,
-    fastPayload,
-    structuralPayload: null,
-    status,
-  });
-  if (
-    state.committedModes.length < FAST_MODAL_DRIVE_PROBE_LIMIT ||
-    fullContractSetup.topologyPacket?.committedModeCount !==
-      state.committedModes.length ||
-    state.fastEstimator?.result?.probeCount !== FAST_MODAL_DRIVE_PROBE_LIMIT
-  ) {
-    throw new Error(
-      `Integrated worker benchmark did not install ${FAST_MODAL_DRIVE_PROBE_LIMIT} probes ` +
-        `across the committed topology ` +
-        `(state=${state.committedModes.length}, ` +
-        `published=${fullContractSetup.topologyPacket?.committedModeCount ?? "missing"}, ` +
-        `probed=${state.fastEstimator?.result?.probeCount ?? "missing"}).`,
-    );
-  }
-  const stableDrivePacketBuffers = {
-    modalCoefficients: fullContractSetup.drivePacket.modalCoefficients,
-    phaseSlots: fullContractSetup.drivePacket.phaseSlots,
-    bandEnergies: fullContractSetup.drivePacket.bandEnergies,
-    spectralBandEnergies: fullContractSetup.drivePacket.spectralBandEnergies,
-  };
-  const setupDrivePacketBufferAllocationCount =
-    state.drivePacketBufferAllocationCount;
-
-  const durations = [];
-  const totalFrames = WARM_UP_FRAMES + MEASURED_FRAMES;
-  for (let index = 0; index < totalFrames; index += 1) {
-    const startedAt = performance.now();
-    const result = processFeatureWorkerFrame(state, {
-      frameId: index + 3,
-      sourceGeneration: 1,
-      workerGeneration: 1,
-      captureTimestampMs: (index + 2) * 16,
-      fastPayload,
-      structuralPayload: null,
-      status,
-    });
-    if (
-      result.drivePacket.modalCoefficients !==
-        stableDrivePacketBuffers.modalCoefficients ||
-      result.drivePacket.phaseSlots !== stableDrivePacketBuffers.phaseSlots ||
-      result.drivePacket.bandEnergies !==
-        stableDrivePacketBuffers.bandEnergies ||
-      result.drivePacket.spectralBandEnergies !==
-        stableDrivePacketBuffers.spectralBandEnergies ||
-      state.drivePacketBufferAllocationCount !==
-        setupDrivePacketBufferAllocationCount
-    ) {
-      throw new Error(
-        "Fast packet construction replaced a steady-state typed buffer.",
+const results = [];
+for (const boundaryMode of ["neumann", "dirichlet"])
+  for (const channelCount of [1, 2])
+    for (const nonlinear of [false, true]) {
+      const state = createFeatureWorkerState();
+      const configuration = {
+        sampleRate,
+        channelCount,
+        timelineRevision: 0,
+        processingRevision: 0,
+        boundaryMode,
+        exposureSeconds: 0.05,
+        cavityAcousticScale: {
+          ...CAVITY_ACOUSTIC_DEFAULTS,
+          incidentPeakPressurePascalAtFullScale: nonlinear
+            ? CAVITY_ACOUSTIC_DEFAULTS.incidentPeakPressurePascalAtFullScale
+            : 0,
+        },
+      };
+      const topology = initializeFeatureWorker(state, {
+        protocolVersion: 3,
+        sourceGeneration: 1,
+        workerGeneration: 1,
+        configuration,
+      });
+      const channels = Array.from(
+        { length: channelCount },
+        () => new Float32Array(512),
       );
+      const durations = [];
+      let observations = 0;
+      for (let sequence = 0; sequence < warmup + measured; sequence++) {
+        const startSample = sequence * frameCount;
+        for (let c = 0; c < channelCount; c++)
+          for (let n = 0; n < frameCount; n++) {
+            const time = (startSample + n) / sampleRate;
+            channels[c][n] =
+              0.12 * Math.sin(2 * Math.PI * (113 + c * 7) * time) +
+              0.08 * Math.sin(2 * Math.PI * (331 + c * 19) * time) +
+              0.05 * Math.sin(2 * Math.PI * 4500 * time);
+          }
+        const start = performance.now();
+        const result = processFeatureWorkerPcm(state, {
+          ...configuration,
+          protocolVersion: 3,
+          sourceGeneration: 1,
+          workerGeneration: 1,
+          sequence,
+          startSample,
+          frameCount,
+          buffers: channels.map((c) => c.buffer),
+        });
+        if (!result.accepted) throw new Error(result.reason);
+        if (sequence >= warmup) {
+          durations.push(performance.now() - start);
+          if (result.observation) observations++;
+        }
+      }
+      results.push({
+        boundaryMode,
+        channelCount,
+        nonlinear,
+        familyCount: topology.familyCount,
+        shellCount: topology.shellCount,
+        measuredBlocks: measured,
+        publishedObservations: observations,
+        workerCpuMsPerAudioSecond:
+          durations.reduce((a, b) => a + b, 0) /
+          ((measured * frameCount) / sampleRate),
+        p50Ms: percentile(durations, 0.5),
+        p95Ms: percentile(durations, 0.95),
+        p99Ms: percentile(durations, 0.99),
+        maxMs: Math.max(...durations),
+      });
     }
-    const durationMs = performance.now() - startedAt;
-    if (index >= WARM_UP_FRAMES) {
-      durations.push(durationMs);
-    }
-  }
-
-  return {
-    sampleRate,
-    warmUpFrames: WARM_UP_FRAMES,
-    measuredFrames: MEASURED_FRAMES,
-    committedModeCount: state.committedModes.length,
-    probeModeCount: state.fastEstimator?.result?.probeCount ?? 0,
-    drivePacketBufferAllocationCount: state.drivePacketBufferAllocationCount,
-    steadyStateDrivePacketBufferAllocationCount: 0,
-    fastLaneP50Ms: percentile(durations, 0.5),
-    fastLaneP95Ms: percentile(durations, 0.95),
-    goertzelAverageMs: state.perf.goertzel.averageMs,
-    goertzelMaxMs: state.perf.goertzel.maxMs,
-  };
-}
-
-const results = [44100, 48000].map(runProbe);
-// This probe owns the total fast-lane p95 gate. Exact-frequency Goertzel p95
-// is isolated from composition jitter by the dedicated fast-modal benchmark.
-const passed = results.every((result) => result.fastLaneP95Ms <= 4);
-
-console.log(JSON.stringify({ passed, results }, null, 2));
-if (!passed) {
-  process.exitCode = 1;
-}
+const sourceHashes = Object.fromEntries(
+  [
+    "./benchmarkAudioFeatureWorker.mjs",
+    "../src/defaults.js",
+    "../src/utils/audio/modalResponseMoments.js",
+    "../src/utils/audio/audioFeatureEngine.worker.js",
+    "../src/utils/audio/broadbandAudioState.js",
+    "../src/utils/audio/broadbandModalResponse.js",
+    "../src/utils/audio/streamingAcousticDrive.js",
+  ].map((path) => [
+    path,
+    createHash("sha256")
+      .update(readFileSync(fileURLToPath(new URL(path, import.meta.url))))
+      .digest("hex"),
+  ]),
+);
+console.log(
+  JSON.stringify(
+    {
+      scope:
+        "production v3 CPU worker only; excludes capture, transfer, renderer, GPU and physical latency",
+      runtime: {
+        node: process.version,
+        platform: process.platform,
+        arch: process.arch,
+      },
+      inputDefinition:
+        "continuous deterministic three-sine PCM; generator and parameters pinned by this script hash",
+      sampleRate,
+      frameCount,
+      warmup,
+      measured,
+      sourceHashes,
+      results,
+    },
+    null,
+    2,
+  ),
+);

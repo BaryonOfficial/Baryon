@@ -18,7 +18,11 @@ describe("modal geometry backend", () => {
       acousticSideLengthMeters: CAVITY_ACOUSTIC_DEFAULTS.sideLengthMeters,
     });
     expect(mode).not.toHaveProperty("acousticRadiusMeters");
-    expect(mode.naturalFrequencyHz).toBeLessThanOrEqual(61);
+    expect(mode.naturalFrequencyHz).toBeCloseTo(
+      CAVITY_ACOUSTIC_DEFAULTS.soundSpeedMetersPerSecond /
+        (2 * CAVITY_ACOUSTIC_DEFAULTS.sideLengthMeters),
+      10,
+    );
   });
 
   it("enumerates the canonical finite rectangular mode lattice", () => {
@@ -36,7 +40,7 @@ describe("modal geometry backend", () => {
       v: 0,
       w: 1,
     });
-    expect(candidates[0].naturalFrequencyHz).toBeCloseTo(59.2, 1);
+    expect(candidates[0].naturalFrequencyHz).toBeCloseTo(118.4, 1);
     expect(candidates.at(-1)).toMatchObject({
       u: 2,
       v: 2,

@@ -1,9 +1,9 @@
+import { resolveCoverSourceRect } from "../../src/ar-lab/coverSourceRect.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
   PERSON_SEGMENTATION_MIN_INTERVAL_MS,
   mapVideoSourceRectToMaskSourceRect,
-  resolveCoverSourceRect,
   resolvePersonMaskAlpha,
   smoothPersonMaskAlpha,
 } from "../../src/ar-lab/personSegmentationMask.js";

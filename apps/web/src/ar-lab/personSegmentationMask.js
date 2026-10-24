@@ -28,34 +28,6 @@ export function smoothPersonMaskAlpha(targetAlpha, previousAlpha) {
   );
 }
 
-export function resolveCoverSourceRect({
-  sourceWidth,
-  sourceHeight,
-  targetWidth,
-  targetHeight,
-}) {
-  const targetAspect = targetWidth / targetHeight;
-  const sourceAspect = sourceWidth / sourceHeight;
-
-  if (sourceAspect > targetAspect) {
-    const sWidth = sourceHeight * targetAspect;
-    return {
-      sx: (sourceWidth - sWidth) / 2,
-      sy: 0,
-      sWidth,
-      sHeight: sourceHeight,
-    };
-  }
-
-  const sHeight = sourceWidth / targetAspect;
-  return {
-    sx: 0,
-    sy: (sourceHeight - sHeight) / 2,
-    sWidth: sourceWidth,
-    sHeight,
-  };
-}
-
 export function mapVideoSourceRectToMaskSourceRect({
   videoSourceRect,
   videoWidth,

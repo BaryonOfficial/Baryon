@@ -1,3 +1,5 @@
+import { createAudioFeaturePacketFixture } from "../testing/audioFeaturePacketFixture.js";
+import { createRendererFeatureView } from "../utils/audioFeatures.js";
 import { describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
 import {
@@ -9,7 +11,6 @@ import {
   applyRaymarchControls,
   applySharedControls,
   applySceneControls,
-  applySimulationControls,
   buildControlInspectionSnapshot,
   CONTROL_RUNTIME_COVERAGE,
 } from "./runtime.js";
@@ -21,29 +22,14 @@ import {
   deriveStepCompensation,
   STEP_REFERENCE,
 } from "../core/raymarch/stepStability.js";
-import { AUDIO_SLOT_CAPACITY, RENDER_DEFAULTS } from "../defaults.js";
+import { RENDER_DEFAULTS } from "../defaults.js";
 import { syncRenderOutputNodeTopology } from "../render/outputPipeline.js";
 
-function withRenderLedger(featureFrame) {
-  if (
-    !featureFrame ||
-    featureFrame.energyLedger ||
-    !featureFrame.renderAuthority
-  ) {
-    return featureFrame;
-  }
-
-  return {
-    ...featureFrame,
-    energyLedger: {
-      projectedRenderEnergy: Math.max(
-        featureFrame.modalResponseRenderEnergy ?? 0,
-        featureFrame.modalResponseEnergy ?? 0,
-        0.2,
-      ),
-      renderEnergyEpsilon: 1e-6,
-    },
-  };
+const canonicalFrame = createRendererFeatureView(
+  createAudioFeaturePacketFixture().model(),
+);
+function withModelAuthority(overrides = {}) {
+  return { ...canonicalFrame, ...overrides };
 }
 
 function createRaymarchHarness(method = DEFAULT_VISUALIZATION_METHOD) {
@@ -119,7 +105,6 @@ function createRaymarchHarness(method = DEFAULT_VISUALIZATION_METHOD) {
       pitchVelocity: 0,
       rollVelocity: 0,
       lastMotionSignal: 0,
-      lastBeatPulseId: 0,
     },
     responseEnvelope: 0,
     idleOverlay: {
@@ -181,7 +166,7 @@ describe("control runtime sync", () => {
     });
   });
 
-  it("applies raymarch controls through the default simulation helper", () => {
+  it("applies raymarch controls to the active and cached materials", () => {
     const controls = createControlState();
     controls.idleLogoIntensity = 0.42;
     controls.idleLogoSize = 1.4;
@@ -196,14 +181,9 @@ describe("control runtime sync", () => {
     controls.colorMode = "spectral";
     controls.spectralChroma = 0.74;
 
-    const gl = {
-      setClearColor: vi.fn(),
-    };
     const runtimeState = createRaymarchHarness();
-    const snapshot = applySimulationControls(gl, runtimeState, controls);
+    const snapshot = applyRaymarchControls(runtimeState, controls);
 
-    expect(gl.setClearColor).toHaveBeenCalledTimes(1);
-    expect(gl.setClearColor).toHaveBeenCalledWith(expect.any(THREE.Color), 0);
     expect(runtimeState.uniforms).not.toHaveProperty("uCarrierCoreFwhmWorld");
     expect(runtimeState.uniforms.uIdleLogoIntensity.value).toBe(0.42);
     expect(runtimeState.uniforms.uIdleLogoSize.value).toBe(1.4);
@@ -331,7 +311,7 @@ describe("control runtime sync", () => {
     expect(snapshot.uniforms.effectiveCavityGeometry).toBe("rectangular");
   });
 
-  it("applies shared and raymarch controls through method-aware helpers", () => {
+  it("applies shared and raymarch controls independently", () => {
     const controls = createControlState();
     controls.backgroundColor = "#123456";
     controls.boundaryMode = "dirichlet";
@@ -342,13 +322,9 @@ describe("control runtime sync", () => {
     };
     const runtimeState = createRaymarchHarness();
     const sharedSnapshot = applySharedControls(gl, controls);
-    const raymarchSnapshot = applySimulationControls(
-      gl,
-      runtimeState,
-      controls,
-    );
+    const raymarchSnapshot = applyRaymarchControls(runtimeState, controls);
 
-    expect(gl.setClearColor).toHaveBeenCalledTimes(2);
+    expect(gl.setClearColor).toHaveBeenCalledTimes(1);
     expect(gl.setClearColor).toHaveBeenNthCalledWith(
       1,
       expect.any(THREE.Color),
@@ -1061,119 +1037,35 @@ describe("control runtime sync", () => {
     expect(snapshot.rotationMode).toBe("off");
   });
 
-  it("adds a beat impulse on top of field-driven rotation in audio mode", () => {
+  it("an observed response onset adds bounded torque above the same sustained response", () => {
     const controls = createControlState();
     controls.rotationMode = "audio";
     controls.motionAmount = 1.4;
-    const beatlessRuntimeState = createRaymarchHarness();
-    beatlessRuntimeState.responseEnvelope = 0.5;
-    const beatRuntimeState = createRaymarchHarness();
-    beatRuntimeState.responseEnvelope = 0.5;
-
-    const baseFrame = withRenderLedger({
-      fieldState: "active",
-      renderAuthority: true,
-      structureSignal: 0.55,
-      energySignal: 0.72,
-      changeSignal: 0.64,
-      transientEnergy: 0.74,
-      pulseSignal: 0.3,
-    });
-    const status = {
-      isPlaying: true,
-      isLiveInputActive: false,
-    };
-
-    const beatlessSnapshot = applySceneControls(
-      beatlessRuntimeState,
-      controls,
-      1 / 60,
-      baseFrame,
-      status,
+    const onset = createRaymarchHarness(),
+      steady = createRaymarchHarness();
+    onset.responseEnvelope = steady.responseEnvelope = 0.5;
+    steady.sceneMotion.lastMotionSignal = 0.5;
+    const onsetResult = applySceneControls(
+        onset,
+        controls,
+        1 / 60,
+        canonicalFrame,
+      ),
+      steadyResult = applySceneControls(
+        steady,
+        controls,
+        1 / 60,
+        canonicalFrame,
+      );
+    expect(onsetResult.angularVelocity).toBeLessThan(
+      steadyResult.angularVelocity,
     );
-    const beatSnapshot = applySceneControls(
-      beatRuntimeState,
-      controls,
-      1 / 60,
-      {
-        ...baseFrame,
-        beatDetected: true,
-        beatPulseId: 9,
-        beatStrength: 0.78,
-        beatConfidence: 0.72,
-      },
-      status,
-    );
-
-    expect(beatSnapshot.rotationMode).toBe("audio");
-    expect(beatSnapshot.motionAmount).toBeGreaterThan(1.4);
-    expect(beatSnapshot.motionSignal).toBeGreaterThan(0.4);
-    expect(beatSnapshot.targetAngularVelocity).toBeLessThan(0);
-    expect(beatSnapshot.angularVelocity).toBeLessThan(
-      beatlessSnapshot.angularVelocity,
-    );
-    expect(Math.abs(beatRuntimeState.cymaticRoot.rotation.x)).toBeGreaterThan(
-      0,
-    );
-    expect(Math.abs(beatRuntimeState.cymaticRoot.rotation.z)).toBeGreaterThan(
-      0,
-    );
-    expect(Math.abs(beatSnapshot.rotationX)).toBeGreaterThan(0);
-    expect(Math.abs(beatSnapshot.rotationZ)).toBeGreaterThan(0);
-    expect(beatRuntimeState.sceneMotion.lastBeatPulseId).toBe(9);
-    expect(beatRuntimeState.cymaticRoot.rotation.y).toBeLessThan(0);
+    expect(onset.cymaticRoot.rotation.y).toBeLessThan(0);
+    expect(Math.abs(onset.cymaticRoot.rotation.x)).toBeGreaterThan(0);
+    expect(onset.sceneMotion).not.toHaveProperty("lastBeatPulseId");
   });
 
-  it("consumes each beat pulse id only once for audio rotation", () => {
-    const controls = createControlState();
-    controls.rotationMode = "audio";
-    controls.motionAmount = 1.2;
-    const freshBeatRuntimeState = createRaymarchHarness();
-    freshBeatRuntimeState.responseEnvelope = 0.42;
-    const consumedBeatRuntimeState = createRaymarchHarness();
-    consumedBeatRuntimeState.responseEnvelope = 0.42;
-    consumedBeatRuntimeState.sceneMotion.lastBeatPulseId = 17;
-
-    const featureFrame = withRenderLedger({
-      fieldState: "active",
-      renderAuthority: true,
-      structureSignal: 0.48,
-      energySignal: 0.58,
-      changeSignal: 0.46,
-      pulseSignal: 0.22,
-      beatDetected: true,
-      beatPulseId: 17,
-      beatStrength: 0.74,
-      beatConfidence: 0.69,
-    });
-    const status = {
-      isPlaying: true,
-      isLiveInputActive: false,
-    };
-
-    const freshBeatSnapshot = applySceneControls(
-      freshBeatRuntimeState,
-      controls,
-      1 / 60,
-      featureFrame,
-      status,
-    );
-    const consumedBeatSnapshot = applySceneControls(
-      consumedBeatRuntimeState,
-      controls,
-      1 / 60,
-      featureFrame,
-      status,
-    );
-
-    expect(freshBeatRuntimeState.sceneMotion.lastBeatPulseId).toBe(17);
-    expect(consumedBeatRuntimeState.sceneMotion.lastBeatPulseId).toBe(17);
-    expect(freshBeatSnapshot.angularVelocity).toBeLessThan(
-      consumedBeatSnapshot.angularVelocity,
-    );
-  });
-
-  it("stays strongly reactive on sustained playback without a fresh beat trigger", () => {
+  it("stays reactive on a sustained observed response", () => {
     const controls = createControlState();
     controls.rotationMode = "audio";
     controls.motionAmount = 1;
@@ -1184,7 +1076,7 @@ describe("control runtime sync", () => {
       runtimeState,
       controls,
       1 / 60,
-      withRenderLedger({
+      withModelAuthority({
         fieldState: "active",
         renderAuthority: true,
         structureSignal: 0.78,
@@ -1341,7 +1233,7 @@ describe("control runtime sync", () => {
     expect(snapshot.idleLogoRotationY).toBeCloseTo(-2 / 60);
   });
 
-  it("disables sustained and beat-driven audio rotation when motion amount is zero", () => {
+  it("disables sustained and onset-driven rotation when motion amount is zero", () => {
     const controls = createControlState();
     controls.rotationMode = "audio";
     controls.motionAmount = 0;
@@ -1352,7 +1244,7 @@ describe("control runtime sync", () => {
       runtimeState,
       controls,
       1 / 60,
-      withRenderLedger({
+      withModelAuthority({
         fieldState: "active",
         renderAuthority: true,
         structureSignal: 0.55,
@@ -1378,7 +1270,7 @@ describe("control runtime sync", () => {
     expect(Math.abs(runtimeState.cymaticRoot.rotation.x)).toBe(0);
     expect(Math.abs(runtimeState.cymaticRoot.rotation.y)).toBe(0);
     expect(Math.abs(runtimeState.cymaticRoot.rotation.z)).toBe(0);
-    expect(runtimeState.sceneMotion.lastBeatPulseId).toBe(9);
+    expect(runtimeState.sceneMotion).not.toHaveProperty("lastBeatPulseId");
   });
 
   it("builds a control inspection snapshot", () => {
@@ -1421,10 +1313,6 @@ describe("control runtime sync", () => {
       baryonGeometry: new THREE.IcosahedronGeometry(1, 0),
       parameters: {
         radius: 3,
-      },
-      audioConfig: {
-        capacity: AUDIO_SLOT_CAPACITY,
-        fftSize: 2048,
       },
     });
 
@@ -1471,19 +1359,12 @@ describe("control runtime sync", () => {
     expect(runtimeState.sceneLighting.secondary.position.z).toBeCloseTo(
       3 * 1.8,
     );
-    expect(runtimeState.modalFieldCapacity).toBe(AUDIO_SLOT_CAPACITY);
-    expect(runtimeState).not.toHaveProperty("capacity");
-    expect(runtimeState).not.toHaveProperty("backboneCapacity");
-    expect(runtimeState).not.toHaveProperty("detailCapacity");
-    expect(runtimeState.modalFieldModeBuffer.value.array).toHaveLength(
-      runtimeState.modalFieldCapacity * 4,
-    );
-    expect(
-      runtimeState.modalFieldSpectralMomentBuffer.value.array,
-    ).toHaveLength(runtimeState.modalFieldCapacity * 4);
-    expect(runtimeState.modalFieldResponseBuffer.value.array).toHaveLength(
-      runtimeState.modalFieldCapacity * 4,
-    );
+    expect(runtimeState).not.toHaveProperty("modalFieldCapacity");
+    expect(runtimeState).not.toHaveProperty("modalFieldModeBuffer");
+    expect(runtimeState.fieldSource.read()).toMatchObject({
+      basisCompileCount: 0,
+      observationUploadCount: 0,
+    });
 
     const idleGeometryDisposes = runtimeState.idleOverlay.children.map(
       (child) => vi.spyOn(child.geometry, "dispose"),
@@ -1506,10 +1387,6 @@ describe("control runtime sync", () => {
       baryonGeometry: new THREE.IcosahedronGeometry(1, 0),
       parameters: {
         radius: 3,
-      },
-      audioConfig: {
-        capacity: AUDIO_SLOT_CAPACITY,
-        fftSize: 2048,
       },
     });
     const controls = createControlState();

@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { FIELD_CACHE_CELL_SIZE } from "./fieldCacheGeometry.js";
 import {
-  FIELD_CACHE_CELL_SIZE,
-  FIELD_CACHE_DOMAINS,
-} from "./fieldCacheGeometry.js";
-import {
-  CYMATIC_OBSERVER_APERTURE_PASSES,
   CYMATIC_OBSERVER_FINE_APERTURE_KERNEL_OFFSETS,
   CYMATIC_OBSERVER_GEOMETRY_EXPOSURE_LIMITS,
   CYMATIC_OBSERVER_REFERENCE,
@@ -27,6 +23,24 @@ import {
 } from "./cymaticObserverReference.js";
 
 describe("deterministic cymatic observer reference", () => {
+  it("reseeds once after a long observation gap and resumes fixed steps", () => {
+    const state = createCymaticObserverClockState();
+    const resetToken = "track-a|apparatus-a";
+    const step = (observationTimeSeconds) =>
+      resolveCymaticObserverStep(state, {
+        resetToken,
+        observationTimeSeconds,
+      });
+    step(0);
+    expect(step(1)).toMatchObject({ reset: false, stepCount: 60 });
+    expect(step(61)).toMatchObject({
+      reset: true,
+      stepCount: 0,
+      stepIndex: 3660,
+    });
+    expect(step(61)).toMatchObject({ reset: false, stepCount: 0 });
+    expect(step(61 + 1 / 60)).toMatchObject({ reset: false, stepCount: 1 });
+  });
   it("advances only on fixed audio-time steps", () => {
     const state = createCymaticObserverClockState();
     const token = "track-a|apparatus-a";
@@ -155,11 +169,26 @@ describe("deterministic cymatic observer reference", () => {
     });
   });
 
-  it("uses one fixed bounded local-energy compression", () => {
-    const halfResponse = CYMATIC_OBSERVER_REFERENCE.localEnergyHalfResponse;
+  it("maps raw response energy through one fixed optical amplitude exposure", () => {
     expect(compressCymaticObserverEnergy(0)).toBe(0);
-    expect(compressCymaticObserverEnergy(halfResponse)).toBe(0.5);
+    expect(
+      compressCymaticObserverEnergy(
+        CYMATIC_OBSERVER_REFERENCE.opticalReferenceEnergy,
+      ),
+    ).toBeCloseTo(Math.SQRT1_2, 14);
     expect(compressCymaticObserverEnergy(1e9)).toBeCloseTo(1, 8);
+    const quietEnergy =
+      CYMATIC_OBSERVER_REFERENCE.opticalReferenceEnergy * 1e-10;
+    expect(
+      compressCymaticObserverEnergy(4 * quietEnergy) /
+        compressCymaticObserverEnergy(quietEnergy),
+    ).toBeCloseTo(2, 7);
+    const energies = [0, 1e-12, 1e-8, 1e-6, 1e-4, 1e-2, 1];
+    const responses = energies.map(compressCymaticObserverEnergy);
+    for (let i = 1; i < responses.length; i++) {
+      expect(responses[i]).toBeGreaterThan(responses[i - 1]);
+      expect(responses[i]).toBeLessThan(1);
+    }
   });
 
   it("holds persistent geometry when the acoustic surface loses support", () => {
@@ -186,31 +215,13 @@ describe("deterministic cymatic observer reference", () => {
     expect(blendCymaticObserverSignedDistance(-0.12, 0, 0)).toBe(-0.12);
   });
 
-  it("realizes the fine and topology apertures in the same three passes", () => {
+  it("retains the fixed finite fine and topology measurement kernels", () => {
     expect(CYMATIC_OBSERVER_FINE_APERTURE_KERNEL_OFFSETS).toEqual([
       -2, -1, 0, 1, 2,
     ]);
     expect(CYMATIC_OBSERVER_TOPOLOGY_APERTURE_KERNEL_OFFSETS).toEqual([
       -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6,
     ]);
-    expect(CYMATIC_OBSERVER_APERTURE_PASSES).toEqual([
-      {
-        direction: [1, 0, 0],
-        inputDomain: FIELD_CACHE_DOMAINS.fundamentalXyz,
-        outputDomain: FIELD_CACHE_DOMAINS.halfYz,
-      },
-      {
-        direction: [0, 1, 0],
-        inputDomain: FIELD_CACHE_DOMAINS.halfYz,
-        outputDomain: FIELD_CACHE_DOMAINS.halfXy,
-      },
-      {
-        direction: [0, 0, 1],
-        inputDomain: FIELD_CACHE_DOMAINS.halfXy,
-        outputDomain: FIELD_CACHE_DOMAINS.fundamentalXyz,
-      },
-    ]);
-
     const fineKernel = deriveCymaticObserverApertureKernel(
       FIELD_CACHE_CELL_SIZE * 3,
       CYMATIC_OBSERVER_REFERENCE.fineApertureFwhmWorld,
@@ -242,7 +253,7 @@ describe("deterministic cymatic observer reference", () => {
     expect(
       CYMATIC_OBSERVER_REFERENCE.topologyApertureFwhmWorld /
         CYMATIC_OBSERVER_REFERENCE.fineApertureFwhmWorld,
-    ).toBeCloseTo(2.5, 12);
+    ).toBeCloseTo(1, 12);
   });
 
   it("measures amplitude-normalized detail agreement across aperture scales", () => {

@@ -5,33 +5,15 @@ import {
   createLiveInputRuntimeStatus,
   LIVE_INPUT_ERROR_CODES,
   LIVE_INPUT_PHASES,
-  LIVE_INPUT_SIGNAL_STATES,
   isLiveInputTransitionLocked,
 } from "../context/liveInputRuntimeStatus.js";
 import { TOP_RIGHT_OVERLAY_PANEL_WIDTH } from "./topRightOverlayLayout.js";
 
 function getSignalBadgeStyle(status) {
-  if (
-    status.phase === LIVE_INPUT_PHASES.error ||
-    status.signalState === LIVE_INPUT_SIGNAL_STATES.clipped
-  ) {
+  if (status.phase === LIVE_INPUT_PHASES.error) {
     return {
       border: "none",
       background: "rgba(255, 59, 48, 0.12)",
-      color: "var(--nd-text-display)",
-    };
-  }
-  if (status.phase === LIVE_INPUT_PHASES.weakSignal) {
-    return {
-      border: "none",
-      background: "rgba(255, 204, 102, 0.1)",
-      color: "var(--nd-text-display)",
-    };
-  }
-  if (status.phase === LIVE_INPUT_PHASES.calibrating) {
-    return {
-      border: "none",
-      background: "rgba(91, 155, 246, 0.1)",
       color: "var(--nd-text-display)",
     };
   }
@@ -55,37 +37,12 @@ function getSignalBadgeStyle(status) {
 function resolveSignalLabel(status) {
   if (status.phase === LIVE_INPUT_PHASES.starting) return "Starting";
   if (status.phase === LIVE_INPUT_PHASES.stopping) return "Stopping";
-  if (status.phase === LIVE_INPUT_PHASES.calibrating) return "Calibrating";
-  if (status.signalState === LIVE_INPUT_SIGNAL_STATES.clipped) {
-    return "Clipped";
-  }
   if (status.phase === LIVE_INPUT_PHASES.error) {
     return status.errorCode === LIVE_INPUT_ERROR_CODES.deviceUnavailable
       ? "Unavailable"
       : "Input Error";
   }
-  if (status.phase === LIVE_INPUT_PHASES.weakSignal) {
-    return status.signalState === LIVE_INPUT_SIGNAL_STATES.silent
-      ? "Live · No Signal"
-      : "Weak";
-  }
   return "Listening";
-}
-
-function resolveLiveInputSignalGuidance(status) {
-  if (
-    status.active !== true ||
-    status.phase !== LIVE_INPUT_PHASES.weakSignal ||
-    status.signalState !== LIVE_INPUT_SIGNAL_STATES.silent
-  ) {
-    return null;
-  }
-
-  if (status.resolvedAnalysisClass === "line-feed") {
-    return "Live input is connected. No audio is reaching this device yet. Route the source app to the selected loopback or line input.";
-  }
-
-  return "Live input is connected. No microphone signal is reaching Baryon yet.";
 }
 
 function resolveLiveInputErrorGuidance(status) {
@@ -99,8 +56,8 @@ function resolveLiveInputErrorGuidance(status) {
       return "The selected input is no longer available. Reconnect it or choose another device.";
     case LIVE_INPUT_ERROR_CODES.deviceDisconnected:
       return "The input disconnected. Reconnect it, then retry.";
-    case LIVE_INPUT_ERROR_CODES.calibrationInvalid:
-      return "The input level is clipping. Lower it before retrying calibration.";
+    case LIVE_INPUT_ERROR_CODES.processingFailed:
+      return "Audio processing stopped. Stop and restart this input to resume visualization.";
     case LIVE_INPUT_ERROR_CODES.startFailed:
       return "Baryon could not start this input. Check the device, then retry.";
     default:
@@ -116,9 +73,7 @@ function resolveDisplayStatus(status, isLiveInputActive) {
   if (
     status.phase === LIVE_INPUT_PHASES.starting ||
     status.phase === LIVE_INPUT_PHASES.stopping ||
-    status.phase === LIVE_INPUT_PHASES.calibrating ||
-    status.phase === LIVE_INPUT_PHASES.error ||
-    status.phase === LIVE_INPUT_PHASES.weakSignal
+    status.phase === LIVE_INPUT_PHASES.error
   ) {
     return status;
   }
@@ -253,7 +208,6 @@ export default function LiveInputStatusPanel({
         }
       : getSignalBadgeStyle(status);
   const liveInputErrorGuidance = resolveLiveInputErrorGuidance(status);
-  const liveInputSignalGuidance = resolveLiveInputSignalGuidance(status);
 
   const micProcessingDisabled = selectedLiveInputDeviceKind !== "live";
   const showAcousticIntent = selectedLiveInputDeviceKind === "live";
@@ -630,24 +584,6 @@ export default function LiveInputStatusPanel({
             }}
           >
             {liveInputErrorGuidance}
-          </div>
-        ) : null}
-
-        {liveInputSignalGuidance ? (
-          <div
-            data-testid="live-input-signal-guidance"
-            role="status"
-            style={{
-              padding: "0.42rem 0.48rem",
-              borderRadius: "0.58rem",
-              border: "1px solid rgba(255, 204, 102, 0.24)",
-              background: "rgba(255, 204, 102, 0.06)",
-              color: "var(--nd-text-secondary)",
-              fontSize: "0.62rem",
-              lineHeight: 1.42,
-            }}
-          >
-            {liveInputSignalGuidance}
           </div>
         ) : null}
 

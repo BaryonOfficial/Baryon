@@ -1,20 +1,37 @@
+import { createGpuSubmissionGate } from "@baryon/engine/render/gpuSubmissionGate";
 import { transferOutputCompositorFrame } from "./outputCompositorFrame.js";
 
 /**
- * Owns the one live program-frame sequence. Callers may render only from an
- * authoritative clock/control trigger. Bitmap completion and stage
- * acknowledgement finish publication and never request another render.
+ * One renderer owns one outstanding native GPU submission and bitmap transfer.
+ * Clock/control commands request frames; completion only releases capacity.
+ * Detach/replacement revokes old publication callbacks without restarting audio.
  */
 export function createProgramFrameProducer({
   transferFrame = transferOutputCompositorFrame,
 } = {}) {
-  let rendererOwner = null;
-  let transferInFlight = false;
-
-  function bindRenderer(nextRendererOwner) {
-    rendererOwner = nextRendererOwner ?? null;
+  let rendererOwner = null,
+    generation = 0,
+    gate = null,
+    transfer = null;
+  function bindRenderer(owner, { completeSubmittedWork = null } = {}) {
+    if (owner === rendererOwner) return false;
+    rendererOwner = owner ?? null;
+    generation++;
+    // A new renderer has a new queue. Old completion cannot free its capacity
+    // or publish a receipt to the replacement surface.
+    gate?.drain().catch(() => {});
+    gate =
+      owner && completeSubmittedWork
+        ? createGpuSubmissionGate({ completeSubmittedWork })
+        : null;
+    transfer = null;
+    return true;
   }
-
+  function canProduce() {
+    return (
+      rendererOwner !== null && transfer === null && (!gate || gate.canSubmit())
+    );
+  }
   function produce({
     render,
     renderCanvas = null,
@@ -24,47 +41,51 @@ export function createProgramFrameProducer({
     onError = null,
     receipt = null,
   }) {
-    if (!rendererOwner || typeof render !== "function") {
-      return Promise.resolve(false);
-    }
     if (
-      transferRequired === true &&
-      (typeof onFrame !== "function" || transferInFlight)
-    ) {
+      typeof render !== "function" ||
+      !canProduce() ||
+      (transferRequired && typeof onFrame !== "function")
+    )
       return Promise.resolve(false);
-    }
-
-    render();
-
-    if (transferRequired !== true) {
-      onStageRender?.(receipt ?? {});
-      return Promise.resolve(true);
-    }
-    transferInFlight = true;
-    return Promise.resolve(transferFrame(renderCanvas, onFrame))
-      .then((transferred) => {
-        const transferSucceeded = transferred === true;
-        if (transferSucceeded) {
-          onStageRender?.(receipt ?? {});
-        }
-        return transferSucceeded;
+    const epoch = generation;
+    const current = () => epoch === generation && rendererOwner !== null;
+    render(); // Preserve the synchronous renderer-error boundary.
+    const completion = gate?.markSubmitted() ?? Promise.resolve();
+    // Request the bitmap immediately while this canvas generation is current;
+    // awaiting the queue before requesting it can cross a browser presentation.
+    const token = {};
+    let bitmap;
+    if (transferRequired) {
+      transfer = token;
+      try {
+        bitmap = Promise.resolve(
+          transferFrame(renderCanvas, (frame) => {
+            if (current()) onFrame(frame);
+            else frame?.bitmap?.close?.();
+          }),
+        );
+      } catch (error) {
+        bitmap = Promise.reject(error);
+      }
+    } else bitmap = Promise.resolve(true);
+    return Promise.all([completion, bitmap])
+      .then(([, transferred]) => {
+        if (!current() || transferred !== true) return false;
+        onStageRender?.(receipt ?? {});
+        return true;
       })
       .catch((error) => {
-        onError?.(error);
+        if (current()) onError?.(error);
         return false;
       })
       .finally(() => {
-        transferInFlight = false;
+        if (transfer === token) transfer = null;
       });
   }
-
-  function detach() {
-    rendererOwner = null;
-  }
-
   return {
     bindRenderer,
-    detach,
+    canProduce,
     produce,
+    detach: () => bindRenderer(null),
   };
 }

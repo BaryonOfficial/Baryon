@@ -1,16 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createVisualizationRuntime } from "@baryon/engine/visualization/runtime";
-import {
-  AUDIO_FEATURE_AUTHORITY_ROLES,
-  createAudioFeatureRuntime,
-} from "@baryon/engine/audio-features";
-import {
-  CAVITY_ACOUSTIC_DEFAULTS,
-  SIMULATION_DEFAULTS,
-} from "@baryon/engine/defaults";
-import { buildAuditControlSnapshot } from "@baryon/engine/controls/runtime";
+import { SIMULATION_DEFAULTS } from "@baryon/engine/defaults";
 import { createLiveInputRuntimeStatus } from "../../context/liveInputRuntimeStatus.js";
-import { subscribeControlsChanged } from "../../controls/controlsEvents.js";
 import {
   clearFrameCache,
   createEmptyControlSnapshots,
@@ -19,41 +10,19 @@ import {
   resetAdaptiveRaymarchControllerState,
 } from "./baryonEngineRuntimeState.js";
 
-function buildAudioFeatureRuntimeConfiguration(controls = {}) {
-  return {
-    radius: SIMULATION_DEFAULTS.radius,
-    cavityAcousticScale: CAVITY_ACOUSTIC_DEFAULTS,
-    boundaryMode: controls.boundaryMode ?? SIMULATION_DEFAULTS.boundaryMode,
-    cavityGeometry:
-      controls.cavityGeometry ?? SIMULATION_DEFAULTS.cavityGeometry,
-    auditSettings: buildAuditControlSnapshot(controls),
-  };
-}
-
 export function useVisualizationRuntimeLifecycle({
+  externalFeatureSource = null,
   audioRef,
   baryonGeometry,
   controlsRef,
-  audioFeatureAuthorityRole = AUDIO_FEATURE_AUTHORITY_ROLES.localProducer,
-  audioFeatureConfigurationVersion = 0,
   setIsEngineReady,
   setLiveInputRuntimeStatus,
+  requestRender = null,
 }) {
+  const requestRenderRef = useRef(requestRender);
   const runtimeRef = useRef(null);
   const runtimeStateRef = useRef(null);
-  const audioFeatureRuntimeRef = useRef(null);
-  const initialAudioFeatureAuthorityRoleRef = useRef(audioFeatureAuthorityRole);
-  const [initialAudioFeatureConfiguration] = useState(() =>
-    buildAudioFeatureRuntimeConfiguration(controlsRef?.current),
-  );
-  const initialAudioFeatureConfigurationRef = useRef(
-    initialAudioFeatureConfiguration,
-  );
-  const initialAudioFeatureConfigurationVersionRef = useRef(
-    audioFeatureConfigurationVersion,
-  );
-  const lastCommandedAudioFeatureAuthorityRoleRef = useRef(null);
-  const lastCommandedAudioFeatureConfigurationVersionRef = useRef(null);
+  const featureSourceRef = useRef(null);
   const lastIdleFrameRef = useRef(null);
   const pausedFileFrameRef = useRef(null);
   const lastLiveInputRuntimeStatusRef = useRef(null);
@@ -93,75 +62,19 @@ export function useVisualizationRuntimeLifecycle({
   }, [setLiveInputRuntimeStatus]);
 
   useEffect(() => {
-    const audioSession = audioRef.current;
-    if (!audioSession) {
-      return undefined;
-    }
+    requestRenderRef.current = requestRender;
+  }, [requestRender]);
 
-    const featureRuntime = createAudioFeatureRuntime({}, { audioSession });
-    audioFeatureRuntimeRef.current = featureRuntime;
-    featureRuntime.configure(initialAudioFeatureConfigurationRef.current);
-    lastCommandedAudioFeatureConfigurationVersionRef.current =
-      initialAudioFeatureConfigurationVersionRef.current;
-    featureRuntime.setAuthorityRole(
-      initialAudioFeatureAuthorityRoleRef.current,
-    );
-    lastCommandedAudioFeatureAuthorityRoleRef.current =
-      initialAudioFeatureAuthorityRoleRef.current;
-    featureRuntime.start();
-
+  useEffect(() => {
+    const featureRuntime =
+      externalFeatureSource ?? audioRef.current?.featureRuntime ?? null;
+    featureSourceRef.current = featureRuntime;
     return () => {
-      featureRuntime.dispose();
-      if (audioFeatureRuntimeRef.current === featureRuntime) {
-        audioFeatureRuntimeRef.current = null;
-      }
+      // A renderer relinquishes its reference, never the source processor.
+      if (featureSourceRef.current === featureRuntime)
+        featureSourceRef.current = null;
     };
-  }, [audioRef]);
-
-  useEffect(() => {
-    if (
-      lastCommandedAudioFeatureAuthorityRoleRef.current ===
-      audioFeatureAuthorityRole
-    ) {
-      return;
-    }
-    const featureRuntime = audioFeatureRuntimeRef.current;
-    if (!featureRuntime) {
-      return;
-    }
-    featureRuntime.setAuthorityRole(audioFeatureAuthorityRole);
-    lastCommandedAudioFeatureAuthorityRoleRef.current =
-      audioFeatureAuthorityRole;
-  }, [audioFeatureAuthorityRole]);
-
-  useEffect(() => {
-    if (
-      lastCommandedAudioFeatureConfigurationVersionRef.current ===
-      audioFeatureConfigurationVersion
-    ) {
-      return;
-    }
-    audioFeatureRuntimeRef.current?.configure(
-      buildAudioFeatureRuntimeConfiguration(controlsRef?.current),
-    );
-    lastCommandedAudioFeatureConfigurationVersionRef.current =
-      audioFeatureConfigurationVersion;
-  }, [audioFeatureConfigurationVersion, controlsRef]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return undefined;
-    }
-
-    const handleControlsChange = (event) => {
-      audioFeatureRuntimeRef.current?.configure(
-        buildAudioFeatureRuntimeConfiguration(
-          event?.detail ?? controlsRef?.current,
-        ),
-      );
-    };
-    return subscribeControlsChanged(handleControlsChange);
-  }, [controlsRef]);
+  }, [audioRef, externalFeatureSource]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -178,30 +91,37 @@ export function useVisualizationRuntimeLifecycle({
     setIsEngineReadyRef.current?.(false);
     setPoints(null);
 
+    let unsubscribeObservations = null;
     try {
       const runtime = createVisualizationRuntime();
       runtimeRef.current = runtime;
-      const audioStatus = audio.getStatus();
       const parameters = {
         radius: SIMULATION_DEFAULTS.radius,
         volumeShape:
           initialControlsSnapshot?.volumeShape ??
           SIMULATION_DEFAULTS.volumeShape,
       };
-      const audioConfig = {
-        capacity: audioStatus.capacity,
-        fftSize: audioStatus.fftSize,
-        sampleRate: audioStatus.sampleRate,
-      };
 
       const runtimeState = runtime.setup({
         baryonGeometry,
         parameters,
-        audioConfig,
       });
       initializeAdaptiveRaymarchRuntimeState(runtimeState);
       runtimeState.method = runtime.method;
       runtimeStateRef.current = runtimeState;
+      unsubscribeObservations = featureSourceRef.current.subscribeObservations(
+        (model) => runtime.enqueueObservation({ runtimeState, model }),
+        (error) => runtime.invalidatePresentation({ runtimeState, error }),
+        () => {
+          runtime.revokeObservations({ runtimeState });
+          requestRenderRef.current?.();
+        },
+      );
+      // A recreated renderer may replay the latest complete model once. This
+      // cache read cannot send another audio bootstrap or restart capture.
+      const latestModel = featureSourceRef.current.readLatestFeatureModel();
+      if (latestModel)
+        runtime.enqueueObservation({ runtimeState, model: latestModel });
       cachedControlSnapshotsRef.current = createEmptyControlSnapshots(
         initialControlsSnapshot,
       );
@@ -213,6 +133,7 @@ export function useVisualizationRuntimeLifecycle({
     }
 
     return () => {
+      unsubscribeObservations?.();
       const runtime = runtimeRef.current;
       setIsEngineReadyRef.current?.(false);
       setPoints(null);
@@ -232,13 +153,19 @@ export function useVisualizationRuntimeLifecycle({
       cachedControlSnapshotsRef.current = createEmptyControlSnapshots(null);
       setLiveInputRuntimeStatusRef.current?.(createLiveInputRuntimeStatus());
     };
-  }, [audioRef, baryonGeometry, controlsRef, frameCacheRefs]);
+  }, [
+    audioRef,
+    externalFeatureSource,
+    baryonGeometry,
+    controlsRef,
+    frameCacheRefs,
+  ]);
 
   return {
     points,
     runtimeRef,
     runtimeStateRef,
-    audioFeatureRuntimeRef,
+    featureSourceRef,
     runtimeDiagnosticsRef,
     frameCacheRefs,
     controlCacheRefs,

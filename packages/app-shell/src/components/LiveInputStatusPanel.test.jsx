@@ -253,24 +253,21 @@ describe("LiveInputStatusPanel", () => {
     expect(handleLiveInputAction).toHaveBeenCalledTimes(1);
   });
 
-  it("distinguishes connected silence from a failed or pending live start", () => {
+  it("labels a valid quiet stream as listening without inventing an input-level diagnosis", () => {
     renderPanel({
       isLiveInputActive: true,
       liveInputRuntimeStatus: {
         active: true,
-        phase: "weak-signal",
+        phase: "listening",
+        observationAvailable: true,
         resolvedAnalysisClass: "line-feed",
-        signalState: "silent",
-        sourceBoundaryState: "muted",
       },
     });
-
-    expect(container.textContent).toContain("Live · No Signal");
-    expect(container.textContent).toContain(
-      "Live input is connected. No audio is reaching this device yet.",
-    );
-    expect(container.textContent).not.toContain("Starting");
-    expect(container.textContent).not.toContain("Input Error");
+    expect(container.textContent).toContain("Listening");
+    expect(container.textContent).not.toContain("Weak");
+    expect(
+      container.querySelector('[data-testid="live-input-signal-guidance"]'),
+    ).toBeNull();
   });
 
   it("keeps the live button label canonical during a source-switch go-live path", () => {

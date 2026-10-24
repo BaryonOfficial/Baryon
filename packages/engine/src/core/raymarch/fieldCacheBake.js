@@ -1,3 +1,5 @@
+import { createFieldCacheDomainGeometry } from "./fieldCacheDomainGeometry.js";
+import { compileRenderPass } from "./compileRenderPass.js";
 import * as THREE from "three";
 import { MeshBasicNodeMaterial } from "three/webgpu";
 import {
@@ -10,48 +12,32 @@ import {
   max,
   min,
   mrt,
-  screenUV,
   struct,
   texture,
   uniform,
   vec3,
   vec4,
 } from "three/tsl";
-import { BOUNDARY_MODES, normalizeBoundaryMode } from "../modeFamily.js";
-import { VOLUME_SHAPES, normalizeVolumeShape } from "../volumeShape.js";
-import {
-  SPECTRAL_MOMENT_SUPPORT_EPSILON,
-  evaluateAnalyticWaterRadiationPotentialNode,
-} from "./radiationPotentialObservation.js";
+import { BOUNDARY_MODES } from "../modeFamily.js";
+import { VOLUME_SHAPES } from "../volumeShape.js";
 import {
   FIELD_CACHE_ATLAS_HEIGHT,
   FIELD_CACHE_ATLAS_WIDTH,
-  FIELD_CACHE_BAKE_GATE_HALF_EXTENT,
   FIELD_CACHE_CELL_SIZE,
   FIELD_CACHE_DOMAINS,
-  FIELD_CACHE_DOMAIN_HALF_EXTENT,
   FIELD_CACHE_RESOLUTION,
-  FIELD_CACHE_TILES_X,
-  createFieldCacheDomainGeometry,
 } from "./fieldCacheGeometry.js";
 import {
   createSparseResolvedFieldCacheFootprintNode,
+  deriveFieldCacheFragmentVoxelIndexNode,
   sampleFieldCacheAtlasAtVoxelCenterNode,
   sampleSparseFieldCacheVectorLaneNode,
   sampleSparseResolvedFieldCacheLaneNode,
-  toSparseFieldCacheAtlasTexelNode,
 } from "./fieldCacheSampling.js";
-import {
-  fixedRenderTargetTexture,
-  fixedRenderTargetTextureLoad,
-} from "./fixedOrientationTextureNode.js";
+import { fixedRenderTargetTexture } from "./fixedOrientationTextureNode.js";
 import { createCymaticObserverMaterial } from "./cymaticObserverNode.js";
-import { createFieldCacheBasisLookup } from "./fieldCacheBasisLookup.js";
 import {
-  CYMATIC_OBSERVER_APERTURE_PASSES,
-  CYMATIC_OBSERVER_FINE_APERTURE_KERNEL_OFFSETS,
   CYMATIC_OBSERVER_REFERENCE,
-  CYMATIC_OBSERVER_TOPOLOGY_APERTURE_KERNEL_OFFSETS,
   createCymaticObserverClockState,
   deriveCymaticObserverBlend,
   resolveCymaticObserverFieldInterval,
@@ -59,24 +45,10 @@ import {
 } from "./cymaticObserverReference.js";
 import { SPECTRAL_PHASE_FIELD_REFERENCE } from "./spectralPhaseFieldReference.js";
 
-/**
- * Bakes the complete live modal packet and advances the virtual observer.
- *
- * This is where the acoustic radiation potential is evaluated. The march would
- * otherwise run the mode loop at every ray sample: `pixels x samples x modes`.
- * The same cycle-averaged potential on the cache grid is `voxels x modes`.
- *
- * The first pass evaluates scalar potential only over the permutation
- * fundamental domain. A fixed world-space aperture then reconstructs and
- * filters the full symmetric volume. The resolve pass takes a sixth-order
- * derivative of that same filtered scalar. Finally, the stateful observer
- * advects and integrates the U=0 sheet on the authoritative audio clock.
- */
-
-const SourceFieldCachePayload = struct(
-  { field: "vec4", spectral: "vec4" },
-  "BaryonSourceFieldCachePayload",
-);
+/** Filtered spatial measurement before gradient inference or persistence.
+ * Fine energy remains raw amplitude-squared energy; potential/support/color
+ * carry their existing global normalization. The evaluator is a derived cache,
+ * not an acoustic state owner. */
 const ResolvedFieldCachePayload = struct(
   {
     topology: "vec4",
@@ -86,283 +58,16 @@ const ResolvedFieldCachePayload = struct(
   "BaryonResolvedFieldCachePayload",
 );
 const SparseObserverExpansionPayload = struct(
-  { geometry: "vec4", appearance: "vec4", organization: "vec4" },
+  {
+    geometry: "vec4",
+    appearance: "vec4",
+    organization: "vec4",
+    availability: "float",
+  },
   "BaryonSparseObserverExpansionPayload",
 );
 
-/**
- * Integer voxel index this fragment owns.
- *
- * The atlas lays the z slices out as a grid of tiles, so the tile a fragment
- * falls in IS its slice index. A fragment centre sits at pixel + 0.5, so the
- * floor of the in-tile pixel coordinate is the voxel index exactly.
- */
-function deriveBakedVoxelIndexNode() {
-  const pixelX = screenUV.x.mul(float(FIELD_CACHE_ATLAS_WIDTH));
-  const pixelY = screenUV.y.mul(float(FIELD_CACHE_ATLAS_HEIGHT));
-  const tileSpan = float(FIELD_CACHE_RESOLUTION);
-  const tileX = pixelX.div(tileSpan).floor();
-  const tileY = pixelY.div(tileSpan).floor();
-  return vec3(
-    pixelX.sub(tileX.mul(tileSpan)).floor(),
-    pixelY.sub(tileY.mul(tileSpan)).floor(),
-    tileY.mul(float(FIELD_CACHE_TILES_X)).add(tileX),
-  );
-}
-
-/** Normalized cavity coordinate of a voxel centre. */
-function toBakedVoxelPositionNode(voxelIndex) {
-  return voxelIndex
-    .add(0.5)
-    .mul(float(FIELD_CACHE_CELL_SIZE))
-    .sub(float(FIELD_CACHE_DOMAIN_HALF_EXTENT));
-}
-
-/**
- * Zero the mode loop outside the region any ray can reach, plus the stencil
- * slack. Exact rather than approximate: those voxels are neither sampled nor
- * read, so not evaluating them changes nothing but the bill.
- */
-function deriveBakeGateNode(position, volumeShape) {
-  const gate = float(FIELD_CACHE_BAKE_GATE_HALF_EXTENT);
-  if (normalizeVolumeShape(volumeShape) === VOLUME_SHAPES.cube) {
-    return position.abs().greaterThan(gate).any().select(float(0), float(1));
-  }
-  return dot(position, position)
-    .greaterThan(gate.mul(gate))
-    .select(float(0), float(1));
-}
-
-/**
- * @typedef {import("three/webgpu").MeshBasicNodeMaterial & {
- *   raymarchBoundaryMode?: string,
- *   raymarchVolumeShape?: string,
- * }} FieldCacheBakeMaterial
- */
-
-function createFieldCacheBakeMaterial({
-  modalFieldModeUniforms,
-  modalFieldCoefficientUniforms,
-  modalFieldResponseUniforms,
-  modalFieldSpectralMomentUniforms,
-  modalFieldModeCount,
-  basisLookup,
-  boundaryMode,
-  volumeShape,
-}) {
-  const material = /** @type {FieldCacheBakeMaterial} */ (
-    new MeshBasicNodeMaterial()
-  );
-  material.name = "BaryonFieldCacheBakeMaterial";
-  material.lights = false;
-  material.depthTest = false;
-  material.depthWrite = false;
-
-  // The whole payload is built inside one function body. A TSL Loop and its
-  // accumulators only exist on a function stack — assembled at material
-  // construction time they are silently dropped, leaving a shader that writes
-  // its initial values and costs nothing.
-  const payload = Fn(() => {
-    const voxelIndex = deriveBakedVoxelIndexNode();
-    const position = toBakedVoxelPositionNode(voxelIndex);
-    const observed = evaluateAnalyticWaterRadiationPotentialNode({
-      voxelIndex,
-      basisLookup,
-      modalFieldModeUniforms,
-      modalFieldCoefficientUniforms,
-      modalFieldResponseUniforms,
-      modalFieldSpectralMomentUniforms,
-      // The mesh owns the exact fundamental-domain support, so the shader only
-      // needs the permutation-invariant shape gate for voxels no ray can reach.
-      modalFieldActiveCount: modalFieldModeCount.mul(
-        deriveBakeGateNode(position, volumeShape),
-      ),
-      boundaryMode,
-    });
-
-    const spectral = observed.spectralFirstMoment
-      ? vec4(observed.spectralFirstMoment, observed.spectralSecondMoment)
-      : vec4(0, 0, 0, 0);
-
-    // Lane x carries the fine-aperture potential, lane y carries the
-    // cycle-averaged energy used by local radiance, and lane w feeds the wider
-    // topology aperture. No component-ranking statistic participates in the
-    // observation.
-    return SourceFieldCachePayload(
-      vec4(
-        observed.radiationPotential,
-        observed.totalEnergy,
-        observed.spectralSupport ?? float(0),
-        observed.radiationPotential,
-      ),
-      spectral,
-    );
-  })();
-
-  // Struct members are untyped at the node level; both lanes are vec4 by
-  // construction above.
-  const fieldLane = /** @type {any} */ (payload.get("field"));
-  material.colorNode = fieldLane;
-  material.mrtNode = mrt({
-    output: fieldLane,
-    spectral: payload.get("spectral"),
-  });
-  material.raymarchBoundaryMode = normalizeBoundaryMode(boundaryMode);
-  material.raymarchVolumeShape = normalizeVolumeShape(volumeShape);
-  return material;
-}
-
-function createApertureKernelWeightNode(radius, apertureFwhmWorld, offset) {
-  const sigmaWorld = float(apertureFwhmWorld / (2 * Math.sqrt(2 * Math.LN2)));
-  const offsetWorld = radius
-    .mul(float(FIELD_CACHE_CELL_SIZE))
-    .mul(float(offset));
-  return exp(
-    offsetWorld.mul(offsetWorld).div(sigmaWorld.mul(sigmaWorld).mul(-2)),
-  );
-}
-
-/**
- * Gaussian aperture weights vary with apparatus radius but never with voxel.
- * Evaluate the ten non-negative half-kernel entries in the vertex stage and carry
- * three packed constants across the full-screen pass. The fragment stage keeps
- * the original accumulation and normalization order, so this removes repeated
- * transcendental work without changing the fixed world-space aperture.
- */
-function createApertureKernelWeightNodes(radius) {
-  const topology = Array.from({ length: 7 }, (_, offset) =>
-    createApertureKernelWeightNode(
-      radius,
-      CYMATIC_OBSERVER_REFERENCE.topologyApertureFwhmWorld,
-      offset,
-    ),
-  );
-  const fine = Array.from({ length: 3 }, (_, offset) =>
-    createApertureKernelWeightNode(
-      radius,
-      CYMATIC_OBSERVER_REFERENCE.fineApertureFwhmWorld,
-      offset,
-    ),
-  );
-  const topologyTotal =
-    CYMATIC_OBSERVER_TOPOLOGY_APERTURE_KERNEL_OFFSETS.reduce(
-      (total, offset) => total.add(topology[Math.abs(offset)]),
-      float(0),
-    );
-  const fineTotal = CYMATIC_OBSERVER_FINE_APERTURE_KERNEL_OFFSETS.reduce(
-    (total, offset) => total.add(fine[Math.abs(offset)]),
-    float(0),
-  );
-  const packedA = vec4(
-    topology[0],
-    topology[1],
-    topology[2],
-    topology[3],
-  ).toVertexStage();
-  const packedB = vec4(
-    topology[4],
-    topology[5],
-    topology[6],
-    fine[0],
-  ).toVertexStage();
-  const packedC = vec4(
-    fine[1],
-    fine[2],
-    topologyTotal,
-    fineTotal,
-  ).toVertexStage();
-
-  return {
-    topology: [
-      packedA.x,
-      packedA.y,
-      packedA.z,
-      packedA.w,
-      packedB.x,
-      packedB.y,
-      packedB.z,
-    ],
-    fine: [packedB.w, packedC.x, packedC.y],
-    topologyTotal: packedC.z,
-    fineTotal: packedC.w,
-  };
-}
-
-/**
- * Apply the instrument's fixed world-space resolving aperture while carrying
- * permutation symmetry through the smallest exact stored domain at each axis.
- */
-function createFieldCacheApertureMaterial({
-  sourceField,
-  sourceSpectral,
-  radius,
-  direction,
-  inputDomain,
-}) {
-  const material = new MeshBasicNodeMaterial();
-  const axis = direction.findIndex((component) => component !== 0);
-  material.name = `BaryonFieldCacheAperture${"XYZ"[axis]}Material`;
-  material.lights = false;
-  material.depthTest = false;
-  material.depthWrite = false;
-  const apertureWeights = createApertureKernelWeightNodes(radius);
-
-  const payload = Fn(() => {
-    const voxelIndex = deriveBakedVoxelIndexNode();
-    const directionNode = vec3(...direction);
-    const fineFieldSum = vec3(0).toVar();
-    const topologyPotentialSum = float(0).toVar();
-    const spectralMomentSum = vec4(0).toVar();
-    const accumulateFine = (field, spectral, weight) => {
-      fineFieldSum.addAssign(field.xyz.mul(weight));
-      spectralMomentSum.addAssign(spectral.mul(weight));
-    };
-
-    for (const offset of CYMATIC_OBSERVER_TOPOLOGY_APERTURE_KERNEL_OFFSETS) {
-      const sourceTexel = toSparseFieldCacheAtlasTexelNode(
-        voxelIndex.add(directionNode.mul(float(offset))),
-        inputDomain,
-      ).toVar();
-      const field = fixedRenderTargetTextureLoad(sourceField, sourceTexel);
-      const topologyWeight = apertureWeights.topology[Math.abs(offset)];
-      topologyPotentialSum.addAssign(field.w.mul(topologyWeight));
-
-      if (CYMATIC_OBSERVER_FINE_APERTURE_KERNEL_OFFSETS.includes(offset)) {
-        const fineWeight = apertureWeights.fine[Math.abs(offset)];
-        accumulateFine(
-          field,
-          fixedRenderTargetTextureLoad(sourceSpectral, sourceTexel),
-          fineWeight,
-        );
-      }
-    }
-
-    const filteredFineField = fineFieldSum.div(apertureWeights.fineTotal);
-    const filteredTopologyPotential = topologyPotentialSum.div(
-      apertureWeights.topologyTotal,
-    );
-    return SourceFieldCachePayload(
-      vec4(filteredFineField, filteredTopologyPotential),
-      spectralMomentSum.div(apertureWeights.fineTotal),
-    );
-  })();
-
-  const fieldLane = /** @type {any} */ (payload.get("field"));
-  material.colorNode = fieldLane;
-  material.mrtNode = mrt({
-    output: fieldLane,
-    spectral: payload.get("spectral"),
-  });
-  return material;
-}
-
-// Fixed scale-space aperture owner end.
-
-function createFieldCacheResolveMaterial({
-  apertureField,
-  apertureSpectral,
-  radius,
-}) {
+function createFieldCacheResolveMaterial({ evaluateAperture, radius }) {
   const material = new MeshBasicNodeMaterial();
   material.name = "BaryonFieldCacheResolveMaterial";
   material.lights = false;
@@ -370,13 +75,15 @@ function createFieldCacheResolveMaterial({
   material.depthWrite = false;
 
   const payload = Fn(() => {
-    const voxelIndex = deriveBakedVoxelIndexNode();
+    const voxelIndex = deriveFieldCacheFragmentVoxelIndexNode();
     const sampleField = (index) => {
-      const texel = toSparseFieldCacheAtlasTexelNode(
-        index,
-        FIELD_CACHE_DOMAINS.fundamentalXyz,
+      const observed = evaluateAperture({ voxelIndex: index });
+      return vec4(
+        observed.finePotential,
+        observed.fineEnergy,
+        observed.fineSupport,
+        observed.topologyPotential,
       );
-      return fixedRenderTargetTextureLoad(apertureField, texel);
     };
     const firstDerivative = (samples) =>
       samples.positiveThree
@@ -386,18 +93,16 @@ function createFieldCacheResolveMaterial({
         .add(samples.negativeTwo.mul(9))
         .sub(samples.negativeThree)
         .mul(float(1 / (60 * FIELD_CACHE_CELL_SIZE)));
-    // Fine and topology potential share one RGBA field atlas. Fetch every
-    // stencil point once, then take both derivatives from the same vec4. This
-    // preserves the exact sixth-order result while halving resolve-pass field
-    // reads on both renderer backends.
+    // Reuse each physical cache read for the fine and topology derivatives.
+    // The aperture evaluator reconstructs both scalar measurements before this
+    // unchanged sixth-order stencil and the nonlinear geometry inference.
     const directions = [vec3(1, 0, 0), vec3(0, 1, 0), vec3(0, 0, 1)];
-    const centerTexel = toSparseFieldCacheAtlasTexelNode(
-      voxelIndex,
-      FIELD_CACHE_DOMAINS.fundamentalXyz,
-    ).toVar();
-    const centerField = fixedRenderTargetTextureLoad(
-      apertureField,
-      centerTexel,
+    const center = evaluateAperture({ voxelIndex });
+    const centerField = vec4(
+      center.finePotential,
+      center.fineEnergy,
+      center.fineSupport,
+      center.topologyPotential,
     ).toVar();
     const axialDerivatives = directions.map((direction) =>
       firstDerivative({
@@ -476,19 +181,22 @@ function createFieldCacheResolveMaterial({
         ),
       );
     const localEnergy = max(centerField.y, float(0));
-    const compressedEnergy = localEnergy.div(
-      localEnergy.add(
-        float(CYMATIC_OBSERVER_REFERENCE.localEnergyHalfResponse),
-      ),
-    );
-    const spectral = fixedRenderTargetTextureLoad(
-      apertureSpectral,
-      centerTexel,
-    );
+    // Optical transduction of raw energy, matching the CPU reference. Keep
+    // this out of the normalized potential and its gradient above.
+    const opticalExcitation = localEnergy
+      .div(
+        localEnergy.add(
+          float(CYMATIC_OBSERVER_REFERENCE.opticalReferenceEnergy),
+        ),
+      )
+      .sqrt();
+    const spectral = center.fineSpectralFirstMoment
+      ? vec4(center.fineSpectralFirstMoment, center.fineSpectralSecondMoment)
+      : vec4(0);
     const spectralSupport = max(centerField.z, float(0));
     const spectralDenominator = max(
       spectralSupport,
-      float(SPECTRAL_MOMENT_SUPPORT_EPSILON),
+      float(SPECTRAL_PHASE_FIELD_REFERENCE.supportEpsilon),
     );
     const clampMomentToUnitDisk = (moment) => {
       const ratio = moment.div(spectralDenominator);
@@ -500,7 +208,9 @@ function createFieldCacheResolveMaterial({
     const spectralSecondMoment = clampMomentToUnitDisk(spectral.zw);
     const spectralPresence = clamp(
       spectralSupport.div(
-        spectralSupport.add(float(SPECTRAL_MOMENT_SUPPORT_EPSILON)),
+        spectralSupport.add(
+          float(SPECTRAL_PHASE_FIELD_REFERENCE.supportEpsilon),
+        ),
       ),
       float(0),
       float(1),
@@ -511,7 +221,7 @@ function createFieldCacheResolveMaterial({
         spectralFirstMoment.x,
         spectralFirstMoment.y,
         spectralSecondMoment.x,
-        compressedEnergy,
+        opticalExcitation,
       ),
       vec4(
         fineDetailAgreement,
@@ -564,10 +274,23 @@ function createFieldCacheAtlasTarget({
   return target;
 }
 
+function createObserverAtlasTarget() {
+  const target = createFieldCacheAtlasTarget({
+    names: ["geometry", "appearance", "organization", "availability"],
+    nearestNames: ["organization"],
+  });
+  // One byte per voxel, exactly 0 or 1. Linear filtering is intentional:
+  // backtracing and the ray reader need the available interpolation weight.
+  target.textures[3].format = THREE.RedFormat;
+  target.textures[3].type = THREE.UnsignedByteType;
+  return target;
+}
+
 function createObserverCheckpointCopyMaterial({
   geometryTexture,
   appearanceTexture,
   organizationTexture,
+  availabilityTexture,
 }) {
   const material = new MeshBasicNodeMaterial();
   material.name = "BaryonObserverCheckpointCopyMaterial";
@@ -578,19 +301,22 @@ function createObserverCheckpointCopyMaterial({
   const geometryNode = fixedRenderTargetTexture(geometryTexture);
   const appearanceNode = fixedRenderTargetTexture(appearanceTexture);
   const organizationNode = fixedRenderTargetTexture(organizationTexture);
+  const availabilityNode = fixedRenderTargetTexture(availabilityTexture);
   material.colorNode = geometryNode;
   material.mrtNode = mrt({
     geometry: geometryNode,
     appearance: appearanceNode,
     organization: organizationNode,
+    availability: availabilityNode,
   });
 
   return {
     material,
-    setTextures({ geometry, appearance, organization }) {
+    setTextures({ geometry, appearance, organization, availability }) {
       geometryNode.value = geometry;
       appearanceNode.value = appearance;
       organizationNode.value = organization;
+      availabilityNode.value = availability;
     },
     dispose() {
       material.dispose?.();
@@ -610,6 +336,7 @@ function createObserverSparseExpansionMaterial({
   geometryTexture,
   appearanceTexture,
   organizationTexture,
+  availabilityTexture,
 }) {
   const material = new MeshBasicNodeMaterial();
   material.name = "BaryonObserverSparseExpansionMaterial";
@@ -620,14 +347,28 @@ function createObserverSparseExpansionMaterial({
   const geometryNode = texture(geometryTexture);
   const appearanceNode = texture(appearanceTexture);
   const organizationNode = texture(organizationTexture);
+  const availabilityNode = texture(availabilityTexture);
   const payload = Fn(() => {
     const footprint = createSparseResolvedFieldCacheFootprintNode(
-      deriveBakedVoxelIndexNode(),
+      deriveFieldCacheFragmentVoxelIndexNode(),
+    );
+    const geometry = sampleSparseFieldCacheVectorLaneNode(
+      geometryNode,
+      footprint,
+    );
+    const appearance = sampleSparseResolvedFieldCacheLaneNode(
+      appearanceNode,
+      footprint,
+    );
+    const organization = sampleSparseResolvedFieldCacheLaneNode(
+      organizationNode,
+      footprint,
     );
     return SparseObserverExpansionPayload(
-      sampleSparseFieldCacheVectorLaneNode(geometryNode, footprint),
-      sampleSparseResolvedFieldCacheLaneNode(appearanceNode, footprint),
-      sampleSparseResolvedFieldCacheLaneNode(organizationNode, footprint),
+      geometry,
+      appearance,
+      organization,
+      sampleSparseResolvedFieldCacheLaneNode(availabilityNode, footprint).x,
     );
   })();
 
@@ -637,18 +378,29 @@ function createObserverSparseExpansionMaterial({
     geometry: geometryLane,
     appearance: payload.get("appearance"),
     organization: payload.get("organization"),
+    availability: vec4(
+      /** @type {import("three/webgpu").Node<"float">} */ (
+        payload.get("availability")
+      ),
+    ),
   });
   return material;
 }
 
 /**
- * Project the two ray-visible appearance lanes into one z-paired atlas.
+ * Project observer history into filterable, ray-visible presentation atlases.
  *
  * Observer appearance remains the canonical history. This derived material
  * cache stores radiance/support for z and z+1 in one RGBA16F texel so the ray
  * march can reconstruct the same trilinear value with one bilinear sample.
+ * Organization is copied losslessly into a separate linear-filtered attachment:
+ * continuous chromaticity and detail must not jump at observer voxel boundaries.
+ * Keeping that sampler separate preserves the observer's history/backtrace.
  */
-function createObserverOpticalPairMaterial(appearanceTexture) {
+function createObserverOpticalPairMaterial(
+  appearanceTexture,
+  organizationTexture,
+) {
   const material = new MeshBasicNodeMaterial();
   material.name = "BaryonObserverOpticalPairMaterial";
   material.lights = false;
@@ -656,8 +408,9 @@ function createObserverOpticalPairMaterial(appearanceTexture) {
   material.depthWrite = false;
 
   const appearanceNode = fixedRenderTargetTexture(appearanceTexture);
+  const organizationNode = fixedRenderTargetTexture(organizationTexture);
   material.colorNode = Fn(() => {
-    const voxelIndex = deriveBakedVoxelIndexNode().toVar();
+    const voxelIndex = deriveFieldCacheFragmentVoxelIndexNode().toVar();
     const upperVoxelIndex = vec3(
       voxelIndex.xy,
       min(voxelIndex.z.add(float(1)), float(FIELD_CACHE_RESOLUTION - 1)),
@@ -672,6 +425,18 @@ function createObserverOpticalPairMaterial(appearanceTexture) {
     );
     return vec4(lowerAppearance.zw, upperAppearance.zw);
   })();
+  // These are four data channels, not RGB plus opacity. The ordinary opaque
+  // color output forces alpha to one, corrupting the upper slice's support.
+  // Named MRT outputs write the raw nodes, preserving every channel.
+  material.mrtNode = mrt({
+    opticalPair: material.colorNode,
+    organization: Fn(() =>
+      sampleFieldCacheAtlasAtVoxelCenterNode(
+        organizationNode,
+        deriveFieldCacheFragmentVoxelIndexNode(),
+      ),
+    )(),
+  });
 
   return {
     material,
@@ -751,27 +516,20 @@ function assertCymaticObserverBakeOptions(options) {
  * compile-time specializations. Observer history stays in one full-domain
  * target; each fixed audio-timestamp step evaluates the canonical sixth into a
  * sparse target, then expands that generation back into the full target.
+ * The aperture evaluator supplies already filtered signed potential, raw local
+ * energy and spectral moments. It does not own observer history or advance audio.
+ * No source-copy or Gaussian raster passes are retained in production.
  */
 export function createModalFieldCache({
-  modalFieldModeUniforms,
-  modalFieldCoefficientUniforms,
-  modalFieldResponseUniforms,
-  modalFieldSpectralMomentUniforms = null,
-  modalFieldModeCount,
   radius,
+  evaluateAperture,
+  prepareAperture = undefined,
+  getApertureRevision = () => 0,
 }) {
-  const basisLookup = createFieldCacheBasisLookup();
-  const source = createFieldCacheAtlasTarget({
-    type: THREE.FloatType,
-    // Every source/aperture read lands on an exact voxel centre. Linear
-    // filtering cannot change the ideal value there, but it can force a much
-    // slower float-filtering path on Windows WebGL2 drivers.
-    nearestNames: ["output", "spectral"],
-  });
-  const aperture = createFieldCacheAtlasTarget({
-    type: THREE.FloatType,
-    nearestNames: ["output", "spectral"],
-  });
+  if (typeof evaluateAperture !== "function")
+    throw new TypeError(
+      "The field cache requires a complete aperture-field evaluator",
+    );
   const resolvedTargets = Array.from({ length: 2 }, () =>
     createFieldCacheAtlasTarget({
       // Fine potential and gradient are consumed entirely by the resolve pass;
@@ -782,15 +540,12 @@ export function createModalFieldCache({
     }),
   );
   const observerTargets = Array.from({ length: 2 }, () =>
-    createFieldCacheAtlasTarget({
-      names: ["geometry", "appearance", "organization"],
-      nearestNames: ["organization"],
-    }),
+    createObserverAtlasTarget(),
   );
   const fullObserverTarget = observerTargets[0];
   const sparseObserverTarget = observerTargets[1];
   const observerOpticalPairTarget = createFieldCacheAtlasTarget({
-    names: ["opticalPair"],
+    names: ["opticalPair", "organization"],
   });
   // Live input and generated-tone sessions never request a file checkpoint.
   // Defer its three full RGBA16F atlases (48 MiB at 128 cubed) until a keyed
@@ -798,10 +553,7 @@ export function createModalFieldCache({
   let observerCheckpointTarget = null;
   const ensureObserverCheckpointTarget = () => {
     if (!observerCheckpointTarget) {
-      observerCheckpointTarget = createFieldCacheAtlasTarget({
-        names: ["geometry", "appearance", "organization"],
-        nearestNames: ["organization"],
-      });
+      observerCheckpointTarget = createObserverAtlasTarget();
     }
     return observerCheckpointTarget;
   };
@@ -809,10 +561,9 @@ export function createModalFieldCache({
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 2);
   const domainGeometries = new Map(
-    Object.values(FIELD_CACHE_DOMAINS).map((domain) => [
-      domain,
-      createFieldCacheDomainGeometry(domain),
-    ]),
+    [FIELD_CACHE_DOMAINS.full, FIELD_CACHE_DOMAINS.fundamentalXyz].map(
+      (domain) => [domain, createFieldCacheDomainGeometry(domain)],
+    ),
   );
   const fullDomainGeometry = domainGeometries.get(FIELD_CACHE_DOMAINS.full);
   const fundamentalDomainGeometry = domainGeometries.get(
@@ -823,26 +574,6 @@ export function createModalFieldCache({
   quad.frustumCulled = false;
   scene.add(quad);
 
-  const aperturePasses = CYMATIC_OBSERVER_APERTURE_PASSES.map((pass, index) => {
-    const input = index % 2 === 0 ? source : aperture;
-    const output = index % 2 === 0 ? aperture : source;
-    return {
-      material: createFieldCacheApertureMaterial({
-        sourceField: input.textures[0],
-        sourceSpectral: input.textures[1],
-        radius,
-        direction: pass.direction,
-        inputDomain: pass.inputDomain,
-      }),
-      output,
-      geometry: domainGeometries.get(pass.outputDomain),
-    };
-  });
-  const fieldResolveMaterial = createFieldCacheResolveMaterial({
-    apertureField: aperture.textures[0],
-    apertureSpectral: aperture.textures[1],
-    radius,
-  });
   const observerSeed = createCymaticObserverMaterial({
     currentTopologyFieldTexture: resolvedTargets[0].textures[0],
     currentSourceTexture: resolvedTargets[0].textures[1],
@@ -859,6 +590,7 @@ export function createModalFieldCache({
     previousSourceTexture: resolvedTargets[1].textures[1],
     previousOrganizationTexture: resolvedTargets[1].textures[2],
     previousGeometryTexture: fullObserverTarget.textures[0],
+    previousGeometryAvailabilityTexture: fullObserverTarget.textures[3],
     previousAppearanceTexture: fullObserverTarget.textures[1],
     previousObserverOrganizationTexture: fullObserverTarget.textures[2],
     spectralSeedDirectionNode,
@@ -870,6 +602,7 @@ export function createModalFieldCache({
     currentOrganizationTexture: resolvedTargets[0].textures[2],
     previousTopologyFieldTexture: resolvedTargets[1].textures[0],
     previousGeometryTexture: fullObserverTarget.textures[0],
+    previousGeometryAvailabilityTexture: fullObserverTarget.textures[3],
     previousAppearanceTexture: fullObserverTarget.textures[1],
     previousObserverOrganizationTexture: fullObserverTarget.textures[2],
     spectralSeedDirectionNode,
@@ -880,20 +613,28 @@ export function createModalFieldCache({
     geometryTexture: fullObserverTarget.textures[0],
     appearanceTexture: fullObserverTarget.textures[1],
     organizationTexture: fullObserverTarget.textures[2],
+    availabilityTexture: fullObserverTarget.textures[3],
   });
   const observerSparseExpansion = createObserverSparseExpansionMaterial({
     geometryTexture: sparseObserverTarget.textures[0],
     appearanceTexture: sparseObserverTarget.textures[1],
     organizationTexture: sparseObserverTarget.textures[2],
+    availabilityTexture: sparseObserverTarget.textures[3],
   });
   const observerOpticalPair = createObserverOpticalPairMaterial(
     fullObserverTarget.textures[1],
+    fullObserverTarget.textures[2],
   );
   const observerGeometryTexture = texture(fullObserverTarget.textures[0]);
+  const observerGeometryAvailabilityTexture = texture(
+    fullObserverTarget.textures[3],
+  );
   const observerOpticalPairTexture = texture(
     observerOpticalPairTarget.textures[0],
   );
-  const observerOrganizationTexture = texture(fullObserverTarget.textures[2]);
+  const observerOrganizationTexture = texture(
+    observerOpticalPairTarget.textures[1],
+  );
   const observerClockState = createCymaticObserverClockState();
   let resolvedReadIndex = 0;
   let resolvedWriteIndex = 1;
@@ -901,25 +642,20 @@ export function createModalFieldCache({
   let observerCheckpointKey = null;
   let observerCheckpointStepIndex = null;
 
-  const materials = new Map();
-  const resolveBakeMaterial = (boundaryMode, volumeShape) => {
-    const key = `${normalizeBoundaryMode(boundaryMode)}:${normalizeVolumeShape(volumeShape)}`;
-    const cached = materials.get(key);
-    if (cached) {
-      return cached;
+  let disposed = false;
+  let compiledApertureRevision = null;
+  let fieldResolveMaterial = null;
+  const resolveApertureMaterial = () => {
+    const revision = getApertureRevision();
+    if (!fieldResolveMaterial || revision !== compiledApertureRevision) {
+      fieldResolveMaterial?.dispose();
+      fieldResolveMaterial = createFieldCacheResolveMaterial({
+        evaluateAperture,
+        radius,
+      });
+      compiledApertureRevision = revision;
     }
-    const material = createFieldCacheBakeMaterial({
-      modalFieldModeUniforms,
-      modalFieldCoefficientUniforms,
-      modalFieldResponseUniforms,
-      modalFieldSpectralMomentUniforms,
-      modalFieldModeCount,
-      basisLookup: basisLookup.texture,
-      boundaryMode,
-      volumeShape,
-    });
-    materials.set(key, material);
-    return material;
+    return fieldResolveMaterial;
   };
 
   const renderSparseObserverUpdate = (renderer, observerMaterial) => {
@@ -948,17 +684,57 @@ export function createModalFieldCache({
 
   return {
     observerGeometryTexture,
+    observerGeometryAvailabilityTexture,
     observerOpticalPairTexture,
     observerOrganizationTexture,
     spectralSeedDirectionNode,
-    // Named so the wiring audit can prove the buffers the runtime uploads are
-    // the same objects this bake compiled against, rather than trusting that
-    // two things with matching names refer to one another.
-    modalResourceBindings: {
-      modalFieldModeUniforms,
-      modalFieldCoefficientUniforms,
-      modalFieldResponseUniforms,
-      modalFieldSpectralMomentUniforms,
+    async compile(renderer) {
+      if (disposed) return;
+      const passes = [
+        {
+          geometry: fundamentalDomainGeometry,
+          material: resolveApertureMaterial(),
+          target: resolvedTargets[0],
+        },
+        ...[
+          observerSeed.material,
+          observerEvolution.material,
+          observerFinalEvolution.material,
+        ].map((material) => ({
+          geometry: fundamentalDomainGeometry,
+          material,
+          target: sparseObserverTarget,
+        })),
+        {
+          geometry: fullDomainGeometry,
+          material: observerSparseExpansion,
+          target: fullObserverTarget,
+        },
+        {
+          geometry: fullDomainGeometry,
+          material: observerOpticalPair.material,
+          target: observerOpticalPairTarget,
+        },
+      ];
+      for (const pass of passes) {
+        if (disposed) return;
+        const object = quad.clone();
+        object.geometry = pass.geometry;
+        object.material = pass.material;
+        await compileRenderPass(renderer, {
+          scene,
+          camera,
+          object,
+          target: pass.target,
+        });
+      }
+    },
+    get geometryAvailabilityBytes() {
+      return (
+        FIELD_CACHE_ATLAS_WIDTH *
+        FIELD_CACHE_ATLAS_HEIGHT *
+        (2 + Number(observerCheckpointTarget !== null))
+      );
     },
     /**
      * Advance the observer from the current modal packet.
@@ -1040,26 +816,17 @@ export function createModalFieldCache({
       let checkpointSaved = false;
 
       try {
+        // Derived source textures are consumed only by an admitted bake.
+        // Validation/upload precedes this call; preparation cannot own audio
+        // time or run merely because a cached observation is read again.
+        prepareAperture?.(renderer, { boundaryMode, volumeShape });
         const previousAutoClear = renderer.autoClear;
         try {
-          // Every downstream sparse read clamps and canonicalizes into the
-          // region its producer writes. Clearing the redundant texels would
-          // turn five small fixed draws back into five full-atlas operations.
+          // Resolve the already measured linear field. Gradients, distance,
+          // validity, observer history and optics retain their original order.
           renderer.autoClear = false;
           quad.geometry = fundamentalDomainGeometry;
-          quad.material = resolveBakeMaterial(boundaryMode, volumeShape);
-          renderer.setRenderTarget(source);
-          renderer.render(scene, camera);
-
-          for (const aperturePass of aperturePasses) {
-            quad.geometry = aperturePass.geometry;
-            quad.material = aperturePass.material;
-            renderer.setRenderTarget(aperturePass.output);
-            renderer.render(scene, camera);
-          }
-
-          quad.geometry = fundamentalDomainGeometry;
-          quad.material = fieldResolveMaterial;
+          quad.material = resolveApertureMaterial();
           renderer.setRenderTarget(currentResolvedTarget);
           renderer.render(scene, camera);
         } finally {
@@ -1072,6 +839,7 @@ export function createModalFieldCache({
             geometry: observerCheckpointTarget.textures[0],
             appearance: observerCheckpointTarget.textures[1],
             organization: observerCheckpointTarget.textures[2],
+            availability: observerCheckpointTarget.textures[3],
           });
           quad.material = observerCheckpointCopy.material;
           renderer.setRenderTarget(fullObserverTarget);
@@ -1092,6 +860,7 @@ export function createModalFieldCache({
               geometry: fullObserverTarget.textures[0],
               appearance: fullObserverTarget.textures[1],
               organization: fullObserverTarget.textures[2],
+              availability: fullObserverTarget.textures[3],
             });
             quad.material = observerCheckpointCopy.material;
             renderer.setRenderTarget(checkpointTarget);
@@ -1187,10 +956,9 @@ export function createModalFieldCache({
       };
     },
     dispose() {
-      materials.forEach((material) => material.dispose?.());
-      materials.clear();
-      aperturePasses.forEach((pass) => pass.material.dispose?.());
-      fieldResolveMaterial.dispose?.();
+      if (disposed) return;
+      disposed = true;
+      fieldResolveMaterial?.dispose();
       observerSeed.dispose();
       observerEvolution.dispose();
       observerFinalEvolution.dispose();
@@ -1199,13 +967,10 @@ export function createModalFieldCache({
       observerOpticalPair.dispose();
       domainGeometries.forEach((geometry) => geometry.dispose?.());
       domainGeometries.clear();
-      source.dispose?.();
-      aperture.dispose?.();
       resolvedTargets.forEach((target) => target.dispose?.());
       observerTargets.forEach((target) => target.dispose?.());
       observerOpticalPairTarget.dispose?.();
       observerCheckpointTarget?.dispose?.();
-      basisLookup.dispose();
     },
   };
 }

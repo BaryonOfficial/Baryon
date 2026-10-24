@@ -24,6 +24,7 @@ import {
   AUDIO_FEATURE_AUTHORITY_ROLES,
   AudioProvider,
   BaryonScene,
+  useAudioFeatureOwner,
   CAMERA_CONTROL_MODES,
   ControlsProvider,
   ListenerControls,
@@ -250,6 +251,7 @@ function ArOrbExperience({ xrStore, canEnterAr }) {
   const personCanvasRef = useRef(null);
   const backgroundFileInputRef = useRef(null);
   const controlsRef = useControlsStore().controlsRef;
+  useAudioFeatureOwner({ controlsRef });
   const { updateControl } = useControlsActions();
   const controlsState = useControlsSnapshot(
     (snapshot) => snapshot.controlsState,
@@ -260,8 +262,7 @@ function ArOrbExperience({ xrStore, canEnterAr }) {
     liveInputUiState,
     liveInputErrorCode,
   } = useAudioScene();
-  const { isLiveInputActive, selectedLiveDeviceId, sourceSession } =
-    useAudio();
+  const { isLiveInputActive, selectedLiveDeviceId, sourceSession } = useAudio();
   const anchorStateRef = useRef(createIdleHandAnchorState());
   const selectedLiveDeviceIdRef = useRef(selectedLiveDeviceId);
   selectedLiveDeviceIdRef.current = selectedLiveDeviceId;

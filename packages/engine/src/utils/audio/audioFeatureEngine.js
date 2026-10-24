@@ -1,939 +1,489 @@
-import {
-  buildAnalysisSessionKey,
-  buildAnalysisSourceKey,
-} from "./analysisSession.js";
-import {
-  createAudioFeaturePacketJoiner,
-  createBoundedAudioInputTransport,
-} from "./audioFeaturePackets.js";
+import { AUDIO_FEATURE_PROTOCOL_VERSION } from "../../contracts/audioFeatureProtocol.js";
+import { CAVITY_ACOUSTIC_DEFAULTS } from "../../defaults.js";
+import { createAudioPcmCapture } from "../../core/audio/audioPcmCapture.js";
+import { createAudioFeaturePacketJoiner } from "./audioFeaturePackets.js";
 import { normalizeAudioFeatureRuntimeSettings } from "./audioFeatureEngineShared.js";
-import {
-  AUDIO_SOURCE_KINDS,
-  isPreparedFileAwaitingPlayback,
-} from "../../core/audio/audioSourceSession.js";
-import { hasPreparationAuthority } from "../../core/renderAuthorityContract.js";
 
 export {
   DEFAULT_AUDIO_FEATURE_RUNTIME_SETTINGS,
   normalizeAudioFeatureRuntimeSettings,
 } from "./audioFeatureEngineShared.js";
-
 export const AUDIO_FEATURE_AUTHORITY_ROLES = Object.freeze({
   localProducer: "local-producer",
   externalConsumer: "external-consumer",
 });
-
-const VALID_AUTHORITY_ROLES = new Set(
-  Object.values(AUDIO_FEATURE_AUTHORITY_ROLES),
-);
-
-function getRuntimeNow() {
-  return typeof globalThis.performance?.now === "function"
-    ? globalThis.performance.now()
-    : Date.now();
+function configurationOf(input = {}) {
+  const exposureSeconds = input.exposureSeconds ?? 0.05;
+  const boundaryMode = input.boundaryMode ?? "neumann";
+  if (
+    !["neumann", "dirichlet"].includes(boundaryMode) ||
+    !Number.isFinite(exposureSeconds) ||
+    exposureSeconds <= 0
+  )
+    throw new RangeError("Invalid broadband apparatus configuration");
+  return {
+    boundaryMode,
+    exposureSeconds,
+    cavityAcousticScale: {
+      ...CAVITY_ACOUSTIC_DEFAULTS,
+      ...input.cavityAcousticScale,
+    },
+  };
 }
-
-function stableSerialize(value) {
-  if (!value || typeof value !== "object") {
-    return JSON.stringify(value ?? null);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map(stableSerialize).join(",")}]`;
-  }
-  const entries = Object.entries(value).sort(([left], [right]) =>
-    left.localeCompare(right),
-  );
-  return `{${entries
-    .map(([key, nested]) => `${JSON.stringify(key)}:${stableSerialize(nested)}`)
+function signature(value) {
+  if (!value || typeof value !== "object") return JSON.stringify(value);
+  return `{${Object.keys(value)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${signature(value[key])}`)
     .join(",")}}`;
 }
 
-function normalizeRuntimeConfiguration(config = {}) {
-  return Object.freeze({
-    radius: Number.isFinite(config.radius) ? config.radius : 1,
-    cavityAcousticScale: config.cavityAcousticScale
-      ? { ...config.cavityAcousticScale }
-      : null,
-    boundaryMode: config.boundaryMode ?? null,
-    cavityGeometry: config.cavityGeometry ?? null,
-    auditSettings: config.auditSettings ? { ...config.auditSettings } : null,
-    beatSettings: config.beatSettings ? { ...config.beatSettings } : null,
-    liveInputAnalysisSettings: config.liveInputAnalysisSettings
-      ? { ...config.liveInputAnalysisSettings }
-      : null,
-  });
-}
-
-function isActiveSource(status, configuration) {
-  const ownsPreparedFile =
-    status?.sourceSession?.kind === AUDIO_SOURCE_KINDS.file &&
-    status?.hasPreparedFileAnalysisSource === true;
-  return Boolean(
-    status?.isPlaying ||
-    status?.isLiveInputActive ||
-    ownsPreparedFile ||
-    configuration?.auditSettings?.injectTestTone,
-  );
-}
-
-function isExplicitPausedFile(status) {
-  return status?.isPlaybackPaused === true;
-}
-
-function shouldRetainFileModel(status) {
-  return (
-    status?.sourceSession?.kind === AUDIO_SOURCE_KINDS.file &&
-    status?.isLiveInputActive !== true
-  );
-}
-
-function hasPreparedFeatureModel(model) {
-  if (!model?.topology || !model?.drive) {
-    return false;
-  }
-  return hasPreparationAuthority({
-    ...model.drive.renderState,
-    modalDescriptor: model.topology.modalDescriptor,
-  });
-}
-
-function hasCurrentPlaybackEndReason(status, reason) {
-  const playbackSessionId = status?.playbackSessionId;
-  return (
-    playbackSessionId != null &&
-    status?.lastPlaybackEndReason === reason &&
-    status?.lastPlaybackDiagnostics?.playbackSessionId === playbackSessionId
-  );
-}
-
-function hasPlaybackEndSupersedingSource(status, configuration) {
-  return Boolean(
-    status?.isPlaying ||
-    status?.isLiveInputActive ||
-    configuration?.auditSettings?.injectTestTone,
-  );
-}
-
-function captureFastPayloadShape(payload, fallbackFftSize) {
-  const fftSize = Math.max(
-    2,
-    Math.floor(payload?.timeData?.length ?? fallbackFftSize ?? 2048),
-  );
-  const spectrumSize = Math.max(
-    1,
-    Math.floor(payload?.fftLinearAmplitudes?.length ?? fftSize / 2),
-  );
-  return {
-    sourceMode: payload?.sourceMode ?? "file",
-    fftSize,
-    spectrumSize,
-  };
-}
-
-function createZeroFastPayload(shape) {
-  return {
-    sourceMode: shape?.sourceMode ?? "file",
-    avgAmplitude: 0,
-    rms: 0,
-    spectralCentroid: 0,
-    spectralFlux: 0,
-    fftLinearAmplitudes: new Float32Array(shape?.spectrumSize ?? 1024),
-    timeData: new Float32Array(shape?.fftSize ?? 2048),
-  };
-}
-
-function createInitialStatus() {
-  return {
-    state: "idle",
-    reason: "not-started",
-    authorityRole: AUDIO_FEATURE_AUTHORITY_ROLES.localProducer,
-    sourceGeneration: 1,
-    workerGeneration: 0,
-    topologyRevision: 0,
-    latestAcceptedFrameId: 0,
-    latestDriveCaptureTimestampMs: null,
-    latestDriveProcessingTimestampMs: null,
-    latestDriveAgeMs: null,
-    latestDriveStale: false,
-    latestObservationTimeSeconds: null,
-    latestCaptureRms: null,
-    naturalRingdownActive: false,
-    naturalRingdownSessionId: null,
-    renderAuthorityRevoked: false,
-    workerRestartCount: 0,
-    sourceBootstrapCount: 0,
-    configurationReplayCount: 0,
-    queueDepth: 0,
-    inputReplacementCount: 0,
-    rejectedPacketCount: 0,
-    staleAcknowledgementCount: 0,
-    staleWorkerStatusCount: 0,
-  };
-}
-
 /**
- * Single owner for audio-feature cadence, worker lifecycle, bounded input
- * transport, packet joining, source generations, and stale-drive authority.
+ * Source commands alone own capture/worker lifetime. Consecutive worklet loans
+ * advance acoustic time; completed observations only refresh the model cache and
+ * notify consumers. Reads, acknowledgements, telemetry and mirrors cannot start,
+ * replay or recover a source. Faults revoke the epoch until an explicit command.
  */
 export function createAudioFeatureRuntime(settings = {}, dependencies = {}) {
-  const normalizedSettings = normalizeAudioFeatureRuntimeSettings(settings);
-  const audioSession = dependencies.audioSession ?? null;
-  const now = dependencies.now ?? getRuntimeNow;
-  const schedule =
-    dependencies.schedule ??
-    ((callback, delayMs) => globalThis.setTimeout(callback, delayMs));
-  const cancel =
-    dependencies.cancel ?? ((handle) => globalThis.clearTimeout(handle));
-  const workerFactory =
+  const normalized = normalizeAudioFeatureRuntimeSettings(settings);
+  const audioSession = dependencies.audioSession;
+  const now = dependencies.now ?? (() => performance.now());
+  const createCapture = dependencies.createCapture ?? createAudioPcmCapture;
+  const createPcmChannel =
+    dependencies.createPcmChannel ?? (() => new MessageChannel());
+  const createWorker =
     dependencies.createWorker ??
     (() =>
       new Worker(new URL("./audioFeatureEngine.worker.js", import.meta.url), {
         type: "module",
       }));
-
-  let disposed = false;
-  let started = false;
-  let worker = null;
-  let schedulerHandle = null;
-  let sourceGeneration = 1;
-  let workerGeneration = 0;
+  let configuration = configurationOf(),
+    configurationSignature = signature(configuration);
   let authorityRole = AUDIO_FEATURE_AUTHORITY_ROLES.localProducer;
-  let configuration = normalizeRuntimeConfiguration();
-  let configurationSignature = stableSerialize(configuration);
-  let forceStructuralCapture = true;
-  let capturePreparedPausedFile = false;
-  let lastStructuralCaptureAtMs = Number.NEGATIVE_INFINITY;
-  let lastSourceSessionKey = null;
-  let lastAcceptedDriveAtMs = null;
-  let workerAdvancementGraceStartedAtMs = null;
-  let workerStartedAtMs = null;
-  let workerCreationFailedAtMs = null;
-  let restartedForSourceGeneration = false;
-  let workerCreationAttemptedForSourceGeneration = false;
-  let lastSourceStatus = null;
-  let lastFastPayloadShape = null;
-  let lastCaptureTimestampMs = null;
-  let lastObservationTimeSeconds = null;
-  let naturalRingdownState = null;
-  let lastCompletedNaturalRingdownSessionId = null;
-  // Worker generations are replaceable implementation state. Preserve the
-  // immutable file model until the owning source generation actually changes.
-  let retainedFileModel = null;
-  let status = createInitialStatus();
+  let sourceGeneration = 1,
+    workerGeneration = 0,
+    processingRevision = 0;
+  let requestRevision = 0,
+    started = false,
+    disposed = false,
+    unbind = null;
+  let worker = null,
+    capture = null,
+    pcmChannel = null,
+    abort = null;
+  let source = null,
+    sourceIdentity = null,
+    pendingPreparation = null;
+  let phase = "idle",
+    state = "idle",
+    reason = "not-started";
+  let pauseSettled = null,
+    settlePause = null,
+    startSettled = null,
+    settleStart = null;
+  let lastProgressAtAudioTime = null;
+  let lastObservationAtMs = null,
+    sourceBootstrapCount = 0,
+    workerProcessingMs = null;
+  let joiner = createAudioFeaturePacketJoiner();
+  const listeners = new Map();
+  let observerNotificationFailure = null;
+  let settleWorkerReady = null,
+    workerStartupTimer = null;
 
-  const joiner = createAudioFeaturePacketJoiner({
-    sourceGeneration,
-    workerGeneration,
-  });
-  let transport = null;
-
-  const updateStatus = (patch) => {
-    status = { ...status, ...patch };
-  };
-
-  const retainPublishedFileModel = (result) => {
-    if (result.published && shouldRetainFileModel(lastSourceStatus)) {
-      retainedFileModel = result.model;
+  function releaseResources() {
+    if (workerStartupTimer !== null) clearTimeout(workerStartupTimer);
+    workerStartupTimer = null;
+    settleWorkerReady?.(false);
+    settleWorkerReady = null;
+    abort?.abort();
+    abort = null;
+    capture?.dispose();
+    capture = null;
+    pcmChannel?.port1.close();
+    pcmChannel?.port2.close();
+    pcmChannel = null;
+    if (worker) {
+      worker.onmessage = worker.onerror = worker.onmessageerror = null;
+      worker.terminate();
+      worker = null;
     }
-  };
-
-  const isAcousticStateAdvancing = () =>
-    naturalRingdownState != null ||
-    isActiveSource(lastSourceStatus, configuration);
-
-  const postWorkerMessage = (message) => {
-    if (!worker) {
-      return;
-    }
-    worker.postMessage(message);
-  };
-
-  const createTransport = () =>
-    createBoundedAudioInputTransport({
-      sourceGeneration,
-      workerGeneration,
-      send(frame) {
-        // The analyser owns and reuses its capture buffers. Structured clone
-        // preserves that ownership; transferring here would detach the audio
-        // session's synchronized taps and force a fresh allocation next tick.
-        postWorkerMessage({ type: "analysis-input", frame });
-      },
-    });
-
-  const syncGenerationOwners = () => {
-    joiner.setGenerations(sourceGeneration, workerGeneration);
-    transport = createTransport();
-    updateStatus({
-      sourceGeneration,
-      workerGeneration,
-      topologyRevision: 0,
-      latestAcceptedFrameId: 0,
-      latestDriveAgeMs: null,
-      latestDriveStale: false,
-      renderAuthorityRevoked: false,
-      queueDepth: 0,
-    });
-  };
-
-  const sendInit = ({ replayConfiguration = false } = {}) => {
-    postWorkerMessage({
-      type: "init",
-      settings: normalizedSettings,
-      sourceGeneration,
-      workerGeneration,
-      configuration,
-    });
-    if (replayConfiguration) {
-      updateStatus({
-        configurationReplayCount: status.configurationReplayCount + 1,
-      });
-    }
-  };
-
-  const advanceSourceGeneration = (
-    reason,
-    {
-      preserveCompletedNaturalRingdownSession = false,
-      renderAuthorityRevoked = false,
-    } = {},
-  ) => {
-    naturalRingdownState = null;
-    if (!preserveCompletedNaturalRingdownSession) {
-      lastCompletedNaturalRingdownSessionId = null;
-    }
-    sourceGeneration += 1;
-    restartedForSourceGeneration = false;
-    workerCreationAttemptedForSourceGeneration = false;
-    forceStructuralCapture = true;
-    lastStructuralCaptureAtMs = Number.NEGATIVE_INFINITY;
-    lastAcceptedDriveAtMs = null;
-    retainedFileModel = null;
-    workerAdvancementGraceStartedAtMs = null;
-    workerCreationFailedAtMs = null;
-    syncGenerationOwners();
-    sendInit();
-    updateStatus({
-      reason,
-      naturalRingdownActive: false,
-      naturalRingdownSessionId: null,
-      renderAuthorityRevoked,
-      sourceBootstrapCount: status.sourceBootstrapCount + 1,
-    });
-  };
-
-  const completeNaturalPlayback = (
-    reason,
-    playbackSessionId = naturalRingdownState?.playbackSessionId,
-  ) => {
-    lastCompletedNaturalRingdownSessionId =
-      playbackSessionId ?? lastCompletedNaturalRingdownSessionId;
-    advanceSourceGeneration(reason, {
-      preserveCompletedNaturalRingdownSession: true,
-      renderAuthorityRevoked: true,
-    });
-  };
-
-  const cancelNaturalRingdown = (reason) => {
-    naturalRingdownState = null;
-    updateStatus({
-      naturalRingdownActive: false,
-      naturalRingdownSessionId: null,
-      reason,
-    });
-  };
-
-  const handleWorkerMessage = (event) => {
-    const payload = event?.data ?? {};
-    if (payload.type === "analysis-input-ack") {
-      transport?.acknowledge(payload);
-      const transportStatus = transport?.getStatus();
-      updateStatus({
-        queueDepth: transportStatus?.queueDepth ?? 0,
-        inputReplacementCount: transportStatus?.replacementCount ?? 0,
-        staleAcknowledgementCount:
-          transportStatus?.staleAcknowledgementCount ?? 0,
-      });
-      return;
-    }
-    if (payload.type === "status") {
-      const workerStatus = payload.status ?? {};
-      if (
-        workerStatus.sourceGeneration !== sourceGeneration ||
-        workerStatus.workerGeneration !== workerGeneration
-      ) {
-        updateStatus({
-          staleWorkerStatusCount: status.staleWorkerStatusCount + 1,
-        });
-        return;
-      }
-      updateStatus(workerStatus);
-      return;
-    }
-    if (payload.type === "topology-packet") {
-      const result = joiner.acceptTopology(payload.packet);
-      const joinStatus = joiner.getStatus();
-      const publishedDrive = result.published ? result.model?.drive : null;
-      retainPublishedFileModel(result);
-      updateStatus({
-        topologyRevision: joinStatus.topologyRevision,
-        latestAcceptedFrameId: joinStatus.latestAcceptedFrameId,
-        latestDriveCaptureTimestampMs:
-          publishedDrive?.captureTimestampMs ??
-          status.latestDriveCaptureTimestampMs,
-        latestDriveProcessingTimestampMs:
-          publishedDrive?.processingTimestampMs ??
-          status.latestDriveProcessingTimestampMs,
-        rejectedPacketCount: joinStatus.rejectedPacketCount,
-        state: result.accepted ? "ready" : status.state,
-        reason: result.reason,
-        renderAuthorityRevoked: result.published
-          ? false
-          : status.renderAuthorityRevoked,
-        latestDriveStale: result.published ? false : status.latestDriveStale,
-      });
-      if (result.published) {
-        lastAcceptedDriveAtMs = now();
-        workerAdvancementGraceStartedAtMs = null;
-      }
-      if (
-        result.published &&
-        naturalRingdownState &&
-        publishedDrive?.renderState?.renderAuthority !== true
-      ) {
-        completeNaturalPlayback("natural-ringdown-complete");
-      }
-      return;
-    }
-    if (payload.type === "drive-packet") {
-      const result = joiner.acceptDrive(payload.packet);
-      const joinStatus = joiner.getStatus();
-      retainPublishedFileModel(result);
-      if (result.published) {
-        lastAcceptedDriveAtMs = now();
-        workerAdvancementGraceStartedAtMs = null;
-      }
-      updateStatus({
-        state: result.accepted ? "ready" : status.state,
-        reason: result.reason,
-        topologyRevision: joinStatus.topologyRevision,
-        latestAcceptedFrameId: joinStatus.latestAcceptedFrameId,
-        latestDriveCaptureTimestampMs: result.published
-          ? payload.packet.captureTimestampMs
-          : status.latestDriveCaptureTimestampMs,
-        latestDriveProcessingTimestampMs: result.published
-          ? payload.packet.processingTimestampMs
-          : status.latestDriveProcessingTimestampMs,
-        rejectedPacketCount: joinStatus.rejectedPacketCount,
-        renderAuthorityRevoked: result.published
-          ? false
-          : status.renderAuthorityRevoked,
-        latestDriveStale: result.published ? false : status.latestDriveStale,
-      });
-      if (
-        result.published &&
-        naturalRingdownState &&
-        payload.packet?.renderState?.renderAuthority !== true
-      ) {
-        completeNaturalPlayback("natural-ringdown-complete");
-      }
-    }
-  };
-
-  const stopWorker = () => {
-    if (!worker) {
-      return;
-    }
-    worker.removeEventListener?.("message", handleWorkerMessage);
-    worker.removeEventListener?.("error", handleWorkerError);
-    worker.terminate?.();
-    worker = null;
-    workerStartedAtMs = null;
-  };
-
-  const handleWorkerError = () => {
-    if (authorityRole !== AUDIO_FEATURE_AUTHORITY_ROLES.localProducer) {
-      stopWorker();
-      updateStatus({ state: "suspended", reason: "worker-error-suspended" });
-      return;
-    }
-    restartWorker("worker-error");
-  };
-
-  const restartWorker = (reason) => {
-    if (
-      restartedForSourceGeneration ||
-      disposed ||
-      !started ||
-      authorityRole !== AUDIO_FEATURE_AUTHORITY_ROLES.localProducer
-    ) {
-      return false;
-    }
-    restartedForSourceGeneration = true;
-    workerCreationAttemptedForSourceGeneration = true;
-    stopWorker();
-    workerGeneration += 1;
-    syncGenerationOwners();
-    try {
-      worker = workerFactory();
-    } catch (error) {
-      workerCreationFailedAtMs = now();
-      updateStatus({
-        state: "failed",
-        reason: "worker-create-failed",
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return false;
-    }
-    worker.addEventListener?.("message", handleWorkerMessage);
-    worker.addEventListener?.("error", handleWorkerError);
-    workerStartedAtMs = now();
-    workerCreationFailedAtMs = null;
-    forceStructuralCapture = true;
-    sendInit({ replayConfiguration: true });
-    updateStatus({
-      state: "loading",
-      reason,
-      workerRestartCount: status.workerRestartCount + 1,
-    });
-    return true;
-  };
-
-  const ensureWorker = () => {
-    if (worker || normalizedSettings.runtime !== "worker") {
-      return Boolean(worker);
-    }
-    if (workerCreationAttemptedForSourceGeneration) {
-      return false;
-    }
-    workerCreationAttemptedForSourceGeneration = true;
-    workerGeneration += 1;
-    syncGenerationOwners();
-    try {
-      worker = workerFactory();
-    } catch (error) {
-      workerCreationFailedAtMs = now();
-      updateStatus({
-        state: "failed",
-        reason: "worker-create-failed",
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return false;
-    }
-    worker.addEventListener?.("message", handleWorkerMessage);
-    worker.addEventListener?.("error", handleWorkerError);
-    workerStartedAtMs = now();
-    workerCreationFailedAtMs = null;
-    sendInit();
-    updateStatus({ state: "loading", reason: "worker-started" });
-    return true;
-  };
-
-  const maybeRestartStalledWorker = (currentTimeMs) => {
-    if (!isAcousticStateAdvancing() || isExplicitPausedFile(lastSourceStatus)) {
-      return false;
-    }
-    const advancementAnchor =
-      workerAdvancementGraceStartedAtMs ??
-      lastAcceptedDriveAtMs ??
-      workerStartedAtMs ??
-      workerCreationFailedAtMs;
-    if (
-      Number.isFinite(advancementAnchor) &&
-      currentTimeMs - advancementAnchor >=
-        normalizedSettings.workerRestartTimeoutMs
-    ) {
-      return restartWorker("worker-advancement-timeout");
-    }
-    return false;
-  };
-
-  const captureOnce = () => {
-    if (
-      disposed ||
-      !started ||
-      authorityRole !== AUDIO_FEATURE_AUTHORITY_ROLES.localProducer
-    ) {
-      return;
-    }
-
-    const currentTimeMs = now();
-    const audioStatus = audioSession?.getStatus?.() ?? {};
-    const previousAudioStatus = lastSourceStatus;
-    if (
-      isPreparedFileAwaitingPlayback(previousAudioStatus) &&
-      audioStatus?.isPlaying === true
-    ) {
-      // A static prepared file can legitimately hold longer than the worker
-      // advancement timeout. Give the existing worker one live cadence window
-      // before liveness checks. The prepared topology also satisfies the first
-      // structural cadence; playback can begin on the fast lane alone.
-      workerAdvancementGraceStartedAtMs = currentTimeMs;
-      lastStructuralCaptureAtMs = currentTimeMs;
-    }
-    const playbackEndSuperseded = hasPlaybackEndSupersedingSource(
-      audioStatus,
-      configuration,
+    settlePause?.();
+    settleStart?.();
+    settlePause = settleStart = pauseSettled = startSettled = null;
+  }
+  function invalidate(nextReason) {
+    requestRevision++;
+    sourceGeneration++;
+    releaseResources();
+    pendingPreparation = null;
+    joiner.clear();
+    lastObservationAtMs = null;
+    lastProgressAtAudioTime = null;
+    workerProcessingMs = null;
+    sourceIdentity = null;
+    source = null;
+    phase = "idle";
+    state = "idle";
+    reason = nextReason;
+    notifyObservers(
+      "revoke",
+      Object.freeze({ reason: nextReason, sourceGeneration }),
     );
-    const naturalCompletion =
-      !playbackEndSuperseded &&
-      hasCurrentPlaybackEndReason(audioStatus, "natural");
-    const explicitStop =
-      !playbackEndSuperseded &&
-      hasCurrentPlaybackEndReason(audioStatus, "stopped");
-    lastSourceStatus = audioStatus;
-    const sourceKey = buildAnalysisSourceKey(audioStatus);
-    const sourceSessionKey = buildAnalysisSessionKey(audioStatus);
-    const sourceActive = isActiveSource(audioStatus, configuration);
-    const injectedTestToneActive =
-      configuration?.auditSettings?.injectTestTone === true;
-
-    if (
-      naturalRingdownState &&
-      (audioStatus?.isPlaying === true ||
-        audioStatus?.isLiveInputActive === true ||
-        isExplicitPausedFile(audioStatus) ||
-        !naturalCompletion ||
-        audioStatus?.playbackSessionId !==
-          naturalRingdownState.playbackSessionId)
-    ) {
-      cancelNaturalRingdown("natural-ringdown-cancelled");
-    }
-
-    const latestModel = joiner.readLatestModel();
-    if (
-      !naturalRingdownState &&
-      previousAudioStatus?.isPlaying === true &&
-      naturalCompletion &&
-      latestModel?.drive?.renderState?.renderAuthority === true &&
-      lastFastPayloadShape
-    ) {
-      naturalRingdownState = {
-        playbackSessionId: audioStatus.playbackSessionId,
-        sourceKey: buildAnalysisSourceKey(previousAudioStatus),
-        sessionKey:
-          lastSourceSessionKey ?? buildAnalysisSessionKey(previousAudioStatus),
-        captureTimestampMs: Number.isFinite(lastCaptureTimestampMs)
-          ? lastCaptureTimestampMs
-          : currentTimeMs - normalizedSettings.fastCadenceMs,
-        observationTimeSeconds: Number.isFinite(lastObservationTimeSeconds)
-          ? lastObservationTimeSeconds
-          : Math.max(0, currentTimeMs / 1000),
-        fastPayload: createZeroFastPayload(lastFastPayloadShape),
-      };
-      updateStatus({
-        naturalRingdownActive: true,
-        naturalRingdownSessionId: audioStatus.playbackSessionId,
-        reason: "natural-ringdown-started",
-      });
-    }
-
-    if (naturalRingdownState) {
-      if (!ensureWorker() && !maybeRestartStalledWorker(currentTimeMs)) {
-        return;
+  }
+  function fail(nextReason) {
+    invalidate(nextReason);
+    phase = "faulted";
+    state = "failed";
+  }
+  function published(result) {
+    if (!result.published) return;
+    lastObservationAtMs = now();
+    lastProgressAtAudioTime = source.context.currentTime;
+    const model = result.model;
+    state = "ready";
+    reason = "observation-accepted";
+    // Subscribers own their bounded presentation histories. Notifications do
+    // not feed back into capture or send another worker input.
+    notifyObservers("model", model);
+  }
+  function notifyObservers(kind, value) {
+    for (const [listener, { onError, onRevoke }] of listeners) {
+      try {
+        if (kind === "model") listener(value);
+        else onRevoke?.(value);
+      } catch (error) {
+        listeners.delete(listener);
+        observerNotificationFailure =
+          error instanceof Error ? error.message : String(error);
+        try {
+          onError?.(error);
+        } catch {
+          /* A presentation callback cannot reset audio. */
+        }
       }
-      naturalRingdownState.captureTimestampMs +=
-        normalizedSettings.fastCadenceMs;
-      naturalRingdownState.observationTimeSeconds +=
-        normalizedSettings.fastCadenceMs / 1000;
-      const offerResult = transport.offer({
-        captureTimestampMs: naturalRingdownState.captureTimestampMs,
-        fastPayload: naturalRingdownState.fastPayload,
-        structuralPayload: null,
-        structuralRequested: false,
-        status: {
-          ...audioStatus,
-          hasAnalysisSource: true,
-          sourceKey: naturalRingdownState.sourceKey,
-          sessionKey: naturalRingdownState.sessionKey,
-          naturalRingdownActive: true,
-          observationTimeSeconds: naturalRingdownState.observationTimeSeconds,
-          observationAdvancing: true,
-          observationPaused: false,
-        },
-      });
-      const transportStatus = transport.getStatus();
-      updateStatus({
-        reason: offerResult.sent
-          ? "natural-ringdown-input-sent"
-          : offerResult.reason,
-        latestObservationTimeSeconds:
-          naturalRingdownState.observationTimeSeconds,
-        latestCaptureRms: 0,
-        queueDepth: transportStatus.queueDepth,
-        inputReplacementCount: transportStatus.replacementCount,
-      });
-      maybeRestartStalledWorker(currentTimeMs);
-      return;
     }
+  }
 
-    if (naturalCompletion) {
-      if (
-        lastCompletedNaturalRingdownSessionId !== audioStatus.playbackSessionId
-      ) {
-        completeNaturalPlayback(
-          "natural-ringdown-empty",
-          audioStatus.playbackSessionId,
+  async function prepare(snapshot) {
+    if (
+      disposed ||
+      !started ||
+      authorityRole !== AUDIO_FEATURE_AUTHORITY_ROLES.localProducer ||
+      !snapshot
+    )
+      return false;
+    const identity = `${snapshot.sourceSession.kind}:${snapshot.sourceSession.sessionId}:${snapshot.sourceSession.timelineRevision}`;
+    if (
+      sourceIdentity === identity &&
+      snapshot.sourceSession.phase !== "ended" &&
+      (capture || pendingPreparation)
+    ) {
+      if (pendingPreparation) await pendingPreparation;
+      if (pauseSettled) await pauseSettled;
+      return Boolean(capture);
+    }
+    invalidate("source-prepared");
+    source = snapshot;
+    sourceIdentity = identity;
+    const revision = requestRevision;
+    const configurationForSource = {
+      ...configuration,
+      sourceGeneration,
+      timelineRevision: snapshot.sourceSession.timelineRevision,
+      processingRevision,
+      sampleRate: snapshot.context.sampleRate,
+      // Mono is duplicated at capture admission. The independent-channel
+      // mean is identical for two equal channels and preserves true stereo.
+      channelCount: 2,
+      startSample: 0,
+    };
+    const epoch = {
+      ...configurationForSource,
+      workerGeneration: ++workerGeneration,
+    };
+    joiner = createAudioFeaturePacketJoiner(epoch);
+    const isCurrent = () => !disposed && revision === requestRevision;
+    const preparation = (async () => {
+      try {
+        const activeWorker = createWorker();
+        worker = activeWorker;
+        activeWorker.onerror = () => {
+          if (isCurrent()) fail("worker-error");
+        };
+        activeWorker.onmessageerror = () => {
+          if (isCurrent()) fail("worker-message-error");
+        };
+        const workerReady = new Promise((resolve) => {
+          settleWorkerReady = resolve;
+        });
+        state = "starting";
+        reason = "worker-initializing";
+        workerStartupTimer = setTimeout(() => {
+          if (isCurrent()) fail("worker-startup-timeout");
+        }, 5000);
+        activeWorker.onmessage = ({ data }) => {
+          if (!isCurrent() || worker !== activeWorker) return;
+          try {
+            if (data.type === "topology-packet") {
+              const result = joiner.acceptTopology(data.packet);
+              if (settleWorkerReady) {
+                if (!result.accepted) {
+                  fail("invalid-initial-topology");
+                  return;
+                }
+                clearTimeout(workerStartupTimer);
+                workerStartupTimer = null;
+                settleWorkerReady(true);
+                settleWorkerReady = null;
+              }
+              published(result);
+            } else if (data.type === "observation-packet") {
+              workerProcessingMs =
+                Number.isFinite(data.processingMs) && data.processingMs >= 0
+                  ? data.processingMs
+                  : null;
+              published(joiner.acceptObservation(data.packet));
+            } else if (
+              data.type === "status" &&
+              data.status?.sourceGeneration === epoch.sourceGeneration &&
+              data.status?.workerGeneration === epoch.workerGeneration &&
+              data.status.state === "failed"
+            )
+              fail(data.status.reason ?? "worker-processing-failed");
+          } catch (error) {
+            fail(error instanceof Error ? error.message : String(error));
+          }
+        };
+        worker.postMessage({
+          type: "init",
+          protocolVersion: AUDIO_FEATURE_PROTOCOL_VERSION,
+          sourceGeneration: epoch.sourceGeneration,
+          workerGeneration: epoch.workerGeneration,
+          configuration: configurationForSource,
+        });
+        sourceBootstrapCount++;
+        // Cold module loading and basis initialization must finish before
+        // capture can consume its bounded pool. Readiness completes this
+        // explicit prepare command; it cannot issue start or new init itself.
+        if (!(await workerReady) || !isCurrent()) return false;
+        pcmChannel = createPcmChannel();
+        activeWorker.postMessage(
+          { type: "connect-pcm", ...epoch, port: pcmChannel.port2 },
+          [pcmChannel.port2],
         );
-      }
-      return;
-    }
-
-    if (explicitStop) {
-      if (!hasCurrentPlaybackEndReason(previousAudioStatus, "stopped")) {
-        advanceSourceGeneration("explicit-stop-hold");
-      } else {
-        updateStatus({
-          naturalRingdownActive: false,
-          naturalRingdownSessionId: null,
-          reason: "explicit-stop-hold",
+        abort = new AbortController();
+        state = "starting";
+        reason = "capture-installing";
+        const candidate = await createCapture({
+          context: snapshot.context,
+          source: snapshot.source,
+          configuration: {
+            ...epoch,
+            protocolVersion: AUDIO_FEATURE_PROTOCOL_VERSION,
+          },
+          pcmPort: pcmChannel.port1,
+          signal: abort.signal,
+          onEvent: (event) => {
+            if (!isCurrent()) return;
+            if (event.type === "fault") {
+              fail(event.reason ?? "capture-fault");
+              return;
+            }
+            if (event.type === "started" || event.type === "resumed") {
+              lastProgressAtAudioTime = source.context.currentTime;
+              phase = event.postSourceSilence ? "draining" : "running";
+              settleStart?.();
+              settleStart = startSettled = null;
+            }
+            if (["paused", "resumed", "ended"].includes(event.type)) {
+              if (event.type === "paused") {
+                phase = "paused";
+                settlePause?.();
+                settlePause = pauseSettled = null;
+              } else if (event.type === "ended")
+                phase = event.phase === "paused" ? "paused" : "draining";
+            }
+          },
         });
+        if (!isCurrent()) {
+          candidate.dispose();
+          return false;
+        }
+        capture = candidate;
+        phase = "idle";
+        state = "ready";
+        reason = "capture-prepared";
+        return true;
+      } catch (error) {
+        if (isCurrent())
+          fail(error instanceof Error ? error.message : String(error));
+        return false;
       }
-      return;
-    }
-
-    if (
-      lastSourceSessionKey !== null &&
-      sourceSessionKey !== lastSourceSessionKey
-    ) {
-      lastSourceSessionKey = sourceSessionKey;
-      capturePreparedPausedFile = Boolean(
-        audioStatus?.isPlaybackPaused === true &&
-        audioStatus?.hasPreparedFileAnalysisSource === true,
-      );
-      advanceSourceGeneration("source-session-changed");
-      return;
-    }
-    lastSourceSessionKey = sourceSessionKey;
-
-    if (
-      isExplicitPausedFile(audioStatus) &&
-      capturePreparedPausedFile !== true
-    ) {
-      updateStatus({ reason: "paused-file-hold" });
-      return;
-    }
-    if (
-      isPreparedFileAwaitingPlayback(audioStatus) &&
-      hasPreparedFeatureModel(latestModel)
-    ) {
-      updateStatus({ reason: "prepared-file-hold" });
-      return;
-    }
-    if (!ensureWorker() && !maybeRestartStalledWorker(currentTimeMs)) {
-      return;
-    }
-
-    const includeStructural =
-      (forceStructuralCapture && sourceActive) ||
-      currentTimeMs - lastStructuralCaptureAtMs >=
-        normalizedSettings.structuralCadenceMs;
-    const capture = audioSession?.readFeatureAnalysisCapture?.({
-      includeStructural,
+    })();
+    pendingPreparation = preparation;
+    const result = await preparation;
+    if (isCurrent()) pendingPreparation = null;
+    return result;
+  }
+  function begin({ startFrame, endFrame = undefined }) {
+    if (!capture || !["idle", "paused"].includes(phase)) return false;
+    const resume = phase === "paused";
+    startSettled = new Promise((resolve) => {
+      settleStart = resolve;
     });
-    const transportState = audioSession?.getTransportState?.() ?? null;
-    const observationTimeSeconds = injectedTestToneActive
-      ? currentTimeMs / 1000
-      : Number.isFinite(capture?.observationTimeSeconds)
-        ? Math.max(0, capture.observationTimeSeconds)
-        : Number.isFinite(transportState?.currentTimeSeconds) &&
-            audioStatus?.isAudioLoaded
-          ? Math.max(0, transportState.currentTimeSeconds)
-          : currentTimeMs / 1000;
-    const structuralCaptureSatisfied = Boolean(
-      includeStructural &&
-      (capture?.structural != null || injectedTestToneActive),
-    );
-    // A null capture cannot satisfy bootstrap. Keep the force armed, but let an
-    // inactive source retry at structural cadence until its analyser activates.
-    if (structuralCaptureSatisfied) {
-      forceStructuralCapture = false;
-      lastStructuralCaptureAtMs = currentTimeMs;
-    } else if (includeStructural && !sourceActive) {
-      lastStructuralCaptureAtMs = currentTimeMs;
+    phase = "armed";
+    try {
+      if (resume) capture.resume({ contextFrame: startFrame });
+      else capture.start({ contextFrame: startFrame });
+      if (endFrame !== undefined)
+        capture.end({ contextFrame: Math.max(startFrame, endFrame) });
+      return true;
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+      return false;
     }
-
-    const offerResult = transport.offer({
-      captureTimestampMs: capture?.captureTimestampMs ?? currentTimeMs,
-      fastPayload: capture?.fast ?? null,
-      structuralPayload: capture?.structural ?? null,
-      structuralRequested: includeStructural,
-      status: {
-        ...audioStatus,
-        sourceKey,
-        sessionKey: sourceSessionKey,
-        observationTimeSeconds,
-        observationAdvancing:
-          injectedTestToneActive ||
-          audioStatus?.isPlaying === true ||
-          audioStatus?.isLiveInputActive === true,
-        observationPaused:
-          !injectedTestToneActive && audioStatus?.isPlaybackPaused === true,
-      },
+  }
+  function reconnectActiveSource() {
+    const snapshot = audioSession?.readPcmSource?.();
+    if (!snapshot?.active) return;
+    void prepare(snapshot).then((ready) => {
+      if (!ready || source !== snapshot) return;
+      const startFrame =
+        Math.ceil(
+          (snapshot.context.currentTime * snapshot.context.sampleRate) / 128,
+        ) *
+          128 +
+        512;
+      begin({
+        startFrame,
+        endFrame:
+          snapshot.endTime === undefined
+            ? undefined
+            : Math.max(
+                startFrame,
+                Math.ceil(snapshot.endTime * snapshot.context.sampleRate),
+              ),
+      });
     });
-    if (capture?.fast) {
-      lastFastPayloadShape = captureFastPayloadShape(
-        capture.fast,
-        audioStatus?.fastFftSize,
-      );
-    }
-    lastCaptureTimestampMs = capture?.captureTimestampMs ?? currentTimeMs;
-    lastObservationTimeSeconds = observationTimeSeconds;
-    capturePreparedPausedFile = false;
-    const transportStatus = transport.getStatus();
-    updateStatus({
-      reason: offerResult.sent ? "input-sent" : offerResult.reason,
-      latestObservationTimeSeconds: observationTimeSeconds,
-      latestCaptureRms: Number.isFinite(capture?.fast?.rms)
-        ? Math.max(0, capture.fast.rms)
+  }
+  const consumer = {
+    prepare,
+    begin,
+    invalidate,
+    waitUntilStarted: () => startSettled ?? Promise.resolve(),
+    scheduleEnd: (endFrame) => {
+      if (capture) capture.end({ contextFrame: endFrame });
+    },
+    end: () => {
+      if (capture && ["armed", "running"].includes(phase)) capture.end();
+    },
+    pause: (options = {}) => {
+      if (!capture || !["armed", "running", "draining"].includes(phase)) return;
+      pauseSettled = new Promise((resolve) => {
+        settlePause = resolve;
+      });
+      phase = "pausing";
+      capture.pause(options);
+    },
+  };
+  function status() {
+    const observation = joiner.readLatestModel()?.observation;
+    const latestObservationAgeMs =
+      lastObservationAtMs === null
+        ? null
+        : Math.max(0, now() - lastObservationAtMs);
+    // Arrival age is diagnostic wall time. Liveness uses the actual audio
+    // clock, which stops during context suspension. A start/resume event arms
+    // the deadline without manufacturing a new observation or elapsed samples.
+    const progressAgeMs =
+      lastProgressAtAudioTime === null
+        ? null
+        : Math.max(0, source.context.currentTime - lastProgressAtAudioTime) *
+          1000;
+    const stale =
+      ["running", "draining"].includes(phase) &&
+      progressAgeMs !== null &&
+      progressAgeMs > normalized.staleObservationTimeoutMs;
+    return {
+      ...joiner.getStatus(),
+      state,
+      reason,
+      phase,
+      authorityRole,
+      sourceGeneration,
+      workerGeneration,
+      processingRevision,
+      sourceBootstrapCount,
+      workerProcessingMs,
+      observerNotificationFailure,
+      latestObservationAgeMs,
+      latestObservationStale: stale,
+      latestObservationTimeSeconds: observation
+        ? observation.endSample / source.context.sampleRate
         : null,
-      queueDepth: transportStatus.queueDepth,
-      inputReplacementCount: transportStatus.replacementCount,
-    });
-    maybeRestartStalledWorker(currentTimeMs);
-  };
-
-  const scheduleNextCapture = () => {
-    if (
-      disposed ||
-      !started ||
-      authorityRole !== AUDIO_FEATURE_AUTHORITY_ROLES.localProducer
-    ) {
-      return;
-    }
-    schedulerHandle = schedule(() => {
-      schedulerHandle = null;
-      captureOnce();
-      scheduleNextCapture();
-    }, normalizedSettings.fastCadenceMs);
-  };
-
+      naturalRingdownActive: phase === "draining",
+      renderAuthorityRevoked: state === "failed" || stale,
+    };
+  }
   return {
     start() {
-      if (disposed || started) {
-        return false;
-      }
+      if (disposed) throw new Error("Audio feature runtime is disposed");
+      if (started) return false;
       started = true;
-      updateStatus({ state: "loading", reason: "started" });
-      if (authorityRole === AUDIO_FEATURE_AUTHORITY_ROLES.localProducer) {
-        ensureWorker();
-        captureOnce();
-        scheduleNextCapture();
-      }
+      unbind = audioSession?.bindPcmConsumer(consumer) ?? null;
+      state = "idle";
+      reason = "awaiting-source";
+      reconnectActiveSource();
       return true;
     },
-
-    configure(nextConfiguration = {}) {
-      const normalized = normalizeRuntimeConfiguration(nextConfiguration);
-      const nextSignature = stableSerialize(normalized);
-      if (nextSignature === configurationSignature) {
-        return false;
-      }
-      configuration = normalized;
-      configurationSignature = nextSignature;
-      forceStructuralCapture = true;
-      postWorkerMessage({
-        type: "configure",
-        sourceGeneration,
-        workerGeneration,
-        configuration,
-      });
-      updateStatus({ reason: "configured" });
+    configure(input = {}) {
+      if (disposed) return false;
+      const next = configurationOf(input),
+        key = signature(next);
+      if (key === configurationSignature) return false;
+      configuration = next;
+      configurationSignature = key;
+      processingRevision++;
+      invalidate("apparatus-changed");
+      if (started) reconnectActiveSource();
       return true;
     },
-
     setAuthorityRole(role) {
-      if (!VALID_AUTHORITY_ROLES.has(role)) {
-        throw new TypeError(`Invalid audio feature authority role: ${role}`);
-      }
-      if (role === authorityRole) {
-        return false;
-      }
+      if (!Object.values(AUDIO_FEATURE_AUTHORITY_ROLES).includes(role))
+        throw new TypeError("Invalid audio feature authority role");
+      if (disposed || role === authorityRole) return false;
       authorityRole = role;
-      if (schedulerHandle != null) {
-        cancel(schedulerHandle);
-        schedulerHandle = null;
-      }
-      if (role === AUDIO_FEATURE_AUTHORITY_ROLES.localProducer) {
-        const currentSourceStatus = audioSession?.getStatus?.() ?? {};
-        lastSourceStatus = currentSourceStatus;
-        lastSourceSessionKey = buildAnalysisSessionKey(currentSourceStatus);
-      }
-      advanceSourceGeneration("authority-role-changed");
-      updateStatus({ authorityRole: role });
-      if (started && role === AUDIO_FEATURE_AUTHORITY_ROLES.localProducer) {
-        captureOnce();
-        scheduleNextCapture();
-      }
+      invalidate("authority-role-changed");
+      if (started && role === AUDIO_FEATURE_AUTHORITY_ROLES.localProducer)
+        reconnectActiveSource();
       return true;
     },
-
+    subscribeObservations(listener, onError = undefined, onRevoke = undefined) {
+      if (typeof listener !== "function")
+        throw new TypeError("Observation subscriber must be a function");
+      listeners.set(listener, { onError, onRevoke });
+      return () => listeners.delete(listener);
+    },
     readLatestFeatureModel() {
-      const fileModelRetentionActive =
-        shouldRetainFileModel(lastSourceStatus);
-      const model =
-        joiner.readLatestModel() ??
-        (fileModelRetentionActive ? retainedFileModel : null);
-      if (!model) {
+      if (
+        authorityRole !== AUDIO_FEATURE_AUTHORITY_ROLES.localProducer ||
+        status().renderAuthorityRevoked
+      )
         return null;
-      }
-      if (authorityRole !== AUDIO_FEATURE_AUTHORITY_ROLES.localProducer) {
-        return null;
-      }
-
-      const currentTimeMs = now();
-      const active = isAcousticStateAdvancing();
-      const paused = isExplicitPausedFile(lastSourceStatus);
-      const latestDriveAgeMs = Number.isFinite(lastAcceptedDriveAtMs)
-        ? Math.max(0, currentTimeMs - lastAcceptedDriveAtMs)
-        : null;
-      const latestDriveStale =
-        active &&
-        !paused &&
-        latestDriveAgeMs !== null &&
-        latestDriveAgeMs > normalizedSettings.staleDriveTimeoutMs;
-      const renderAuthorityRevoked =
-        latestDriveStale && !fileModelRetentionActive;
-      updateStatus({
-        latestDriveAgeMs,
-        latestDriveStale,
-        renderAuthorityRevoked,
-      });
-      return renderAuthorityRevoked ? null : model;
+      return joiner.readLatestModel();
     },
-
-    getStatus() {
-      const joinStatus = joiner.getStatus();
-      const transportStatus = transport?.getStatus();
-      return {
-        ...status,
-        authorityRole,
-        sourceGeneration,
-        workerGeneration,
-        topologyRevision: joinStatus.topologyRevision,
-        latestAcceptedFrameId: joinStatus.latestAcceptedFrameId,
-        rejectedPacketCount: joinStatus.rejectedPacketCount,
-        queueDepth: transportStatus?.queueDepth ?? 0,
-        inputReplacementCount: transportStatus?.replacementCount ?? 0,
-        staleAcknowledgementCount:
-          transportStatus?.staleAcknowledgementCount ?? 0,
-      };
-    },
-
+    getStatus: status,
     dispose() {
-      if (disposed) {
-        return;
-      }
+      if (disposed) return;
+      invalidate("disposed");
       disposed = true;
       started = false;
-      if (schedulerHandle != null) {
-        cancel(schedulerHandle);
-        schedulerHandle = null;
-      }
-      transport?.clear();
-      joiner.clear();
-      naturalRingdownState = null;
-      stopWorker();
-      updateStatus({ state: "terminated", reason: "disposed" });
+      unbind?.();
+      unbind = null;
+      listeners.clear();
+      state = "terminated";
+      reason = "disposed";
     },
   };
 }

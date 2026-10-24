@@ -1,8 +1,9 @@
-export const RAYMARCH_QUANTITY_LEDGER_VERSION = "cymatic-observer-quantity-v11";
+export const RAYMARCH_QUANTITY_LEDGER_VERSION =
+  "broadband-observer-quantity-v13";
 export const RAYMARCH_OPTICAL_FIELD_REPRESENTATION =
-  "complete-modal-gorkov-field-fixed-scale-space-persistent-topology-u0-observer";
+  "complete-broadband-moment-gorkov-field-fixed-scale-space-persistent-topology-u0-observer";
 export const RAYMARCH_SPECTRAL_PHASE_REPRESENTATION =
-  "observer-phase-cache-nearest-rgb-companion";
+  "observer-phase-cache-filtered-rgb-companion";
 
 function freezeStrings(values = []) {
   return Object.freeze([...values]);
@@ -44,66 +45,129 @@ function contract({
 }
 
 export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
-  admittedModalDescriptor: contract({
-    quantity: "admittedModalDescriptor",
+  acousticPcm: contract({
+    quantity: "acousticPcm",
+    lane: "audio-source",
+    represents:
+      "consecutive signed dimensionless full-scale PCM per channel, before acoustic preparation",
+    deepOwner:
+      "audioSetup.js source epoch and audioPcmCapture.worklet.js sample clock",
+    transforms: [
+      "mono duplication or independent stereo preservation",
+      "bounded transfer without sample replacement",
+    ],
+    allowedConsumers: ["preparedAcousticDrive", "diagnostics"],
+    forbiddenConsumers: [
+      "renderFrameClock",
+      "peakSelection",
+      "perChannelNormalization",
+    ],
+  }),
+  preparedAcousticDrive: contract({
+    quantity: "preparedAcousticDrive",
+    lane: "audio-source",
+    represents:
+      "causally prepared dimensionless waveform with explicit integer preparation delay",
+    deepOwner: "streamingAcousticDrive.js",
+    transforms: [
+      "declared nonlinear frame transform",
+      "overlap-add",
+      "causal DC removal",
+    ],
+    allowedConsumers: ["modalState", "diagnostics"],
+    forbiddenConsumers: ["displayCadence", "winningFrequency", "silentGapFill"],
+  }),
+  modalTopology: contract({
+    quantity: "modalTopology",
     lane: "modal-field",
     represents:
-      "the complete cache-resolved set of admitted eigenmode identities",
-    deepOwner: "audioFeatureModalProjection.js modal descriptor",
-    transforms: ["apparatus admission", "stable descriptor ordering"],
-    allowedConsumers: [
-      "modalFieldPacket",
-      "modalCoefficientPacket",
-      "diagnostics",
+      "complete eligible spatial families, signed source amplitude overlaps, common shell poles and channel semantics",
+    deepOwner:
+      "modalExcitationAtlas.js and audioFeatureEngine.worker.js immutable topology",
+    transforms: [
+      "apparatus admission",
+      "group common shell poles",
+      "source energy coupling to amplitude exactly once",
     ],
+    allowedConsumers: ["modalState", "completeAcousticField", "diagnostics"],
     forbiddenConsumers: [
       "performanceTierPaging",
       "cameraRanking",
-      "materialRanking",
+      "musicDominanceRanking",
     ],
   }),
-  modalCoefficientPacket: contract({
-    quantity: "modalCoefficientPacket",
+  modalState: contract({
+    quantity: "modalState",
     lane: "modal-field",
     represents:
-      "per-mode pressure amplitudes and phases at one authoritative audio time",
-    deepOwner: "runtimeModalUpload.js radiation potential packet",
+      "raw signed dimensionless pressure P and velocity-basis R per shell and channel; not pressure magnitudes or hertz labels",
+    deepOwner: "broadbandModalResponse.js consecutive sample-hold propagation",
     transforms: [
-      "modal response",
-      "cache-passband transfer",
-      "deterministic packing",
+      "passive pressure-velocity equations",
+      "exact affine matrix-exponential sample hold",
+      "declared apparatus damping",
+    ],
+    allowedConsumers: [
+      "modalResponseMoments",
+      "responseSpectrum",
+      "diagnostics",
+    ],
+    forbiddenConsumers: [
+      "renderNormalization",
+      "amplitudeFloor",
+      "frameRate",
+      "winningFrequency",
+    ],
+  }),
+  modalResponseMoments: contract({
+    quantity: "modalResponseMoments",
+    lane: "modal-field",
+    represents:
+      "raw exponentially observed pressure/velocity second moments in coefficient-amplitude squared, including every off-diagonal shell pair and the channel ensemble mean",
+    deepOwner: "modalResponseMoments.js",
+    transforms: [
+      "continuous within-sample observation",
+      "dense symmetric raw moments, without mean subtraction",
+      "one common spatial mean total-response energy",
     ],
     allowedConsumers: ["completeAcousticField", "diagnostics"],
     forbiddenConsumers: [
-      "bloom",
-      "camera",
-      "frameRate",
-      "performanceTierPaging",
+      "rankTruncation",
+      "PSDRepair",
+      "perModeNormalization",
+      "confidenceGain",
     ],
   }),
-  modalSpectralPacket: contract({
-    quantity: "modalSpectralPacket",
+  responseSpectrum: contract({
+    quantity: "responseSpectrum",
     lane: "spectral-phase",
     represents:
-      "per-shell first and second circular pitch basis independent of acoustic amplitude",
-    deepOwner: "modal descriptor spectral moment slot views",
-    transforms: ["response-frequency phase fold", "deterministic packing"],
+      "complete finite-history response spectrum reconstructed from input bins, transition powers and endpoint corrections at one accepted acoustic sample",
+    deepOwner: "broadbandResponseSpectrum.js and broadbandSpectralExpansion.js",
+    transforms: [
+      "zero-padded rectangular finite history",
+      "full-bin complex response reconstruction including free motion",
+    ],
     allowedConsumers: ["fieldSpectralMomentEvidence", "diagnostics"],
     forbiddenConsumers: [
       "fieldPotential",
       "observerGeometry",
-      "observerRadiance",
+      "acousticStateAdvance",
+      "peakSelection",
     ],
   }),
   fieldSpectralMomentEvidence: contract({
     quantity: "fieldSpectralMomentEvidence",
     lane: "spectral-phase",
     represents:
-      "additive local first moment M1, second moment M2, and nonnegative support W",
-    deepOwner: "radiationPotentialObservation.js coherent shell observation",
+      "additive local first/second circular moments and nonnegative response spectral support, normalized by the common total response energy",
+    deepOwner:
+      "broadbandSpectralProjection.js full-bin matrices and broadbandMomentField.js spatial quadratic evaluation",
     transforms: [
-      "squared local shell support q=S^2",
-      "linear fine-aperture filtering before normalization",
+      "complete coherent field at each bin",
+      "additive response-energy weighting, without squared per-bin support",
+      "independent-channel ensemble mean",
+      "linear fine-aperture filtering before moment normalization",
     ],
     allowedConsumers: ["resolvedSpectralMomentEvidence", "diagnostics"],
     forbiddenConsumers: [
@@ -136,9 +200,14 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
     quantity: "completeAcousticField",
     lane: "field-cache",
     represents:
-      "cycle-averaged Gor'kov potential and gradient from every admitted mode",
-    deepOwner: "fieldCacheBake.js complete modal bake",
-    transforms: ["coherent same-frequency shells", "cycle-averaged energy"],
+      "dimensionless normalized Gor'kov potential proxy and normalized-coordinate gradient from complete raw pressure/velocity second moments",
+    deepOwner:
+      "broadbandCosineProjection.js, broadbandMomentField.js and fieldCacheBake.js",
+    transforms: [
+      "signed family overlaps and full cross-shell interference",
+      "exact quadratic product-to-sum projection",
+      "one common total-response normalization",
+    ],
     allowedConsumers: [
       "fineApertureResolvedField",
       "topologyApertureResolvedField",
@@ -258,10 +327,12 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
     surface: "material-transfer",
     represents:
       "advected finite-exposure signed level set of the topology-aperture-resolved U=0 sheet",
-    deepOwner: "cymaticObserverNode.js geometry ping-pong lane",
+    deepOwner:
+      "cymaticGeometryObservation.js and cymaticObserverNode.js geometry ping-pong lane",
     transforms: [
-      "field-derived advection",
-      "fixed 200 ms exponential exposure",
+      "field-derived advection and continuous geometric validity",
+      "explicit availability; directly seed first valid history",
+      "fixed 400 ms exponential exposure",
       "fixed-width sheet extraction at material sampling",
     ],
     allowedConsumers: ["plasmaCarrier", "diagnostics"],
@@ -273,14 +344,32 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
       "bloom",
     ],
   }),
+  observerGeometryAvailability: contract({
+    quantity: "observerGeometryAvailability",
+    lane: "observer-state",
+    represents:
+      "binary support marking whether valid geometry history has actually been seeded at a voxel; not acoustic energy or a normal magnitude",
+    deepOwner:
+      "cymaticGeometryObservation.js and cymaticObserverNode.js availability ping-pong lane",
+    transforms: [
+      "first valid geometric observation establishes history",
+      "transport with matching geometry history",
+    ],
+    allowedConsumers: ["observerGeometryAssimilation", "diagnostics"],
+    forbiddenConsumers: [
+      "audioEnergyGain",
+      "observerRadiance",
+      "spectralColorGain",
+    ],
+  }),
   observerSurfaceNormal: contract({
     quantity: "observerSurfaceNormal",
     lane: "observer-state",
     surface: "material-transfer",
     represents:
-      "local normalized topology-aperture gradient whose nonzero direction proves persistent U=0 surface validity",
+      "local normalized topology-aperture gradient; direction and explicit history availability are distinct quantities",
     deepOwner: "cymaticObserverNode.js geometry ping-pong lane",
-    transforms: ["gradient normalization", "fixed 200 ms geometry exposure"],
+    transforms: ["gradient normalization", "fixed 400 ms geometry exposure"],
     allowedConsumers: ["plasmaCarrier", "plasmaTangentResponse", "diagnostics"],
     forbiddenConsumers: ["observerRadiance", "observerSpectralPhase"],
   }),
@@ -292,15 +381,11 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
       "continuous acoustic support for a valid persistent topology surface",
     deepOwner: "cymaticObserverNode.js appearance alpha lane",
     transforms: [
-      "compressed absolute local acoustic energy",
+      "fixed amplitude-like optical transduction of absolute local acoustic energy",
       "continuous topology-gradient validity",
       "fixed 50 ms exponential exposure",
     ],
-    allowedConsumers: [
-      "observerGeometryAssimilation",
-      "plasmaCarrier",
-      "diagnostics",
-    ],
+    allowedConsumers: ["plasmaCarrier", "diagnostics"],
     forbiddenConsumers: [
       "patternPersistence",
       "spectralColorGain",
@@ -319,7 +404,7 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
     transforms: [
       "agreement times bounded residual reinforcement",
       "field-derived advection",
-      "fixed 200 ms geometry exposure",
+      "fixed 400 ms geometry exposure",
     ],
     allowedConsumers: ["plasmaDetailSpine", "diagnostics"],
     forbiddenConsumers: [
@@ -338,13 +423,13 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
     lane: "observer-state",
     surface: "material-transfer",
     represents:
-      "fast local acoustic energy response carried with the observed sheet",
+      "bounded optical excitation from raw local acoustic energy carried with the observed sheet",
     deepOwner: "cymaticObserverNode.js appearance blue lane",
     transforms: [
       "field-local energy",
+      "fixed sqrt(E / (E + 5e-4)) optical response",
       "field-derived advection",
       "fixed 50 ms exponential exposure",
-      "bounded compression",
     ],
     allowedConsumers: ["plasmaAccentRadiance", "diagnostics"],
     forbiddenConsumers: [
@@ -361,7 +446,7 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
     represents:
       "unit circular hue direction H stored directly until material sampling",
     deepOwner:
-      "cymaticObserverNode.js appearance xy phase direction and response-derived reset seed",
+      "cymaticObserverNode.js appearance xy phase direction and fixed reference reset seed",
     transforms: [
       "first/second-moment evidence resolution",
       "fixed-aperture spatial moment resolution",
@@ -386,11 +471,11 @@ export const RAYMARCH_QUANTITY_LEDGER = Object.freeze({
     represents:
       "unit-Rec.709-luminance RGB chromaticity derived from one resolved observer phase",
     deepOwner:
-      "cymaticObserverNode.js two-harmonic projection; fieldCacheSampling.js nearest organization-lane fetch",
+      "cymaticObserverNode.js two-harmonic projection; fieldCacheBake.js filterable presentation copy; fieldCacheSampling.js trilinear chromaticity reconstruction",
     transforms: [
       "pinned two-harmonic phase projection",
       "RGB organization-lane half-float packing",
-      "nearest observer-voxel fetch",
+      "convex trilinear presentation reconstruction",
     ],
     allowedConsumers: [
       "operatorSpectralChroma",

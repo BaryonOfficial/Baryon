@@ -2,6 +2,8 @@ import { AUDIO_FEATURE_AUTHORITY_ROLES } from "@baryon/engine/audio-features";
 import { assertAudioFeatureAuthorityRole } from "../audioFeatureAuthorityRole.js";
 
 function resolveExternalFrameIdentity(externalFrameState) {
+  if (typeof externalFrameState?.frameIdentity === "string")
+    return externalFrameState.frameIdentity;
   const frameSequence = externalFrameState?.frameSequence ?? null;
   if (frameSequence != null) {
     return frameSequence;
@@ -17,6 +19,7 @@ export function getSourceAuthoritativeClock({
   audioFeatureAuthorityRole,
   externalFrameState,
   lastAppliedFrameSequence,
+  lastAppliedFrameTime = null,
   fallbackClockSnapshot,
 }) {
   assertAudioFeatureAuthorityRole(audioFeatureAuthorityRole);
@@ -36,7 +39,7 @@ export function getSourceAuthoritativeClock({
     return {
       status: null,
       clockMode: "external-hold",
-      time: 0,
+      time: Number.isFinite(lastAppliedFrameTime) ? lastAppliedFrameTime : 0,
       deltaTime: 0,
       frameSequence: null,
       frameIdentity: null,
@@ -53,7 +56,14 @@ export function getSourceAuthoritativeClock({
     status: externalFrameState.status,
     clockMode: externalFrameState.clockMode,
     time: externalFrameState.time,
-    deltaTime: shouldAdvance ? externalFrameState.deltaTime : 0,
+    deltaTime: !shouldAdvance
+      ? 0
+      : Number.isFinite(lastAppliedFrameTime) &&
+          lastAppliedFrameTime !== null &&
+          Number.isFinite(externalFrameState.time) &&
+          externalFrameState.time >= lastAppliedFrameTime
+        ? externalFrameState.time - lastAppliedFrameTime
+        : externalFrameState.deltaTime,
     frameSequence,
     frameIdentity,
     shouldAdvance,

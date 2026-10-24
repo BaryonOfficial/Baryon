@@ -1,5 +1,7 @@
+import { useAudioFeatureOwner } from "./hooks/useAudioFeatureOwner.js";
 import { Suspense, useEffect, useState } from "react";
-import { Canvas, useThree } from "@react-three/fiber";
+import { useThree } from "@react-three/fiber";
+import { RendererCanvas } from "./RendererCanvas.jsx";
 import { BaryonScene, CAMERA_CONTROL_MODES } from "./BaryonScene.jsx";
 import { RendererErrorBoundary } from "./RendererErrorBoundary.jsx";
 import { DEFAULT_ACTIVE_CAMERA_POSE } from "./cameraPosePresets.js";
@@ -133,6 +135,12 @@ export function OutputStageSurface({
   onPerformanceHudSnapshotChange = null,
   onAuditSnapshotChange = null,
 }) {
+  useAudioFeatureOwner({
+    controlsRef,
+    authorityRole: audioFeatureAuthorityRole,
+    configurationVersion: structuralControlVersion,
+    registerStructureExportSampleReader,
+  });
   const [rendererError, setRendererError] = useState(null);
   const normalizedFramebufferPixelRatio = Number(framebufferPixelRatio);
   const resolvedFramebufferPixelRatio =
@@ -217,7 +225,7 @@ export function OutputStageSurface({
           resetKey={`stage-${forceWebGLRenderer ? "webgl" : "webgpu"}-${visualizationMethod}`}
           onError={handleCanvasError}
         >
-          <Canvas
+          <RendererCanvas
             key={`stage-${forceWebGLRenderer ? "webgl" : "webgpu"}-${visualizationMethod}`}
             frameloop="demand"
             style={{
@@ -265,9 +273,6 @@ export function OutputStageSurface({
                 basePixelRatio={resolvedFramebufferPixelRatio}
                 onStageRender={onStageRender}
                 onFrameState={onFrameState}
-                registerStructureExportSampleReader={
-                  registerStructureExportSampleReader
-                }
                 cameraControlMode={CAMERA_CONTROL_MODES.externalSynced}
                 outputMode={resolvedOutputMode}
                 structuralControlVersion={structuralControlVersion}
@@ -279,7 +284,7 @@ export function OutputStageSurface({
                 onOutputCompositorFrame={onOutputCompositorFrame}
               />
             </Suspense>
-          </Canvas>
+          </RendererCanvas>
         </RendererErrorBoundary>
       )}
     </div>

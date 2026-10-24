@@ -37,10 +37,6 @@ describe("Spectral Light render contract", () => {
       resolve(currentDir, "raymarch/runtime.js"),
       "utf8",
     );
-    const raymarchDiagnostics = await readFile(
-      resolve(currentDir, "raymarch/runtimeDiagnostics.js"),
-      "utf8",
-    );
     const raymarchMaterial = await readFile(
       resolve(currentDir, "raymarch/material.js"),
       "utf8",
@@ -57,8 +53,8 @@ describe("Spectral Light render contract", () => {
       resolve(currentDir, "raymarch/fieldCacheSampling.js"),
       "utf8",
     );
-    const radiationPotentialObservation = await readFile(
-      resolve(currentDir, "raymarch/radiationPotentialObservation.js"),
+    const broadbandField = await readFile(
+      resolve(currentDir, "raymarch/broadbandMomentField.js"),
       "utf8",
     );
 
@@ -74,14 +70,6 @@ describe("Spectral Light render contract", () => {
       "enqueueRaymarchSpectralLightCacheRebuild",
     );
     expect(raymarchRuntime).not.toContain("spectralLightCache");
-    expect(raymarchDiagnostics).not.toContain("spectralLightCache");
-    expect(raymarchDiagnostics).toContain(
-      "RAYMARCH_SPECTRAL_PHASE_REPRESENTATION",
-    );
-    expect(raymarchDiagnostics).toContain(
-      "RAYMARCH_OPTICAL_FIELD_REPRESENTATION",
-    );
-
     expect(raymarchMaterial).not.toContain("RAYMARCH_SPECTRAL_LIGHT_TUNING");
     expect(raymarchMaterial).not.toContain("cachedSpectralLightEnabled");
     expect(raymarchMaterial).not.toContain("spectralLightCacheTexture");
@@ -90,7 +78,7 @@ describe("Spectral Light render contract", () => {
     expect(raymarchMaterial).not.toContain("spectralLaneTexture");
     // Spectral moments are measured once in the complete-field bake, resolved
     // as persistent phase, and projected once per observer voxel. The march
-    // fetches the already-resolved chromaticity without interpolating RGB.
+    // filters the already-resolved unit-luminance chromaticity for display.
     expect(raymarchMaterial).toContain("sampleCymaticObserver");
     expect(raymarchMaterial).toContain("observer.localSpectralChromaticity");
     expect(raymarchMaterial).not.toContain("observer.localSpectralPhase");
@@ -99,25 +87,23 @@ describe("Spectral Light render contract", () => {
     );
     expect(raymarchMaterial).toContain("localSpectralChromaticity");
     expect(raymarchObserver).toContain("resolveSpectralChromaticityNode");
-    expect(raymarchSampling).toContain(
-      "fixedRenderTargetTextureLoadAtKnownHeight",
-    );
-    expect(raymarchSampling).toContain("footprint.nearestTexel");
+    expect(raymarchSampling).toContain("sampleFieldCacheAtlasAtFootprintNode");
+    expect(raymarchSampling).not.toContain("footprint.nearestTexel");
     expect(raymarchSampling).not.toContain(
       "sampleFieldCacheAtlasNearestAtFootprintNode",
     );
     expect(raymarchSampling).toContain("localSpectralChromaticity");
     expect(raymarchMaterial).not.toContain("uKeyTint");
-    expect(raymarchBake).toContain(
+    expect(raymarchBake).toContain("evaluateAperture");
+    expect(raymarchBake).toContain("prepareAperture");
+    expect(raymarchBake).not.toContain(
       "evaluateAnalyticWaterRadiationPotentialNode",
     );
     expect(raymarchBake).not.toContain("spectralLightCacheTexture");
-    expect(radiationPotentialObservation).toContain(
-      "const spectralWeight = support.mul(support)",
-    );
-    expect(radiationPotentialObservation).toContain(
-      "spectralSupport.addAssign(spectralWeight)",
-    );
+    expect(broadbandField).toContain("spectralMatrixTexture");
+    expect(broadbandField).toContain("spectralFirstMoment:");
+    expect(broadbandField).toContain("spectralSecondMoment:");
+    expect(broadbandField).not.toContain("responseFrequencyHz");
     expect(raymarchMaterial).toContain("deriveCymaticPlasmaCarrierNode");
     expect(raymarchMaterial).toContain("deriveCymaticPlasmaTransferNode");
     expect(raymarchMaterial).not.toContain(

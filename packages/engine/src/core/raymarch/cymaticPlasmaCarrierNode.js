@@ -40,7 +40,7 @@ export function deriveCymaticPlasmaProfileSampleNode({
     )
     .uniformFlow()
     .toVar();
-  // The sole production caller passes the nonnegative Gauss interval weight.
+  // The ray marcher supplies the width of the centered interval at this sample.
   const intervalWidthWorld = stepSize.mul(normalDotRay).toVar();
   const lookupSample = sampleCymaticPlasmaProfileLookupNode(profileLookup, {
     signedDistanceWorld,

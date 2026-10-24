@@ -1,622 +1,349 @@
+import { compileRenderPass } from "./compileRenderPass.js";
 import * as THREE from "three";
-import { normalizeCavityGeometry } from "../cavityGeometry.js";
-import {
-  hasPreparationAuthority,
-  hasRenderAuthority,
-} from "../renderAuthorityContract.js";
-import { publishRaymarchRuntimeAuditSnapshot } from "./runtimeDiagnostics.js";
-import { getRuntimeEffectiveCavityGeometry } from "./runtimeStateSelectors.js";
+import { hasRenderAuthority } from "../renderAuthorityContract.js";
+import { createRendererFeatureView } from "../../utils/audio/audioFeaturePacketCodec.js";
+import { createObservationHistory } from "../../render/observationHistory.js";
 import { updateRaymarchReactiveResponse } from "./runtimeReactiveResponse.js";
 import {
   clearRaymarchUniformProjection,
   setRaymarchUniformIfChanged,
   syncRaymarchUniformProjection,
 } from "./runtimeUniformProjection.js";
+import { applyRaymarchModelUpload } from "./runtimeModalUpload.js";
+import { clampCymaticObserverGeometryExposureSeconds } from "./cymaticObserverReference.js";
 import {
-  applyRaymarchModalPacketUploads,
-  resetRaymarchUploadState,
-} from "./runtimeModalUpload.js";
-import { inferModalFieldCapacity } from "./fieldAnalysis.js";
-import { setRaymarchCavityGeometry } from "./material.js";
-import { resolveIdleOverlayVisible } from "../idleLogoVisibility.js";
-import { hasActiveFilePlaybackTransport } from "../sourceTransportContract.js";
-import {
-  clampCymaticObserverGeometryExposureSeconds,
-  resolveCymaticObserverStepIndex,
-} from "./cymaticObserverReference.js";
-import { RAYMARCH_SPECTRAL_PHASE_REPRESENTATION } from "./quantityLedger.js";
+  RAYMARCH_QUANTITY_LEDGER_VERSION,
+  RAYMARCH_OPTICAL_FIELD_REPRESENTATION,
+  RAYMARCH_SPECTRAL_PHASE_REPRESENTATION,
+} from "./quantityLedger.js";
 
-function readRuntimeTimeSec(time) {
-  return Number.isFinite(time) ? Math.max(0, time) : 0;
+const EPOCH_KEYS = [
+  "sourceGeneration",
+  "workerGeneration",
+  "timelineRevision",
+  "processingRevision",
+  "topologyRevision",
+];
+const SPECTRAL_SEED = Object.freeze([1, 0]);
+function isStaleTopology(previous, next) {
+  const changed =
+    previous && EPOCH_KEYS.find((key) => previous[key] !== next[key]);
+  return Boolean(changed && next[changed] < previous[changed]);
 }
 
-function isExplicitStoppedTransport(featureFrame) {
-  return (
-    featureFrame?.sourceEvidence?.transport?.playbackEndReason === "stopped"
-  );
-}
-
-function clearRenderAuthorityDisplayHold(runtimeState) {
-  runtimeState.renderAuthorityDisplayHoldActive = false;
-  runtimeState.renderAuthorityDisplayHoldAgeSec = null;
-}
-
-function readCymaticObserverGeometryExposureSeconds(runtimeState) {
-  return clampCymaticObserverGeometryExposureSeconds(
-    runtimeState?.cymaticObserverTuning?.geometryExposureSeconds,
-  );
-}
-
-function clearBufferNode(bufferNode) {
-  const array = bufferNode?.value?.array;
-  if (!array?.fill) {
-    return;
+/** Cache every admitted endpoint before presentation. This never sends audio commands. */
+export function queueRaymarchObservation(runtimeState, model) {
+  if (runtimeState.disposed) return false;
+  const frame = createRendererFeatureView(model);
+  if (runtimeState.presentationReady !== true) return false;
+  const next = frame.topology;
+  const previous = runtimeState.observationTopology;
+  const changed =
+    previous && EPOCH_KEYS.find((key) => previous[key] !== next[key]);
+  if (changed && next[changed] < previous[changed]) return false;
+  if (changed) {
+    revokeRaymarchObservationHistory(runtimeState);
+    return false;
   }
-
-  let hasNonZero = false;
-  for (let index = 0; index < array.length; index += 1) {
-    if (array[index] !== 0) {
-      hasNonZero = true;
-      break;
-    }
+  if (!previous || changed) {
+    runtimeState.observationTopology = next;
+    runtimeState.observationHistory = createObservationHistory({
+      generation: next,
+      capacity: 64,
+    });
+    runtimeState.latestFeatureFrame = null;
+    runtimeState.presentationFailure = null;
   }
-  if (!hasNonZero) {
-    return;
+  if (frame.frameId <= (runtimeState.latestFeatureFrame?.frameId ?? 0))
+    return false;
+  if (runtimeState.presentationFailure) return false;
+  runtimeState.latestFeatureFrame = frame;
+  try {
+    return runtimeState.observationHistory.offer(frame.observation);
+  } catch (error) {
+    runtimeState.presentationFailure =
+      error instanceof Error ? error.message : String(error);
+    throw error;
   }
-
-  array.fill(0);
-  bufferNode.value.needsUpdate = true;
-  bufferNode.syncUniforms?.();
 }
-
-function resetRenderAuthorityState(runtimeState) {
-  clearBufferNode(runtimeState.modalFieldModeBuffer);
-  clearBufferNode(runtimeState.modalFieldSpectralMomentBuffer);
-  clearBufferNode(runtimeState.modalFieldCoefficientBuffer);
-  clearBufferNode(runtimeState.modalFieldResponseBuffer);
-  runtimeState.raymarchFieldAnalysis = null;
-  if (runtimeState.bloomTuning) {
-    runtimeState.bloomTuning.bloomAllowed = false;
-  }
-  runtimeState.renderAuthorityLastVisibleAtSec = null;
-  runtimeState.renderAuthorityHoldEvaluatedAtSec = null;
-  clearRenderAuthorityDisplayHold(runtimeState);
-  runtimeState.currentModalDescriptor = null;
-  runtimeState.preparedObserverFrameKey = null;
-  resetRaymarchUploadState(runtimeState);
-  runtimeState.renderAuthorityResetApplied = true;
-}
-
-function resolveFatalModalDescriptorBlockReason(fieldAuthority) {
-  if (
-    !fieldAuthority ||
-    fieldAuthority === "complete" ||
-    fieldAuthority === "capacity-limited"
-  ) {
-    return null;
-  }
-
-  return "descriptor-blocked";
-}
-
-function blockNonAuthoritativeModalDescriptor(
-  runtimeState,
-  featureFrame,
-  fieldState,
-  renderAuthority,
-) {
-  clearBufferNode(runtimeState.modalFieldModeBuffer);
-  clearBufferNode(runtimeState.modalFieldSpectralMomentBuffer);
-  clearBufferNode(runtimeState.modalFieldCoefficientBuffer);
-  clearBufferNode(runtimeState.modalFieldResponseBuffer);
-  runtimeState.raymarchFieldAnalysis = null;
-  if (runtimeState.bloomTuning) {
-    runtimeState.bloomTuning.bloomAllowed = false;
-  }
-  runtimeState.renderAuthorityLastVisibleAtSec = null;
-  runtimeState.renderAuthorityHoldEvaluatedAtSec = null;
-  clearRenderAuthorityDisplayHold(runtimeState);
-  resetRaymarchUploadState(runtimeState);
-  clearRaymarchUniformProjection(runtimeState);
+/** A lost/replaced presentation stream may reseed from one current model.
+ * This resets only the observer, never source PCM, epochs or derived field data. */
+export function revokeRaymarchObservationHistory(runtimeState) {
+  if (runtimeState.disposed) return;
+  runtimeState.presentationReady = false;
+  runtimeState.presentationRevision =
+    (runtimeState.presentationRevision ?? 0) + 1;
+  runtimeState.observationTopology = null;
+  runtimeState.observationHistory = null;
+  runtimeState.latestFeatureFrame = null;
+  runtimeState.lastBakedFeatureFrame = null;
+  runtimeState.lastObserverResetToken = null;
   runtimeState.volumeMesh.visible = false;
-  runtimeState.idleOverlay.visible = resolveIdleOverlayVisible(
-    runtimeState,
-    featureFrame,
-    renderAuthority,
-  );
-  publishRaymarchRuntimeAuditSnapshot(
-    runtimeState,
-    featureFrame,
-    fieldState,
-    renderAuthority,
-  );
 }
-
-/**
- * Fill the field cache from the packet that was just uploaded.
- *
- * Ordering is the whole contract: the bake must follow the modal upload that
- * feeds it and precede the frame that reads it, so the march never samples a
- * cache built from a stale packet. Both hold inside the tick — uploads run
- * above, and the pipeline renders after the tick returns.
- */
-function buildCymaticObserverApparatusIdentity(runtimeState) {
-  const meshState = runtimeState.volumeMesh?.userData;
-  return {
-    observerAppearanceRepresentation: RAYMARCH_SPECTRAL_PHASE_REPRESENTATION,
-    boundaryMode: meshState?.raymarchBoundaryMode ?? null,
-    volumeShape: meshState?.raymarchVolumeShape ?? null,
-    cavityGeometry: meshState?.raymarchCavityGeometry ?? null,
-    radius: meshState?.raymarchBaseRadius ?? null,
-    geometryExposureSeconds:
-      readCymaticObserverGeometryExposureSeconds(runtimeState),
+function resetToken(runtimeState, topology) {
+  const mesh = runtimeState.volumeMesh.userData;
+  return JSON.stringify([
+    runtimeState.presentationRevision ?? 0,
+    ...EPOCH_KEYS.map((key) => topology[key]),
+    mesh.raymarchVolumeShape,
+    mesh.raymarchBaseRadius,
+    runtimeState.cymaticObserverTuning.geometryExposureSeconds,
+  ]);
+}
+function publishDiagnostics(runtimeState, frame) {
+  const source = runtimeState.fieldSource.read();
+  runtimeState.debugSnapshot = {
+    renderQuantityLedgerVersion: RAYMARCH_QUANTITY_LEDGER_VERSION,
+    opticalFieldRepresentation: RAYMARCH_OPTICAL_FIELD_REPRESENTATION,
+    spectralPhaseRepresentation: RAYMARCH_SPECTRAL_PHASE_REPRESENTATION,
+    volumeVisible: runtimeState.volumeMesh.visible,
+    idleOverlayVisible: runtimeState.idleOverlay.visible,
+    protocolVersion: frame?.topology.protocolVersion ?? null,
+    familyCount: frame?.topology.familyCount ?? 0,
+    shellCount: frame?.topology.shellCount ?? 0,
+    normalizationEnergy: frame?.observation.normalizationEnergy ?? null,
+    latestAcceptedEndSample: frame?.observation.endSample ?? null,
+    observationEndSample:
+      runtimeState.lastBakedFeatureFrame?.observation.endSample ?? null,
+    sourcePhase: frame?.observation.sourcePhase ?? null,
+    renderAuthority: hasRenderAuthority(frame),
+    presentationReady: runtimeState.presentationReady === true,
+    preparationPending: Boolean(
+      runtimeState.preparation && !runtimeState.preparation.error,
+    ),
+    preparationError: runtimeState.preparation?.error ?? null,
+    basisCompileCount: source.basisCompileCount,
+    observationUploadCount: source.observationUploadCount,
+    derivedTextureBytes: source.textureBytes,
+    observationHistory: runtimeState.observationHistory?.read() ?? null,
+    observer: runtimeState.fieldCache.getObserverState(),
+    presentationFailure: runtimeState.presentationFailure ?? null,
   };
 }
-
-function buildCymaticObserverResetToken(runtimeState, featureFrame) {
-  return JSON.stringify({
-    session: featureFrame?.observationSessionKey ?? null,
-    ...buildCymaticObserverApparatusIdentity(runtimeState),
-  });
-}
-
-function buildCymaticObserverCheckpointKey(runtimeState, featureFrame) {
-  const sourceKey = featureFrame?.observationSourceKey;
-  if (typeof sourceKey !== "string" || !sourceKey.startsWith("file:")) {
-    return null;
-  }
-  return JSON.stringify({
-    source: sourceKey,
-    step: resolveCymaticObserverStepIndex(featureFrame?.observationTimeSeconds),
-    ...buildCymaticObserverApparatusIdentity(runtimeState),
-  });
-}
-
-function buildRaymarchPreparationFrameKey(runtimeState, featureFrame) {
-  return JSON.stringify({
-    observer: buildCymaticObserverResetToken(runtimeState, featureFrame),
-    observationTimeSeconds: Number.isFinite(
-      featureFrame?.observationTimeSeconds,
-    )
-      ? Math.max(0, featureFrame.observationTimeSeconds)
-      : 0,
-    topologyRevision: featureFrame?.topologyRevision ?? null,
-    basisIdentityHash: featureFrame?.basisIdentityHash ?? null,
-    observationInputSignature: featureFrame?.observationInputSignature ?? null,
-    modalFieldModeCount:
-      featureFrame?.modalDescriptor?.counts?.modalFieldModeCount ??
-      featureFrame?.activeModalFieldModeCount ??
-      0,
-  });
-}
-
-function buildRaymarchPreparationCompileKey(runtimeState) {
-  const meshState = runtimeState.volumeMesh?.userData;
-  return JSON.stringify({
-    material: runtimeState.volumeMesh?.material?.uuid ?? null,
-    boundaryMode: meshState?.raymarchBoundaryMode ?? null,
-    volumeShape: meshState?.raymarchVolumeShape ?? null,
-    cavityGeometry: meshState?.raymarchCavityGeometry ?? null,
-  });
-}
-
-function requestRaymarchMaterialCompilation(
-  runtimeState,
-  renderer,
-  { camera = null, scene = null } = {},
-) {
-  if (
-    typeof renderer?.compileAsync !== "function" ||
-    !camera ||
-    !scene ||
-    !runtimeState.volumeMesh
-  ) {
-    return null;
-  }
-
-  const compileKey = buildRaymarchPreparationCompileKey(runtimeState);
-  if (
-    runtimeState.preparedMaterialCompileKey === compileKey ||
-    runtimeState.pendingMaterialCompileKey === compileKey ||
-    runtimeState.failedMaterialCompileKey === compileKey
-  ) {
-    return runtimeState.pendingMaterialCompilePromise ?? null;
-  }
-
-  // compileAsync skips invisible objects. A detached clone shares the exact
-  // production geometry and material while letting the presented mesh remain
-  // hidden throughout preparation.
-  const compileTarget = runtimeState.volumeMesh.clone();
-  compileTarget.visible = true;
-  compileTarget.frustumCulled = false;
-  runtimeState.pendingMaterialCompileKey = compileKey;
-  runtimeState.materialPreparationError = null;
-
-  const compilePromise = Promise.resolve(
-    renderer.compileAsync(compileTarget, camera, scene),
-  )
-    .then(() => {
-      if (runtimeState.pendingMaterialCompileKey === compileKey) {
-        runtimeState.preparedMaterialCompileKey = compileKey;
-      }
-    })
-    .catch((error) => {
-      if (runtimeState.pendingMaterialCompileKey === compileKey) {
-        runtimeState.failedMaterialCompileKey = compileKey;
-        runtimeState.materialPreparationError =
-          error instanceof Error ? error.message : String(error);
-      }
-    })
-    .finally(() => {
-      if (runtimeState.pendingMaterialCompileKey === compileKey) {
-        runtimeState.pendingMaterialCompileKey = null;
-        runtimeState.pendingMaterialCompilePromise = null;
-      }
-    });
-
-  runtimeState.pendingMaterialCompilePromise = compilePromise;
-  return compilePromise;
-}
-
-function bakeModalFieldCache(runtimeState, featureFrame, renderer) {
-  const fieldCache = runtimeState.fieldCache;
-  if (!fieldCache || !renderer) {
-    return null;
-  }
-
-  const result = fieldCache.bake(renderer, {
-    boundaryMode: runtimeState.volumeMesh?.userData?.raymarchBoundaryMode,
-    volumeShape: runtimeState.volumeMesh?.userData?.raymarchVolumeShape,
-    observationTimeSeconds: featureFrame?.observationTimeSeconds,
-    observationAdvancing:
-      featureFrame?.observationAdvancing === true &&
-      featureFrame?.observationPaused !== true,
-    geometryExposureSeconds:
-      readCymaticObserverGeometryExposureSeconds(runtimeState),
-    observationResetToken: buildCymaticObserverResetToken(
-      runtimeState,
-      featureFrame,
-    ),
-    observationCheckpointKey: buildCymaticObserverCheckpointKey(
-      runtimeState,
-      featureFrame,
-    ),
-    modalFieldSpectralSeedDirection:
-      featureFrame?.modalFieldSpectralSeedDirection,
-  });
-  runtimeState.cymaticObserverBakeResult = result;
-  if (result?.checkpointSaved === true) {
-    runtimeState.cymaticObserverCheckpointSaveCount =
-      (runtimeState.cymaticObserverCheckpointSaveCount ?? 0) + 1;
-    runtimeState.cymaticObserverCheckpointLastEvent = "saved";
-  } else if (result?.checkpointRestored === true) {
-    runtimeState.cymaticObserverCheckpointRestoreCount =
-      (runtimeState.cymaticObserverCheckpointRestoreCount ?? 0) + 1;
-    runtimeState.cymaticObserverCheckpointLastEvent = "restored";
-  }
-  return result;
-}
-
-function clearCymaticObserverBakeResult(runtimeState) {
-  if (runtimeState) {
-    runtimeState.cymaticObserverBakeResult = null;
-  }
-}
-
-function applyRaymarchRuntimeFrame(
-  runtimeState,
-  featureFrame,
-  time,
-  deltaTime,
-  renderer = null,
-  allowPreparationFrame = false,
-) {
-  // This is a per-tick event result, not retained observer state. Clear it
-  // before any early return so diagnostics cannot replay a previous bake.
-  clearCymaticObserverBakeResult(runtimeState);
-  const { uniforms, volumeMesh, idleOverlay } = runtimeState;
-  const modalFieldCapacity = inferModalFieldCapacity(
-    runtimeState.modalFieldCapacity,
-    runtimeState?.raymarchUploadState?.basisPlan?.identitySlots,
+function bakeObservation(runtimeState, frame, renderer) {
+  runtimeState.volumeMesh.userData.raymarchBoundaryMode =
+    frame.topology.boundaryMode;
+  runtimeState.cymaticObserverBakeResult = runtimeState.fieldCache.bake(
+    renderer,
+    {
+      boundaryMode: frame.topology.boundaryMode,
+      volumeShape: runtimeState.volumeMesh.userData.raymarchVolumeShape,
+      observationTimeSeconds:
+        frame.observation.endSample / frame.topology.sampleRate,
+      observationAdvancing: frame.observation.sourcePhase !== "paused",
+      geometryExposureSeconds: clampCymaticObserverGeometryExposureSeconds(
+        runtimeState.cymaticObserverTuning.geometryExposureSeconds,
+      ),
+      observationResetToken: resetToken(runtimeState, frame.topology),
+      observationCheckpointKey: null,
+      modalFieldSpectralSeedDirection: SPECTRAL_SEED,
+    },
   );
-  uniforms.uTime.value = time;
-  const fieldState = featureFrame?.fieldState ?? "idle";
-  const renderAuthority = hasRenderAuthority(featureFrame);
-  const preparationAuthority =
-    allowPreparationFrame === true && hasPreparationAuthority(featureFrame);
-  const projectionAuthority = renderAuthority || preparationAuthority;
-  const fatalModalDescriptorBlockReason =
-    resolveFatalModalDescriptorBlockReason(
-      featureFrame?.modalDescriptor?.fieldAuthority,
-    );
-  const observerState = runtimeState.fieldCache?.getObserverState?.() ?? null;
-  const observerTerminated =
-    featureFrame?.renderAuthorityRevoked === true ||
-    isExplicitStoppedTransport(featureFrame) ||
-    Boolean(fatalModalDescriptorBlockReason);
-  const observerContinuationOwned =
-    projectionAuthority || hasActiveFilePlaybackTransport(featureFrame);
-  const observerContinuation =
-    observerState?.hasHistory === true &&
-    observerTerminated !== true &&
-    observerContinuationOwned;
-  if (!renderAuthority) {
-    updateRaymarchReactiveResponse(
-      runtimeState,
-      featureFrame,
-      fieldState,
-      renderAuthority,
-      deltaTime,
-    );
-  }
-  setRaymarchUniformIfChanged(
-    uniforms.uFieldState,
-    runtimeState.fieldStateValues[fieldState] ??
-      runtimeState.fieldStateValues.idle,
-  );
-
-  if (!projectionAuthority && fatalModalDescriptorBlockReason) {
-    runtimeState.currentModalDescriptor = featureFrame.modalDescriptor;
-    blockNonAuthoritativeModalDescriptor(
-      runtimeState,
-      featureFrame,
-      fieldState,
-      renderAuthority,
-    );
-    return;
-  }
-
-  if (!projectionAuthority && !observerContinuation) {
-    if (
-      featureFrame?.renderAuthorityRevoked === true ||
-      isExplicitStoppedTransport(featureFrame)
-    ) {
-      runtimeState.renderAuthorityLastVisibleAtSec = null;
-      clearRenderAuthorityDisplayHold(runtimeState);
-    }
-    if (runtimeState.renderAuthorityResetApplied !== true) {
-      resetRenderAuthorityState(runtimeState);
-    }
-    clearRaymarchUniformProjection(runtimeState);
-    volumeMesh.visible = false;
-    idleOverlay.visible = resolveIdleOverlayVisible(
-      runtimeState,
-      featureFrame,
-      renderAuthority,
-    );
-    publishRaymarchRuntimeAuditSnapshot(
-      runtimeState,
-      featureFrame,
-      fieldState,
-      renderAuthority,
-    );
-    return;
-  }
-  clearRenderAuthorityDisplayHold(runtimeState);
-  runtimeState.renderAuthorityResetApplied = false;
-
-  const effectiveCavityGeometry =
-    getRuntimeEffectiveCavityGeometry(runtimeState);
-  const modalDescriptor = featureFrame?.modalDescriptor ?? null;
-  if (!modalDescriptor) {
-    if (observerContinuation) {
-      volumeMesh.visible = true;
-      idleOverlay.visible = false;
-      publishRaymarchRuntimeAuditSnapshot(
-        runtimeState,
-        featureFrame,
-        fieldState,
-        renderAuthority,
-      );
-      return;
-    }
-    blockNonAuthoritativeModalDescriptor(
-      runtimeState,
-      featureFrame,
-      fieldState,
-      renderAuthority,
-    );
-    return;
-  }
-  runtimeState.currentModalDescriptor = modalDescriptor;
-  const rebuiltFatalModalDescriptorBlockReason =
-    resolveFatalModalDescriptorBlockReason(modalDescriptor.fieldAuthority);
-  if (rebuiltFatalModalDescriptorBlockReason) {
-    blockNonAuthoritativeModalDescriptor(
-      runtimeState,
-      featureFrame,
-      fieldState,
-      renderAuthority,
-    );
-    return;
-  }
-  // The descriptor, upload buffers, and potential-cache bake share one modal
-  // capacity. No render-side alias may narrow the canonical descriptor.
-  const productUploadCapacity = modalFieldCapacity;
-  const modalFrameProjection = applyRaymarchModalPacketUploads({
+  runtimeState.lastObserverResetToken = resetToken(
     runtimeState,
-    featureFrame,
-    modalDescriptor,
-    productUploadCapacity,
-    effectiveCavityGeometry,
-  });
-  updateRaymarchReactiveResponse(
-    runtimeState,
-    featureFrame,
-    fieldState,
-    renderAuthority,
-    deltaTime,
+    frame.topology,
   );
-  syncRaymarchUniformProjection(
-    runtimeState,
-    featureFrame,
-    deltaTime,
-    modalFrameProjection,
-  );
-
-  const normalizedCavityGeometry = normalizeCavityGeometry(
-    effectiveCavityGeometry,
-  );
-  if (
-    runtimeState.volumeMesh?.userData?.raymarchCavityGeometry !==
-    normalizedCavityGeometry
-  ) {
-    setRaymarchCavityGeometry(
-      runtimeState.volumeMesh,
-      normalizedCavityGeometry,
-    );
-  }
-  const shouldAdvanceObserver =
-    modalFrameProjection.modalFieldModeCount > 0 || observerContinuation;
-  if (shouldAdvanceObserver) {
-    bakeModalFieldCache(runtimeState, featureFrame, renderer);
-  }
-  const nextObserverState =
-    runtimeState.fieldCache?.getObserverState?.() ?? observerState;
-  volumeMesh.visible =
-    modalFrameProjection.modalFieldModeCount > 0 ||
-    nextObserverState?.hasHistory === true;
-  if (renderAuthority && volumeMesh.visible) {
-    runtimeState.renderAuthorityLastVisibleAtSec = readRuntimeTimeSec(time);
-    runtimeState.renderAuthorityHoldEvaluatedAtSec = null;
-  }
-  const resolvedIdleOverlayVisible = resolveIdleOverlayVisible(
-    runtimeState,
-    featureFrame,
-    renderAuthority,
-  );
-  idleOverlay.visible = volumeMesh.visible ? false : resolvedIdleOverlayVisible;
-  publishRaymarchRuntimeAuditSnapshot(
-    runtimeState,
-    featureFrame,
-    fieldState,
-    renderAuthority,
-  );
+  if (runtimeState.cymaticObserverBakeResult.baked)
+    runtimeState.lastBakedFeatureFrame = frame;
+  return runtimeState.cymaticObserverBakeResult;
 }
-
 export function tickRaymarchRuntime(
   runtimeState,
   featureFrame,
   time,
-  deltaTime,
+  _deltaTime,
   renderer = null,
 ) {
-  return applyRaymarchRuntimeFrame(
-    runtimeState,
-    featureFrame,
-    time,
-    deltaTime,
-    renderer,
-    false,
-  );
+  if (runtimeState.disposed) return;
+  if (
+    featureFrame?.topology &&
+    isStaleTopology(
+      runtimeState.fieldSource.read().topology,
+      featureFrame.topology,
+    )
+  )
+    return;
+  runtimeState.cymaticObserverBakeResult = null;
+  setRaymarchUniformIfChanged(runtimeState.uniforms.uTime, time);
+  if (
+    !hasRenderAuthority(featureFrame) ||
+    runtimeState.presentationFailure ||
+    runtimeState.presentationReady !== true
+  ) {
+    runtimeState.volumeMesh.visible = false;
+    runtimeState.idleOverlay.visible =
+      featureFrame?.isLiveInputActive !== true &&
+      featureFrame?.isPlaying !== true;
+    updateRaymarchReactiveResponse(runtimeState, null, "idle", false);
+    clearRaymarchUniformProjection(runtimeState);
+    publishDiagnostics(runtimeState, null);
+    return;
+  }
+  // The live subscription normally queued this already. Genuine renderer replay
+  // may supply the latest complete model once; duplicates cannot republish it.
+  queueRaymarchObservation(runtimeState, featureFrame);
+  if (renderer) {
+    // Drain the bounded batch present at this tick. A per-frame bake limit
+    // makes the fixed audio-time observer fall behind below that render rate,
+    // eventually faulting healthy audio. Retain every endpoint and let the
+    // observer clock alone decide which ones require GPU evolution.
+    const queued = runtimeState.observationHistory.read().queued;
+    for (let i = 0; i < queued; i++) {
+      const observation = runtimeState.observationHistory.take();
+      if (!observation) break;
+      const frame = createRendererFeatureView({
+        topology: runtimeState.observationTopology,
+        observation,
+      });
+      applyRaymarchModelUpload({ runtimeState, featureFrame: frame });
+      bakeObservation(runtimeState, frame, renderer);
+    }
+  }
+  // Only an explicit apparatus change can reseed a held observation here.
+  if (
+    renderer &&
+    runtimeState.uploadedFeatureFrame &&
+    runtimeState.lastObserverResetToken !==
+      resetToken(runtimeState, runtimeState.uploadedFeatureFrame.topology)
+  )
+    bakeObservation(runtimeState, runtimeState.uploadedFeatureFrame, renderer);
+  const latest = runtimeState.latestFeatureFrame;
+  updateRaymarchReactiveResponse(runtimeState, latest, "active", true);
+  syncRaymarchUniformProjection(runtimeState);
+  runtimeState.volumeMesh.visible =
+    runtimeState.fieldCache.getObserverState().hasHistory;
+  runtimeState.idleOverlay.visible = false;
+  publishDiagnostics(runtimeState, latest);
 }
 
-/**
- * Prepare the production field and material while the loaded file remains
- * visually idle.
- *
- * This is a seed operation, never an evolution step. Repeated render ticks and
- * camera motion resolve to the same key and do no field work. A source or
- * apparatus change produces a new key and seeds the new observer exactly once.
- */
+/** Prepare one real model's derived resources, never an observer step or source.
+ * Completion only records flags. Ordinary ticks own derived dispatch/activation. */
 export function prepareRaymarchRuntime(
   runtimeState,
   featureFrame,
   renderer,
-  { camera = null, scene = null } = {},
+  { camera = null, scene = null, outputTarget = null, outputMrt = null } = {},
 ) {
-  clearCymaticObserverBakeResult(runtimeState);
+  if (runtimeState.disposed) return { ready: false, pending: false };
+  const frame = createRendererFeatureView(featureFrame);
   if (
-    !runtimeState ||
-    !featureFrame?.modalDescriptor ||
-    (!hasRenderAuthority(featureFrame) &&
-      !hasPreparationAuthority(featureFrame))
-  ) {
+    frame &&
+    isStaleTopology(runtimeState.fieldSource.read().topology, frame.topology)
+  )
+    return { ready: false, pending: false, reason: "stale-topology" };
+  if (!hasRenderAuthority(frame)) return { ready: false, pending: false };
+  if (!renderer?.compileAsync || !camera || !scene)
     return {
-      prepared: false,
-      seeded: false,
-      reason: "authoritative-frame-unavailable",
+      ready: false,
+      pending: false,
+      reason: "renderer-unavailable",
+    };
+  const mesh = runtimeState.volumeMesh;
+  const key = JSON.stringify([
+    ...EPOCH_KEYS.map((name) => frame.topology[name]),
+    mesh.material.uuid,
+    mesh.userData.raymarchVolumeShape,
+    outputTarget?.uuid ?? "canvas",
+    outputMrt?.id ?? null,
+  ]);
+  let preparation = runtimeState.preparation;
+  if (!preparation && runtimeState.preparedPresentationKey === key) {
+    const activated = runtimeState.presentationReady !== true;
+    runtimeState.presentationReady = true;
+    return { ready: true, pending: false, activated };
+  }
+  runtimeState.presentationReady = false;
+  if (preparation?.key === key && preparation.error)
+    return {
+      ready: false,
+      pending: false,
+      error: preparation.error,
+    };
+  if (preparation && !preparation.settled)
+    return { ready: false, pending: true };
+  if (preparation?.key === key && preparation.compiled) {
+    if (!preparation.derivedPrepared) {
+      // This dispatch belongs to the ordinary frame, whose existing submission
+      // gate waits for it before a later ordinary frame activates the observer.
+      runtimeState.fieldSource.prepare(renderer);
+      preparation.derivedPrepared = true;
+      return { ready: false, pending: true };
+    }
+    runtimeState.preparedPresentationKey = key;
+    runtimeState.preparation = null;
+    runtimeState.presentationReady = true;
+    return { ready: true, pending: false, activated: true };
+  }
+  revokeRaymarchObservationHistory(runtimeState);
+  runtimeState.presentationFailure = null;
+  runtimeState.preparedPresentationKey = null;
+  preparation = {
+    key,
+    settled: false,
+    compiled: false,
+    derivedPrepared: false,
+    error: null,
+    promise: null,
+  };
+  runtimeState.preparation = preparation;
+  const fail = (error) => {
+    if (!runtimeState.disposed) {
+      preparation.error =
+        error instanceof Error ? error.message : String(error);
+      runtimeState.presentationFailure = preparation.error;
+    }
+  };
+  let target;
+  try {
+    applyRaymarchModelUpload({ runtimeState, featureFrame: frame });
+    target = mesh.clone();
+    target.visible = true;
+  } catch (error) {
+    fail(error);
+    preparation.settled = true;
+    return {
+      ready: false,
+      pending: false,
+      error: preparation.error,
     };
   }
-
-  const preparationFrame = {
-    ...featureFrame,
-    observationAdvancing: false,
-    observationPaused: true,
-  };
-  const frameKey = buildRaymarchPreparationFrameKey(
-    runtimeState,
-    preparationFrame,
-  );
-  const seeded = runtimeState.preparedObserverFrameKey !== frameKey;
-
-  if (seeded) {
-    applyRaymarchRuntimeFrame(
-      runtimeState,
-      preparationFrame,
-      preparationFrame.observationTimeSeconds ?? 0,
-      0,
-      renderer,
-      true,
-    );
-    runtimeState.preparedObserverFrameKey = frameKey;
-  }
-
-  requestRaymarchMaterialCompilation(runtimeState, renderer, {
-    camera,
-    scene,
-  });
-
-  runtimeState.volumeMesh.visible = false;
-  runtimeState.idleOverlay.visible = resolveIdleOverlayVisible(
-    runtimeState,
-    preparationFrame,
-    false,
-  );
-  publishRaymarchRuntimeAuditSnapshot(
-    runtimeState,
-    preparationFrame,
-    "idle",
-    false,
-  );
-
-  return {
-    prepared: true,
-    seeded,
-    frameKey,
-    materialReady:
-      runtimeState.preparedMaterialCompileKey ===
-      buildRaymarchPreparationCompileKey(runtimeState),
-    materialPending: Boolean(runtimeState.pendingMaterialCompilePromise),
-    materialError: runtimeState.materialPreparationError ?? null,
-  };
+  preparation.promise = (async () => {
+    await runtimeState.fieldSource.compile(renderer);
+    if (runtimeState.disposed) return;
+    await runtimeState.fieldCache.compile(renderer);
+    if (runtimeState.disposed) return;
+    await compileRenderPass(renderer, {
+      scene,
+      camera,
+      object: target,
+      target: outputTarget,
+      mrt: outputMrt,
+    });
+  })()
+    .then(() => {
+      if (!runtimeState.disposed) preparation.compiled = true;
+    })
+    .catch(fail)
+    .finally(() => {
+      preparation.settled = true;
+    });
+  return { ready: false, pending: true };
 }
-
 export function disposeRaymarchRuntime(runtimeState) {
-  runtimeState?.fieldCache?.dispose?.();
-  runtimeState?.plasmaProfileLookup?.dispose?.();
-  [
-    runtimeState?.modalFieldModeBuffer,
-    runtimeState?.modalFieldSpectralMomentBuffer,
-    runtimeState?.modalFieldCoefficientBuffer,
-    runtimeState?.modalFieldResponseBuffer,
-  ].forEach((buffer) => buffer?.dispose?.());
-  runtimeState?.points?.traverse?.((child) => {
-    child.geometry?.dispose?.();
-    // One material per volume shape. This used to be nested one level deeper,
-    // keyed by boundary family as well, and walking it as if it still were
-    // reaches the materials' own properties instead of the materials.
-    const materialCache = child.userData?.raymarchMaterialCache;
-    if (materialCache) {
-      Object.values(materialCache).forEach((material) => {
-        material?.dispose?.();
-      });
-    } else {
-      child.material?.dispose?.();
-    }
-    if (child.isLight && child.shadow?.map) {
-      child.shadow.map.dispose?.();
-    }
+  if (!runtimeState || runtimeState.disposed) return;
+  runtimeState.disposed = true;
+  runtimeState.observationHistory = null;
+  runtimeState.latestFeatureFrame = null;
+  runtimeState.fieldCache.dispose();
+  runtimeState.fieldSource.dispose();
+  runtimeState.plasmaProfileLookup?.dispose();
+  runtimeState.points?.traverse?.((child) => {
+    child.geometry?.dispose();
+    const materials = child.userData?.raymarchMaterialCache;
+    if (materials)
+      Object.values(materials).forEach((material) => material.dispose());
+    else child.material?.dispose();
+    child.shadow?.map?.dispose();
   });
 }
 

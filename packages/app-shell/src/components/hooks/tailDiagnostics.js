@@ -1,16 +1,10 @@
-import { hasRenderAuthority } from "@baryon/engine/core/renderAuthorityContract";
-import { RAYMARCH_OPTICAL_FIELD_REPRESENTATION } from "@baryon/engine/core/raymarch/quantityLedger";
 import {
   RENDER_PROBE_MATERIAL_FIELDS,
   buildRenderProbeSnapshot,
 } from "./renderProbeSnapshot.js";
-import { readRenderFacingModalResponseEnergy } from "./modalResponseDiagnostics.js";
 
 const DEFAULT_SAMPLE_INTERVAL_MS = 250;
 const DEFAULT_MAX_DURATION_MS = 60_000;
-const OBSERVER_MIN_RESONANCE_ENERGY = 1e-4;
-const FRAME_MIN_VISIBILITY_ENERGY = 0.02;
-const PLASMA_PROBE_MIN_DENSITY = 0.005;
 const MATERIAL_PROBE_SPIKE_MIN_DELTA = 0.05;
 const MATERIAL_PROBE_SPIKE_RELATIVE_DELTA = 0.35;
 
@@ -38,61 +32,14 @@ function readFiniteNumber(value, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
 }
 
-function readBoolean(value, fallback = false) {
-  return typeof value === "boolean" ? value : fallback;
-}
-
 function readString(value, fallback = null) {
   return typeof value === "string" ? value : fallback;
 }
 
-function readStringArrayMap(value, fallback = null) {
-  if (!value || typeof value !== "object") {
-    return fallback;
-  }
-
-  return Object.fromEntries(
-    Object.entries(value).map(([key, entries]) => [
-      key,
-      Array.isArray(entries) ? [...entries] : [],
-    ]),
-  );
-}
-
-function hasLiveSourceEvidence(sourceEvidence = null) {
+function hasCurrentObservation(frame = {}) {
   return (
-    sourceEvidence?.currentSourceEvidence === true &&
-    sourceEvidence?.sourceBoundaryState === "live" &&
-    readFiniteNumber(sourceEvidence?.sourceEnergy) > 0
-  );
-}
-
-function hasCurrentInput(input = {}) {
-  return hasLiveSourceEvidence(input.sourceEvidence);
-}
-
-function hasObservedModalResponse(observer = {}, frame = {}) {
-  return (
-    readFiniteNumber(frame.observationEnergy) >= FRAME_MIN_VISIBILITY_ENERGY ||
-    readFiniteNumber(frame.modalResponseEnergy) >=
-      FRAME_MIN_VISIBILITY_ENERGY ||
-    (readFiniteNumber(observer.resonantObservedModeCount) > 0 &&
-      readFiniteNumber(observer.resonantObservedEnergy) >
-        OBSERVER_MIN_RESONANCE_ENERGY)
-  );
-}
-
-function hasFrameVisibility(frame = {}) {
-  return (
-    frame.renderAuthority === true &&
-    readFiniteNumber(frame.observationEnergy) >= FRAME_MIN_VISIBILITY_ENERGY
-  );
-}
-
-function hasObservedPlasmaDensity(render = {}) {
-  return (
-    readFiniteNumber(render.plasmaProbeOrganizedDensity) >=
-    PLASMA_PROBE_MIN_DENSITY
+    frame?.renderAuthority === true &&
+    Number.isSafeInteger(frame.latestAcceptedEndSample)
   );
 }
 
@@ -122,13 +69,14 @@ function median(values) {
 function summarizeNumericWindow(values) {
   if (values.length === 0) {
     return {
-      mean: 0,
-      variance: 0,
-      min: 0,
-      max: 0,
-      p50: 0,
-      p95: 0,
-      spikeThreshold: 0,
+      count: 0,
+      mean: null,
+      variance: null,
+      min: null,
+      max: null,
+      p50: null,
+      p95: null,
+      spikeThreshold: null,
       spikeCount: 0,
     };
   }
@@ -148,6 +96,7 @@ function summarizeNumericWindow(values) {
     );
 
   return {
+    count: values.length,
     mean,
     variance,
     min: sorted[0],
@@ -160,7 +109,10 @@ function summarizeNumericWindow(values) {
 }
 
 function readMaterialProbeValues(samples, field) {
-  return samples.map((sample) => readFiniteNumber(sample?.render?.[field]));
+  return samples
+    .filter((sample) => sample?.probe?.health?.available === true)
+    .map((sample) => sample?.render?.[field])
+    .filter(Number.isFinite);
 }
 
 function countSampleClassifications(samples) {
@@ -172,33 +124,10 @@ function countSampleClassifications(samples) {
 }
 
 function hasMaterialProbeSignal(sample) {
-  const probe = sample?.probe ?? sample?.render?.renderProbeSnapshot ?? null;
-  if (probe?.health?.available === true) {
-    return true;
-  }
-  const render = sample?.render ?? {};
-  return (
-    readFiniteNumber(render.plasmaProbeLocalRadiance) > 0 ||
-    readFiniteNumber(render.plasmaProbePersistence) > 0 ||
-    readFiniteNumber(render.plasmaProbeOrganizedDensity) > 0 ||
-    readFiniteNumber(render.plasmaProbeExtinction) > 0 ||
-    readFiniteNumber(render.plasmaProbePreBloomRadiance) > 0 ||
-    readFiniteNumber(render.plasmaProbePostBloomRisk) > 0 ||
-    readFiniteNumber(render.plasmaProbeBloomAmplification, 1) !== 1
-  );
+  return sample?.probe?.health?.available === true;
 }
-
 function hasActiveProbeCandidate(sample) {
-  const probe = sample?.probe ?? sample?.render?.renderProbeSnapshot ?? null;
-  if (typeof probe?.health?.activeCandidate === "boolean") {
-    return probe.health.activeCandidate;
-  }
-  return (
-    sample?.render?.volumeVisible === true &&
-    sample?.frame?.renderAuthority === true &&
-    (readFiniteNumber(sample?.frame?.projectedRenderEnergy) > 0 ||
-      readFiniteNumber(sample?.frame?.observationEnergy) > 0)
-  );
+  return sample?.probe?.health?.activeCandidate === true;
 }
 
 function classifyMaterialProbeWindow({
@@ -210,7 +139,7 @@ function classifyMaterialProbeWindow({
   if (sampleCount === 0) {
     return "empty";
   }
-  if (probeSampleCount === 0 && activeProbeCandidateCount > 0) {
+  if (probeSampleCount < activeProbeCandidateCount || probeSampleCount === 0) {
     return "probe-unavailable";
   }
   if (metrics.plasmaProbePreBloomRadiance.spikeCount > 0) {
@@ -254,33 +183,13 @@ export function summarizeTailDiagnosticWindow(samples = []) {
 }
 
 export function classifyTailDiagnosticSample(sample = {}) {
-  const inputPresent = hasCurrentInput(sample.input);
-  if (!inputPresent) {
-    return "input-drop";
-  }
-
-  const observerPresent = hasObservedModalResponse(
-    sample.observer,
-    sample.frame,
-  );
-  if (!observerPresent) {
-    return "observer-drop";
-  }
-
-  const frameVisible = hasFrameVisibility(sample.frame);
-  if (!frameVisible) {
-    return "frame-visibility-drop";
-  }
-
-  if (sample.render?.volumeVisible === false) {
-    return "render-hidden";
-  }
-
-  if (!hasObservedPlasmaDensity(sample.render)) {
-    return "plasma-transfer-drop";
-  }
-
-  return "unknown";
+  if (sample.frame?.presentationFailure) return "presentation-failed";
+  if (!hasCurrentObservation(sample.frame)) return "model-unavailable";
+  if (sample.observer?.hasHistory !== true) return "observer-pending";
+  if (sample.render?.volumeVisible !== true) return "render-hidden";
+  if (sample.frame.sourcePhase === "paused") return "source-held";
+  if (sample.frame.sourcePhase === "draining") return "source-draining";
+  return "active";
 }
 
 function buildTailDiagnosticSample({
@@ -289,246 +198,29 @@ function buildTailDiagnosticSample({
   runtimeState = null,
   tMs,
 }) {
-  const modalFreshness = runtimeDiagnostics?.modalFreshness ?? {};
-  const render = runtimeDiagnostics?.render ?? {};
   const debugSnapshot = runtimeState?.debugSnapshot ?? null;
-  const raymarchDebug = debugSnapshot?.raymarchDebug ?? {};
-  const sourceEvidence =
-    modalFreshness.sourceEvidence ?? featureFrame?.sourceEvidence ?? null;
-  const renderAuthority =
-    featureFrame != null
-      ? hasRenderAuthority(featureFrame)
-      : readBoolean(raymarchDebug.renderAuthority);
-
-  const sample = {
-    tMs: readFiniteNumber(tMs),
-    input: {
-      sourceEvidence,
-      avgAmplitude: readFiniteNumber(modalFreshness.avgAmplitude),
-      analyserRms: readFiniteNumber(modalFreshness.analyserRms),
-      periodicity: readFiniteNumber(modalFreshness.periodicity),
-      hardSilence: readBoolean(modalFreshness.liveInputHardSilenceActive),
-      noiseGate: readBoolean(modalFreshness.liveInputNoiseGateActive),
-      sourceMode: modalFreshness.sourceMode ?? featureFrame?.sourceMode ?? null,
-    },
-    observer: {
-      resonantObservedModeCount: readFiniteNumber(
-        modalFreshness.resonantObservedModeCount,
-      ),
-      resonantObservedEnergy: readFiniteNumber(
-        modalFreshness.resonantObservedEnergy,
-      ),
-      resonantRingSupport: readFiniteNumber(modalFreshness.resonantRingSupport),
-      modeCoherence: readFiniteNumber(modalFreshness.modeCoherence),
-      modalPhaseAuthority: readFiniteNumber(modalFreshness.modalPhaseAuthority),
-    },
-    frame: {
-      fieldState:
-        modalFreshness.fieldState ?? featureFrame?.fieldState ?? "idle",
-      renderAuthority,
-      projectedRenderEnergy: readFiniteNumber(
-        featureFrame?.energyLedger?.projectedRenderEnergy ??
-          raymarchDebug.projectedRenderEnergy,
-      ),
-      activeModeCount: readFiniteNumber(
-        modalFreshness.uploadedModeCount ??
-          render.activeModeCount ??
-          modalFreshness.activeModeCount,
-      ),
-      activeModalFieldModeCount: readFiniteNumber(
-        modalFreshness.uploadedModeCount ??
-          modalFreshness.activeModalFieldModeCount ??
-          modalFreshness.activeModeCount,
-      ),
-      totalSlotAmplitude: readFiniteNumber(
-        runtimeState?.raymarchStructuralProjection?.amplitudeSum ??
-          raymarchDebug.totalSlotAmplitude ??
-          render.totalSlotAmplitude ??
-          modalFreshness.totalSlotAmplitude ??
-          featureFrame?.debug?.totalSlotAmplitude,
-      ),
-      structuralProjectionDrive: readFiniteNumber(
-        runtimeState?.raymarchStructuralProjection?.projectionEnergyDrive ??
-          raymarchDebug.structuralProjectionDrive ??
-          render.structuralProjectionDrive ??
-          modalFreshness.structuralProjectionDrive ??
-          featureFrame?.debug?.structuralProjectionDrive,
-      ),
-      structuralProjectionConcentration: readFiniteNumber(
-        runtimeState?.raymarchStructuralProjection?.structuralConcentration ??
-          raymarchDebug.structuralProjectionConcentration ??
-          render.structuralProjectionConcentration ??
-          modalFreshness.structuralProjectionConcentration ??
-          featureFrame?.debug?.structuralProjectionConcentration,
-      ),
-      observationEnergy: readFiniteNumber(
-        modalFreshness.observationEnergy ?? featureFrame?.observationEnergy,
-      ),
-      modalResponseEnergy: Math.max(
-        readFiniteNumber(modalFreshness.modalResponseEnergy),
-        readRenderFacingModalResponseEnergy(featureFrame),
-      ),
-      modalResponseBudgetScale: readFiniteNumber(
-        modalFreshness.modalResponseBudgetScale ??
-          featureFrame?.modalResponseBudgetScale ??
-          featureFrame?.debug?.modalResponseBudgetScale,
-      ),
-      modalResponseRawEnergy: readFiniteNumber(
-        modalFreshness.modalResponseRawEnergy ??
-          featureFrame?.modalResponseRawEnergy ??
-          featureFrame?.debug?.modalResponseRawEnergy,
-      ),
-      modalResponseAverageDampingEnvelope: readFiniteNumber(
-        modalFreshness.modalResponseAverageDampingEnvelope ??
-          featureFrame?.modalResponseAverageDampingEnvelope ??
-          featureFrame?.debug?.modalResponseAverageDampingEnvelope,
-      ),
-      modalResponseAverageCouplingStrength: readFiniteNumber(
-        modalFreshness.modalResponseAverageCouplingStrength ??
-          featureFrame?.modalResponseAverageCouplingStrength ??
-          featureFrame?.debug?.modalResponseAverageCouplingStrength,
-      ),
-      modalResponseAveragePhaseConfidence: readFiniteNumber(
-        modalFreshness.modalResponseAveragePhaseConfidence ??
-          featureFrame?.modalResponseAveragePhaseConfidence ??
-          featureFrame?.debug?.modalResponseAveragePhaseConfidence,
-      ),
-      modalResponseAveragePersistence: readFiniteNumber(
-        modalFreshness.modalResponseAveragePersistence ??
-          featureFrame?.modalResponseAveragePersistence ??
-          featureFrame?.debug?.modalResponseAveragePersistence,
-      ),
-    },
-    render: {
-      volumeVisible: readBoolean(debugSnapshot.volumeVisible, true),
-      idleOverlayVisible: readBoolean(debugSnapshot.idleOverlayVisible),
-      observerGeometryExposureSeconds: readFiniteNumber(
-        render.observerGeometryExposureSeconds ??
-          raymarchDebug.observerGeometryExposureSeconds,
-      ),
-      observerRadianceExposureSeconds: readFiniteNumber(
-        render.observerRadianceExposureSeconds ??
-          raymarchDebug.observerRadianceExposureSeconds,
-      ),
-      observerSpectralExposureSeconds: readFiniteNumber(
-        render.observerSpectralExposureSeconds ??
-          raymarchDebug.observerSpectralExposureSeconds,
-      ),
-      plasmaProbeLocalRadiance: readFiniteNumber(
-        render.plasmaProbeLocalRadiance ??
-          raymarchDebug.plasmaProbeLocalRadiance,
-      ),
-      plasmaProbePersistence: readFiniteNumber(
-        render.plasmaProbePersistence ?? raymarchDebug.plasmaProbePersistence,
-      ),
-      plasmaProbeOrganizedDensity: readFiniteNumber(
-        render.plasmaProbeOrganizedDensity ??
-          raymarchDebug.plasmaProbeOrganizedDensity,
-      ),
-      plasmaProbeExtinction: readFiniteNumber(
-        render.plasmaProbeExtinction ?? raymarchDebug.plasmaProbeExtinction,
-      ),
-      plasmaProbePreBloomRadiance: readFiniteNumber(
-        render.plasmaProbePreBloomRadiance ??
-          raymarchDebug.plasmaProbePreBloomRadiance,
-      ),
-      plasmaProbePostBloomRisk: readFiniteNumber(
-        render.plasmaProbePostBloomRisk ??
-          raymarchDebug.plasmaProbePostBloomRisk,
-      ),
-      plasmaProbeBloomAmplification: readFiniteNumber(
-        render.plasmaProbeBloomAmplification ??
-          raymarchDebug.plasmaProbeBloomAmplification,
-        1,
-      ),
-      renderQuantityLedgerVersion: readString(
-        render.renderQuantityLedgerVersion ??
-          raymarchDebug.renderQuantityLedgerVersion,
-      ),
-      renderQuantityForbiddenConsumers: readStringArrayMap(
-        render.renderQuantityForbiddenConsumers ??
-          raymarchDebug.renderQuantityForbiddenConsumers,
-      ),
-      totalSlotAmplitude: readFiniteNumber(
-        runtimeState?.raymarchStructuralProjection?.amplitudeSum ??
-          raymarchDebug.totalSlotAmplitude ??
-          render.totalSlotAmplitude ??
-          modalFreshness.totalSlotAmplitude ??
-          featureFrame?.debug?.totalSlotAmplitude,
-      ),
-      structuralProjectionDrive: readFiniteNumber(
-        runtimeState?.raymarchStructuralProjection?.projectionEnergyDrive ??
-          raymarchDebug.structuralProjectionDrive ??
-          render.structuralProjectionDrive ??
-          modalFreshness.structuralProjectionDrive ??
-          featureFrame?.debug?.structuralProjectionDrive,
-      ),
-      structuralProjectionConcentration: readFiniteNumber(
-        runtimeState?.raymarchStructuralProjection?.structuralConcentration ??
-          raymarchDebug.structuralProjectionConcentration ??
-          render.structuralProjectionConcentration ??
-          modalFreshness.structuralProjectionConcentration ??
-          featureFrame?.debug?.structuralProjectionConcentration,
-      ),
-      opticalFieldRepresentation: readString(
-        render.opticalFieldRepresentation ??
-          raymarchDebug.opticalFieldRepresentation,
-        RAYMARCH_OPTICAL_FIELD_REPRESENTATION,
-      ),
-      radiationPotentialModeCapacity: readFiniteNumber(
-        render.radiationPotentialModeCapacity ??
-          raymarchDebug.radiationPotentialModeCapacity ??
-          runtimeState?.modalFieldCapacity,
-      ),
-      radiationPotentialObservedCoefficientEnergy: readFiniteNumber(
-        runtimeState?.radiationPotentialCoefficientFrame
-          ?.observedCoefficientEnergy ??
-          render.radiationPotentialObservedCoefficientEnergy ??
-          raymarchDebug.radiationPotentialObservedCoefficientEnergy,
-      ),
-      radiationPotentialObservedCoefficientNorm: readFiniteNumber(
-        runtimeState?.radiationPotentialCoefficientFrame
-          ?.observedCoefficientNorm ??
-          render.radiationPotentialObservedCoefficientNorm ??
-          raymarchDebug.radiationPotentialObservedCoefficientNorm,
-      ),
-      radiationPotentialNormalizedEnergyNorm: readFiniteNumber(
-        render.radiationPotentialNormalizedEnergyNorm ??
-          raymarchDebug.radiationPotentialNormalizedEnergyNorm,
-      ),
-      radiationPotentialBakeModeCount: readFiniteNumber(
-        render.radiationPotentialBakeModeCount ??
-          raymarchDebug.radiationPotentialBakeModeCount,
-      ),
-      radiationPotentialExposureDrive: readFiniteNumber(
-        render.radiationPotentialExposureDrive ??
-          raymarchDebug.radiationPotentialExposureDrive,
-      ),
-      bloomEnabled: readBoolean(render.bloomEnabled),
-      bloomResponseSignal: readFiniteNumber(modalFreshness.bloomResponseSignal),
-      scaleSignal: readFiniteNumber(modalFreshness.scaleSignal),
-    },
-  };
   const probe = buildRenderProbeSnapshot({
-    renderDiagnostics: {
-      ...sample.render,
-      plasmaProbeLocalRadiance:
-        sample.render.plasmaProbeLocalRadiance ||
-        sample.frame.observationEnergy,
-      activeModeCount: sample.frame.activeModeCount,
-    },
+    renderDiagnostics: runtimeDiagnostics?.render,
     debugSnapshot,
     runtimeState,
     featureFrame,
     nowMs: tMs,
   });
-  sample.probe = probe;
-  sample.render.renderProbeSnapshot = probe;
-  sample.render.renderProbeSchemaVersion = probe.schemaVersion;
-  sample.render.renderProbeAvailable = probe.health.available;
-  sample.render.renderProbeActiveCandidate = probe.health.activeCandidate;
-  sample.render.renderProbeStatus = probe.health.status;
-  sample.render.renderProbeUnavailableReason = probe.health.unavailableReason;
+  const sample = {
+    tMs: readFiniteNumber(tMs),
+    input: {
+      sourceGeneration: featureFrame?.observation.sourceGeneration ?? null,
+      inputEndSample: featureFrame?.observation.inputEndSample ?? null,
+      preparationDelayFrames:
+        featureFrame?.observation.preparationDelayFrames ?? null,
+    },
+    frame: probe.state,
+    observer: debugSnapshot?.observer
+      ? { ...debugSnapshot.observer }
+      : { hasHistory: false, stepIndex: null },
+    render: { ...probe.visual, ...probe.material },
+    probe,
+  };
   sample.classification = classifyTailDiagnosticSample(sample);
   return sample;
 }

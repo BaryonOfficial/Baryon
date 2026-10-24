@@ -100,7 +100,7 @@ function createPairedSeparableBlurMaterial(builder, kernelRadius) {
  * Three's bloom topology and lifecycle with only the safe equal-resolution
  * separable passes replaced by coefficient-paired bilinear sampling.
  */
-export class PairedBloomNode extends BloomNode {
+class PairedBloomNode extends BloomNode {
   constructor(inputNode, strength = 1, radius = 0, threshold = 0) {
     super(inputNode, strength, radius, threshold);
     this._pairedSeparableBlurMaterials = [];

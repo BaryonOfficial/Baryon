@@ -1,3 +1,4 @@
+import { REFERENCE_APERTURE_PASSES } from "../../testing/spatialApertureReference.js";
 import { describe, expect, it } from "vitest";
 import {
   FIELD_CACHE_CELL_SIZE,
@@ -8,7 +9,6 @@ import {
   sortFieldCacheVoxelIndex,
 } from "./fieldCacheGeometry.js";
 import {
-  CYMATIC_OBSERVER_APERTURE_PASSES,
   CYMATIC_OBSERVER_FINE_APERTURE_KERNEL_OFFSETS,
   CYMATIC_OBSERVER_REFERENCE,
   CYMATIC_OBSERVER_TOPOLOGY_APERTURE_KERNEL_OFFSETS,
@@ -133,7 +133,7 @@ function filterPass(source, { direction, inputDomain, outputDomain }) {
 
 function runFullAperture() {
   let field = createSource(FIELD_CACHE_DOMAINS.full);
-  for (const pass of CYMATIC_OBSERVER_APERTURE_PASSES) {
+  for (const pass of REFERENCE_APERTURE_PASSES) {
     field = filterPass(field, {
       direction: pass.direction,
       inputDomain: FIELD_CACHE_DOMAINS.full,
@@ -145,7 +145,7 @@ function runFullAperture() {
 
 function runSparseAperture() {
   let field = createSource(FIELD_CACHE_DOMAINS.fundamentalXyz);
-  for (const pass of CYMATIC_OBSERVER_APERTURE_PASSES) {
+  for (const pass of REFERENCE_APERTURE_PASSES) {
     field = filterPass(field, pass);
   }
   return field;

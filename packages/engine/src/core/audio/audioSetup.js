@@ -1,10 +1,4 @@
-import {
-  AUDIO_DEFAULTS,
-  AUDIO_SLOT_CAPACITY,
-  DEFAULT_FFT_SIZE,
-  DEFAULT_SAMPLE_RATE,
-} from "../../defaults.js";
-import { createNodeAnalyser, sampleAnalyser } from "./analyserSampler.js";
+import { AUDIO_DEFAULTS, DEFAULT_SAMPLE_RATE } from "../../defaults.js";
 import {
   DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
   areLiveInputAnalysisSettingsEqual,
@@ -30,26 +24,20 @@ import {
   cloneLiveInputInterruptionDiagnostics,
   clonePlaybackDiagnostics,
 } from "./audioSessionDiagnostics.js";
-import { createDecodedAudioAnalysisSource } from "./decodedAudioAnalysis.js";
 import {
   AUDIO_SOURCE_EVENTS,
   AUDIO_SOURCE_KINDS,
   AUDIO_SOURCE_PHASES,
   cloneAudioSourceSession,
   createAudioSourceSession,
-  isPreparedFileAwaitingPlayback,
   reduceAudioSourceSession,
 } from "./audioSourceSession.js";
+import { createAudioFeatureRuntime } from "../../utils/audio/audioFeatureEngine.js";
 
-export {
-  AUDIO_SOURCE_KINDS,
-  AUDIO_SOURCE_PHASES,
-  isPreparedFileAwaitingPlayback,
-};
+export { AUDIO_SOURCE_KINDS, AUDIO_SOURCE_PHASES };
 
 const LIVE_INPUT_INTERRUPTION_MUTE_TIMEOUT_MS = 1500;
 const LIVE_INPUT_INTERRUPTION_CONTEXT_TIMEOUT_MS = 1500;
-const FAST_ANALYSIS_FFT_SIZE = 2048;
 function disconnectAudioNode(node, target = undefined) {
   if (!node?.disconnect) return;
   try {
@@ -63,85 +51,11 @@ function disconnectAudioNode(node, target = undefined) {
   }
 }
 
-function createAnalysisTap(audioCtx, sourceNode, fftSize) {
-  const reader = createNodeAnalyser(audioCtx, sourceNode, fftSize);
-  return {
-    reader,
-    analyserNode: reader.analyser,
-  };
-}
-
-function disconnectAnalysisTaps(taps) {
-  disconnectAudioNode(taps?.fast?.analyserNode);
-  disconnectAudioNode(taps?.structural?.analyserNode);
-}
-
-function createSynchronizedAnalysisTaps(
-  audioCtx,
-  sourceNode,
-  structuralFftSize,
-) {
-  const taps = {};
-  try {
-    taps.fast = createAnalysisTap(audioCtx, sourceNode, FAST_ANALYSIS_FFT_SIZE);
-    taps.structural = createAnalysisTap(
-      audioCtx,
-      sourceNode,
-      structuralFftSize,
-    );
-    return taps;
-  } catch (error) {
-    disconnectAnalysisTaps(taps);
-    throw error;
-  }
-}
-
-function createLiveInputAnalysisGraph(audioCtx, stream, structuralFftSize) {
-  const sourceNode = audioCtx.createMediaStreamSource(stream);
-  try {
-    return {
-      sourceNode,
-      analysisTaps: createSynchronizedAnalysisTaps(
-        audioCtx,
-        sourceNode,
-        structuralFftSize,
-      ),
-    };
-  } catch (error) {
-    disconnectAudioNode(sourceNode);
-    throw error;
-  }
-}
-
-function releaseLiveInputAnalysisGraph(graph) {
-  disconnectAnalysisTaps(graph?.analysisTaps);
-  disconnectAudioNode(graph?.sourceNode);
-}
-
 function stopMediaStreamTracks(stream) {
   const tracks = stream?.getTracks?.() ?? stream?.getAudioTracks?.() ?? [];
   for (const track of tracks) {
     track.stop?.();
   }
-}
-
-function getAnalysisSource(status) {
-  if (
-    status.sourceSession.kind === AUDIO_SOURCE_KINDS.file &&
-    (status.hasPlaybackAnalysisSource ||
-      (status.hasPreparedFileAnalysisSource && status.isPlaying))
-  ) {
-    return "file";
-  }
-  if (
-    status.sourceSession.kind === AUDIO_SOURCE_KINDS.system &&
-    status.isLiveInputActive
-  ) {
-    return isLoopbackLiveInputDeviceKind(status.liveInputDeviceKind)
-      ? "file"
-      : "live";
-  }
-  return "idle";
 }
 
 function getAudioContextCtor() {
@@ -178,19 +92,17 @@ function getTimingNowMs() {
   return Date.now();
 }
 
-export function createAudioSession() {
+export function createAudioSession({
+  createFeatureRuntime = createAudioFeatureRuntime,
+} = {}) {
   const state = {
-    fftSize: DEFAULT_FFT_SIZE,
-    capacity: AUDIO_SLOT_CAPACITY,
-    pitchSourceMode: "spectral",
     sourceSession: createAudioSourceSession(),
     cachedFileTimelineRevision: 0,
     audioCtx: null,
     playbackOutputGain: null,
-    activeAnalysisTaps: null,
     decodedBuffer: null,
-    decodedAnalysisSource: null,
     activeBufferSource: null,
+    retiringBufferSources: new Set(),
     mediaElement: null,
     mediaElementSourceNode: null,
     mediaElementListeners: null,
@@ -225,9 +137,70 @@ export function createAudioSession() {
     audioContextStateListenerAttached: false,
   };
 
+  let pcmBus = null;
+  let pcmConsumer = null;
+  function ensurePcmBus() {
+    if (!pcmBus) {
+      pcmBus = ensureAudioContext().createGain();
+      pcmBus.channelCountMode = "max";
+      pcmBus.channelInterpretation = "discrete";
+    }
+    return pcmBus;
+  }
+  function readPcmSource() {
+    if (!state.audioCtx || !pcmBus) return null;
+    return {
+      context: state.audioCtx,
+      source: pcmBus,
+      sourceSession: cloneAudioSourceSession(state.sourceSession),
+      active: Boolean(
+        state.activeBufferSource ||
+        isStreamSourcePlaying() ||
+        state.gumStream?.active,
+      ),
+      endTime: state.activeBufferSource
+        ? state.activePlaybackDiagnostics?.expectedEndTimeSeconds
+        : undefined,
+    };
+  }
+  function bindPcmConsumer(consumer) {
+    if (pcmConsumer)
+      throw new Error("The audio session already has a PCM consumer");
+    pcmConsumer = consumer;
+    return () => {
+      if (pcmConsumer !== consumer) return;
+      pcmConsumer = null;
+      consumer.invalidate("pcm-consumer-detached");
+    };
+  }
+  async function preparePcmAnalysis() {
+    if (pcmConsumer) await pcmConsumer.prepare(readPcmSource());
+  }
+  function nextPcmBoundaryFrame(context) {
+    return (
+      Math.ceil((context.currentTime * context.sampleRate) / 128) * 128 + 512
+    );
+  }
+  function beginPcmAnalysis(endTime = undefined) {
+    const context = ensureAudioContext();
+    if (!pcmConsumer) return context.currentTime;
+    // Both audible file playback and capture use this scheduled sample edge.
+    // The short lookahead lets the worklet receive its command before the edge.
+    const startFrame = nextPcmBoundaryFrame(context);
+    pcmConsumer?.begin({
+      startFrame,
+      endFrame:
+        endTime === undefined
+          ? undefined
+          : Math.ceil(endTime * context.sampleRate),
+    });
+    return startFrame / context.sampleRate;
+  }
+
   let endedCallback = null;
   let activeLiveInputSettingsSync = null;
   let nextPlaybackSessionId = 0;
+  let playbackStartRequest = null;
   const clockState = {
     mode: "realtime",
     previousElapsedTime: 0,
@@ -235,7 +208,19 @@ export function createAudioSession() {
   };
 
   function transitionSource(event) {
-    state.sourceSession = reduceAudioSourceSession(state.sourceSession, event);
+    const previous = state.sourceSession;
+    state.sourceSession = reduceAudioSourceSession(previous, event);
+    if (
+      state.sourceSession !== previous &&
+      (previous.sessionId !== state.sourceSession.sessionId ||
+        previous.timelineRevision !== state.sourceSession.timelineRevision ||
+        ["empty", "loading", "stopped", "error"].includes(
+          state.sourceSession.phase,
+        ))
+    ) {
+      clearRetiringBufferSources();
+      pcmConsumer?.invalidate(event.type);
+    }
     if (state.sourceSession.kind === AUDIO_SOURCE_KINDS.file) {
       state.cachedFileTimelineRevision = state.sourceSession.timelineRevision;
     }
@@ -243,12 +228,23 @@ export function createAudioSession() {
   }
 
   function beginSourceRequest(event, expectedPhase) {
+    cancelPlaybackStart();
     const sourceSession = transitionSource(event);
     return {
       kind: sourceSession.kind,
       phase: expectedPhase,
       sessionId: sourceSession.sessionId,
     };
+  }
+
+  function cancelPlaybackStart() {
+    playbackStartRequest = null;
+  }
+
+  function beginPlaybackStart(element = null) {
+    const request = { pending: true, element };
+    playbackStartRequest = request;
+    return request;
   }
 
   function isCurrentSourceRequest(request) {
@@ -304,6 +300,7 @@ export function createAudioSession() {
     }
 
     state.audioCtx = new AudioContextCtor();
+    globalThis.addEventListener?.("pagehide", handlePageUnload);
     state.audioContextState = state.audioCtx.state ?? "unknown";
     if (!state.audioContextStateListenerAttached) {
       state.audioCtx.onstatechange = () => {
@@ -327,8 +324,12 @@ export function createAudioSession() {
     state.activePlaybackDiagnostics = null;
   }
 
-  function beginPlaybackSession({ audioCtx, sourceKind, offsetSeconds }) {
-    const startedAtContextTimeSeconds = audioCtx.currentTime;
+  function beginPlaybackSession({
+    audioCtx,
+    sourceKind,
+    offsetSeconds,
+    startedAtContextTimeSeconds = audioCtx.currentTime,
+  }) {
     const durationSeconds = normalizeDurationSeconds(
       state.playbackDurationSeconds,
     );
@@ -538,11 +539,6 @@ export function createAudioSession() {
     };
   }
 
-  function clearActiveAnalysisTap() {
-    disconnectAnalysisTaps(state.activeAnalysisTaps);
-    state.activeAnalysisTaps = null;
-  }
-
   function clearLiveInputMuteTimeout() {
     if (state.liveInputMuteTimeoutId != null) {
       globalThis.clearTimeout?.(state.liveInputMuteTimeoutId);
@@ -591,7 +587,6 @@ export function createAudioSession() {
     state.selectedLiveInputDeviceId = null;
     state.selectedLiveInputDeviceLabel = "";
     state.liveInputDeviceKind = null;
-    clearActiveAnalysisTap();
   }
 
   function recoverInterruptedLiveInput(reason) {
@@ -670,15 +665,6 @@ export function createAudioSession() {
     };
   }
 
-  function hasActiveAnalysisTap(sourceKind) {
-    return state.activeAnalysisTaps?.sourceKind === sourceKind;
-  }
-
-  function replaceActiveAnalysisTap(taps, sourceKind) {
-    clearActiveAnalysisTap();
-    state.activeAnalysisTaps = { ...taps, sourceKind };
-  }
-
   function applyOutputVolume() {
     if (state.playbackOutputGain?.gain) {
       state.playbackOutputGain.gain.value = getEffectiveVolume();
@@ -741,7 +727,33 @@ export function createAudioSession() {
     state.activeBufferSource.onended = null;
     disconnectAudioNode(state.activeBufferSource);
     state.activeBufferSource = null;
-    clearActiveAnalysisTap();
+  }
+
+  function stopBufferSource(source, stopAtSeconds = null) {
+    const disconnect = () => {
+      state.retiringBufferSources.delete(source);
+      source.onended = null;
+      disconnectAudioNode(source);
+    };
+    source.onended = null;
+    if (stopAtSeconds !== null) {
+      // The worklet must still receive the input through the shared pause edge.
+      state.retiringBufferSources.add(source);
+      source.onended = disconnect;
+    }
+    try {
+      if (stopAtSeconds === null) source.stop();
+      else source.stop(stopAtSeconds);
+    } catch (error) {
+      disconnect();
+      if (error?.name !== "InvalidStateError") throw error;
+      return;
+    }
+    if (stopAtSeconds === null) disconnect();
+  }
+
+  function clearRetiringBufferSources() {
+    for (const source of state.retiringBufferSources) stopBufferSource(source);
   }
 
   function removeMediaElementListeners() {
@@ -766,7 +778,6 @@ export function createAudioSession() {
     removeMediaElementListeners();
     disconnectAudioNode(state.mediaElementSourceNode);
     state.mediaElementSourceNode = null;
-    clearActiveAnalysisTap();
     if (clearElement) {
       state.mediaElement = null;
     }
@@ -780,6 +791,7 @@ export function createAudioSession() {
       return;
     }
 
+    pcmConsumer?.end();
     pauseMediaElement(element);
     setMediaElementTime(element, 0);
     resetPlaybackPosition();
@@ -813,11 +825,8 @@ export function createAudioSession() {
 
     const audioCtx = ensureAudioContext();
     const sourceNode = audioCtx.createMediaElementSource(element);
-    replaceActiveAnalysisTap(
-      createSynchronizedAnalysisTaps(audioCtx, sourceNode, state.fftSize),
-      "playback",
-    );
     sourceNode.connect(state.playbackOutputGain);
+    sourceNode.connect(ensurePcmBus());
 
     const handleEnded = () => {
       handleStreamEnded(element);
@@ -847,7 +856,6 @@ export function createAudioSession() {
       pauseMediaElement(state.mediaElement);
     }
     state.decodedBuffer = null;
-    state.decodedAnalysisSource = null;
     state.loadedPlaybackSourceKind = "none";
     state.playbackDurationSeconds = 0;
     state.sourceMetadata = {
@@ -878,29 +886,37 @@ export function createAudioSession() {
     resetOffset = false,
     stoppedMode = null,
     endReason = null,
+    synchronizePcmPause = false,
   } = {}) {
-    const playbackTime = getCurrentPlaybackTime();
     const audioCtx = state.audioCtx;
+    const pauseFrame =
+      synchronizePcmPause &&
+      pcmConsumer &&
+      state.activeBufferSource &&
+      audioCtx?.state === "running"
+        ? nextPcmBoundaryFrame(audioCtx)
+        : null;
+    const pauseTime =
+      pauseFrame === null ? null : pauseFrame / audioCtx.sampleRate;
+    const playbackTime =
+      pauseTime === null
+        ? getCurrentPlaybackTime()
+        : clampPlaybackTime(
+            state.playbackOffsetSeconds +
+              Math.max(0, pauseTime - state.playbackStartedAtSeconds),
+          );
     if (resetOffset) {
       resetPlaybackPosition();
     } else {
       resetPlaybackPosition(playbackTime);
     }
 
+    pcmConsumer?.pause(
+      pauseFrame === null ? undefined : { contextFrame: pauseFrame },
+    );
     const source = state.activeBufferSource;
     state.activeBufferSource = null;
-    if (source) {
-      source.onended = null;
-      try {
-        source.stop();
-      } catch (error) {
-        if (error?.name !== "InvalidStateError") {
-          throw error;
-        }
-      }
-      disconnectAudioNode(source);
-      clearActiveAnalysisTap();
-    }
+    if (source) stopBufferSource(source, pauseTime);
 
     if (endReason) {
       finalizePlaybackDiagnostics(endReason, {
@@ -927,6 +943,7 @@ export function createAudioSession() {
     endReason = null,
   } = {}) {
     const element = state.mediaElement;
+    pcmConsumer?.pause();
     const playbackTime = getCurrentPlaybackTime();
 
     if (element) {
@@ -961,14 +978,21 @@ export function createAudioSession() {
     resetOffset = false,
     stoppedMode = null,
     endReason = null,
+    synchronizePcmPause = false,
   } = {}) {
+    cancelPlaybackStart();
     if (state.loadedPlaybackSourceKind === "stream") {
       stopStreamPlayback({ resetOffset, stoppedMode, endReason });
       return;
     }
 
     if (state.activeBufferSource || state.playbackOffsetSeconds > 0) {
-      stopBufferPlayback({ resetOffset, stoppedMode, endReason });
+      stopBufferPlayback({
+        resetOffset,
+        stoppedMode,
+        endReason,
+        synchronizePcmPause,
+      });
       return;
     }
 
@@ -1017,6 +1041,7 @@ export function createAudioSession() {
         ? "premature"
         : "interrupted";
 
+    if (endReason !== "natural") pcmConsumer?.pause();
     clearActiveBufferSource();
     if (endReason === "natural") {
       resetPlaybackPosition();
@@ -1045,14 +1070,6 @@ export function createAudioSession() {
     const hasActivePlaybackSource = Boolean(
       state.activeBufferSource || isStreamSourcePlaying(),
     );
-    const hasPlaybackAnalysisSource = Boolean(
-      hasActiveAnalysisTap("playback") && hasActivePlaybackSource,
-    );
-    const hasPreparedFileAnalysisSource = Boolean(
-      state.loadedPlaybackSourceKind === "file" &&
-      state.decodedBuffer &&
-      state.decodedAnalysisSource,
-    );
     const isPlaying = Boolean(
       state.sourceSession.kind === AUDIO_SOURCE_KINDS.file &&
       hasActivePlaybackSource,
@@ -1061,7 +1078,7 @@ export function createAudioSession() {
       state.sourceSession.kind === AUDIO_SOURCE_KINDS.system &&
       state.sourceSession.phase === AUDIO_SOURCE_PHASES.active &&
       state.gumStream?.active &&
-      hasActiveAnalysisTap("live"),
+      state.liveInputNode,
     );
     const isAudioLoaded = hasLoadedPlaybackSource();
     const isPlaybackPaused = Boolean(
@@ -1076,23 +1093,9 @@ export function createAudioSession() {
       ? normalizeLiveInputDeviceKind(state.liveInputDeviceKind)
       : null;
     const sourceSession = cloneAudioSourceSession(state.sourceSession);
-    const analysisSource = getAnalysisSource({
-      hasPlaybackAnalysisSource,
-      hasPreparedFileAnalysisSource,
-      isPlaying,
-      isLiveInputActive,
-      liveInputDeviceKind,
-      sourceKind: sourceSession.kind,
-      sourceSession,
-    });
 
     return {
       sourceSession,
-      analysisSource,
-      pitchSourceMode: state.pitchSourceMode,
-      fastFftSize: FAST_ANALYSIS_FFT_SIZE,
-      fftSize: state.fftSize,
-      capacity: state.capacity,
       sampleRate:
         state.decodedBuffer?.sampleRate ??
         state.audioCtx?.sampleRate ??
@@ -1101,10 +1104,6 @@ export function createAudioSession() {
       isPlaying,
       isPlaybackPaused,
       isLiveInputActive,
-      hasPlaybackAnalysisSource,
-      hasPreparedFileAnalysisSource,
-      hasAnalysisSource: analysisSource !== "idle",
-      workerStatus: null,
       volume: state.volume,
       muted: state.muted,
       liveInputSettings: cloneLiveInputCaptureSettings(state.liveInputSettings),
@@ -1145,7 +1144,7 @@ export function createAudioSession() {
     const currentTimeSeconds = clampPlaybackTime(getCurrentPlaybackTime());
     const canSeek =
       hasLoadedPlaybackSource() &&
-      !(state.gumStream?.active && hasActiveAnalysisTap("live")) &&
+      !state.gumStream?.active &&
       durationSeconds > 0;
 
     return {
@@ -1236,6 +1235,8 @@ export function createAudioSession() {
       return cloneAudioSourceSession(state.sourceSession);
     }
 
+    cancelPlaybackStart();
+
     if (nextKind === AUDIO_SOURCE_KINDS.system) {
       if (state.activeBufferSource || isStreamSourcePlaying()) {
         stopPlayback({ resetOffset: false });
@@ -1291,13 +1292,6 @@ export function createAudioSession() {
         return false;
       }
       state.decodedBuffer = decodedBuffer;
-      state.decodedAnalysisSource = createDecodedAudioAnalysisSource(
-        decodedBuffer,
-        {
-          fastFftSize: FAST_ANALYSIS_FFT_SIZE,
-          structuralFftSize: state.fftSize,
-        },
-      );
       state.loadedPlaybackSourceKind = "file";
       state.playbackDurationSeconds = normalizeDurationSeconds(
         decodedBuffer.duration,
@@ -1374,31 +1368,56 @@ export function createAudioSession() {
 
     const audioCtx = ensureAudioContext();
     ensurePlaybackAudioGraph();
+    const request = beginPlaybackStart();
 
-    if (audioCtx.state !== "running") {
-      await maybeResumeAudioContext("start-buffer-playback");
+    try {
+      if (audioCtx.state !== "running") {
+        await maybeResumeAudioContext("start-buffer-playback");
+      }
+      if (playbackStartRequest !== request) {
+        return false;
+      }
+
+      const source = audioCtx.createBufferSource();
+      source.buffer = state.decodedBuffer;
+      source.connect(state.playbackOutputGain);
+      source.connect(ensurePcmBus());
+      source.onended = () => {
+        handleBufferEnded(source);
+      };
+
+      const nextOffset = Math.min(
+        clampPlaybackTime(offsetSeconds),
+        Math.max(0, state.playbackDurationSeconds - 1e-4),
+      );
+      if (pcmConsumer) await preparePcmAnalysis();
+      if (playbackStartRequest !== request) {
+        source.onended = null;
+        disconnectAudioNode(source);
+        return false;
+      }
+      const startedAtContextTimeSeconds = beginPcmAnalysis();
+      pcmConsumer?.scheduleEnd(
+        Math.round(
+          (startedAtContextTimeSeconds +
+            state.playbackDurationSeconds -
+            nextOffset) *
+            audioCtx.sampleRate,
+        ),
+      );
+      resetPlaybackPosition(nextOffset);
+      beginPlaybackSession({
+        audioCtx,
+        sourceKind: "file",
+        offsetSeconds: nextOffset,
+        startedAtContextTimeSeconds,
+      });
+      state.activeBufferSource = source;
+      source.start(startedAtContextTimeSeconds, nextOffset);
+      return true;
+    } finally {
+      request.pending = false;
     }
-
-    const source = audioCtx.createBufferSource();
-    source.buffer = state.decodedBuffer;
-    source.connect(state.playbackOutputGain);
-    source.onended = () => {
-      handleBufferEnded(source);
-    };
-
-    const nextOffset = Math.min(
-      clampPlaybackTime(offsetSeconds),
-      Math.max(0, state.playbackDurationSeconds - 1e-4),
-    );
-    resetPlaybackPosition(nextOffset);
-    beginPlaybackSession({
-      audioCtx,
-      sourceKind: "file",
-      offsetSeconds: nextOffset,
-    });
-    state.activeBufferSource = source;
-    source.start(0, nextOffset);
-    return true;
   }
 
   async function startStreamPlayback(element) {
@@ -1408,44 +1427,74 @@ export function createAudioSession() {
 
     const streamAudioCtx = ensureAudioContext();
     ensurePlaybackAudioGraph();
+    const request = beginPlaybackStart(element);
 
-    if (streamAudioCtx.state !== "running") {
-      await maybeResumeAudioContext("stream-playback");
+    try {
+      if (streamAudioCtx.state !== "running") {
+        await maybeResumeAudioContext("stream-playback");
+      }
+      if (playbackStartRequest !== request) {
+        return false;
+      }
+
+      if (
+        state.playbackDurationSeconds > 0 &&
+        getMediaElementPlaybackTime(element) >= state.playbackDurationSeconds
+      ) {
+        setMediaElementTime(element, 0);
+      }
+
+      if (pcmConsumer) await preparePcmAnalysis();
+      if (playbackStartRequest !== request) return false;
+      // Media elements expose no sample-accurate play boundary. Capture starts
+      // on the audio clock before play(), retaining real leading silence.
+      beginPcmAnalysis();
+      if (pcmConsumer) await pcmConsumer.waitUntilStarted();
+      if (playbackStartRequest !== request) return false;
+      await element.play();
+      if (playbackStartRequest !== request) {
+        // A late play() may make the old element audible again. Only a newer
+        // playback command for this same element may keep it playing.
+        if (playbackStartRequest?.element !== element) {
+          pauseMediaElement(element);
+        }
+        return false;
+      }
+
+      const offsetSeconds = clampPlaybackTime(
+        getMediaElementPlaybackTime(element),
+      );
+      beginPlaybackSession({
+        audioCtx: streamAudioCtx,
+        sourceKind: state.sourceMetadata.sourceKind || "stream",
+        offsetSeconds,
+      });
+      return true;
+    } catch (error) {
+      if (playbackStartRequest !== request) {
+        return false;
+      }
+      cancelPlaybackStart();
+      // An older play may have made this element audible while we waited.
+      pauseMediaElement(element);
+      throw error;
+    } finally {
+      request.pending = false;
     }
-
-    if (
-      state.playbackDurationSeconds > 0 &&
-      getMediaElementPlaybackTime(element) >= state.playbackDurationSeconds
-    ) {
-      setMediaElementTime(element, 0);
-    }
-
-    await element.play();
-
-    const offsetSeconds = clampPlaybackTime(
-      getMediaElementPlaybackTime(element),
-    );
-    beginPlaybackSession({
-      audioCtx: streamAudioCtx,
-      sourceKind: state.sourceMetadata.sourceKind || "stream",
-      offsetSeconds,
-    });
-    return true;
   }
 
   async function playPauseAudio() {
+    if (playbackStartRequest?.pending) {
+      stopPlayback();
+      return false;
+    }
     const audioCtx = state.audioCtx;
     if (state.activeBufferSource && audioCtx && audioCtx.state !== "running") {
       return maybeResumeAudioContext("play-pause-resume");
     }
 
-    if (state.activeBufferSource) {
-      stopBufferPlayback();
-      return false;
-    }
-
-    if (isStreamSourcePlaying()) {
-      stopStreamPlayback();
+    if (state.activeBufferSource || isStreamSourcePlaying()) {
+      stopPlayback({ synchronizePcmPause: true });
       return false;
     }
 
@@ -1465,6 +1514,7 @@ export function createAudioSession() {
   }
 
   function stopAudio() {
+    cancelPlaybackStart();
     if (
       state.loadedPlaybackSourceKind === "stream" ||
       state.activeBufferSource ||
@@ -1507,6 +1557,8 @@ export function createAudioSession() {
       return false;
     }
 
+    cancelPlaybackStart();
+
     const nextTimeSeconds = clampPlaybackTime(timeSeconds);
 
     if (state.loadedPlaybackSourceKind === "stream" && state.mediaElement) {
@@ -1518,6 +1570,10 @@ export function createAudioSession() {
       transitionSource(
         currentSourceEvent(AUDIO_SOURCE_EVENTS.fileTimelineChanged),
       );
+      if (isStreamSourcePlaying()) {
+        if (pcmConsumer) await preparePcmAnalysis();
+        beginPcmAnalysis();
+      }
       return true;
     }
 
@@ -1672,10 +1728,10 @@ export function createAudioSession() {
     { deviceId, liveInputDeviceKind, sessionId },
   ) {
     const audioCtx = ensureAudioContext();
-    let graph = null;
+    let sourceNode = null;
 
     try {
-      graph = createLiveInputAnalysisGraph(audioCtx, stream, state.fftSize);
+      sourceNode = audioCtx.createMediaStreamSource(stream);
       const track = stream.getAudioTracks?.()?.[0] ?? null;
 
       if (
@@ -1683,22 +1739,23 @@ export function createAudioSession() {
         state.sourceSession.phase !== AUDIO_SOURCE_PHASES.starting ||
         state.sourceSession.sessionId !== sessionId
       ) {
-        releaseLiveInputAnalysisGraph(graph);
+        disconnectAudioNode(sourceNode);
         stopMediaStreamTracks(stream);
         return null;
       }
 
+      // Only the current source command may connect to the physical PCM bus.
+      sourceNode.connect(ensurePcmBus());
       // Acquire and build the replacement before releasing the current input.
       // Once the replacement is known-good, this is the single cutover point
-      // for stream, analysis-tap, and System capture ownership.
+      // for stream, PCM-node and System capture ownership.
       clearLiveInputRuntimeState();
       state.gumStream = stream;
-      state.liveInputNode = graph.sourceNode;
+      state.liveInputNode = sourceNode;
       state.selectedLiveInputDeviceId = deviceId ?? null;
       state.liveInputDeviceKind = liveInputDeviceKind;
       state.selectedLiveInputDeviceLabel = String(track?.label ?? "").trim();
       state.lastLiveInputInterruption = null;
-      replaceActiveAnalysisTap(graph.analysisTaps, "live");
       attachLiveInputTrackListeners(track, sessionId);
       state.appliedLiveInputSettings = cloneLiveInputCaptureSettings(
         state.liveInputSettings,
@@ -1720,7 +1777,7 @@ export function createAudioSession() {
       if (state.gumStream === stream) {
         clearLiveInputRuntimeState();
       } else {
-        releaseLiveInputAnalysisGraph(graph);
+        disconnectAudioNode(sourceNode);
         stopMediaStreamTracks(stream);
       }
       throw error;
@@ -1837,6 +1894,15 @@ export function createAudioSession() {
         });
       });
     }
+    if (pcmConsumer) await preparePcmAnalysis();
+    if (
+      !isCurrentSourceRequest({
+        ...sourceRequest,
+        phase: AUDIO_SOURCE_PHASES.active,
+      })
+    )
+      return false;
+    beginPcmAnalysis();
     return true;
   }
 
@@ -1854,77 +1920,14 @@ export function createAudioSession() {
     }
   }
 
-  function resolveAnalysisSourceMode(status) {
-    if (status.sourceSession.kind === AUDIO_SOURCE_KINDS.system) {
-      if (!status.isLiveInputActive) {
-        return null;
-      }
-      return isLoopbackLiveInputDeviceKind(status.liveInputDeviceKind)
-        ? "system"
-        : "live";
-    }
-
-    if (status.sourceSession.kind !== AUDIO_SOURCE_KINDS.file) {
-      return null;
-    }
-    if (
-      status.analysisSource !== "file" &&
-      status.hasPreparedFileAnalysisSource !== true
-    ) {
-      return null;
-    }
-    return state.loadedPlaybackSourceKind === "stream" ? "stream" : "file";
-  }
-
-  function readFeatureAnalysisCapture({ includeStructural = false } = {}) {
-    const status = getStatus();
-    const sourceMode = resolveAnalysisSourceMode(status);
-    if (!sourceMode) {
-      return null;
-    }
-
-    const captureTimestampMs = getTimingNowMs();
-    const observationTimeSeconds =
-      sourceMode === "file" || sourceMode === "stream"
-        ? clampPlaybackTime(getCurrentPlaybackTime())
-        : captureTimestampMs / 1000;
-    if (sourceMode === "file" && state.decodedAnalysisSource) {
-      const capture = state.decodedAnalysisSource.sample(
-        observationTimeSeconds,
-        { includeStructural },
-      );
-      return {
-        captureTimestampMs,
-        observationTimeSeconds,
-        fast: {
-          sourceMode,
-          ...capture.fast,
-        },
-        structural: capture.structural
-          ? {
-              sourceMode,
-              ...capture.structural,
-            }
-          : null,
-      };
-    }
-    return {
-      captureTimestampMs,
-      observationTimeSeconds,
-      fast: {
-        sourceMode,
-        ...sampleAnalyser(state.activeAnalysisTaps?.fast?.reader),
-      },
-      structural: includeStructural
-        ? {
-            sourceMode,
-            ...sampleAnalyser(state.activeAnalysisTaps?.structural?.reader),
-          }
-        : null,
-    };
-  }
-
   async function dispose() {
+    clearRetiringBufferSources();
+    pcmConsumer?.invalidate("audio-session-disposed");
+    // This session is reused by the host after an explicit reset. Retain its
+    // one feature owner/binding; invalidate() releases all live processing.
+    pcmBus?.disconnect();
+    pcmBus = null;
+    cancelPlaybackStart();
     const audioCtx = state.audioCtx;
 
     globalThis.removeEventListener?.("pagehide", handlePageUnload);
@@ -1950,7 +1953,6 @@ export function createAudioSession() {
     disconnectAudioNode(state.playbackOutputGain);
     state.playbackOutputGain = null;
     state.decodedBuffer = null;
-    state.decodedAnalysisSource = null;
     state.loadedPlaybackSourceKind = "none";
     state.playbackDurationSeconds = 0;
     state.sourceMetadata = {
@@ -1986,9 +1988,7 @@ export function createAudioSession() {
     state.audioCtx?.suspend();
   }
 
-  globalThis.addEventListener?.("pagehide", handlePageUnload);
-
-  return {
+  const session = {
     loadAudio,
     loadStream,
     selectSource,
@@ -2007,10 +2007,19 @@ export function createAudioSession() {
     getLiveInputSettings,
     getLiveInputAnalysisSettings,
     readClockSnapshot,
-    readFeatureAnalysisCapture,
+    bindPcmConsumer,
+    readPcmSource,
     seekTo,
     dispose,
+    get featureRuntime() {
+      return featureRuntime;
+    },
   };
+  // Binding is inert until a source command supplies consecutive PCM. Canvas
+  // creation, cache reads and renderer recovery never construct this owner.
+  const featureRuntime = createFeatureRuntime({}, { audioSession: session });
+  featureRuntime.start();
+  return session;
 }
 
 const defaultAudioSession = createAudioSession();
