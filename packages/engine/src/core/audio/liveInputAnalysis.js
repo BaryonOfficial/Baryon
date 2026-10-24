@@ -183,7 +183,7 @@ export function areLiveInputAnalysisSettingsEqual(left, right) {
   );
 }
 
-export function isLikelyLineFeedDeviceLabel(label = "") {
+function isLikelyLineFeedDeviceLabel(label = "") {
   const normalizedLabel = String(label).trim().toLowerCase();
   if (!normalizedLabel) {
     return false;

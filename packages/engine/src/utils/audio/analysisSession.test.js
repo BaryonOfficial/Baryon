@@ -10,6 +10,43 @@ function sourceSession(kind, sessionId, timelineRevision = 0) {
   return { kind, sessionId, timelineRevision };
 }
 
+test("injected tone identity supersedes transport and rejects stale file or tone frames", () => {
+  const status = { sourceSession: sourceSession("file", 3) };
+  const tone = { injectTestTone: true };
+  expect(buildAnalysisSourceKey(status, tone)).toBe("audit:test-tone");
+  expect(buildAnalysisSessionKey(status, tone)).toBe("audit:test-tone");
+  expect(
+    resolveAnalysisFrameStaleness(
+      { observationSessionKey: "audit:test-tone" },
+      status,
+      tone,
+    ),
+  ).toBeNull();
+  expect(
+    resolveAnalysisFrameStaleness(
+      { observationSessionKey: "file:3" },
+      status,
+      tone,
+    ),
+  ).toBe("source-session");
+  expect(
+    resolveAnalysisFrameStaleness(
+      { observationSessionKey: "audit:test-tone" },
+      status,
+    ),
+  ).toBe("source-session");
+  expect(
+    resolveAnalysisFrameStaleness(
+      { observationSessionKey: "audit:test-tone", isLiveInputActive: false },
+      {
+        sourceSession: sourceSession("system", 4),
+        isLiveInputActive: true,
+      },
+      tone,
+    ),
+  ).toBeNull();
+});
+
 test("an explicit upstream session key remains authoritative", () => {
   expect(
     buildAnalysisSessionKey({

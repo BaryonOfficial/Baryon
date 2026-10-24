@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const rendererMocks = vi.hoisted(() => ({
   defaultOnDeviceLost: vi.fn(),
+  dispose: vi.fn(),
+  initialize: vi.fn(),
   defaultOnError: vi.fn(),
   popErrorScope: vi.fn(),
 }));
@@ -30,7 +32,8 @@ vi.mock("three/webgpu", () => {
         parameters.forceWebGL === true
           ? new WebGLBackend()
           : new WebGPUBackend();
-      this.init = vi.fn(async () => this);
+      this.init = vi.fn(() => rendererMocks.initialize(this));
+      this.dispose = vi.fn(() => rendererMocks.dispose(this));
       this.onDeviceLost = (info) => rendererMocks.defaultOnDeviceLost(info);
       this.onError = (info) => rendererMocks.defaultOnError(info);
       this.setClearColor = vi.fn();
@@ -114,6 +117,9 @@ function createCanvas() {
 
 describe("renderer diagnostics", () => {
   beforeEach(() => {
+    rendererMocks.dispose.mockClear();
+    rendererMocks.initialize.mockReset();
+    rendererMocks.initialize.mockImplementation(async (renderer) => renderer);
     rendererMocks.defaultOnDeviceLost.mockClear();
     rendererMocks.defaultOnError.mockClear();
     rendererMocks.popErrorScope.mockReset();
@@ -126,6 +132,50 @@ describe("renderer diagnostics", () => {
     restoreGlobalProperty("CustomEvent", originalCustomEventDescriptor);
     restoreGlobalProperty("navigator", originalNavigatorDescriptor);
     restoreGlobalProperty("window", originalWindowDescriptor);
+  });
+
+  it("releases a renderer once and ignores old GPU errors/loss after normal disposal", async () => {
+    const oldFailure = vi.fn(),
+      nextFailure = vi.fn();
+    const old = await createBaryonRenderer({ canvas: createCanvas() }, false, {
+      onRuntimeFailure: oldFailure,
+    });
+    let rejectOldScope;
+    rendererMocks.popErrorScope.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectOldScope = reject;
+        }),
+    );
+    const oldScope = old.backend.device.popErrorScope();
+    old.dispose();
+    old.dispose();
+    const replacement = await createBaryonRenderer(
+      { canvas: createCanvas() },
+      false,
+      { onRuntimeFailure: nextFailure },
+    );
+    old.onError({ message: "old scope error" });
+    old.onDeviceLost({ message: "normal destruction", reason: "destroyed" });
+    rejectOldScope(new Error("Device lost during popErrorScope"));
+    await oldScope;
+    expect(rendererMocks.dispose).toHaveBeenCalledExactlyOnceWith(old);
+    expect(oldFailure).not.toHaveBeenCalled();
+    expect(rendererMocks.defaultOnDeviceLost).not.toHaveBeenCalled();
+    expect(window.__baryonRendererInfo.gpuErrors).toEqual([]);
+    replacement.onDeviceLost({ message: "real loss", reason: "unknown" });
+    expect(nextFailure).toHaveBeenCalledOnce();
+    expect(oldFailure).not.toHaveBeenCalled();
+  });
+
+  it("disposes an initialization that fails before handing its renderer to Canvas", async () => {
+    rendererMocks.initialize.mockRejectedValueOnce(
+      new Error("initialization failed"),
+    );
+    await expect(
+      createBaryonRenderer({ canvas: createCanvas() }, false),
+    ).rejects.toMatchObject({ name: "WebGPURendererInitError" });
+    expect(rendererMocks.dispose).toHaveBeenCalledOnce();
   });
 
   it("records runtime WebGPU errors and preserves Three renderer handlers", async () => {

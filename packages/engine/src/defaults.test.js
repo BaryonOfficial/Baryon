@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   AUDIO_DEFAULTS,
-  AUDIO_SLOT_CAPACITY,
   AUDIT_DEFAULTS,
   BEAT_DEFAULTS,
-  DEFAULT_FFT_SIZE,
   DEFAULT_SAMPLE_RATE,
   DEFAULTS,
   RAYMARCH_DEFAULTS,
@@ -36,16 +34,11 @@ describe("defaults compatibility surface", () => {
     }
   });
 
-  it("keeps scalar audio constants aligned with slot-domain defaults", () => {
-    expect(DEFAULT_FFT_SIZE).toBe(8192);
+  it("keeps the source rate default without retired descriptor capacity controls", () => {
     expect(DEFAULT_SAMPLE_RATE).toBe(44100);
-    expect(AUDIO_SLOT_CAPACITY).toBe(AUDIO_DEFAULTS.modalFieldCapacity);
-    expect(AUDIO_DEFAULTS.maxModalFieldDescriptorModes).toBe(
-      AUDIO_DEFAULTS.modalFieldCapacity,
-    );
-    expect(AUDIO_DEFAULTS.signalNormalizationSlots).toBe(
-      AUDIO_DEFAULTS.modalFieldCapacity,
-    );
+    expect(AUDIO_DEFAULTS).not.toHaveProperty("modalFieldCapacity");
+    expect(AUDIO_DEFAULTS).not.toHaveProperty("maxModalFieldDescriptorModes");
+    expect(AUDIO_DEFAULTS).not.toHaveProperty("signalNormalizationSlots");
     expect(AUDIO_DEFAULTS).not.toHaveProperty("backboneStackSlots");
     expect(AUDIO_DEFAULTS).not.toHaveProperty("detailStackSlots");
     expect(AUDIO_DEFAULTS).not.toHaveProperty("maxBackboneDescriptorModes");

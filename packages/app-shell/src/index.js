@@ -14,7 +14,6 @@ export {
   createLiveInputRuntimeStatus,
   LIVE_INPUT_ERROR_CODES,
   LIVE_INPUT_PHASES,
-  LIVE_INPUT_SIGNAL_STATES,
 } from "./context/liveInputRuntimeStatus.js";
 export { default as SceneSurface } from "./components/ThreeScene.jsx";
 export {
@@ -22,10 +21,7 @@ export {
   CAMERA_CONTROL_MODES,
 } from "./components/BaryonScene.jsx";
 export { AUDIO_FEATURE_AUTHORITY_ROLES } from "@baryon/engine/audio-features";
-export {
-  AUDIO_SOURCE_KINDS,
-  AUDIO_SOURCE_PHASES,
-} from "@baryon/engine/audio";
+export { AUDIO_SOURCE_KINDS, AUDIO_SOURCE_PHASES } from "@baryon/engine/audio";
 export { default as AdvancedControlsDock } from "./components/AdvancedControlsDock.jsx";
 export { useFullscreenUiPreference } from "./components/hooks/useFullscreenUiPreference.js";
 export { useFullscreen } from "./components/hooks/useFullScreenToggle.jsx";
@@ -50,8 +46,7 @@ export { RendererErrorBoundary } from "./components/RendererErrorBoundary.jsx";
 export { AppErrorBoundary } from "./components/AppErrorBoundary.jsx";
 export {
   DEFAULT_ACTIVE_CAMERA_POSE,
-  DEFAULT_IDLE_PERFORMER_CAMERA_POSE,
-  DEFAULT_LIVE_PERFORMER_CAMERA_POSE,
+  DEFAULT_IDLE_CAMERA_POSE,
   MOBILE_DEMO_CAMERA_DISTANCE_SCALE,
   resolvePresetCameraPose,
 } from "./components/cameraPosePresets.js";
@@ -71,3 +66,7 @@ export {
   useControlsSnapshot,
   useControlsStore,
 } from "./controls/useControlsStore.js";
+
+export { useAudioFeatureOwner } from "./components/hooks/useAudioFeatureOwner.js";
+
+export { RendererCanvas } from "./components/RendererCanvas.jsx";

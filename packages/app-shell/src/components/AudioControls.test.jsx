@@ -699,32 +699,24 @@ describe("ListenerControls file player layout", () => {
     expect(container.querySelector(".am-compact-state-chip")).toBeNull();
   });
 
-  it("shows a connected silent line feed without the starting pulse", () => {
+  it("shows a valid quiet line feed as listening", () => {
     renderControls({
       isLiveInputActive: true,
       liveInputDeviceKind: "system",
       liveInputRuntimeStatus: {
         active: true,
-        phase: "weak-signal",
+        phase: "listening",
+        observationAvailable: true,
         resolvedAnalysisClass: "line-feed",
-        signalState: "silent",
-        sourceBoundaryState: "muted",
       },
     });
-
-    const sourceControl = container.querySelector(
-      '[data-testid="source-mode-control"]',
-    );
-    const statusLight = sourceControl?.querySelector(".am-source-mode-light");
-    const statusDot = /** @type {HTMLElement | null} */ (
-      sourceControl?.querySelector(".am-status-dot")
-    );
-
-    expect(statusLight?.getAttribute("aria-label")).toBe(
-      "Live input connected — waiting for audio",
-    );
-    expect(statusDot?.style.background).not.toBe("rgb(215, 25, 33)");
-    expect(statusDot?.style.animation).toBe("none");
+    expect(
+      container
+        .querySelector(
+          '[data-testid="source-mode-control"] .am-source-mode-light',
+        )
+        ?.getAttribute("aria-label"),
+    ).toBe("Line feed listening");
   });
 
   it("uses green for a line feed with current source evidence", () => {

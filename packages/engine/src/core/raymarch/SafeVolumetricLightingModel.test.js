@@ -1,8 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
-  deriveCompositeGaussLegendreRaymarchSamples,
-  integrateCompositeGaussLegendreRaymarch,
+  deriveCenteredRaymarchIntervals,
   integrateRadiativeTransferRay,
   integrateRadiativeTransferStep,
 } from "./SafeVolumetricLightingModel.js";
@@ -104,25 +103,25 @@ describe("safe volumetric lighting model", () => {
   });
 
   it("uses one fixed-spacing two-point panel lattice with explicit even rounding", () => {
-    const fullChord = deriveCompositeGaussLegendreRaymarchSamples({
+    const fullChord = deriveCenteredRaymarchIntervals({
       entryDistance: 1,
       exitDistance: 3,
       referenceLength: 2,
       sampleBudget: 16,
     });
-    const halfChord = deriveCompositeGaussLegendreRaymarchSamples({
+    const halfChord = deriveCenteredRaymarchIntervals({
       entryDistance: 1,
       exitDistance: 2,
       referenceLength: 2,
       sampleBudget: 16,
     });
-    const oddBudget = deriveCompositeGaussLegendreRaymarchSamples({
+    const oddBudget = deriveCenteredRaymarchIntervals({
       entryDistance: 0,
       exitDistance: 2,
       referenceLength: 2,
       sampleBudget: 5,
     });
-    const grazingChord = deriveCompositeGaussLegendreRaymarchSamples({
+    const grazingChord = deriveCenteredRaymarchIntervals({
       entryDistance: 0,
       exitDistance: 0.05,
       referenceLength: 2,
@@ -134,10 +133,10 @@ describe("safe volumetric lighting model", () => {
     expect(oddBudget).toHaveLength(6);
     expect(grazingChord).toHaveLength(2);
     expect(
-      fullChord.reduce((sum, sample) => sum + sample.weight, 0),
+      fullChord.reduce((sum, sample) => sum + sample.intervalWidth, 0),
     ).toBeCloseTo(2, 14);
     expect(
-      oddBudget.reduce((sum, sample) => sum + sample.weight, 0),
+      oddBudget.reduce((sum, sample) => sum + sample.intervalWidth, 0),
     ).toBeCloseTo(2, 14);
     for (const sample of [
       ...fullChord,
@@ -147,18 +146,18 @@ describe("safe volumetric lighting model", () => {
     ]) {
       expect(sample.distance).toBeGreaterThanOrEqual(0);
       expect(sample.distance).toBeLessThanOrEqual(3);
-      expect(sample.weight).toBeGreaterThan(0);
+      expect(sample.intervalWidth).toBeGreaterThan(0);
     }
   });
 
   it("extends a ray with a partial panel without moving its shared sample lattice", () => {
-    const shorterChord = deriveCompositeGaussLegendreRaymarchSamples({
+    const shorterChord = deriveCenteredRaymarchIntervals({
       entryDistance: 0,
       exitDistance: 0.7,
       referenceLength: 2,
       sampleBudget: 16,
     });
-    const longerChord = deriveCompositeGaussLegendreRaymarchSamples({
+    const longerChord = deriveCenteredRaymarchIntervals({
       entryDistance: 0,
       exitDistance: 0.8,
       referenceLength: 2,
@@ -167,51 +166,11 @@ describe("safe volumetric lighting model", () => {
 
     expect(longerChord.slice(0, 4)).toEqual(shorterChord.slice(0, 4));
     expect(
-      shorterChord.reduce((sum, sample) => sum + sample.weight, 0),
+      shorterChord.reduce((sum, sample) => sum + sample.intervalWidth, 0),
     ).toBeCloseTo(0.7, 14);
     expect(
-      longerChord.reduce((sum, sample) => sum + sample.weight, 0),
+      longerChord.reduce((sum, sample) => sum + sample.intervalWidth, 0),
     ).toBeCloseTo(0.8, 14);
-  });
-
-  it("integrates cubic source variation exactly with an even budget", () => {
-    const integral = integrateCompositeGaussLegendreRaymarch({
-      entryDistance: 0,
-      exitDistance: 1,
-      referenceLength: 1,
-      sampleBudget: 8,
-      sample: (distance) => distance ** 3 - 2 * distance + 4,
-    });
-
-    expect(integral).toBeCloseTo(3.25, 14);
-  });
-
-  it("resolves a smooth attenuated caustic source more accurately than midpoint at the same cost", () => {
-    const sample = (distance) =>
-      Math.exp(-0.4 * distance) *
-      (1 + 0.2 * Math.cos(7 * distance) + 0.05 * distance ** 3);
-    const sampleBudget = 8;
-    const reference = integrateCompositeGaussLegendreRaymarch({
-      entryDistance: 0,
-      exitDistance: 1,
-      referenceLength: 1,
-      sampleBudget: 1024,
-      sample,
-    });
-    const gaussLegendre = integrateCompositeGaussLegendreRaymarch({
-      entryDistance: 0,
-      exitDistance: 1,
-      referenceLength: 1,
-      sampleBudget,
-      sample,
-    });
-    const midpoint = Array.from({ length: sampleBudget }, (_, index) =>
-      sample((index + 0.5) / sampleBudget),
-    ).reduce((sum, value) => sum + value / sampleBudget, 0);
-
-    expect(Math.abs(gaussLegendre - reference)).toBeLessThan(
-      Math.abs(midpoint - reference),
-    );
   });
 
   it("observes the complete chord without a camera-facing section mask", () => {
@@ -269,6 +228,37 @@ describe("safe volumetric lighting model", () => {
     );
     expect(step.nextTransmittance).toBeCloseTo(0.8 * falloff, 12);
   });
+
+  it.each([
+    [0, 0],
+    [0, 0.1],
+    [1.01e-8, 0.1],
+    [1e-7, 0.1],
+    [1e-6, 0.01],
+    [1e-6, 0.1],
+    [1e-9, 1e9],
+    [100, 6],
+  ])(
+    "preserves the thin-medium limit and dimensional scaling (%s, %s)",
+    (extinction, stepSize) => {
+      const result = integrateRadiativeTransferStep({
+        baseSourceRadiance: [1, 0.5, 0.25],
+        extinction,
+        stepSize,
+      });
+      const tau = extinction * stepSize;
+      // Independent series near zero; the ordinary expression is conditioned
+      // for the finite-depth cases. No absolute tolerance hides a lost tail.
+      const expected =
+        tau <= 1e-3
+          ? stepSize * (1 - tau / 2 + tau ** 2 / 6 - tau ** 3 / 24)
+          : (1 - Math.exp(-tau)) / extinction;
+      if (expected === 0) expect(result.segmentRadiance).toEqual([0, 0, 0]);
+      else expect(result.segmentRadiance[0] / expected).toBeCloseTo(1, 12);
+      expect(result.segmentRadiance[1]).toBe(result.segmentRadiance[0] / 2);
+      expect(result.segmentRadiance[2]).toBe(result.segmentRadiance[0] / 4);
+    },
+  );
 
   it("preserves color ratios through achromatic extinction", () => {
     const step = integrateRadiativeTransferStep({
@@ -345,12 +335,12 @@ describe("safe volumetric lighting model", () => {
     expect(source).toContain("material.createOpticalTransferRaySampler");
     expect(source).not.toContain("scatteringNode");
     expect(source).not.toContain("constantExtinction");
-    expect(source).toContain("const falloff = localExtinction");
+    // The native GPU regression exercises this same production helper.
     expect(source).toMatch(
-      /const falloff = localExtinction\s+\.negate\(\)\s+\.mul\(sampleWeight\)\s+\.exp\(\)/,
+      /deriveRadiativeTransferIntervalNode\(\s*localExtinction,\s*intervalWidth,?\s*\)/,
     );
     expect(source).toContain("accumulatedTransmittance.mulAssign(falloff)");
-    expect(source).toContain("GAUSS_LEGENDRE_TWO_POINT_OFFSET");
+    expect(source).toContain("const signedIntervalOffset = intervalWidth");
     expect(source).toContain("end: segmentPanelCount");
     expect(source).toContain("const targetPanelWidth =");
     expect(source).toContain("const localPanelWidth =");
@@ -438,12 +428,12 @@ describe("safe volumetric lighting model", () => {
 
     expect(source).toContain("const segmentPanelCount = int(");
     expect(source).toContain("const panelCenterDistance = entryDistance.add(");
-    expect(source).toContain("const firstGaussDirection = mix(");
+    expect(source).toContain("const firstIntervalDirection = mix(");
     expect(source).toContain(
-      "accumulateSample(firstSampleDistance, gaussWeight)",
+      "accumulateSample(firstSampleDistance, intervalWidth)",
     );
     expect(source).toContain(
-      "accumulateSample(secondSampleDistance, gaussWeight)",
+      "accumulateSample(secondSampleDistance, intervalWidth)",
     );
     expect(source).toContain("const intersectSphereDomain = () => {");
     expect(source).toContain("const intersectBoxDomain = () => {");

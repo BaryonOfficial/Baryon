@@ -898,13 +898,9 @@ describe("AudioProvider source transport gating", () => {
         requestedAnalysisClass: "auto",
         acousticIntent: "ambient",
         resolvedAnalysisClass: "line-feed",
-        calibrationActive: false,
-        gateOpen: true,
-        hardSilence: false,
-        calibrationInvalid: false,
-        calibrationInvalidReason: "none",
-        sourceBoundaryState: "live",
-        signalState: "ok",
+        sourceSessionId: 1,
+        sourceGeneration: 7,
+        observationAvailable: true,
         errorCode: "none",
       });
     });
@@ -921,10 +917,27 @@ describe("AudioProvider source transport gating", () => {
     expect(audio.liveInputRuntimeStatus).toMatchObject({
       active: true,
       phase: "listening",
-      gateOpen: true,
-      sourceBoundaryState: "live",
-      signalState: "ok",
+      observationAvailable: true,
+      sourceSessionId: 1,
+      sourceGeneration: 7,
       resolvedAnalysisClass: "line-feed",
+    });
+    const previousGetStatus = session.getStatus;
+    session.getStatus = () => ({
+      ...previousGetStatus(),
+      sourceSession: { ...previousGetStatus().sourceSession, sessionId: 2 },
+    });
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent("__baryon-controls-change", {
+          detail: { boundaryMode: "neumann" },
+        }),
+      );
+    });
+    expect(onValue.mock.lastCall[0].liveInputRuntimeStatus).toMatchObject({
+      phase: "listening",
+      observationAvailable: false,
+      sourceSessionId: 2,
     });
   });
 

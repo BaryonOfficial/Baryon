@@ -35,6 +35,8 @@ import {
   buildLiveInputRuntimeStatus,
   createLiveInputRuntimeStatus,
   mapLiveInputStartError,
+  normalizeLiveInputUiState,
+  normalizeLiveInputErrorCode,
 } from "./liveInputRuntimeStatus.js";
 import { useAudioLogic } from "../components/hooks/useAudioLogic";
 import {
@@ -231,64 +233,28 @@ function persistLiveInputAcousticIntent(storage, acousticIntent) {
   });
 }
 
-function normalizeProviderLiveInputUiState(value) {
-  return value === LIVE_INPUT_UI_STATES.starting ||
-    value === LIVE_INPUT_UI_STATES.active ||
-    value === LIVE_INPUT_UI_STATES.stopping ||
-    value === LIVE_INPUT_UI_STATES.error
-    ? value
-    : LIVE_INPUT_UI_STATES.idle;
-}
-
-function normalizeProviderLiveInputErrorCode(value) {
-  return value === LIVE_INPUT_ERROR_CODES.permissionDenied ||
-    value === LIVE_INPUT_ERROR_CODES.deviceMissing ||
-    value === LIVE_INPUT_ERROR_CODES.deviceUnavailable ||
-    value === LIVE_INPUT_ERROR_CODES.deviceDisconnected ||
-    value === LIVE_INPUT_ERROR_CODES.startFailed ||
-    value === LIVE_INPUT_ERROR_CODES.calibrationInvalid
-    ? value
-    : LIVE_INPUT_ERROR_CODES.none;
-}
-
-function isSteadyFrameDerivedLiveInputPhase(phase) {
-  return (
-    phase === LIVE_INPUT_PHASES.calibrating ||
-    phase === LIVE_INPUT_PHASES.listening ||
-    phase === LIVE_INPUT_PHASES.weakSignal
-  );
-}
-
+// Provider polling refreshes device metadata only. It may retain a frame-derived
+// status for the same source session; it cannot manufacture listening authority.
 function shouldPreserveFrameDerivedLiveInputRuntimeStatus({
   previousRuntimeStatus,
   nextRuntimeStatus,
   liveInputUiState,
   liveInputErrorCode,
 }) {
-  if (
-    normalizeProviderLiveInputUiState(liveInputUiState) !==
-    LIVE_INPUT_UI_STATES.active
-  ) {
-    return false;
-  }
-  if (
-    normalizeProviderLiveInputErrorCode(liveInputErrorCode) !==
-    LIVE_INPUT_ERROR_CODES.none
-  ) {
-    return false;
-  }
-
-  const previousStatus = createLiveInputRuntimeStatus(previousRuntimeStatus);
-  const nextStatus = createLiveInputRuntimeStatus(nextRuntimeStatus);
+  const previous = createLiveInputRuntimeStatus(previousRuntimeStatus),
+    next = createLiveInputRuntimeStatus(nextRuntimeStatus);
   return (
-    previousStatus.active === true &&
-    nextStatus.active === true &&
-    previousStatus.errorCode === LIVE_INPUT_ERROR_CODES.none &&
-    nextStatus.errorCode === LIVE_INPUT_ERROR_CODES.none &&
-    previousStatus.resolvedAnalysisClass === nextStatus.resolvedAnalysisClass &&
-    previousStatus.liveInputDeviceKind === nextStatus.liveInputDeviceKind &&
-    nextStatus.sourceBoundaryState === "unknown" &&
-    isSteadyFrameDerivedLiveInputPhase(previousStatus.phase)
+    normalizeLiveInputUiState(liveInputUiState) ===
+      LIVE_INPUT_UI_STATES.active &&
+    normalizeLiveInputErrorCode(liveInputErrorCode) ===
+      LIVE_INPUT_ERROR_CODES.none &&
+    previous.active &&
+    next.active &&
+    previous.sourceSessionId !== null &&
+    previous.sourceSessionId === next.sourceSessionId &&
+    previous.liveInputDeviceKind === next.liveInputDeviceKind &&
+    (previous.phase === LIVE_INPUT_PHASES.listening ||
+      previous.phase === LIVE_INPUT_PHASES.error)
   );
 }
 
@@ -319,13 +285,9 @@ function buildProviderLiveInputRuntimeStatus({
   return createLiveInputRuntimeStatus({
     ...nextRuntimeStatus,
     phase: previousStatus.phase,
-    calibrationActive: previousStatus.calibrationActive,
-    gateOpen: previousStatus.gateOpen,
-    hardSilence: previousStatus.hardSilence,
-    calibrationInvalid: previousStatus.calibrationInvalid,
-    calibrationInvalidReason: previousStatus.calibrationInvalidReason,
-    sourceBoundaryState: previousStatus.sourceBoundaryState,
-    signalState: previousStatus.signalState,
+    sourceGeneration: previousStatus.sourceGeneration,
+    observationAvailable: previousStatus.observationAvailable,
+    errorCode: previousStatus.errorCode,
   });
 }
 
@@ -607,10 +569,9 @@ export function AudioProvider({
       statusOverride = undefined,
     ) => {
       /** @type {import("./liveInputRuntimeStatus.js").LiveInputUiState} */
-      const normalizedUiState = normalizeProviderLiveInputUiState(nextUiState);
+      const normalizedUiState = normalizeLiveInputUiState(nextUiState);
       /** @type {import("./liveInputRuntimeStatus.js").LiveInputErrorCode} */
-      const normalizedErrorCode =
-        normalizeProviderLiveInputErrorCode(nextErrorCode);
+      const normalizedErrorCode = normalizeLiveInputErrorCode(nextErrorCode);
       liveInputUiStateRef.current = normalizedUiState;
       liveInputErrorCodeRef.current = normalizedErrorCode;
       setLiveInputUiState(normalizedUiState);

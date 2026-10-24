@@ -8,44 +8,12 @@ import {
   normalizeResolvedLiveInputAnalysisClass,
 } from "@baryon/engine/audio/liveInputAnalysis";
 
-/**
- * @typedef {"idle" | "starting" | "active" | "stopping" | "error"} LiveInputUiState
- */
+import { hasRenderAuthority } from "@baryon/engine/core/renderAuthorityContract";
 
-/**
- * @typedef {"idle" | "starting" | "calibrating" | "listening" | "weak-signal" | "stopping" | "error"} LiveInputPhase
- */
-
-/**
- * @typedef {"ok" | "weak" | "silent" | "clipped"} LiveInputSignalState
- */
-
-/**
- * @typedef {"none" | "permission-denied" | "device-missing" | "device-unavailable" | "device-disconnected" | "start-failed" | "calibration-invalid"} LiveInputErrorCode
- */
-
-/**
- * @typedef {{
- *   active: boolean,
- *   phase: LiveInputPhase,
- *   liveInputDeviceKind: import("@baryon/engine/audio/liveInputAnalysis").LiveInputDeviceKind | null,
- *   liveInputKind: "live" | "system" | null,
- *   selectedDeviceId: string | null,
- *   selectedDeviceLabel: string,
- *   requestedAnalysisClass: import("@baryon/engine/audio/liveInputAnalysis").LiveInputAnalysisClass,
- *   acousticIntent: import("@baryon/engine/audio/liveInputAnalysis").LiveInputAcousticIntent,
- *   resolvedAnalysisClass: import("@baryon/engine/audio/liveInputAnalysis").ResolvedLiveInputAnalysisClass,
- *   calibrationActive: boolean,
- *   gateOpen: boolean,
- *   hardSilence: boolean,
- *   calibrationInvalid: boolean,
- *   calibrationInvalidReason: string,
- *   sourceBoundaryState: string,
- *   signalState: LiveInputSignalState,
- *   errorCode: LiveInputErrorCode,
- * }} LiveInputRuntimeStatus
- */
-
+/** @typedef {"idle"|"starting"|"active"|"stopping"|"error"} LiveInputUiState */
+/** @typedef {"idle"|"starting"|"listening"|"stopping"|"error"} LiveInputPhase */
+/** @typedef {"none"|"permission-denied"|"device-missing"|"device-unavailable"|"device-disconnected"|"start-failed"|"processing-failed"} LiveInputErrorCode */
+/** @typedef {{active:boolean,phase:LiveInputPhase,liveInputDeviceKind:import("@baryon/engine/audio/liveInputAnalysis").LiveInputDeviceKind|null,liveInputKind:"live"|"system"|null,selectedDeviceId:string|null,selectedDeviceLabel:string,requestedAnalysisClass:import("@baryon/engine/audio/liveInputAnalysis").LiveInputAnalysisClass,acousticIntent:import("@baryon/engine/audio/liveInputAnalysis").LiveInputAcousticIntent,resolvedAnalysisClass:import("@baryon/engine/audio/liveInputAnalysis").ResolvedLiveInputAnalysisClass,sourceSessionId:number|string|null,sourceGeneration:number|null,observationAvailable:boolean,errorCode:LiveInputErrorCode}} LiveInputRuntimeStatus */
 export const LIVE_INPUT_UI_STATES = Object.freeze({
   idle: "idle",
   starting: "starting",
@@ -53,24 +21,13 @@ export const LIVE_INPUT_UI_STATES = Object.freeze({
   stopping: "stopping",
   error: "error",
 });
-
 export const LIVE_INPUT_PHASES = Object.freeze({
   idle: "idle",
   starting: "starting",
-  calibrating: "calibrating",
   listening: "listening",
-  weakSignal: "weak-signal",
   stopping: "stopping",
   error: "error",
 });
-
-export const LIVE_INPUT_SIGNAL_STATES = Object.freeze({
-  ok: "ok",
-  weak: "weak",
-  silent: "silent",
-  clipped: "clipped",
-});
-
 export const LIVE_INPUT_ERROR_CODES = Object.freeze({
   none: "none",
   permissionDenied: "permission-denied",
@@ -78,76 +35,59 @@ export const LIVE_INPUT_ERROR_CODES = Object.freeze({
   deviceUnavailable: "device-unavailable",
   deviceDisconnected: "device-disconnected",
   startFailed: "start-failed",
-  calibrationInvalid: "calibration-invalid",
+  processingFailed: "processing-failed",
 });
-
-/**
- * @param {unknown} value
- * @returns {LiveInputUiState}
- */
-function normalizeUiState(value) {
-  return value === LIVE_INPUT_UI_STATES.starting ||
-    value === LIVE_INPUT_UI_STATES.active ||
-    value === LIVE_INPUT_UI_STATES.stopping ||
-    value === LIVE_INPUT_UI_STATES.error
+/** @param {unknown} value @returns {LiveInputUiState} */
+export function normalizeLiveInputUiState(value) {
+  return value === "starting" ||
+    value === "active" ||
+    value === "stopping" ||
+    value === "error"
     ? value
-    : LIVE_INPUT_UI_STATES.idle;
+    : "idle";
 }
-
-/**
- * @param {unknown} value
- * @returns {LiveInputErrorCode}
- */
-function normalizeErrorCode(value) {
-  return value === LIVE_INPUT_ERROR_CODES.permissionDenied ||
-    value === LIVE_INPUT_ERROR_CODES.deviceMissing ||
-    value === LIVE_INPUT_ERROR_CODES.deviceUnavailable ||
-    value === LIVE_INPUT_ERROR_CODES.deviceDisconnected ||
-    value === LIVE_INPUT_ERROR_CODES.startFailed ||
-    value === LIVE_INPUT_ERROR_CODES.calibrationInvalid
+/** @param {unknown} value @returns {LiveInputErrorCode} */
+export function normalizeLiveInputErrorCode(value) {
+  return value === "permission-denied" ||
+    value === "device-missing" ||
+    value === "device-unavailable" ||
+    value === "device-disconnected" ||
+    value === "start-failed" ||
+    value === "processing-failed"
     ? value
-    : LIVE_INPUT_ERROR_CODES.none;
+    : "none";
 }
-
-/**
- * @param {Partial<LiveInputRuntimeStatus>=} overrides
- * @returns {LiveInputRuntimeStatus}
- */
+/** @param {Partial<LiveInputRuntimeStatus>=} overrides @returns {LiveInputRuntimeStatus} */
 export function createLiveInputRuntimeStatus(overrides = {}) {
+  const kind = overrides.liveInputDeviceKind ?? overrides.liveInputKind;
   const liveInputDeviceKind =
-    overrides.liveInputDeviceKind == null && overrides.liveInputKind == null
-      ? null
-      : normalizeLiveInputDeviceKind(
-          overrides.liveInputDeviceKind ?? overrides.liveInputKind,
-        );
+    kind == null ? null : normalizeLiveInputDeviceKind(kind);
   return {
-    active: false,
-    phase: LIVE_INPUT_PHASES.idle,
-    selectedDeviceId: null,
-    selectedDeviceLabel: "",
-    requestedAnalysisClass: DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
-    resolvedAnalysisClass: DEFAULT_RESOLVED_LIVE_INPUT_ANALYSIS_CLASS,
-    calibrationActive: false,
-    gateOpen: false,
-    hardSilence: false,
-    calibrationInvalid: false,
-    calibrationInvalidReason: "none",
-    sourceBoundaryState: "unknown",
-    signalState: LIVE_INPUT_SIGNAL_STATES.ok,
-    errorCode: LIVE_INPUT_ERROR_CODES.none,
-    ...overrides,
+    active: overrides.active === true,
+    phase: Object.values(LIVE_INPUT_PHASES).includes(overrides.phase)
+      ? overrides.phase
+      : LIVE_INPUT_PHASES.idle,
+    liveInputDeviceKind,
+    liveInputKind: liveInputDeviceKind,
+    selectedDeviceId: overrides.selectedDeviceId ?? null,
+    selectedDeviceLabel: overrides.selectedDeviceLabel ?? "",
+    requestedAnalysisClass: normalizeLiveInputAnalysisClass(
+      overrides.requestedAnalysisClass ?? DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
+    ),
     acousticIntent: normalizeLiveInputAcousticIntent(
       overrides.acousticIntent ?? DEFAULT_LIVE_INPUT_ACOUSTIC_INTENT,
     ),
-    liveInputDeviceKind,
-    liveInputKind: liveInputDeviceKind,
+    resolvedAnalysisClass: normalizeResolvedLiveInputAnalysisClass(
+      overrides.resolvedAnalysisClass ??
+        DEFAULT_RESOLVED_LIVE_INPUT_ANALYSIS_CLASS,
+    ),
+    sourceSessionId: overrides.sourceSessionId ?? null,
+    sourceGeneration: overrides.sourceGeneration ?? null,
+    observationAvailable: overrides.observationAvailable === true,
+    errorCode: normalizeLiveInputErrorCode(overrides.errorCode),
   };
 }
-
-/**
- * @param {unknown} error
- * @returns {LiveInputErrorCode}
- */
+/** @param {unknown} error @returns {LiveInputErrorCode} */
 export function mapLiveInputStartError(error) {
   const candidate =
     /** @type {{ name?: unknown, message?: unknown } | null | undefined} */ (
@@ -190,220 +130,86 @@ export function mapLiveInputStartError(error) {
   return LIVE_INPUT_ERROR_CODES.startFailed;
 }
 
-/**
- * @param {{
- *   active: boolean,
- *   liveInputUiState: LiveInputUiState,
- *   providerErrorCode: LiveInputErrorCode,
- *   calibrationActive: boolean,
- *   gateOpen: boolean,
- *   calibrationInvalid: boolean,
- * }} param0
- * @returns {LiveInputPhase}
- */
-function deriveLiveInputPhase({
-  active,
-  liveInputUiState,
-  providerErrorCode,
-  calibrationActive,
-  gateOpen,
-  calibrationInvalid,
-}) {
-  if (liveInputUiState === LIVE_INPUT_UI_STATES.starting) {
-    return LIVE_INPUT_PHASES.starting;
-  }
-  if (liveInputUiState === LIVE_INPUT_UI_STATES.stopping) {
-    return LIVE_INPUT_PHASES.stopping;
-  }
-  if (
-    liveInputUiState === LIVE_INPUT_UI_STATES.error ||
-    providerErrorCode !== LIVE_INPUT_ERROR_CODES.none ||
-    calibrationInvalid
-  ) {
-    return LIVE_INPUT_PHASES.error;
-  }
-  if (!active) {
-    return LIVE_INPUT_PHASES.idle;
-  }
-  if (calibrationActive) {
-    return LIVE_INPUT_PHASES.calibrating;
-  }
-  if (gateOpen) {
-    return LIVE_INPUT_PHASES.listening;
-  }
-  return LIVE_INPUT_PHASES.weakSignal;
-}
-
-/**
- * @param {{
- *   phase: LiveInputPhase,
- *   hardSilence: boolean,
- *   calibrationInvalid: boolean,
- *   calibrationInvalidReason: string,
- * }} param0
- * @returns {LiveInputSignalState}
- */
-function deriveSignalState({
-  phase,
-  hardSilence,
-  calibrationInvalid,
-  calibrationInvalidReason,
-}) {
-  if (
-    calibrationInvalid &&
-    (calibrationInvalidReason === "baseline-clipping" ||
-      calibrationInvalidReason === "compressed-baseline")
-  ) {
-    return LIVE_INPUT_SIGNAL_STATES.clipped;
-  }
-  if (hardSilence) {
-    return LIVE_INPUT_SIGNAL_STATES.silent;
-  }
-  if (phase === LIVE_INPUT_PHASES.weakSignal) {
-    return LIVE_INPUT_SIGNAL_STATES.weak;
-  }
-  return LIVE_INPUT_SIGNAL_STATES.ok;
-}
-
-function readSourceEvidence(featureFrame) {
-  return (
-    featureFrame?.sourceEvidence ?? featureFrame?.debug?.sourceEvidence ?? null
-  );
-}
-
-function readSourceBoundaryState(featureFrame) {
-  const sourceEvidence = readSourceEvidence(featureFrame);
-  return (
-    sourceEvidence?.sourceBoundaryState ??
-    featureFrame?.energyLedger?.sourceBoundaryState ??
-    featureFrame?.debug?.sourceBoundaryState ??
-    "unknown"
-  );
-}
-
-function hasLiveSourceBoundary(sourceEvidence) {
-  return (
-    sourceEvidence?.currentSourceEvidence === true &&
-    sourceEvidence?.sourceBoundaryState === "live"
-  );
-}
-
-function isClosedLineFeedBoundary(sourceBoundaryState) {
-  return (
-    sourceBoundaryState === "absent" ||
-    sourceBoundaryState === "muted" ||
-    sourceBoundaryState === "zero"
-  );
-}
-
-/**
- * @param {{
- *   status?: any,
- *   featureFrame?: any,
- *   liveInputUiState?: LiveInputUiState,
- *   liveInputErrorCode?: LiveInputErrorCode,
- * }=} param0
- * @returns {LiveInputRuntimeStatus}
- */
+// Listening describes the connected capture source, including exact silence.
+// Observation availability is separate; virtual response energy cannot measure
+// input signal quality. Explicit processing failures still surface as errors.
+/** @param {{status?:any,featureFrame?:any,featureRuntimeStatus?:any,liveInputUiState?:LiveInputUiState,liveInputErrorCode?:LiveInputErrorCode}=} options @returns {LiveInputRuntimeStatus} */
 export function buildLiveInputRuntimeStatus({
-  status = undefined,
-  featureFrame = undefined,
+  status,
+  featureFrame,
+  featureRuntimeStatus,
   liveInputUiState = LIVE_INPUT_UI_STATES.idle,
   liveInputErrorCode = LIVE_INPUT_ERROR_CODES.none,
 } = {}) {
-  const debug = featureFrame?.debug ?? null;
-  const active = Boolean(status?.isLiveInputActive);
-  const normalizedUiState = normalizeUiState(liveInputUiState);
-  const requestedAnalysisClass = normalizeLiveInputAnalysisClass(
-    status?.liveInputAnalysisClass,
+  const active = status?.isLiveInputActive === true,
+    ui = normalizeLiveInputUiState(liveInputUiState);
+  const failed =
+    featureRuntimeStatus?.state === "failed" ||
+    featureRuntimeStatus?.latestObservationStale === true;
+  const errorCode =
+    normalizeLiveInputErrorCode(liveInputErrorCode) !==
+    LIVE_INPUT_ERROR_CODES.none
+      ? normalizeLiveInputErrorCode(liveInputErrorCode)
+      : active && failed
+        ? LIVE_INPUT_ERROR_CODES.processingFailed
+        : LIVE_INPUT_ERROR_CODES.none;
+  const currentEpoch = ![
+    "sourceGeneration",
+    "workerGeneration",
+    "timelineRevision",
+    "processingRevision",
+    "topologyRevision",
+  ].some(
+    (key) =>
+      Number.isSafeInteger(featureRuntimeStatus?.[key]) &&
+      featureRuntimeStatus[key] !== featureFrame?.observation?.[key],
   );
-  const resolvedAnalysisClass = normalizeResolvedLiveInputAnalysisClass(
-    status?.resolvedLiveInputAnalysisClass,
-  );
-  const calibrationInvalid = Boolean(debug?.liveInputCalibrationInvalid);
-  const calibrationInvalidReason =
-    debug?.liveInputCalibrationInvalidReason ?? "none";
-  const sourceEvidence = readSourceEvidence(featureFrame);
-  const sourceBoundaryState = readSourceBoundaryState(featureFrame);
-  const lineFeedSourceLive =
-    resolvedAnalysisClass === "line-feed" &&
-    hasLiveSourceBoundary(sourceEvidence);
-  const providerErrorCode = normalizeErrorCode(
-    liveInputErrorCode !== LIVE_INPUT_ERROR_CODES.none
-      ? liveInputErrorCode
-      : calibrationInvalid
-        ? LIVE_INPUT_ERROR_CODES.calibrationInvalid
-        : LIVE_INPUT_ERROR_CODES.none,
-  );
-  const calibrationActive =
+  const observationAvailable =
     active &&
-    resolvedAnalysisClass === "acoustic-mic" &&
-    Boolean(debug?.liveInputCalibrationActive);
-  const hardSilence =
-    active &&
-    (resolvedAnalysisClass === "line-feed"
-      ? isClosedLineFeedBoundary(sourceBoundaryState)
-      : Boolean(debug?.liveInputHardSilenceActive));
-  const gateOpen =
-    active &&
-    (resolvedAnalysisClass === "line-feed"
-      ? lineFeedSourceLive
-      : !debug?.liveInputNoiseGateActive &&
-        !calibrationActive &&
-        !calibrationInvalid);
-  const phase = deriveLiveInputPhase({
-    active,
-    liveInputUiState: normalizedUiState,
-    providerErrorCode,
-    calibrationActive,
-    gateOpen,
-    calibrationInvalid,
-  });
-
+    !failed &&
+    featureRuntimeStatus?.revoked !== true &&
+    featureRuntimeStatus?.renderAuthorityRevoked !== true &&
+    currentEpoch &&
+    hasRenderAuthority(featureFrame);
+  const phase =
+    ui === LIVE_INPUT_UI_STATES.stopping
+      ? LIVE_INPUT_PHASES.stopping
+      : ui === LIVE_INPUT_UI_STATES.error ||
+          errorCode !== LIVE_INPUT_ERROR_CODES.none
+        ? LIVE_INPUT_PHASES.error
+        : ui === LIVE_INPUT_UI_STATES.starting
+          ? LIVE_INPUT_PHASES.starting
+          : !active
+            ? LIVE_INPUT_PHASES.idle
+            : LIVE_INPUT_PHASES.listening;
   return createLiveInputRuntimeStatus({
     active,
     phase,
+    observationAvailable,
+    errorCode,
+    sourceSessionId: status?.sourceSession?.sessionId ?? null,
+    sourceGeneration: observationAvailable
+      ? featureFrame.observation.sourceGeneration
+      : null,
     liveInputDeviceKind:
       status?.liveInputDeviceKind ?? status?.liveInputKind ?? null,
     selectedDeviceId: status?.selectedLiveInputDeviceId ?? null,
     selectedDeviceLabel: status?.selectedLiveInputDeviceLabel ?? "",
-    requestedAnalysisClass,
-    resolvedAnalysisClass,
-    calibrationActive,
-    gateOpen,
-    hardSilence,
-    calibrationInvalid,
-    calibrationInvalidReason,
-    sourceBoundaryState,
-    signalState: deriveSignalState({
-      phase,
-      hardSilence,
-      calibrationInvalid,
-      calibrationInvalidReason,
-    }),
-    errorCode: providerErrorCode,
+    requestedAnalysisClass: status?.liveInputAnalysisClass,
+    resolvedAnalysisClass: status?.resolvedLiveInputAnalysisClass,
+    acousticIntent: status?.liveInputAcousticIntent,
   });
 }
-
-/**
- * @param {Partial<LiveInputRuntimeStatus> | null | undefined} left
- * @param {Partial<LiveInputRuntimeStatus> | null | undefined} right
- * @returns {boolean}
- */
+/** @param {Partial<LiveInputRuntimeStatus>|null|undefined} left @param {Partial<LiveInputRuntimeStatus>|null|undefined} right @returns {boolean} */
 export function areLiveInputRuntimeStatusesEqual(left, right) {
-  const normalizedLeft = createLiveInputRuntimeStatus(left);
-  const normalizedRight = createLiveInputRuntimeStatus(right);
-  const keys = Object.keys(normalizedLeft);
-  return keys.every((key) => normalizedLeft[key] === normalizedRight[key]);
+  const a = createLiveInputRuntimeStatus(left),
+    b = createLiveInputRuntimeStatus(right);
+  return Object.keys(a).every((key) => a[key] === b[key]);
 }
-
-/**
- * @param {Partial<LiveInputRuntimeStatus> | null | undefined} runtimeStatus
- * @returns {boolean}
- */
-export function isLiveInputTransitionLocked(runtimeStatus) {
-  const phase = runtimeStatus?.phase ?? LIVE_INPUT_PHASES.idle;
+/** @param {Partial<LiveInputRuntimeStatus>|null|undefined} status @returns {boolean} */
+export function isLiveInputTransitionLocked(status) {
   return (
-    phase === LIVE_INPUT_PHASES.starting || phase === LIVE_INPUT_PHASES.stopping
+    status?.phase === LIVE_INPUT_PHASES.starting ||
+    status?.phase === LIVE_INPUT_PHASES.stopping
   );
 }

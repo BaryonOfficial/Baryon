@@ -28,7 +28,7 @@ function readVector(vector, fallback) {
 }
 
 function wrapDegrees(value) {
-  const wrapped = ((value + 180) % 360 + 360) % 360 - 180;
+  const wrapped = ((((value + 180) % 360) + 360) % 360) - 180;
   return wrapped === -180 && value > 0 ? 180 : wrapped;
 }
 
@@ -40,12 +40,8 @@ function interpolateNumber(start, end, amount) {
   return start + (end - start) * amount;
 }
 
-export function isCameraOrbitAxis(value) {
-  return CAMERA_ORBIT_AXIS_SET.has(value);
-}
-
-export function normalizeCameraOrbitAxisValue(axis, value) {
-  if (!isCameraOrbitAxis(axis) || !Number.isFinite(Number(value))) {
+function normalizeCameraOrbitAxisValue(axis, value) {
+  if (!CAMERA_ORBIT_AXIS_SET.has(axis) || !Number.isFinite(Number(value))) {
     return null;
   }
   const range = CAMERA_ORBIT_RANGES[axis];

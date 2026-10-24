@@ -1,9 +1,11 @@
 import { CAVITY_ACOUSTIC_DEFAULTS } from "../../defaults.js";
-import { frequencyToBinIndex } from "./binFrequency.js";
-import { findCredibleSpectralPeaks } from "./spectralEvidence.js";
+import { createFftPlan, executeFft } from "../../core/audio/fft.js";
+import {
+  computeBlackmanWindow,
+  normalizeFftMagnitude,
+} from "../../core/audio/fftSpectrum.js";
 
 const WATER_MEDIUM = "water";
-const SPECTRAL_HARMONIC_LIMIT = 16;
 
 function hasOwn(value, key) {
   return Object.prototype.hasOwnProperty.call(value ?? {}, key);
@@ -100,157 +102,230 @@ function resolveWaterAcousticNonlinearityApparatus(cavityAcousticScale) {
 
 export function createWaterAcousticDriveScratch() {
   return {
-    timeDomainData: new Float32Array(0),
-    fftLinearAmplitudes: new Float32Array(0),
-    spectralEnergyDelta: new Float64Array(0),
+    // Acquisition uses a short and a long aperture. Keep their storage separate
+    // so structural preparation cannot overwrite the prepared fast waveform.
+    plans: new Map(),
   };
 }
 
-function ensureFloat32(buffer, length) {
-  return buffer instanceof Float32Array && buffer.length === length
-    ? buffer
-    : new Float32Array(length);
+function prepareSignalScratch(cache, size) {
+  const existing = cache.plans.get(size);
+  if (existing) {
+    return existing;
+  }
+  // Quadratic products can double the source bandwidth. Padding to 2N
+  // evaluates those products before truncation, without wrapping them into
+  // lower frequencies. Plans and output buffers belong only to this scratch.
+  const window = Float64Array.from({ length: size }, (_, index) =>
+    size === 2 ? 1 : computeBlackmanWindow(index, size),
+  );
+  const plan = {
+    signalPlan: createFftPlan(size),
+    oversampledPlan: createFftPlan(2 * size),
+    timeDomainData: new Float32Array(size),
+    fftLinearAmplitudes: new Float32Array(size / 2),
+    window,
+    coherentGain: window.reduce((total, sample) => total + sample, 0) / size,
+  };
+  // A changed acquisition size may replace a plan; historical apertures must
+  // not retain unbounded storage across device or session changes.
+  if (cache.plans.size === 2) {
+    cache.plans.delete(cache.plans.keys().next().value);
+  }
+  cache.plans.set(size, plan);
+  return plan;
 }
 
-function ensureFloat64(buffer, length) {
-  return buffer instanceof Float64Array && buffer.length === length
-    ? buffer
-    : new Float64Array(length);
-}
-
-function readSpectralAmplitude(input, index) {
-  const value = input[index];
-  return Number.isFinite(value) ? Math.max(0, value) : 0;
-}
-
-function projectTimeDomainDrive({
+function transformSignal({
   input,
   sampleRate,
   propagationTimeScaleSeconds,
-  scratch,
+  signal,
+  padded,
 }) {
-  if (!(input instanceof Float32Array) || input.length === 0) {
-    return input;
-  }
-  const output = ensureFloat32(scratch.timeDomainData, input.length);
-  scratch.timeDomainData = output;
-
+  const size = input.length;
+  const halfSize = size / 2;
   let inputEnergy = 0;
-  let projectedEnergy = 0;
-  for (let index = 0; index < input.length; index += 1) {
+  for (let index = 0; index < size; index += 1) {
     const sample = Number.isFinite(input[index]) ? input[index] : 0;
-    const previous = Number.isFinite(input[Math.max(0, index - 1)])
-      ? input[Math.max(0, index - 1)]
-      : sample;
-    const next = Number.isFinite(input[Math.min(input.length - 1, index + 1)])
-      ? input[Math.min(input.length - 1, index + 1)]
-      : sample;
-    const divisor = index === 0 || index === input.length - 1 ? 1 : 2;
-    const derivative = ((next - previous) * sampleRate) / divisor;
-    const projected =
-      sample + propagationTimeScaleSeconds * sample * derivative;
-    output[index] = projected;
+    signal.real[index] = sample;
+    signal.imaginary[index] = 0;
     inputEnergy += sample * sample;
-    projectedEnergy += projected * projected;
   }
+  executeFft(signal);
 
+  padded.real.fill(0);
+  padded.imaginary.fill(0);
+  for (let bin = 0; bin < halfSize; bin += 1) {
+    // Twice as many inverse-transform samples require twice the coefficients.
+    padded.real[bin] = 2 * signal.real[bin];
+    padded.imaginary[bin] = 2 * signal.imaginary[bin];
+    if (bin > 0) {
+      padded.real[padded.size - bin] = 2 * signal.real[size - bin];
+      padded.imaginary[padded.size - bin] = 2 * signal.imaginary[size - bin];
+    }
+  }
+  // The real source Nyquist coefficient splits into conjugate endpoints on
+  // the interpolated grid. Preserve its linear samples in the final signal.
+  padded.real[halfSize] = signal.real[halfSize];
+  padded.real[padded.size - halfSize] = signal.real[halfSize];
+  executeFft(padded, true);
+  for (let index = 0; index < padded.size; index += 1) {
+    padded.real[index] *= padded.real[index];
+    padded.imaginary[index] = 0;
+  }
+  executeFft(padded);
+
+  // x dx/dt = (1/2) d(x^2)/dt. Differentiating the dealiased product keeps
+  // self-harmonics, sum/difference products, and their complex phases together.
+  // Only nonlinear coefficients strictly below source Nyquist are retained.
+  let correctionEnergy = 0;
+  for (let bin = 1; bin < halfSize; bin += 1) {
+    const derivativeScale =
+      (propagationTimeScaleSeconds * Math.PI * bin * sampleRate) / (2 * size);
+    const correctionReal = -padded.imaginary[bin] * derivativeScale;
+    const correctionImaginary = padded.real[bin] * derivativeScale;
+    correctionEnergy +=
+      (2 * (correctionReal ** 2 + correctionImaginary ** 2)) / size;
+    signal.real[bin] += correctionReal;
+    signal.imaginary[bin] += correctionImaginary;
+    signal.real[size - bin] = signal.real[bin];
+    signal.imaginary[size - bin] = -signal.imaginary[bin];
+  }
+  executeFft(signal, true);
+  let projectedEnergy = 0;
+  for (let index = 0; index < size; index += 1) {
+    projectedEnergy += signal.real[index] ** 2;
+  }
+  return { inputEnergy, projectedEnergy, correctionEnergy };
+}
+
+/**
+ * Unnormalized periodic-aperture operator for continuous preparation.
+ * The caller owns stereo gain and overlap-add; neither belongs in this kernel.
+ * Output storage is supplied by the caller and survives the next transform.
+ */
+export function createWaterAcousticFrameTransform({
+  sampleRate,
+  cavityAcousticScale,
+  size = 2048,
+}) {
+  const apparatus =
+    resolveWaterAcousticNonlinearityApparatus(cavityAcousticScale);
+  if (!(Number.isFinite(sampleRate) && sampleRate > 0))
+    throw new TypeError("Water acoustic drive requires a positive sampleRate");
+  if (apparatus.propagationTimeScaleSeconds * Math.PI * sampleRate >= 1)
+    throw new RangeError(
+      "Water acoustic apparatus exceeds the pre-shock weak model at Nyquist",
+    );
+  const signal = createFftPlan(size);
+  const padded = createFftPlan(2 * size);
+  return {
+    active: apparatus.active,
+    transform(input, output) {
+      if (
+        !(input instanceof Float32Array || input instanceof Float64Array) ||
+        input.length !== size ||
+        !input.every(Number.isFinite) ||
+        !(output instanceof Float64Array) ||
+        output.length !== size ||
+        input.buffer === output.buffer
+      )
+        throw new TypeError(
+          "Water frame requires finite PCM and distinct Float64 output",
+        );
+      if (!apparatus.active) {
+        let inputEnergy = 0;
+        for (const value of input) inputEnergy += value * value;
+        if (!Number.isFinite(inputEnergy))
+          throw new RangeError(
+            "Water frame overflowed its finite numerical range",
+          );
+        output.set(input);
+        return {
+          inputEnergy,
+          projectedEnergy: inputEnergy,
+          correctionEnergy: 0,
+        };
+      }
+      const energies = transformSignal({
+        input,
+        sampleRate,
+        propagationTimeScaleSeconds: apparatus.propagationTimeScaleSeconds,
+        signal,
+        padded,
+      });
+      if (
+        !Object.values(energies).every(Number.isFinite) ||
+        !signal.real.every(Number.isFinite)
+      )
+        throw new RangeError(
+          "Water frame overflowed its finite numerical range",
+        );
+      output.set(signal.real);
+      return energies;
+    },
+  };
+}
+
+function projectSignal({
+  input,
+  sampleRate,
+  propagationTimeScaleSeconds,
+  scratch: cache,
+}) {
+  const size = input.length;
+  const scratch = prepareSignalScratch(cache, size);
+  const signal = scratch.signalPlan;
+  const halfSize = size / 2;
+  const { inputEnergy, projectedEnergy, correctionEnergy } = transformSignal({
+    input,
+    sampleRate,
+    propagationTimeScaleSeconds,
+    signal,
+    padded: scratch.oversampledPlan,
+  });
+  // Retain the existing lossless, first-order model's mean-square constraint
+  // in the represented band, after discarding unrepresentable frequencies.
   const energyScale =
     inputEnergy > 0 && projectedEnergy > 0
       ? Math.sqrt(inputEnergy / projectedEnergy)
       : 1;
-  for (let index = 0; index < output.length; index += 1) {
-    output[index] *= energyScale;
-  }
-  return output;
-}
-
-function projectSpectralDrive({ input, sampleRate, apparatus, scratch }) {
-  if (!(input instanceof Float32Array) || input.length === 0) {
-    return { output: input, generatedEnergy: 0, inputEnergy: 0 };
-  }
-  const output = ensureFloat32(scratch.fftLinearAmplitudes, input.length);
-  const energyDelta = ensureFloat64(scratch.spectralEnergyDelta, input.length);
-  scratch.fftLinearAmplitudes = output;
-  scratch.spectralEnergyDelta = energyDelta;
-  output.set(input);
-  energyDelta.fill(0);
-
-  let inputEnergy = 0;
-  for (let index = 0; index < input.length; index += 1) {
-    const amplitude = readSpectralAmplitude(input, index);
-    inputEnergy += amplitude * amplitude;
-  }
-  if (!(inputEnergy > 0)) {
-    return { output, generatedEnergy: 0, inputEnergy: 0 };
+  const output = scratch.timeDomainData;
+  for (let index = 0; index < size; index += 1) {
+    output[index] = signal.real[index] * energyScale;
   }
 
-  let generatedEnergy = 0;
-  const peaks = findCredibleSpectralPeaks(
-    input,
-    sampleRate,
-    SPECTRAL_HARMONIC_LIMIT,
-  );
-  for (const peak of peaks) {
-    const frequencyHz = peak?.frequency ?? 0;
-    const harmonicFrequencyHz = frequencyHz * 2;
-    if (!(frequencyHz > 0) || harmonicFrequencyHz >= sampleRate / 2) {
-      continue;
-    }
-    const sourceBin = frequencyToBinIndex(
-      frequencyHz,
-      input.length,
-      sampleRate,
-    );
-    const harmonicBin = frequencyToBinIndex(
-      harmonicFrequencyHz,
-      input.length,
-      sampleRate,
-    );
-    if (sourceBin === harmonicBin) {
-      continue;
-    }
-    const sourceAmplitude = readSpectralAmplitude(input, sourceBin);
-    const sourceEnergy = sourceAmplitude * sourceAmplitude;
-    if (!(sourceEnergy > 0)) {
-      continue;
-    }
-
-    // Lossless pre-shock plane-wave perturbation:
-    // p2/p1 = beta * omega * L * p1 / (2 rho c^3).
-    const pressureAmplitude =
-      apparatus.incidentPeakPressurePascalAtFullScale * sourceAmplitude;
-    const harmonicAmplitudeRatio =
-      (apparatus.nonlinearCoefficientBeta *
-        2 *
-        Math.PI *
-        frequencyHz *
-        apparatus.sideLengthMeters *
-        pressureAmplitude) /
-      (2 *
-        apparatus.mediumDensityKgPerM3 *
-        apparatus.soundSpeedMetersPerSecond ** 3);
-    const transferredEnergy =
-      sourceEnergy *
-      (harmonicAmplitudeRatio ** 2 / (1 + harmonicAmplitudeRatio ** 2));
-    energyDelta[sourceBin] -= transferredEnergy;
-    energyDelta[harmonicBin] += transferredEnergy;
-    generatedEnergy += transferredEnergy;
+  // The published modal spectrum is measured from that exact Float32 waveform
+  // with the shared acquisition aperture and amplitude convention, not from
+  // parent-peak magnitudes or a separately normalized energy ledger.
+  for (let index = 0; index < size; index += 1) {
+    signal.real[index] = output[index] * scratch.window[index];
+    signal.imaginary[index] = 0;
   }
-
-  for (let index = 0; index < output.length; index += 1) {
-    const sourceAmplitude = readSpectralAmplitude(input, index);
-    output[index] = Math.sqrt(
-      Math.max(0, sourceAmplitude * sourceAmplitude + energyDelta[index]),
+  executeFft(signal);
+  for (let bin = 0; bin < halfSize; bin += 1) {
+    scratch.fftLinearAmplitudes[bin] = normalizeFftMagnitude(
+      Math.hypot(signal.real[bin], signal.imaginary[bin]) / size,
+      bin,
+      scratch.coherentGain,
     );
   }
-  return { output, generatedEnergy, inputEnergy };
+  return {
+    timeDomainData: output,
+    fftLinearAmplitudes: scratch.fftLinearAmplitudes,
+    // Diagnostic quadratic-correction share before lossless normalization.
+    generatedEnergyFraction:
+      inputEnergy > 0 ? correctionEnergy / (inputEnergy + correctionEnergy) : 0,
+  };
 }
 
 /**
  * First-order, lossless finite-amplitude propagation for the virtual water
- * cavity. The source waveform is not mutated. Time-domain steepening preserves
- * total mean-square amplitude; the modal-only magnitude spectrum transfers
- * corresponding weak self-harmonic energy from each credible parent to 2f.
+ * cavity. A periodic, band-limited reconstruction of the captured aperture
+ * supplies one dealiased waveform; its measured spectrum describes that same
+ * waveform. Mean-square amplitude is preserved in the represented band.
+ * Source evidence is not mutated. This is a finite-aperture approximation.
  *
  * No render, topology, observer, or transport state may call this as a trigger.
  * One captured source frame plus the declared apparatus are the complete input.
@@ -286,26 +361,29 @@ export function projectWaterAcousticDrive({
     );
   }
 
-  const projectedTimeDomainData = projectTimeDomainDrive({
-    input: timeDomainData,
-    sampleRate,
-    propagationTimeScaleSeconds: apparatus.propagationTimeScaleSeconds,
-    scratch,
-  });
-  const spectralProjection = projectSpectralDrive({
-    input: fftLinearAmplitudes,
-    sampleRate,
-    apparatus,
-    scratch,
-  });
+  const hasWaveformSignal =
+    timeDomainData instanceof Float32Array &&
+    timeDomainData.some((sample) => Number.isFinite(sample) && sample !== 0);
+  if (!hasWaveformSignal) {
+    // Magnitudes alone cannot recover phase-dependent nonlinear products.
+    // An absent/empty/silent time buffer can accompany spectral-only evidence.
+    // Preserve that linear fallback instead of manufacturing a second signal.
+    return {
+      ...apparatus,
+      timeDomainData,
+      fftLinearAmplitudes,
+      generatedEnergyFraction: 0,
+      fullScaleCharacteristicDistortion,
+    };
+  }
   return {
     ...apparatus,
-    timeDomainData: projectedTimeDomainData,
-    fftLinearAmplitudes: spectralProjection.output,
-    generatedEnergyFraction:
-      spectralProjection.inputEnergy > 0
-        ? spectralProjection.generatedEnergy / spectralProjection.inputEnergy
-        : 0,
+    ...projectSignal({
+      input: timeDomainData,
+      sampleRate,
+      propagationTimeScaleSeconds: apparatus.propagationTimeScaleSeconds,
+      scratch,
+    }),
     fullScaleCharacteristicDistortion,
   };
 }

@@ -150,7 +150,7 @@ vi.mock("../context/AudioContext", () => ({
 
 import {
   composeAuthoritativePerformanceHudMetrics,
-  resolveCameraControlFieldState,
+  resolveCameraControlsAvailable,
   resolvePreviewOverlayState,
   shouldUseAuthoritativePerformanceHud,
 } from "./threeSceneState.js";
@@ -162,6 +162,8 @@ import { ControlsProvider } from "../controls/ControlsProvider.jsx";
 import { createControlsStore } from "../controls/controlsStore.js";
 import { CONTROL_SURFACES } from "@baryon/engine/controls/schema";
 import ThreeScene from "./ThreeScene.jsx";
+import { createRendererFeatureView } from "@baryon/engine/audio-features";
+import { createAudioFeaturePacketFixture } from "../../../engine/src/testing/audioFeaturePacketFixture.js";
 
 describe("resolvePreviewOverlayState", () => {
   it("returns an unsupported state when presented performer preview is requested without support", () => {
@@ -243,8 +245,8 @@ describe("resolvePreviewOverlayState", () => {
 describe("preview camera control state", () => {
   it("uses the authoritative stage field state once the local scene is omitted", () => {
     expect(
-      resolveCameraControlFieldState({
-        frameFieldState: "idle",
+      resolveCameraControlsAvailable({
+        frameHasRenderAuthority: false,
         previewState: {
           omitLocalScene: true,
         },
@@ -252,13 +254,13 @@ describe("preview camera control state", () => {
           lastRenderedFieldState: "active",
         },
       }),
-    ).toBe("active");
+    ).toBe(true);
   });
 
   it("keeps preview camera control highlights source-owned even when the authoritative stage is mirrored", () => {
     expect(
-      resolveCameraControlFieldState({
-        frameFieldState: "idle",
+      resolveCameraControlsAvailable({
+        frameHasRenderAuthority: false,
         previewState: {
           omitLocalScene: true,
         },
@@ -266,7 +268,7 @@ describe("preview camera control state", () => {
           lastRenderedFieldState: "active",
         },
       }),
-    ).toBe("active");
+    ).toBe(true);
   });
 });
 
@@ -842,9 +844,48 @@ describe("ThreeScene render behavior", () => {
 
     expect(dispatchCameraControlCommandSpy.mock.calls).toStrictEqual([
       [{ cameraPose: resolvePresetCameraPose("side") }],
-      [{ cameraPose: DEFAULT_ACTIVE_CAMERA_POSE }],
+      [{ cameraPose: DEFAULT_ACTIVE_CAMERA_POSE, cameraReset: true }],
     ]);
     expect(sideButton.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("uses side for the idle logo and clears a manual view when audio stops", async () => {
+    const controlsStore = createControlsStore();
+    const renderScene = async (active) => {
+      audioSceneState.liveInputUiState = active ? "active" : "idle";
+      await act(async () =>
+        root.render(
+          React.createElement(
+            ControlsProvider,
+            { store: controlsStore },
+            React.createElement(ThreeScene),
+          ),
+        ),
+      );
+    };
+    await renderScene(false);
+    expect(baryonSceneSpy.mock.calls.at(-1)[0].cameraPose).toEqual(
+      resolvePresetCameraPose("side"),
+    );
+    await renderScene(true);
+    expect(baryonSceneSpy.mock.calls.at(-1)[0].cameraPose).toEqual(
+      DEFAULT_ACTIVE_CAMERA_POSE,
+    );
+    await act(async () =>
+      container.querySelector('[data-testid="camera-top-view-button"]').click(),
+    );
+    expect(baryonSceneSpy.mock.calls.at(-1)[0].cameraPose).toEqual(
+      resolvePresetCameraPose("top-down"),
+    );
+    await renderScene(false);
+    expect(baryonSceneSpy.mock.calls.at(-1)[0].cameraPose).toEqual(
+      resolvePresetCameraPose("side"),
+    );
+    await renderScene(true);
+    expect(baryonSceneSpy.mock.calls.at(-1)[0].cameraPose).toEqual(
+      DEFAULT_ACTIVE_CAMERA_POSE,
+    );
+    expect(dispatchCameraControlCommandSpy).toHaveBeenCalledTimes(1);
   });
 
   it("uses the diagonal default camera view for active preview", async () => {
@@ -926,55 +967,79 @@ describe("ThreeScene render behavior", () => {
     );
   });
 
-  it("shows camera controls once file playback renders an active field", async () => {
-    audioSceneState.liveInputUiState = "idle";
-    const controlsStore = createControlsStore();
+  it.each(["running", "paused"])(
+    "shows usable camera controls for a complete %s file model and hides them on revocation",
+    async (sourcePhase) => {
+      audioSceneState.liveInputUiState = "idle";
+      const controlsStore = createControlsStore();
 
-    await act(async () => {
-      root.render(
-        React.createElement(
-          ControlsProvider,
-          { store: controlsStore },
-          React.createElement(ThreeScene),
-        ),
-      );
-    });
-
-    expect(
-      container.querySelector('[data-testid="camera-controls"]'),
-    ).toBeNull();
-
-    await act(async () => {
-      baryonSceneSpy.mock.calls.at(-1)?.[0]?.onFrameState?.({
-        featureFrame: { fieldState: "active" },
-        cameraPose: {
-          position: { x: 1.234, y: 0, z: -8.765 },
-        },
+      await act(async () => {
+        root.render(
+          React.createElement(
+            ControlsProvider,
+            { store: controlsStore },
+            React.createElement(ThreeScene),
+          ),
+        );
       });
-    });
 
-    expect(
-      container.querySelector('[data-testid="camera-controls"]'),
-    ).toBeInstanceOf(HTMLElement);
-    expect(
-      container
-        .querySelector('[data-testid="camera-top-view-button"]')
-        ?.getAttribute("aria-pressed"),
-    ).toBe("false");
-    expect(
-      container
-        .querySelector('[data-testid="camera-side-view-button"]')
-        ?.getAttribute("aria-pressed"),
-    ).toBe("false");
-    expect(
-      container.querySelector('[data-testid="camera-view-readout"]')
-        ?.textContent,
-    ).toContain("x+1.23");
-    expect(
-      container.querySelector('[data-testid="camera-view-readout"]')
-        ?.textContent,
-    ).toContain("z-8.77");
-  });
+      expect(
+        container.querySelector('[data-testid="camera-controls"]'),
+      ).toBeNull();
+
+      await act(async () => {
+        const model = createAudioFeaturePacketFixture().model();
+        baryonSceneSpy.mock.calls.at(-1)?.[0]?.onFrameState?.({
+          featureFrame: createRendererFeatureView({
+            topology: model.topology,
+            observation: { ...model.observation, sourcePhase },
+          }),
+          cameraPose: {
+            position: { x: 1.234, y: 0, z: -8.765 },
+          },
+        });
+      });
+
+      expect(
+        container.querySelector('[data-testid="camera-controls"]'),
+      ).toBeInstanceOf(HTMLElement);
+      expect(
+        container
+          .querySelector('[data-testid="camera-top-view-button"]')
+          ?.getAttribute("aria-pressed"),
+      ).toBe("false");
+      expect(
+        container
+          .querySelector('[data-testid="camera-side-view-button"]')
+          ?.getAttribute("aria-pressed"),
+      ).toBe("false");
+      expect(
+        container.querySelector('[data-testid="camera-view-readout"]')
+          ?.textContent,
+      ).toContain("x+1.23");
+      expect(
+        container.querySelector('[data-testid="camera-view-readout"]')
+          ?.textContent,
+      ).toContain("z-8.77");
+      expect(dispatchCameraControlCommandSpy).not.toHaveBeenCalled();
+      await act(async () => {
+        container
+          .querySelector('[data-testid="camera-top-view-button"]')
+          .click();
+      });
+      expect(dispatchCameraControlCommandSpy).toHaveBeenCalledExactlyOnceWith({
+        cameraPose: resolvePresetCameraPose("top-down"),
+      });
+      await act(async () => {
+        baryonSceneSpy.mock.calls
+          .at(-1)?.[0]
+          ?.onFrameState?.({ featureFrame: null });
+      });
+      expect(
+        container.querySelector('[data-testid="camera-controls"]'),
+      ).toBeNull();
+    },
+  );
 
   it("keeps camera pose identity stable across unrelated rerenders", async () => {
     const controlsStore = createControlsStore();

@@ -1,320 +1,151 @@
 import {
   AUDIO_FEATURE_PROTOCOL_VERSION,
-  audioFeatureDriveMatchesTopology,
-  isAudioFeatureDrivePacket,
+  audioFeatureObservationMatchesTopology,
+  isAudioFeatureObservationPacket,
   isAudioFeatureTopologyPacket,
   isPositiveProtocolInteger,
 } from "../../contracts/audioFeatureProtocol.js";
 
-function freezePacket(packet) {
-  return packet && typeof packet === "object" && !Object.isFrozen(packet)
-    ? Object.freeze(packet)
-    : packet;
-}
+const EPOCH_KEYS = [
+  "sourceGeneration",
+  "workerGeneration",
+  "timelineRevision",
+  "processingRevision",
+];
 
-function matchesGeneration(packet, sourceGeneration, workerGeneration) {
-  return (
-    packet?.protocolVersion === AUDIO_FEATURE_PROTOCOL_VERSION &&
-    packet?.sourceGeneration === sourceGeneration &&
-    packet?.workerGeneration === workerGeneration
-  );
+function epochOf({
+  sourceGeneration = 1,
+  workerGeneration = 0,
+  timelineRevision = 0,
+  processingRevision = 0,
+} = {}) {
+  const epoch = {
+    sourceGeneration,
+    workerGeneration,
+    timelineRevision,
+    processingRevision,
+  };
+  if (
+    !isPositiveProtocolInteger(sourceGeneration) ||
+    [workerGeneration, timelineRevision, processingRevision].some(
+      (n) => !Number.isSafeInteger(n) || n < 0,
+    )
+  )
+    throw new RangeError("invalid audio feature epoch");
+  return epoch;
 }
 
 /**
- * Mechanically joins immutable topology and drive wire packets. This owner does
- * not derive audio semantics and never copies packet arrays.
+ * Joins one immutable topology/observation pair, without deriving physics,
+ * sending commands, restarting capture or allocating replacement packet arrays.
+ * Unknown topology retains only its newest observation. Explicit clear revokes
+ * the epoch; cached reads or packets cannot reactivate it.
  */
-export function createAudioFeaturePacketJoiner({
-  sourceGeneration = 1,
-  workerGeneration = 1,
-} = {}) {
-  let currentSourceGeneration = sourceGeneration;
-  let currentWorkerGeneration = workerGeneration;
-  let topologyPacket = null;
-  let heldFutureDrivePacket = null;
-  let latestModel = null;
-  let latestAcceptedFrameId = 0;
-  let rejectedPacketCount = 0;
-
+export function createAudioFeaturePacketJoiner(configuration = {}) {
+  let epoch = epochOf(configuration);
+  let revoked = false;
+  let topology = null,
+    held = null,
+    latestModel = null;
+  let latestAcceptedFrameId = 0,
+    rejectedPacketCount = 0;
   const reject = (reason) => {
-    rejectedPacketCount += 1;
+    rejectedPacketCount++;
     return { accepted: false, published: false, reason };
   };
-
-  const publish = (drivePacket) => {
-    const topology = topologyPacket;
-    const drive = freezePacket(drivePacket);
-    latestAcceptedFrameId = drive.frameId;
-    latestModel = Object.freeze({ topology, drive });
+  const matchesEpoch = (packet) =>
+    !revoked &&
+    packet?.protocolVersion === AUDIO_FEATURE_PROTOCOL_VERSION &&
+    EPOCH_KEYS.every((key) => packet[key] === epoch[key]);
+  const publish = (observation) => {
+    latestAcceptedFrameId = observation.frameId;
+    latestModel = Object.freeze({
+      topology,
+      observation: Object.freeze(observation),
+    });
     return { accepted: true, published: true, model: latestModel };
   };
-
-  const clearPackets = () => {
-    topologyPacket = null;
-    heldFutureDrivePacket = null;
-    latestModel = null;
-    latestAcceptedFrameId = 0;
-  };
-
   return {
-    setGenerations(nextSourceGeneration, nextWorkerGeneration) {
-      if (
-        nextSourceGeneration === currentSourceGeneration &&
-        nextWorkerGeneration === currentWorkerGeneration
-      ) {
-        return false;
-      }
-
-      currentSourceGeneration = nextSourceGeneration;
-      currentWorkerGeneration = nextWorkerGeneration;
-      clearPackets();
+    setEpoch(configuration) {
+      const next = epochOf(configuration);
+      const changed = EPOCH_KEYS.find((key) => next[key] !== epoch[key]);
+      if (!changed) return false;
+      if (next[changed] < epoch[changed])
+        throw new RangeError("audio feature epoch cannot move backward");
+      epoch = next;
+      revoked = false;
+      topology = held = latestModel = null;
+      latestAcceptedFrameId = 0;
       return true;
     },
-
     acceptTopology(packet) {
-      if (
-        !matchesGeneration(
-          packet,
-          currentSourceGeneration,
-          currentWorkerGeneration,
-        )
-      ) {
-        return reject("generation-mismatch");
-      }
-      if (!isPositiveProtocolInteger(packet.topologyRevision)) {
-        return reject("invalid-topology-revision");
-      }
-      if (
-        topologyPacket &&
-        packet.topologyRevision <= topologyPacket.topologyRevision
-      ) {
-        return reject("non-increasing-topology-revision");
-      }
-      if (!isAudioFeatureTopologyPacket(packet)) {
+      if (!matchesEpoch(packet)) return reject("generation-mismatch");
+      if (!isAudioFeatureTopologyPacket(packet))
         return reject("invalid-topology-shape");
+      if (topology && packet.topologyRevision <= topology.topologyRevision)
+        return reject("non-increasing-topology-revision");
+      topology = Object.freeze(packet);
+      latestModel = null;
+      if (held && held.topologyRevision < topology.topologyRevision) {
+        held = null;
+        rejectedPacketCount++;
       }
-
-      topologyPacket = freezePacket(packet);
-      if (
-        heldFutureDrivePacket &&
-        heldFutureDrivePacket.topologyRevision < packet.topologyRevision
-      ) {
-        heldFutureDrivePacket = null;
-        rejectedPacketCount += 1;
-      }
-      if (heldFutureDrivePacket?.topologyRevision === packet.topologyRevision) {
-        const heldDrive = heldFutureDrivePacket;
-        heldFutureDrivePacket = null;
-        if (!audioFeatureDriveMatchesTopology(heldDrive, topologyPacket)) {
-          rejectedPacketCount += 1;
-          return {
-            accepted: true,
-            published: false,
-            reason: "discarded-mismatched-held-drive",
-          };
-        }
-        if (heldDrive.frameId > latestAcceptedFrameId) {
-          return publish(heldDrive);
-        }
-      }
-
-      return { accepted: true, published: false, reason: "awaiting-drive" };
-    },
-
-    acceptDrive(packet) {
-      if (
-        !matchesGeneration(
-          packet,
-          currentSourceGeneration,
-          currentWorkerGeneration,
+      if (held?.topologyRevision === topology.topologyRevision) {
+        const pending = held;
+        held = null;
+        if (
+          pending.frameId <= latestAcceptedFrameId ||
+          !audioFeatureObservationMatchesTopology(pending, topology)
         )
-      ) {
-        return reject("generation-mismatch");
+          return reject("invalid-held-observation");
+        return publish(pending);
       }
+      return {
+        accepted: true,
+        published: false,
+        reason: "awaiting-observation",
+      };
+    },
+    acceptObservation(packet) {
+      if (!matchesEpoch(packet)) return reject("generation-mismatch");
       if (
-        !isPositiveProtocolInteger(packet.topologyRevision) ||
-        !isPositiveProtocolInteger(packet.frameId)
-      ) {
-        return reject("invalid-drive-packet");
-      }
-      if (!isAudioFeatureDrivePacket(packet)) {
-        return reject("invalid-drive-shape");
-      }
-      if (packet.frameId <= latestAcceptedFrameId) {
+        !isPositiveProtocolInteger(packet.frameId) ||
+        packet.frameId <= latestAcceptedFrameId
+      )
         return reject("non-monotonic-frame");
-      }
-
-      const topologyRevision = topologyPacket?.topologyRevision ?? 0;
-      if (packet.topologyRevision === topologyRevision) {
-        if (!audioFeatureDriveMatchesTopology(packet, topologyPacket)) {
-          return reject("drive-topology-shape-mismatch");
-        }
+      if (packet.topologyRevision < (topology?.topologyRevision ?? 0))
+        return reject("older-observation-revision");
+      if (packet.topologyRevision === topology?.topologyRevision) {
+        if (!audioFeatureObservationMatchesTopology(packet, topology))
+          return reject("observation-topology-shape-mismatch");
         return publish(packet);
       }
-      if (packet.topologyRevision < topologyRevision) {
-        return reject("older-drive-revision");
-      }
-
+      if (!isAudioFeatureObservationPacket(packet))
+        return reject("invalid-observation-shape");
       if (
-        !heldFutureDrivePacket ||
-        packet.topologyRevision > heldFutureDrivePacket.topologyRevision ||
-        (packet.topologyRevision === heldFutureDrivePacket.topologyRevision &&
-          packet.frameId > heldFutureDrivePacket.frameId)
-      ) {
-        heldFutureDrivePacket = freezePacket(packet);
-        return {
-          accepted: true,
-          published: false,
-          reason: "awaiting-topology",
-        };
-      }
-
-      return reject("superseded-future-drive");
+        held &&
+        (packet.topologyRevision < held.topologyRevision ||
+          (packet.topologyRevision === held.topologyRevision &&
+            packet.frameId <= held.frameId))
+      )
+        return reject("superseded-future-observation");
+      held = Object.freeze(packet);
+      return { accepted: true, published: false, reason: "awaiting-topology" };
     },
-
-    readLatestModel() {
-      return latestModel;
-    },
-
+    readLatestModel: () => latestModel,
     clear() {
-      clearPackets();
+      topology = held = latestModel = null;
+      revoked = true;
     },
-
     getStatus() {
       return {
-        sourceGeneration: currentSourceGeneration,
-        workerGeneration: currentWorkerGeneration,
-        topologyRevision: topologyPacket?.topologyRevision ?? 0,
+        ...epoch,
+        revoked,
+        topologyRevision: topology?.topologyRevision ?? 0,
         latestAcceptedFrameId,
-        heldFutureTopologyRevision:
-          heldFutureDrivePacket?.topologyRevision ?? 0,
+        heldFutureTopologyRevision: held?.topologyRevision ?? 0,
         rejectedPacketCount,
-        hasCompleteModel: Boolean(latestModel),
-      };
-    },
-  };
-}
-
-/**
- * Producer-side bounded input transport. Acknowledgement is the only event
- * that releases the in-flight slot. Pending fast data coalesces to the newest
- * capture while the newest unsent structural payload remains sticky.
- */
-/**
- * @param {{
- *   send: (frame: any) => void,
- *   sourceGeneration?: number,
- *   workerGeneration?: number,
- * }} options
- */
-export function createBoundedAudioInputTransport({
-  send,
-  sourceGeneration = 1,
-  workerGeneration = 1,
-}) {
-  if (typeof send !== "function") {
-    throw new TypeError("createBoundedAudioInputTransport requires send");
-  }
-
-  let currentSourceGeneration = sourceGeneration;
-  let currentWorkerGeneration = workerGeneration;
-  let nextFrameId = 1;
-  let inFlight = null;
-  let pending = null;
-  let replacementCount = 0;
-  let staleAcknowledgementCount = 0;
-  let sentCount = 0;
-
-  const stamp = (input) => ({
-    ...input,
-    protocolVersion: AUDIO_FEATURE_PROTOCOL_VERSION,
-    sourceGeneration: currentSourceGeneration,
-    workerGeneration: currentWorkerGeneration,
-    frameId: nextFrameId++,
-  });
-
-  const dispatch = (input) => {
-    inFlight = stamp(input);
-    sentCount += 1;
-    send(inFlight);
-    return inFlight.frameId;
-  };
-
-  return {
-    offer(input) {
-      if (!input) {
-        return { sent: false, reason: "empty-input" };
-      }
-      if (!inFlight) {
-        return { sent: true, frameId: dispatch(input) };
-      }
-
-      if (pending) {
-        replacementCount += 1;
-      }
-      pending = {
-        ...input,
-        structuralPayload:
-          input.structuralPayload ?? pending?.structuralPayload ?? null,
-        structuralRequested:
-          input.structuralRequested === true ||
-          pending?.structuralRequested === true ||
-          input.structuralPayload != null ||
-          pending?.structuralPayload != null,
-      };
-      return { sent: false, reason: "coalesced" };
-    },
-
-    /** @param {{ sourceGeneration?: number, workerGeneration?: number, frameId?: number }} [acknowledgement] */
-    acknowledge(
-      {
-        sourceGeneration: acknowledgedSourceGeneration,
-        workerGeneration: acknowledgedWorkerGeneration,
-        frameId,
-      } = /** @type {{ sourceGeneration?: number, workerGeneration?: number, frameId?: number }} */ ({}),
-    ) {
-      if (
-        !inFlight ||
-        acknowledgedSourceGeneration !== currentSourceGeneration ||
-        acknowledgedWorkerGeneration !== currentWorkerGeneration ||
-        frameId !== inFlight.frameId
-      ) {
-        staleAcknowledgementCount += 1;
-        return false;
-      }
-
-      inFlight = null;
-      if (pending) {
-        const next = pending;
-        pending = null;
-        dispatch(next);
-      }
-      return true;
-    },
-
-    resetGenerations(nextSourceGeneration, nextWorkerGeneration) {
-      currentSourceGeneration = nextSourceGeneration;
-      currentWorkerGeneration = nextWorkerGeneration;
-      nextFrameId = 1;
-      inFlight = null;
-      pending = null;
-    },
-
-    clear() {
-      inFlight = null;
-      pending = null;
-    },
-
-    getStatus() {
-      return {
-        sourceGeneration: currentSourceGeneration,
-        workerGeneration: currentWorkerGeneration,
-        inFlightFrameId: inFlight?.frameId ?? 0,
-        pending: Boolean(pending),
-        queueDepth: Number(Boolean(inFlight)) + Number(Boolean(pending)),
-        replacementCount,
-        staleAcknowledgementCount,
-        sentCount,
+        hasCompleteModel: latestModel !== null,
       };
     },
   };

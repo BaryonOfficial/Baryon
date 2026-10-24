@@ -1,3 +1,4 @@
+import { listWorkspaceManifestPaths } from "./lib/workspace-manifests.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -48,33 +49,6 @@ function toRepoRelative(filePath) {
 
 function scriptExists(relPath) {
   return fs.existsSync(path.join(rootDir, relPath));
-}
-
-function findWorkspaceManifestPaths() {
-  const workspaceRoots = ["apps", "packages"];
-  const manifestPaths = ["package.json"];
-
-  for (const workspaceRoot of workspaceRoots) {
-    const workspaceRootPath = path.join(rootDir, workspaceRoot);
-    if (!fs.existsSync(workspaceRootPath)) {
-      continue;
-    }
-
-    for (const entry of fs.readdirSync(workspaceRootPath, {
-      withFileTypes: true,
-    })) {
-      if (!entry.isDirectory()) {
-        continue;
-      }
-
-      const manifestPath = path.join(workspaceRoot, entry.name, "package.json");
-      if (fs.existsSync(path.join(rootDir, manifestPath))) {
-        manifestPaths.push(manifestPath);
-      }
-    }
-  }
-
-  return manifestPaths.sort();
 }
 
 function localLinkTargetExists(resolvedPath, allowExtensionless = false) {
@@ -350,7 +324,10 @@ checkTouchDesignerDownload({
 });
 
 const polyformLicense = "LicenseRef-PolyForm-Strict-1.0";
-for (const relPath of findWorkspaceManifestPaths()) {
+for (const relPath of [
+  "package.json",
+  ...listWorkspaceManifestPaths(rootDir),
+].sort()) {
   const packageJson = JSON.parse(
     fs.readFileSync(path.join(rootDir, relPath), "utf8"),
   );

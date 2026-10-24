@@ -1,3 +1,4 @@
+import { createFieldCacheDomainGeometry } from "./fieldCacheDomainGeometry.js";
 import { describe, expect, it } from "vitest";
 import {
   CYMATIC_OBSERVER_CHECKPOINT_BYTES,
@@ -12,7 +13,6 @@ import {
   FIELD_CACHE_SAMPLED_HALF_EXTENT,
   FIELD_CACHE_TILES_X,
   FIELD_CACHE_TILES_Y,
-  createFieldCacheDomainGeometry,
   isFieldCacheVoxelInDomain,
   isModalFamilyResolvedByFieldCache,
   toFieldCacheVoxelCoordinate,

@@ -17,7 +17,6 @@
 
 import assert from "node:assert/strict";
 import { SIMULATION_DEFAULTS } from "../src/defaults.js";
-import { MODAL_SEMANTIC_DESCRIPTOR_CAPACITY } from "../src/core/modalBudgets.js";
 import {
   CYMATIC_OBSERVER_REFERENCE,
   createCymaticObserverClockState,
@@ -65,7 +64,7 @@ function simulateObserverClock(renderFps, durationSeconds) {
   return { fixedStepCount, finalStepIndex: state.stepIndex };
 }
 
-function proveCompleteModalDescriptor() {
+function proveCompleteModalTopology() {
   const atlas = buildModalExcitationAtlas(SIMULATION_DEFAULTS);
   const identities = new Set(atlas.map((mode) => mode.familyId));
 
@@ -76,17 +75,12 @@ function proveCompleteModalDescriptor() {
     "each admitted modal family must have one stable identity",
   );
   check(
-    atlas.length <= MODAL_SEMANTIC_DESCRIPTOR_CAPACITY,
-    "the complete admitted atlas must fit the one production descriptor",
-  );
-  check(
     atlas.every((mode) => mode.sourceSupported === true),
-    "the descriptor must contain only apparatus-supported modal families",
+    "the topology must contain only apparatus-supported modal families",
   );
 
   return {
     admittedModeCount: atlas.length,
-    descriptorCapacity: MODAL_SEMANTIC_DESCRIPTOR_CAPACITY,
     frequencyRangeHz: [
       atlas[0].naturalFrequencyHz,
       atlas.at(-1).naturalFrequencyHz,
@@ -219,7 +213,7 @@ function proveLocalizedChromaticPlasma() {
 }
 
 const report = {
-  descriptor: proveCompleteModalDescriptor(),
+  descriptor: proveCompleteModalTopology(),
   observerClock: proveAudioTimeOwnership(),
   surfaceMotion: proveImplicitSurfaceMotion(),
   plasma: proveLocalizedChromaticPlasma(),

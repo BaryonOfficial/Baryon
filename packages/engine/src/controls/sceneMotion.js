@@ -10,15 +10,12 @@ const AUDIO_ROTATION_IDLE_DAMP = 5.5;
 const AUDIO_ROTATION_RETURN = 4.5;
 const AUDIO_ROTATION_SUSTAIN_SCALE = 5.4;
 const AUDIO_ROTATION_IMPULSE_SCALE = 2.35;
-const AUDIO_ROTATION_BEAT_IMPULSE_SCALE = 1.2;
-const AUDIO_ROTATION_BEAT_CONFIDENCE_FLOOR = 0.3;
 const AUDIO_ROTATION_DRIVE_DEADZONE = 0.055;
 const AUDIO_ROTATION_DRIVE_EXPONENT = 1.15;
 const AUDIO_ROTATION_IMPULSE_OVERSHOOT_CAP = 2.0;
 const AUDIO_ATTITUDE_MAX_PITCH = 0.075;
 const AUDIO_ATTITUDE_MAX_ROLL = 0.06;
 const AUDIO_ATTITUDE_TRANSIENT_SCALE = 0.055;
-const AUDIO_ATTITUDE_BEAT_SCALE = 0.035;
 const AUDIO_ATTITUDE_DAMP = 9.5;
 const AUDIO_ATTITUDE_RETURN = 8.0;
 
@@ -141,7 +138,6 @@ export function createSceneMotionState(initialYaw = 0) {
     pitchVelocity: 0,
     rollVelocity: 0,
     lastMotionSignal: 0,
-    lastBeatPulseId: 0,
     motionAmountEnvelope: 0.5,
   };
 }
@@ -194,49 +190,13 @@ export function getIdleLogoManualVelocity(controls) {
   );
 }
 
-export function deriveSceneSignals(
-  featureFrame,
-  responseEnvelope,
-  lastMotionSignal,
-) {
-  const structureSignal = clamp01(featureFrame?.structureSignal ?? 0);
-  const energySignal = clamp01(featureFrame?.energySignal ?? 0);
-  const changeSignal = clamp01(featureFrame?.changeSignal ?? 0);
-  const pulseSignal = clamp01(featureFrame?.pulseSignal ?? 0);
-  const fallbackTransientSignal = clamp01(
-    finiteOr(featureFrame?.changeBreakdown?.hit, 0) / 0.26,
-  );
-  const transientSignal = clamp01(
-    Number.isFinite(featureFrame?.transientEnergy)
-      ? featureFrame.transientEnergy
-      : fallbackTransientSignal,
-  );
-  const normalizedResponseEnvelope = clamp01(responseEnvelope ?? 0);
-  const motionSignal = clamp01(
-    changeSignal * 0.56 +
-      pulseSignal * 0.22 +
-      energySignal * 0.14 +
-      normalizedResponseEnvelope * 0.08,
-  );
-  const motionImpulse = clamp01(motionSignal - (lastMotionSignal ?? 0) * 0.7);
-  const bedSignal = clamp01(
-    structureSignal * energySignal * 0.2 +
-      energySignal * 0.22 +
-      normalizedResponseEnvelope * 0.24,
-  );
-  const reactiveSignal = clamp01(
-    changeSignal * 0.62 + motionImpulse * 0.82 + pulseSignal * 0.18,
-  );
-  const torqueImpulse = clamp01(
-    Math.max(
-      motionImpulse,
-      transientSignal * 0.7 + pulseSignal * 0.18 + changeSignal * 0.12,
-    ),
-  );
-  const attitudeImpulse = clamp01(
-    transientSignal * 0.65 + motionImpulse * 0.2 + pulseSignal * 0.15,
-  );
-  const rotationDrive = clamp01(bedSignal * 0.4 + reactiveSignal * 0.6);
+// Presentation motion uses the renderer's one response envelope. It does not
+// estimate notes, beats or additional acoustic state from display-time reads.
+export function deriveSceneSignals(responseEnvelope, lastMotionSignal) {
+  const energySignal = clamp01(responseEnvelope ?? 0);
+  const motionSignal = energySignal;
+  const motionImpulse = clamp01(motionSignal - (lastMotionSignal ?? 0));
+  const rotationDrive = clamp01(energySignal * 0.8 + motionImpulse * 0.2);
   const shapedDrive =
     rotationDrive <= AUDIO_ROTATION_DRIVE_DEADZONE
       ? 0
@@ -245,20 +205,13 @@ export function deriveSceneSignals(
             (1 - AUDIO_ROTATION_DRIVE_DEADZONE),
           AUDIO_ROTATION_DRIVE_EXPONENT,
         );
-
   return {
-    structureSignal,
     energySignal,
-    changeSignal,
-    pulseSignal,
-    responseEnvelope: normalizedResponseEnvelope,
-    transientSignal,
     motionSignal,
     motionImpulse,
-    torqueImpulse,
-    attitudeImpulse,
-    bedSignal,
-    reactiveSignal,
+    reactiveSignal: motionImpulse,
+    torqueImpulse: motionImpulse,
+    attitudeImpulse: motionImpulse,
     rotationDrive,
     shapedDrive,
   };
@@ -302,10 +255,6 @@ export function stepAudioSceneMotion(
     motionImpulse,
     torqueImpulse,
     attitudeImpulse,
-    beatPulseId,
-    beatStrength,
-    beatConfidence,
-    beatDetected,
     deltaTime,
   },
 ) {
@@ -318,27 +267,6 @@ export function stepAudioSceneMotion(
     0,
     AUDIO_ROTATION_MAX_SPEED,
   );
-
-  const beatDrive =
-    Math.max(0.18, finiteOr(beatStrength, 0)) *
-    Math.max(AUDIO_ROTATION_BEAT_CONFIDENCE_FLOOR, finiteOr(beatConfidence, 0));
-  if (
-    beatPulseId > 0 &&
-    beatPulseId !== sceneMotion.lastBeatPulseId &&
-    beatDetected
-  ) {
-    sceneMotion.lastBeatPulseId = beatPulseId;
-    sceneMotion.angularVelocity = clamp(
-      sceneMotion.angularVelocity -
-        motionAmount * AUDIO_ROTATION_BEAT_IMPULSE_SCALE * beatDrive,
-      -AUDIO_ROTATION_MAX_SPEED,
-      AUDIO_ROTATION_MAX_SPEED,
-    );
-    applyAttitudeKick(
-      sceneMotion,
-      motionAmount * AUDIO_ATTITUDE_BEAT_SCALE * beatDrive,
-    );
-  }
 
   const effectiveTorqueImpulse = clamp01(torqueImpulse ?? motionImpulse ?? 0);
   if (effectiveTorqueImpulse > 0.04) {

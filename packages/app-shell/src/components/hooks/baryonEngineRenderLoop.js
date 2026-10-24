@@ -7,22 +7,9 @@ import {
   buildAuditControlSnapshot,
   buildControlInspectionSnapshot,
 } from "@baryon/engine/controls/runtime";
-import {
-  AUDIO_SOURCE_KINDS,
-  isPreparedFileAwaitingPlayback,
-} from "@baryon/engine/audio";
-import {
-  createRendererFeatureView,
-  resolveAnalysisFrameStaleness,
-} from "@baryon/engine/audio-features";
-import {
-  allowsModalDescriptorRenderAuthority,
-  allowsCurrentLiveRenderFrame,
-  hasPreparationAuthority,
-  hasRenderAuthority,
-} from "@baryon/engine/core/renderAuthorityContract";
-import * as raymarchFieldAnalysisModule from "@baryon/engine/core/raymarch/fieldAnalysis";
-import { usesRaymarchVolumePipeline } from "@baryon/engine/visualization/types";
+import { createRendererFeatureView } from "@baryon/engine/audio-features";
+import { hasRenderAuthority } from "@baryon/engine/core/renderAuthorityContract";
+import { isVisualizationMethod } from "@baryon/engine/visualization/types";
 import { resolveTemporalReprojectionPolicy } from "@baryon/engine/render/temporalReprojectionPolicy";
 import {
   DEFAULT_PERFORMANCE_TARGET_FPS,
@@ -37,17 +24,13 @@ import {
   markRenderOutputVisualIdle,
 } from "@baryon/engine/render/outputPipeline";
 import {
-  clearFrameCache,
   initializeAdaptiveRaymarchRuntimeState,
   recordRuntimePerfSample,
-  shouldReuseIdleFrame,
   snapshotModalFreshnessDiagnostics,
   snapshotRuntimePerfBreakdown,
   snapshotRuntimeDiagnostics,
-  snapshotSourceEvidenceDiagnostics,
-  snapshotWorkerPerfCounters,
 } from "./baryonEngineRuntimeState.js";
-import { readRenderFacingModalResponseEnergy } from "./modalResponseDiagnostics.js";
+import { readObservedResponseEnergy } from "./modalResponseDiagnostics.js";
 export { syncLiveInputRuntimeStatus } from "./liveInputRuntimeSync.js";
 
 const LONG_FRAME_THRESHOLD_MS = 34;
@@ -67,7 +50,6 @@ const ADAPTIVE_RAYMARCH_PRESSURE_SAFETY_MARGIN = 0.9;
 const ADAPTIVE_RAYMARCH_PRESSURE_FRAME_TIME_RATIO = 1.03;
 const ADAPTIVE_RAYMARCH_STABLE_FRAME_TIME_RATIO = 0.9;
 const ADAPTIVE_RAYMARCH_LONG_FRAME_TIME_RATIO = 1.35;
-const ADAPTIVE_RAYMARCH_RECOVERY_MIN_RENDER_ENERGY = 0.08;
 const RAYMARCH_USER_TUNABLE_STEP_MIN = MIN_PRESENTATION_RAYMARCH_STEPS;
 const ADAPTIVE_RAYMARCH_STEP_LADDER = Object.freeze([
   16, 20, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192,
@@ -165,32 +147,8 @@ function buildStageAttribution(runtimeDiagnostics, perfBreakdown) {
   };
 }
 
-function buildStageEngineCounters(runtimeDiagnostics) {
-  return {
-    latestDriveAgeMs: runtimeDiagnostics?.engine?.latestDriveAgeMs ?? null,
-    latestObservationTimeSeconds:
-      runtimeDiagnostics?.engine?.latestObservationTimeSeconds ?? null,
-    latestCaptureRms: runtimeDiagnostics?.engine?.latestCaptureRms ?? null,
-    latestAcceptedFrameId:
-      runtimeDiagnostics?.engine?.latestAcceptedFrameId ?? 0,
-    sourceGeneration: runtimeDiagnostics?.engine?.sourceGeneration ?? 0,
-    workerGeneration: runtimeDiagnostics?.engine?.workerGeneration ?? 0,
-    topologyRevision: runtimeDiagnostics?.engine?.topologyRevision ?? 0,
-    processedFrameCount: runtimeDiagnostics?.engine?.processedFrameCount ?? 0,
-    topologyPublishCount: runtimeDiagnostics?.engine?.topologyPublishCount ?? 0,
-    drivePublishCount: runtimeDiagnostics?.engine?.drivePublishCount ?? 0,
-    inputReplacementCount:
-      runtimeDiagnostics?.engine?.inputReplacementCount ?? 0,
-    rejectedPacketCount: runtimeDiagnostics?.engine?.rejectedPacketCount ?? 0,
-    staleAcknowledgementCount:
-      runtimeDiagnostics?.engine?.staleAcknowledgementCount ?? 0,
-    renderAuthorityRevoked:
-      runtimeDiagnostics?.engine?.renderAuthorityRevoked ?? false,
-    queueDepth: runtimeDiagnostics?.engine?.queueDepth ?? 0,
-    state: runtimeDiagnostics?.engine?.state ?? "none",
-    reason: runtimeDiagnostics?.engine?.reason ?? null,
-    ...snapshotWorkerPerfCounters(runtimeDiagnostics?.engine),
-  };
+function buildStageEngineCounters(diagnostics) {
+  return diagnostics?.engine ? { ...diagnostics.engine } : null;
 }
 
 function snapshotRenderSurfaceDiagnostics(renderSurface) {
@@ -225,206 +183,31 @@ function readFiniteNumber(value, fallback = 0) {
   return Number.isFinite(value) ? Number(value) : fallback;
 }
 
-function isCopyableSlotArray(values) {
-  return values instanceof Float32Array || Array.isArray(values);
-}
-
-function copyNumericSlotsInto(values, reusableTarget) {
-  const target =
-    reusableTarget instanceof Float32Array &&
-    reusableTarget.length === values.length
-      ? reusableTarget
-      : new Float32Array(values.length);
-  if (values instanceof Float32Array) {
-    target.set(values);
-    return target;
-  }
-
-  for (let index = 0; index < values.length; index += 1) {
-    target[index] = readFiniteNumber(values[index]);
-  }
-  return target;
-}
-
-function measureSlotTurnover(previousSlots, nextSlots, epsilon = 1e-4) {
-  if (!isCopyableSlotArray(nextSlots)) {
-    return {
-      nextCopy: null,
-      meanAbsDelta: 0,
-      changeCount: 0,
-    };
-  }
-  if (!previousSlots) {
-    return {
-      nextCopy: copyNumericSlotsInto(nextSlots, null),
-      meanAbsDelta: 0,
-      changeCount: 0,
-    };
-  }
-
-  const previousLength = previousSlots.length;
-  const nextLength = nextSlots.length;
-  const comparedLength = Math.max(previousLength, nextLength);
-  if (comparedLength === 0) {
-    return {
-      nextCopy: copyNumericSlotsInto(nextSlots, previousSlots),
-      meanAbsDelta: 0,
-      changeCount: 0,
-    };
-  }
-
-  let totalAbsDelta = 0;
-  let changeCount = 0;
-  for (let index = 0; index < comparedLength; index += 1) {
-    const previousValue =
-      index < previousLength ? readFiniteNumber(previousSlots[index]) : 0;
-    // fround mirrors the Float32Array coercion the stored copy will apply.
-    const nextValue =
-      index < nextLength ? Math.fround(readFiniteNumber(nextSlots[index])) : 0;
-    const delta = Math.abs(nextValue - previousValue);
-    totalAbsDelta += delta;
-    if (delta > epsilon) {
-      changeCount += 1;
-    }
-  }
-
-  return {
-    nextCopy: copyNumericSlotsInto(nextSlots, previousSlots),
-    meanAbsDelta: totalAbsDelta / comparedLength,
-    changeCount,
-  };
-}
-
-function applySlotTurnoverDiagnostics(
-  modalFreshness,
-  { fieldPrefix, previousField, nextSlots },
-) {
-  const turnover = measureSlotTurnover(
-    modalFreshness[previousField],
-    nextSlots,
-  );
-  modalFreshness[`${fieldPrefix}MeanAbsDelta`] = turnover.meanAbsDelta;
-  modalFreshness[`${fieldPrefix}ChangeCount`] = turnover.changeCount;
-  modalFreshness[previousField] = turnover.nextCopy;
-}
-
 export function updateModalFreshnessDiagnostics(
-  runtimeDiagnostics,
-  featureFrame,
+  diagnostics,
+  frame,
   { getWallTimeMs = getRenderLoopWallTimeMs } = {},
 ) {
-  const modalFreshness = runtimeDiagnostics?.modalFreshness;
-  if (!modalFreshness || !featureFrame) {
-    return;
-  }
-
-  const renderSubmittedAtMs = readFiniteNumber(getWallTimeMs());
-  const frameTimeMs = readFiniteNumber(featureFrame.frameTimeMs);
-  modalFreshness.frameTimeMs = frameTimeMs;
-  modalFreshness.sourceMode = featureFrame.sourceMode ?? null;
-  modalFreshness.sourceEvidence = snapshotSourceEvidenceDiagnostics(
-    featureFrame.sourceEvidence,
-  );
-  modalFreshness.fieldState =
-    featureFrame.debug?.fieldState ?? featureFrame.fieldState ?? "idle";
-  modalFreshness.structuralSnapshotAgeMs = readFiniteNumber(
-    runtimeDiagnostics?.engine?.latestDriveAgeMs,
-  );
-  modalFreshness.featureFrameAgeAtRenderMs = Math.max(
-    0,
-    renderSubmittedAtMs - frameTimeMs,
-  );
-  modalFreshness.renderSubmittedAtMs = renderSubmittedAtMs;
-  modalFreshness.lastUpdatedAtWallTimeMs = renderSubmittedAtMs;
-  modalFreshness.avgAmplitude = readFiniteNumber(
-    featureFrame.debug?.avgAmplitude ?? featureFrame.averageAmplitude,
-  );
-  modalFreshness.analyserRms = readFiniteNumber(
-    featureFrame.debug?.analyserRms,
-  );
-  modalFreshness.periodicity = readFiniteNumber(
-    featureFrame.debug?.periodicity,
-  );
-  modalFreshness.liveInputNoiseGateActive = Boolean(
-    featureFrame.debug?.liveInputNoiseGateActive,
-  );
-  modalFreshness.liveInputHardSilenceActive = Boolean(
-    featureFrame.debug?.liveInputHardSilenceActive,
-  );
-  modalFreshness.structureSignal = readFiniteNumber(
-    featureFrame.structureSignal,
-  );
-  modalFreshness.energySignal = readFiniteNumber(featureFrame.energySignal);
-  modalFreshness.changeSignal = readFiniteNumber(featureFrame.changeSignal);
-  modalFreshness.pulseSignal = readFiniteNumber(featureFrame.pulseSignal);
-  modalFreshness.modalVisibilityEnergy = readFiniteNumber(
-    featureFrame.modalVisibilityEnergy,
-  );
-  modalFreshness.modalObserverVisibilityEnergy = readFiniteNumber(
-    featureFrame.modalObserverVisibilityEnergy,
-  );
-  modalFreshness.observationEnergy = readFiniteNumber(
-    featureFrame.observationEnergy,
-  );
-  modalFreshness.modalResponseEnergy =
-    readRenderFacingModalResponseEnergy(featureFrame);
-  modalFreshness.modalResponseBudgetScale = readFiniteNumber(
-    featureFrame.modalResponseBudgetScale ??
-      featureFrame.debug?.modalResponseBudgetScale,
-  );
-  modalFreshness.modalResponseRawEnergy = readFiniteNumber(
-    featureFrame.modalResponseRawEnergy ??
-      featureFrame.debug?.modalResponseRawEnergy,
-  );
-  modalFreshness.modalResponseAverageDampingEnvelope = readFiniteNumber(
-    featureFrame.modalResponseAverageDampingEnvelope ??
-      featureFrame.debug?.modalResponseAverageDampingEnvelope,
-  );
-  modalFreshness.modalResponseAverageCouplingStrength = readFiniteNumber(
-    featureFrame.modalResponseAverageCouplingStrength ??
-      featureFrame.debug?.modalResponseAverageCouplingStrength,
-  );
-  modalFreshness.modalResponseAveragePhaseConfidence = readFiniteNumber(
-    featureFrame.modalResponseAveragePhaseConfidence ??
-      featureFrame.debug?.modalResponseAveragePhaseConfidence,
-  );
-  modalFreshness.modalResponseAveragePersistence = readFiniteNumber(
-    featureFrame.modalResponseAveragePersistence ??
-      featureFrame.debug?.modalResponseAveragePersistence,
-  );
-  modalFreshness.modalPhaseAuthority = readFiniteNumber(
-    featureFrame.modalPhaseAuthority,
-  );
-  modalFreshness.resonantPhaseAuthority = readFiniteNumber(
-    featureFrame.debug?.resonantPhaseAuthority,
-  );
-  modalFreshness.sourceCoupledPhaseAuthority = readFiniteNumber(
-    featureFrame.debug?.sourceCoupledPhaseAuthority,
-  );
-  modalFreshness.modalPhaseCoherentFieldModeCount = readFiniteNumber(
-    featureFrame.debug?.modalPhaseCoherentFieldModeCount ??
-      featureFrame.modalPhaseCoherentFieldModeCount,
-  );
-  modalFreshness.modeCoherence = readFiniteNumber(featureFrame.modeCoherence);
-  const renderFacingModeCount = readRaymarchFrameModeCount(featureFrame);
-  modalFreshness.activeModeCount = renderFacingModeCount;
-  modalFreshness.activeModalFieldModeCount = renderFacingModeCount;
-  applySlotTurnoverDiagnostics(modalFreshness, {
-    fieldPrefix: "modalIdentitySlot",
-    previousField: "_previousModalIdentitySlots",
-    nextSlots:
-      featureFrame.modalDescriptor?.slotViews?.modalIdentitySlots ??
-      featureFrame.modalIdentitySlots,
+  const target = diagnostics?.modalFreshness;
+  if (!target) return;
+  const observation = frame?.observation,
+    topology = frame?.topology;
+  Object.assign(target, {
+    frameId: observation?.frameId ?? null,
+    sourcePhase: observation?.sourcePhase ?? null,
+    familyCount: topology?.familyCount ?? 0,
+    shellCount: topology?.shellCount ?? 0,
+    endSample: observation?.endSample ?? null,
+    inputEndSample: observation?.inputEndSample ?? null,
+    preparationDelayFrames: observation?.preparationDelayFrames ?? null,
+    observationTimeSeconds:
+      observation && topology
+        ? observation.endSample / topology.sampleRate
+        : null,
+    normalizationEnergy: observation ? readObservedResponseEnergy(frame) : null,
+    observationAgeMs: diagnostics.engine?.latestObservationAgeMs ?? null,
+    renderSubmittedAtMs: getWallTimeMs(),
   });
-  modalFreshness.resonantObservedModeCount = readFiniteNumber(
-    featureFrame.debug?.resonantObservedModeCount,
-  );
-  modalFreshness.resonantObservedEnergy = readFiniteNumber(
-    featureFrame.debug?.resonantObservedEnergy,
-  );
-  modalFreshness.resonantRingSupport = readFiniteNumber(
-    featureFrame.debug?.resonantRingSupport,
-  );
 }
 
 export function updateModalEnvelopeDiagnostics(
@@ -532,230 +315,6 @@ function recordFrameSemanticSource(runtimeDiagnostics, source) {
   modalFreshness.frameSemanticSource = source ?? null;
   modalFreshness.frameSemanticFresh = fresh;
   modalFreshness.frameSemanticReused = reused;
-}
-
-function isCanonicalStaticIdleFrame(featureFrame) {
-  return Boolean(
-    featureFrame &&
-    featureFrame.fieldState === "idle" &&
-    featureFrame.renderAuthority === false &&
-    featureFrame.sourceEvidence?.currentSourceEvidence !== true &&
-    featureFrame.sourceEvidence?.sourceBoundaryState !== "live" &&
-    featureFrame.sourceEvidence?.transport?.playing !== true &&
-    featureFrame.sourceEvidence?.transport?.liveInputActive !== true,
-  );
-}
-
-function cloneFrameValue(value, seen = new WeakMap()) {
-  if (value == null || typeof value !== "object") {
-    return value;
-  }
-
-  if (seen.has(value)) {
-    return seen.get(value);
-  }
-
-  if (value instanceof ArrayBuffer) {
-    return value.slice(0);
-  }
-
-  if (ArrayBuffer.isView(value)) {
-    const cloned =
-      value instanceof DataView
-        ? new DataView(
-            value.buffer.slice(
-              value.byteOffset,
-              value.byteOffset + value.byteLength,
-            ),
-          )
-        : Reflect.construct(value.constructor, [value]);
-    seen.set(value, cloned);
-    return cloned;
-  }
-
-  if (Array.isArray(value)) {
-    const cloned = [];
-    seen.set(value, cloned);
-    for (const entry of value) {
-      cloned.push(cloneFrameValue(entry, seen));
-    }
-    return cloned;
-  }
-
-  const cloned = {};
-  seen.set(value, cloned);
-  for (const [key, entry] of Object.entries(value)) {
-    cloned[key] = cloneFrameValue(entry, seen);
-  }
-  return cloned;
-}
-
-function closePausedFileSourceEvidence(sourceEvidence) {
-  return {
-    ...(sourceEvidence ?? {}),
-    sourceBoundaryState: "muted",
-    currentSourceEvidence: false,
-    sourceEnergy: 0,
-    transport: {
-      ...(sourceEvidence?.transport ?? {}),
-      playing: false,
-      fileMuted: true,
-    },
-  };
-}
-
-function closePausedFileEnergyLedger(energyLedger) {
-  return {
-    ...(energyLedger ?? {}),
-    sourceBoundaryState: "muted",
-    sourceEnergy: 0,
-  };
-}
-
-function createPausedFileHoldFrame(featureFrame) {
-  const frame = cloneFrameValue(featureFrame);
-  frame.observationAdvancing = false;
-  frame.observationPaused = true;
-  frame.audioMotionAuthority = false;
-  frame.sourceEvidence = closePausedFileSourceEvidence(frame.sourceEvidence);
-  frame.energyLedger = closePausedFileEnergyLedger(frame.energyLedger);
-  frame.modalResponseCurrentRenderSourceEvidence = false;
-  frame.debug = {
-    ...(frame.debug ?? {}),
-    pausedFileHold: true,
-    sourceBoundaryState: "muted",
-    currentSourceEvidence: false,
-  };
-  return frame;
-}
-
-function getPlaybackSessionId(status) {
-  return status?.playbackSessionId ?? null;
-}
-
-function getFileSourceSession(status) {
-  return status?.sourceSession?.kind === AUDIO_SOURCE_KINDS.file
-    ? status.sourceSession
-    : null;
-}
-
-function getFileTimelineRevision(status) {
-  return Math.max(
-    0,
-    Math.floor(getFileSourceSession(status)?.timelineRevision ?? 0),
-  );
-}
-
-const TERMINAL_PLAYBACK_END_REASONS = new Set([
-  "natural",
-  "premature",
-  "interrupted",
-  "stopped",
-]);
-
-function hasCurrentPlaybackSessionEnded(status) {
-  const playbackSessionId = getPlaybackSessionId(status);
-  if (playbackSessionId == null) {
-    return false;
-  }
-
-  return (
-    TERMINAL_PLAYBACK_END_REASONS.has(status?.lastPlaybackEndReason) &&
-    status?.lastPlaybackDiagnostics?.playbackSessionId === playbackSessionId
-  );
-}
-
-function isActiveFilePlayback(status) {
-  return (
-    getFileSourceSession(status) != null &&
-    status?.isPlaying === true &&
-    status?.isLiveInputActive !== true &&
-    getPlaybackSessionId(status) != null
-  );
-}
-
-function readPausedFileHoldFrame({ frameCacheRefs, status, clockMode }) {
-  if (
-    clockMode !== "paused-playback" ||
-    status?.isPlaying === true ||
-    status?.isLiveInputActive === true ||
-    hasCurrentPlaybackSessionEnded(status)
-  ) {
-    return null;
-  }
-
-  const fileSourceSession = getFileSourceSession(status);
-  const playbackSessionId = getPlaybackSessionId(status);
-  if (!fileSourceSession) {
-    return null;
-  }
-
-  const heldFrame = frameCacheRefs.pausedFileFrameRef?.current;
-  return heldFrame?.playbackSessionId === playbackSessionId &&
-    heldFrame?.fileSourceSessionId === fileSourceSession.sessionId &&
-    heldFrame?.fileTimelineRevision === getFileTimelineRevision(status)
-    ? (heldFrame.frame ?? null)
-    : null;
-}
-
-function clearPausedFileHoldFrame(frameCacheRefs) {
-  if (frameCacheRefs.pausedFileFrameRef) {
-    frameCacheRefs.pausedFileFrameRef.current = null;
-  }
-}
-
-function refreshPausedFileHoldFrame({ frameCacheRefs, status, featureFrame }) {
-  const fileSourceSession = getFileSourceSession(status);
-  const playbackSessionId = getPlaybackSessionId(status);
-  if (!frameCacheRefs.pausedFileFrameRef || !fileSourceSession) {
-    return;
-  }
-
-  const heldFrame = frameCacheRefs.pausedFileFrameRef.current;
-  const fileTimelineRevision = getFileTimelineRevision(status);
-  if (
-    heldFrame?.playbackSessionId !== playbackSessionId ||
-    heldFrame?.fileSourceSessionId !== fileSourceSession.sessionId ||
-    heldFrame?.fileTimelineRevision !== fileTimelineRevision
-  ) {
-    frameCacheRefs.pausedFileFrameRef.current = null;
-  }
-
-  if (allowsCurrentLiveRenderFrame(featureFrame)) {
-    frameCacheRefs.pausedFileFrameRef.current = {
-      playbackSessionId,
-      fileSourceSessionId: fileSourceSession.sessionId,
-      fileTimelineRevision,
-      frame: createPausedFileHoldFrame(featureFrame),
-    };
-  }
-}
-
-function isPreparedPausedFileObservationFrame(status, featureFrame) {
-  return Boolean(
-    getFileSourceSession(status) != null &&
-    status?.isAudioLoaded === true &&
-    status?.hasPreparedFileAnalysisSource === true &&
-    status?.isPlaying !== true &&
-    status?.isPlaybackPaused === true &&
-    status?.isLiveInputActive !== true &&
-    featureFrame?.observationPaused === true &&
-    featureFrame?.observationTimelineRevision ===
-      getFileTimelineRevision(status) &&
-    featureFrame?.modalDescriptor,
-  );
-}
-
-function resetInterruptedLiveInputVisualResponse(runtimeState) {
-  if (!runtimeState) {
-    return;
-  }
-
-  runtimeState.responseEnvelope = 0;
-  runtimeState.accentEnvelope = 0;
-  runtimeState.motionSignal = 0;
-  runtimeState.scaleSignal = 0;
-  runtimeState.bloomResponseSignal = 0;
 }
 
 export function buildPerformanceHudSnapshot(runtimeDiagnostics) {
@@ -876,21 +435,8 @@ export function syncRenderSurfacePixelRatio({
   return targetPixelRatio;
 }
 
-function readRaymarchFrameModeCount(featureFrame) {
-  if (!allowsModalDescriptorRenderAuthority(featureFrame)) {
-    return 0;
-  }
-
-  return Math.max(
-    0,
-    Math.round(
-      readFiniteNumber(
-        featureFrame?.modalDescriptor?.counts?.modalFieldModeCount ??
-          featureFrame?.activeModalFieldModeCount ??
-          featureFrame?.activeModeCount,
-      ),
-    ),
-  );
+function readRaymarchFamilyCount(frame) {
+  return hasRenderAuthority(frame) ? frame.topology.familyCount : 0;
 }
 
 /**
@@ -996,8 +542,74 @@ function updateRenderSurfaceDiagnostics(
     1_000_000;
 }
 
+/** Completion cadence in wall-clock milliseconds, never animation callbacks,
+ * GPU execution time, or physical display presentation. The frame producer
+ * admits only successful completions from the current renderer generation.
+ */
+export function recordCompletedRenderFrame(
+  runtimeDiagnostics,
+  { completedAtMs, time, status },
+) {
+  if (!Number.isFinite(completedAtMs)) return;
+  const previous = runtimeDiagnostics.lastCompletedFrameAtMs;
+  if (previous !== null && completedAtMs <= previous) return;
+  runtimeDiagnostics.lastCompletedFrameAtMs = completedAtMs;
+  // The first completion establishes an endpoint, not a frame interval.
+  if (previous === null) return;
+  const frameTimeMs = completedAtMs - previous;
+  const sourceStatus = status ?? {};
+  runtimeDiagnostics.lastFrameTimeMs = frameTimeMs;
+  runtimeDiagnostics.smoothedFrameTimeMs =
+    runtimeDiagnostics.smoothedFrameTimeMs > 0
+      ? runtimeDiagnostics.smoothedFrameTimeMs +
+        (frameTimeMs - runtimeDiagnostics.smoothedFrameTimeMs) *
+          FRAME_TIME_SMOOTHING_ALPHA
+      : frameTimeMs;
+  runtimeDiagnostics.worstFrameTimeMs = Math.max(
+    runtimeDiagnostics.worstFrameTimeMs,
+    frameTimeMs,
+  );
+  if (frameTimeMs > FRAME_DROP_THRESHOLD_16_7_MS) {
+    runtimeDiagnostics.frameDrops.framesOver16_7Ms += 1;
+  }
+  if (frameTimeMs > FRAME_DROP_THRESHOLD_25_MS) {
+    runtimeDiagnostics.frameDrops.framesOver25Ms += 1;
+  }
+  if (frameTimeMs > FRAME_DROP_THRESHOLD_33_3_MS) {
+    runtimeDiagnostics.frameDrops.framesOver33_3Ms += 1;
+  }
+  if (frameTimeMs > FRAME_DROP_THRESHOLD_50_MS) {
+    runtimeDiagnostics.frameDrops.framesOver50Ms += 1;
+  }
+  if (frameTimeMs >= LONG_FRAME_THRESHOLD_MS) {
+    runtimeDiagnostics.longFrameCount += 1;
+    runtimeDiagnostics.lastLongFrame = {
+      durationMs: frameTimeMs,
+      atElapsedTimeSeconds: time,
+      playbackSessionId: sourceStatus.playbackSessionId ?? null,
+    };
+    runtimeDiagnostics.frameDrops.recentLongFramesMs.push(frameTimeMs);
+    if (
+      runtimeDiagnostics.frameDrops.recentLongFramesMs.length >
+      MAX_RECENT_LONG_FRAME_SAMPLES
+    ) {
+      runtimeDiagnostics.frameDrops.recentLongFramesMs.splice(
+        0,
+        runtimeDiagnostics.frameDrops.recentLongFramesMs.length -
+          MAX_RECENT_LONG_FRAME_SAMPLES,
+      );
+    }
+  }
+  if (sourceStatus.isPlaying) {
+    runtimeDiagnostics.activeFrameCount += 1;
+    runtimeDiagnostics.averageFrameTimeMs +=
+      (frameTimeMs - runtimeDiagnostics.averageFrameTimeMs) /
+      runtimeDiagnostics.activeFrameCount;
+  }
+}
+
 export function updateRendererDiagnostics(
-  { state, controls, status, time, deltaTime, rfDelta, gl, renderLoopRefs },
+  { state, controls, status, time, gl, renderLoopRefs },
   { getRequestedPixelRatio = getDevicePixelRatio } = {},
 ) {
   const runtimeDiagnostics = renderLoopRefs.runtimeDiagnosticsRef.current;
@@ -1025,58 +637,6 @@ export function updateRendererDiagnostics(
     runtimeDiagnostics,
     basePixelRatio: getRequestedPixelRatio(),
   });
-  const frameTimeMs =
-    typeof rfDelta === "number" && rfDelta > 0 && Number.isFinite(rfDelta)
-      ? rfDelta * 1000
-      : typeof deltaTime === "number" &&
-          deltaTime > 0 &&
-          Number.isFinite(deltaTime)
-        ? deltaTime * 1000
-        : null;
-  if (frameTimeMs !== null) {
-    runtimeDiagnostics.lastFrameTimeMs = frameTimeMs;
-    runtimeDiagnostics.smoothedFrameTimeMs =
-      runtimeDiagnostics.smoothedFrameTimeMs > 0
-        ? runtimeDiagnostics.smoothedFrameTimeMs +
-          (frameTimeMs - runtimeDiagnostics.smoothedFrameTimeMs) *
-            FRAME_TIME_SMOOTHING_ALPHA
-        : frameTimeMs;
-    runtimeDiagnostics.worstFrameTimeMs = Math.max(
-      runtimeDiagnostics.worstFrameTimeMs,
-      frameTimeMs,
-    );
-    if (frameTimeMs > FRAME_DROP_THRESHOLD_16_7_MS) {
-      runtimeDiagnostics.frameDrops.framesOver16_7Ms += 1;
-    }
-    if (frameTimeMs > FRAME_DROP_THRESHOLD_25_MS) {
-      runtimeDiagnostics.frameDrops.framesOver25Ms += 1;
-    }
-    if (frameTimeMs > FRAME_DROP_THRESHOLD_33_3_MS) {
-      runtimeDiagnostics.frameDrops.framesOver33_3Ms += 1;
-    }
-    if (frameTimeMs > FRAME_DROP_THRESHOLD_50_MS) {
-      runtimeDiagnostics.frameDrops.framesOver50Ms += 1;
-    }
-    if (frameTimeMs >= LONG_FRAME_THRESHOLD_MS) {
-      runtimeDiagnostics.longFrameCount += 1;
-      runtimeDiagnostics.lastLongFrame = {
-        durationMs: frameTimeMs,
-        atElapsedTimeSeconds: time,
-        playbackSessionId: sourceStatus.playbackSessionId ?? null,
-      };
-      runtimeDiagnostics.frameDrops.recentLongFramesMs.push(frameTimeMs);
-      if (
-        runtimeDiagnostics.frameDrops.recentLongFramesMs.length >
-        MAX_RECENT_LONG_FRAME_SAMPLES
-      ) {
-        runtimeDiagnostics.frameDrops.recentLongFramesMs.splice(
-          0,
-          runtimeDiagnostics.frameDrops.recentLongFramesMs.length -
-            MAX_RECENT_LONG_FRAME_SAMPLES,
-        );
-      }
-    }
-  }
   const nextRenderSurfaceWidth = state?.size?.width ?? 0;
   const nextRenderSurfaceHeight = state?.size?.height ?? 0;
   const previousRenderSurfaceSize =
@@ -1097,13 +657,6 @@ export function updateRendererDiagnostics(
     targetPixelRatio,
     gl,
   });
-
-  if (sourceStatus.isPlaying && frameTimeMs !== null) {
-    runtimeDiagnostics.activeFrameCount += 1;
-    runtimeDiagnostics.averageFrameTimeMs +=
-      (frameTimeMs - runtimeDiagnostics.averageFrameTimeMs) /
-      runtimeDiagnostics.activeFrameCount;
-  }
 
   const playbackIssueSignature =
     sourceStatus.lastPlaybackEndReason &&
@@ -1300,45 +853,25 @@ function deriveAdaptivePressureRung({
   return Math.max(0, Math.min(currentRung - 1, estimatedRung));
 }
 
-function deriveAdaptiveRecoveryState({
-  controls,
-  effectiveFrame,
-  status,
-  adaptiveRaymarch,
-}) {
-  const playbackSessionId = status?.playbackSessionId ?? null;
-  const sessionTransition =
-    playbackSessionId != null &&
-    adaptiveRaymarch?.lastPlaybackSessionId != null &&
-    adaptiveRaymarch.lastPlaybackSessionId !== playbackSessionId;
-
-  let recoveryBlockedReason = "none";
-  if (!controls?.injectTestTone) {
-    const currentSourceEvidence =
-      effectiveFrame?.sourceEvidence?.currentSourceEvidence === true;
-    const sourceBoundaryState =
-      effectiveFrame?.sourceEvidence?.sourceBoundaryState ?? "absent";
-    const projectedRenderEnergy =
-      effectiveFrame?.energyLedger?.projectedRenderEnergy ?? 0;
-
-    if (sessionTransition) {
-      recoveryBlockedReason = "session-transition";
-    } else if (!currentSourceEvidence || sourceBoundaryState !== "live") {
-      recoveryBlockedReason = "closed-source";
-    } else if (!hasRenderAuthority(effectiveFrame)) {
-      recoveryBlockedReason = "render-not-authorized";
-    } else if (
-      !(projectedRenderEnergy >= ADAPTIVE_RAYMARCH_RECOVERY_MIN_RENDER_ENERGY)
-    ) {
-      recoveryBlockedReason = "low-render-energy";
-    }
-  }
-
+function deriveAdaptiveRecoveryState({ effectiveFrame, adaptiveRaymarch }) {
+  const sourceGeneration =
+    effectiveFrame?.observation?.sourceGeneration ?? null;
+  const sourceTransition =
+    sourceGeneration !== null &&
+    adaptiveRaymarch.lastSourceGeneration !== null &&
+    sourceGeneration !== adaptiveRaymarch.lastSourceGeneration;
+  const reason = sourceTransition
+    ? "source-transition"
+    : !hasRenderAuthority(effectiveFrame)
+      ? "render-not-authorized"
+      : !effectiveFrame.audioMotionAuthority
+        ? "source-held"
+        : "none";
   return {
-    recoveryEligible: recoveryBlockedReason === "none",
-    recoveryBlockedReason,
-    playbackSessionId,
-    sessionTransition,
+    recoveryEligible: reason === "none",
+    recoveryBlockedReason: reason,
+    sourceGeneration,
+    sourceTransition,
   };
 }
 
@@ -1349,67 +882,29 @@ function resolveAdaptiveStepBudgetAtRung({ ladder, rung }) {
   );
 }
 
-export function resolveRaymarchFieldAnalysisFrameInputs(
-  runtimeState,
-  effectiveFrame,
-) {
-  const modalFieldCapacity =
-    raymarchFieldAnalysisModule.inferModalFieldCapacity(
-      runtimeState?.modalFieldCapacity,
-      runtimeState?.raymarchUploadState?.basisPlan?.identitySlots,
-    );
-  const productUploadCapacity = modalFieldCapacity;
-  const uploadedModeCount = allowsModalDescriptorRenderAuthority(effectiveFrame)
-    ? Math.max(
-        0,
-        Math.round(runtimeState?.uniforms?.uModalFieldModeCount?.value ?? 0),
-      )
-    : 0;
-  const descriptorModeCount = readRaymarchFrameModeCount(effectiveFrame);
-  const activeModeCount =
-    uploadedModeCount > 0 ? uploadedModeCount : descriptorModeCount;
-
+export function resolveRaymarchFieldAnalysisFrameInputs(state, frame) {
+  const familyCount = readRaymarchFamilyCount(frame);
+  const source = state?.fieldSource?.read();
   return {
-    modalFieldCapacity: productUploadCapacity,
-    productUploadCapacity,
-    activeModeCount,
-    uploadedModeCount,
+    familyCount,
+    shellCount: familyCount ? frame.topology.shellCount : 0,
+    uploadedFamilyCount: source?.topology?.familyCount ?? 0,
   };
 }
 
-export function syncUploadedRenderQuantities(runtimeDiagnostics, runtimeState) {
-  if (!runtimeDiagnostics || !runtimeState) {
-    return;
-  }
-
-  const uploadedModeCount = Math.max(
-    0,
-    Math.round(runtimeState?.uniforms?.uModalFieldModeCount?.value ?? 0),
-  );
-  const totalSlotAmplitude = readFiniteNumber(
-    runtimeState?.raymarchStructuralProjection?.amplitudeSum,
-  );
-  const structuralProjectionDrive = readFiniteNumber(
-    runtimeState?.raymarchStructuralProjection?.projectionEnergyDrive,
-  );
-  const structuralProjectionConcentration = readFiniteNumber(
-    runtimeState?.raymarchStructuralProjection?.structuralConcentration,
-  );
-  const render = runtimeDiagnostics.render ?? (runtimeDiagnostics.render = {});
-  render.activeModeCount = uploadedModeCount;
-  render.uploadedModeCount = uploadedModeCount;
-  render.totalSlotAmplitude = totalSlotAmplitude;
-  render.structuralProjectionDrive = structuralProjectionDrive;
-  render.structuralProjectionConcentration = structuralProjectionConcentration;
-
-  const modalFreshness = runtimeDiagnostics.modalFreshness;
-  if (modalFreshness) {
-    modalFreshness.uploadedModeCount = uploadedModeCount;
-    modalFreshness.totalSlotAmplitude = totalSlotAmplitude;
-    modalFreshness.structuralProjectionDrive = structuralProjectionDrive;
-    modalFreshness.structuralProjectionConcentration =
-      structuralProjectionConcentration;
-  }
+export function syncUploadedRenderQuantities(diagnostics, state) {
+  if (!diagnostics || !state) return;
+  const source = state.fieldSource?.read();
+  const render = diagnostics.render ?? (diagnostics.render = {});
+  Object.assign(render, {
+    uploadedFamilyCount: source?.topology?.familyCount ?? 0,
+    uploadedShellCount: source?.topology?.shellCount ?? 0,
+    basisCompileCount: source?.basisCompileCount ?? 0,
+    observationUploadCount: source?.observationUploadCount ?? 0,
+    observerConsumedEndSample:
+      state.lastBakedFeatureFrame?.observation.endSample ?? null,
+    derivedTextureBytes: source?.textureBytes ?? 0,
+  });
 }
 
 export function updateAdaptiveRaymarchStepBudget({
@@ -1418,7 +913,6 @@ export function updateAdaptiveRaymarchStepBudget({
   runtimeState,
   renderProfile,
   effectiveFrame,
-  status,
   runtimeDiagnostics,
 }) {
   if (!runtimeState || !runtimeDiagnostics) {
@@ -1435,41 +929,18 @@ export function updateAdaptiveRaymarchStepBudget({
     runtimeState,
     controls,
   );
-  const { productUploadCapacity, activeModeCount, uploadedModeCount } =
+  const { familyCount, shellCount, uploadedFamilyCount } =
     resolveRaymarchFieldAnalysisFrameInputs(runtimeState, effectiveFrame);
-  const frameModeCount = readRaymarchFrameModeCount(effectiveFrame);
-  const cavityGeometry =
-    runtimeState?.effectiveCavityGeometry ??
-    runtimeState?.volumeMesh?.userData?.raymarchCavityGeometry ??
-    "rectangular";
-  const modalIdentitySlots =
-    effectiveFrame?.modalDescriptor?.slotViews?.modalIdentitySlots ??
-    effectiveFrame?.modalIdentitySlots;
-  const modalCoefficientSlots =
-    effectiveFrame?.modalDescriptor?.slotViews?.modalCoefficientSlots ??
-    effectiveFrame?.modalCoefficientSlots;
   const activeRaymarchFrame = Boolean(
-    usesRaymarchVolumePipeline(runtime?.method) &&
-    allowsCurrentLiveRenderFrame(effectiveFrame) &&
-    Math.max(frameModeCount, uploadedModeCount) > 0,
+    isVisualizationMethod(runtime?.method) && familyCount > 0,
   );
   const profileAllowsAdaptiveRaymarch = isAdaptivePerformanceProfile(
     renderProfile?.qualityPreset,
   );
   const adaptiveQualityActive =
     profileAllowsAdaptiveRaymarch && activeRaymarchFrame;
-  // The observation integrator owns adaptive quality only through the raymarch
-  // step budget. Render scale/DPR remain the user-selected output resolution.
-  const raymarchFieldAnalysis =
-    raymarchFieldAnalysisModule.buildRaymarchFieldAnalysis({
-      modalIdentitySlots,
-      modalCoefficientSlots,
-      activeModeCount,
-      modalFieldCapacity: productUploadCapacity,
-      featureFrame: effectiveFrame,
-      cavityGeometry,
-    });
-  runtimeState.raymarchFieldAnalysis = raymarchFieldAnalysis;
+  // Measured frame time controls only ray integration quality. The complete
+  // acoustic basis and matrices are never selected or pruned by this controller.
   const adaptiveTuning = buildAdaptiveRaymarchTuning(
     resolveAdaptiveTargetFps(renderProfile, controls),
   );
@@ -1549,15 +1020,13 @@ export function updateAdaptiveRaymarchStepBudget({
     ladder,
   });
   const recoveryState = deriveAdaptiveRecoveryState({
-    controls,
     effectiveFrame,
-    status,
     adaptiveRaymarch,
   });
   adaptiveRaymarch.recoveryEligible = recoveryState.recoveryEligible;
   adaptiveRaymarch.recoveryBlockedReason = recoveryState.recoveryBlockedReason;
-  adaptiveRaymarch.lastPlaybackSessionId = recoveryState.playbackSessionId;
-  if (recoveryState.sessionTransition) {
+  adaptiveRaymarch.lastSourceGeneration = recoveryState.sourceGeneration;
+  if (recoveryState.sourceTransition) {
     adaptiveRaymarch.stableWindowCount = 0;
   }
 
@@ -1632,9 +1101,9 @@ export function updateAdaptiveRaymarchStepBudget({
     rung: adaptiveRaymarch.currentRung,
   });
   adaptiveRaymarch.effectiveRaymarchSteps = effectiveStepBudget;
-  adaptiveRaymarch.complexityScore = raymarchFieldAnalysis.complexityScore;
-  adaptiveRaymarch.uploadedModeCount = raymarchFieldAnalysis.uploadedModeCount;
-  adaptiveRaymarch.originalModeCount = raymarchFieldAnalysis.originalModeCount;
+  adaptiveRaymarch.familyCount = familyCount;
+  adaptiveRaymarch.shellCount = shellCount;
+  adaptiveRaymarch.uploadedFamilyCount = uploadedFamilyCount;
   applyEffectiveRaymarchStepBudget(runtimeState, controls, effectiveStepBudget);
   publishAdaptiveRaymarchDiagnostics(runtimeDiagnostics, adaptiveRaymarch);
   // Profile-owned adaptation stops at the step ladder.
@@ -1664,10 +1133,10 @@ export function applyCachedControlSnapshots(
     appliedControlVersionRef,
     cachedControlSnapshotsRef,
   } = renderLoopRefs.controlCacheRefs;
-  const hasBloomPass = Boolean(postNodesRef.current?.bloomPass);
   const controlsChanged =
     appliedControlVersionRef.current !== controlVersionRef.current ||
-    cachedControlSnapshotsRef.current.hasBloomPass !== hasBloomPass ||
+    cachedControlSnapshotsRef.current.appliedPostNodes !==
+      postNodesRef.current ||
     cachedControlSnapshotsRef.current.surfaceOutputMode !== surfaceOutputMode;
 
   if (controlsChanged) {
@@ -1688,7 +1157,9 @@ export function applyCachedControlSnapshots(
         outputControls,
       ),
       audit: buildAuditControlSnapshot(controls),
-      hasBloomPass,
+      // Applying output controls may create the pipeline. Record the objects
+      // that actually received them so the next frame does not reapply them.
+      appliedPostNodes: postNodesRef.current,
       surfaceOutputMode,
       controlsSnapshot: cachedControlSnapshotsRef.current.controlsSnapshot,
     };
@@ -1738,47 +1209,38 @@ export function resolveRenderSurfaceOutputControls(
   return resolvedControls;
 }
 
-function syncFeatureRuntimeDiagnostics(runtimeDiagnostics, runtimeStatus) {
-  if (!runtimeDiagnostics?.engine) {
-    return;
-  }
-
-  Object.assign(runtimeDiagnostics.engine, {
-    latestDriveAgeMs: runtimeStatus?.latestDriveAgeMs ?? null,
-    latestDriveStale: runtimeStatus?.latestDriveStale === true,
-    latestObservationTimeSeconds:
-      runtimeStatus?.latestObservationTimeSeconds ?? null,
-    latestCaptureRms: runtimeStatus?.latestCaptureRms ?? null,
-    latestAcceptedFrameId: runtimeStatus?.latestAcceptedFrameId ?? 0,
-    sourceGeneration: runtimeStatus?.sourceGeneration ?? 0,
-    workerGeneration: runtimeStatus?.workerGeneration ?? 0,
-    topologyRevision: runtimeStatus?.topologyRevision ?? 0,
-    processedFrameCount: runtimeStatus?.processedFrameCount ?? 0,
-    topologyPublishCount: runtimeStatus?.topologyPublishCount ?? 0,
-    drivePublishCount: runtimeStatus?.drivePublishCount ?? 0,
-    inputReplacementCount: runtimeStatus?.inputReplacementCount ?? 0,
-    rejectedPacketCount: runtimeStatus?.rejectedPacketCount ?? 0,
-    staleAcknowledgementCount: runtimeStatus?.staleAcknowledgementCount ?? 0,
-    naturalRingdownActive: runtimeStatus?.naturalRingdownActive === true,
-    naturalRingdownSessionId: runtimeStatus?.naturalRingdownSessionId ?? null,
-    renderAuthorityRevoked: runtimeStatus?.renderAuthorityRevoked === true,
-    ...snapshotWorkerPerfCounters(runtimeStatus),
-    queueDepth: runtimeStatus?.queueDepth ?? 0,
-    state: runtimeStatus?.state ?? "none",
-    reason: runtimeStatus?.reason ?? null,
-  });
+const FEATURE_EPOCH_KEYS = [
+  "sourceGeneration",
+  "workerGeneration",
+  "timelineRevision",
+  "processingRevision",
+  "topologyRevision",
+];
+function syncFeatureRuntimeDiagnostics(diagnostics, status) {
+  if (!diagnostics?.engine) return;
+  for (const key of [
+    ...FEATURE_EPOCH_KEYS,
+    "state",
+    "reason",
+    "phase",
+    "queueDepth",
+    "latestAcceptedFrameId",
+    "latestObservationTimeSeconds",
+    "latestObservationAgeMs",
+    "latestObservationStale",
+    "sourceBootstrapCount",
+    "workerProcessingMs",
+    "rejectedPacketCount",
+    "staleAcknowledgementCount",
+    "naturalRingdownActive",
+    "renderAuthorityRevoked",
+  ])
+    diagnostics.engine[key] = status?.[key] ?? null;
 }
 
+/** Select the source owner's current immutable observation; never synthesize a hold or forcing frame. */
 export function resolveFeatureFrame(
-  {
-    featureRuntime,
-    runtimeDiagnostics = null,
-    runtimeState,
-    controls,
-    status,
-    clockMode,
-    renderLoopRefs,
-  },
+  { featureRuntime, runtimeDiagnostics = null },
   {
     createFeatureView = createRendererFeatureView,
     candidateFeatureModel = UNREAD_FEATURE_RESOLVER_INPUT,
@@ -1786,146 +1248,54 @@ export function resolveFeatureFrame(
     onFrameSemanticSource = null,
   } = {},
 ) {
-  const { lastIdleFrameRef } = renderLoopRefs.frameCacheRefs;
-  const pausedFileHoldFrame = readPausedFileHoldFrame({
-    frameCacheRefs: renderLoopRefs.frameCacheRefs,
-    status,
-    clockMode,
-  });
-  const preparedFileAwaitingPlayback = isPreparedFileAwaitingPlayback(status);
-  const resolvedFeatureRuntimeStatus =
+  const status =
     featureRuntimeStatus === UNREAD_FEATURE_RESOLVER_INPUT
-      ? (featureRuntime?.getStatus?.() ?? null)
+      ? featureRuntime?.getStatus?.()
       : featureRuntimeStatus;
-  const naturalRingdownActive = Boolean(
-    resolvedFeatureRuntimeStatus?.naturalRingdownActive === true &&
-      resolvedFeatureRuntimeStatus?.naturalRingdownSessionId ===
-      getPlaybackSessionId(status),
-  );
-  const shouldReuseStaticIdleFrame =
-    !pausedFileHoldFrame &&
-    !preparedFileAwaitingPlayback &&
-    !naturalRingdownActive &&
-    shouldReuseIdleFrame(status, controls) &&
-    isCanonicalStaticIdleFrame(lastIdleFrameRef.current);
-
-  let featureFrame = null;
-  let preparationFrame = null;
-  let frameSemanticSource = null;
-  let pausedSeekFrameInstalled = false;
-  let rejectedFeatureModelReason = null;
-
-  if (pausedFileHoldFrame) {
-    featureFrame = pausedFileHoldFrame;
-    frameSemanticSource = "paused-file-hold";
-  } else if (shouldReuseStaticIdleFrame) {
-    featureFrame = lastIdleFrameRef.current;
-    frameSemanticSource = "static-idle-cache";
-  } else {
-    const featureModel =
-      candidateFeatureModel === UNREAD_FEATURE_RESOLVER_INPUT
-        ? readLatestFeatureModel(featureRuntime, runtimeDiagnostics)
-        : candidateFeatureModel;
-
-    if (featureModel) {
-      const viewStartedAt = getRenderLoopWallTimeMs();
-      featureFrame = createFeatureView(featureModel);
+  const model =
+    candidateFeatureModel === UNREAD_FEATURE_RESOLVER_INPUT
+      ? readLatestFeatureModel(featureRuntime, runtimeDiagnostics)
+      : candidateFeatureModel;
+  let featureFrame = null,
+    source = "feature-model-unavailable";
+  if (status?.renderAuthorityRevoked === true || status?.revoked === true)
+    source = "source-authority-revoked";
+  else if (model) {
+    if (
+      FEATURE_EPOCH_KEYS.some(
+        (key) =>
+          Number.isSafeInteger(status?.[key]) &&
+          model.observation?.[key] !== status[key],
+      )
+    )
+      source = "stale-source-model-rejected";
+    else {
+      const startedAt = getRenderLoopWallTimeMs();
+      try {
+        const view = createFeatureView(model);
+        if (hasRenderAuthority(view)) {
+          featureFrame = view;
+          source = "feature-model";
+        } else source = "invalid-feature-model";
+      } catch {
+        source = "invalid-feature-model";
+      }
       recordRuntimePerfSample(
         runtimeDiagnostics,
         "createRendererFeatureViewMs",
-        getRenderLoopWallTimeMs() - viewStartedAt,
+        getRenderLoopWallTimeMs() - startedAt,
       );
     }
-    const featureFrameStaleness = resolveAnalysisFrameStaleness(
-      featureFrame,
-      status,
-    );
-    if (featureFrame && featureFrameStaleness) {
-      featureFrame = null;
-      rejectedFeatureModelReason = `stale-${featureFrameStaleness}-model-rejected`;
-    }
-    if (
-      preparedFileAwaitingPlayback &&
-      hasPreparationAuthority(featureFrame) &&
-      featureFrame?.modalDescriptor
-    ) {
-      preparationFrame = featureFrame;
-    }
-    if (isPreparedPausedFileObservationFrame(status, featureFrame)) {
-      refreshPausedFileHoldFrame({
-        frameCacheRefs: renderLoopRefs.frameCacheRefs,
-        status,
-        featureFrame,
-      });
-      featureFrame =
-        renderLoopRefs.frameCacheRefs.pausedFileFrameRef?.current?.frame ??
-        createPausedFileHoldFrame(featureFrame);
-      pausedSeekFrameInstalled = true;
-    }
-    frameSemanticSource =
-      rejectedFeatureModelReason ??
-      (featureFrame
-        ? pausedSeekFrameInstalled
-          ? "paused-file-seek"
-          : "feature-model"
-        : "feature-model-unavailable");
-
-    if (
-      shouldReuseIdleFrame(status, controls) &&
-      !naturalRingdownActive &&
-      !pausedSeekFrameInstalled
-    ) {
-      if (featureFrame && !isCanonicalStaticIdleFrame(featureFrame)) {
-        featureFrame = null;
-        frameSemanticSource = preparationFrame
-          ? "prepared-file-model"
-          : "stale-source-model-rejected";
-      }
-      lastIdleFrameRef.current = isCanonicalStaticIdleFrame(featureFrame)
-        ? featureFrame
-        : null;
-    } else {
-      lastIdleFrameRef.current = null;
-    }
   }
-
-  if (resolvedFeatureRuntimeStatus) {
-    syncFeatureRuntimeDiagnostics(
-      runtimeDiagnostics,
-      resolvedFeatureRuntimeStatus,
-    );
-  }
-
-  onFrameSemanticSource?.(frameSemanticSource);
-  recordFrameSemanticSource(runtimeDiagnostics, frameSemanticSource);
-
-  if (status?.isPlaying || status?.isLiveInputActive) {
-    if (isActiveFilePlayback(status) && featureFrame) {
-      refreshPausedFileHoldFrame({
-        frameCacheRefs: renderLoopRefs.frameCacheRefs,
-        status,
-        featureFrame,
-      });
-    } else {
-      clearPausedFileHoldFrame(renderLoopRefs.frameCacheRefs);
-    }
-    lastIdleFrameRef.current = null;
-  } else if (status?.lastLiveInputInterruption) {
-    clearFrameCache(renderLoopRefs.frameCacheRefs);
-    resetInterruptedLiveInputVisualResponse(runtimeState);
-    featureFrame = null;
-  } else if (
-    frameSemanticSource !== "paused-file-hold" &&
-    frameSemanticSource !== "paused-file-seek"
-  ) {
-    clearPausedFileHoldFrame(renderLoopRefs.frameCacheRefs);
-  }
-
-  return {
-    featureFrame,
-    effectiveFrame: featureFrame,
-    preparationFrame,
-  };
+  syncFeatureRuntimeDiagnostics(runtimeDiagnostics, status);
+  if (runtimeDiagnostics?.engine)
+    runtimeDiagnostics.engine.rejectedModelReason =
+      source === "feature-model" || source === "feature-model-unavailable"
+        ? null
+        : source;
+  onFrameSemanticSource?.(source);
+  recordFrameSemanticSource(runtimeDiagnostics, source);
+  return { featureFrame, effectiveFrame: featureFrame };
 }
 
 const UNREAD_FEATURE_RESOLVER_INPUT = Symbol("unread-feature-resolver-input");
@@ -1941,103 +1311,31 @@ function readLatestFeatureModel(featureRuntime, runtimeDiagnostics) {
   return featureModel;
 }
 
-function buildCandidateFeatureModelIdentity(featureModel) {
-  const topology = featureModel?.topology ?? null;
-  const drive = featureModel?.drive ?? null;
+function buildCandidateFeatureModelIdentity(model) {
+  const observation = model?.observation;
   return [
-    drive?.sourceGeneration ?? topology?.sourceGeneration ?? null,
-    drive?.workerGeneration ?? topology?.workerGeneration ?? null,
-    drive?.topologyRevision ?? topology?.topologyRevision ?? null,
-    drive?.frameId ?? null,
-    drive?.observationSourceKey ?? null,
-    drive?.observationSessionKey ?? null,
-    drive?.observationTimelineRevision ?? null,
-    drive?.observationAdvancing === true,
-    Boolean(featureModel),
+    ...FEATURE_EPOCH_KEYS.map((key) => observation?.[key] ?? null),
+    observation?.frameId ?? null,
+    observation?.endSample ?? null,
+    observation?.sourcePhase ?? null,
   ];
 }
-
-function buildResolvedFeatureSemanticKey({
-  result,
-  candidateFeatureModel,
-  featureRuntimeStatus,
-  status,
-  clockMode,
-  controls,
-}) {
-  const sourceSession = status?.sourceSession ?? null;
-  const interruption = status?.lastLiveInputInterruption ?? null;
+function buildFeatureResolverInvocationKey(_args, model, status) {
   return JSON.stringify([
-    ...buildCandidateFeatureModelIdentity(candidateFeatureModel),
-    sourceSession?.kind ?? null,
-    sourceSession?.sessionId ?? null,
-    sourceSession?.timelineRevision ?? null,
-    status?.sessionKey ?? null,
-    status?.playbackSessionId ?? null,
-    status?.lastPlaybackEndReason ?? null,
-    status?.lastPlaybackDiagnostics?.playbackSessionId ?? null,
-    status?.isPlaying === true,
-    status?.isPlaybackPaused === true,
-    status?.isAudioLoaded === true,
-    status?.hasPreparedFileAnalysisSource === true,
-    status?.isLiveInputActive === true,
-    clockMode ?? null,
-    controls?.injectTestTone === true,
-    interruption?.sessionId ?? interruption?.at ?? interruption ?? null,
-    featureRuntimeStatus?.naturalRingdownActive === true,
-    featureRuntimeStatus?.naturalRingdownSessionId ?? null,
-    Boolean(result?.effectiveFrame),
-    Boolean(result?.preparationFrame),
+    ...buildCandidateFeatureModelIdentity(model),
+    ...FEATURE_EPOCH_KEYS.map((key) => status?.[key] ?? null),
+    status?.renderAuthorityRevoked === true,
+    status?.revoked === true,
   ]);
 }
-
-function buildFeatureResolverInvocationKey(
-  args,
-  candidateFeatureModel,
-  featureRuntimeStatus,
-) {
-  const status = args?.status ?? null;
-  const controls = args?.controls ?? null;
-  const sourceSession = status?.sourceSession ?? null;
-  const interruption = status?.lastLiveInputInterruption ?? null;
-  return JSON.stringify([
-    ...buildCandidateFeatureModelIdentity(candidateFeatureModel),
-    featureRuntimeStatus?.sourceGeneration ?? null,
-    featureRuntimeStatus?.workerGeneration ?? null,
-    featureRuntimeStatus?.topologyRevision ?? null,
-    featureRuntimeStatus?.latestAcceptedFrameId ?? null,
-    featureRuntimeStatus?.latestObservationTimeSeconds ?? null,
-    sourceSession?.kind ?? null,
-    sourceSession?.sessionId ?? null,
-    sourceSession?.timelineRevision ?? null,
-    status?.sessionKey ?? null,
-    status?.playbackSessionId ?? null,
-    status?.lastPlaybackEndReason ?? null,
-    status?.lastPlaybackDiagnostics?.playbackSessionId ?? null,
-    status?.isPlaying === true,
-    status?.isPlaybackPaused === true,
-    status?.isAudioLoaded === true,
-    status?.hasPreparedFileAnalysisSource === true,
-    status?.isLiveInputActive === true,
-    args?.clockMode ?? null,
-    controls?.injectTestTone === true,
-    interruption?.sessionId ?? interruption?.at ?? interruption ?? null,
-    featureRuntimeStatus?.naturalRingdownActive === true,
-    featureRuntimeStatus?.naturalRingdownSessionId ?? null,
-  ]);
-}
-
 /**
- * Owns the paused/idle resolver caches for one eligible rendering surface.
- * Render and OSC callers must share this instance so semantic transitions are
- * revisioned once regardless of call ordering.
+ * Owns only a renderer validation/diagnostic cache. Source identity and acoustic
+ * state belong to the session; no renderer revision is part of exported state.
  */
 export function createFeatureFrameResolver() {
   let lastInvocationKey = null;
-  let lastSemanticKey = null;
   let lastResult = null;
   let lastFrameSemanticSource = null;
-  let resolvedSemanticRevision = 0;
 
   return {
     resolve(args, dependencies = {}) {
@@ -2074,28 +1372,10 @@ export function createFeatureFrameResolver() {
           dependencies.onFrameSemanticSource?.(source);
         },
       });
-      const semanticKey = buildResolvedFeatureSemanticKey({
-        result,
-        candidateFeatureModel,
-        featureRuntimeStatus,
-        status: args?.status,
-        clockMode: args?.clockMode,
-        controls: args?.controls,
-      });
-      if (semanticKey !== lastSemanticKey) {
-        lastSemanticKey = semanticKey;
-        resolvedSemanticRevision += 1;
-      }
       lastInvocationKey = invocationKey;
       lastFrameSemanticSource = frameSemanticSource;
-      lastResult = {
-        ...result,
-        resolvedSemanticRevision,
-      };
+      lastResult = result;
       return lastResult;
-    },
-    getResolvedSemanticRevision() {
-      return resolvedSemanticRevision;
     },
   };
 }

@@ -1,4 +1,3 @@
-import { float } from "three/tsl";
 import {
   getCavityModeFrequency,
   resolveCavityModeFamilyForPitch,
@@ -10,11 +9,6 @@ import {
   normalizeBoundaryMode,
 } from "./modeFamily.js";
 import { computeRectangularModalSourceCoupling } from "./modalSourceCoupling.js";
-import {
-  evaluatePermutationFamilyAxisPathIntegratedHessiansNodeForBoundary,
-  evaluatePermutationFamilyFieldNodeForBoundary,
-  evaluatePermutationFamilyNodeForBoundary,
-} from "./modeFamilyNode.js";
 import { resolveEffectiveCavityGeometry } from "./cavityGeometry.js";
 import {
   readModalTopologyMode,
@@ -117,72 +111,6 @@ const RECTANGULAR_MODE_BACKEND = Object.freeze({
       w,
       boundaryMode,
       sourceProfile,
-    });
-  },
-  evaluateModeNode({
-    u,
-    v,
-    w,
-    xCoord,
-    yCoord,
-    zCoord,
-    scale = null,
-    uRadius = null,
-    boundaryMode,
-  }) {
-    return evaluatePermutationFamilyNodeForBoundary({
-      u,
-      v,
-      w,
-      xCoord,
-      yCoord,
-      zCoord,
-      scale: scale ?? float(Math.PI).div(uRadius.max(float(1e-4))),
-      boundaryMode,
-    });
-  },
-  evaluateModeAxisPathIntegratedHessiansNode({
-    u,
-    v,
-    w,
-    xCoord,
-    yCoord,
-    zCoord,
-    scale = null,
-    uRadius = null,
-    boundaryMode,
-  }) {
-    return evaluatePermutationFamilyAxisPathIntegratedHessiansNodeForBoundary({
-      u,
-      v,
-      w,
-      xCoord,
-      yCoord,
-      zCoord,
-      scale: scale ?? float(Math.PI).div(uRadius.max(float(1e-4))),
-      boundaryMode,
-    });
-  },
-  evaluateFieldNode({
-    u,
-    v,
-    w,
-    xCoord,
-    yCoord,
-    zCoord,
-    scale = null,
-    uRadius = null,
-    boundaryMode,
-  }) {
-    return evaluatePermutationFamilyFieldNodeForBoundary({
-      u,
-      v,
-      w,
-      xCoord,
-      yCoord,
-      zCoord,
-      scale: scale ?? float(Math.PI).div(uRadius.max(float(1e-4))),
-      boundaryMode,
     });
   },
   getSlotEvaluationCost(slots, offset) {

@@ -74,6 +74,15 @@ Run the fast verification gate locally — the same default checks CI will run:
 pnpm verify
 ```
 
+The OSC bridge validation requires Python 3. By default it runs `python3`;
+set `PYTHON` to an installed Python executable when that command is unavailable.
+For example, in Windows PowerShell:
+
+```powershell
+$env:PYTHON = 'C:\path\to\python.exe'
+pnpm verify
+```
+
 The pre-push hook is cache-only by default. It allows a push only after the
 current tree has already passed `pnpm verify`, so verification failures happen
 before `git push` starts. If you intentionally want the hook to run the full gate

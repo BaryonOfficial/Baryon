@@ -3,168 +3,175 @@ title: "OSC Structure Export"
 description: "Send Baryon's authoritative modal structure to TouchDesigner, Max, or another OSC receiver."
 ---
 
-OSC Structure Export v4 sends Baryon's audio-derived modal structure to an
-external receiver. It is outbound only: **Baryon → receiver**. Parameter
-automation remains the separate inbound OSC control path.
+OSC Structure Export v5 sends the complete audio-derived modal model to an
+external receiver: **Baryon → receiver**. Parameter automation uses a separate
+OSC control path.
 
 <Warning>
-  Baryon Desktop 1.2.0 uses protocol v4. Replace older receiver components with
-  the current `baryon_osc_structure.tox`, or update a custom receiver to the v4
-  lifecycle and commit rules on this page.
+  The full-basis engine uses protocol v5. Update custom receivers and replace v4
+  TouchDesigner components together with the engine. The protocols are
+  incompatible.
 </Warning>
 
 ## Configure OSC Data Out
 
-| Setting |     Default | Supported values                                 |
-| ------- | ----------: | ------------------------------------------------ |
-| Host    | `127.0.0.1` | Receiver host or LAN address                     |
-| Port    |      `9000` | `1–65535`                                        |
-| Modes   |        `32` | `0–160`; use **All** to export every active mode |
-| Rate    |     `30 Hz` | `15`, `30`, or `60 Hz`                           |
+| Setting | Default     | Supported values             |
+| ------- | ----------- | ---------------------------- |
+| Host    | `127.0.0.1` | Receiver host or LAN address |
+| Port    | `9000`      | `1–65535`                    |
+| Rate    | `30 Hz`     | `15`, `30`, or `60 Hz`       |
 
-Open Performer Mode → **Control I/O** → **OSC Data Out**, configure the
-receiver, and enable the switch. The status reports complete topology and
-state batches; it does not count individual UDP datagrams.
+Open Performer Mode → **Control I/O** → **OSC Data Out**, configure the receiver,
+and enable the switch. The counters report complete topology and state batches,
+not individual UDP datagrams. Every eligible family, shell and response-spectrum
+bin is included. Rate changes transmission cadence; it does not change the
+acoustic model. There is no mode cap.
 
-The main Baryon process owns UDP and samples one authoritative producer at the
-selected rate. OSC alone does not start the visual-output helper. When Display,
-Syphon, or Spout is configured, the authoritative stage becomes the producer;
-Baryon does not fall back to the local preview while that stage is unavailable.
+The main process samples one authoritative producer. OSC alone does not start
+visual output. When Display, Syphon or Spout is configured, the authoritative
+stage supplies the model; an unavailable stage does not fall back to the preview.
 
-Unchanged resolved samples send nothing. Structural topology is sent
-transactionally when mode identity, natural frequency, Q, geometry, or mode cap
-changes, and every two seconds as a recovery keyframe. Observation-derived
-response, support, and circular moments travel in grouped state messages;
-dynamic state is never replayed from a cache.
+Topology describes the static basis, signed source overlaps, natural frequencies,
+Q and finite-response transitions. State carries signed pressure/velocity,
+raw pressure/velocity moment matrices, normalization energy, source sample clocks,
+finite-response spectral inputs and material controls. These are normalized
+virtual-system quantities, not a calibrated measurement of a venue's sound field.
+A receiver holds the sampled state; it must not invent phase progression from its
+own clock. Material RGB values are display controls, separate from acoustic energy.
 
-## Terminal receiver
+## Receivers
 
 ```bash
 pnpm osc:structure:listen
 pnpm osc:structure:listen -- --port 9100 --verbose
 ```
 
-The receiver implements v4 activation, permanent stream retirement, complete
-topology/state assembly, and rollback rejection. It is a useful proof before
-opening TouchDesigner.
+The terminal receiver validates complete matching snapshots, rejects stale or
+corrupt assemblies, and reports the prepared sample clock and raw normalization
+energy. Local arrival time only expires incomplete fragments.
 
-## TouchDesigner monitor
+Download [baryon_osc_structure.tox](https://downloads.baryon.live/touchdesigner/baryon_osc_structure.tox)
+and drop it into TouchDesigner. Match its **OSC Data Port** to Baryon's Port.
+After activation, its tables expose:
 
-Download
-[baryon_osc_structure.tox](https://downloads.baryon.live/touchdesigner/baryon_osc_structure.tox),
-drop it into a network, and keep its OSC Data Port aligned with Baryon. Its
-`frame`, `global`, `coverage`, `material`, `modes`, `spectral_moments`, and
-`raw` DATs update only after complete monotonic commits.
+| DAT                                    | Contents                                                            |
+| -------------------------------------- | ------------------------------------------------------------------- |
+| `frame`                                | Source epochs, sample clocks, source phase and normalization energy |
+| `topology`, `field_convention`         | Basis/spectrum conventions and quadratic field weights              |
+| `families`                             | Sorted indices, shell assignment and signed source overlap          |
+| `shells`, `transitions`                | Natural frequencies, Q and discrete response transitions            |
+| `response`                             | Signed pressure and velocity for each shell and channel             |
+| `pressure_moments`, `velocity_moments` | Complete raw dense moment matrices                                  |
+| `input_spectrum`, `boundary_delta`     | Complete finite-response spectral inputs                            |
+| `material`                             | Static/spectral display controls; RGB is sRGB                       |
 
-The source checkout includes the v4 generator:
+The committed full model is also available as
+`component.fetch('receiver').topology` and `.state`. Tables change only after
+complete commits or explicit invalidation. Incomplete packets never display a
+partially updated field. A new topology clears the previous state while waiting
+for its matching observation.
 
-```python
-script = '/path/to/baryon/scripts/touchdesigner/build_baryon_osc_structure_monitor.py'
-globals()['__file__'] = script
-exec(compile(open(script).read(), script, 'exec'), globals())
-```
+## Stream lifecycle
 
-Headless schema validation is available with:
+Only `/baryon/hello` activates a new stream UUID. A new UUID permanently retires
+the previous one. `/baryon/v5/clear` clears and retires its UUID, including queued
+assemblies. Delayed hello messages cannot revive a retired stream.
+
+Retargeting clears the old target and uses a new UUID. Socket recovery advertises
+the stream and reinstalls cached topology, but requests a fresh dynamic sample.
+Topology is also repeated every two seconds for loss recovery. Identical topology
+replay does not install a second model. Unchanged samples send nothing. Loss of
+source authority clears the receiver and requires a new complete matching model.
+
+Sample identity uses the acoustic epochs, frame/sample endpoint and source phase,
+plus the canonical exported material value. Renderer counters and render receipts
+are not part of acoustic state or export eligibility. Material is accepted display
+input, not a claim that pixels have reached a GPU or screen.
+
+The producer owns audio state. Receiver acknowledgements, mirror telemetry,
+transport completion and topology replay cannot start or reset audio.
+
+## OSC message contract
+
+The application name is `Baryon`; transport is `osc-structure`; version is `5`.
+OSC integers below are signed 32-bit; revision and sequence counters start at one
+and rotate to a new stream before exhaustion. Acoustic counters inside the
+binary payload retain their nonnegative JavaScript safe-integer range.
+
+| Address                     | Arguments                                                                         |
+| --------------------------- | --------------------------------------------------------------------------------- |
+| `/baryon/hello`             | `s app, i version, s transport, s streamUUID, i rateHz`                           |
+| `/baryon/v5/topology/begin` | `s streamUUID, i exportRevision, i byteLength, i pageCount, s sha256`             |
+| `/baryon/v5/topology/chunk` | `s streamUUID, i exportRevision, i pageIndex, i pageCount, b bytes`               |
+| `/baryon/v5/topology/end`   | `s streamUUID, i exportRevision, s sha256`                                        |
+| `/baryon/v5/state/begin`    | `s streamUUID, i sequence, i exportRevision, i byteLength, i pageCount, s sha256` |
+| `/baryon/v5/state/chunk`    | `s streamUUID, i sequence, i exportRevision, i pageIndex, i pageCount, b bytes`   |
+| `/baryon/v5/state/end`      | `s streamUUID, i sequence, i exportRevision, s sha256`                            |
+| `/baryon/v5/clear`          | `s streamUUID, i exportRevision, i lastAttemptedSequence`                         |
+
+Pages contain at most **960 bytes**; every page except the final one contains
+exactly 960. Indices are zero-based. Every complete OSC datagram is at most
+**1,200 bytes**, including padding. Payloads are bounded to 4 MiB and JSON headers
+to 16 KiB. An oversized model is rejected explicitly, never silently truncated.
+
+Begin, all pages and end must agree. Verify the lowercase hexadecimal SHA-256
+of the concatenated payload before decoding or publication. Reject conflicting
+duplicate pages. Reordering and identical duplicates are allowed. Keep no more
+than two topology and two state assemblies; expire incomplete assemblies after
+250 ms. An expired/rejected state sequence cannot be resurrected by late pages.
+An incomplete static topology may recover from an identical genuine replay.
+
+Commit state only after its complete topology revision exists, its source epochs
+match and its physical packet validates. Reject regressed observation sample/frame
+clocks and sequences at or below the last committed sequence. A newer complete
+snapshot can recover after a lost one; UDP does not guarantee delivery.
+
+## Binary payload
+
+`baryon-full-model-le-v1` preserves Float64 values without quantizing or
+renormalizing them. The byte layout is:
+
+1. Four magic bytes `42 59 4e 35` (`BYN5`).
+2. Unsigned 32-bit **little-endian** JSON-header byte length.
+3. UTF-8 JSON `{schemaVersion:5, kind, metadata, arrays}`.
+4. Arrays concatenated in the fixed order below, with no inter-array padding.
+
+Each array descriptor is `{name, type, length}`; `length` counts elements.
+`u16` is unsigned 16-bit little-endian; `f64` is IEEE-754 Float64 little-endian.
+Reject an unexpected name/type/order, inconsistent dimensions, nonfinite values,
+trailing bytes or invalid acoustic state. Typed-array lengths are checked before
+allocation. The complete reference decoders are in
+`scripts/osc/receive-structure-export.mjs` and
+`scripts/touchdesigner/osc_structure_receiver.py` in the source checkout.
+
+| Kind       | Fixed array order                                                                                                                  |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `topology` | `familyIndices:u16`, `familyShells:u16`, `sourceOverlaps:f64`, `naturalFrequenciesHz:f64`, `qualityFactors:f64`, `transitions:f64` |
+| `state`    | `pressure:f64`, `velocity:f64`, `pressureMoments:f64`, `velocityMoments:f64`, `inputSpectrum:f64`, `boundaryDelta:f64`             |
+
+Topology metadata contains the v3 acoustic topology's scalar fields and spectrum
+convention, plus `fieldConvention`. State metadata contains the v3 observation's
+scalar fields and spectrum endpoint, plus `material`. Binary `transitions`, `inputSpectrum` and
+`boundaryDelta` are restored under each packet's `spectrum` object.
+
+For `F` families, `K` shells, `C` channels and spectrum frame size `N`:
+`familyIndices` has `3F` elements; `familyShells` and `sourceOverlaps` have `F`;
+natural frequencies and Q have `K`; transitions have `6K`. Pressure and velocity
+have `CK` values in channel-major order. Each raw moment matrix is `K × K`,
+row-major. Input spectrum contains `C(N/2+1)` complex bins, interleaved real/imaginary
+in channel-major order; boundary deltas have `2CK` values, interleaved
+pressure/velocity. No phase-offset or phase-velocity vector is transmitted.
+
+## Source validation and component rebuild
 
 ```bash
 pnpm osc:structure:schema:check
-```
-
-When TouchDesigner is installed, rebuild the checked-in component's embedded
-receiver callback with:
-
-```bash
+node --test scripts/osc-structure-receivers.test.mjs
 python3 scripts/touchdesigner/build_baryon_osc_structure_monitor.py --rebuild-existing-tox
 ```
 
-The binary `.tox` must still be opened and inspected inside TouchDesigner;
-headless generation and schema validation cannot prove operator behavior.
-
-## v4 stream lifecycle
-
-`streamSessionId` is a unique UUID. Only `/baryon/hello` may activate an
-unknown stream. Activating a new stream permanently retires the previous UUID.
-`/baryon/v4/clear` clears and permanently retires its stream. Delayed packets
-and delayed hello messages from retired streams are ignored.
-
-Retargeting sends clear to the old target, allocates a new UUID, and re-encodes
-the committed topology while reusing the healthy UDP socket. Changing rate
-keeps the stream and resends hello. Changing the mode cap creates a new topology
-transaction.
-
-## Messages
-
-Every address is one UDP datagram and stays at or below 1,200 bytes. Vector
-messages are paged only when their payload would exceed that boundary. Each
-page adds `startMode` and `pageModeCount`; single-value vectors fit all 160
-modes in one page, while paired vectors use at most 104 modes per page.
-
-| Address                                    | Ordered payload                                                                                                                            |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/baryon/hello`                            | app, schema `4`, transport, stream UUID, update rate                                                                                       |
-| `/baryon/v4/topology/begin`                | stream, topology revision, engine generations/revision, mode count, geometry                                                               |
-| `/baryon/v4/topology/mode`                 | stream, revision, index, `(u,v,w)`, natural frequency, Q                                                                                   |
-| `/baryon/v4/topology/end`                  | stream, revision, mode count                                                                                                               |
-| `/baryon/v4/state/context`                 | stream, state sequence, topology revision, frame/control identity, phase reference, advancing flag, coverage, global signals, and material |
-| `/baryon/v4/state/coefficients`            | stream, sequence, revision, start mode, page mode count, coefficients                                                                      |
-| `/baryon/v4/state/phase/offsets`           | stream, sequence, revision, start mode, page mode count, offsets                                                                           |
-| `/baryon/v4/state/phase/velocities`        | stream, sequence, revision, start mode, page mode count, angular velocities                                                                |
-| `/baryon/v4/state/phase/quality`           | stream, sequence, revision, start mode, page mode count, coherence/authority pairs                                                         |
-| `/baryon/v4/state/response-metadata`       | stream, sequence, revision, start mode, page mode count, response-frequency/support pairs                                                  |
-| `/baryon/v4/state/spectral/first-moments`  | stream, sequence, revision, start mode, page mode count, first circular moment X/Y pairs                                                   |
-| `/baryon/v4/state/spectral/second-moments` | stream, sequence, revision, start mode, page mode count, second circular moment X/Y pairs                                                  |
-| `/baryon/v4/state/end`                     | stream, sequence, revision, mode count, required mask `511`                                                                                |
-| `/baryon/v4/clear`                         | stream, last topology revision, last attempted state sequence                                                                              |
-
-OSC `d` values carry engine generations, engine topology revision, frame ID,
-and applied-control revision. Wire sequences/revisions are signed int32 values
-from `1` through `2,147,483,647`; Baryon rotates the stream before wrap.
-
-## Receiver commit rules
-
-A receiver should stage topology by `(stream, exportRevision)` and state by
-`(stream, stateSequence, exportRevision)`.
-
-- Only a complete greater topology revision replaces active topology.
-- Equal-revision recovery is accepted only when byte-identical.
-- A state commits only at message mask `511`, after every vector range covers
-  exactly `0…modeCount-1`, with the active topology revision.
-- A state sequence less than or equal to the last committed sequence is
-  rejected.
-- An early state end remains pending; incomplete state expires after `250 ms`
-  or two newer sequences.
-- Committing newer topology discards obsolete assemblies.
-
-## Phase
-
-`phaseReferenceTimeSeconds` is the observation time, falling back to frame time.
-For advancing observations, extrapolate from local commit time. When
-`observationAdvancing` is `0`, use the phase at reference unchanged; paused
-files must not continue oscillating.
-
-## Value semantics
-
-The exported coefficient is normalized modal amplitude. Natural frequency and
-Q are structural mode parameters; response frequency and observed support are
-observation-derived state. Frequencies are hertz, phase offsets are radians,
-and phase velocities are radians per second.
-`spectralMomentX/Y` and `spectralSecondMomentX/Y` are the canonical first and
-second circular spectral moments. They are physical pitch descriptors, not RGB
-values, confidence, or mass fields.
-
-`modeCount = min(activeModalFieldModeCount, configuredModeCap)`. The maximum
-cap matches the engine's 160-mode capacity; it never pads a smaller active
-field. `modeCount = 0` still sends every vector address with `startMode = 0`,
-`pageModeCount = 0`, and no vector values.
-Coverage and authority fields distinguish silence from capacity or descriptor
-limitations.
-
-## Troubleshooting
-
-| Symptom              | Check                                                     |
-| -------------------- | --------------------------------------------------------- |
-| No packets           | Enable OSC Data Out; verify host, port, and firewall.     |
-| `Waiting` status     | The selected local/stage producer has not registered yet. |
-| Modes do not update  | Commit topology completely before dependent state.        |
-| Old geometry returns | Retire cleared/replaced UUIDs and reject old revisions.   |
-| Paused visuals drift | Honor `observationAdvancing = 0`.                         |
+The last command requires an installed TouchDesigner and regenerates both checked-in
+component copies. The component embeds the independent Python receiver; it has no
+external Python dependencies. Headless checks prove packet/schema behavior and
+artifact contents. Loading and inspecting the component in TouchDesigner remains
+the operator-integration check.

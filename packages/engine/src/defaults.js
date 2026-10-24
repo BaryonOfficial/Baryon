@@ -9,16 +9,9 @@ import {
   DEFAULT_TRAA_ENABLED,
 } from "./render/outputProfilePolicy.js";
 
-const DEFAULT_MODAL_FIELD_CAPACITY = 160;
-export const DEFAULT_FFT_SIZE = 8192;
 export const DEFAULT_SAMPLE_RATE = 44100;
 
-export const AUDIO_SLOT_CAPACITY = DEFAULT_MODAL_FIELD_CAPACITY;
-
 export const AUDIO_DEFAULTS = Object.freeze({
-  modalFieldCapacity: DEFAULT_MODAL_FIELD_CAPACITY,
-  maxModalFieldDescriptorModes: DEFAULT_MODAL_FIELD_CAPACITY,
-  signalNormalizationSlots: DEFAULT_MODAL_FIELD_CAPACITY,
   echoCancellation: false,
   noiseSuppression: false,
   autoGainControl: false,
@@ -33,7 +26,10 @@ export const TEST_TONE_SIGNALS = Object.freeze({
 
 export const CAVITY_ACOUSTIC_DEFAULTS = Object.freeze({
   acousticMedium: "water",
-  sideLengthMeters: 12.5,
+  // Fixed broadband instrument revision: shifts the retained cavity poles
+  // upward while retaining the same spatial basis and complete PCM forcing.
+  // See the instrument matrix in broadband-modal-response-implementation.md.
+  sideLengthMeters: 6.25,
   soundSpeedMetersPerSecond: 1480,
   mediumDensityKgPerM3: 998,
   // Distilled water near 20 C. B/A declares the quadratic equation-of-state
@@ -48,9 +44,8 @@ export const CAVITY_ACOUSTIC_DEFAULTS = Object.freeze({
   // Damping is part of the declared virtual apparatus. Side length and sound
   // speed determine eigenfrequencies, but cannot determine Q without wall,
   // support, transducer, and radiation-loss measurements. The declared load
-  // preserves the established broadband musical response; the fixed-aperture
-  // persistent cymatic observer owns visual legibility without changing modal
-  // admission.
+  // is independent of the current signal. The fixed-aperture persistent
+  // observer owns visual legibility without changing modal admission.
   modalIntrinsicQualityFactorAt100Hz: 164,
   modalLoadLinewidthHz: 7,
 });

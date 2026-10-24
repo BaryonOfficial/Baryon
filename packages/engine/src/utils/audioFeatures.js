@@ -14,9 +14,8 @@ export {
 } from "./audio/audioFeaturePacketCodec.js";
 export {
   AUDIO_FEATURE_PROTOCOL_VERSION,
-  isAudioFeatureDrivePacket,
+  isAudioFeatureObservationPacket,
   isAudioFeatureTopologyPacket,
-  isCanonicalModalDescriptor,
   isCompleteAudioFeatureModel,
   isRendererFeatureUploadContract,
 } from "../contracts/audioFeatureProtocol.js";

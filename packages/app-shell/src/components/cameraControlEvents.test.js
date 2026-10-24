@@ -21,6 +21,15 @@ test("camera control command normalizes preset and default distance", () => {
   });
 });
 
+test("reset remains an action instead of becoming an explicit default pose", () => {
+  expect(
+    createCameraControlCommand({
+      cameraReset: true,
+      cameraPose: resolvePresetCameraPose("side"),
+    }),
+  ).toEqual({ cameraReset: true });
+});
+
 test("camera control command rejects invalid presets", () => {
   expect(
     createCameraControlCommand({

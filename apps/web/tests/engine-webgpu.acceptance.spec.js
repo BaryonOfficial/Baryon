@@ -328,6 +328,20 @@ test("production WebGPU preserves authority, spectral output, 80-step fidelity, 
   await expect
     .poll(
       () =>
+        page.evaluate(() => ({
+          reason: window.__baryonPerfMetrics?.engine?.reason,
+          sourceGeneration:
+            window.__baryonPerfMetrics?.engine?.sourceGeneration,
+        })),
+      { timeout: 30_000 },
+    )
+    .toEqual({
+      reason: "prepared-file-hold",
+      sourceGeneration: activeState.engine.sourceGeneration + 1,
+    });
+  await expect
+    .poll(
+      () =>
         page.evaluate(() => {
           const metrics = window.__baryonPerfMetrics;
           const probe = metrics?.render?.renderProbeSnapshot;
@@ -352,6 +366,10 @@ test("production WebGPU preserves authority, spectral output, 80-step fidelity, 
         const startedAt = performance.now();
         const initialFrameId =
           window.__baryonPerfMetrics?.engine?.latestAcceptedFrameId ?? 0;
+        const initialSourceGeneration =
+          window.__baryonPerfMetrics?.engine?.sourceGeneration;
+        const initialWorkerGeneration =
+          window.__baryonPerfMetrics?.engine?.workerGeneration;
         let sampleCount = 0;
         let authorityObserved = false;
         let materialOutputObserved = false;
@@ -370,6 +388,10 @@ test("production WebGPU preserves authority, spectral output, 80-step fidelity, 
               materialOutputObserved,
               acceptedFrameAdvanced:
                 (metrics?.engine?.latestAcceptedFrameId ?? 0) > initialFrameId,
+              sourceGenerationChanged:
+                metrics?.engine?.sourceGeneration !== initialSourceGeneration,
+              workerGenerationChanged:
+                metrics?.engine?.workerGeneration !== initialWorkerGeneration,
             });
             return;
           }
@@ -379,7 +401,9 @@ test("production WebGPU preserves authority, spectral output, 80-step fidelity, 
       }),
   );
   expect(stableRevocation.sampleCount).toBeGreaterThan(0);
-  expect(stableRevocation.acceptedFrameAdvanced).toBe(true);
+  expect(stableRevocation.acceptedFrameAdvanced).toBe(false);
+  expect(stableRevocation.sourceGenerationChanged).toBe(false);
+  expect(stableRevocation.workerGenerationChanged).toBe(false);
   expect(stableRevocation.authorityObserved).toBe(false);
   expect(stableRevocation.materialOutputObserved).toBe(false);
 

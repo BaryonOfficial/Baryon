@@ -1,8 +1,13 @@
+import { createAudioFeaturePacketFixture } from "../testing/audioFeaturePacketFixture.js";
+import { createRendererFeatureView } from "../utils/audioFeatures.js";
 import { describe, expect, it } from "vitest";
 
 import { resolveTemporalReprojectionPolicy } from "./temporalReprojectionPolicy.js";
 
 const RAYMARCH_METHOD = "raymarch";
+const canonicalFrame = createRendererFeatureView(
+  createAudioFeaturePacketFixture().model(),
+);
 
 describe("temporal reprojection policy", () => {
   it("keeps temporal accumulation disabled unless explicitly requested", () => {
@@ -53,12 +58,7 @@ describe("temporal reprojection policy", () => {
       resolveTemporalReprojectionPolicy({
         visualizationMethod: RAYMARCH_METHOD,
         traaRequested: true,
-        featureFrame: {
-          energyLedger: {
-            projectedRenderEnergy: 0.05,
-            renderEnergyEpsilon: 1e-6,
-          },
-        },
+        featureFrame: canonicalFrame,
         sceneSnapshot: {
           angularVelocity: 0.1,
         },
@@ -75,12 +75,7 @@ describe("temporal reprojection policy", () => {
       resolveTemporalReprojectionPolicy({
         visualizationMethod: RAYMARCH_METHOD,
         traaRequested: true,
-        featureFrame: {
-          energyLedger: {
-            projectedRenderEnergy: 0.05,
-            renderEnergyEpsilon: 1e-6,
-          },
-        },
+        featureFrame: canonicalFrame,
         sceneSnapshot: {
           angularVelocity: 0,
           pitchVelocity: 0,
@@ -95,20 +90,12 @@ describe("temporal reprojection policy", () => {
     });
   });
 
-  it("accumulates history for recoverable capacity-limited descriptors", () => {
+  it("accumulates history for a complete full-basis observation", () => {
     expect(
       resolveTemporalReprojectionPolicy({
         visualizationMethod: RAYMARCH_METHOD,
         traaRequested: true,
-        featureFrame: {
-          energyLedger: {
-            projectedRenderEnergy: 0.05,
-            renderEnergyEpsilon: 1e-6,
-          },
-          modalDescriptor: {
-            fieldAuthority: "capacity-limited",
-          },
-        },
+        featureFrame: canonicalFrame,
         sceneSnapshot: {
           angularVelocity: 0.1,
         },

@@ -99,16 +99,25 @@ describe("getMinimumCavityFrequency", () => {
 });
 
 describe("acoustic cavity scale", () => {
-  it("uses the default acoustic scale to keep bass in resolved cavity families", () => {
+  it("resolves distinct families above the apparatus floor without inventing lower modes", () => {
     const options = {
       acousticScale: SIMULATION_DEFAULTS.cavityAcousticScale,
       boundaryMode: SIMULATION_DEFAULTS.boundaryMode,
     };
-    const mappings = [60, 80, 120, 180, 220, 320].map(
+    const floor =
+      options.acousticScale.soundSpeedMetersPerSecond /
+      (2 * options.acousticScale.sideLengthMeters);
+    const mappings = [1, 2, 3, 4].map(
+      (multiple) =>
+        resolveCavityModeFamilyForPitch(multiple * floor, options, 1)[0],
+    );
+    const belowFloor = [floor / 4, floor / 2, floor * 0.9].map(
       (pitch) => resolveCavityModeFamilyForPitch(pitch, options, 1)[0],
     );
 
-    expect(getCavityAcousticFloorHz(options)).toBeLessThanOrEqual(60);
+    expect(getCavityAcousticFloorHz(options)).toBeCloseTo(floor, 10);
+    for (const mode of belowFloor)
+      expect(mode.naturalFrequencyHz).toBeCloseTo(floor, 10);
     expect(
       new Set(mappings.map((mode) => `${mode.u}:${mode.v}:${mode.w}`)).size,
     ).toBeGreaterThan(3);

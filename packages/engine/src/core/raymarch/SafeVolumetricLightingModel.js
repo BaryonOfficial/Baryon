@@ -45,21 +45,56 @@ const raymarchCoverageNode = property(
   float(0),
 );
 
-const EXTINCTION_EPSILON = 1e-8;
-const GAUSS_LEGENDRE_TWO_POINT_OFFSET = 1 / (2 * Math.sqrt(3));
+// For tau <= 0.1 the degree-four series for (1-exp(-tau))/tau
+// has absolute truncation error <= tau^5/720 <= 1.39e-8, below
+// Float32 roundoff near one. Above it, subtraction is well conditioned.
+const SMALL_OPTICAL_DEPTH = 0.1;
 
 /**
- * CPU mirror of the deterministic GPU quadrature. `sampleBudget` is the
- * declared number of analytic field evaluations on a reference-length chord.
+ * Constant-segment optical transfer shared by the raymarcher and native GPU
+ * regression. Extinction is inverse world length; distance is world length.
+ * This pure shader calculation owns no audio, history or presentation state.
+ * @param {any} extinction
+ * @param {any} distance
+ */
+export function deriveRadiativeTransferIntervalNode(extinction, distance) {
+  const opticalDepth = extinction.mul(distance).toVar();
+  const falloff = opticalDepth.negate().exp().toVar();
+  const segmentIntegral = float(0).toVar();
+  If(opticalDepth.lessThanEqual(float(SMALL_OPTICAL_DEPTH)), () => {
+    // Horner form includes the exact zero-extinction/zero-distance limits.
+    // Branch on dimensionless optical depth, never extinction alone.
+    const relativeIntegral = float(1 / 120)
+      .mul(opticalDepth)
+      .sub(1 / 24)
+      .mul(opticalDepth)
+      .add(1 / 6)
+      .mul(opticalDepth)
+      .sub(1 / 2)
+      .mul(opticalDepth)
+      .add(1);
+    segmentIntegral.assign(distance.mul(relativeIntegral));
+  }).Else(() => {
+    // Positive optical depth guarantees nonzero extinction here. Keeping
+    // this in the branch avoids an undefined division at zero extinction.
+    segmentIntegral.assign(float(1).sub(falloff).div(extinction));
+  });
+  return { falloff, segmentIntegral };
+}
+
+/**
+ * CPU mirror of the deterministic GPU interval traversal. `sampleBudget` is the
+ * declared number of cached material evaluations on a reference-length chord.
  * It is rounded up once to an even count because every panel uses the same
- * two-point rule. Shorter chords retain the same world-space panel spacing and
- * finish with one partial panel instead of rescaling every existing sample.
+ * two centered half-panel intervals. Shorter chords retain the same world-space
+ * panel spacing and finish with one partial panel instead of rescaling every
+ * existing sample.
  *
  * That fixed lattice is important visually: changing chord length can only add
  * or grow the final panel, so neighbouring rays never turn integer sample-count
  * boundaries into either coherent rings or stochastic grain.
  */
-export function deriveCompositeGaussLegendreRaymarchSamples({
+export function deriveCenteredRaymarchIntervals({
   entryDistance = 0,
   exitDistance = 0,
   referenceLength = 1,
@@ -92,7 +127,7 @@ export function deriveCompositeGaussLegendreRaymarchSamples({
       segmentLength / targetPanelWidth - Number.EPSILON * evenSampleBudget,
     ),
   );
-  const samples = [];
+  const intervals = [];
 
   for (let panelIndex = 0; panelIndex < panelCount; panelIndex += 1) {
     const panelStart = entry + panelIndex * targetPanelWidth;
@@ -101,45 +136,15 @@ export function deriveCompositeGaussLegendreRaymarchSamples({
       continue;
     }
     const panelCenter = panelStart + localPanelWidth * 0.5;
-    const offset = localPanelWidth * GAUSS_LEGENDRE_TWO_POINT_OFFSET;
-    const weight = localPanelWidth * 0.5;
-    samples.push(
-      { distance: panelCenter - offset, weight },
-      { distance: panelCenter + offset, weight },
+    const intervalWidth = localPanelWidth * 0.5;
+    const offset = intervalWidth * 0.5;
+    intervals.push(
+      { distance: panelCenter - offset, intervalWidth },
+      { distance: panelCenter + offset, intervalWidth },
     );
   }
 
-  return samples;
-}
-
-/**
- * Deterministic CPU oracle for the direct volume quadrature.
- * @param {{
- *   entryDistance?: number,
- *   exitDistance?: number,
- *   referenceLength?: number,
- *   sampleBudget?: number,
- *   sample?: (distance: number) => number,
- * }} options
- */
-export function integrateCompositeGaussLegendreRaymarch({
-  entryDistance = 0,
-  exitDistance = 0,
-  referenceLength = 1,
-  sampleBudget = 1,
-  sample = () => 0,
-} = {}) {
-  return deriveCompositeGaussLegendreRaymarchSamples({
-    entryDistance,
-    exitDistance,
-    referenceLength,
-    sampleBudget,
-  }).reduce(
-    (integral, quadratureSample) =>
-      integral +
-      Number(sample(quadratureSample.distance) || 0) * quadratureSample.weight,
-    0,
-  );
+  return intervals;
 }
 
 /**
@@ -165,7 +170,7 @@ export function integrateRadiativeTransferStep({
   const distance = Math.max(0, Number.isFinite(stepSize) ? stepSize : 0);
   const falloff = Math.exp(-sigmaT * distance);
   const segmentIntegral =
-    sigmaT > EXTINCTION_EPSILON ? (1 - falloff) / sigmaT : distance;
+    sigmaT > 0 ? -Math.expm1(-sigmaT * distance) / sigmaT : distance;
   const integrateSource = (sourceRadiance) => {
     const source =
       Array.isArray(sourceRadiance) || ArrayBuffer.isView(sourceRadiance)
@@ -196,9 +201,10 @@ export function integrateRadiativeTransferStep({
 /**
  * Deterministic CPU oracle for the camera-ordered production transfer.
  *
- * Composite Gauss-Legendre weights partition the chord into positive path
- * intervals. Each sampled coefficient tuple is treated as constant over its
- * interval, then integrated exactly before the next camera-depth interval.
+ * Adjacent centered intervals partition the chord without gaps or overlap.
+ * The carrier averages its fixed profiles over each supplied width. Remaining
+ * coefficients use the midpoint approximation, then the constant-coefficient
+ * transfer is integrated exactly before the next camera-depth interval.
  */
 export function integrateRadiativeTransferRay({
   entryDistance = 0,
@@ -206,21 +212,25 @@ export function integrateRadiativeTransferRay({
   referenceLength = 1,
   sampleBudget = 1,
   cameraAtRayStart = true,
-  sample = /** @type {(distance: number) => any} */ (() => ({})),
+  sample = /** @type {(distance: number, intervalWidth: number) => any} */ (
+    () => ({})
+  ),
 } = {}) {
-  const samples = deriveCompositeGaussLegendreRaymarchSamples({
+  const intervals = deriveCenteredRaymarchIntervals({
     entryDistance,
     exitDistance,
     referenceLength,
     sampleBudget,
   });
-  const orderedSamples = cameraAtRayStart ? samples : [...samples].reverse();
+  const orderedIntervals = cameraAtRayStart
+    ? intervals
+    : [...intervals].reverse();
   const baseRadiance = [0, 0, 0];
   const accentRadiance = [0, 0, 0];
   let transmittance = 1;
 
-  for (const quadratureSample of orderedSamples) {
-    const coefficients = sample(quadratureSample.distance) ?? {};
+  for (const { distance, intervalWidth } of orderedIntervals) {
+    const coefficients = sample(distance, intervalWidth) ?? {};
     const localExtinction = Math.max(
       0,
       Number.isFinite(coefficients.extinction) ? coefficients.extinction : 0,
@@ -230,7 +240,7 @@ export function integrateRadiativeTransferRay({
       baseSourceRadiance: coefficients.baseSourceRadiance,
       accentSourceRadiance: coefficients.accentSourceRadiance,
       extinction: localExtinction,
-      stepSize: quadratureSample.weight,
+      stepSize: intervalWidth,
     });
 
     for (let channel = 0; channel < 3; channel += 1) {
@@ -353,17 +363,17 @@ export function createSafeVolumetricOutputNode(material) {
         ).toVar();
         const segmentPanelCountFloat = float(segmentPanelCount).toVar();
         const lastPanelIndex = segmentPanelCountFloat.sub(float(1)).toVar();
-        const firstGaussDirection = mix(
+        const firstIntervalDirection = mix(
           float(1),
           float(-1),
           cameraAtRayStart,
         ).toVar();
 
-        const accumulateSample = (sampleDistance, sampleWeight) => {
+        const accumulateSample = (sampleDistance, intervalWidth) => {
           const opticalSample = opticalTransferRaySampler
             ? opticalTransferRaySampler({
                 sampleDistance,
-                stepSize: sampleWeight,
+                stepSize: intervalWidth,
               })
             : null;
           if (opticalSample) {
@@ -372,19 +382,11 @@ export function createSafeVolumetricOutputNode(material) {
               opticalSample.accentRadiance,
             ).toVar();
             const localExtinction = float(opticalSample.extinction).toVar();
-            const falloff = localExtinction
-              .negate()
-              .mul(sampleWeight)
-              .exp()
-              .toVar();
-            const attenuatedInterval = float(1)
-              .sub(falloff)
-              .div(max(localExtinction, float(EXTINCTION_EPSILON)));
-            const segmentIntegral = localExtinction
-              .greaterThan(float(EXTINCTION_EPSILON))
-              .select(attenuatedInterval, sampleWeight)
-              .uniformFlow()
-              .toVar();
+            const { falloff, segmentIntegral } =
+              deriveRadiativeTransferIntervalNode(
+                localExtinction,
+                intervalWidth,
+              );
             const weightedTransmittance = accumulatedTransmittance
               .mul(segmentIntegral)
               .toVar();
@@ -398,7 +400,7 @@ export function createSafeVolumetricOutputNode(material) {
           }
         };
 
-        // Traverse the same deterministic quadrature from the camera toward the
+        // Traverse the same centered intervals from the camera toward the
         // far side in either ray parameterization. Each interval updates the
         // one shared extinction recurrence before the next depth sample.
         Loop(
@@ -421,24 +423,24 @@ export function createSafeVolumetricOutputNode(material) {
               targetPanelWidth,
               max(exitDistance.sub(panelStartDistance), float(0)),
             ).toVar();
-            const gaussWeight = localPanelWidth.mul(float(0.5)).toVar();
+            // Each width is centered on its sample. Together the two halves
+            // tile the panel, so the carrier's interval averages lose no area.
+            const intervalWidth = localPanelWidth.mul(float(0.5)).toVar();
             const panelCenterDistance = entryDistance.add(
-              panelOffset.add(gaussWeight),
+              panelOffset.add(intervalWidth),
             );
-            const gaussOffset = localPanelWidth
-              .mul(float(GAUSS_LEGENDRE_TWO_POINT_OFFSET))
-              .toVar();
-            const signedGaussOffset = gaussOffset
-              .mul(firstGaussDirection)
+            const signedIntervalOffset = intervalWidth
+              .mul(float(0.5))
+              .mul(firstIntervalDirection)
               .toVar();
             const firstSampleDistance = panelCenterDistance
-              .add(signedGaussOffset)
+              .add(signedIntervalOffset)
               .toVar();
             const secondSampleDistance = panelCenterDistance
-              .sub(signedGaussOffset)
+              .sub(signedIntervalOffset)
               .toVar();
-            accumulateSample(firstSampleDistance, gaussWeight);
-            accumulateSample(secondSampleDistance, gaussWeight);
+            accumulateSample(firstSampleDistance, intervalWidth);
+            accumulateSample(secondSampleDistance, intervalWidth);
           },
         );
 

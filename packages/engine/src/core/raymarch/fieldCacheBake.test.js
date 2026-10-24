@@ -1,19 +1,23 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
-import { uniform } from "three/tsl";
+import { float, uniform } from "three/tsl";
 import { createModalFieldCache } from "./fieldCacheBake.js";
 import { CYMATIC_OBSERVER_REFERENCE } from "./cymaticObserverReference.js";
 import { FIELD_CACHE_DOMAINS } from "./fieldCacheGeometry.js";
 
-function createCache() {
+function createCache(options = {}) {
   return createModalFieldCache({
-    modalFieldModeUniforms: null,
-    modalFieldCoefficientUniforms: null,
-    modalFieldResponseUniforms: null,
-    modalFieldSpectralMomentUniforms: null,
-    modalFieldModeCount: uniform(0),
     radius: uniform(3),
+    evaluateAperture: () => ({
+      finePotential: float(0),
+      fineEnergy: float(0),
+      fineSupport: float(0),
+      topologyPotential: float(0),
+      fineSpectralFirstMoment: null,
+      fineSpectralSecondMoment: null,
+    }),
+    ...options,
   });
 }
 
@@ -35,6 +39,271 @@ const validBakeOptions = Object.freeze({
 });
 
 describe("modal field cache bake contract", () => {
+  it("compiles the actual observer attachment variants without drawing or seeding history", async () => {
+    const cache = createCache();
+    let target = { initial: true };
+    const initialMrt = { previous: true };
+    let activeMrt = initialMrt;
+    const initial = target,
+      compile = vi.fn(async () => {
+        expect(activeMrt).toBeNull();
+      }),
+      draw = vi.fn();
+    const preparingRenderer = {
+      initialized: true,
+      getRenderTarget: () => target,
+      setRenderTarget: (next) => {
+        target = next;
+      },
+      getMRT: () => activeMrt,
+      setMRT: (next) => {
+        activeMrt = next;
+      },
+      compileAsync: compile,
+      render: draw,
+    };
+    const before = cache.getObserverState();
+    try {
+      await cache.compile(preparingRenderer);
+      expect(compile.mock.calls.length).toBeGreaterThan(5);
+      expect(draw).not.toHaveBeenCalled();
+      expect(cache.getObserverState()).toEqual(before);
+      expect(cache.getObserverState().hasHistory).toBe(false);
+      expect(target).toBe(initial);
+      expect(activeMrt).toBe(initialMrt);
+    } finally {
+      cache.dispose();
+    }
+  });
+
+  it("disposal stops shader preparation after the current compile settles", async () => {
+    const cache = createCache();
+    let finish;
+    const compileAsync = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const pending = cache.compile({
+      ...renderer,
+      initialized: true,
+      compileAsync,
+    });
+    cache.dispose();
+    finish();
+    await pending;
+    expect(compileAsync).toHaveBeenCalledOnce();
+    expect(cache.getObserverState().hasHistory).toBe(false);
+  });
+
+  it("rebinds only replaced aperture resources and allocates no raw Float32 copy or blur targets", async () => {
+    let revision = 0;
+    const resolved = [],
+      targets = new Set();
+    const cache = createCache({ getApertureRevision: () => revision });
+    const preparingRenderer = {
+      ...renderer,
+      initialized: true,
+      setRenderTarget(target) {
+        if (target) targets.add(target);
+      },
+      compileAsync: vi.fn(async (object) => {
+        if (object.material.name === "BaryonFieldCacheResolveMaterial")
+          resolved.push(object.material);
+      }),
+      render: vi.fn(),
+    };
+    try {
+      const before = cache.getObserverState();
+      await cache.compile(preparingRenderer);
+      const dispose = vi.fn();
+      resolved[0].addEventListener("dispose", dispose);
+      await cache.compile(preparingRenderer);
+      expect(resolved[1]).toBe(resolved[0]);
+      expect(dispose).not.toHaveBeenCalled();
+      revision++;
+      await cache.compile(preparingRenderer);
+      expect(resolved[2]).not.toBe(resolved[0]);
+      expect(dispose).toHaveBeenCalledOnce();
+      expect(
+        [...targets]
+          .flatMap((target) => target.textures)
+          .some((texture) => texture.type === THREE.FloatType),
+      ).toBe(false);
+      expect(cache.getObserverState()).toEqual(before);
+      expect(preparingRenderer.render).not.toHaveBeenCalled();
+    } finally {
+      cache.dispose();
+    }
+  });
+
+  it("prepares derived source textures only when the observer accepts a new step or reset", () => {
+    const work = [];
+    const recordingRenderer = {
+      ...renderer,
+      render() {
+        work.push("draw");
+      },
+    };
+    const cache = createCache({
+      prepareAperture(activeRenderer) {
+        expect(activeRenderer).toBe(recordingRenderer);
+        work.push("prepare");
+      },
+    });
+    const options = { ...validBakeOptions, observationAdvancing: true };
+    try {
+      expect(cache.bake(recordingRenderer, options).baked).toBe(true);
+      expect(work[0]).toBe("prepare");
+      expect(work.filter((x) => x === "prepare")).toHaveLength(1);
+      work.length = 0;
+      for (const time of [0, 0.005, 0.01]) {
+        expect(
+          cache.bake(recordingRenderer, {
+            ...options,
+            observationTimeSeconds: time,
+          }).baked,
+        ).toBe(false);
+      }
+      expect(work).toEqual([]);
+      expect(
+        cache.bake(recordingRenderer, {
+          ...options,
+          observationTimeSeconds: 1 / 60,
+        }).baked,
+      ).toBe(true);
+      expect(work[0]).toBe("prepare");
+      expect(work.filter((x) => x === "prepare")).toHaveLength(1);
+      work.length = 0;
+      expect(
+        cache.bake(recordingRenderer, {
+          ...options,
+          observationTimeSeconds: 1 / 60,
+          observationResetToken: "replacement",
+        }).reset,
+      ).toBe(true);
+      expect(work[0]).toBe("prepare");
+      expect(work.filter((x) => x === "prepare")).toHaveLength(1);
+    } finally {
+      cache.dispose();
+    }
+  });
+
+  it("always carries explicit geometry availability in the canonical observer layout", () => {
+    const cache = createCache();
+    const names = [];
+    try {
+      cache.bake(
+        {
+          ...renderer,
+          setRenderTarget(target) {
+            if (target?.textures?.[0]?.name === "geometry")
+              names.push(target.textures.map((t) => t.name));
+          },
+        },
+        validBakeOptions,
+      );
+      expect(names.length).toBeGreaterThan(0);
+      for (const lanes of names)
+        expect(lanes).toEqual([
+          "geometry",
+          "appearance",
+          "organization",
+          "availability",
+        ]);
+      expect(cache.geometryAvailabilityBytes).toBe(2 * 128 ** 3);
+      expect(cache.observerGeometryAvailabilityTexture).not.toBeNull();
+    } finally {
+      cache.dispose();
+    }
+  });
+  it("keeps availability with the same observer generation through checkpoint replay and reset", () => {
+    const cache = createCache({});
+    const targets = [];
+    const recordingRenderer = {
+      ...renderer,
+      setRenderTarget(target) {
+        if (target?.textures?.[0]?.name === "geometry") targets.push(target);
+      },
+    };
+    const options = {
+      ...validBakeOptions,
+      observationCheckpointKey: "source-a",
+    };
+    try {
+      expect(cache.geometryAvailabilityBytes).toBe(2 * 128 ** 3);
+      expect(cache.bake(recordingRenderer, options)).toMatchObject({
+        checkpointSaved: true,
+        checkpointRestored: false,
+      });
+      expect(cache.geometryAvailabilityBytes).toBe(3 * 128 ** 3);
+      for (const target of targets) {
+        expect(target.textures[3]).toMatchObject({
+          name: "availability",
+          format: THREE.RedFormat,
+          type: THREE.UnsignedByteType,
+        });
+      }
+      expect(
+        cache.bake(recordingRenderer, {
+          ...options,
+          observationResetToken: "renderer-recovery",
+        }),
+      ).toMatchObject({ checkpointRestored: true });
+      expect(
+        cache.bake(recordingRenderer, {
+          ...options,
+          observationResetToken: "source-b",
+          observationCheckpointKey: "source-b",
+        }),
+      ).toMatchObject({ checkpointRestored: false, checkpointSaved: true });
+      targets.length = 0;
+      expect(
+        cache.bake(recordingRenderer, {
+          ...options,
+          observationResetToken: "source-b",
+          observationCheckpointKey: "source-b",
+        }),
+      ).toMatchObject({ baked: false });
+      expect(targets).toHaveLength(0);
+    } finally {
+      cache.dispose();
+    }
+  });
+  it("bounds GPU work after a long observation gap without replay on the next frame", () => {
+    const materials = [];
+    const recordingRenderer = {
+      ...renderer,
+      render(scene) {
+        materials.push(scene.children[0]?.material?.name);
+      },
+    };
+    const cache = createCache();
+    const options = { ...validBakeOptions, observationAdvancing: true };
+    try {
+      cache.bake(recordingRenderer, options);
+      materials.length = 0;
+      expect(
+        cache.bake(recordingRenderer, {
+          ...options,
+          observationTimeSeconds: 60,
+        }),
+      ).toMatchObject({ baked: true, reset: true, stepCount: 0 });
+      expect(materials).toHaveLength(4);
+      expect(materials).toContain("BaryonCymaticObserverSeedMaterial");
+      materials.length = 0;
+      expect(
+        cache.bake(recordingRenderer, {
+          ...options,
+          observationTimeSeconds: 60,
+        }),
+      ).toMatchObject({ baked: false, stepCount: 0 });
+      expect(materials).toHaveLength(0);
+    } finally {
+      cache.dispose();
+    }
+  });
   it("draws every expensive cache and observer pass sparsely before publishing a full observer", () => {
     const rendered = [];
     const recordingRenderer = {
@@ -53,34 +322,14 @@ describe("modal field cache bake contract", () => {
     const cache = createCache();
     try {
       cache.bake(recordingRenderer, validBakeOptions);
-      expect(rendered.slice(0, 5)).toEqual([
-        {
-          autoClear: false,
-          domain: FIELD_CACHE_DOMAINS.fundamentalXyz,
-          material: "BaryonFieldCacheBakeMaterial",
-        },
-        {
-          autoClear: false,
-          domain: FIELD_CACHE_DOMAINS.halfYz,
-          material: "BaryonFieldCacheApertureXMaterial",
-        },
-        {
-          autoClear: false,
-          domain: FIELD_CACHE_DOMAINS.halfXy,
-          material: "BaryonFieldCacheApertureYMaterial",
-        },
-        {
-          autoClear: false,
-          domain: FIELD_CACHE_DOMAINS.fundamentalXyz,
-          material: "BaryonFieldCacheApertureZMaterial",
-        },
+      expect(rendered.slice(0, 1)).toEqual([
         {
           autoClear: false,
           domain: FIELD_CACHE_DOMAINS.fundamentalXyz,
           material: "BaryonFieldCacheResolveMaterial",
         },
       ]);
-      expect(rendered.slice(5)).toEqual([
+      expect(rendered.slice(1)).toEqual([
         {
           autoClear: false,
           domain: FIELD_CACHE_DOMAINS.fundamentalXyz,
@@ -345,41 +594,22 @@ describe("modal field cache bake contract", () => {
       "utf8",
     );
 
-    expect(source).toContain(
-      "vec4(observed.spectralFirstMoment, observed.spectralSecondMoment)",
-    );
-    expect(source).toContain("observed.spectralSupport ?? float(0)");
-    expect(source).toContain(
-      "spectralMomentSum.addAssign(spectral.mul(weight))",
-    );
-    expect(source).toContain(
-      "spectralMomentSum.div(apertureWeights.fineTotal)",
-    );
-    expect(source).toContain("createApertureKernelWeightNodes(radius)");
-    expect(source).toContain(".toVertexStage()");
-    expect(source).toContain("topologyTotal: packedC.z");
-    expect(source).toContain("fineTotal: packedC.w");
-    expect(source).not.toContain("const fineTotalWeight = float(0).toVar()");
-    expect(source).not.toContain(
-      "const topologyTotalWeight = float(0).toVar()",
-    );
-    expect(source).toContain("fixedRenderTargetTextureLoad(");
+    expect(source).toContain("evaluateAperture({ voxelIndex");
+    expect(source).not.toContain("createFieldCacheApertureMaterial");
+    expect(source).not.toContain("createFieldCacheBakeMaterial");
+    expect(source).not.toContain("CYMATIC_OBSERVER_APERTURE_PASSES");
     expect(source).toContain(
       "const spectralFirstMoment = clampMomentToUnitDisk",
     );
     expect(source).toContain(
       "const spectralSecondMoment = clampMomentToUnitDisk",
     );
-    expect(source).toContain("SPECTRAL_MOMENT_SUPPORT_EPSILON");
+    expect(source).toContain("SPECTRAL_PHASE_FIELD_REFERENCE.supportEpsilon");
     expect(source).not.toContain("meanColor");
     expect(source).not.toContain("spectralAuthority");
     expect(source).toContain('names: ["topology", "source", "organization"]');
     expect(source).not.toContain('fine: payload.get("fine")');
-    expect(source).toContain('nearestNames: ["output", "spectral"]');
-    expect(source).toContain(
-      'names: ["geometry", "appearance", "organization"]',
-    );
-    expect(source).toContain('names: ["opticalPair"]');
+    expect(source).toContain('names: ["opticalPair", "organization"]');
     expect(source).toContain(
       "return vec4(lowerAppearance.zw, upperAppearance.zw)",
     );
@@ -516,14 +746,14 @@ describe("modal field cache bake contract", () => {
     }
   });
 
-  it("keeps chromatic organization nearest while paired optics stay linear", () => {
+  it("filters presentation organization without changing observer history", () => {
     const cache = createCache();
     try {
       expect(cache.observerOrganizationTexture.value.minFilter).toBe(
-        THREE.NearestFilter,
+        THREE.LinearFilter,
       );
       expect(cache.observerOrganizationTexture.value.magFilter).toBe(
-        THREE.NearestFilter,
+        THREE.LinearFilter,
       );
       expect(cache.observerOpticalPairTexture.value.minFilter).toBe(
         THREE.LinearFilter,
@@ -531,6 +761,33 @@ describe("modal field cache bake contract", () => {
       expect(cache.observerOpticalPairTexture.value.magFilter).toBe(
         THREE.LinearFilter,
       );
+      let target;
+      const historyTargets = new Set();
+      cache.bake(
+        {
+          ...renderer,
+          setRenderTarget(next) {
+            target = next;
+          },
+          render(scene) {
+            if (
+              scene.children[0].material.name ===
+              "BaryonObserverSparseExpansionMaterial"
+            ) {
+              historyTargets.add(target);
+            }
+          },
+        },
+        validBakeOptions,
+      );
+      expect(historyTargets.size).toBe(1);
+      for (const history of historyTargets) {
+        expect(history.textures[2]).not.toBe(
+          cache.observerOrganizationTexture.value,
+        );
+        expect(history.textures[2].minFilter).toBe(THREE.NearestFilter);
+        expect(history.textures[2].magFilter).toBe(THREE.NearestFilter);
+      }
     } finally {
       cache.dispose();
     }

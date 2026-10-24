@@ -12,7 +12,6 @@ import { observeAudioTransportClock } from "../context/audioTransportClock.js";
 import {
   createLiveInputRuntimeStatus,
   LIVE_INPUT_PHASES,
-  LIVE_INPUT_SIGNAL_STATES,
 } from "../context/liveInputRuntimeStatus.js";
 import { SourceSelector } from "./controls/SourceSelector";
 import DemoAudioIcon from "./DemoAudioIcon.jsx";
@@ -234,10 +233,7 @@ function getStatusConfig(
   const status = createLiveInputRuntimeStatus(liveInputRuntimeStatus);
   if (isLiveInputActive) {
     const isLineFeed = status.resolvedAnalysisClass === "line-feed";
-    if (
-      status.phase === LIVE_INPUT_PHASES.error ||
-      status.signalState === LIVE_INPUT_SIGNAL_STATES.clipped
-    ) {
+    if (status.phase === LIVE_INPUT_PHASES.error) {
       return { color: "#D71921", pulse: true, label: "Input error" };
     }
     if (
@@ -245,21 +241,6 @@ function getStatusConfig(
       status.phase === LIVE_INPUT_PHASES.stopping
     ) {
       return { color: "#D4A843", pulse: true, label: "Input starting" };
-    }
-    if (status.phase === LIVE_INPUT_PHASES.calibrating) {
-      return { color: "#5B9BF6", pulse: true, label: "Calibrating mic" };
-    }
-    if (status.phase === LIVE_INPUT_PHASES.weakSignal) {
-      const isSilent = status.signalState === LIVE_INPUT_SIGNAL_STATES.silent;
-      return {
-        color: "#D4A843",
-        pulse: !isSilent,
-        label: isSilent
-          ? "Live input connected — waiting for audio"
-          : isLineFeed
-            ? "Line feed weak"
-            : "Input weak",
-      };
     }
     if (status.phase === LIVE_INPUT_PHASES.listening) {
       return {

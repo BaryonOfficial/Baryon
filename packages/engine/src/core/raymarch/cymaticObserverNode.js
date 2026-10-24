@@ -8,59 +8,38 @@ import {
   max,
   mix,
   mrt,
-  screenUV,
   smoothstep,
   sqrt,
   struct,
   texture as textureNode,
   uniform,
   vec2,
-  vec3,
   vec4,
 } from "three/tsl";
 import {
-  FIELD_CACHE_ATLAS_HEIGHT,
-  FIELD_CACHE_ATLAS_WIDTH,
-  FIELD_CACHE_CELL_SIZE,
-  FIELD_CACHE_DOMAIN_HALF_EXTENT,
-  FIELD_CACHE_RESOLUTION,
-  FIELD_CACHE_TILES_X,
-} from "./fieldCacheGeometry.js";
-import {
   createFieldCacheSamplingFootprintNode,
+  deriveFieldCacheFragmentVoxelIndexNode,
+  toFieldCacheVoxelPositionNode,
   createSparseResolvedFieldCacheFootprintNode,
   sampleFieldCacheAtlasAtFootprintNode,
+  sampleAvailableObserverGeometryNode,
   sampleSparseResolvedFieldCacheLaneNode,
   sampleSparseResolvedFieldCacheTopologyNode,
 } from "./fieldCacheSampling.js";
 import { SPECTRAL_PHASE_FIELD_REFERENCE } from "./spectralPhaseFieldReference.js";
 import { resolveSpectralChromaticityNode } from "./spectralColorimetry.js";
+import { deriveCymaticGeometryAssimilation } from "./cymaticGeometryObservation.js";
 import { CYMATIC_OBSERVER_REFERENCE } from "./cymaticObserverReference.js";
 
 const CymaticObserverPayload = struct(
-  { geometry: "vec4", appearance: "vec4", organization: "vec4" },
+  {
+    geometry: "vec4",
+    appearance: "vec4",
+    organization: "vec4",
+    availability: "float",
+  },
   "BaryonCymaticObserverPayload",
 );
-
-function deriveObserverVoxelIndexNode() {
-  const pixelX = screenUV.x.mul(float(FIELD_CACHE_ATLAS_WIDTH));
-  const pixelY = screenUV.y.mul(float(FIELD_CACHE_ATLAS_HEIGHT));
-  const tileSpan = float(FIELD_CACHE_RESOLUTION);
-  const tileX = pixelX.div(tileSpan).floor();
-  const tileY = pixelY.div(tileSpan).floor();
-  return vec3(
-    pixelX.sub(tileX.mul(tileSpan)).floor(),
-    pixelY.sub(tileY.mul(tileSpan)).floor(),
-    tileY.mul(float(FIELD_CACHE_TILES_X)).add(tileX),
-  );
-}
-
-function toObserverVoxelPositionNode(voxelIndex) {
-  return voxelIndex
-    .add(0.5)
-    .mul(float(FIELD_CACHE_CELL_SIZE))
-    .sub(float(FIELD_CACHE_DOMAIN_HALF_EXTENT));
-}
 
 function deriveCurrentObservationSource({
   currentTopologyField,
@@ -82,9 +61,11 @@ function deriveCurrentObservationSource({
   const gradientValidity = gradientMagnitudeSquared.div(
     gradientMagnitudeSquared.add(float(1e-16)),
   );
-  const localEnergy = currentSource.w;
+  // This lane is bounded optical excitation derived from raw energy. It
+  // controls material visibility, independently of geometric validity.
+  const opticalExcitation = currentSource.w;
   const surfaceSupport = clamp(
-    localEnergy.mul(gradientValidity),
+    opticalExcitation.mul(gradientValidity),
     float(0),
     float(1),
   );
@@ -98,8 +79,9 @@ function deriveCurrentObservationSource({
     firstMoment: currentSource.xy,
     secondMoment: vec2(currentSource.z, currentOrganization.z),
     spectralPresence: clamp(currentOrganization.w, float(0), float(1)),
-    radiance: localEnergy,
+    radiance: opticalExcitation,
     surfaceSupport,
+    geometryValidity: gradientValidity,
     fineDetailAgreement: clamp(currentOrganization.x, float(0), float(1)),
     fineResidual: clamp(currentOrganization.y, float(-1), float(1)),
   };
@@ -276,11 +258,16 @@ export function createCymaticObserverMaterial({
   previousGeometryTexture = null,
   previousAppearanceTexture = null,
   previousObserverOrganizationTexture = null,
+  previousGeometryAvailabilityTexture = null,
   spectralSeedDirectionNode,
   radius,
   seed = false,
   currentFieldEndpoint = false,
 }) {
+  if (!seed && !previousGeometryAvailabilityTexture)
+    throw new TypeError(
+      "geometry observation requires matching history availability",
+    );
   const material = new MeshBasicNodeMaterial();
   material.name = seed
     ? "BaryonCymaticObserverSeedMaterial"
@@ -308,6 +295,9 @@ export function createCymaticObserverMaterial({
   const previousGeometryNode = previousGeometryTexture
     ? textureNode(previousGeometryTexture)
     : null;
+  const previousGeometryAvailabilityNode = previousGeometryAvailabilityTexture
+    ? textureNode(previousGeometryAvailabilityTexture)
+    : null;
   const previousAppearanceNode = previousAppearanceTexture
     ? textureNode(previousAppearanceTexture)
     : null;
@@ -321,8 +311,8 @@ export function createCymaticObserverMaterial({
   const currentFieldMix = currentFieldEndpoint ? null : uniform(1);
 
   const payload = Fn(() => {
-    const voxelIndex = deriveObserverVoxelIndexNode().toVar();
-    const position = toObserverVoxelPositionNode(voxelIndex);
+    const voxelIndex = deriveFieldCacheFragmentVoxelIndexNode().toVar();
+    const position = toFieldCacheVoxelPositionNode(voxelIndex);
     const sparseResolvedFootprint =
       createSparseResolvedFieldCacheFootprintNode(voxelIndex);
     const resolvedCurrentTopologyField =
@@ -359,13 +349,15 @@ export function createCymaticObserverMaterial({
         source.fineDetailAgreement,
         source.fineResidual,
       );
+      const available = source.geometryValidity.greaterThan(0);
+      const geometry = vec4(
+        /** @type {any} */ (source.signedDistanceWorld),
+        source.surfaceNormal.x,
+        source.surfaceNormal.y,
+        source.surfaceNormal.z,
+      );
       return CymaticObserverPayload(
-        vec4(
-          /** @type {any} */ (source.signedDistanceWorld),
-          source.surfaceNormal.x,
-          source.surfaceNormal.y,
-          source.surfaceNormal.z,
-        ),
+        available.select(geometry, vec4(0)),
         vec4(
           spectralSeed.direction.x,
           spectralSeed.direction.y,
@@ -378,6 +370,7 @@ export function createCymaticObserverMaterial({
           spectralChromaticity.b,
           fineDetailAuthority,
         ),
+        available.select(float(1), float(0)),
       );
     }
 
@@ -434,10 +427,12 @@ export function createCymaticObserverMaterial({
     const historyPosition = position.add(backtraceDisplacement);
     const historyFootprint =
       createFieldCacheSamplingFootprintNode(historyPosition);
-    const previousGeometry = sampleFieldCacheAtlasAtFootprintNode(
+    const history = sampleAvailableObserverGeometryNode(
       previousGeometryNode,
+      previousGeometryAvailabilityNode,
       historyFootprint,
     );
+    const previousGeometry = history.geometry;
     const previousAppearance = sampleFieldCacheAtlasAtFootprintNode(
       previousAppearanceNode,
       historyFootprint,
@@ -446,7 +441,14 @@ export function createCymaticObserverMaterial({
       previousObserverOrganizationNode,
       historyFootprint,
     );
-    const geometryAssimilation = geometryBlend.mul(source.surfaceSupport);
+    const geometryAssimilation = deriveCymaticGeometryAssimilation({
+      geometryBlend,
+      geometryValidity: source.geometryValidity,
+      historyAvailable: history.available,
+    });
+    const historyAvailable = history.available.or(
+      geometryAssimilation.greaterThan(0),
+    );
     const signedDistanceWorld = /** @type {any} */ (
       mix(previousGeometry.x, source.signedDistanceWorld, geometryAssimilation)
     );
@@ -523,6 +525,7 @@ export function createCymaticObserverMaterial({
         spectralChromaticity.b,
         fineDetailAuthority,
       ),
+      historyAvailable.select(float(1), float(0)),
     );
   })();
 
@@ -534,6 +537,11 @@ export function createCymaticObserverMaterial({
     geometry: geometryLane,
     appearance: appearanceLane,
     organization: organizationLane,
+    availability: vec4(
+      /** @type {import("three/webgpu").Node<"float">} */ (
+        payload.get("availability")
+      ),
+    ),
   });
 
   return {
@@ -548,6 +556,7 @@ export function createCymaticObserverMaterial({
       previousGeometry = null,
       previousAppearance = null,
       previousObserverOrganization = null,
+      previousGeometryAvailability = null,
     }) {
       currentTopologyFieldNode.value = currentTopologyField;
       currentSourceNode.value = currentSource;
@@ -565,6 +574,9 @@ export function createCymaticObserverMaterial({
       }
       if (previousGeometryNode && previousGeometry) {
         previousGeometryNode.value = previousGeometry;
+      }
+      if (previousGeometryAvailabilityNode && previousGeometryAvailability) {
+        previousGeometryAvailabilityNode.value = previousGeometryAvailability;
       }
       if (previousAppearanceNode && previousAppearance) {
         previousAppearanceNode.value = previousAppearance;

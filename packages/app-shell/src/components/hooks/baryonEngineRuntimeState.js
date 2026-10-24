@@ -2,31 +2,6 @@ import {
   RENDER_PROBE_SCHEMA_VERSION,
   buildRenderProbeSnapshot,
 } from "./renderProbeSnapshot.js";
-import {
-  RAYMARCH_OPTICAL_FIELD_REPRESENTATION,
-  RAYMARCH_SPECTRAL_PHASE_REPRESENTATION,
-} from "@baryon/engine/core/raymarch/quantityLedger";
-
-const WORKER_PERF_COUNTER_BASES = Object.freeze([
-  "FastLane",
-  "StructuralLane",
-  "Goertzel",
-  "Composition",
-]);
-const WORKER_PERF_COUNTER_SUFFIXES = Object.freeze(["Ms", "LastMs", "MaxMs"]);
-const WORKER_PERF_COUNTER_KEYS = Object.freeze(
-  WORKER_PERF_COUNTER_BASES.flatMap((base) =>
-    WORKER_PERF_COUNTER_SUFFIXES.map((suffix) => `worker${base}${suffix}`),
-  ),
-);
-
-export function snapshotWorkerPerfCounters(source) {
-  const counters = {};
-  for (const key of WORKER_PERF_COUNTER_KEYS) {
-    counters[key] = source?.[key] ?? 0;
-  }
-  return counters;
-}
 
 function createRuntimePerfEntry() {
   return {
@@ -84,7 +59,7 @@ function createAdaptiveRaymarchControllerState() {
     stableWindowCount: 0,
     recoveryEligible: false,
     recoveryBlockedReason: "none",
-    lastPlaybackSessionId: null,
+    lastSourceGeneration: null,
     controllerLastFrameTimeMs: 0,
     controllerSmoothedFrameTimeMs: 0,
   };
@@ -102,66 +77,30 @@ function createUiInteractionDiagnostics() {
 
 function createModalFreshnessDiagnostics() {
   return {
-    frameTimeMs: 0,
-    sourceMode: null,
-    sourceEvidence: null,
-    fieldState: "idle",
+    frameId: null,
+    sourcePhase: null,
+    familyCount: 0,
+    shellCount: 0,
+    endSample: null,
+    inputEndSample: null,
+    preparationDelayFrames: null,
+    observationTimeSeconds: null,
+    normalizationEnergy: null,
+    observationAgeMs: null,
+    renderSubmittedAtMs: null,
     frameSemanticSource: null,
     frameSemanticFresh: false,
     frameSemanticReused: false,
-    structuralSnapshotAgeMs: 0,
-    featureFrameAgeAtRenderMs: 0,
-    renderSubmittedAtMs: 0,
-    lastUpdatedAtWallTimeMs: 0,
-    avgAmplitude: 0,
-    analyserRms: 0,
-    periodicity: 0,
-    liveInputNoiseGateActive: false,
-    liveInputHardSilenceActive: false,
-    structureSignal: 0,
-    energySignal: 0,
-    changeSignal: 0,
-    pulseSignal: 0,
-    modalVisibilityEnergy: 0,
-    modalObserverVisibilityEnergy: 0,
-    observationEnergy: 0,
-    modalResponseEnergy: 0,
-    modalResponseBudgetScale: 0,
-    modalResponseRawEnergy: 0,
-    modalResponseAverageDampingEnvelope: 0,
-    modalResponseAverageCouplingStrength: 0,
-    modalResponseAveragePhaseConfidence: 0,
-    modalResponseAveragePersistence: 0,
-    modalPhaseAuthority: 0,
-    resonantPhaseAuthority: 0,
-    sourceCoupledPhaseAuthority: 0,
-    modalPhaseCoherentFieldModeCount: 0,
-    modeCoherence: 0,
-    activeModeCount: 0,
-    activeModalFieldModeCount: 0,
-    modeSlotMeanAbsDelta: 0,
-    modeSlotChangeCount: 0,
-    modalIdentitySlotMeanAbsDelta: 0,
-    modalIdentitySlotChangeCount: 0,
-    resonantObservedModeCount: 0,
-    resonantObservedEnergy: 0,
-    resonantRingSupport: 0,
     responseEnvelope: 0,
     accentEnvelope: 0,
     motionSignal: 0,
     scaleSignal: 0,
     bloomResponseSignal: 0,
-    _previousModeSlots: null,
-    _previousModalIdentitySlots: null,
   };
 }
 
 function readFiniteDiagnosticNumber(value, fallback = 0) {
-  return Number.isFinite(value) ? Number(value) : fallback;
-}
-
-function readDiagnosticString(value, fallback = null) {
-  return typeof value === "string" && value.length > 0 ? value : fallback;
+  return Number.isFinite(value) ? value : fallback;
 }
 
 function snapshotRenderSurfaceDiagnostics(renderSurface) {
@@ -191,119 +130,17 @@ function snapshotRenderSurfaceDiagnostics(renderSurface) {
   };
 }
 
-export function snapshotSourceEvidenceDiagnostics(sourceEvidence) {
-  if (!sourceEvidence) {
-    return null;
-  }
-
-  const metrics = sourceEvidence.metrics ?? {};
-  const transport = sourceEvidence.transport ?? {};
-  return {
-    ownerVersion: readDiagnosticString(sourceEvidence.ownerVersion),
-    sourceKind: readDiagnosticString(sourceEvidence.sourceKind, "none"),
-    analysisClass: readDiagnosticString(sourceEvidence.analysisClass, "none"),
-    sourceBoundaryState: readDiagnosticString(
-      sourceEvidence.sourceBoundaryState,
-      "absent",
-    ),
-    currentSourceEvidence: sourceEvidence.currentSourceEvidence === true,
-    sourceEnergy: readFiniteDiagnosticNumber(sourceEvidence.sourceEnergy),
-    metrics: {
-      avgAmplitude: readFiniteDiagnosticNumber(metrics.avgAmplitude),
-      analyserRms: readFiniteDiagnosticNumber(metrics.analyserRms),
-      fftPeakAmplitude: readFiniteDiagnosticNumber(metrics.fftPeakAmplitude),
-      spectralEffectiveBinCount: Math.max(
-        0,
-        Math.floor(
-          readFiniteDiagnosticNumber(metrics.spectralEffectiveBinCount),
-        ),
-      ),
-    },
-    transport: {
-      playing: transport.playing === true,
-      liveInputActive: transport.liveInputActive === true,
-      fileMuted: transport.fileMuted === true,
-      lineFeedProgramActive: transport.lineFeedProgramActive === true,
-      micHardSilence: transport.micHardSilence === true,
-    },
-  };
-}
-
 function copyRecentLongFrames(recentLongFramesMs) {
   return Array.isArray(recentLongFramesMs) ? [...recentLongFramesMs] : [];
 }
 
-export function snapshotModalFreshnessDiagnostics(modalFreshness) {
-  if (!modalFreshness) {
-    return null;
+export function snapshotModalFreshnessDiagnostics(value) {
+  if (!value) return null;
+  const snapshot = createModalFreshnessDiagnostics();
+  for (const key of Object.keys(snapshot)) {
+    if (Object.hasOwn(value, key)) snapshot[key] = value[key];
   }
-
-  return {
-    frameTimeMs: modalFreshness.frameTimeMs ?? 0,
-    sourceMode: modalFreshness.sourceMode ?? null,
-    sourceEvidence: snapshotSourceEvidenceDiagnostics(
-      modalFreshness.sourceEvidence,
-    ),
-    fieldState: modalFreshness.fieldState ?? "idle",
-    frameSemanticSource: modalFreshness.frameSemanticSource ?? null,
-    frameSemanticFresh: modalFreshness.frameSemanticFresh ?? false,
-    frameSemanticReused: modalFreshness.frameSemanticReused ?? false,
-    structuralSnapshotAgeMs: modalFreshness.structuralSnapshotAgeMs ?? 0,
-    featureFrameAgeAtRenderMs: modalFreshness.featureFrameAgeAtRenderMs ?? 0,
-    renderSubmittedAtMs: modalFreshness.renderSubmittedAtMs ?? 0,
-    lastUpdatedAtWallTimeMs: modalFreshness.lastUpdatedAtWallTimeMs ?? 0,
-    avgAmplitude: modalFreshness.avgAmplitude ?? 0,
-    analyserRms: modalFreshness.analyserRms ?? 0,
-    periodicity: modalFreshness.periodicity ?? 0,
-    liveInputNoiseGateActive: modalFreshness.liveInputNoiseGateActive ?? false,
-    liveInputHardSilenceActive:
-      modalFreshness.liveInputHardSilenceActive ?? false,
-    structureSignal: modalFreshness.structureSignal ?? 0,
-    energySignal: modalFreshness.energySignal ?? 0,
-    changeSignal: modalFreshness.changeSignal ?? 0,
-    pulseSignal: modalFreshness.pulseSignal ?? 0,
-    modalVisibilityEnergy: modalFreshness.modalVisibilityEnergy ?? 0,
-    modalObserverVisibilityEnergy:
-      modalFreshness.modalObserverVisibilityEnergy ?? 0,
-    observationEnergy: modalFreshness.observationEnergy ?? 0,
-    modalResponseEnergy: modalFreshness.modalResponseEnergy ?? 0,
-    modalResponseBudgetScale: modalFreshness.modalResponseBudgetScale ?? 0,
-    modalResponseRawEnergy: modalFreshness.modalResponseRawEnergy ?? 0,
-    modalResponseAverageDampingEnvelope:
-      modalFreshness.modalResponseAverageDampingEnvelope ?? 0,
-    modalResponseAverageCouplingStrength:
-      modalFreshness.modalResponseAverageCouplingStrength ?? 0,
-    modalResponseAveragePhaseConfidence:
-      modalFreshness.modalResponseAveragePhaseConfidence ?? 0,
-    modalResponseAveragePersistence:
-      modalFreshness.modalResponseAveragePersistence ?? 0,
-    modalPhaseAuthority: modalFreshness.modalPhaseAuthority ?? 0,
-    resonantPhaseAuthority: modalFreshness.resonantPhaseAuthority ?? 0,
-    sourceCoupledPhaseAuthority:
-      modalFreshness.sourceCoupledPhaseAuthority ?? 0,
-    modalPhaseCoherentFieldModeCount:
-      modalFreshness.modalPhaseCoherentFieldModeCount ?? 0,
-    modeCoherence: modalFreshness.modeCoherence ?? 0,
-    activeModeCount: modalFreshness.activeModeCount ?? 0,
-    activeModalFieldModeCount:
-      modalFreshness.activeModalFieldModeCount ??
-      modalFreshness.activeModeCount ??
-      0,
-    modeSlotMeanAbsDelta: modalFreshness.modeSlotMeanAbsDelta ?? 0,
-    modeSlotChangeCount: modalFreshness.modeSlotChangeCount ?? 0,
-    modalIdentitySlotMeanAbsDelta:
-      modalFreshness.modalIdentitySlotMeanAbsDelta ?? 0,
-    modalIdentitySlotChangeCount:
-      modalFreshness.modalIdentitySlotChangeCount ?? 0,
-    resonantObservedModeCount: modalFreshness.resonantObservedModeCount ?? 0,
-    resonantObservedEnergy: modalFreshness.resonantObservedEnergy ?? 0,
-    resonantRingSupport: modalFreshness.resonantRingSupport ?? 0,
-    responseEnvelope: modalFreshness.responseEnvelope ?? 0,
-    accentEnvelope: modalFreshness.accentEnvelope ?? 0,
-    motionSignal: modalFreshness.motionSignal ?? 0,
-    scaleSignal: modalFreshness.scaleSignal ?? 0,
-    bloomResponseSignal: modalFreshness.bloomResponseSignal ?? 0,
-  };
+  return snapshot;
 }
 
 function createRuntimePerfBreakdown() {
@@ -334,30 +171,10 @@ export function createEmptyControlSnapshots(controlsSnapshot = null) {
     visualization: null,
     bloom: null,
     audit: null,
-    hasBloomPass: false,
+    appliedPostNodes: null,
     controlsSnapshot,
   };
 }
-
-export function shouldReuseIdleFrame(status, controls) {
-  return (
-    !status.isPlaying &&
-    !status.isPlaybackPaused &&
-    !status.isLiveInputActive &&
-    !controls.injectTestTone
-  );
-}
-
-const RADIATION_POTENTIAL_RENDER_DIAGNOSTIC_DEFAULTS = Object.freeze({
-  opticalFieldRepresentation: RAYMARCH_OPTICAL_FIELD_REPRESENTATION,
-  radiationPotentialModeCapacity: 0,
-  radiationPotentialObservedCoefficientEnergy: 0,
-  radiationPotentialObservedCoefficientNorm: 0,
-  radiationPotentialNormalizedEnergyNorm: 0,
-  radiationPotentialBakeModeCount: 0,
-  radiationPotentialExposureDrive: 0,
-  modalVarietyAudit: null,
-});
 
 export function createRuntimeDiagnostics() {
   return {
@@ -365,6 +182,7 @@ export function createRuntimeDiagnostics() {
     averageFrameTimeMs: 0,
     smoothedFrameTimeMs: 0,
     lastFrameTimeMs: 0,
+    lastCompletedFrameAtMs: null,
     worstFrameTimeMs: 0,
     longFrameCount: 0,
     currentPixelRatio: 1,
@@ -377,25 +195,24 @@ export function createRuntimeDiagnostics() {
     frameDrops: createFrameDropCounters(),
     perfBreakdown: createRuntimePerfBreakdown(),
     engine: {
-      latestDriveAgeMs: null,
-      latestDriveStale: false,
+      latestObservationAgeMs: null,
+      latestObservationStale: false,
       latestObservationTimeSeconds: null,
-      latestCaptureRms: null,
       latestAcceptedFrameId: 0,
       sourceGeneration: 0,
       workerGeneration: 0,
+      timelineRevision: 0,
+      processingRevision: 0,
       topologyRevision: 0,
-      processedFrameCount: 0,
-      topologyPublishCount: 0,
-      drivePublishCount: 0,
-      inputReplacementCount: 0,
+      sourceBootstrapCount: 0,
+      workerProcessingMs: null,
       rejectedPacketCount: 0,
       staleAcknowledgementCount: 0,
       renderAuthorityRevoked: false,
-      ...snapshotWorkerPerfCounters(null),
       queueDepth: 0,
       state: "none",
       reason: null,
+      phase: "idle",
     },
     render: {
       visualizationMethod: null,
@@ -411,45 +228,28 @@ export function createRuntimeDiagnostics() {
       adaptiveStepUpCount: 0,
       targetFps: 60,
       targetFrameTimeMs: 1000 / 60,
-      activeModeCount: 0,
-      visibilityGateState: "unavailable",
-      visibilityGateBlockedReason: "raymarch-debug-missing",
-      spectralPresentationEnabled: false,
-      spectralColorFieldImplementationState:
-        RAYMARCH_SPECTRAL_PHASE_REPRESENTATION,
+      familyCount: 0,
+      shellCount: 0,
       materialOutputVisible: false,
+      renderAuthority: false,
+      uploadedFamilyCount: 0,
+      uploadedShellCount: 0,
+      basisCompileCount: 0,
+      observationUploadCount: 0,
+      derivedTextureBytes: 0,
+      latestAcceptedEndSample: null,
+      observerConsumedEndSample: null,
       observerBakeExecuted: false,
       observerAdvanced: false,
       observerStepCount: 0,
       observerStepIndex: null,
-      observerCheckpointKeyActive: false,
-      observerCheckpointSaved: false,
-      observerCheckpointRestored: false,
-      observerCheckpointStepIndex: null,
-      observerCheckpointSaveCount: 0,
-      observerCheckpointRestoreCount: 0,
-      observerCheckpointLastEvent: null,
-      observerCheckpointBytes: 0,
-      observerGeometryExposureSeconds: 0,
-      observerRadianceExposureSeconds: 0,
-      observerSpectralExposureSeconds: 0,
-      plasmaProbeLocalRadiance: 0,
-      plasmaProbePersistence: 0,
-      plasmaProbeOrganizedDensity: 0,
-      plasmaProbeExtinction: 0,
-      plasmaProbePreBloomRadiance: 0,
-      plasmaProbePostBloomRisk: 0,
-      plasmaProbeBloomAmplification: 1,
+      observerHasHistory: false,
+      observationHistory: null,
+      presentationFailure: null,
+      spectralPresentationEnabled: false,
       renderProbeSchemaVersion: RENDER_PROBE_SCHEMA_VERSION,
-      renderProbeAvailable: false,
-      renderProbeActiveCandidate: false,
-      renderProbeStatus: "unavailable",
-      renderProbeUnavailableReason: "raymarch-debug-missing",
       renderProbeSnapshot: null,
-      renderQuantityLedgerVersion: null,
-      renderQuantityForbiddenConsumers: null,
-      absentDiagnosticSources: [],
-      ...RADIATION_POTENTIAL_RENDER_DIAGNOSTIC_DEFAULTS,
+      materialProbe: null,
     },
     modalFreshness: createModalFreshnessDiagnostics(),
     postProcess: createPostProcessDiagnostics(),
@@ -485,346 +285,61 @@ export function initializeAdaptiveRaymarchRuntimeState(runtimeState) {
   return runtimeState;
 }
 
-function readFiniteNumber(value, fallback = 0) {
-  return Number.isFinite(value) ? value : fallback;
-}
-
-function readString(value, fallback = null) {
-  return typeof value === "string" ? value : fallback;
-}
-
-function snapshotRenderQuantityForbiddenConsumers(value) {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-
-  return Object.fromEntries(
-    Object.entries(value).map(([quantityName, consumers]) => [
-      quantityName,
-      Array.isArray(consumers) ? [...consumers] : [],
-    ]),
-  );
-}
-
-function snapshotRadiationPotentialRenderDiagnostics(renderDiagnostics = null) {
-  return Object.fromEntries(
-    Object.entries(RADIATION_POTENTIAL_RENDER_DIAGNOSTIC_DEFAULTS).map(
-      ([key, fallback]) => [
-        key,
-        key === "modalVarietyAudit"
-          ? snapshotModalVarietyAudit(renderDiagnostics?.modalVarietyAudit)
-          : (renderDiagnostics?.[key] ?? fallback),
-      ],
-    ),
-  );
-}
-
-function snapshotModalVarietyAudit(modalVarietyAudit) {
-  if (!modalVarietyAudit || typeof modalVarietyAudit !== "object") {
-    return null;
-  }
-
-  return Object.fromEntries(
-    Object.entries(modalVarietyAudit).map(([key, value]) => [
-      key,
-      Array.isArray(value)
-        ? value.map((entry) =>
-            entry && typeof entry === "object" ? { ...entry } : entry,
-          )
-        : value,
-    ]),
-  );
-}
-
 export function updateCymaticObserverRenderDiagnostics(
-  runtimeDiagnostics,
+  diagnostics,
   debugSnapshot,
   runtimeState = null,
 ) {
-  const renderDiagnostics = runtimeDiagnostics?.render;
-  if (!renderDiagnostics) {
-    return runtimeDiagnostics;
-  }
-
-  const raymarchDebug = debugSnapshot?.raymarchDebug ?? debugSnapshot ?? {};
-  if (!debugSnapshot) {
-    const coefficientFrame = runtimeState?.radiationPotentialCoefficientFrame;
-    const spectralPresentationEnabled =
-      readFiniteNumber(
-        runtimeState?.uniforms?.uSpectralPresentationEnabled?.value,
-        renderDiagnostics.spectralPresentationEnabled ? 1 : 0,
-      ) > 0;
-    const spectralChroma = readFiniteNumber(
-      runtimeState?.uniforms?.uSpectralChroma?.value,
-      renderDiagnostics.spectralChroma ?? 1,
-    );
-    const bakeModeCount = Math.max(
+  if (!diagnostics?.render) return diagnostics;
+  const render = diagnostics.render,
+    source = runtimeState?.fieldSource?.read?.(),
+    observer =
+      runtimeState?.fieldCache?.getObserverState?.() ?? debugSnapshot?.observer,
+    bake = runtimeState?.cymaticObserverBakeResult;
+  Object.assign(render, {
+    renderAuthority: debugSnapshot?.renderAuthority === true,
+    materialOutputVisible:
+      runtimeState?.volumeMesh?.visible ??
+      debugSnapshot?.volumeVisible ??
+      false,
+    uploadedFamilyCount: source?.topology?.familyCount ?? 0,
+    uploadedShellCount: source?.topology?.shellCount ?? 0,
+    basisCompileCount:
+      source?.basisCompileCount ?? debugSnapshot?.basisCompileCount ?? 0,
+    observationUploadCount:
+      source?.observationUploadCount ??
+      debugSnapshot?.observationUploadCount ??
       0,
-      Math.round(runtimeState?.uniforms?.uModalFieldModeCount?.value ?? 0),
-    );
-    renderDiagnostics.spectralChroma = spectralChroma;
-    renderDiagnostics.spectralPresentationEnabled = spectralPresentationEnabled;
-    renderDiagnostics.spectralColorFieldImplementationState =
-      RAYMARCH_SPECTRAL_PHASE_REPRESENTATION;
-    renderDiagnostics.opticalFieldRepresentation =
-      RAYMARCH_OPTICAL_FIELD_REPRESENTATION;
-    renderDiagnostics.radiationPotentialModeCapacity = Math.max(
-      0,
-      Math.floor(runtimeState?.modalFieldCapacity ?? 0),
-    );
-    renderDiagnostics.radiationPotentialObservedCoefficientEnergy =
-      readFiniteNumber(
-        coefficientFrame?.observedCoefficientEnergy,
-        renderDiagnostics.radiationPotentialObservedCoefficientEnergy,
-      );
-    renderDiagnostics.radiationPotentialObservedCoefficientNorm =
-      readFiniteNumber(
-        coefficientFrame?.observedCoefficientNorm,
-        renderDiagnostics.radiationPotentialObservedCoefficientNorm,
-      );
-    renderDiagnostics.radiationPotentialNormalizedEnergyNorm = Math.sqrt(
-      Math.max(
-        0,
-        readFiniteNumber(
-          coefficientFrame?.normalizedEnergySum,
-          renderDiagnostics.radiationPotentialNormalizedEnergyNorm ** 2,
-        ),
-      ),
-    );
-    renderDiagnostics.radiationPotentialBakeModeCount = bakeModeCount;
-    renderDiagnostics.radiationPotentialExposureDrive = readFiniteNumber(
-      coefficientFrame?.observedPressureDrive,
-      renderDiagnostics.radiationPotentialExposureDrive,
-    );
-    renderDiagnostics.modalVarietyAudit = snapshotModalVarietyAudit(
-      runtimeState?.currentModalDescriptor?.diagnostics?.modalVarietyAudit,
-    );
-    const observerState =
-      runtimeState?.fieldCache?.getObserverState?.() ?? null;
-    const observerBakeResult = runtimeState?.cymaticObserverBakeResult;
-    renderDiagnostics.observerBakeExecuted = observerBakeResult?.baked === true;
-    renderDiagnostics.observerAdvanced = observerBakeResult?.advanced === true;
-    renderDiagnostics.observerStepCount = Number.isFinite(
-      observerBakeResult?.stepCount,
-    )
-      ? Math.max(0, Math.floor(observerBakeResult.stepCount))
-      : 0;
-    renderDiagnostics.observerStepIndex = Number.isFinite(
-      observerBakeResult?.stepIndex,
-    )
-      ? Math.max(0, Math.floor(observerBakeResult.stepIndex))
-      : null;
-    renderDiagnostics.observerCheckpointKeyActive =
-      typeof observerState?.checkpointKey === "string";
-    renderDiagnostics.observerCheckpointSaved =
-      runtimeState?.cymaticObserverBakeResult?.checkpointSaved === true;
-    renderDiagnostics.observerCheckpointRestored =
-      runtimeState?.cymaticObserverBakeResult?.checkpointRestored === true;
-    renderDiagnostics.observerCheckpointStepIndex = Number.isFinite(
-      observerState?.checkpointStepIndex,
-    )
-      ? Math.max(0, Math.floor(observerState.checkpointStepIndex))
-      : null;
-    renderDiagnostics.observerCheckpointSaveCount = Math.max(
-      0,
-      Math.floor(runtimeState?.cymaticObserverCheckpointSaveCount ?? 0),
-    );
-    renderDiagnostics.observerCheckpointRestoreCount = Math.max(
-      0,
-      Math.floor(runtimeState?.cymaticObserverCheckpointRestoreCount ?? 0),
-    );
-    renderDiagnostics.observerCheckpointLastEvent = readString(
-      runtimeState?.cymaticObserverCheckpointLastEvent,
+    derivedTextureBytes:
+      source?.textureBytes ?? debugSnapshot?.derivedTextureBytes ?? 0,
+    latestAcceptedEndSample: debugSnapshot?.latestAcceptedEndSample ?? null,
+    observerConsumedEndSample:
+      runtimeState?.lastBakedFeatureFrame?.observation.endSample ??
+      debugSnapshot?.observationEndSample ??
       null,
-    );
-    renderDiagnostics.observerCheckpointBytes = Math.max(
-      0,
-      Math.floor(
-        runtimeState?.debugSnapshot?.observerCheckpointBytes ??
-          renderDiagnostics.observerCheckpointBytes ??
-          0,
-      ),
-    );
-    const renderProbeSnapshot = buildRenderProbeSnapshot({
-      renderDiagnostics,
-      debugSnapshot,
-      runtimeState,
-    });
-    renderDiagnostics.renderProbeSchemaVersion =
-      renderProbeSnapshot.schemaVersion;
-    renderDiagnostics.renderProbeAvailable =
-      renderProbeSnapshot.health.available;
-    renderDiagnostics.renderProbeActiveCandidate =
-      renderProbeSnapshot.health.activeCandidate;
-    renderDiagnostics.renderProbeStatus = renderProbeSnapshot.health.status;
-    renderDiagnostics.renderProbeUnavailableReason =
-      renderProbeSnapshot.health.unavailableReason;
-    renderDiagnostics.renderProbeSnapshot = renderProbeSnapshot;
-    return runtimeDiagnostics;
-  }
-
-  renderDiagnostics.observerGeometryExposureSeconds = readFiniteNumber(
-    raymarchDebug.observerGeometryExposureSeconds,
-  );
-  renderDiagnostics.observerBakeExecuted =
-    raymarchDebug.observerBakeExecuted === true;
-  renderDiagnostics.observerAdvanced = raymarchDebug.observerAdvanced === true;
-  renderDiagnostics.observerStepCount = Math.max(
-    0,
-    Math.floor(raymarchDebug.observerStepCount ?? 0),
-  );
-  renderDiagnostics.observerStepIndex = Number.isFinite(
-    raymarchDebug.observerStepIndex,
-  )
-    ? Math.max(0, Math.floor(raymarchDebug.observerStepIndex))
-    : null;
-  renderDiagnostics.observerCheckpointKeyActive =
-    raymarchDebug.observerCheckpointKeyActive === true;
-  renderDiagnostics.observerCheckpointSaved =
-    raymarchDebug.observerCheckpointSaved === true;
-  renderDiagnostics.observerCheckpointRestored =
-    raymarchDebug.observerCheckpointRestored === true;
-  renderDiagnostics.observerCheckpointStepIndex = Number.isFinite(
-    raymarchDebug.observerCheckpointStepIndex,
-  )
-    ? Math.max(0, Math.floor(raymarchDebug.observerCheckpointStepIndex))
-    : null;
-  renderDiagnostics.observerCheckpointSaveCount = Math.max(
-    0,
-    Math.floor(raymarchDebug.observerCheckpointSaveCount ?? 0),
-  );
-  renderDiagnostics.observerCheckpointRestoreCount = Math.max(
-    0,
-    Math.floor(raymarchDebug.observerCheckpointRestoreCount ?? 0),
-  );
-  renderDiagnostics.observerCheckpointLastEvent = readString(
-    raymarchDebug.observerCheckpointLastEvent,
-    null,
-  );
-  renderDiagnostics.observerCheckpointBytes = Math.max(
-    0,
-    Math.floor(raymarchDebug.observerCheckpointBytes ?? 0),
-  );
-  renderDiagnostics.observerRadianceExposureSeconds = readFiniteNumber(
-    raymarchDebug.observerRadianceExposureSeconds,
-  );
-  renderDiagnostics.observerSpectralExposureSeconds = readFiniteNumber(
-    raymarchDebug.observerSpectralExposureSeconds,
-  );
-  renderDiagnostics.absentDiagnosticSources = Array.isArray(
-    raymarchDebug.absentDiagnosticSources,
-  )
-    ? [...raymarchDebug.absentDiagnosticSources]
-    : [];
-  renderDiagnostics.plasmaProbeLocalRadiance = readFiniteNumber(
-    raymarchDebug.plasmaProbeLocalRadiance,
-  );
-  renderDiagnostics.plasmaProbePersistence = readFiniteNumber(
-    raymarchDebug.plasmaProbePersistence,
-  );
-  renderDiagnostics.plasmaProbeOrganizedDensity = readFiniteNumber(
-    raymarchDebug.plasmaProbeOrganizedDensity,
-  );
-  renderDiagnostics.plasmaProbeExtinction = readFiniteNumber(
-    raymarchDebug.plasmaProbeExtinction,
-  );
-  renderDiagnostics.plasmaProbePreBloomRadiance = readFiniteNumber(
-    raymarchDebug.plasmaProbePreBloomRadiance,
-  );
-  renderDiagnostics.plasmaProbePostBloomRisk = readFiniteNumber(
-    raymarchDebug.plasmaProbePostBloomRisk,
-  );
-  renderDiagnostics.plasmaProbeBloomAmplification = readFiniteNumber(
-    raymarchDebug.plasmaProbeBloomAmplification,
-    1,
-  );
-  renderDiagnostics.visibilityGateState = readString(
-    raymarchDebug.visibilityGateState,
-    renderDiagnostics.visibilityGateState ?? "unavailable",
-  );
-  renderDiagnostics.visibilityGateBlockedReason =
-    raymarchDebug.visibilityGateBlockedReason === null
-      ? null
-      : readString(
-          raymarchDebug.visibilityGateBlockedReason,
-          renderDiagnostics.visibilityGateBlockedReason ?? null,
-        );
-  renderDiagnostics.spectralPresentationEnabled =
-    raymarchDebug.spectralPresentationEnabled === true;
-  renderDiagnostics.spectralColorFieldImplementationState = readString(
-    raymarchDebug.spectralColorFieldImplementationState,
-    RAYMARCH_SPECTRAL_PHASE_REPRESENTATION,
-  );
-  renderDiagnostics.materialOutputVisible =
-    raymarchDebug.materialOutputVisible === true;
-  renderDiagnostics.renderQuantityLedgerVersion = readString(
-    raymarchDebug.renderQuantityLedgerVersion,
-    renderDiagnostics.renderQuantityLedgerVersion ?? null,
-  );
-  renderDiagnostics.renderQuantityForbiddenConsumers =
-    snapshotRenderQuantityForbiddenConsumers(
-      raymarchDebug.renderQuantityForbiddenConsumers ??
-        renderDiagnostics.renderQuantityForbiddenConsumers,
-    );
-  const renderProbeSnapshot = buildRenderProbeSnapshot({
-    renderDiagnostics,
+    observerBakeExecuted: bake?.baked === true,
+    observerAdvanced: bake?.advanced === true,
+    observerStepCount: bake?.stepCount ?? 0,
+    observerStepIndex: observer?.stepIndex ?? null,
+    observerHasHistory: observer?.hasHistory === true,
+    observationHistory: debugSnapshot?.observationHistory ?? null,
+    presentationFailure:
+      runtimeState?.presentationFailure ??
+      debugSnapshot?.presentationFailure ??
+      null,
+    presentationReady: debugSnapshot?.presentationReady === true,
+    preparationPending: debugSnapshot?.preparationPending === true,
+    preparationError: debugSnapshot?.preparationError ?? null,
+    spectralPresentationEnabled:
+      (runtimeState?.uniforms?.uSpectralPresentationEnabled?.value ?? 0) > 0,
+    renderProbeSchemaVersion: RENDER_PROBE_SCHEMA_VERSION,
+  });
+  render.renderProbeSnapshot = buildRenderProbeSnapshot({
+    renderDiagnostics: render,
     debugSnapshot,
     runtimeState,
   });
-  renderDiagnostics.renderProbeSchemaVersion =
-    renderProbeSnapshot.schemaVersion;
-  renderDiagnostics.renderProbeAvailable = renderProbeSnapshot.health.available;
-  renderDiagnostics.renderProbeActiveCandidate =
-    renderProbeSnapshot.health.activeCandidate;
-  renderDiagnostics.renderProbeStatus = renderProbeSnapshot.health.status;
-  renderDiagnostics.renderProbeUnavailableReason =
-    renderProbeSnapshot.health.unavailableReason;
-  renderDiagnostics.renderProbeSnapshot = renderProbeSnapshot;
-  renderDiagnostics.opticalFieldRepresentation = readString(
-    raymarchDebug.opticalFieldRepresentation,
-    RAYMARCH_OPTICAL_FIELD_REPRESENTATION,
-  );
-  renderDiagnostics.radiationPotentialModeCapacity = readFiniteNumber(
-    raymarchDebug.radiationPotentialModeCapacity ??
-      runtimeState?.modalFieldCapacity,
-  );
-  renderDiagnostics.radiationPotentialObservedCoefficientEnergy =
-    readFiniteNumber(raymarchDebug.radiationPotentialObservedCoefficientEnergy);
-  renderDiagnostics.radiationPotentialObservedCoefficientNorm =
-    readFiniteNumber(raymarchDebug.radiationPotentialObservedCoefficientNorm);
-  renderDiagnostics.radiationPotentialNormalizedEnergyNorm = readFiniteNumber(
-    raymarchDebug.radiationPotentialNormalizedEnergyNorm,
-  );
-  renderDiagnostics.radiationPotentialBakeModeCount = readFiniteNumber(
-    raymarchDebug.radiationPotentialBakeModeCount,
-  );
-  renderDiagnostics.radiationPotentialExposureDrive = readFiniteNumber(
-    raymarchDebug.radiationPotentialExposureDrive,
-  );
-  renderDiagnostics.liveSynthesisUnsignedSupportMean = readFiniteNumber(
-    raymarchDebug.liveSynthesisUnsignedSupportMean,
-  );
-  renderDiagnostics.liveSynthesisCancellationRatioMean = readFiniteNumber(
-    raymarchDebug.liveSynthesisCancellationRatioMean,
-  );
-  renderDiagnostics.liveSynthesisCancellationRatioMax = readFiniteNumber(
-    raymarchDebug.liveSynthesisCancellationRatioMax,
-  );
-  renderDiagnostics.liveSynthesisSupportDiagnosticSampleCount =
-    readFiniteNumber(raymarchDebug.liveSynthesisSupportDiagnosticSampleCount);
-  renderDiagnostics.liveSynthesisSupportDiagnosticSupportedSampleCount =
-    readFiniteNumber(
-      raymarchDebug.liveSynthesisSupportDiagnosticSupportedSampleCount,
-    );
-  renderDiagnostics.liveSynthesisSupportDiagnosticCoverage = readFiniteNumber(
-    raymarchDebug.liveSynthesisSupportDiagnosticCoverage,
-  );
-  renderDiagnostics.modalVarietyAudit = snapshotModalVarietyAudit(
-    raymarchDebug.modalVarietyAudit ??
-      runtimeState?.currentModalDescriptor?.diagnostics?.modalVarietyAudit,
-  );
-
-  return runtimeDiagnostics;
+  return diagnostics;
 }
 
 export function resetAdaptiveRaymarchControllerState(runtimeState) {
@@ -911,137 +426,12 @@ function buildRuntimePerfSnapshot(runtimeDiagnostics) {
         runtimeDiagnostics?.frameDrops?.recentLongFramesMs,
       ),
     },
-    engine: {
-      latestDriveAgeMs: runtimeDiagnostics?.engine?.latestDriveAgeMs ?? null,
-      latestDriveStale: runtimeDiagnostics?.engine?.latestDriveStale === true,
-      latestObservationTimeSeconds:
-        runtimeDiagnostics?.engine?.latestObservationTimeSeconds ?? null,
-      latestCaptureRms: runtimeDiagnostics?.engine?.latestCaptureRms ?? null,
-      latestAcceptedFrameId:
-        runtimeDiagnostics?.engine?.latestAcceptedFrameId ?? 0,
-      sourceGeneration: runtimeDiagnostics?.engine?.sourceGeneration ?? 0,
-      workerGeneration: runtimeDiagnostics?.engine?.workerGeneration ?? 0,
-      topologyRevision: runtimeDiagnostics?.engine?.topologyRevision ?? 0,
-      processedFrameCount: runtimeDiagnostics?.engine?.processedFrameCount ?? 0,
-      topologyPublishCount:
-        runtimeDiagnostics?.engine?.topologyPublishCount ?? 0,
-      drivePublishCount: runtimeDiagnostics?.engine?.drivePublishCount ?? 0,
-      inputReplacementCount:
-        runtimeDiagnostics?.engine?.inputReplacementCount ?? 0,
-      rejectedPacketCount: runtimeDiagnostics?.engine?.rejectedPacketCount ?? 0,
-      staleAcknowledgementCount:
-        runtimeDiagnostics?.engine?.staleAcknowledgementCount ?? 0,
-      renderAuthorityRevoked:
-        runtimeDiagnostics?.engine?.renderAuthorityRevoked ?? false,
-      ...snapshotWorkerPerfCounters(runtimeDiagnostics?.engine),
-      queueDepth: runtimeDiagnostics?.engine?.queueDepth ?? 0,
-      state: runtimeDiagnostics?.engine?.state ?? "none",
-      reason: runtimeDiagnostics?.engine?.reason ?? null,
-    },
-    render: {
-      visualizationMethod:
-        runtimeDiagnostics?.render?.visualizationMethod ?? null,
-      qualityPreset: runtimeDiagnostics?.render?.qualityPreset ?? null,
-      traaEnabled: runtimeDiagnostics?.render?.traaEnabled ?? false,
-      bloomAllowed: runtimeDiagnostics?.render?.bloomAllowed ?? false,
-      bloomEnabled: runtimeDiagnostics?.render?.bloomEnabled ?? false,
-      raymarchStepBudget: runtimeDiagnostics?.render?.raymarchStepBudget ?? 0,
-      requestedRaymarchSteps:
-        runtimeDiagnostics?.render?.requestedRaymarchSteps ?? 0,
-      effectiveRaymarchSteps:
-        runtimeDiagnostics?.render?.effectiveRaymarchSteps ?? 0,
-      adaptiveRaymarchActive:
-        runtimeDiagnostics?.render?.adaptiveRaymarchActive ?? false,
-      adaptiveStepDownCount:
-        runtimeDiagnostics?.render?.adaptiveStepDownCount ?? 0,
-      adaptiveStepUpCount: runtimeDiagnostics?.render?.adaptiveStepUpCount ?? 0,
-      targetFps: runtimeDiagnostics?.render?.targetFps ?? 60,
-      targetFrameTimeMs:
-        runtimeDiagnostics?.render?.targetFrameTimeMs ?? 1000 / 60,
-      activeModeCount: runtimeDiagnostics?.render?.activeModeCount ?? 0,
-      visibilityGateState:
-        runtimeDiagnostics?.render?.visibilityGateState ?? "unavailable",
-      visibilityGateBlockedReason: Object.prototype.hasOwnProperty.call(
-        runtimeDiagnostics?.render ?? {},
-        "visibilityGateBlockedReason",
-      )
-        ? runtimeDiagnostics.render.visibilityGateBlockedReason
-        : "raymarch-debug-missing",
-      spectralPresentationEnabled:
-        runtimeDiagnostics?.render?.spectralPresentationEnabled ?? false,
-      spectralColorFieldImplementationState:
-        runtimeDiagnostics?.render?.spectralColorFieldImplementationState ??
-        RAYMARCH_SPECTRAL_PHASE_REPRESENTATION,
-      materialOutputVisible:
-        runtimeDiagnostics?.render?.materialOutputVisible ?? false,
-      observerBakeExecuted:
-        runtimeDiagnostics?.render?.observerBakeExecuted ?? false,
-      observerAdvanced: runtimeDiagnostics?.render?.observerAdvanced ?? false,
-      observerStepCount: runtimeDiagnostics?.render?.observerStepCount ?? 0,
-      observerStepIndex: runtimeDiagnostics?.render?.observerStepIndex ?? null,
-      observerCheckpointKeyActive:
-        runtimeDiagnostics?.render?.observerCheckpointKeyActive ?? false,
-      observerCheckpointSaved:
-        runtimeDiagnostics?.render?.observerCheckpointSaved ?? false,
-      observerCheckpointRestored:
-        runtimeDiagnostics?.render?.observerCheckpointRestored ?? false,
-      observerCheckpointStepIndex:
-        runtimeDiagnostics?.render?.observerCheckpointStepIndex ?? null,
-      observerCheckpointSaveCount:
-        runtimeDiagnostics?.render?.observerCheckpointSaveCount ?? 0,
-      observerCheckpointRestoreCount:
-        runtimeDiagnostics?.render?.observerCheckpointRestoreCount ?? 0,
-      observerCheckpointLastEvent:
-        runtimeDiagnostics?.render?.observerCheckpointLastEvent ?? null,
-      observerCheckpointBytes:
-        runtimeDiagnostics?.render?.observerCheckpointBytes ?? 0,
-      observerGeometryExposureSeconds:
-        runtimeDiagnostics?.render?.observerGeometryExposureSeconds ?? 0,
-      observerRadianceExposureSeconds:
-        runtimeDiagnostics?.render?.observerRadianceExposureSeconds ?? 0,
-      observerSpectralExposureSeconds:
-        runtimeDiagnostics?.render?.observerSpectralExposureSeconds ?? 0,
-      plasmaProbeLocalRadiance:
-        runtimeDiagnostics?.render?.plasmaProbeLocalRadiance ?? 0,
-      plasmaProbePersistence:
-        runtimeDiagnostics?.render?.plasmaProbePersistence ?? 0,
-      plasmaProbeOrganizedDensity:
-        runtimeDiagnostics?.render?.plasmaProbeOrganizedDensity ?? 0,
-      plasmaProbeExtinction:
-        runtimeDiagnostics?.render?.plasmaProbeExtinction ?? 0,
-      plasmaProbePreBloomRadiance:
-        runtimeDiagnostics?.render?.plasmaProbePreBloomRadiance ?? 0,
-      plasmaProbePostBloomRisk:
-        runtimeDiagnostics?.render?.plasmaProbePostBloomRisk ?? 0,
-      plasmaProbeBloomAmplification:
-        runtimeDiagnostics?.render?.plasmaProbeBloomAmplification ?? 1,
-      renderProbeSchemaVersion:
-        runtimeDiagnostics?.render?.renderProbeSchemaVersion ??
-        RENDER_PROBE_SCHEMA_VERSION,
-      renderProbeAvailable:
-        runtimeDiagnostics?.render?.renderProbeAvailable ?? false,
-      renderProbeActiveCandidate:
-        runtimeDiagnostics?.render?.renderProbeActiveCandidate ?? false,
-      renderProbeStatus:
-        runtimeDiagnostics?.render?.renderProbeStatus ?? "unavailable",
-      renderProbeUnavailableReason: Object.prototype.hasOwnProperty.call(
-        runtimeDiagnostics?.render ?? {},
-        "renderProbeUnavailableReason",
-      )
-        ? runtimeDiagnostics.render.renderProbeUnavailableReason
-        : "raymarch-debug-missing",
-      renderProbeSnapshot:
-        runtimeDiagnostics?.render?.renderProbeSnapshot ?? null,
-      renderQuantityLedgerVersion:
-        runtimeDiagnostics?.render?.renderQuantityLedgerVersion ?? null,
-      renderQuantityForbiddenConsumers:
-        snapshotRenderQuantityForbiddenConsumers(
-          runtimeDiagnostics?.render?.renderQuantityForbiddenConsumers,
-        ),
-      ...snapshotRadiationPotentialRenderDiagnostics(
-        runtimeDiagnostics?.render,
-      ),
-    },
+    engine: runtimeDiagnostics?.engine
+      ? { ...runtimeDiagnostics.engine }
+      : null,
+    render: runtimeDiagnostics?.render
+      ? { ...runtimeDiagnostics.render }
+      : null,
     postProcess: {
       traaNodeActive: runtimeDiagnostics?.postProcess?.traaNodeActive ?? false,
       bloomPassPresent:

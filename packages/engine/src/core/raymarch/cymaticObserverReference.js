@@ -1,7 +1,10 @@
 import { clamp01 } from "../../utils/math.js";
-import { FIELD_CACHE_DOMAINS } from "./fieldCacheGeometry.js";
 
 const OBSERVER_TIME_EPSILON_SEC = 1e-9;
+// Numerical recovery policy, separate from instrument exposure/calibration.
+// More than one second without an observation is a discontinuity: seed the
+// current field rather than reconstructing missing history in an unbounded loop.
+const OBSERVER_MAX_CONTINUOUS_STEPS = 60;
 const GRADIENT_MAGNITUDE_SQUARED_EPSILON = 1e-12;
 const DETAIL_AGREEMENT_GRADIENT_EPSILON = 1e-16;
 const GAUSSIAN_FWHM_EXPONENT = 4 * Math.LN2;
@@ -22,7 +25,9 @@ const ERROR_FUNCTION_COEFFICIENTS = Object.freeze([
 export const CYMATIC_OBSERVER_REFERENCE = Object.freeze({
   fixedStepSeconds: 1 / 60,
   fineApertureFwhmWorld: 0.104,
-  topologyApertureFwhmWorld: 0.26,
+  // The former 0.26 aperture erased resolved zero-set support in the treble
+  // control. Keep a fixed spatial aperture; do not tune it from current audio.
+  topologyApertureFwhmWorld: 0.104,
   fineResidualScaleWorld: 0.104,
   fineResidualDetailLimit: 0.25,
   geometryExposureSeconds: 0.4,
@@ -35,7 +40,11 @@ export const CYMATIC_OBSERVER_REFERENCE = Object.freeze({
   spineEnergyWeight: 96,
   coreEnergyWeight: 3.75,
   sheathEnergyWeight: 0.25,
-  localEnergyHalfResponse: 0.08,
+  // Raw coefficient-amplitude-squared reference for the optical transducer.
+  // Shared by every input, boundary and sample rate. This is an explicit
+  // display calibration for the 6.25 m instrument, not acoustic gain or a
+  // per-band normalization. Exact silence still has exactly zero excitation.
+  opticalReferenceEnergy: 1e-5,
   plasmaSpineContinuityAuthority: 0.32,
   plasmaDetailSpineHalfResponse: 0.09,
   plasmaDetailSpineLimit: 0.24,
@@ -66,24 +75,6 @@ export const CYMATIC_OBSERVER_FINE_APERTURE_KERNEL_OFFSETS = Object.freeze([
 
 export const CYMATIC_OBSERVER_TOPOLOGY_APERTURE_KERNEL_OFFSETS = Object.freeze([
   -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6,
-]);
-
-export const CYMATIC_OBSERVER_APERTURE_PASSES = Object.freeze([
-  Object.freeze({
-    direction: Object.freeze([1, 0, 0]),
-    inputDomain: FIELD_CACHE_DOMAINS.fundamentalXyz,
-    outputDomain: FIELD_CACHE_DOMAINS.halfYz,
-  }),
-  Object.freeze({
-    direction: Object.freeze([0, 1, 0]),
-    inputDomain: FIELD_CACHE_DOMAINS.halfYz,
-    outputDomain: FIELD_CACHE_DOMAINS.halfXy,
-  }),
-  Object.freeze({
-    direction: Object.freeze([0, 0, 1]),
-    inputDomain: FIELD_CACHE_DOMAINS.halfXy,
-    outputDomain: FIELD_CACHE_DOMAINS.fundamentalXyz,
-  }),
 ]);
 
 export function deriveCymaticObserverApertureKernel(
@@ -275,7 +266,12 @@ export function resolveCymaticObserverStep(
   const timelineMovedBackward =
     Number.isFinite(state.stepIndex) && nextStepIndex < state.stepIndex;
   const reset =
-    state.resetToken === undefined || tokenChanged || timelineMovedBackward;
+    state.resetToken === undefined ||
+    tokenChanged ||
+    timelineMovedBackward ||
+    (advancing === true &&
+      Number.isFinite(state.stepIndex) &&
+      nextStepIndex - state.stepIndex > OBSERVER_MAX_CONTINUOUS_STEPS);
 
   state.resetToken = resetToken;
   if (reset) {
@@ -343,9 +339,12 @@ export function resolveCymaticObserverFieldInterval(
 
 export function compressCymaticObserverEnergy(energy) {
   const safeEnergy = Number.isFinite(energy) ? Math.max(0, energy) : 0;
-  return (
+  // Amplitude-like optical excitation: quiet response follows sqrt(E), then
+  // saturates smoothly. Exact silence stays zero. This mapping never changes
+  // the raw moments, normalized potential, geometry validity or acoustic time.
+  return Math.sqrt(
     safeEnergy /
-    (safeEnergy + CYMATIC_OBSERVER_REFERENCE.localEnergyHalfResponse)
+      (safeEnergy + CYMATIC_OBSERVER_REFERENCE.opticalReferenceEnergy),
   );
 }
 
