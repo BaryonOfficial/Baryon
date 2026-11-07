@@ -21,7 +21,7 @@ one-time step — all future PRs from your GitHub account will be auto-approved.
 
 ## Setup
 
-Prerequisites: Node.js `24` from [`.nvmrc`](../.nvmrc), `pnpm`, and Chrome or Edge for the primary WebGPU path.
+Prerequisites: Node.js `26` from [`.nvmrc`](../.nvmrc), `pnpm`, and Chrome or Edge for the primary WebGPU path.
 
 ```bash
 # Clone the repo (or your fork)
@@ -71,6 +71,15 @@ Common branch prefixes:
 Run the fast verification gate locally — the same default checks CI will run:
 
 ```bash
+pnpm verify
+```
+
+The OSC bridge validation requires Python 3. By default it runs `python3`;
+set `PYTHON` to an installed Python executable when that command is unavailable.
+For example, in Windows PowerShell:
+
+```powershell
+$env:PYTHON = 'C:\path\to\python.exe'
 pnpm verify
 ```
 

@@ -3,7 +3,7 @@ import { NodeMaterial, QuadMesh, RendererUtils, Vector2 } from "three/webgpu";
 import { add, Fn, nodeObject, texture, uniform, uv, vec4 } from "three/tsl";
 
 const BLOOM_KERNEL_RADII = Object.freeze([6, 10, 14, 18, 22]);
-const BLOOM_QUAD = new QuadMesh();
+const BLOOM_QUAD = new QuadMesh(null);
 const BLOOM_SIZE = new Vector2();
 const BLOOM_DIRECTION_X = new Vector2(1, 0);
 const BLOOM_DIRECTION_Y = new Vector2(0, 1);
@@ -100,7 +100,7 @@ function createPairedSeparableBlurMaterial(builder, kernelRadius) {
  * Three's bloom topology and lifecycle with only the safe equal-resolution
  * separable passes replaced by coefficient-paired bilinear sampling.
  */
-export class PairedBloomNode extends BloomNode {
+class PairedBloomNode extends BloomNode {
   constructor(inputNode, strength = 1, radius = 0, threshold = 0) {
     super(inputNode, strength, radius, threshold);
     this._pairedSeparableBlurMaterials = [];

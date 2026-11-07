@@ -79,19 +79,19 @@ export function BaryonScene({
   onPerformanceHudSnapshotChange,
   onAuditSnapshotChange = null,
   outputCompositorFrameTransfer = false,
+  presentationEnabled = true,
   onOutputCompositorFrame = null,
   onFrameState = null,
-  registerStructureExportSampleReader = null,
   onCameraPoseChange = null,
   audioFeatureAuthorityRole,
   externalFrameRef = null,
+  externalFeatureSource = null,
   cameraPose = null,
   streamedCameraPoseRef = null,
   structuralControlVersion = 0,
   liveControlSignalRef = null,
   adaptiveResetNonce = 0,
   framePacingFps = null,
-  basePixelRatio = null,
   onStageRender = null,
   suppressRender = false,
   enableControlEventSync = true,
@@ -297,9 +297,7 @@ export function BaryonScene({
       return;
     }
 
-    const streamedCameraPoseKey = createCameraPoseMirrorKey(
-      streamedCameraPose,
-    );
+    const streamedCameraPoseKey = createCameraPoseMirrorKey(streamedCameraPose);
     if (lastStreamedCameraPoseKeyRef.current === streamedCameraPoseKey) {
       return;
     }
@@ -373,11 +371,12 @@ export function BaryonScene({
     onPerformanceHudSnapshotChange,
     onAuditSnapshotChange,
     outputCompositorFrameTransfer,
+    presentationEnabled,
     onOutputCompositorFrame,
     onFrameState: handleFrameState,
-    registerStructureExportSampleReader,
     audioFeatureAuthorityRole,
     externalFrameRef,
+    externalFeatureSource,
     structuralControlVersion,
     liveControlSignalRef,
     localCameraRenderSignalRef,
@@ -385,7 +384,6 @@ export function BaryonScene({
     framePacingFps,
     renderProfile,
     cameraRenderKey,
-    basePixelRatio,
     onStageRender,
     suppressRender,
     enableControlEventSync,

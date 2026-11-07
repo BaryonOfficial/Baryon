@@ -3,24 +3,35 @@ title: "Understanding the engine"
 description: "A plain-language map of what Baryon renders and how the main settings affect the cymatic field."
 ---
 
-Baryon turns audio into a real-time cymatic field. The visual is not a waveform, bar graph, particle system, or point cloud. It is a continuous volumetric field rendered as a 3D cymatic structure.
+Baryon treats sound as the drive for a virtual instrument. Its resonances respond to the incoming waveform, and the renderer reveals a thin, luminous structure derived from that response.
 
-## What you are seeing
+## From a full mix to a visible structure
 
-At a high level:
+1. Baryon captures consecutive audio samples, preserving mono or stereo input.
+2. Signal preparation removes DC and applies the configured weak water-drive correction.
+3. The prepared waveform drives a fixed bank of damped resonances. Each resonance retains its pressure and motion state as the music changes.
+4. The engine combines those responses, including their interference, and measures pressure and motion over a short time window.
+5. A spatially smoothed balance of those measurements defines a surface. Persistent geometry, spectral color, and light integration give it its visible form.
 
-1. Baryon analyzes the incoming audio.
-2. The analysis excites a set of modal patterns.
-3. Those modes form a continuous 3D field inside a virtual cavity.
-4. The renderer samples that field through the volume and draws the visible glow, contours, color, and depth.
+A DJ mix can contain kicks, vocals, synths, cymbals, reverb, and noise at once. They enter together through the waveform. Each resonance responds to the waveform rather than being assigned to one musical note. The finite mode bank limits the virtual instrument's spatial detail; it is not a limit on how many input frequencies can contribute.
 
-That means the meaningful state is not a list of screen coordinates. The meaningful state is the current modal field: which modes are active, how strongly they are excited, and how the renderer samples the resulting volume.
+The instrument has its own response: different frequencies will not look equally strong. Receiving the full waveform does not mean reproducing every sound with equal spatial accuracy.
+
+## What is the luminous surface?
+
+The surface follows `U = 0`, where the weighted, time-averaged pressure and motion contributions balance. The field is spatially smoothed before the surface is observed. This is not necessarily zero sound pressure, a force balance, or a place where real particles would become trapped.
+
+Pattern Persistence controls how the observed geometry evolves over represented audio time. When audio ends normally, stored response can ring down. Pausing holds the acoustic timeline; stopping or replacing the source resets the relevant history.
+
+Brightness follows raw response energy through the material's fixed optical mapping. In Spectral mode, color comes from the response spectrum through an artistic octave-repeating palette. Sound is not physically converted into visible-light frequencies.
 
 ## How physical is the water model?
 
-Baryon's modal backend declares a bounded water cavity rather than treating the image as arbitrary audio-reactive geometry. Its default apparatus uses a 12.5 m acoustic side length, water density and sound speed, and a declared incident-pressure reference at its virtual drive plane. That reference adds weak, physically derived waveform steepening and harmonic generation before the audio drives the modes.
+The virtual apparatus is a rectangular water cavity with a default acoustic side length of **6.25 m**, a declared sound speed, and passive damping. Neumann and Dirichlet settings change the wall conditions. The spherical view clips the rectangular field; it does not turn the apparatus into a spherical resonator.
 
-The pressure is a property of the virtual apparatus, not a source level or hardware calibration; Baryon does not claim to measure the pressure produced by your speakers. The engine also does not simulate turbulence, flowing material, cavitation, or the full motion of a laboratory water surface. It is a bounded-water modal model with a restrained finite-amplitude correction, followed by an artistic volumetric observation of the resulting field.
+A declared incident-pressure reference controls weak waveform steepening and harmonic generation before the linear modal response. It is a property of the virtual instrument, not a measurement of your speakers or room. Baryon combines established acoustics with a chosen observation and artistic material; it does not simulate fluid flow, cavitation, particle transport, or the full motion of a laboratory water surface.
+
+For stereo, the engine responds to each channel separately and averages their pressure/motion measurements. This preserves both channels without canceling opposite-polarity material through an initial mono downmix. It models two virtual experiments, not the placement of two loudspeakers in a room.
 
 ## Why settings matter
 
@@ -28,12 +39,12 @@ Most controls are either analysis controls, field controls, render controls, or 
 
 | Setting area                       | What it changes                                                                                        |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| **Audio Input Profile**            | How Baryon interprets the source before it becomes a modal field.                                      |
+| **Audio Input Profile**            | Live-input classification and intent; does not select musical frequencies.                                      |
 | **Boundary**                       | The modal family. `Neumann` behaves like a reflective boundary; `Dirichlet` behaves like a fixed node. |
 | **Material Density**               | Scales uniform tracer scattering and absorption without changing acoustic or caustic topology.          |
 | **Laser Bending**                  | Changes caustic placement and concentration without becoming a general brightness control.             |
 | **Caustic controls**               | Set the color, detector gain, and finite-source focus of camera-visible laser caustics.                  |
-| **Color Mode**                     | Whether color is manually chosen or promoted from the audio spectrum.                                  |
+| **Color Mode**                     | Whether color is chosen manually or derived from the response spectrum.                                  |
 | **Rotation Mode**                  | Whether the cymatic volume is stationary, audio-driven, or manually spun.                              |
 | **Performance Profile**            | How Baryon adapts raymarch steps against the frame budget without changing resolution or DPR.          |
 | **Camera controls**                | Your viewpoint only. They do not change the underlying modal field.                                    |
@@ -50,12 +61,9 @@ This distinction matters when you are trying to capture a specific expression:
 - **Motion Scale** only applies when **Rotation Mode** is `Audio`.
 - **Lock Camera** prevents accidental orbit dragging. It does not freeze the cymatic field.
 
-## Choosing an input profile
+## Choosing an audio input
 
-The main choice is between two profiles, and it comes down to one question: does the audio have a single lead pitch, or many sounds at once?
-
-- **Voice** tracks one dominant pitch and treats its harmonics as texture. Use it for a singer, a spoken voice, or a lead instrument.
-- **Ambient** lets many simultaneous sources shape the field. Use it for music, a full mix, or a live room.
+Use a direct line or loopback feed for a DJ mixer or another music app, a file for repeatable playback, or a microphone for a room or instrument. Live-input classification describes the capture setup. The retained Voice/Vocal and Ambient intent labels do not select a single pitch or change the number of frequencies admitted by the broadband solver.
 
 For the most faithful result:
 

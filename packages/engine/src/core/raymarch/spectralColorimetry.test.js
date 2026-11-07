@@ -25,8 +25,29 @@ function linearRgbToOklab([red, green, blue]) {
 }
 
 describe("analytic spectral colorimetry", () => {
-  it("uses the pinned two-harmonic presentation curve", () => {
-    expect(SPECTRAL_COLORIMETRY_REFERENCE.harmonicOrder).toBe(2);
+  it("keeps the production palette cyclic, in gamut and unit luminance with even perceptual steps", () => {
+    const samples = Array.from({ length: 8192 }, (_, i) =>
+      resolveSpectralChromaticity([
+        Math.cos((i / 8192) * 2 * Math.PI),
+        Math.sin((i / 8192) * 2 * Math.PI),
+      ]),
+    );
+    const labs = samples.map(linearRgbToOklab);
+    const distances = labs.map((lab, i) =>
+      Math.hypot(...lab.map((v, k) => v - labs[(i + 1) % labs.length][k])),
+    );
+    expect(Math.max(...distances) / Math.min(...distances)).toBeLessThan(1.02);
+    for (const rgb of samples) {
+      expect(deriveRec709Luminance(rgb)).toBeCloseTo(1, 12);
+      for (const component of rgb) {
+        expect(component).toBeGreaterThanOrEqual(0);
+        expect(component * 0.343).toBeLessThanOrEqual(1);
+      }
+    }
+    resolveSpectralChromaticity([
+      Math.cos(2 * Math.PI),
+      Math.sin(2 * Math.PI),
+    ]).forEach((v, i) => expect(v).toBeCloseTo(samples[0][i], 12));
   });
 
   it("maps the whole phase circle to finite unit-luminance chromaticity", () => {
@@ -99,7 +120,7 @@ describe("analytic spectral colorimetry", () => {
   });
 
   it("proves RGB interpolation can turn two saturated phases grey", () => {
-    const knownGreyPair = [100.5, 258.5].map((degrees) => {
+    const knownGreyPair = [118, 254.5].map((degrees) => {
       const radians = (degrees / 180) * Math.PI;
       return [Math.cos(radians), Math.sin(radians)];
     });

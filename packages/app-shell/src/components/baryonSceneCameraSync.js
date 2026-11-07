@@ -24,7 +24,7 @@ function resolveVector3(value, fallback) {
   };
 }
 
-function serializeCameraPoseForExport({ orbitControls, camera }) {
+export function readCameraPose({ orbitControls, camera }) {
   return {
     position: resolveVector3(camera?.position, { x: 0, y: 0, z: 0 }),
     target: resolveVector3(orbitControls?.target, { x: 0, y: 0, z: 0 }),
@@ -75,7 +75,7 @@ export function augmentFrameStateWithCameraSync(
 
   return {
     ...frameState,
-    cameraPose: serializeCameraPoseForExport({
+    cameraPose: readCameraPose({
       orbitControls,
       camera,
     }),

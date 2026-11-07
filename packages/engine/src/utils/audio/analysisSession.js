@@ -1,6 +1,9 @@
 import { AUDIO_SOURCE_KINDS } from "../../core/audio/audioSourceSession.js";
 
-export function buildAnalysisSourceKey(status) {
+export function buildAnalysisSourceKey(status, analysisSettings = null) {
+  if (analysisSettings?.injectTestTone === true) {
+    return "audit:test-tone";
+  }
   const sourceSession = status?.sourceSession;
   if (
     sourceSession?.kind !== AUDIO_SOURCE_KINDS.file &&
@@ -15,7 +18,10 @@ export function buildAnalysisSourceKey(status) {
   return `${sourceSession.kind}:${sessionId}`;
 }
 
-export function buildAnalysisSessionKey(status) {
+export function buildAnalysisSessionKey(status, analysisSettings = null) {
+  if (analysisSettings?.injectTestTone === true) {
+    return buildAnalysisSourceKey(status, analysisSettings);
+  }
   if (typeof status?.sessionKey === "string" && status.sessionKey) {
     return status.sessionKey;
   }
@@ -44,7 +50,11 @@ function readFrameLiveInputActive(featureFrame) {
 /**
  * @returns {"source-session" | "source-state" | null}
  */
-export function resolveAnalysisFrameStaleness(featureFrame, status) {
+export function resolveAnalysisFrameStaleness(
+  featureFrame,
+  status,
+  analysisSettings = null,
+) {
   if (!featureFrame) {
     return null;
   }
@@ -52,12 +62,13 @@ export function resolveAnalysisFrameStaleness(featureFrame, status) {
   const observedSessionKey = featureFrame?.observationSessionKey;
   if (
     typeof observedSessionKey === "string" &&
-    observedSessionKey !== buildAnalysisSessionKey(status)
+    observedSessionKey !== buildAnalysisSessionKey(status, analysisSettings)
   ) {
     return "source-session";
   }
 
   if (
+    analysisSettings?.injectTestTone !== true &&
     status?.sourceSession?.kind === AUDIO_SOURCE_KINDS.system &&
     readFrameLiveInputActive(featureFrame) !==
       (status?.isLiveInputActive === true)

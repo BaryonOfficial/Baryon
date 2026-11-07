@@ -221,17 +221,17 @@ export function compressDisplayRadiance(rgb, options = {}) {
   const inputRgb = normalizeRgb(rgb).map((channel) => Math.max(0, channel));
   const inputLuminance = computeLinearLuminance(inputRgb);
 
-  if (inputLuminance <= resolvedOptions.displayEpsilon) {
-    return [0, 0, 0];
-  }
-
   const compressedLuminance = compressDisplayLuminance(
     inputLuminance,
     resolvedOptions,
   );
+  // The shoulder is the identity below its knee, including exact black.
+  // A denominator epsilon here would become an unintended shadow curve:
+  // faint radiance would be attenuated a second time as Y / epsilon.
   const luminanceScale =
-    compressedLuminance /
-    Math.max(inputLuminance, resolvedOptions.displayEpsilon);
+    inputLuminance <= resolvedOptions.displayKneeStart
+      ? 1
+      : compressedLuminance / inputLuminance;
   const luminanceCompressedRgb = inputRgb.map(
     (channel) => channel * luminanceScale,
   );
@@ -327,7 +327,9 @@ export function compressDisplayRadianceNode(rgb) {
   const nonnegativeRgb = max(rgb, vec3(0.0));
   const luminance = computeLinearLuminanceNode(nonnegativeRgb);
   const compressedLuminance = compressDisplayLuminanceNode(luminance);
-  const luminanceScale = compressedLuminance.div(max(luminance, epsilon));
+  const luminanceScale = luminance
+    .greaterThan(float(DISPLAY_RADIANCE_DEFAULTS.displayKneeStart))
+    .select(compressedLuminance.div(max(luminance, epsilon)), float(1));
   const luminanceCompressedRgb = nonnegativeRgb.mul(luminanceScale);
   const maxChannel = max(
     max(luminanceCompressedRgb.r, luminanceCompressedRgb.g),

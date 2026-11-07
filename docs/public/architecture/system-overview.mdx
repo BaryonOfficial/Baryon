@@ -10,70 +10,79 @@ read the [source on GitHub](https://github.com/BaryonOfficial/Baryon).
 
 ## The pipeline
 
-The engine turns live audio into a volumetric cymatic field through one mostly linear
-path:
-
 ```text
-audio source
-  -> Web Audio analyzers / live-input analysis
-  -> feature building
-  -> AudioFeatureFrame
-  -> visualization runtime
-  -> render / output
-  -> presentation
+consecutive mono/stereo PCM
+  -> signal preparation and DC removal
+  -> signed modal pressure/velocity state
+  -> full quadratic moments and response spectra
+  -> AudioFeatureFrame / versioned model transport
+  -> derived GPU field and spectral caches
+  -> persistent surface observer
+  -> material, light integration, postprocessing and output
 ```
 
-The defining property is that Baryon is **not** a generic audio-reactive renderer. The
-audio side interprets musical and resonant structure first, and the render side consumes
-that interpreted structure. Most "the visuals look wrong" questions are really questions
-about which stage owns the behavior.
+The source/session owns generations and resets. Accepted audio samples advance the
+response; display frames, camera movement, cached reads and transport acknowledgements
+do not. Spectral analysis supports color and diagnostics rather than choosing which
+input frequencies may drive the instrument.
 
 ## The packages
 
-The engine ships as two shared packages, consumed by the web app:
+- **`packages/engine`** owns capture/preparation, modal response, moment and spectral
+  evidence, model contracts, controls, derived GPU fields and rendering.
+- **`packages/app-shell`** owns shared React orchestration, control lifecycle,
+  scene mounting and diagnostics.
+- The **web and desktop applications** integrate those shared owners into their hosts.
+  Desktop additionally owns stage/operator transport and native output boundaries.
 
-- **`packages/engine`** — the engine and its domain semantics: audio analysis,
-  `AudioFeatureFrame` construction, the control schema, render-profile policy, and the
-  raymarch runtime.
-- **`packages/app-shell`** — the shared React orchestration around the engine:
-  control-state lifecycle, the render loop, runtime diagnostics, and scene mounting.
-- **`apps/web`** — the browser product shell.
+## State and observation
 
-Host integrations that embed the engine wrap these shared packages rather than forking
-their semantics.
+The apparatus is a finite rectangular water-cavity model with a 6.25 m default side
+length. A spherical render hull clips the view. It does not change the cavity's
+boundary conditions. Families with the same natural frequency and losses share shell
+state; signed source overlaps are applied once during spatial reconstruction.
 
-## The main seam
-
-The highest-value boundary in the engine is:
+Each channel drives signed dimensionless pressure and velocity-basis coefficients
+`P` and `R`. For a shell with angular frequency `omega` and quality factor `Q`:
 
 ```text
-audio analysis -> AudioFeatureFrame -> visualization runtime
+dP/dt = -d P - omega R + g x(t)
+dR/dt = omega P
+d = g = omega / Q
 ```
 
-It exists so that audio interpretation stays renderer-agnostic, render bugs can be
-debugged without rewriting analysis semantics, and a new runtime can consume the same
-authoritative structure. When a render symptom appears, the first job is to locate which
-stage owns it: capture and live-input classification, feature construction, or render
-consumption.
+Here `x(t)` is the prepared waveform held over each sample interval. State propagation
+uses a precomputed affine matrix exponential. Raw second moments include every shell
+pair, retaining interference and finite-time beats. Stereo channels are independent
+responses whose quadratic measurements are averaged, not coherently downmixed.
+
+Reconstructed pressure and velocity mean squares give the normalized observation:
+
+```text
+U = (w_p P2 - w_v V2) / N2       (N2 > 0)
+```
+
+`N2` is the spatial mean of total pressure-plus-velocity energy; exact zero response
+has zero support. A fixed spatial aperture filters the field before geometry extraction.
+The persistent observer follows its zero-level surface. Raw energy remains available for
+brightness. These are normalized virtual-instrument quantities, not calibrated room
+pressure, particle forces or measured acoustic intensity.
+
+## Model boundary and lifecycle
+
+`AudioFeatureFrame` carries the audio-owned model to visualization. Its versioned
+payload includes topology, signed response state, complete moments, spectral evidence,
+and source/sample identities. GPU projections are derived caches, not another solver.
+[OSC Structure Export](/public/desktop/osc-structure-export) uses the complete v5 model
+for external receivers.
+
+Pause holds acoustic time. Seek, stop, source replacement and incompatible configuration
+changes invalidate the affected histories. Natural end supplies audio-clocked silence
+so preparation tails and free decay can continue. A display reconnect replays a matching
+cached model without restarting capture. Ordered observation delivery preserves the
+history the visual observer needs.
 
 ## The contracts that stay stable
-
-These boundaries should be treated as stable unless a change explicitly intends to move
-them. The goal is not "never refactor" — it is to avoid accidental breakage where Baryon
-has persisted settings and a shared engine that more than one host can consume.
-
-### `AudioFeatureFrame`
-
-The authoritative boundary between audio interpretation and visualization. The audio side
-interprets signal structure; the render side consumes it; render code must not silently
-rebuild analysis from raw audio.
-
-The mental model is one chain:
-`audio drive -> rectangular water-cavity modes -> modal pressure field -> spherical render hull`.
-Pressure and radiation values are normalized visualization quantities — not calibrated
-acoustic measurements. Adding fields that consumers can ignore, or restructuring internal
-stages, is safe; changing the meaning of an existing field without a coordinated migration
-is not.
 
 ### Control schema
 
@@ -106,27 +115,39 @@ still matters, not as free renames.
 
 ### Input semantics
 
-Line-feed / system input and acoustic-microphone input are intentionally distinct analysis
-paths; collapsing them into a single live-input mode is high-risk. Within acoustic-mic
-input, the **Voice** and **Ambient** profiles are small policy deltas over one shared
-engine, not separate analyzers. Source confidence is input evidence only — it does not
-grant render authority.
+Device classification and browser capture processing belong to acquisition. The retained
+Voice/Vocal and Ambient intent settings do not turn the broadband response into separate
+single-pitch and multi-source solvers. Consecutive prepared samples drive the same model.
+Echo cancellation, noise suppression and automatic gain can change the captured signal;
+use them deliberately, especially for direct music feeds.
 
 ### Spectral Light color
 
-Audio interpretation produces additive first- and second-order circular pitch moments per
-modal term and carries them through spectral-moment slots. The persistent observer caches
-one resolved unit phase direction directly in appearance XY. On the same observer step it
-evaluates the constant-luminance two-harmonic mapping once and stores a derived RGB
-chromatic companion in organization RGB. The material fetches that companion from one nearest
-observer voxel, so RGB interpolation cannot cross grey. This adds no render target or palette
-lookup.
-The renderer never reconstructs pitch evidence from raw FFT bins. The plasma allocates
-its scalar radiance budget before applying that unit-luminance chromaticity, so pitch can
-change hue but not geometry, extinction, or brightness. A spectral moment must not promote
-a mode on its own. An explicit Spectral Chroma control may move that chromaticity toward
-equal-luminance neutral without blending in static colors or changing acoustic radiance.
-The detailed Spectral Light architecture lives in the engine whitepaper.
+The response spectrum uses a 2048-sample Blackman window with a 512-sample hop.
+All positive bins contribute, including Nyquist with its endpoint weighting; DC has no
+pitch hue. Reconstructed pressure and velocity spectra contribute additive support and
+first/second circular pitch moments. This includes cross-mode structure within each bin.
+
+Derived GPU spectral fields feed the persistent color observer. An octave-periodic
+artistic mapping selects chromaticity; it is not a conversion from sound frequency to
+optical wavelength. Spectral Chroma changes vividness at constant luminance. Color cannot
+change acoustic energy, geometry or extinction.
+
+### Optical integration
+
+The camera accumulates emission and extinction along each ray using the constant-segment
+radiative-transfer equation. Its small-optical-depth evaluation uses a stable series,
+so faint contributions are not lost to Float32 subtraction. Ray-step count controls
+sampling accuracy, not the underlying acoustic state. Bloom and output composition act
+after this integration.
+
+### Verification boundaries
+
+Numerical references, native GPU comparisons, lifecycle regressions, music-response
+checks and sustained runs measure different contracts. A passing software timing test
+does not establish physical audio-to-display latency. That requires synchronized audio
+and display measurement. Cross-platform native output and live external receivers also
+require their own acceptance checks.
 
 ## Changing the engine safely
 
@@ -136,3 +157,12 @@ already assert its shape. Prefer normalization layers and dual-read compatibilit
 broad renames at genuine persistence or host boundaries. Inside the semantic core, use
 one canonical name and translate legacy values only at the boundary that still requires
 them.
+
+## Foundations
+
+[Modal expansion](https://www.dsprelated.com/freebooks/pasp/Modal_Expansion.html)
+describes the established use of driven resonant modes.
+[Volume transmittance](https://pbr-book.org/4ed/Volume_Scattering/Transmittance)
+describes attenuation along a camera ray. These support the underlying methods;
+Baryon's source coupling, observation surface, palette and material remain declared
+model and presentation choices.

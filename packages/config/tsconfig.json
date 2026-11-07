@@ -1,5 +1,5 @@
 {
   "extends": "../../tsconfig.base.json",
-  "include": ["node-path.d.ts", "vite.base.js", "vitest.js"],
+  "include": ["node-path.d.ts", "vite.base.js", "vitest.shared.js"],
   "exclude": ["node_modules", "dist"]
 }

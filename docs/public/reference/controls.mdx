@@ -29,16 +29,9 @@ For a practical walkthrough, start with [First session guide](/public/guides/fir
 
 ---
 
-## Audio Input Profiles
+## Audio input and intent
 
-The mic profile selector next to the mic button exposes two analysis presets:
-
-| Profile     | Description                                                                                              |
-| ----------- | -------------------------------------------------------------------------------------------------------- |
-| **Voice**   | Speech and singing. Tracks a lead vocal pitch and uses harmonics as texture.                             |
-| **Ambient** | Crowds, rooms, parties, and mixed music. Represents multiple simultaneous sources instead of one driver. |
-
-The mic path auto-calibrates when the microphone starts and whenever you switch profiles.
+The live-input controls describe the capture setup. Voice/Vocal and Ambient are retained intent labels; neither selects one dominant pitch nor limits the frequencies entering the broadband solver. Files, line feeds, and microphone audio all drive the same modal response after preparation.
 
 ---
 
@@ -48,8 +41,8 @@ Controls for live-input analysis and browser microphone processing.
 
 | Label               | Description                                                                                                                                                      |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Live Input Mode** | Choose how unknown live devices should be analyzed. `Auto` uses heuristics, `Line Feed` uses the file-style path, and `Acoustic Mic` uses the mic-specific path. |
-| **Mic Intent**      | Choose how acoustic mic input should be interpreted. `Ambient` is forgiving for rooms and instruments; `Vocal` emphasizes singing and lead pitch.                |
+| **Live Input Mode** | Classify the capture setup. `Auto` uses device heuristics; `Line Feed` and `Acoustic Mic` identify the source type. Both feed consecutive samples to the same response model. |
+| **Mic Intent**      | Retained acoustic-input intent label (`Ambient` or `Vocal`). It does not select a pitch or replace the broadband response model.                |
 | **Echo Cancel**     | Suppress speaker bleed and room echo from mic input. Useful with speakers, but it may color the audio spectrum.                                                  |
 | **Noise Suppress**  | Filter out steady background noise before analysis. Useful in noisy rooms, but it can soften quieter harmonics.                                                  |
 | **Auto Gain**       | Automatically normalize mic volume. Convenient for speech, but it flattens dynamics for visualization.                                                           |
@@ -102,7 +95,7 @@ Controls for tracer color, focused-light transfer, and bloom.
 
 | Label                | Description                                                                                                             |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| **Color Mode**       | `Static` uses the chosen colors. `Spectral` colors promoted cymatic modes from the audio spectrum.                      |
+| **Color Mode**       | `Static` uses the chosen colors. `Spectral` colors the field from the full response spectrum.                      |
 | **Volume Color**     | Main color of the volume interior.                                                                                      |
 | **Caustic Color**    | Color of focused laser irradiance revealed by the tracer.                                                               |
 | **Spectral Chroma**  | Adjust spectral color vividness at constant luminance without blending in the configured static colors.                 |

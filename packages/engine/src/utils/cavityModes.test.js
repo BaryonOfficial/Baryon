@@ -5,7 +5,6 @@ import {
   getCavityModeFrequency,
   getMinimumCavityFrequency,
   resolveCavityModeFamilyForPitch,
-  sampleFFTAmplitudeForFrequency,
   solveCavityModeFamilyForPitch,
   solveCavityModeForPitch,
 } from "./cavityModes.js";
@@ -99,16 +98,25 @@ describe("getMinimumCavityFrequency", () => {
 });
 
 describe("acoustic cavity scale", () => {
-  it("uses the default acoustic scale to keep bass in resolved cavity families", () => {
+  it("resolves distinct families above the apparatus floor without inventing lower modes", () => {
     const options = {
       acousticScale: SIMULATION_DEFAULTS.cavityAcousticScale,
       boundaryMode: SIMULATION_DEFAULTS.boundaryMode,
     };
-    const mappings = [60, 80, 120, 180, 220, 320].map(
+    const floor =
+      options.acousticScale.soundSpeedMetersPerSecond /
+      (2 * options.acousticScale.sideLengthMeters);
+    const mappings = [1, 2, 3, 4].map(
+      (multiple) =>
+        resolveCavityModeFamilyForPitch(multiple * floor, options, 1)[0],
+    );
+    const belowFloor = [floor / 4, floor / 2, floor * 0.9].map(
       (pitch) => resolveCavityModeFamilyForPitch(pitch, options, 1)[0],
     );
 
-    expect(getCavityAcousticFloorHz(options)).toBeLessThanOrEqual(60);
+    expect(getCavityAcousticFloorHz(options)).toBeCloseTo(floor, 10);
+    for (const mode of belowFloor)
+      expect(mode.naturalFrequencyHz).toBeCloseTo(floor, 10);
     expect(
       new Set(mappings.map((mode) => `${mode.u}:${mode.v}:${mode.w}`)).size,
     ).toBeGreaterThan(3);
@@ -160,79 +168,6 @@ describe("getCavityModeFrequency", () => {
   it("returns 0 for invalid triplets or side length", () => {
     expect(getCavityModeFrequency(NaN, 1, 1, SIDE_LENGTH)).toBe(0);
     expect(getCavityModeFrequency(1, 1, 1, 0)).toBe(0);
-  });
-});
-
-describe("sampleFFTAmplitudeForFrequency", () => {
-  const sampleRate = 44100;
-  const fftSize = 32;
-
-  it("returns the amplitude at the nearest FFT bin", () => {
-    const fftLinearAmplitudes = new Float32Array(16);
-    fftLinearAmplitudes[2] = 0.75;
-    const result = sampleFFTAmplitudeForFrequency(
-      2940,
-      fftLinearAmplitudes,
-      sampleRate,
-      fftSize,
-    );
-    expect(result).toBeCloseTo(0.75);
-  });
-
-  it("returns 0 for frequency 0", () => {
-    const fftLinearAmplitudes = new Float32Array(16).fill(0.5);
-    expect(
-      sampleFFTAmplitudeForFrequency(
-        0,
-        fftLinearAmplitudes,
-        sampleRate,
-        fftSize,
-      ),
-    ).toBe(0);
-  });
-
-  it("clamps above-Nyquist frequencies to the last bin", () => {
-    const fftLinearAmplitudes = new Float32Array(16);
-    fftLinearAmplitudes[15] = 0.9;
-    const result = sampleFFTAmplitudeForFrequency(
-      99999,
-      fftLinearAmplitudes,
-      sampleRate,
-      fftSize,
-    );
-    expect(result).toBeCloseTo(0.9);
-  });
-
-  it("returns 0 for null or empty fftLinearAmplitudes", () => {
-    expect(sampleFFTAmplitudeForFrequency(440, null, sampleRate, fftSize)).toBe(
-      0,
-    );
-    expect(
-      sampleFFTAmplitudeForFrequency(
-        440,
-        new Float32Array(0),
-        sampleRate,
-        fftSize,
-      ),
-    ).toBe(0);
-  });
-
-  it("returns 0 for invalid sampling inputs", () => {
-    const fftLinearAmplitudes = new Float32Array(16).fill(0.5);
-    expect(
-      sampleFFTAmplitudeForFrequency(
-        -1,
-        fftLinearAmplitudes,
-        sampleRate,
-        fftSize,
-      ),
-    ).toBe(0);
-    expect(
-      sampleFFTAmplitudeForFrequency(440, fftLinearAmplitudes, 0, fftSize),
-    ).toBe(0);
-    expect(
-      sampleFFTAmplitudeForFrequency(440, fftLinearAmplitudes, sampleRate, 0),
-    ).toBe(0);
   });
 });
 

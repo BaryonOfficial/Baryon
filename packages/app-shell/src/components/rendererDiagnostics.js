@@ -208,9 +208,11 @@ function installRendererRuntimeDiagnostics(
   renderer,
   forceWebGLFallbackTest,
   reportRuntimeLoss,
+  isDisposed,
 ) {
   const onError = renderer.onError?.bind(renderer);
   renderer.onError = (info) => {
+    if (isDisposed()) return;
     const kind =
       info?.kind === "error-scope-rejected"
         ? "error-scope-rejected"
@@ -225,6 +227,7 @@ function installRendererRuntimeDiagnostics(
 
   const onDeviceLost = renderer.onDeviceLost?.bind(renderer);
   renderer.onDeviceLost = (info) => {
+    if (isDisposed()) return;
     const gpuError = buildRendererGpuError("device-lost", info);
     appendRendererGpuError(renderer, forceWebGLFallbackTest, gpuError);
     onDeviceLost?.(info);
@@ -317,11 +320,25 @@ export async function createBaryonRenderer(
     ...(context ? { context } : {}),
   });
   const renderer = new WebGPURenderer(rendererParameters);
-  const reportRuntimeLoss = createRuntimeLossReporter(onRuntimeFailure);
+  let disposed = false;
+  let disposal;
+  const dispose = renderer.dispose.bind(renderer);
+  renderer.dispose = () => {
+    if (!disposed) {
+      // Close diagnostics before asynchronous destruction can report device loss.
+      disposed = true;
+      disposal = dispose();
+    }
+    return disposal;
+  };
+  const reportRuntimeLoss = createRuntimeLossReporter((error, info) => {
+    if (!disposed) onRuntimeFailure?.(error, info);
+  });
   installRendererRuntimeDiagnostics(
     renderer,
     forceWebGLFallbackTest,
     reportRuntimeLoss,
+    () => disposed,
   );
 
   // Keep the renderer's internal size bookkeeping aligned with the canvas
@@ -331,6 +348,7 @@ export async function createBaryonRenderer(
   try {
     await renderer.init();
   } catch (error) {
+    await renderer.dispose();
     setRendererInfo(null, forceWebGLFallbackTest, error);
 
     const rendererInitError = new Error(
@@ -355,6 +373,7 @@ export async function createBaryonRenderer(
       { cause: backendError },
     );
     rendererInitError.name = WEBGPU_RENDERER_INIT_ERROR;
+    await renderer.dispose();
     throw rendererInitError;
   }
 

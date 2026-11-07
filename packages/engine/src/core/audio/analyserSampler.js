@@ -1,3 +1,11 @@
+import {
+  BLACKMAN_WINDOW_COHERENT_GAIN,
+  FFT_MAX_DECIBELS,
+  FFT_MIN_DECIBELS,
+  normalizeDecibelMagnitude,
+  normalizeFftMagnitude,
+} from "./fftSpectrum.js";
+
 function ensureTypedBuffer(existing, length, Type) {
   if (existing?.length === length) {
     return existing;
@@ -144,20 +152,13 @@ export function createAnalyserReader(
   };
 }
 
-function normalizeDecibelMagnitude(value, minDecibels, maxDecibels) {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-
-  const span = Math.max(1e-6, maxDecibels - minDecibels);
-  return Math.max(0, Math.min(1, (value - minDecibels) / span));
-}
-
-function decibelsToLinearAmplitude(value, minDecibels) {
-  if (!Number.isFinite(value) || value <= minDecibels) {
-    return 0;
-  }
-  return Math.max(0, Math.min(1, 10 ** (value / 20)));
+function decibelsToLinearAmplitude(value, minDecibels, bin) {
+  return normalizeFftMagnitude(
+    10 ** (value / 20),
+    bin,
+    BLACKMAN_WINDOW_COHERENT_GAIN,
+    minDecibels,
+  );
 }
 
 export function createNodeAnalyser(audioCtx, sourceNode, fftSize) {
@@ -170,10 +171,10 @@ export function createNodeAnalyser(audioCtx, sourceNode, fftSize) {
     typeof analyserNode.getFloatFrequencyData === "function";
   const minDecibels = Number.isFinite(analyserNode.minDecibels)
     ? analyserNode.minDecibels
-    : -100;
+    : FFT_MIN_DECIBELS;
   const maxDecibels = Number.isFinite(analyserNode.maxDecibels)
     ? analyserNode.maxDecibels
-    : -30;
+    : FFT_MAX_DECIBELS;
   const decibelSpan = Math.max(1e-6, maxDecibels - minDecibels);
   // Preserve the raw analyser meter while projecting the FFT to linear
   // amplitude. Reconstructing either representation from the other is lossy
@@ -196,6 +197,7 @@ export function createNodeAnalyser(audioCtx, sourceNode, fftSize) {
               : decibelsToLinearAmplitude(
                   minDecibels + (byteValue / 255) * decibelSpan,
                   minDecibels,
+                  index,
                 );
         }
         legacyMeterLevel = data.length ? meterTotal / data.length : 0;
@@ -211,7 +213,7 @@ export function createNodeAnalyser(audioCtx, sourceNode, fftSize) {
           minDecibels,
           maxDecibels,
         );
-        data[index] = decibelsToLinearAmplitude(decibels, minDecibels);
+        data[index] = decibelsToLinearAmplitude(decibels, minDecibels, index);
       }
       legacyMeterLevel = data.length ? meterTotal / data.length : 0;
       return data;

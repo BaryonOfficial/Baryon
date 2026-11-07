@@ -1,6 +1,6 @@
 {
   "name": "@baryon/web",
-  "version": "1.2.0",
+  "version": "1.4.1",
   "private": true,
   "license": "LicenseRef-PolyForm-Strict-1.0",
   "type": "module",
@@ -9,6 +9,7 @@
     "dev:https": "cross-env HTTPS=true vite",
     "build": "vite build",
     "lint": "eslint . --report-unused-disable-directives --max-warnings 0",
+    "test:optical-transfer:gpu": "node scripts/verifyRadiativeTransferGpu.mjs",
     "test:unit": "node --test tests/unit/**/*.test.js",
     "typecheck": "tsc -p tsconfig.json",
     "preview": "vite preview",
@@ -22,13 +23,13 @@
     "@baryon/engine": "workspace:*",
     "@mediapipe/tasks-vision": "^0.10.17",
     "@react-three/drei": "^10.7.7",
-    "@react-three/fiber": "9.7.0",
+    "@react-three/fiber": "9.8.2",
     "@react-three/xr": "^6.6.30",
     "@vercel/analytics": "^2.0.1",
     "@vercel/speed-insights": "^2.0.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "three": "^0.185.1",
+    "three": "0.187.0",
     "zustand": "^5.0.12"
   },
   "devDependencies": {
@@ -38,11 +39,14 @@
     "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "@types/three": "^0.185.0",
+    "@types/three": "^0.186.0",
     "@vitejs/plugin-basic-ssl": "^2.3.0",
     "cross-env": "^10.1.0",
     "sharp": "^0.34.5",
     "tailwindcss": "^4.3.1",
     "vite": "^8.2.1"
+  },
+  "engines": {
+    "node": "26.x"
   }
 }

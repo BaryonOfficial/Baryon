@@ -19,7 +19,6 @@ import {
 } from "three/tsl";
 import { createSafeVolumetricOutputNode } from "./SafeVolumetricLightingModel.js";
 import { normalizeCavityGeometry } from "../cavityGeometry.js";
-import { MODAL_SEMANTIC_DESCRIPTOR_CAPACITY } from "../modalBudgets.js";
 import { BOUNDARY_MODES, normalizeBoundaryMode } from "../modeFamily.js";
 import { VOLUME_SHAPES, normalizeVolumeShape } from "../volumeShape.js";
 import {
@@ -45,7 +44,6 @@ const DEFAULT_VOLUME_SHAPE = /** @type {VolumeShape} */ (VOLUME_SHAPES.sphere);
  *   createOpticalTransferRaySampler?: any,
  *   raymarchVolumeShape?: VolumeShape,
  *   fieldCache?: any,
- *   modalFieldCapacity?: number,
  *   plasmaProfileLookup?: any,
  * }} BaryonVolumeMaterial
  */
@@ -225,7 +223,6 @@ export function createRaymarchVolumeMesh({
   radius,
   fieldCache = null,
   plasmaProfileLookup = null,
-  modalFieldCapacity = MODAL_SEMANTIC_DESCRIPTOR_CAPACITY,
   uniforms,
   cavityGeometry = "rectangular",
   volumeShape = DEFAULT_VOLUME_SHAPE,
@@ -240,7 +237,6 @@ export function createRaymarchVolumeMesh({
   const geometry = createVolumeDomainGeometry(radius, initialVolumeShape);
   const modalResourceBindings = {
     fieldCache,
-    modalFieldCapacity,
   };
   // Volume shape is the only thing that still specializes this shader: the cube
   // variant carries domainHalfExtentsNode. Boundary family selects which field
@@ -285,7 +281,6 @@ export function createRaymarchVolumeMesh({
     material.outputNode = createSafeVolumetricOutputNode(material);
     material.raymarchVolumeShape = normalizedVolumeShape;
     material.fieldCache = modalResourceBindings.fieldCache;
-    material.modalFieldCapacity = modalResourceBindings.modalFieldCapacity;
     material.plasmaProfileLookup = plasmaProfileLookup;
     return material;
   };
@@ -298,7 +293,6 @@ export function createRaymarchVolumeMesh({
   mesh.userData.raymarchBoundaryMode = BOUNDARY_MODES.neumann;
   mesh.userData.raymarchVolumeShape = initialVolumeShape;
   mesh.userData.raymarchFieldCache = fieldCache;
-  mesh.userData.raymarchModalFieldCapacity = modalFieldCapacity;
   mesh.userData.raymarchModalResourceBindings = modalResourceBindings;
   mesh.userData.raymarchCavityGeometry = normalizedCavityGeometry;
   mesh.userData.raymarchBaseRadius = radius;

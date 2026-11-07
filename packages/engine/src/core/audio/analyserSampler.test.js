@@ -85,7 +85,7 @@ describe("analyser sampler", () => {
     expect(sourceNode.connect).toHaveBeenCalledWith(analyserNode);
   });
 
-  it("publishes Web Audio decibels as linear FFT amplitude while preserving the legacy meter", () => {
+  it("publishes one-sided peak amplitudes while preserving the raw-decibel meter", () => {
     const analyserNode = {
       fftSize: 0,
       frequencyBinCount: 4,
@@ -108,9 +108,12 @@ describe("analyser sampler", () => {
     const snapshot = sampleAnalyser(analyser);
 
     expect(snapshot.fftLinearAmplitudes[0]).toBe(0);
-    expect(snapshot.fftLinearAmplitudes[1]).toBeCloseTo(0.001, 8);
-    expect(snapshot.fftLinearAmplitudes[2]).toBeCloseTo(0.01, 8);
-    expect(snapshot.fftLinearAmplitudes[3]).toBeCloseTo(10 ** (-30 / 20), 8);
+    expect(snapshot.fftLinearAmplitudes[1]).toBeCloseTo(0.001 / 0.21, 8);
+    expect(snapshot.fftLinearAmplitudes[2]).toBeCloseTo(0.01 / 0.21, 8);
+    expect(snapshot.fftLinearAmplitudes[3]).toBeCloseTo(
+      10 ** (-30 / 20) / 0.21,
+      8,
+    );
     expect(snapshot.avgAmplitude).toBeCloseTo(
       ((0 + 40 / 70 + 60 / 70 + 1) / 4) * 255,
       5,
@@ -140,6 +143,34 @@ describe("analyser sampler", () => {
 
     expect(snapshot.fftLinearAmplitudes[0]).toBe(1);
     expect(snapshot.avgAmplitude).toBe(255);
+  });
+
+  it("does not derive the meter from a spectrum clipped by coherent gain correction", () => {
+    const decibels = 20 * Math.log10(0.3);
+    const analyserNode = {
+      fftSize: 0,
+      frequencyBinCount: 2,
+      minDecibels: -100,
+      maxDecibels: 10,
+      getFloatFrequencyData(data) {
+        data.set([-Infinity, decibels]);
+      },
+      getFloatTimeDomainData(data) {
+        data.fill(0);
+      },
+    };
+    const snapshot = sampleAnalyser(
+      createNodeAnalyser(
+        { createAnalyser: () => analyserNode },
+        { connect: vi.fn() },
+        8,
+      ),
+    );
+    expect(snapshot.fftLinearAmplitudes[1]).toBe(1);
+    expect(snapshot.avgAmplitude).toBeCloseTo(
+      ((decibels + 100) / 110 / 2) * 255,
+      5,
+    );
   });
 
   it("matches float and byte analyser amplitude at the acquisition boundary", () => {
@@ -257,8 +288,8 @@ describe("analyser sampler", () => {
   });
 
   it("passes through already-normalised float values without dividing by 255", () => {
-    // normaliseSpectrum uses value > 1 as the gate for byte-range data.
-    // Float values in [0, 1] must not be scaled.
+    // Float readers already publish normalized amplitudes. Only byte buffers
+    // are scaled by 255 at this adapter boundary.
     const floatAnalyser = {
       analyser: {
         fftSize: 4,

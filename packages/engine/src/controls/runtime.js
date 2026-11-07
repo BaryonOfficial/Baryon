@@ -420,23 +420,6 @@ export function applyRaymarchControls(runtimeState, controls) {
   });
 }
 
-export function applyVisualizationControls(method, runtimeState, controls) {
-  if (!runtimeState) {
-    return null;
-  }
-
-  return applyRaymarchControls(runtimeState, controls);
-}
-
-export const applySimulationControls = (gl, runtimeState, controls) => ({
-  ...applySharedControls(gl, controls),
-  ...applyVisualizationControls(
-    runtimeState?.method ?? DEFAULT_VISUALIZATION_METHOD,
-    runtimeState,
-    controls,
-  ),
-});
-
 export function applyBloomControls(pipelineState, controls) {
   const stepBudget = normalizeStepBudget(
     controls.raymarchSteps ??
@@ -555,7 +538,6 @@ export function applySceneControls(target, controls, deltaTime, featureFrame) {
   const audioMotionDriven = allowsAudioMotion(featureFrame);
   const sceneDeltaTime = normalizeSceneMotionDeltaTime(deltaTime);
   const signals = deriveSceneSignals(
-    featureFrame,
     runtimeState?.responseEnvelope ?? 0,
     sceneMotion.lastMotionSignal,
   );
@@ -590,10 +572,6 @@ export function applySceneControls(target, controls, deltaTime, featureFrame) {
       motionImpulse: signals.motionImpulse,
       torqueImpulse: signals.torqueImpulse,
       attitudeImpulse: signals.attitudeImpulse,
-      beatPulseId: featureFrame?.beatPulseId ?? 0,
-      beatStrength: clamp01(featureFrame?.beatStrength ?? 0),
-      beatConfidence: clamp01(featureFrame?.beatConfidence ?? 0),
-      beatDetected: featureFrame?.beatDetected,
       deltaTime: sceneDeltaTime,
     });
   } else if (rotationMode === "audio" && featureFrame && !audioMotionDriven) {

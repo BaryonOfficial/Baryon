@@ -6,13 +6,15 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { AUDIO_SOURCE_KINDS } from "@baryon/engine/audio";
+import {
+  AUDIO_SOURCE_KINDS,
+  getDefaultAudioSession,
+} from "@baryon/engine/audio";
 import { useAudio } from "../context/AudioContext";
 import { observeAudioTransportClock } from "../context/audioTransportClock.js";
 import {
   createLiveInputRuntimeStatus,
   LIVE_INPUT_PHASES,
-  LIVE_INPUT_SIGNAL_STATES,
 } from "../context/liveInputRuntimeStatus.js";
 import { SourceSelector } from "./controls/SourceSelector";
 import DemoAudioIcon from "./DemoAudioIcon.jsx";
@@ -234,10 +236,7 @@ function getStatusConfig(
   const status = createLiveInputRuntimeStatus(liveInputRuntimeStatus);
   if (isLiveInputActive) {
     const isLineFeed = status.resolvedAnalysisClass === "line-feed";
-    if (
-      status.phase === LIVE_INPUT_PHASES.error ||
-      status.signalState === LIVE_INPUT_SIGNAL_STATES.clipped
-    ) {
+    if (status.phase === LIVE_INPUT_PHASES.error) {
       return { color: "#D71921", pulse: true, label: "Input error" };
     }
     if (
@@ -245,21 +244,6 @@ function getStatusConfig(
       status.phase === LIVE_INPUT_PHASES.stopping
     ) {
       return { color: "#D4A843", pulse: true, label: "Input starting" };
-    }
-    if (status.phase === LIVE_INPUT_PHASES.calibrating) {
-      return { color: "#5B9BF6", pulse: true, label: "Calibrating mic" };
-    }
-    if (status.phase === LIVE_INPUT_PHASES.weakSignal) {
-      const isSilent = status.signalState === LIVE_INPUT_SIGNAL_STATES.silent;
-      return {
-        color: "#D4A843",
-        pulse: !isSilent,
-        label: isSilent
-          ? "Live input connected — waiting for audio"
-          : isLineFeed
-            ? "Line feed weak"
-            : "Input weak",
-      };
     }
     if (status.phase === LIVE_INPUT_PHASES.listening) {
       return {
@@ -564,6 +548,14 @@ const CSS = `
   backdrop-filter: blur(18px) saturate(125%);
   -webkit-backdrop-filter: blur(18px) saturate(125%);
   box-sizing: border-box;
+}
+
+.am-demo-error {
+  margin: 8px 0 0;
+  color: var(--nd-warning);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
 }
 
 .am-compact-track-section {
@@ -948,7 +940,8 @@ const CSS = `
     transform var(--nd-transition);
 }
 
-.am-compact-hover-actions--expanded {
+.am-compact-hover-actions--expanded,
+.am-compact-hover-actions--introduction {
   opacity: 1;
   transform: translate(-50%, 0);
   pointer-events: auto;
@@ -983,6 +976,29 @@ const CSS = `
   transition:
     transform 120ms cubic-bezier(0.23, 1, 0.32, 1),
     color 160ms ease;
+}
+
+.am-compact-hover-actions--introduction .am-compact-hover-actions-panel {
+  grid-template-columns: 44px auto 44px;
+}
+
+.am-compact-hover-actions--introduction:not(.am-compact-hover-actions--expanded) .am-compact-hover-actions-panel {
+  grid-template-columns: auto;
+}
+
+.am-compact-hover-actions--introduction:not(.am-compact-hover-actions--expanded) .am-compact-hover-action:not(.am-compact-demo-action) {
+  display: none;
+}
+
+.am-compact-hover-actions--introduction .am-compact-demo-action {
+  width: auto;
+  gap: 6px;
+  padding: 0 10px;
+  font-family: var(--baryon-type-interface-family);
+  font-size: 11px;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
 }
 
 .am-compact-hover-action::after {
@@ -1890,6 +1906,7 @@ function PlaybackTimelineView({
         if (scrubStart.generation === generation) {
           await scrubStart.promise;
         }
+        if (interactionGenerationRef.current !== generation) return;
         await operation();
       } catch (error) {
         console.error("Playback scrub interaction failed.", error);
@@ -2024,6 +2041,58 @@ const PlaybackTimeline = memo(PlaybackTimelineView);
 
 // ─── Listener Controls ───────────────────────────────────────────────────────
 
+// Playback gain is independent of source/analysis and scene state. Keep its
+// display mirror here so each drag event only reconciles this small control.
+function PlaybackVolumeControls() {
+  const session = getDefaultAudioSession();
+  const [volume, setVolume] = useState(() => session.getStatus().volume);
+  const [isMuted, setIsMuted] = useState(() => session.getStatus().muted);
+  const handleVolumeChange = (value) => setVolume(session.setVolume(value));
+  const handleMuteToggle = () =>
+    setIsMuted(session.setMuted(!session.getStatus().muted));
+  const volumePercent = Math.round(volume * 100);
+  /** @type {import("react").CSSProperties & { "--am-slider-percent": string }} */
+  const volumeSliderStyle = {
+    "--am-slider-percent": `${volumePercent}%`,
+  };
+  return (
+    <div className="am-compact-volume-row">
+      <div className="am-volume">
+        <button
+          type="button"
+          className="am-btn am-btn--volume"
+          onClick={handleMuteToggle}
+          aria-label={isMuted ? "Unmute app playback" : "Mute app playback"}
+          title={isMuted ? "Unmute app playback" : "Mute app playback"}
+        >
+          {isMuted || volume <= 0.001 ? (
+            <VolumeIcon muted />
+          ) : (
+            <VolumeLowIcon />
+          )}
+        </button>
+        <input
+          className="am-slider"
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value={volume}
+          onChange={(event) => {
+            handleVolumeChange(Number(event.target.value));
+          }}
+          style={volumeSliderStyle}
+          aria-label="App playback volume"
+          title={`App playback volume ${volumePercent}%`}
+        />
+      </div>
+      <span className="am-compact-volume-end" aria-hidden="true">
+        <VolumeIcon muted={false} />
+      </span>
+    </div>
+  );
+}
+
 export function ListenerControls({
   showSourceLiveButton = true,
   allowSystemSource = true,
@@ -2042,15 +2111,12 @@ export function ListenerControls({
     liveInputDeviceKind,
     liveInputRuntimeStatus,
     isAudioLoaded,
-    volume,
-    isMuted,
+    showDemoIntroduction,
     isEngineReady,
     handleFileChange,
     handleRecentUploadSelect,
     loadDemoAudioFile,
     handlePlayPause,
-    handleVolumeChange,
-    handleMuteToggle,
     setShowDeviceMenu,
     beginScrub,
     previewScrub,
@@ -2065,6 +2131,25 @@ export function ListenerControls({
   const fileListButtonRef = useRef(null);
   const fileListPanelRef = useRef(null);
   const [showFileListPanel, setShowFileListPanel] = useState(false);
+  const [isDemoLoading, setIsDemoLoading] = useState(false);
+  const [demoError, setDemoError] = useState("");
+  const playDemo = async () => {
+    if (isDemoLoading) return;
+    setShowFileListPanel(false);
+    setShowDeviceMenu(false);
+    setIsDemoLoading(true);
+    setDemoError("");
+    try {
+      const result = await loadDemoAudioFile({ autoPlay: true });
+      if (result?.ok === false && result.cancelled !== true) {
+        setDemoError("The demo couldn't start. Please try again.");
+      }
+    } catch {
+      setDemoError("The demo couldn't start. Please try again.");
+    } finally {
+      setIsDemoLoading(false);
+    }
+  };
   const [showCompactUtilities, setShowCompactUtilities] = useState(false);
   const openFilePicker = () => {
     setShowFileListPanel(false);
@@ -2079,11 +2164,6 @@ export function ListenerControls({
     liveInputDeviceKind,
     liveInputRuntimeStatus,
   );
-  const volumePercent = Math.round(volume * 100);
-  /** @type {import("react").CSSProperties & { "--am-slider-percent": string }} */
-  const volumeSliderStyle = {
-    "--am-slider-percent": `${volumePercent}%`,
-  };
   const hasLocalFileQueue = localFileQueue.length > 0;
   const hasFileListItems = hasLocalFileQueue || recentUploads.length > 0;
   const queuedLocalFiles = localFileQueue.slice(
@@ -2305,51 +2385,14 @@ export function ListenerControls({
                   </div>
                 </div>
 
-                <div className="am-compact-volume-row">
-                  <div className="am-volume">
-                    <button
-                      type="button"
-                      className="am-btn am-btn--volume"
-                      onClick={handleMuteToggle}
-                      aria-label={
-                        isMuted ? "Unmute app playback" : "Mute app playback"
-                      }
-                      title={
-                        isMuted ? "Unmute app playback" : "Mute app playback"
-                      }
-                    >
-                      {isMuted || volume <= 0.001 ? (
-                        <VolumeIcon muted />
-                      ) : (
-                        <VolumeLowIcon />
-                      )}
-                    </button>
-                    <input
-                      className="am-slider"
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.01"
-                      value={volume}
-                      onChange={(event) => {
-                        handleVolumeChange(Number(event.target.value));
-                      }}
-                      style={volumeSliderStyle}
-                      aria-label="App playback volume"
-                      title={`App playback volume ${volumePercent}%`}
-                    />
-                  </div>
-                  <span className="am-compact-volume-end" aria-hidden="true">
-                    <VolumeIcon muted={false} />
-                  </span>
-                </div>
+                <PlaybackVolumeControls />
 
                 <div
                   className={`am-compact-hover-actions${
                     showCompactUtilities
                       ? " am-compact-hover-actions--expanded"
                       : ""
-                  }`}
+                  }${showDemoIntroduction ? " am-compact-hover-actions--introduction" : ""}`}
                 >
                   <div className="am-compact-hover-actions-panel">
                     <button
@@ -2373,17 +2416,18 @@ export function ListenerControls({
                     </button>
                     <button
                       type="button"
-                      className="am-btn am-compact-hover-action"
-                      onClick={() => {
-                        setShowFileListPanel(false);
-                        setShowDeviceMenu(false);
-                        void loadDemoAudioFile?.();
-                      }}
+                      className="am-btn am-compact-hover-action am-compact-demo-action"
+                      onClick={playDemo}
+                      disabled={isDemoLoading}
+                      aria-busy={isDemoLoading}
                       title="Play demo audio"
-                      data-tooltip="Demo audio"
+                      data-tooltip={
+                        showDemoIntroduction ? undefined : "Demo audio"
+                      }
                       aria-label="Play demo audio"
                     >
                       <DemoAudioIcon />
+                      {showDemoIntroduction ? <span>Play demo</span> : null}
                     </button>
                     <button
                       type="button"
@@ -2407,6 +2451,11 @@ export function ListenerControls({
                   </div>
                 </div>
               </div>
+              {demoError ? (
+                <p className="am-demo-error" role="alert">
+                  {demoError}
+                </p>
+              ) : null}
             </div>
           </div>
 

@@ -93,16 +93,12 @@ describe("ListenerControls file player layout", () => {
       isPlaying: false,
       isLiveInputActive: false,
       liveInputDeviceKind: "system",
-      isAudioLoaded: false,
-      volume: 1,
-      isMuted: false,
+      isAudioLoaded: true,
       isEngineReady: true,
       handleFileChange: () => {},
       handleRecentUploadSelect: () => {},
       loadDemoAudioFile: () => {},
       handlePlayPause: () => {},
-      handleVolumeChange: () => {},
-      handleMuteToggle: () => {},
       setShowDeviceMenu: () => {},
       scrubPreviewSeconds: null,
       isScrubbing: false,
@@ -152,6 +148,70 @@ describe("ListenerControls file player layout", () => {
       }
     });
   }
+
+  it("keeps the existing empty player and loads demo only on request", async () => {
+    let finishLoad;
+    const loadDemoAudioFile = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          finishLoad = resolve;
+        }),
+    );
+    renderControls({
+      isAudioLoaded: false,
+      showDemoIntroduction: true,
+      loadDemoAudioFile,
+    });
+    expect(container.querySelector(".am-compact-card")).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="compact-source-trigger"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="file-playback-toggle"]').disabled,
+    ).toBe(true);
+    expect(loadDemoAudioFile).not.toHaveBeenCalled();
+    const demo = container.querySelector('[aria-label="Play demo audio"]');
+    expect(demo.textContent).toBe("Play demo");
+    const utilityRow = container.querySelector(".am-compact-hover-actions");
+    expect(window.getComputedStyle(utilityRow).opacity).toBe("1");
+    expect(window.getComputedStyle(utilityRow).pointerEvents).toBe("auto");
+    expect(
+      window.getComputedStyle(
+        container.querySelector('[aria-label="Autoplay"]'),
+      ).display,
+    ).toBe("none");
+    await act(async () => {
+      demo.click();
+    });
+    expect(loadDemoAudioFile).toHaveBeenCalledWith({ autoPlay: true });
+    expect(demo.disabled).toBe(true);
+    await act(async () => {
+      finishLoad({ ok: false, error: "Download failed" });
+    });
+    expect(container.querySelector('[role="alert"]').textContent).toContain(
+      "try again",
+    );
+    expect(demo.disabled).toBe(false);
+    await act(async () => {
+      demo.click();
+    });
+    await act(async () => {
+      finishLoad({ ok: false, cancelled: true });
+    });
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("keeps the demo icon on hover for returning users with an empty player", () => {
+    renderControls({ isAudioLoaded: false, showDemoIntroduction: false });
+    expect(
+      container.querySelector('[aria-label="Play demo audio"]').textContent,
+    ).toBe("");
+    expect(
+      window.getComputedStyle(
+        container.querySelector(".am-compact-hover-actions"),
+      ).opacity,
+    ).toBe("0");
+  });
 
   it("shows the source control without the compact file dock in system mode", () => {
     renderControls({
@@ -408,6 +468,51 @@ describe("ListenerControls file player layout", () => {
     expect(timeline.title).toBe("Playback position 0:40 of 4:00");
   });
 
+  it("does not commit an older gesture after a newer scrub begins", async () => {
+    let finishFirstBegin;
+    const beginScrub = vi
+      .fn(() => Promise.resolve())
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishFirstBegin = resolve;
+          }),
+      );
+    const commitScrub = vi.fn(() => Promise.resolve());
+    renderControls(
+      { isAudioLoaded: true, beginScrub, commitScrub },
+      {
+        transportClockOverrides: {
+          currentTimeSeconds: 5,
+          durationSeconds: 120,
+          canSeek: true,
+        },
+      },
+    );
+    const timeline = container.querySelector(
+      '[data-testid="playback-timeline"]',
+    );
+    await act(async () => {
+      timeline.value = "10";
+      timeline.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      await Promise.resolve();
+      timeline.dispatchEvent(new Event("pointerup", { bubbles: true }));
+      timeline.value = "20";
+      timeline.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      await Promise.resolve();
+      finishFirstBegin();
+      await Promise.resolve();
+    });
+    expect(commitScrub).not.toHaveBeenCalled();
+    expect(timeline.value).toBe("20");
+
+    await act(async () => {
+      timeline.dispatchEvent(new Event("pointerup", { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(commitScrub).toHaveBeenCalledExactlyOnceWith(20);
+  });
+
   it("hides the timeline immediately when seekability is lost mid-commit", async () => {
     let resolveCommit;
     const commitScrub = vi.fn(
@@ -551,7 +656,7 @@ describe("ListenerControls file player layout", () => {
     expect(fileInput?.getAttribute("accept")).toBe("audio/*");
   });
 
-  it("starts the preloaded demo audio from the compact file dock", () => {
+  it("starts demo audio from the loaded file dock on request", async () => {
     const loadDemoAudioFile = vi.fn();
     renderControls({
       sourceSession: { kind: "file" },
@@ -567,7 +672,7 @@ describe("ListenerControls file player layout", () => {
       true,
     );
     expect(demoButton?.textContent).toBe("");
-    act(() => {
+    await act(async () => {
       demoButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(loadDemoAudioFile).toHaveBeenCalledTimes(1);
@@ -606,7 +711,7 @@ describe("ListenerControls file player layout", () => {
   it("uses the queue-aware transport without legacy controls", () => {
     renderControls({
       sourceSession: { kind: "file" },
-      isAudioLoaded: false,
+      isAudioLoaded: true,
     });
 
     const playerShell = container.querySelector(".am-player-shell");
@@ -699,32 +804,24 @@ describe("ListenerControls file player layout", () => {
     expect(container.querySelector(".am-compact-state-chip")).toBeNull();
   });
 
-  it("shows a connected silent line feed without the starting pulse", () => {
+  it("shows a valid quiet line feed as listening", () => {
     renderControls({
       isLiveInputActive: true,
       liveInputDeviceKind: "system",
       liveInputRuntimeStatus: {
         active: true,
-        phase: "weak-signal",
+        phase: "listening",
+        observationAvailable: true,
         resolvedAnalysisClass: "line-feed",
-        signalState: "silent",
-        sourceBoundaryState: "muted",
       },
     });
-
-    const sourceControl = container.querySelector(
-      '[data-testid="source-mode-control"]',
-    );
-    const statusLight = sourceControl?.querySelector(".am-source-mode-light");
-    const statusDot = /** @type {HTMLElement | null} */ (
-      sourceControl?.querySelector(".am-status-dot")
-    );
-
-    expect(statusLight?.getAttribute("aria-label")).toBe(
-      "Live input connected — waiting for audio",
-    );
-    expect(statusDot?.style.background).not.toBe("rgb(215, 25, 33)");
-    expect(statusDot?.style.animation).toBe("none");
+    expect(
+      container
+        .querySelector(
+          '[data-testid="source-mode-control"] .am-source-mode-light',
+        )
+        ?.getAttribute("aria-label"),
+    ).toBe("Line feed listening");
   });
 
   it("uses green for a line feed with current source evidence", () => {

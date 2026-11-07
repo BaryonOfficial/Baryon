@@ -33,7 +33,7 @@ describe("MobileDemoControls", () => {
     document.body.innerHTML = "";
   });
 
-  it("waits for the preloaded demo and renderer before enabling playback", () => {
+  it("waits for the renderer before enabling the demo", () => {
     const { container, root } = renderControls({
       isAudioLoaded: false,
       isEngineReady: false,
@@ -61,7 +61,48 @@ describe("MobileDemoControls", () => {
     });
   });
 
-  it("starts the preloaded audio directly from the user gesture", async () => {
+  it("loads the demo only after an explicit click and offers retry after failure", async () => {
+    let finishLoad;
+    const loadDemoAudioFile = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          finishLoad = resolve;
+        }),
+    );
+    const { container, root } = renderControls({
+      isAudioLoaded: false,
+      isEngineReady: true,
+      isPlaying: false,
+      loadDemoAudioFile,
+      handlePlayPause: vi.fn(),
+      handleStop: vi.fn(),
+    });
+    const button = container.querySelector("button");
+    expect(button.disabled).toBe(false);
+    expect(loadDemoAudioFile).not.toHaveBeenCalled();
+    await act(async () => {
+      button.click();
+    });
+    expect(loadDemoAudioFile).toHaveBeenCalledWith({ autoPlay: true });
+    expect(button.disabled).toBe(true);
+    await act(async () => {
+      finishLoad({ ok: false, error: "Offline" });
+    });
+    expect(container.querySelector('[role="alert"]').textContent).toContain(
+      "try again",
+    );
+    expect(button.disabled).toBe(false);
+    await act(async () => {
+      button.click();
+    });
+    await act(async () => {
+      finishLoad({ ok: false, cancelled: true });
+    });
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    act(() => root.unmount());
+  });
+
+  it("restarts already-loaded audio directly from the user gesture", async () => {
     const handlePlayPause = vi.fn(async () => {});
     const { container, root } = renderControls({
       isAudioLoaded: true,

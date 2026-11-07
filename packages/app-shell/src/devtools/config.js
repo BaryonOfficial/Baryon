@@ -1,4 +1,4 @@
-const viteEnvironment = /** @type {any} */ (import.meta).env;
+const viteEnvironment = import.meta.env;
 
 export const DEVTOOLS_ENABLED = viteEnvironment.DEV;
 

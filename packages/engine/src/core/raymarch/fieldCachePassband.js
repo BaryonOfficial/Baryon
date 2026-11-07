@@ -4,14 +4,14 @@ import { clamp, clamp01 } from "../../utils/math.js";
  * Spatial wavenumber (mode-index units) below which the 128-cubed cache
  * representation remains unattenuated.
  */
-export const FIELD_CACHE_PASSBAND_REFERENCE_WAVENUMBER = 8;
+const FIELD_CACHE_PASSBAND_REFERENCE_WAVENUMBER = 8;
 
 /**
  * Standard deviation of the numerical cache reconstruction rolloff on the
  * normalized basis domain [-1, 1]. This is a representation property,
  * independent of source geometry, tracer physics, and display quality tier.
  */
-export const FIELD_CACHE_PASSBAND_ROLLOFF_STANDARD_DEVIATION_NORMALIZED = 0.035;
+const FIELD_CACHE_PASSBAND_ROLLOFF_STANDARD_DEVIATION_NORMALIZED = 0.035;
 
 /**
  * Mode index to normalized angular spatial wavenumber. A mode of index n
@@ -30,7 +30,7 @@ const BASIS_ANGULAR_WAVENUMBER_PER_INDEX = Math.PI * 0.5;
  * -12 dB amplitude cutoff on the already-applied cache prefilter, not a
  * physical aperture attenuation or a second modal admission threshold.
  */
-export const FIELD_CACHE_PASSBAND_MIN_TRANSFER_AMPLITUDE = 0.25;
+const FIELD_CACHE_PASSBAND_MIN_TRANSFER_AMPLITUDE = 0.25;
 
 /**
  * Numerical support boundary for spatial modal topology. Below one percent
@@ -89,7 +89,7 @@ export function deriveModalFieldCacheTransferAmplitude(spatialWavenumber) {
  * Inverting H at the numerical passband boundary keeps the render sampler
  * derived from the same observation model that shapes the field.
  */
-export function deriveFieldCachePassbandMaxResolvedWavenumber(
+function deriveFieldCachePassbandMaxResolvedWavenumber(
   minTransferAmplitude = FIELD_CACHE_PASSBAND_MIN_TRANSFER_AMPLITUDE,
 ) {
   const safeTransferAmplitude = clamp(
@@ -142,8 +142,7 @@ export function deriveCavityModalFieldCacheBandwidth({
   // (1,1,1) remains the floor. A centered rigid-wall Neumann source is zero on
   // every family containing an odd axis order, making (0,0,2) the first driven
   // family rather than the undriven mathematical eigenmode (0,0,1).
-  const minimumModeWavenumber =
-    boundaryMode === "dirichlet" ? Math.sqrt(3) : 2;
+  const minimumModeWavenumber = boundaryMode === "dirichlet" ? Math.sqrt(3) : 2;
   const visibleMaxWavenumber = deriveFieldCachePassbandMaxResolvedWavenumber(
     visibleTransferAmplitude,
   );

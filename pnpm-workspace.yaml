@@ -5,9 +5,8 @@ packages:
 nodeLinker: hoisted
 verifyDepsBeforeRun: false
 
+minimumReleaseAgeStrict: true
 minimumReleaseAgeExclude:
-  - "@types/three@0.185.0"
-  - "three@0.185.0"
   - "thinking-orbs@0.1.1"
 
 blockExoticSubdeps: false
@@ -24,12 +23,8 @@ allowBuilds:
   "@sentry/cli": true
   "@serialport/bindings-cpp": false
   electron: true
-  electron-winstaller: true
+  electron-winstaller: false
   esbuild: true
   fs-xattr: true
   macos-alias: true
   sharp: true
-
-patchedDependencies:
-  # Remove after R3F ships https://github.com/pmndrs/react-three-fiber/pull/3783.
-  '@react-three/fiber@9.7.0': patches/@react-three__fiber@9.7.0.patch

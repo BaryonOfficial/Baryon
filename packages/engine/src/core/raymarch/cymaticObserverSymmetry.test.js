@@ -409,11 +409,32 @@ function evolveDenseObserver(voxel) {
     priorDirection,
   );
   const assimilation = mul(spectralAssimilation, evidence.gate);
-  const priorMix = Math.max(0, sub(1, assimilation));
-  const spectralNumerator = priorDirection.map((component, index) =>
-    add(mul(component, priorMix), mul(evidence.direction[index], assimilation)),
+  const cross = sub(
+    mul(priorDirection[0], evidence.direction[1]),
+    mul(priorDirection[1], evidence.direction[0]),
   );
-  const spectralDirection = normalize2(spectralNumerator, priorDirection);
+  const agreement = add(
+    mul(priorDirection[0], evidence.direction[0]),
+    mul(priorDirection[1], evidence.direction[1]),
+  );
+  const delta =
+    agreement < 0 &&
+    Math.abs(cross) <= SPECTRAL_PHASE_FIELD_REFERENCE.directionEpsilon
+      ? f32(Math.PI)
+      : f32(Math.atan2(cross, agreement));
+  const rotation = mul(assimilation, delta);
+  const cosine = f32(Math.cos(rotation)),
+    sine = f32(Math.sin(rotation));
+  const spectralDirection =
+    rotation === 0
+      ? priorDirection
+      : normalize2(
+          [
+            sub(mul(priorDirection[0], cosine), mul(priorDirection[1], sine)),
+            add(mul(priorDirection[0], sine), mul(priorDirection[1], cosine)),
+          ],
+          priorDirection,
+        );
   const fineAuthority = clamp(
     mul(
       clamp(currentOrganization[0], 0, 1),

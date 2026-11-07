@@ -10,6 +10,65 @@ const angle = (direction) => Math.atan2(direction[1], direction[0]);
 const directionMagnitude = (direction) => Math.hypot(...direction);
 
 describe("spectral phase field reference", () => {
+  it.each([0, 0.7, -2.1])(
+    "turns through an exact half-circle from phase %s",
+    (phase) => {
+      const prior = [Math.cos(phase), Math.sin(phase)];
+      const target = prior.map((value) => -value);
+      let direction = prior;
+      for (let step = 1; step <= 60; step++) {
+        direction = resolveSpectralPhaseField({
+          firstMoment: target,
+          priorDirection: direction,
+          presence: 1,
+          deltaTimeSeconds: 1 / 60,
+        }).direction;
+        const expected = phase + Math.PI * (1 - Math.exp(-step / 6));
+        expect(direction[0]).toBeCloseTo(Math.cos(expected), 10);
+        expect(direction[1]).toBeCloseTo(Math.sin(expected), 10);
+        expect(directionMagnitude(direction)).toBeCloseTo(1, 12);
+      }
+    },
+  );
+
+  it.each([-1, 1])(
+    "takes the shorter arc near the half-turn on side %s",
+    (side) => {
+      const targetAngle = side * (Math.PI - 0.001);
+      const next = resolveSpectralPhaseField({
+        firstMoment: [Math.cos(targetAngle), Math.sin(targetAngle)],
+        priorDirection: [1, 0],
+        presence: 1,
+        deltaTimeSeconds: 1 / 60,
+      });
+      expect(angle(next.direction)).toBeCloseTo(
+        targetAngle * (1 - Math.exp(-1 / 6)),
+        12,
+      );
+    },
+  );
+
+  it("has the same strong-evidence response across audio step subdivisions", () => {
+    const advance = (steps) => {
+      let direction = [1, 0];
+      for (let i = 0; i < steps; i++)
+        direction = resolveSpectralPhaseField({
+          firstMoment: [-1, 0],
+          priorDirection: direction,
+          presence: 1,
+          deltaTimeSeconds: 0.1 / steps,
+        }).direction;
+      return direction;
+    };
+    const expected = advance(1);
+    for (const steps of [2, 6, 12]) {
+      const actual = advance(steps);
+      actual.forEach((value, index) =>
+        expect(value).toBeCloseTo(expected[index], 12),
+      );
+    }
+  });
+
   it("keeps the TSL resolver on the same constants and no-growth packing", () => {
     const observerSource = readFileSync(
       new URL("./cymaticObserverNode.js", import.meta.url),

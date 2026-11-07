@@ -1,35 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AUDIO_SLOT_CAPACITY, DEFAULT_FFT_SIZE } from "../../defaults.js";
-
-const FAST_FEATURE_FFT_SIZE = 2048;
-
-class MockAnalyserNode {
-  constructor() {
-    this._fftSize = 0;
-    this.frequencyBinCount = 0;
-    this.disconnect = vi.fn();
-  }
-
-  set fftSize(value) {
-    this._fftSize = value;
-    this.frequencyBinCount = value / 2;
-  }
-
-  get fftSize() {
-    return this._fftSize;
-  }
-
-  connect() {}
-
-  getByteFrequencyData(data) {
-    data.fill(0);
-    if (data.length > 2) data[2] = 255;
-  }
-
-  getFloatTimeDomainData(data) {
-    data.fill(0.25);
-  }
-}
 
 class MockGainNode {
   constructor() {
@@ -60,7 +29,7 @@ class MockGainNode {
 class MockMediaStreamSourceNode {
   connect() {}
 
-  disconnect() {}
+  disconnect = vi.fn();
 }
 
 class MockMediaElementSourceNode {
@@ -84,16 +53,17 @@ class MockBufferSourceNode {
 
   connect() {}
 
-  disconnect() {}
+  disconnect = vi.fn();
 
   start(when = 0, offset = 0) {
     this.started = true;
     this.startArgs = { when, offset };
   }
 
-  stop() {
+  stop = vi.fn((when = 0) => {
     this.started = false;
-  }
+    this.stoppedAt = when;
+  });
 }
 
 class MockAudioContext {
@@ -106,6 +76,7 @@ class MockAudioContext {
     this.createdAnalysers = [];
     this.createdGains = [];
     this.createdMediaElementSources = [];
+    this.createdMediaStreamSources = [];
     this.createdMediaStreamDestinations = [];
     this.onstatechange = null;
   }
@@ -125,13 +96,16 @@ class MockAudioContext {
   }
 
   createAnalyser() {
-    const analyser = new MockAnalyserNode();
-    this.createdAnalysers.push(analyser);
-    return analyser;
+    this.createdAnalysers.push(null);
+    throw new Error(
+      "Snapshot analysers must not be created by the PCM session",
+    );
   }
 
   createMediaStreamSource() {
-    return new MockMediaStreamSourceNode();
+    const source = new MockMediaStreamSourceNode();
+    this.createdMediaStreamSources.push(source);
+    return source;
   }
 
   createMediaElementSource(element) {
@@ -165,7 +139,7 @@ class MockAudioContext {
   }
 
   decodeAudioData = vi.fn(async () => {
-    const samples = new Float32Array(DEFAULT_FFT_SIZE * 2);
+    const samples = new Float32Array(this.sampleRate * 5);
     samples.fill(0.25);
     return {
       duration: 5,
@@ -342,8 +316,94 @@ describe("audio session", () => {
   });
 
   function createSession() {
-    return createAudioSession();
+    // Session graph tests isolate the model processor. Explicit PCM timing
+    // cases bind their own consumer; production uses the real factory.
+    return createAudioSession({
+      createFeatureRuntime: () => ({ start: vi.fn() }),
+    });
   }
+
+  it("resumes within playback intent without loading, capturing, or changing source", async () => {
+    const session = createSession();
+    session.getAnalysisSampleRate();
+    lastAudioContext.state = "suspended";
+    const before = session.getStatus().sourceSession;
+    const pending = session.resumeAudioContext();
+    expect(lastAudioContext.resume).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(getUserMediaMock).not.toHaveBeenCalled();
+    expect(lastAudioContext.createdBufferSources).toHaveLength(0);
+    expect(session.getStatus().sourceSession).toEqual(before);
+    await pending;
+    await session.resumeAudioContext();
+    expect(lastAudioContext.resume).toHaveBeenCalledTimes(1);
+    expect(session.getStatus().isPlaying).toBe(false);
+  });
+
+  it("owns one feature runtime across resource reset and never constructs it from renderer reads", async () => {
+    const consumer = {
+      prepare: vi.fn(async () => true),
+      begin: vi.fn(),
+      invalidate: vi.fn(),
+      scheduleEnd: vi.fn(),
+      waitUntilStarted: vi.fn(async () => {}),
+      pause: vi.fn(),
+    };
+    const runtime = {
+      start: vi.fn(),
+      configure: vi.fn(),
+      setAuthorityRole: vi.fn(),
+      dispose: vi.fn(),
+    };
+    const factory = vi.fn((_settings, { audioSession }) => {
+      runtime.start.mockImplementation(() =>
+        audioSession.bindPcmConsumer(consumer),
+      );
+      return runtime;
+    });
+    const session = createAudioSession({ createFeatureRuntime: factory });
+    expect(session.featureRuntime).toBe(runtime);
+    expect(factory).toHaveBeenCalledExactlyOnceWith(
+      {},
+      { audioSession: session },
+    );
+    expect(runtime.start).toHaveBeenCalledOnce();
+    expect(lastAudioContext).toBeNull();
+    for (let i = 0; i < 2; i++) {
+      await session.loadAudio("good");
+      await session.playPauseAudio();
+      expect(session.featureRuntime).toBe(runtime);
+      await session.dispose();
+    }
+    expect(runtime.start).toHaveBeenCalledOnce();
+    expect(factory).toHaveBeenCalledOnce();
+    // Each cycle prepares at load and again (idempotently) at Play.
+    expect(consumer.prepare).toHaveBeenCalledTimes(4);
+    expect(consumer.invalidate).toHaveBeenCalledWith("audio-session-disposed");
+    expect(runtime.dispose).not.toHaveBeenCalled();
+  });
+
+  it("file, media-stream and live sources use the PCM bus without snapshot analysers", async () => {
+    const session = createSession();
+    expect(session).not.toHaveProperty("readFeatureAnalysisCapture");
+    await session.loadAudio("good");
+    expect(session.getStatus().isAudioLoaded).toBe(true);
+    await session.playPauseAudio();
+    expect(session.readPcmSource()?.active).toBe(true);
+    expect(lastAudioContext.createdAnalysers).toHaveLength(0);
+    session.stopAudio();
+    const element = new MockMediaElement();
+    await session.loadStream({ element, sourceKind: "stream", duration: 7 });
+    await session.playPauseAudio();
+    expect(session.readPcmSource()?.active).toBe(true);
+    expect(lastAudioContext.createdAnalysers).toHaveLength(0);
+    session.stopAudio();
+    await session.startLiveInputStream("device-1", "system");
+    expect(session.readPcmSource()?.active).toBe(true);
+    expect(lastAudioContext.createdAnalysers).toHaveLength(0);
+    session.stopLiveInputStream();
+    expect(session.readPcmSource()?.active).toBe(false);
+  });
 
   it("tracks file lifecycle through explicit status", async () => {
     const session = createSession();
@@ -355,55 +415,14 @@ describe("audio session", () => {
       isAudioLoaded: true,
       isPlaying: false,
       isPlaybackPaused: false,
-      analysisSource: "idle",
-      hasPreparedFileAnalysisSource: true,
-      capacity: AUDIO_SLOT_CAPACITY,
-    });
-    expect(
-      session.readFeatureAnalysisCapture({ includeStructural: true }),
-    ).toMatchObject({
-      observationTimeSeconds: 0,
-      fast: { sourceMode: "file", rms: 0.25 },
-      structural: { sourceMode: "file", rms: 0.25 },
     });
 
     await session.playPauseAudio();
     expect(session.getStatus()).toMatchObject({
       sourceSession: { kind: "file", phase: "active" },
       isPlaying: true,
-      analysisSource: "file",
       playbackSessionId: 1,
       lastPlaybackEndReason: null,
-    });
-    const fileCapture = session.readFeatureAnalysisCapture({
-      includeStructural: true,
-    });
-    expect(fileCapture).toMatchObject({
-      captureTimestampMs: expect.any(Number),
-      fast: {
-        sourceMode: "file",
-        rms: 0.25,
-      },
-      structural: {
-        sourceMode: "file",
-        rms: 0.25,
-      },
-    });
-    expect(fileCapture?.fast.avgAmplitude).toBeGreaterThan(0);
-    expect(fileCapture?.fast.fftLinearAmplitudes).toBeInstanceOf(Float32Array);
-    expect(fileCapture?.fast.timeData).toBeInstanceOf(Float32Array);
-    expect(fileCapture?.fast.timeData).toHaveLength(FAST_FEATURE_FFT_SIZE);
-    expect(fileCapture?.fast.fftLinearAmplitudes).toHaveLength(
-      FAST_FEATURE_FFT_SIZE / 2,
-    );
-    expect(fileCapture?.structural?.timeData).toHaveLength(DEFAULT_FFT_SIZE);
-    expect(fileCapture?.structural?.fftLinearAmplitudes).toHaveLength(
-      DEFAULT_FFT_SIZE / 2,
-    );
-    expect(session.readFeatureAnalysisCapture()).toMatchObject({
-      captureTimestampMs: expect.any(Number),
-      fast: { sourceMode: "file" },
-      structural: null,
     });
     expect(session.getStatus().lastPlaybackDiagnostics).toMatchObject({
       playbackSessionId: 1,
@@ -419,7 +438,6 @@ describe("audio session", () => {
       sourceSession: { kind: "file", phase: "paused" },
       isPlaying: false,
       isPlaybackPaused: true,
-      analysisSource: "idle",
     });
   });
 
@@ -480,7 +498,7 @@ describe("audio session", () => {
     });
   });
 
-  it("never exposes cached File analysis while System owns the source", async () => {
+  it("keeps a cached File passive while System owns the PCM source", async () => {
     const session = createSession();
     await session.loadAudio("good");
     await session.playPauseAudio();
@@ -492,9 +510,7 @@ describe("audio session", () => {
       sourceSession: { kind: "system", phase: "ready" },
       isAudioLoaded: true,
       isLiveInputActive: false,
-      analysisSource: "idle",
     });
-    expect(session.readFeatureAnalysisCapture()).toBeNull();
 
     const deferredStream = createDeferred();
     navigator.mediaDevices.enumerateDevices = undefined;
@@ -506,7 +522,6 @@ describe("audio session", () => {
       kind: "system",
       phase: "starting",
     });
-    expect(session.readFeatureAnalysisCapture()).toBeNull();
 
     deferredStream.resolve({
       active: true,
@@ -514,12 +529,8 @@ describe("audio session", () => {
       getAudioTracks: getAudioTracksMock,
     });
     await expect(liveStart).resolves.toBe(true);
-    expect(session.readFeatureAnalysisCapture()).toMatchObject({
-      fast: { sourceMode: "system" },
-    });
 
     session.stopLiveInputStream();
-    expect(session.readFeatureAnalysisCapture()).toBeNull();
 
     session.selectSource("file");
     expect(session.getStatus()).toMatchObject({
@@ -574,8 +585,8 @@ describe("audio session", () => {
     expect(session.getStatus().isLiveInputActive).toBe(false);
   });
 
-  it("rolls back an acquired stream and partial taps when live analysis setup fails", async () => {
-    let shouldFailAnalysisSetup = true;
+  it("rolls back an acquired stream and staged node when PCM connection fails", async () => {
+    let shouldFailPcmConnection = true;
     Object.defineProperty(globalThis, "AudioContext", {
       configurable: true,
       value: class extends MockAudioContext {
@@ -584,12 +595,15 @@ describe("audio session", () => {
           lastAudioContext = this;
         }
 
-        createAnalyser() {
-          if (shouldFailAnalysisSetup && this.createdAnalysers.length === 1) {
-            shouldFailAnalysisSetup = false;
-            throw new Error("analysis graph unavailable");
+        createMediaStreamSource() {
+          const node = super.createMediaStreamSource();
+          if (shouldFailPcmConnection) {
+            shouldFailPcmConnection = false;
+            node.connect = () => {
+              throw new Error("PCM connection unavailable");
+            };
           }
-          return super.createAnalyser();
+          return node;
         }
       },
     });
@@ -597,11 +611,11 @@ describe("audio session", () => {
 
     await expect(
       session.startLiveInputStream("device-1", "system"),
-    ).rejects.toThrow("analysis graph unavailable");
+    ).rejects.toThrow("PCM connection unavailable");
 
     expect(mockTrackStop).toHaveBeenCalledTimes(1);
     expect(
-      lastAudioContext.createdAnalysers[0].disconnect,
+      lastAudioContext.createdMediaStreamSources[0].disconnect,
     ).toHaveBeenCalledTimes(1);
     expect(session.getStatus()).toMatchObject({
       sourceSession: {
@@ -677,7 +691,7 @@ describe("audio session", () => {
     });
   });
 
-  it("fails closed when replacement analysis setup fails", async () => {
+  it("fails closed when the replacement PCM node cannot connect", async () => {
     const activeTrackStop = vi.fn();
     const replacementTrackStop = vi.fn();
     const activeTrack = {
@@ -704,20 +718,17 @@ describe("audio session", () => {
     const session = createSession();
     await session.startLiveInputStream("device-1", "system");
 
-    const createAnalyser =
-      lastAudioContext.createAnalyser.bind(lastAudioContext);
-    let replacementAnalyserCallCount = 0;
-    lastAudioContext.createAnalyser = vi.fn(() => {
-      replacementAnalyserCallCount += 1;
-      if (replacementAnalyserCallCount === 2) {
-        throw new Error("replacement analysis unavailable");
-      }
-      return createAnalyser();
+    lastAudioContext.createMediaStreamSource = vi.fn(() => {
+      const node = new MockMediaStreamSourceNode();
+      node.connect = () => {
+        throw new Error("replacement PCM connection unavailable");
+      };
+      return node;
     });
 
     await expect(
       session.startLiveInputStream("device-2", "system"),
-    ).rejects.toThrow("replacement analysis unavailable");
+    ).rejects.toThrow("replacement PCM connection unavailable");
 
     expect(activeTrackStop).toHaveBeenCalledTimes(1);
     expect(replacementTrackStop).toHaveBeenCalledTimes(1);
@@ -804,7 +815,6 @@ describe("audio session", () => {
       sourceLabel: "Remote Stream",
       isAudioLoaded: true,
       isPlaying: false,
-      analysisSource: "idle",
     });
 
     await session.playPauseAudio();
@@ -813,7 +823,6 @@ describe("audio session", () => {
     expect(session.getStatus()).toMatchObject({
       sourceSession: { kind: "file", phase: "active" },
       isPlaying: true,
-      analysisSource: "file",
       playbackSessionId: 1,
       lastPlaybackDiagnostics: {
         playbackSessionId: 1,
@@ -823,13 +832,6 @@ describe("audio session", () => {
         audioContextStateAtStart: "running",
         latestAudioContextState: "running",
       },
-    });
-    expect(session.readFeatureAnalysisCapture()).toMatchObject({
-      fast: {
-        sourceMode: "stream",
-        rms: 0.25,
-      },
-      structural: null,
     });
 
     mediaElement.currentTime = 2.25;
@@ -925,7 +927,6 @@ describe("audio session", () => {
     expect(session.getStatus()).toMatchObject({
       sourceSession: { kind: "system", phase: "active", sessionId: 1 },
       isLiveInputActive: true,
-      analysisSource: "live",
       liveInputTrack: {
         present: true,
         streamActive: true,
@@ -953,22 +954,12 @@ describe("audio session", () => {
         autoGainControl: false,
       },
     });
-    const liveInputCapture = session.readFeatureAnalysisCapture();
-    expect(liveInputCapture).toMatchObject({
-      fast: {
-        sourceMode: "live",
-        rms: 0.25,
-      },
-      structural: null,
-    });
-    expect(liveInputCapture?.fast.avgAmplitude).toBeGreaterThan(0);
 
     session.stopLiveInputStream();
     expect(mockTrackStop).toHaveBeenCalledTimes(1);
     expect(session.getStatus()).toMatchObject({
       sourceSession: { kind: "system", phase: "stopped" },
       isLiveInputActive: false,
-      analysisSource: "idle",
       lastLiveInputInterruption: null,
     });
   });
@@ -1014,7 +1005,6 @@ describe("audio session", () => {
     expect(session.getStatus()).toMatchObject({
       sourceSession: { kind: "system", phase: "error" },
       isLiveInputActive: false,
-      analysisSource: "idle",
       selectedLiveInputDeviceId: null,
       selectedLiveInputDeviceLabel: "",
       lastLiveInputInterruption: {
@@ -1022,7 +1012,6 @@ describe("audio session", () => {
         deviceId: "device-1",
       },
     });
-    expect(session.readFeatureAnalysisCapture()).toBeNull();
   });
 
   it("recovers live input after a sustained track mute but ignores a transient mute", async () => {
@@ -1058,7 +1047,6 @@ describe("audio session", () => {
       expect(session.getStatus()).toMatchObject({
         sourceSession: { kind: "system", phase: "error" },
         isLiveInputActive: false,
-        analysisSource: "idle",
         lastLiveInputInterruption: {
           reason: "track-muted-timeout",
           deviceId: "device-1",
@@ -1078,7 +1066,6 @@ describe("audio session", () => {
     expect(session.getStatus()).toMatchObject({
       sourceSession: { kind: "system", phase: "error" },
       isLiveInputActive: false,
-      analysisSource: "idle",
       lastLiveInputInterruption: {
         reason: "audio-context-interrupted",
         deviceId: "device-1",
@@ -1086,26 +1073,7 @@ describe("audio session", () => {
     });
   });
 
-  it("uses decoded analysis for files and reserves analyser taps for live input", async () => {
-    const session = createSession();
-    await session.loadAudio("good");
-    await session.playPauseAudio();
-
-    expect(lastAudioContext.createdAnalysers).toHaveLength(0);
-
-    await session.startLiveInputStream("device-1");
-
-    expect(lastAudioContext.createdAnalysers).toHaveLength(2);
-    expect(session.readFeatureAnalysisCapture()).toMatchObject({
-      fast: {
-        sourceMode: "live",
-        rms: 0.25,
-      },
-      structural: null,
-    });
-  });
-
-  it("treats system-classified live input as file-style analysis", async () => {
+  it("tracks loopback input through its declared capture-device kind", async () => {
     const session = createSession();
     await session.setLiveInputSettings({
       echoCancellation: true,
@@ -1133,16 +1101,8 @@ describe("audio session", () => {
       isLiveInputActive: true,
       liveInputDeviceKind: "system",
       liveInputCalibrationVersion: 0,
-      analysisSource: "file",
     });
     expect(status).not.toHaveProperty("liveInputKind");
-    expect(session.readFeatureAnalysisCapture()).toMatchObject({
-      fast: {
-        sourceMode: "system",
-        rms: 0.25,
-      },
-      structural: null,
-    });
 
     await session.setLiveInputSettings({
       echoCancellation: false,
@@ -1220,7 +1180,6 @@ describe("audio session", () => {
     expect(session.getStatus()).toMatchObject({
       sourceSession: { kind: "system", phase: "active" },
       isLiveInputActive: true,
-      analysisSource: "file",
       selectedLiveInputDeviceId: "device-1",
     });
   });
@@ -1236,9 +1195,7 @@ describe("audio session", () => {
       sourceSession: { kind: "file", phase: "empty" },
       isAudioLoaded: false,
       isPlaying: false,
-      analysisSource: "idle",
     });
-    expect(session.readFeatureAnalysisCapture()).toBeNull();
     expect(lastAudioContext.close).toHaveBeenCalledTimes(1);
   });
 
@@ -1292,6 +1249,285 @@ describe("audio session", () => {
     });
   });
 
+  it("prepares a loaded file's analysis epoch before Play without starting capture", async () => {
+    const session = createSession();
+    const consumer = {
+      prepare: vi.fn(async () => true),
+      begin: vi.fn(),
+      pause: vi.fn(),
+      invalidate: vi.fn(),
+      scheduleEnd: vi.fn(),
+    };
+    session.bindPcmConsumer(consumer);
+    await session.loadAudio("good");
+    expect(consumer.prepare).toHaveBeenCalledOnce();
+    expect(consumer.prepare.mock.lastCall[0]).toMatchObject({
+      active: false,
+      sourceSession: { kind: "file", phase: "ready" },
+    });
+    expect(consumer.begin).not.toHaveBeenCalled();
+    expect(lastAudioContext.createdBufferSources).toEqual([]);
+    await session.playPauseAudio();
+    expect(consumer.prepare.mock.lastCall[0].sourceSession).toMatchObject({
+      sessionId: consumer.prepare.mock.calls[0][0].sourceSession.sessionId,
+      timelineRevision:
+        consumer.prepare.mock.calls[0][0].sourceSession.timelineRevision,
+    });
+    expect(consumer.begin).toHaveBeenCalledOnce();
+  });
+
+  it("recaptures one real file interval after a clock gap without restarting playback", async () => {
+    const session = createSession();
+    const consumer = {
+      prepare: vi.fn(async () => true),
+      begin: vi.fn(),
+      pause: vi.fn(),
+      invalidate: vi.fn(),
+      scheduleEnd: vi.fn(),
+    };
+    session.bindPcmConsumer(consumer);
+    await session.loadAudio("good");
+    await session.playPauseAudio();
+    const source = lastAudioContext.createdBufferSources[0];
+    const playbackSessionId = session.getStatus().playbackSessionId;
+    lastAudioContext.currentTime += 0.5;
+    expect(await session.recoverPcmAnalysis("invalid-pcm")).toBe(false);
+    expect(await session.recoverPcmAnalysis("context-frame-gap")).toBe(true);
+    // Load, Play, then the one recovery interval.
+    expect(consumer.prepare).toHaveBeenCalledTimes(3);
+    expect(consumer.begin).toHaveBeenCalledTimes(2);
+    expect(consumer.begin.mock.lastCall[0]).toMatchObject({
+      endFrame: consumer.scheduleEnd.mock.lastCall[0],
+    });
+    expect(lastAudioContext.createdBufferSources).toEqual([source]);
+    expect(source.stop).not.toHaveBeenCalled();
+    expect(session.getStatus()).toMatchObject({
+      isPlaying: true,
+      playbackSessionId,
+    });
+    expect(await session.recoverPcmAnalysis("context-frame-gap")).toBe(false);
+    expect(consumer.begin).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["pause", "stop", "seek", "replace", "dispose"])(
+    "does not finish clock-gap recovery after %s",
+    async (command) => {
+      const session = createSession();
+      const consumer = {
+        prepare: vi.fn(async () => true),
+        begin: vi.fn(),
+        pause: vi.fn(),
+        invalidate: vi.fn(),
+        scheduleEnd: vi.fn(),
+      };
+      session.bindPcmConsumer(consumer);
+      await session.loadAudio("good");
+      await session.playPauseAudio();
+      const prepared = createDeferred();
+      consumer.prepare.mockImplementationOnce(() => prepared.promise);
+      const recovery = session.recoverPcmAnalysis("context-frame-gap");
+      expect(await session.recoverPcmAnalysis("context-frame-gap")).toBe(false);
+      if (command === "pause") await session.playPauseAudio();
+      if (command === "stop") session.stopAudio();
+      if (command === "seek") await session.seekTo(1);
+      if (command === "replace") await session.loadAudio("replacement");
+      if (command === "dispose") await session.dispose();
+      const startsAfterCommand = consumer.begin.mock.calls.length;
+      prepared.resolve(true);
+      expect(await recovery).toBe(false);
+      expect(consumer.begin).toHaveBeenCalledTimes(startsAfterCommand);
+    },
+  );
+
+  it("does not finish clock-gap recovery through a replacement PCM consumer", async () => {
+    const session = createSession();
+    const consumer = {
+      prepare: vi.fn(async () => true),
+      begin: vi.fn(),
+      pause: vi.fn(),
+      invalidate: vi.fn(),
+      scheduleEnd: vi.fn(),
+    };
+    const unbind = session.bindPcmConsumer(consumer);
+    await session.loadAudio("good");
+    await session.playPauseAudio();
+    const prepared = createDeferred();
+    consumer.prepare.mockImplementationOnce(() => prepared.promise);
+    const recovery = session.recoverPcmAnalysis("context-frame-gap");
+    unbind();
+    const replacement = {
+      ...consumer,
+      prepare: vi.fn(async () => true),
+      begin: vi.fn(),
+    };
+    session.bindPcmConsumer(replacement);
+    prepared.resolve(true);
+
+    expect(await recovery).toBe(false);
+    expect(consumer.begin).toHaveBeenCalledOnce();
+    expect(replacement.begin).not.toHaveBeenCalled();
+    expect(session.getStatus().isPlaying).toBe(true);
+    expect(await session.recoverPcmAnalysis("context-frame-gap")).toBe(false);
+    expect(replacement.prepare).not.toHaveBeenCalled();
+  });
+
+  it("does not recover a paused file, failed preparation or expired file interval", async () => {
+    const session = createSession();
+    const consumer = {
+      prepare: vi.fn(async () => true),
+      begin: vi.fn(),
+      pause: vi.fn(),
+      invalidate: vi.fn(),
+      scheduleEnd: vi.fn(),
+    };
+    session.bindPcmConsumer(consumer);
+    await session.loadAudio("good");
+    expect(await session.recoverPcmAnalysis("context-frame-gap")).toBe(false);
+    await session.playPauseAudio();
+    consumer.prepare.mockResolvedValueOnce(false);
+    expect(await session.recoverPcmAnalysis("context-frame-gap")).toBe(false);
+    expect(consumer.begin).toHaveBeenCalledOnce();
+    await session.seekTo(1);
+    lastAudioContext.currentTime += 10;
+    expect(await session.recoverPcmAnalysis("context-frame-gap")).toBe(false);
+    expect(consumer.begin).toHaveBeenCalledTimes(2);
+  });
+
+  it("cancels a pending start when the playback toggle is pressed again", async () => {
+    const session = createSession();
+    await session.loadAudio("good");
+    const resume = createDeferred();
+    lastAudioContext.state = "suspended";
+    lastAudioContext.resume.mockImplementation(() => resume.promise);
+    const first = session.playPauseAudio();
+    const second = session.playPauseAudio();
+    lastAudioContext.state = "running";
+    resume.resolve();
+    await Promise.all([first, second]);
+    expect(
+      lastAudioContext.createdBufferSources.filter((source) => source.started),
+    ).toHaveLength(0);
+    expect(session.getStatus().isPlaying).toBe(false);
+  });
+
+  it.each(["stop", "seek", "replace", "select-system", "dispose"])(
+    "does not finish a pending start after %s",
+    async (command) => {
+      const session = createSession();
+      await session.loadAudio("good");
+      const context = lastAudioContext;
+      const resume = createDeferred();
+      context.state = "suspended";
+      context.resume.mockImplementation(() => resume.promise);
+      const starting = session.playPauseAudio();
+      if (command === "stop") session.stopAudio();
+      if (command === "seek") await session.seekTo(1);
+      if (command === "replace") await session.loadAudio("replacement");
+      if (command === "select-system") session.selectSource("system");
+      if (command === "dispose") await session.dispose();
+      context.state = "running";
+      resume.resolve();
+      expect(await starting).toBe(false);
+      expect(
+        context.createdBufferSources.filter((source) => source.started),
+      ).toHaveLength(0);
+      expect(session.getStatus().isPlaying).toBe(false);
+    },
+  );
+
+  it("does not finish or leave a stream playing after a cancelled asynchronous play", async () => {
+    const session = createSession();
+    const element = new MockMediaElement();
+    await session.loadStream({ element });
+    const play = createDeferred();
+    element.play.mockImplementation(async () => {
+      await play.promise;
+      element.paused = false;
+    });
+    const starting = session.playPauseAudio();
+    session.stopAudio();
+    play.resolve();
+    expect(await starting).toBe(false);
+    expect(element.paused).toBe(true);
+    expect(session.getStatus().isPlaying).toBe(false);
+  });
+
+  it.each([false, true])(
+    "does not let an old stream start override a newer play result (fails=%s)",
+    async (fails) => {
+      const session = createSession();
+      const element = new MockMediaElement();
+      await session.loadStream({ element });
+      const oldPlay = createDeferred();
+      element.play.mockImplementationOnce(async () => {
+        await oldPlay.promise;
+        element.paused = false;
+      });
+      const oldStart = session.playPauseAudio();
+      session.stopAudio();
+      if (fails) {
+        element.play.mockRejectedValueOnce(new Error("play rejected"));
+        await expect(session.playPauseAudio()).rejects.toThrow("play rejected");
+      } else {
+        expect(await session.playPauseAudio()).toBe(true);
+      }
+      oldPlay.resolve();
+      expect(await oldStart).toBe(false);
+      expect(element.paused).toBe(fails);
+      expect(session.getStatus().isPlaying).toBe(!fails);
+    },
+  );
+
+  it.each([false, true])(
+    "honors the newer stream result after an old play resolves first (fails=%s)",
+    async (fails) => {
+      const session = createSession();
+      const element = new MockMediaElement();
+      await session.loadStream({ element });
+      const oldPlay = createDeferred();
+      const newPlay = createDeferred();
+      element.play
+        .mockImplementationOnce(async () => {
+          await oldPlay.promise;
+          element.paused = false;
+        })
+        .mockImplementationOnce(() => newPlay.promise);
+
+      const oldStart = session.playPauseAudio();
+      session.stopAudio();
+      const newStart = session.playPauseAudio();
+      oldPlay.resolve();
+      expect(await oldStart).toBe(false);
+      expect(element.paused).toBe(false);
+
+      if (fails) {
+        const rejection = expect(newStart).rejects.toThrow("play rejected");
+        newPlay.reject(new Error("play rejected"));
+        await rejection;
+      } else {
+        newPlay.resolve();
+        expect(await newStart).toBe(true);
+      }
+      expect(element.paused).toBe(fails);
+      expect(session.getStatus().isPlaying).toBe(!fails);
+    },
+  );
+
+  it("does not pause a newer stream when a stale play rejects", async () => {
+    const session = createSession();
+    const element = new MockMediaElement();
+    await session.loadStream({ element });
+    const oldPlay = createDeferred();
+    element.play.mockImplementationOnce(() => oldPlay.promise);
+    const oldStart = session.playPauseAudio();
+    session.stopAudio();
+    expect(await session.playPauseAudio()).toBe(true);
+    oldPlay.reject(new Error("stale play rejected"));
+    expect(await oldStart).toBe(false);
+    expect(element.paused).toBe(false);
+    expect(session.getStatus().isPlaying).toBe(true);
+  });
+
   it("returns to stopped when stopAudio is called while playing", async () => {
     const session = createSession();
     await session.loadAudio("good");
@@ -1302,7 +1538,6 @@ describe("audio session", () => {
     expect(session.getStatus()).toMatchObject({
       isPlaying: false,
       sourceSession: { kind: "file", phase: "stopped" },
-      analysisSource: "idle",
       lastPlaybackEndReason: "stopped",
     });
   });
@@ -1329,7 +1564,6 @@ describe("audio session", () => {
     expect(session.getStatus()).toMatchObject({
       sourceSession: { kind: "file", phase: "stopped" },
       isPlaying: false,
-      analysisSource: "idle",
     });
   });
 
@@ -1366,23 +1600,69 @@ describe("audio session", () => {
     expect(session.getStatus().playbackSessionId).not.toBeNull();
   });
 
-  it("keeps analysis captures active at zero volume and while muted", async () => {
+  it("smooths repeated volume and mute commands without replacing playback", async () => {
     const session = createSession();
     await session.loadAudio("good");
     await session.playPauseAudio();
-
-    const baseline = session.readFeatureAnalysisCapture().fast;
-    session.setVolume(0);
-    const mutedByVolume = session.readFeatureAnalysisCapture().fast;
-    session.setMuted(true);
-    const muted = session.readFeatureAnalysisCapture().fast;
-
-    expect(baseline.fftLinearAmplitudes).toEqual(
-      mutedByVolume.fftLinearAmplitudes,
+    const output = lastAudioContext.createdGains.find((node) =>
+      node.connectedTargets.includes(lastAudioContext.destination),
     );
-    expect(baseline.fftLinearAmplitudes).toEqual(muted.fftLinearAmplitudes);
-    expect(baseline.avgAmplitude).toBe(mutedByVolume.avgAmplitude);
-    expect(baseline.avgAmplitude).toBe(muted.avgAmplitude);
+    const source = session.readPcmSource().source;
+    session.setVolume(0.2);
+    expect(output.gain.setValueAtTime).toHaveBeenLastCalledWith(1, 12);
+    expect(output.gain.linearRampToValueAtTime).toHaveBeenLastCalledWith(
+      0.2,
+      12.01,
+    );
+    lastAudioContext.currentTime = 12.005;
+    session.setVolume(0.8);
+    expect(output.gain.setValueAtTime.mock.lastCall[0]).toBeCloseTo(0.6, 10);
+    expect(output.gain.setValueAtTime.mock.lastCall[1]).toBe(12.005);
+    expect(output.gain.linearRampToValueAtTime).toHaveBeenLastCalledWith(
+      0.8,
+      12.015,
+    );
+    session.setMuted(true);
+    expect(output.gain.linearRampToValueAtTime).toHaveBeenLastCalledWith(
+      0,
+      12.015,
+    );
+    session.setVolume(0.5);
+    session.setMuted(false);
+    expect(output.gain.linearRampToValueAtTime).toHaveBeenLastCalledWith(
+      0.5,
+      12.015,
+    );
+    expect(session.readPcmSource().source).toBe(source);
+    expect(session.getStatus()).toMatchObject({
+      volume: 0.5,
+      muted: false,
+      isPlaying: true,
+    });
+  });
+
+  it("keeps the raw PCM source independent of output volume and mute", async () => {
+    const session = createSession();
+    await session.loadAudio("good");
+    await session.playPauseAudio();
+    const rawSource = session.readPcmSource().source;
+    session.setVolume(0);
+    expect(session.readPcmSource()).toMatchObject({
+      source: rawSource,
+      active: true,
+    });
+    session.setMuted(true);
+    expect(session.readPcmSource()).toMatchObject({
+      source: rawSource,
+      active: true,
+    });
+    session.setVolume(0.75);
+    session.setMuted(false);
+    expect(session.readPcmSource()).toMatchObject({
+      source: rawSource,
+      active: true,
+    });
+    expect(session.getStatus().isPlaying).toBe(true);
   });
 
   it("preserves playback offset across pause and resume", async () => {
@@ -1408,6 +1688,172 @@ describe("audio session", () => {
     });
   });
 
+  it("prepares PCM before scheduling audible file playback on the same sample edge", async () => {
+    const session = createSession();
+    await session.loadAudio("good");
+    const installed = createDeferred();
+    const consumer = {
+      prepare: vi.fn(() => installed.promise),
+      begin: vi.fn(),
+      scheduleEnd: vi.fn(),
+      pause: vi.fn(),
+      invalidate: vi.fn(),
+    };
+    session.bindPcmConsumer(consumer);
+    const playing = session.playPauseAudio();
+    expect(consumer.prepare).toHaveBeenCalledOnce();
+    expect(lastAudioContext.createdBufferSources.at(-1).started).toBe(false);
+    installed.resolve();
+    expect(await playing).toBe(true);
+    const source = lastAudioContext.createdBufferSources.at(-1);
+    const { startFrame } = consumer.begin.mock.calls[0][0];
+    expect(source.startArgs.when * lastAudioContext.sampleRate).toBe(
+      startFrame,
+    );
+    expect(startFrame).toBeGreaterThan(
+      lastAudioContext.currentTime * lastAudioContext.sampleRate,
+    );
+    expect(consumer.scheduleEnd).toHaveBeenCalledExactlyOnceWith(
+      startFrame + 5 * lastAudioContext.sampleRate,
+    );
+    expect(session.readPcmSource().source).toBe(
+      consumer.prepare.mock.calls[0][0].source,
+    );
+    expect(session.readPcmSource().source.channelInterpretation).toBe(
+      "discrete",
+    );
+    await session.playPauseAudio();
+    expect(consumer.pause).toHaveBeenCalledOnce();
+    expect(consumer.invalidate).not.toHaveBeenCalled();
+    session.stopAudio();
+    expect(consumer.invalidate).toHaveBeenCalledWith("file-stopped");
+  });
+
+  it.each([
+    [44100, 0],
+    [44100, 0.031],
+    [48000, 0],
+    [48000, 0.031],
+  ])(
+    "pauses file and PCM together at %i Hz after %f seconds and retires only the old node",
+    async (sampleRate, elapsed) => {
+      const session = createSession();
+      await session.loadAudio("good");
+      const consumer = {
+        prepare: vi.fn(async () => {}),
+        begin: vi.fn(),
+        scheduleEnd: vi.fn(),
+        pause: vi.fn(),
+        invalidate: vi.fn(),
+      };
+      session.bindPcmConsumer(consumer);
+      lastAudioContext.sampleRate = sampleRate;
+      await session.playPauseAudio();
+      const context = lastAudioContext;
+      const oldSource = context.createdBufferSources.at(-1);
+      context.currentTime += elapsed;
+      await session.playPauseAudio();
+      const { contextFrame } = consumer.pause.mock.calls[0][0];
+      expect(contextFrame).toBeGreaterThan(
+        context.currentTime * context.sampleRate,
+      );
+      expect(oldSource.stop).toHaveBeenCalledExactlyOnceWith(
+        contextFrame / context.sampleRate,
+      );
+      expect(oldSource.disconnect).not.toHaveBeenCalled();
+      const pausedTime = session.getTransportState().currentTimeSeconds;
+      expect(pausedTime).toBeCloseTo(
+        contextFrame / context.sampleRate - oldSource.startArgs.when,
+        12,
+      );
+      expect(session.getStatus().isPlaybackPaused).toBe(true);
+      const retireOldSource = oldSource.onended;
+      context.currentTime = contextFrame / context.sampleRate;
+      await session.playPauseAudio();
+      const newSource = context.createdBufferSources.at(-1);
+      expect(newSource.startArgs.offset).toBe(pausedTime);
+      retireOldSource();
+      expect(oldSource.disconnect).toHaveBeenCalledOnce();
+      expect(newSource.disconnect).not.toHaveBeenCalled();
+      expect(session.getStatus().isPlaying).toBe(true);
+      expect(consumer.invalidate).not.toHaveBeenCalled();
+      expect(consumer.begin).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it.each(["stop", "replace", "select", "dispose"])(
+    "%s cancels a pending sample-aligned pause without leaving a connected source",
+    async (action) => {
+      const session = createSession();
+      await session.loadAudio("good");
+      session.bindPcmConsumer({
+        prepare: async () => {},
+        begin() {},
+        scheduleEnd() {},
+        pause() {},
+        invalidate() {},
+      });
+      await session.playPauseAudio();
+      const source = lastAudioContext.createdBufferSources.at(-1);
+      await session.playPauseAudio();
+      expect(source.disconnect).not.toHaveBeenCalled();
+      if (action === "stop") session.stopAudio();
+      if (action === "replace") await session.loadAudio("good");
+      if (action === "select") session.selectSource("system");
+      if (action === "dispose") await session.dispose();
+      expect(source.stop).toHaveBeenLastCalledWith();
+      expect(source.disconnect).toHaveBeenCalledOnce();
+      expect(source.onended).toBeNull();
+    },
+  );
+
+  it("a command cancelling PCM installation cannot leave an audible source or bootstrap it later", async () => {
+    const session = createSession();
+    await session.loadAudio("good");
+    const installed = createDeferred();
+    const consumer = {
+      prepare: vi.fn(() => installed.promise),
+      begin: vi.fn(),
+      scheduleEnd: vi.fn(),
+      pause: vi.fn(),
+      invalidate: vi.fn(),
+    };
+    session.bindPcmConsumer(consumer);
+    const playing = session.playPauseAudio();
+    session.stopAudio();
+    installed.resolve();
+    expect(await playing).toBe(false);
+    expect(consumer.begin).not.toHaveBeenCalled();
+    expect(
+      lastAudioContext.createdBufferSources.some((source) => source.started),
+    ).toBe(false);
+  });
+
+  it("captures the native stream before asking the media element to play", async () => {
+    const session = createSession(),
+      element = new MockMediaElement();
+    await session.loadStream({ element });
+    const started = createDeferred();
+    const consumer = {
+      prepare: vi.fn(async () => {}),
+      begin: vi.fn(),
+      waitUntilStarted: () => started.promise,
+      end: vi.fn(),
+      pause: vi.fn(),
+      invalidate: vi.fn(),
+    };
+    session.bindPcmConsumer(consumer);
+    const playing = session.playPauseAudio();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(consumer.begin).toHaveBeenCalledOnce();
+    expect(element.play).not.toHaveBeenCalled();
+    started.resolve();
+    expect(await playing).toBe(true);
+    expect(element.play).toHaveBeenCalledOnce();
+  });
+
   it("restarts active file playback from the requested seek offset", async () => {
     const session = createSession();
     await session.loadAudio("good");
@@ -1431,7 +1877,7 @@ describe("audio session", () => {
     expect(
       lastAudioContext.createdBufferSources.at(-1)?.startArgs,
     ).toMatchObject({
-      when: 0,
+      when: lastAudioContext.currentTime,
       offset: 3.25,
     });
     expect(session.getTransportState()).toMatchObject({
@@ -1483,7 +1929,6 @@ describe("audio session", () => {
       sourceSession: { kind: "file", phase: "ready" },
       isAudioLoaded: true,
       isPlaying: false,
-      analysisSource: "idle",
     });
     expect(session.readClockSnapshot(5)).toMatchObject({
       clockMode: "realtime",
@@ -1496,7 +1941,7 @@ describe("audio session", () => {
     expect(
       lastAudioContext.createdBufferSources.at(-1)?.startArgs,
     ).toMatchObject({
-      when: 0,
+      when: lastAudioContext.currentTime,
       offset: 0,
     });
   });
@@ -1519,19 +1964,11 @@ describe("audio session", () => {
       sourceSession: { kind: "system", phase: "active" },
       isLiveInputActive: true,
       isPlaying: false,
-      analysisSource: "live",
     });
     expect(session.readClockSnapshot(3)).toMatchObject({
       clockMode: "realtime",
       time: 3,
       deltaTime: 0,
-    });
-    expect(session.readFeatureAnalysisCapture()).toMatchObject({
-      fast: {
-        sourceMode: "live",
-        rms: 0.25,
-      },
-      structural: null,
     });
   });
 
@@ -1556,7 +1993,6 @@ describe("audio session", () => {
       sourceSession: { kind: "system", phase: "active" },
       isLiveInputActive: true,
       isPlaying: false,
-      analysisSource: "live",
       isAudioLoaded: true,
     });
   });
@@ -1636,7 +2072,7 @@ describe("audio session", () => {
     ).toBeCloseTo(1.2, 5);
   });
 
-  it("keeps file analysis active across audio context interruptions", async () => {
+  it("preserves the prepared File and source session across audio context interruptions", async () => {
     const session = createSession();
     await session.loadAudio("good");
     await session.playPauseAudio();
@@ -1645,18 +2081,7 @@ describe("audio session", () => {
 
     expect(session.getStatus()).toMatchObject({
       isPlaying: true,
-      analysisSource: "file",
-      hasAnalysisSource: true,
-      hasPlaybackAnalysisSource: false,
-      hasPreparedFileAnalysisSource: true,
       lastPlaybackEndReason: null,
-    });
-    expect(session.readFeatureAnalysisCapture()).toMatchObject({
-      fast: {
-        sourceMode: "file",
-        rms: 0.25,
-      },
-      structural: null,
     });
     expect(session.getStatus().lastPlaybackDiagnostics).toMatchObject({
       latestAudioContextState: "suspended",
@@ -1741,7 +2166,6 @@ describe("audio session", () => {
       sourceSession: { kind: "file", phase: "empty" },
       isLiveInputActive: false,
       isPlaying: false,
-      analysisSource: "idle",
     });
     expect(lastAudioContext.close).toHaveBeenCalledTimes(1);
   });
@@ -1804,7 +2228,6 @@ describe("audio session", () => {
       sourceSession: { kind: "file", phase: "empty" },
       isAudioLoaded: false,
       isPlaying: false,
-      analysisSource: "idle",
     });
 
     await secondSession.loadAudio("good");

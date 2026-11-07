@@ -25,7 +25,7 @@ See [`LICENSING.md`](LICENSING.md) for the summary and [`COMMERCIAL_LICENSE.md`]
 
 ## Prerequisites
 
-- Node.js `24` via [`.nvmrc`](.nvmrc)
+- Node.js `26` via [`.nvmrc`](.nvmrc)
 - `pnpm`
 - Playwright Chromium for browser acceptance tests, installed on demand
 

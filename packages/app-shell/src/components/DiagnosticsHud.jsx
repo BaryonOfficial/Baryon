@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { RAYMARCH_OPTICAL_FIELD_REPRESENTATION } from "@baryon/engine/core/raymarch/quantityLedger";
-import { usesRaymarchVolumePipeline } from "@baryon/engine/visualization/types";
+import { isVisualizationMethod } from "@baryon/engine/visualization/types";
 import { DEVTOOLS_ENABLED } from "../devtools/config.js";
 import {
   normalizeDiagnosticsHudItems,
@@ -594,7 +594,7 @@ function buildChangeMixItems(changeBreakdown) {
 }
 
 function buildPostProcessItems(metrics) {
-  if (!metrics || !usesRaymarchVolumePipeline(metrics.visualizationMethod)) {
+  if (!metrics || !isVisualizationMethod(metrics.visualizationMethod)) {
     return null;
   }
 

@@ -125,7 +125,7 @@ describe("weakly nonlinear water-acoustic drive", () => {
     );
   });
 
-  it("moves spectral energy from a fundamental into its second harmonic", () => {
+  it("measures the energy-preserving parent and second harmonic from one waveform", () => {
     const amplitude = 0.5;
     const fundamentalBin = Math.round(
       (FUNDAMENTAL_HZ * FFT_SIZE) / SAMPLE_RATE,
@@ -145,10 +145,13 @@ describe("weakly nonlinear water-acoustic drive", () => {
 
     expect(result.fftLinearAmplitudes[fundamentalBin]).toBeLessThan(amplitude);
     expect(result.fftLinearAmplitudes[harmonicBin]).toBeGreaterThan(0);
-    expect(sumSquares(result.fftLinearAmplitudes)).toBeCloseTo(
-      sumSquares(fftLinearAmplitudes),
-      7,
-    );
+    // For these isolated bin-centered sinusoids, center-bin peak amplitudes
+    // describe their energy ratio. Summing all Blackman leakage bins does not
+    // measure time-domain energy without window/power normalization.
+    expect(
+      result.fftLinearAmplitudes[fundamentalBin] ** 2 +
+        result.fftLinearAmplitudes[harmonicBin] ** 2,
+    ).toBeCloseTo(amplitude ** 2, 7);
     expect(result.generatedEnergyFraction).toBeGreaterThan(0);
   });
 

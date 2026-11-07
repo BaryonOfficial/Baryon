@@ -20,9 +20,10 @@ function readFiniteVector(value, length) {
   if (!Array.isArray(value) && !ArrayBuffer.isView(value)) {
     return null;
   }
-  const vector = Array.from(
-    /** @type {ArrayLike<number>} */ (value),
-  ).slice(0, length);
+  const vector = Array.from(/** @type {ArrayLike<number>} */ (value)).slice(
+    0,
+    length,
+  );
   return vector.length === length && vector.every(Number.isFinite)
     ? vector
     : null;
@@ -192,18 +193,35 @@ export function resolveSpectralPhaseField({
     Math.exp(
       -safeDeltaTime / SPECTRAL_PHASE_FIELD_REFERENCE.spectralExposureSeconds,
     );
-  const priorMix = Math.max(0, 1 - beta * evidence.gate);
-  const numerator = [
-    priorMix * prior[0] + beta * evidence.gate * evidence.direction[0],
-    priorMix * prior[1] + beta * evidence.gate * evidence.direction[1],
-  ];
-  const magnitude = Math.hypot(...numerator);
+  // Hue is a direction on S1, not a vector amplitude. Normalized linear
+  // blending cannot leave an antipode with a sub-half assimilation weight.
+  const cross =
+    prior[0] * evidence.direction[1] - prior[1] * evidence.direction[0];
+  const agreement =
+    prior[0] * evidence.direction[0] + prior[1] * evidence.direction[1];
+  // Resolve the ambiguous half-turn consistently, including signed zero and
+  // Float32 roundoff. Outside this angular tolerance, use the shorter arc.
+  const delta =
+    agreement < 0 &&
+    Math.abs(cross) <= SPECTRAL_PHASE_FIELD_REFERENCE.directionEpsilon
+      ? Math.PI
+      : Math.atan2(cross, agreement);
+  const rotation = beta * evidence.gate * delta;
+  const cosine = Math.cos(rotation),
+    sine = Math.sin(rotation);
+  const direction =
+    rotation === 0
+      ? prior
+      : normalizeDirection(
+          [
+            prior[0] * cosine - prior[1] * sine,
+            prior[0] * sine + prior[1] * cosine,
+          ],
+          prior,
+        );
 
   return {
-    direction:
-      magnitude >= SPECTRAL_PHASE_FIELD_REFERENCE.directionEpsilon
-        ? numerator.map((component) => component / magnitude)
-        : prior,
+    direction,
     presence: clamp01(Number.isFinite(presence) ? presence : 0),
     diagnosticConcentration: evidence.diagnosticConcentration,
     evidenceGate: evidence.gate,

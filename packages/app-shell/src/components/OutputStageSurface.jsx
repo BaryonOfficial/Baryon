@@ -1,3 +1,4 @@
+import { useAudioFeatureOwner } from "./hooks/useAudioFeatureOwner.js";
 import { Suspense, useEffect, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { BaryonScene, CAMERA_CONTROL_MODES } from "./BaryonScene.jsx";
@@ -94,6 +95,7 @@ function resolveStageColor(value, fallback) {
  *   registerRenderRequester?: ((requester: (() => void) | null) => void) | null,
  *   halfFloatOutput?: boolean,
  *   outputCompositorFrameTransfer?: boolean,
+ *   presentationEnabled?: boolean,
  *   framebufferPixelRatio?: number,
  *   onOutputCompositorFrame?: ((frame: { width: number, height: number, bitmap: ImageBitmap }) => void) | null,
  *   onStageRender?: (payload: { frameSequence: number | null, qualityPreset: string | null }) => void,
@@ -124,6 +126,7 @@ export function OutputStageSurface({
   registerRenderRequester = null,
   halfFloatOutput = false,
   outputCompositorFrameTransfer = false,
+  presentationEnabled = true,
   framebufferPixelRatio = EXTERNAL_OUTPUT_FRAMEBUFFER_PIXEL_RATIO,
   onOutputCompositorFrame = null,
   onStageRender = null,
@@ -133,6 +136,12 @@ export function OutputStageSurface({
   onPerformanceHudSnapshotChange = null,
   onAuditSnapshotChange = null,
 }) {
+  useAudioFeatureOwner({
+    controlsRef,
+    authorityRole: audioFeatureAuthorityRole,
+    configurationVersion: structuralControlVersion,
+    registerStructureExportSampleReader,
+  });
   const [rendererError, setRendererError] = useState(null);
   const normalizedFramebufferPixelRatio = Number(framebufferPixelRatio);
   const resolvedFramebufferPixelRatio =
@@ -262,12 +271,8 @@ export function OutputStageSurface({
                 externalFrameRef={externalFrameRef}
                 cameraPose={resolvedCameraPose}
                 cameraCutNonce={cameraCutNonce}
-                basePixelRatio={resolvedFramebufferPixelRatio}
                 onStageRender={onStageRender}
                 onFrameState={onFrameState}
-                registerStructureExportSampleReader={
-                  registerStructureExportSampleReader
-                }
                 cameraControlMode={CAMERA_CONTROL_MODES.externalSynced}
                 outputMode={resolvedOutputMode}
                 structuralControlVersion={structuralControlVersion}
@@ -276,6 +281,7 @@ export function OutputStageSurface({
                 adaptiveResetNonce={adaptiveResetNonce}
                 renderContext={RENDER_CONTEXTS.externalOutput}
                 outputCompositorFrameTransfer={outputCompositorFrameTransfer}
+                presentationEnabled={presentationEnabled}
                 onOutputCompositorFrame={onOutputCompositorFrame}
               />
             </Suspense>

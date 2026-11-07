@@ -1,0 +1,116 @@
+{
+  "$schema": "./node_modules/knip/schema-jsonc.json",
+  "tags": [
+    "-lintignore"
+  ],
+  "workspaces": {
+    ".": {
+      "project": [
+        "scripts/**/*.mjs"
+      ],
+      "ignoreBinaries": [
+        "volta"
+      ]
+    },
+    "apps/web": {
+      "entry": [
+        "dev-*/main.js",
+        "scripts/compareBroadbandMusicControls.mjs",
+        "scripts/compareBroadbandRender.mjs",
+        "scripts/linux-webgpu-diagnostics.mjs",
+        "scripts/verifyBroadbandAudioCapture.mjs",
+        "scripts/verifyBroadbandGpuField.mjs",
+        "scripts/verifyBroadbandObserverTimeline.mjs",
+        "scripts/verifyBroadbandSessionOwnership.mjs",
+        "scripts/verifyBroadbandSpectrum.mjs",
+        "scripts/verifyObserverPresentationCache.mjs",
+        "scripts/verifyParallelSpectralProjection.mjs",
+        "scripts/verifySpectralPaletteGpu.mjs",
+        "scripts/verifySpectralPhaseGpu.mjs"
+      ],
+      "project": [
+        "**/*.{js,jsx,mjs,cjs,ts,tsx}!",
+        "!public/draco/**",
+        "!dist/**",
+        "!.vite/**",
+        "!.desktop/**",
+        "!coverage/**",
+        "!scripts/**!",
+        "!dev-*/**!",
+        "!playwright*.{js,mjs,ts}!",
+        "!tests/**!",
+        "!**/*.test.{js,jsx,ts,tsx}!"
+      ],
+      "paths": {
+        "/packages/engine/*": [
+          "../../packages/engine/*"
+        ],
+        "/core/*": [
+          "../../packages/engine/src/core/*"
+        ],
+        "/testing/*": [
+          "../../packages/engine/src/testing/*"
+        ],
+        "/utils/*": [
+          "../../packages/engine/src/utils/*"
+        ],
+        "/defaults.js": [
+          "../../packages/engine/src/defaults.js"
+        ]
+      },
+      "ignoreUnresolved": [
+        "/__spectral_baseline.js"
+      ]
+    },
+    "packages/app-shell": {
+      "entry": [
+        "src/**/*.test.jsx"
+      ],
+      "project": [
+        "!dist/**",
+        "!coverage/**",
+        "src/**/*.{js,jsx,mjs,cjs,ts,tsx}!",
+        "!src/**/*.test.{js,jsx,ts,tsx}!"
+      ]
+    },
+    "packages/engine": {
+      "ignoreBinaries": [
+        "ffmpeg"
+      ],
+      "project": [
+        "!dist/**",
+        "!coverage/**",
+        "scripts/**/*.mjs",
+        "src/**/*.{js,jsx,mjs,cjs,ts,tsx}!",
+        "!src/**/*.test.{js,jsx,ts,tsx}!",
+        "!src/testing/**!"
+      ],
+      "entry": [
+        "scripts/generateSpectralColorimetry.mjs",
+        "scripts/prepareBroadbandMusic.mjs",
+        "scripts/reconstructionHarness.mjs",
+        "scripts/verifyBroadbandConfigurations.mjs",
+        "scripts/verifyBroadbandFrequencyCoverage.mjs",
+        "scripts/verifyBroadbandModalResponse.mjs",
+        "scripts/verifyBroadbandObservationAttribution.mjs",
+        "scripts/verifyBroadbandPreparation.mjs",
+        "src/testing/broadbandGpuApertureProbe.js",
+        "src/testing/broadbandGpuFieldProbe.js",
+        "src/testing/broadbandObserverProbe.js",
+        "src/testing/broadbandObserverTimelineProbe.js",
+        "src/testing/broadbandRenderProbe.js",
+        "src/testing/broadbandSpectralGpuProbe.js",
+        "src/testing/currentModalRenderProbe.js",
+        "src/testing/historicalObserverProbe.js",
+        "src/testing/radiativeTransferGpuProbe.js",
+        "src/testing/spectralPaletteGpuProbe.js",
+        "src/testing/spectralPhaseGpuProbe.js"
+      ]
+    },
+    "packages/config": {
+      "project": [
+        "*.{js,d.ts}"
+      ]
+    }
+  }
+}

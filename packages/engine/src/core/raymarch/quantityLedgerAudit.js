@@ -21,17 +21,17 @@ function freezeAudit({
  */
 export const RAYMARCH_RENDER_SURFACE_AUDITS = Object.freeze({
   scaleSpaceAperture: freezeAudit({
-    file: "fieldCacheBake.js",
-    startToken: "function createApertureKernelWeightNode",
-    endToken: "// Fixed scale-space aperture owner end.",
+    file: "broadbandApertureBasis.js",
+    startToken: "import {",
+    endToken: "// Finite aperture basis owner end.",
     requiredTokens: [
       "CYMATIC_OBSERVER_REFERENCE.fineApertureFwhmWorld",
       "CYMATIC_OBSERVER_REFERENCE.topologyApertureFwhmWorld",
       "CYMATIC_OBSERVER_FINE_APERTURE_KERNEL_OFFSETS",
       "CYMATIC_OBSERVER_TOPOLOGY_APERTURE_KERNEL_OFFSETS",
-      "filteredFineField",
-      "filteredTopologyPotential",
-      "spectralMomentSum",
+      "writeBroadbandApertureBasis",
+      "deriveCymaticObserverApertureKernel",
+      "i + half + offsets[tap]",
     ],
     forbiddenTokens: [
       "threshold",
@@ -47,15 +47,20 @@ export const RAYMARCH_RENDER_SURFACE_AUDITS = Object.freeze({
     endToken: "// Modal field cache bake owner end.",
     requiredTokens: [
       "assertCymaticObserverBakeOptions",
-      "createFieldCacheApertureMaterial",
       "createCymaticObserverMaterial",
-      "modalFieldSpectralMomentUniforms",
+      "evaluateAperture",
+      "prepareAperture",
+      "resolveApertureMaterial",
       'names: ["topology", "source", "organization"]',
       "currentTopologyField",
       "observationTimeSeconds",
       "observationAdvancing",
     ],
     forbiddenTokens: [
+      "createFieldCacheApertureMaterial",
+      "createFieldCacheBakeMaterial",
+      "evaluateSourceField",
+      "prepareSourceField",
       "modalPage",
       "pageIndex",
       "fineFieldTexture",
@@ -252,23 +257,6 @@ export const RAYMARCH_RENDER_SURFACE_AUDITS = Object.freeze({
       "accentRadiance",
     ],
     forbiddenTokens: ["additive-only", "cameraSlice"],
-  }),
-  runtimePlasmaProbe: freezeAudit({
-    file: "runtimeDiagnostics.js",
-    startToken: "function buildPlasmaProbe",
-    endToken: "function buildDebugSnapshot",
-    requiredTokens: [
-      "deriveCymaticPlasmaTransfer",
-      "deriveCymaticPlasmaCarrier",
-      "detailSpineDensity",
-      "preBloomRadiance",
-    ],
-    forbiddenTokens: [
-      "deriveObservationTransfer",
-      "deriveAcousticEnergyMaterialTransfer",
-      "holographicBaseRadianceGain",
-      "trapSalience",
-    ],
   }),
 });
 

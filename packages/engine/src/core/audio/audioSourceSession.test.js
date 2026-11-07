@@ -4,7 +4,6 @@ import {
   AUDIO_SOURCE_KINDS,
   AUDIO_SOURCE_PHASES,
   createAudioSourceSession,
-  isPreparedFileAwaitingPlayback,
   reduceAudioSourceSession,
 } from "./audioSourceSession.js";
 
@@ -121,42 +120,5 @@ describe("audioSourceSession", () => {
       sessionId: loading.sessionId - 1,
     });
     expect(stale).toBe(changed);
-  });
-
-  it("owns the decoded File state that is eligible for initial preparation", () => {
-    const readyStatus = {
-      sourceSession: {
-        ...createAudioSourceSession(),
-        phase: AUDIO_SOURCE_PHASES.ready,
-      },
-      isAudioLoaded: true,
-      hasPreparedFileAnalysisSource: true,
-      isPlaying: false,
-      isPlaybackPaused: false,
-      isLiveInputActive: false,
-      naturalRingdownActive: false,
-    };
-
-    expect(isPreparedFileAwaitingPlayback(readyStatus)).toBe(true);
-    for (const closedStatus of [
-      { isAudioLoaded: false },
-      { hasPreparedFileAnalysisSource: false },
-      { isPlaying: true },
-      { isPlaybackPaused: true },
-      { naturalRingdownActive: true },
-      {
-        sourceSession: {
-          ...readyStatus.sourceSession,
-          phase: AUDIO_SOURCE_PHASES.active,
-        },
-      },
-    ]) {
-      expect(
-        isPreparedFileAwaitingPlayback({
-          ...readyStatus,
-          ...closedStatus,
-        }),
-      ).toBe(false);
-    }
   });
 });

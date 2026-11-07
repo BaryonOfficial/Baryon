@@ -9,8 +9,6 @@ export function useAudioLogic({
   setIsPlaying,
   setIsLiveInputActive,
   setLiveInputDeviceKind,
-  setVolume,
-  setIsMuted,
   setAudioDevices,
   setSelectedDevice,
   isAudioLoaded,
@@ -75,8 +73,6 @@ export function useAudioLogic({
     setIsPlaying(status.isPlaying);
     setIsLiveInputActive(status.isLiveInputActive);
     setLiveInputDeviceKind?.(status.liveInputDeviceKind ?? null);
-    setVolume?.(status.volume ?? 1);
-    setIsMuted?.(status.muted ?? false);
     return status;
   }, [
     audioSession,
@@ -84,8 +80,6 @@ export function useAudioLogic({
     setIsLiveInputActive,
     setIsPlaying,
     setLiveInputDeviceKind,
-    setVolume,
-    setIsMuted,
   ]);
 
   useEffect(() => {
@@ -197,20 +191,6 @@ export function useAudioLogic({
     syncStatus,
   ]);
 
-  const handleVolumeChange = useCallback(
-    (value) => {
-      audioSession.setVolume(value);
-      syncStatus();
-    },
-    [audioSession, syncStatus],
-  );
-
-  const handleMuteToggle = useCallback(() => {
-    const { muted } = audioSession.getStatus();
-    audioSession.setMuted(!muted);
-    syncStatus();
-  }, [audioSession, syncStatus]);
-
   const handleRecentFileSelect = useCallback(
     async (file) => {
       return loadLocalFile(file);
@@ -224,8 +204,6 @@ export function useAudioLogic({
     handlePlayPause,
     handleStop,
     handleLiveInputToggle,
-    handleVolumeChange,
-    handleMuteToggle,
     refreshAudioInputs,
   };
 }

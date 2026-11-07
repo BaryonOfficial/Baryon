@@ -1,5 +1,4 @@
 import { CAVITY_ACOUSTIC_DEFAULTS } from "../defaults.js";
-import { frequencyToBinIndex } from "./audio/binFrequency.js";
 
 // One owner for the water analogy. Both fallbacks below and the atlas cache
 // key read it, so changing the analogy cannot leave a path on the old speed.
@@ -251,27 +250,4 @@ export function solveCavityModeFamilyForPitch(pitch, sideLength, count = 1) {
       frequencyError,
     }),
   );
-}
-
-export function sampleFFTAmplitudeForFrequency(
-  frequency,
-  fftLinearAmplitudes,
-  sampleRate,
-  fftSize,
-) {
-  if (
-    !fftLinearAmplitudes?.length ||
-    !sampleRate ||
-    !fftSize ||
-    frequency <= 0
-  ) {
-    return 0;
-  }
-
-  const index = frequencyToBinIndex(
-    frequency,
-    fftLinearAmplitudes.length,
-    sampleRate,
-  );
-  return fftLinearAmplitudes[index] ?? 0;
 }

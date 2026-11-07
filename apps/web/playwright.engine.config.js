@@ -10,6 +10,8 @@ if (process.platform === "darwin") {
 
 export default defineConfig({
   testDir: "./tests",
+  // Playwright clears its output directory; keep other GPU evidence outside it.
+  outputDir: "./test-results/engine-webgpu-acceptance",
   timeout: 120_000,
   workers: 1,
   fullyParallel: false,

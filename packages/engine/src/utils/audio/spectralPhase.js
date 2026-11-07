@@ -1,4 +1,4 @@
-export const SPECTRAL_PITCH_REFERENCE_HZ = 440;
+const SPECTRAL_PITCH_REFERENCE_HZ = 440;
 
 function fract(value) {
   return value - Math.floor(value);

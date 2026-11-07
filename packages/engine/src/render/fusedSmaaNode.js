@@ -24,7 +24,7 @@ import {
   vec4,
 } from "three/tsl";
 
-const SMAA_QUAD = new QuadMesh();
+const SMAA_QUAD = new QuadMesh(null);
 const SMAA_SIZE = new Vector2();
 
 let smaaRendererState;

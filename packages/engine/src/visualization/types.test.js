@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_VISUALIZATION_METHOD,
   normalizeVisualizationMethod,
-  usesRaymarchVolumePipeline,
+  isVisualizationMethod,
   VISUALIZATION_METHODS,
 } from "./types.js";
 
@@ -26,11 +26,9 @@ describe("normalizeVisualizationMethod", () => {
   });
 });
 
-describe("usesRaymarchVolumePipeline", () => {
+describe("isVisualizationMethod", () => {
   it("is true for the raymarch method and false otherwise", () => {
-    expect(usesRaymarchVolumePipeline(VISUALIZATION_METHODS.raymarch)).toBe(
-      true,
-    );
-    expect(usesRaymarchVolumePipeline("legacy")).toBe(false);
+    expect(isVisualizationMethod(VISUALIZATION_METHODS.raymarch)).toBe(true);
+    expect(isVisualizationMethod("legacy")).toBe(false);
   });
 });

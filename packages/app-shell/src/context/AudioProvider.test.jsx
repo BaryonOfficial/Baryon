@@ -31,7 +31,13 @@ vi.mock("../components/hooks/useAudioLogic", () => ({
       if (!file) return false;
       options.setFileName?.(file.name);
       const fileUrl = URL.createObjectURL(file);
-      await getDefaultAudioSessionMock().loadAudio(fileUrl);
+      try {
+        const loaded = await getDefaultAudioSessionMock().loadAudio(fileUrl);
+        if (loaded === false) return false;
+      } catch {
+        options.setIsAudioLoaded?.(false);
+        return false;
+      }
       options.registerRecentFile?.(file);
       const status = getDefaultAudioSessionMock().getStatus();
       options.setIsAudioLoaded?.(status.isAudioLoaded);
@@ -45,8 +51,6 @@ vi.mock("../components/hooks/useAudioLogic", () => ({
       handleRecentFileSelect: loadRecentFile,
       handlePlayPause: handleLocalPlayPauseMock,
       handleStop: handleLocalStopMock,
-      handleVolumeChange: () => {},
-      handleMuteToggle: () => {},
       refreshAudioInputs: async () => {
         const audioInputs = await refreshAudioInputsMock();
         options.setAudioDevices?.(audioInputs);
@@ -65,6 +69,7 @@ vi.mock("../components/hooks/useAudioLogic", () => ({
 }));
 
 import { AudioProvider } from "./AudioProvider.jsx";
+import { ListenerControls } from "../components/AudioControls.jsx";
 import { useAudio, useAudioScene } from "./AudioContext.jsx";
 import { observeAudioTransportClock } from "./audioTransportClock.js";
 import * as audioTransportClockModule from "./audioTransportClock.js";
@@ -208,12 +213,14 @@ describe("AudioProvider source transport gating", () => {
       platform = "desktop",
       demoAudioFileLoader = null,
       loadAudioResult = true,
+      initialAudioLoaded = true,
       onSceneValue = null,
+      playbackControls = false,
     } = {},
   ) {
     let sessionAcousticIntent = "ambient";
     let sessionStatus = {
-      isAudioLoaded: true,
+      isAudioLoaded: initialAudioLoaded,
       isPlaying: false,
       isLiveInputActive: false,
       volume: 1,
@@ -274,6 +281,7 @@ describe("AudioProvider source transport gating", () => {
     };
 
     session = {
+      resumeAudioContext: vi.fn(async () => {}),
       getStatus,
       getTransportState: () => ({
         currentTimeSeconds: 0,
@@ -403,6 +411,8 @@ describe("AudioProvider source transport gating", () => {
         };
         return true;
       }),
+      setVolume: vi.fn((value) => (sessionStatus.volume = value)),
+      setMuted: vi.fn((value) => (sessionStatus.muted = value)),
       dispose: () => Promise.resolve(),
     };
     getDefaultAudioSessionMock.mockReturnValue(session);
@@ -418,11 +428,332 @@ describe("AudioProvider source transport gating", () => {
           demoAudioFileLoader={demoAudioFileLoader}
         >
           <AudioHarness onValue={onValue} />
+          {playbackControls ? <ListenerControls /> : null}
           {onSceneValue ? <AudioSceneHarness onValue={onSceneValue} /> : null}
         </AudioProvider>,
       );
     });
   }
+
+  it("retires the demo introduction after a successful load, across reset and remount", async () => {
+    const onValue = vi.fn();
+    renderProvider(onValue, { platform: "web" });
+    expect(onValue.mock.lastCall[0].showDemoIntroduction).toBe(true);
+    await act(async () => {
+      await onValue.mock.lastCall[0].loadDemoAudioFile({ autoPlay: false });
+    });
+    expect(onValue.mock.lastCall[0].showDemoIntroduction).toBe(false);
+    await act(async () => {
+      await onValue.mock.lastCall[0].resetAudioSession();
+    });
+    expect(onValue.mock.lastCall[0].showDemoIntroduction).toBe(false);
+    act(() => root.unmount());
+    root = null;
+    container.remove();
+    renderProvider(onValue, { platform: "web" });
+    expect(onValue.mock.lastCall[0].showDemoIntroduction).toBe(false);
+    expect(session.loadAudio).not.toHaveBeenCalled();
+    expect(session.startLiveInputStream).not.toHaveBeenCalled();
+  });
+
+  it("keeps the introduction after a failed demo load or a source selection", async () => {
+    const onValue = vi.fn();
+    renderProvider(onValue, {
+      platform: "web",
+      loadAudioResult: false,
+      initialAudioLoaded: false,
+    });
+    await act(async () => {
+      await onValue.mock.lastCall[0].loadDemoAudioFile();
+      await onValue.mock.lastCall[0].handleSourceChange("system");
+    });
+    expect(onValue.mock.lastCall[0].showDemoIntroduction).toBe(true);
+    expect(
+      window.localStorage.getItem("baryon.audio.introductionCompleted.v1"),
+    ).toBeNull();
+  });
+
+  it.each(["desktop", "web"])(
+    "restores the selected input on %s without activating a source",
+    async (platform) => {
+      window.localStorage.setItem(
+        "baryon.audio.inputPreference.v1",
+        JSON.stringify({
+          deviceId: "saved-loopback",
+          label: "BlackHole 2ch",
+        }),
+      );
+      const onValue = vi.fn();
+      renderProvider(onValue, { platform });
+      await flushAsyncWork();
+      const audio = onValue.mock.lastCall[0];
+      expect(audio.selectedSystemDevice).toBe("saved-loopback");
+      expect(audio.selectedLiveDeviceLabel).toBe("BlackHole 2ch");
+      expect(session.startLiveInputStream).not.toHaveBeenCalled();
+      expect(session.selectSource).not.toHaveBeenCalled();
+      expect(refreshAudioInputsMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("persists an explicit input selection across provider remounts", async () => {
+    const onValue = vi.fn();
+    renderProvider(onValue);
+    await act(async () => {
+      await onValue.mock.lastCall[0].setSelectedSystemDevice("chosen-input");
+    });
+    expect(
+      JSON.parse(
+        window.localStorage.getItem("baryon.audio.inputPreference.v1"),
+      ),
+    ).toEqual({
+      deviceId: "chosen-input",
+      label: "",
+    });
+    act(() => root.unmount());
+    root = null;
+    container.remove();
+    renderProvider(onValue);
+    await flushAsyncWork();
+    expect(onValue.mock.lastCall[0].selectedSystemDevice).toBe("chosen-input");
+    expect(session.startLiveInputStream).not.toHaveBeenCalled();
+  });
+
+  it("does not substitute a different microphone for an unavailable saved input", async () => {
+    window.localStorage.setItem(
+      "baryon.audio.inputPreference.v1",
+      JSON.stringify({
+        deviceId: "missing-loopback",
+        label: "BlackHole 2ch",
+      }),
+    );
+    Object.defineProperty(window, "isSecureContext", {
+      configurable: true,
+      value: true,
+    });
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => ({
+          getTracks: () => [{ stop: vi.fn() }],
+        })),
+        enumerateDevices: vi.fn(async () => []),
+      },
+    });
+    refreshAudioInputsMock.mockResolvedValue([
+      {
+        kind: "audioinput",
+        deviceId: "other-mic",
+        label: "Built-in microphone",
+      },
+    ]);
+    const onValue = vi.fn();
+    renderProvider(onValue, { platform: "web" });
+    await act(async () => {
+      await onValue.mock.lastCall[0].requestLiveInputPermission();
+    });
+    expect(onValue.mock.lastCall[0].selectedSystemDevice).toBe(
+      "missing-loopback",
+    );
+    await act(async () => {
+      await onValue.mock.lastCall[0].handleLiveInputAction();
+    });
+    expect(session.startLiveInputStream).not.toHaveBeenCalled();
+    expect(onValue.mock.lastCall[0].liveInputErrorCode).toBe("device-missing");
+    expect(onValue.mock.lastCall[0].selectedLiveDeviceLabel).toBe(
+      "BlackHole 2ch",
+    );
+  });
+
+  it("keeps volume gestures out of source and scene updates", async () => {
+    const onValue = vi.fn(),
+      onSceneValue = vi.fn();
+    renderProvider(onValue, {
+      platform: "web",
+      playbackControls: true,
+      onSceneValue,
+    });
+    await act(async () => {
+      await onValue.mock.lastCall[0].loadDemoAudioFile({ autoPlay: false });
+    });
+    onValue.mockClear();
+    onSceneValue.mockClear();
+    const sourceBefore = session.getStatus().sourceSession;
+    const input = container.querySelector('[aria-label="App playback volume"]');
+    const setValue = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    ).set;
+    for (const value of [0.8, 0.6, 0.3, 0]) {
+      act(() => {
+        setValue.call(input, String(value));
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    }
+    expect(session.setVolume.mock.calls.map(([value]) => value)).toEqual([
+      0.8, 0.6, 0.3, 0,
+    ]);
+    expect(input.value).toBe("0");
+    expect(onValue).not.toHaveBeenCalled();
+    expect(onSceneValue).not.toHaveBeenCalled();
+    act(() =>
+      container.querySelector('[aria-label="Mute app playback"]').click(),
+    );
+    expect(session.getStatus().muted).toBe(true);
+    expect(
+      container.querySelector('[aria-label="Unmute app playback"]'),
+    ).not.toBeNull();
+    expect(session.getStatus().sourceSession).toEqual(sourceBefore);
+    expect(session.stopAudio).not.toHaveBeenCalled();
+    expect(onValue).not.toHaveBeenCalled();
+  });
+
+  it.each(["seek", "resume"])(
+    "keeps the latest scrub paused when an older %s finishes",
+    async (pendingOperation) => {
+      const onValue = vi.fn();
+      renderProvider(onValue);
+      session.getTransportState = () => ({
+        currentTimeSeconds: 0,
+        durationSeconds: 120,
+        canSeek: true,
+      });
+      await act(async () => {
+        await session.playPauseAudio();
+        await onValue.mock.lastCall[0].beginScrub(10);
+      });
+      const entered = createDeferred();
+      const finish = createDeferred();
+      if (pendingOperation === "seek") {
+        session.seekTo.mockImplementationOnce(async () => {
+          entered.resolve();
+          await finish.promise;
+          return true;
+        });
+      } else {
+        const toggle = session.playPauseAudio.getMockImplementation();
+        session.playPauseAudio.mockImplementationOnce(async () => {
+          entered.resolve();
+          await finish.promise;
+          return toggle();
+        });
+      }
+      let oldCommit;
+      await act(async () => {
+        oldCommit = onValue.mock.lastCall[0].commitScrub(10);
+        await entered.promise;
+      });
+      let nextBegin;
+      await act(async () => {
+        nextBegin = onValue.mock.lastCall[0].beginScrub(20);
+      });
+      await act(async () => {
+        finish.resolve();
+        await Promise.all([oldCommit, nextBegin]);
+      });
+      expect(session.getStatus().isPlaying).toBe(false);
+      expect(onValue.mock.lastCall[0].isScrubbing).toBe(true);
+
+      await act(async () => {
+        await onValue.mock.lastCall[0].commitScrub(20);
+      });
+      expect(session.seekTo).toHaveBeenLastCalledWith(20);
+      expect(session.getStatus().isPlaying).toBe(true);
+      expect(onValue.mock.lastCall[0].isScrubbing).toBe(false);
+    },
+  );
+
+  it.each(["stop", "play-pause", "replace"])(
+    "does not resume a scrub after %s supersedes its seek",
+    async (command) => {
+      const onValue = vi.fn();
+      renderProvider(onValue);
+      session.getTransportState = () => ({
+        currentTimeSeconds: 0,
+        durationSeconds: 120,
+        canSeek: true,
+      });
+      await act(async () => {
+        await session.playPauseAudio();
+        await onValue.mock.lastCall[0].beginScrub(10);
+      });
+      const entered = createDeferred();
+      const finish = createDeferred();
+      session.seekTo.mockImplementationOnce(async () => {
+        entered.resolve();
+        await finish.promise;
+        return true;
+      });
+      let pending;
+      await act(async () => {
+        pending = onValue.mock.lastCall[0].commitScrub(10);
+        await entered.promise;
+        if (command === "stop") onValue.mock.lastCall[0].stopProbeAudio();
+        else if (command === "play-pause")
+          await onValue.mock.lastCall[0].handlePlayPause();
+        else await session.loadAudio("replacement");
+      });
+      const togglesAfterCommand = session.playPauseAudio.mock.calls.length;
+      await act(async () => {
+        finish.resolve();
+        await pending;
+      });
+      expect(session.playPauseAudio).toHaveBeenCalledTimes(togglesAfterCommand);
+      expect(session.getStatus().isPlaying).toBe(false);
+    },
+  );
+
+  it.each([
+    ["commit", false],
+    ["cancel", false],
+    ["cancel", true],
+  ])("%s preserves the original playing state %s", async (action, playing) => {
+    const onValue = vi.fn();
+    renderProvider(onValue);
+    session.getTransportState = () => ({
+      currentTimeSeconds: 0,
+      durationSeconds: 120,
+      canSeek: true,
+    });
+    await act(async () => {
+      if (playing) await session.playPauseAudio();
+      await onValue.mock.lastCall[0].beginScrub(10);
+    });
+    expect(session.getStatus().isPlaying).toBe(false);
+    await act(async () => {
+      if (action === "commit") await onValue.mock.lastCall[0].commitScrub(10);
+      else await onValue.mock.lastCall[0].cancelScrub();
+    });
+    expect(session.getStatus().isPlaying).toBe(playing);
+    expect(onValue.mock.lastCall[0].isScrubbing).toBe(false);
+    if (action === "cancel") expect(session.seekTo).not.toHaveBeenCalled();
+  });
+
+  it("clears a failed scrub and allows the next seek to complete", async () => {
+    const onValue = vi.fn();
+    renderProvider(onValue);
+    session.getTransportState = () => ({
+      currentTimeSeconds: 0,
+      durationSeconds: 120,
+      canSeek: true,
+    });
+    await act(async () => {
+      await onValue.mock.lastCall[0].beginScrub(10);
+    });
+    session.seekTo.mockRejectedValueOnce(new Error("seek failed"));
+    await act(async () => {
+      await expect(onValue.mock.lastCall[0].commitScrub(10)).rejects.toThrow(
+        "seek failed",
+      );
+    });
+    expect(onValue.mock.lastCall[0].isScrubbing).toBe(false);
+    await act(async () => {
+      await onValue.mock.lastCall[0].beginScrub(20);
+      await onValue.mock.lastCall[0].commitScrub(20);
+    });
+    expect(session.seekTo).toHaveBeenLastCalledWith(20);
+    expect(session.getStatus().isPlaying).toBe(false);
+    expect(onValue.mock.lastCall[0].isScrubbing).toBe(false);
+  });
 
   it("updates acoustic intent without toggling live input or changing device", async () => {
     const onValue = vi.fn();
@@ -632,6 +963,10 @@ describe("AudioProvider source transport gating", () => {
       await audio.handleLiveInputAction();
     });
 
+    expect(onValue.mock.lastCall[0].showDemoIntroduction).toBe(false);
+    expect(
+      window.localStorage.getItem("baryon.audio.introductionCompleted.v1"),
+    ).toBe("true");
     expect(session.startLiveInputStream).toHaveBeenCalledWith(
       "main-window-device-9",
       "system",
@@ -898,13 +1233,9 @@ describe("AudioProvider source transport gating", () => {
         requestedAnalysisClass: "auto",
         acousticIntent: "ambient",
         resolvedAnalysisClass: "line-feed",
-        calibrationActive: false,
-        gateOpen: true,
-        hardSilence: false,
-        calibrationInvalid: false,
-        calibrationInvalidReason: "none",
-        sourceBoundaryState: "live",
-        signalState: "ok",
+        sourceSessionId: 1,
+        sourceGeneration: 7,
+        observationAvailable: true,
         errorCode: "none",
       });
     });
@@ -921,10 +1252,27 @@ describe("AudioProvider source transport gating", () => {
     expect(audio.liveInputRuntimeStatus).toMatchObject({
       active: true,
       phase: "listening",
-      gateOpen: true,
-      sourceBoundaryState: "live",
-      signalState: "ok",
+      observationAvailable: true,
+      sourceSessionId: 1,
+      sourceGeneration: 7,
       resolvedAnalysisClass: "line-feed",
+    });
+    const previousGetStatus = session.getStatus;
+    session.getStatus = () => ({
+      ...previousGetStatus(),
+      sourceSession: { ...previousGetStatus().sourceSession, sessionId: 2 },
+    });
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent("__baryon-controls-change", {
+          detail: { boundaryMode: "neumann" },
+        }),
+      );
+    });
+    expect(onValue.mock.lastCall[0].liveInputRuntimeStatus).toMatchObject({
+      phase: "listening",
+      observationAvailable: false,
+      sourceSessionId: 2,
     });
   });
 
@@ -1462,7 +1810,50 @@ describe("AudioProvider source transport gating", () => {
     }
   });
 
-  it("preloads the desktop demo without autoplaying it", async () => {
+  it("resumes audio within the play command before downloading the demo", async () => {
+    const onValue = vi.fn();
+    renderProvider(onValue, { platform: "web" });
+    expect(session.resumeAudioContext).not.toHaveBeenCalled();
+    const resume = createDeferred();
+    session.resumeAudioContext.mockReturnValue(resume.promise);
+    let pending;
+    await act(async () => {
+      pending = onValue.mock.lastCall[0].loadDemoAudioFile();
+      expect(session.resumeAudioContext).toHaveBeenCalledTimes(1);
+      expect(session.loadAudio).not.toHaveBeenCalled();
+    });
+    await act(async () => {
+      await onValue.mock.lastCall[0].handleSourceChange("system");
+      resume.resolve();
+      expect(await pending).toMatchObject({ ok: false, cancelled: true });
+    });
+    expect(session.loadAudio).not.toHaveBeenCalled();
+    expect(session.playPauseAudio).not.toHaveBeenCalled();
+  });
+
+  it("reports desktop demo decode failures instead of hiding them as cancellation", async () => {
+    const onValue = vi.fn();
+    renderProvider(onValue, {
+      demoAudioFileLoader: async () =>
+        new File(["bad audio"], "baryon-demo.mp3"),
+    });
+    const original = URL.createObjectURL;
+    URL.createObjectURL = () => "blob:invalid-demo";
+    session.loadAudio.mockRejectedValueOnce(new Error("Decode failed"));
+    try {
+      await act(async () => {
+        const result = await onValue.mock.lastCall[0].loadDemoAudioFile();
+        expect(result.ok).toBe(false);
+        expect(result.cancelled).not.toBe(true);
+        expect(result.error).toBe("Demo audio failed to load.");
+      });
+      expect(session.playPauseAudio).not.toHaveBeenCalled();
+    } finally {
+      URL.createObjectURL = original;
+    }
+  });
+
+  it("leaves desktop startup silent without loading the demo", async () => {
     const originalCreateObjectUrl = window.URL.createObjectURL;
     Object.defineProperty(window.URL, "createObjectURL", {
       configurable: true,
@@ -1481,8 +1872,8 @@ describe("AudioProvider source transport gating", () => {
 
       await flushAsyncWork();
 
-      expect(demoAudioFileLoader).toHaveBeenCalledTimes(1);
-      expect(session.loadAudio).toHaveBeenCalledTimes(1);
+      expect(demoAudioFileLoader).not.toHaveBeenCalled();
+      expect(session.loadAudio).not.toHaveBeenCalled();
       expect(session.playPauseAudio).not.toHaveBeenCalled();
     } finally {
       if (originalCreateObjectUrl) {
@@ -1497,7 +1888,7 @@ describe("AudioProvider source transport gating", () => {
     }
   });
 
-  it("does not let a pending desktop demo preload reclaim System after Go Live", async () => {
+  it("does not let a requested desktop demo reclaim System after Go Live", async () => {
     const originalCreateObjectUrl = window.URL.createObjectURL;
     Object.defineProperty(window.URL, "createObjectURL", {
       configurable: true,
@@ -1510,6 +1901,9 @@ describe("AudioProvider source transport gating", () => {
 
     try {
       renderProvider(onValue, { platform: "desktop", demoAudioFileLoader });
+      await act(async () => {
+        void onValue.mock.lastCall[0].loadDemoAudioFile();
+      });
       expect(demoAudioFileLoader).toHaveBeenCalledTimes(1);
 
       await act(async () => {
@@ -1544,24 +1938,76 @@ describe("AudioProvider source transport gating", () => {
     }
   });
 
-  it("preloads the demo audio on web startup without autoplaying it", async () => {
+  it.each(["source", "file", "reset"])(
+    "cancels a pending demo when the user chooses %s",
+    async (choice) => {
+      const pendingFile = createDeferred();
+      const onValue = vi.fn();
+      renderProvider(onValue, {
+        platform: "desktop",
+        demoAudioFileLoader: () => pendingFile.promise,
+      });
+      let pendingDemo;
+      await act(async () => {
+        pendingDemo = onValue.mock.lastCall[0].loadDemoAudioFile();
+      });
+      await act(async () => {
+        const audio = onValue.mock.lastCall[0];
+        if (choice === "source") await audio.handleSourceChange("system");
+        if (choice === "reset") await audio.resetAudioSession();
+      });
+      if (choice === "file") {
+        await act(async () => {
+          const original = URL.createObjectURL;
+          URL.createObjectURL = () => "blob:user-selected-track";
+          try {
+            await onValue.mock.lastCall[0].handleFileChange({
+              target: {
+                files: [new File(["track"], "my-track.wav")],
+                value: "",
+              },
+            });
+          } finally {
+            URL.createObjectURL = original;
+          }
+        });
+      }
+      let result;
+      await act(async () => {
+        pendingFile.resolve(new File(["demo"], "baryon-demo.mp3"));
+        result = await pendingDemo;
+      });
+      expect(result).toMatchObject({ ok: false, cancelled: true });
+      if (choice === "file") {
+        expect(session.loadAudio).toHaveBeenCalledExactlyOnceWith(
+          "blob:user-selected-track",
+        );
+        expect(onValue.mock.lastCall[0].displayName).toBe("my-track.wav");
+      } else {
+        expect(session.loadAudio).not.toHaveBeenCalled();
+      }
+      expect(session.playPauseAudio).not.toHaveBeenCalled();
+    },
+  );
+
+  it("leaves web startup silent without loading or playing audio", async () => {
     const onValue = vi.fn();
     renderProvider(onValue, { platform: "web" });
-
     await flushAsyncWork();
-
-    const audio = onValue.mock.lastCall[0];
-    expect(session.loadAudio).toHaveBeenCalledWith("/audio/baryon-demo.mp3");
+    expect(session.loadAudio).not.toHaveBeenCalled();
     expect(session.playPauseAudio).not.toHaveBeenCalled();
-    expect(audio.displayName).toBe("baryon-demo.mp3");
-    expect(audio.sourceSession.kind).toBe("file");
+    expect(session.startLiveInputStream).not.toHaveBeenCalled();
+    expect(onValue.mock.lastCall[0].displayName).toBe("Upload Audio");
   });
 
-  it("starts the already-preloaded web demo without loading or decoding it again", async () => {
+  it("reuses an explicitly loaded web demo without decoding it again", async () => {
     const onValue = vi.fn();
     renderProvider(onValue, { platform: "web" });
-    await flushAsyncWork();
+    await act(async () => {
+      await onValue.mock.lastCall[0].loadDemoAudioFile({ autoPlay: false });
+    });
 
+    expect(session.resumeAudioContext).not.toHaveBeenCalled();
     let audio = onValue.mock.lastCall[0];
     expect(session.loadAudio).toHaveBeenCalledTimes(1);
 
@@ -1575,7 +2021,7 @@ describe("AudioProvider source transport gating", () => {
     expect(audio.displayName).toBe("baryon-demo.mp3");
   });
 
-  it("does not let a superseded web preload claim transport authority", async () => {
+  it("does not play a web demo when loading returns false", async () => {
     const onValue = vi.fn();
     renderProvider(onValue, {
       platform: "web",
@@ -1590,9 +2036,9 @@ describe("AudioProvider source transport gating", () => {
 
     expect(result).toMatchObject({
       ok: false,
-      error: "Demo audio load was superseded.",
+      error: "Demo audio failed to load.",
     });
-    expect(session.loadAudio).toHaveBeenCalledTimes(2);
+    expect(session.loadAudio).toHaveBeenCalledTimes(1);
     expect(session.playPauseAudio).not.toHaveBeenCalled();
     expect(onValue.mock.lastCall[0].displayName).toBe("Upload Audio");
   });

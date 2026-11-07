@@ -1,5 +1,5 @@
 import { hasRenderAuthority } from "../core/renderAuthorityContract.js";
-import { usesRaymarchVolumePipeline } from "../visualization/types.js";
+import { isVisualizationMethod } from "../visualization/types.js";
 import { DEFAULT_TRAA_ENABLED } from "./outputProfilePolicy.js";
 
 const REPROJECTABLE_RAYMARCH_MOTION_EPSILON = 1e-4;
@@ -37,7 +37,7 @@ export function resolveTemporalReprojectionPolicy({
   featureFrame = null,
   sceneSnapshot = null,
 } = {}) {
-  if (!usesRaymarchVolumePipeline(visualizationMethod)) {
+  if (!isVisualizationMethod(visualizationMethod)) {
     return {
       traaEnabled: false,
       accumulateHistory: false,

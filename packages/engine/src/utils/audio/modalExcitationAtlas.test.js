@@ -50,7 +50,7 @@ describe("modal excitation atlas", () => {
       (entry) => entry.u === 0 && entry.v === 0 && entry.w === 2,
     );
 
-    expect(floorEntry?.naturalFrequencyHz).toBeCloseTo(118.4, 1);
+    expect(floorEntry?.naturalFrequencyHz).toBeCloseTo(236.8, 1);
   });
 
   it("admits only optically supported, cache-resolved spatial topology", () => {
@@ -194,7 +194,7 @@ describe("modal excitation atlas", () => {
     });
 
     expect(implicitApparatus).toBe(explicitApparatus);
-    expect(implicitApparatus[0]?.naturalFrequencyHz).toBeCloseTo(118.4, 1);
+    expect(implicitApparatus[0]?.naturalFrequencyHz).toBeCloseTo(236.8, 1);
   });
 
   it("derives bounded source coupling from the declared spatial source profile", () => {
@@ -248,8 +248,7 @@ describe("modal excitation atlas", () => {
     );
 
     expect(
-      strongest[0].sourceCouplingAmplitude /
-        weakest[0].sourceCouplingAmplitude,
+      strongest[0].sourceCouplingAmplitude / weakest[0].sourceCouplingAmplitude,
     ).toBeCloseTo(
       strongest[0].shellSourceGeneralizedForceNorm /
         weakest[0].shellSourceGeneralizedForceNorm,
@@ -330,8 +329,8 @@ describe("modal quality factor", () => {
           ? entry
           : best,
       );
-    const low = nearestIntrinsic(118.4);
-    const high = nearestIntrinsic(236.8);
+    const low = intrinsicAtlas[0];
+    const high = nearestIntrinsic(low.naturalFrequencyHz * 2);
 
     expect(high.qualityFactor / low.qualityFactor).toBeCloseTo(Math.SQRT2, 2);
   });

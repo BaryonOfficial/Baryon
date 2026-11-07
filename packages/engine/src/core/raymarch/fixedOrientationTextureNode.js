@@ -18,11 +18,9 @@ class FixedOrientationTextureNode extends TextureNode {
     levelNode = null,
     biasNode = null,
     flipYForWebGl = false,
-    fixedTextureHeight = null,
   ) {
     super(value, uvNode, levelNode, biasNode);
     this.flipYForWebGl = flipYForWebGl;
-    this.fixedTextureHeight = fixedTextureHeight;
   }
 
   setupUV(builder, uvNode) {
@@ -32,9 +30,9 @@ class FixedOrientationTextureNode extends TextureNode {
     if (this.sampler) {
       return uvNode.flipY();
     }
-    const textureHeight = Number.isInteger(this.fixedTextureHeight)
-      ? int(this.fixedTextureHeight)
-      : int(/** @type {any} */ (textureSize(this, this.levelNode)).y);
+    const textureHeight = int(
+      /** @type {any} */ (textureSize(this, this.levelNode)).y,
+    );
     return uvNode.setY(textureHeight.sub(uvNode.y).sub(1));
   }
 
@@ -46,7 +44,6 @@ class FixedOrientationTextureNode extends TextureNode {
       this.levelNode,
       this.biasNode,
       this.flipYForWebGl,
-      this.fixedTextureHeight,
     );
     clone.sampler = this.sampler;
     clone.depthNode = this.depthNode;
@@ -63,7 +60,7 @@ class FixedOrientationTextureNode extends TextureNode {
 function fixedOrientationTexture(
   value,
   uvNode = null,
-  { flipYForWebGl = false, fixedTextureHeight = null } = {},
+  { flipYForWebGl = false } = {},
 ) {
   const sourceNode = value?.isTextureNode === true ? value : null;
   const textureNode = new FixedOrientationTextureNode(
@@ -72,7 +69,6 @@ function fixedOrientationTexture(
     null,
     null,
     flipYForWebGl,
-    fixedTextureHeight,
   );
   if (sourceNode) {
     textureNode.referenceNode = sourceNode.getBase();
@@ -86,17 +82,6 @@ export function fixedRenderTargetTexture(value, uvNode = null) {
 
 export function fixedRenderTargetTextureLoad(value, texelNode) {
   return fixedRenderTargetTexture(value, texelNode).setSampler(false);
-}
-
-export function fixedRenderTargetTextureLoadAtKnownHeight(
-  value,
-  texelNode,
-  textureHeight,
-) {
-  return fixedOrientationTexture(value, texelNode, {
-    flipYForWebGl: true,
-    fixedTextureHeight: textureHeight,
-  }).setSampler(false);
 }
 
 export function fixedDataTexture(value, uvNode = null) {

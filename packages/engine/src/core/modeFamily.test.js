@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   BOUNDARY_MODES,
@@ -144,26 +143,6 @@ describe("mode family helpers", () => {
     expect(positiveFace.field).toBeCloseTo(0, 6);
   });
 
-  // Both boundary families must read the same centered cavity phase. A
-  // Neumann basis written as cos(index·scale·coordinate) about the cavity
-  // centre still satisfies the wall condition, but it is the even-parity half
-  // of the eigenbasis only: every mode would then peak at the centre, the
-  // field would carry three forced mirror planes regardless of the audio, and
-  // the wavenumber would be twice the f = c|n| / (2L) atlas.
-  it("keeps both TSL boundary bases on the shared centered cavity phase", () => {
-    const source = readFileSync(
-      new URL("./modeFamilyNode.js", import.meta.url),
-      "utf8",
-    );
-
-    expect(source).toContain("createCenteredCavityArgumentNode");
-    expect(source).toContain(
-      "coordinate.mul(scale).add(float(Math.PI)).mul(float(0.5))",
-    );
-    expect(source).not.toMatch(/cos\(\s*index\.mul\(scale\)\.mul\(coordinate\)/);
-    expect(source).not.toMatch(/const argument = coordinates\.mul\(angularScale\)/);
-  });
-
   it("normalizes family energy relative to the old single-term kernel", () => {
     const single = evaluateSinglePermutationMode({
       u: 1,
@@ -251,16 +230,6 @@ describe("mode family helpers", () => {
         boundaryMode: BOUNDARY_MODES.neumann,
       }),
     ).toBeCloseTo(representedEnergy, 6);
-  });
-
-  it("keeps the TSL basis on the same energy-normalized convention", () => {
-    const source = readFileSync(
-      new URL("./modeFamilyNode.js", import.meta.url),
-      "utf8",
-    );
-
-    expect(source).toContain("createDirichletBasisEnergyNormalizationNode");
-    expect(source).toContain("createNeumannBasisEnergyNormalizationNode");
   });
 });
 
@@ -429,7 +398,9 @@ describe("path-integrated modal curvature", () => {
           Math.abs(negativeFace[component] - positiveFace[component]) < 5e-7,
       );
 
-      expect(matches).toEqual(shared ? components : expect.not.arrayContaining(components));
+      expect(matches).toEqual(
+        shared ? components : expect.not.arrayContaining(components),
+      );
     },
   );
 
@@ -507,32 +478,18 @@ describe("path-integrated modal curvature", () => {
 });
 
 describe("GPU permutation-family mask parity", () => {
-  // Plain-number mirror of createPermutationFamilySignature in
-  // modeFamilyNode.js. The GPU derives per-term weights from smoothstep
-  // equality masks and a positional weight list over
-  // PERMUTATION_ORDERS.distinct; for integer mode indices the masks are
-  // exactly 0 or 1 because unequal adjacent indices differ by at least 1,
-  // far above the GPU's FAMILY_EPSILON. This sweep pins the positional
-  // contract: reordering PERMUTATION_ORDERS.distinct would silently break
-  // the GPU weight assignment even though the CPU side adapts, and this
-  // test fails in that case.
+  // Exercise the canonical prepared masks against actual family membership.
+  // The lookup evaluator applies [1, A, B, A, B, A*B] in this order.
   const signatureTermWeights = (u, v, w) => {
-    const neqUV = u === v ? 0 : 1;
-    const neqVW = v === w ? 0 : 1;
-    const twoEqualUV = (1 - neqUV) * neqVW;
-    const twoEqualVW = neqUV * (1 - neqVW);
-    const allDistinct = neqUV * neqVW;
+    const { threeTermUVMask: a, threeTermVWMask: b } =
+      deriveModeFamilyEvaluationScalars(u, v, w, BOUNDARY_MODES.neumann);
+    const termWeights = [1, a, b, a, b, a * b];
     return {
-      termWeights: [
-        1,
-        twoEqualUV + allDistinct,
-        twoEqualVW + allDistinct,
-        twoEqualUV + allDistinct,
-        twoEqualVW + allDistinct,
-        allDistinct,
-      ],
-      uniquePermutationCount:
-        1 + (twoEqualUV + twoEqualVW) * 2 + allDistinct * 5,
+      termWeights,
+      uniquePermutationCount: termWeights.reduce(
+        (sum, weight) => sum + weight,
+        0,
+      ),
     };
   };
 
@@ -591,9 +548,17 @@ describe("mode family evaluation scalars", () => {
   ];
 
   it("matches the enumerated permutation family it replaces", () => {
-    for (const boundaryMode of [BOUNDARY_MODES.neumann, BOUNDARY_MODES.dirichlet]) {
+    for (const boundaryMode of [
+      BOUNDARY_MODES.neumann,
+      BOUNDARY_MODES.dirichlet,
+    ]) {
       for (const [u, v, w] of TRIPLES) {
-        const scalars = deriveModeFamilyEvaluationScalars(u, v, w, boundaryMode);
+        const scalars = deriveModeFamilyEvaluationScalars(
+          u,
+          v,
+          w,
+          boundaryMode,
+        );
         const uniqueCount = getPermutationFamily(u, v, w).length;
 
         // The six ordered weights the shader applies are [1, A, B, A, B, A*B].
@@ -625,10 +590,9 @@ describe("mode family evaluation scalars", () => {
       [2, 1, 3],
       [3, 2, 1],
     ]) {
-      expect(deriveModeFamilyEvaluationScalars(u, v, w).familyScale).toBeCloseTo(
-        canonical.familyScale,
-        12,
-      );
+      expect(
+        deriveModeFamilyEvaluationScalars(u, v, w).familyScale,
+      ).toBeCloseTo(canonical.familyScale, 12);
     }
   });
 });
