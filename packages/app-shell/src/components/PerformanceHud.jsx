@@ -2,7 +2,7 @@ import {
   formatPerformanceProfileLabel,
   isAdaptivePerformanceProfile,
 } from "@baryon/engine/render/outputProfilePolicy";
-import { usesRaymarchVolumePipeline } from "@baryon/engine/visualization/types";
+import { isVisualizationMethod } from "@baryon/engine/visualization/types";
 import { TOP_RIGHT_OVERLAY_PANEL_WIDTH } from "./topRightOverlayLayout.js";
 
 const compactCountFormatter = new Intl.NumberFormat("en-US", {
@@ -173,7 +173,7 @@ export default function PerformanceHud({
   const targetFpsLabel = "Target";
 
   const showRaymarchSamples =
-    usesRaymarchVolumePipeline(metrics.visualizationMethod) &&
+    isVisualizationMethod(metrics.visualizationMethod) &&
     metrics.requestedRaymarchSteps > 0;
   const raymarchSamplesLabel = showRaymarchSamples
     ? `${Math.round(metrics.effectiveRaymarchSteps)} / ${Math.round(metrics.requestedRaymarchSteps)}`

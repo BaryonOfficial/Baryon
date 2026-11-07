@@ -1,201 +1,135 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
+import { syncLiveInputRuntimeStatus } from "../components/hooks/liveInputRuntimeSync.js";
+import { createAudioFeaturePacketFixture } from "../../../engine/src/testing/audioFeaturePacketFixture.js";
+import { createRendererFeatureView } from "@baryon/engine/audio-features";
 import {
   LIVE_INPUT_ERROR_CODES,
   LIVE_INPUT_PHASES,
-  LIVE_INPUT_SIGNAL_STATES,
-  LIVE_INPUT_UI_STATES,
   buildLiveInputRuntimeStatus,
+  createLiveInputRuntimeStatus,
   isLiveInputTransitionLocked,
   mapLiveInputStartError,
 } from "./liveInputRuntimeStatus.js";
 
-function createStatus(overrides = {}) {
-  return {
-    isLiveInputActive: false,
-    liveInputKind: "live",
-    liveInputAnalysisClass: "auto",
-    resolvedLiveInputAnalysisClass: "acoustic-mic",
-    selectedLiveInputDeviceId: "device-1",
-    selectedLiveInputDeviceLabel: "Built-in Mic",
-    ...overrides,
+test("revoked external status projects idle without inventing local source activity", () => {
+  const lastLiveInputRuntimeStatusRef = { current: null },
+    setStatus = vi.fn();
+  const options = {
+    status: null,
+    featureFrame: null,
+    featureRuntimeStatus: { revoked: true },
+    liveInputUiState: "idle",
+    liveInputErrorCode: "none",
+    setLiveInputRuntimeStatus: setStatus,
+    renderLoopRefs: { lastLiveInputRuntimeStatusRef },
   };
-}
-
-function createFeatureFrame(debug = {}) {
-  return {
-    debug: {
-      liveInputCalibrationActive: false,
-      liveInputNoiseGateActive: false,
-      liveInputHardSilenceActive: false,
-      liveInputCalibrationInvalid: false,
-      liveInputCalibrationInvalidReason: "none",
-      ...debug,
-    },
-  };
-}
-
-function createLineFeedFeatureFrame(sourceEvidenceOverrides = {}) {
-  return {
-    sourceEvidence: {
-      sourceBoundaryState: "live",
-      currentSourceEvidence: true,
-      sourceEnergy: 0.3,
-      ...sourceEvidenceOverrides,
-    },
-    debug: {
-      liveInputCalibrationActive: true,
-      liveInputNoiseGateActive: true,
-      liveInputHardSilenceActive: false,
-      liveInputCalibrationInvalid: false,
-      liveInputCalibrationInvalidReason: "none",
-    },
-  };
-}
-
-test("maps acoustic mic runtime phases from calibration to listening to weak signal", () => {
-  const calibrating = buildLiveInputRuntimeStatus({
-    status: createStatus({ isLiveInputActive: true }),
-    featureFrame: createFeatureFrame({
-      liveInputCalibrationActive: true,
-      liveInputNoiseGateActive: true,
-    }),
-    liveInputUiState: LIVE_INPUT_UI_STATES.active,
+  expect(syncLiveInputRuntimeStatus(options)).toMatchObject({
+    active: false,
+    phase: "idle",
+    observationAvailable: false,
   });
-  expect(calibrating.phase).toBe(LIVE_INPUT_PHASES.calibrating);
-  expect(calibrating.liveInputDeviceKind).toBe("live");
-  expect(calibrating.liveInputKind).toBe("live");
-  expect(calibrating.calibrationActive).toBe(true);
-  expect(calibrating.gateOpen).toBe(false);
-  expect(calibrating.signalState).toBe(LIVE_INPUT_SIGNAL_STATES.ok);
-
-  const listening = buildLiveInputRuntimeStatus({
-    status: createStatus({ isLiveInputActive: true }),
-    featureFrame: createFeatureFrame({
-      liveInputCalibrationActive: false,
-      liveInputNoiseGateActive: false,
-    }),
-    liveInputUiState: LIVE_INPUT_UI_STATES.active,
-  });
-  expect(listening.phase).toBe(LIVE_INPUT_PHASES.listening);
-  expect(listening.gateOpen).toBe(true);
-
-  const weak = buildLiveInputRuntimeStatus({
-    status: createStatus({ isLiveInputActive: true }),
-    featureFrame: createFeatureFrame({
-      liveInputCalibrationActive: false,
-      liveInputNoiseGateActive: true,
-      liveInputHardSilenceActive: false,
-    }),
-    liveInputUiState: LIVE_INPUT_UI_STATES.active,
-  });
-  expect(weak.phase).toBe(LIVE_INPUT_PHASES.weakSignal);
-  expect(weak.signalState).toBe(LIVE_INPUT_SIGNAL_STATES.weak);
-
-  const silent = buildLiveInputRuntimeStatus({
-    status: createStatus({ isLiveInputActive: true }),
-    featureFrame: createFeatureFrame({
-      liveInputCalibrationActive: false,
-      liveInputNoiseGateActive: true,
-      liveInputHardSilenceActive: true,
-    }),
-    liveInputUiState: LIVE_INPUT_UI_STATES.active,
-  });
-  expect(silent.phase).toBe(LIVE_INPUT_PHASES.weakSignal);
-  expect(silent.signalState).toBe(LIVE_INPUT_SIGNAL_STATES.silent);
+  syncLiveInputRuntimeStatus(options);
+  expect(setStatus).toHaveBeenCalledOnce();
 });
-
-test("treats line feed input as listening without mic calibration states", () => {
-  const runtimeStatus = buildLiveInputRuntimeStatus({
-    status: createStatus({
-      isLiveInputActive: true,
-      liveInputKind: "system",
-      resolvedLiveInputAnalysisClass: "line-feed",
-      selectedLiveInputDeviceLabel: "Loopback Device",
-    }),
-    featureFrame: createLineFeedFeatureFrame(),
-    liveInputUiState: LIVE_INPUT_UI_STATES.active,
-  });
-
-  expect(runtimeStatus.phase).toBe(LIVE_INPUT_PHASES.listening);
-  expect(runtimeStatus.liveInputDeviceKind).toBe("system");
-  expect(runtimeStatus.liveInputKind).toBe("system");
-  expect(runtimeStatus.calibrationActive).toBe(false);
-  expect(runtimeStatus.gateOpen).toBe(true);
-  expect(runtimeStatus.sourceBoundaryState).toBe("live");
-});
-
-test("treats line feed live boundary as listening when source energy is zero", () => {
-  const runtimeStatus = buildLiveInputRuntimeStatus({
-    status: createStatus({
-      isLiveInputActive: true,
-      liveInputKind: "system",
-      resolvedLiveInputAnalysisClass: "line-feed",
-      selectedLiveInputDeviceLabel: "BlackHole 2ch",
-    }),
-    featureFrame: createLineFeedFeatureFrame({
-      sourceEnergy: 0,
-      metrics: {
-        avgAmplitude: 0,
-        analyserRms: 0,
-        fftPeakAmplitude: 0,
-        timeDomainPeakAmplitude: 0.002,
-        spectralEffectiveBinCount: 0,
+const frame = createRendererFeatureView(
+  createAudioFeaturePacketFixture().model(),
+);
+const status = {
+  isLiveInputActive: true,
+  sourceSession: { kind: "system", sessionId: 7 },
+  liveInputDeviceKind: "system",
+  resolvedLiveInputAnalysisClass: "line-feed",
+  selectedLiveInputDeviceId: "device-1",
+  selectedLiveInputDeviceLabel: "DJ mixer",
+};
+test.each(["acoustic-mic", "line-feed"])(
+  "a valid quiet %s stream is listening without calibration or energy gating",
+  (resolvedLiveInputAnalysisClass) => {
+    const result = buildLiveInputRuntimeStatus({
+      status: { ...status, resolvedLiveInputAnalysisClass },
+      featureFrame: frame,
+    });
+    expect(result).toMatchObject({
+      active: true,
+      phase: "listening",
+      observationAvailable: true,
+      sourceSessionId: 7,
+      sourceGeneration: frame.observation.sourceGeneration,
+    });
+    expect(result).not.toHaveProperty("gateOpen");
+    expect(result).not.toHaveProperty("signalState");
+  },
+);
+test("device connection and retired diagnostic fields cannot synthesize observation readiness", () => {
+  const result = buildLiveInputRuntimeStatus({
+    status,
+    featureFrame: {
+      renderAuthority: true,
+      sourceEvidence: {
+        currentSourceEvidence: true,
+        sourceBoundaryState: "live",
       },
-      transport: {
-        lineFeedProgramActive: true,
-      },
-    }),
-    liveInputUiState: LIVE_INPUT_UI_STATES.active,
+      debug: { liveInputNoiseGateActive: false },
+    },
   });
-
-  expect(runtimeStatus.phase).toBe(LIVE_INPUT_PHASES.listening);
-  expect(runtimeStatus.gateOpen).toBe(true);
-  expect(runtimeStatus.signalState).toBe(LIVE_INPUT_SIGNAL_STATES.ok);
-  expect(runtimeStatus.sourceBoundaryState).toBe("live");
-});
-
-test("treats active line feed with muted source evidence as silent", () => {
-  const runtimeStatus = buildLiveInputRuntimeStatus({
-    status: createStatus({
-      isLiveInputActive: true,
-      liveInputKind: "system",
-      resolvedLiveInputAnalysisClass: "line-feed",
-      selectedLiveInputDeviceLabel: "BlackHole 2ch",
-    }),
-    featureFrame: createLineFeedFeatureFrame({
-      sourceBoundaryState: "muted",
-      currentSourceEvidence: false,
-      sourceEnergy: 0,
-    }),
-    liveInputUiState: LIVE_INPUT_UI_STATES.active,
+  expect(result).toMatchObject({
+    phase: "listening",
+    observationAvailable: false,
   });
-
-  expect(runtimeStatus.phase).toBe(LIVE_INPUT_PHASES.weakSignal);
-  expect(runtimeStatus.gateOpen).toBe(false);
-  expect(runtimeStatus.hardSilence).toBe(true);
-  expect(runtimeStatus.signalState).toBe(LIVE_INPUT_SIGNAL_STATES.silent);
-  expect(runtimeStatus.sourceBoundaryState).toBe("muted");
-});
-
-test("maps invalid calibration to clipped error status", () => {
-  const runtimeStatus = buildLiveInputRuntimeStatus({
-    status: createStatus({ isLiveInputActive: true }),
-    featureFrame: createFeatureFrame({
-      liveInputCalibrationInvalid: true,
-      liveInputCalibrationInvalidReason: "compressed-baseline",
-      liveInputNoiseGateActive: true,
+  expect(
+    createLiveInputRuntimeStatus({
+      calibrationActive: true,
+      sourceEvidence: { live: true },
     }),
-    liveInputUiState: LIVE_INPUT_UI_STATES.active,
-  });
-
-  expect(runtimeStatus.phase).toBe(LIVE_INPUT_PHASES.error);
-  expect(runtimeStatus.calibrationInvalid).toBe(true);
-  expect(runtimeStatus.errorCode).toBe(
-    LIVE_INPUT_ERROR_CODES.calibrationInvalid,
-  );
-  expect(runtimeStatus.signalState).toBe(LIVE_INPUT_SIGNAL_STATES.clipped);
+  ).not.toHaveProperty("calibrationActive");
 });
-
+test("worker failure and sample-clock staleness surface as processing errors even while the device remains connected", () => {
+  for (const featureRuntimeStatus of [
+    { state: "failed" },
+    { latestObservationStale: true },
+  ]) {
+    expect(
+      buildLiveInputRuntimeStatus({
+        status,
+        featureFrame: frame,
+        featureRuntimeStatus,
+      }),
+    ).toMatchObject({
+      phase: "error",
+      errorCode: "processing-failed",
+      observationAvailable: false,
+    });
+  }
+});
+test("provider transitions and errors remain authoritative over cached valid observations", () => {
+  expect(
+    buildLiveInputRuntimeStatus({
+      status,
+      featureFrame: frame,
+      liveInputUiState: "stopping",
+    }).phase,
+  ).toBe("stopping");
+  expect(
+    buildLiveInputRuntimeStatus({
+      status,
+      featureFrame: frame,
+      liveInputUiState: "starting",
+    }).phase,
+  ).toBe("starting");
+  expect(
+    buildLiveInputRuntimeStatus({
+      status: { ...status, isLiveInputActive: false },
+      featureFrame: frame,
+    }).phase,
+  ).toBe("idle");
+  expect(
+    buildLiveInputRuntimeStatus({
+      status,
+      featureFrame: frame,
+      liveInputErrorCode: "device-disconnected",
+    }),
+  ).toMatchObject({ phase: "error", errorCode: "device-disconnected" });
+});
 test("maps provider start errors and transition locking", () => {
   expect(
     mapLiveInputStartError({

@@ -18,7 +18,6 @@ import {
   resolveModalDampingApparatus,
 } from "./modalDamping.js";
 
-export const MODAL_EXCITATION_RESONANT_MIN_HZ = 200;
 export const MODAL_EXCITATION_RESONANT_MIN_MODE_ORDER = 20;
 const ATLAS_CACHE_MAX_SIZE = 8;
 const ATLAS_CACHE = new Map();
@@ -153,7 +152,7 @@ function buildSourceProjectedShellAtlas(families) {
  * an omitted or partial scale resolves against the one declared water-cavity
  * apparatus, and an omitted boundary resolves to its rigid-wall Neumann basis.
  */
-export function resolveModalExcitationApparatus({
+function resolveModalExcitationApparatus({
   radius,
   cavityAcousticScale,
   boundaryMode,

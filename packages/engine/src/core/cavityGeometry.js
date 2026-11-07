@@ -6,7 +6,7 @@ const CAVITY_GEOMETRIES = Object.freeze({
 });
 
 export const DEFAULT_REQUESTED_CAVITY_GEOMETRY = CAVITY_GEOMETRIES.rectangular;
-export const DEFAULT_EFFECTIVE_CAVITY_GEOMETRY = CAVITY_GEOMETRIES.rectangular;
+const DEFAULT_EFFECTIVE_CAVITY_GEOMETRY = CAVITY_GEOMETRIES.rectangular;
 
 /**
  * @param {unknown} value

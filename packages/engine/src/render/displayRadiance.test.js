@@ -204,6 +204,16 @@ describe("display radiance", () => {
     expect(compressed).toBeLessThan(0.96);
   });
 
+  it("preserves faint linear radiance and chromaticity without a black cutoff", () => {
+    for (const gain of [0, 1e-12, 1e-8, 1e-6, 1e-5, 0.01]) {
+      const source = [gain, gain * 0.2, gain * 0.6];
+      const displayed = compressDisplayRadiance(source);
+      for (let channel = 0; channel < 3; channel++) {
+        expect(displayed[channel]).toBe(source[channel]);
+      }
+    }
+  });
+
   it("preserves luminance separation across the caustic highlight range", () => {
     const referenceHighlight = compressDisplayLuminance(1.1);
     const focusedHighlight = compressDisplayLuminance(2.2);

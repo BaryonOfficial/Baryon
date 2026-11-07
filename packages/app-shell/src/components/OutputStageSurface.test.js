@@ -154,7 +154,6 @@ describe("OutputStageSurface", () => {
 
     expect(canvasSpy).toHaveBeenCalledTimes(1);
     expect(canvasSpy.mock.calls[0][0].dpr).toBe(1);
-    expect(baryonSceneSpy.mock.calls[0][0].basePixelRatio).toBe(1);
   });
 
   it("renders a physical-pixel Windows compositor frame at the supplied ratio", () => {
@@ -171,7 +170,6 @@ describe("OutputStageSurface", () => {
     );
 
     expect(canvasSpy.mock.calls.at(-1)?.[0].dpr).toBe(1.5);
-    expect(baryonSceneSpy.mock.calls.at(-1)?.[0].basePixelRatio).toBe(1.5);
     canvasSpy.mock.calls.at(-1)?.[0].gl(glDefaults);
     expect(createBaryonRendererSpy).toHaveBeenCalledWith(glDefaults, false, {
       initialPixelRatio: 1.5,
@@ -292,7 +290,6 @@ describe("OutputStageSurface", () => {
     expect(baryonSceneSpy.mock.calls[0][0]).toMatchObject({
       performanceProfile: "custom",
       customTargetFps: 72,
-      basePixelRatio: 1,
     });
   });
 

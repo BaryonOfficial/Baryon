@@ -8,6 +8,85 @@ const PRODUCTION_RAYMARCH_STEPS = 80;
 const REFERENCE_RAYMARCH_STEPS = 104;
 const ACTIVE_LUMINANCE_THRESHOLD = 0.004;
 
+test("prepares the production renderer before a file has loaded", async ({
+  page,
+}) => {
+  let releaseDemo;
+  const heldDemo = new Promise((resolve) => {
+    releaseDemo = resolve;
+  });
+  await page.route("**/audio/baryon-demo.mp3", async (route) => {
+    await heldDemo;
+    await route.fulfill({
+      status: 200,
+      contentType: "audio/wav",
+      body: createToneWav(),
+    });
+  });
+  try {
+    await installProductionControlMirror(page);
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await setProductionControls(page, [["auditEnabled", true]]);
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const metrics = window.__baryonPerfMetrics;
+            return {
+              basis:
+                metrics?.render?.renderProbeSnapshot?.state?.basisCompileCount,
+              uploads:
+                metrics?.render?.renderProbeSnapshot?.state
+                  ?.observationUploadCount,
+              authority:
+                metrics?.render?.renderProbeSnapshot?.state?.renderAuthority,
+              visible: metrics?.render?.materialOutputVisible,
+              pending: metrics?.render?.preparationPending,
+            };
+          }),
+        { timeout: 30000 },
+      )
+      .toMatchObject({
+        basis: 1,
+        uploads: 0,
+        authority: false,
+        visible: false,
+        pending: false,
+      });
+    expect(
+      await page.evaluate(() => window.__baryonRendererInfo?.gpuErrors),
+    ).toEqual([]);
+  } finally {
+    releaseDemo();
+    await page.unrouteAll({ behavior: "wait" });
+  }
+});
+
+function createToneWav() {
+  const sampleRate = 48_000;
+  const sampleCount = sampleRate * 60;
+  const buffer = Buffer.alloc(44 + sampleCount * 2);
+  buffer.write("RIFF");
+  buffer.writeUInt32LE(buffer.length - 8, 4);
+  buffer.write("WAVEfmt ", 8);
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(1, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(sampleRate * 2, 28);
+  buffer.writeUInt16LE(2, 32);
+  buffer.writeUInt16LE(16, 34);
+  buffer.write("data", 36);
+  buffer.writeUInt32LE(sampleCount * 2, 40);
+  for (let i = 0; i < sampleCount; i++) {
+    buffer.writeInt16LE(
+      Math.round(Math.sin((2 * Math.PI * 528 * i) / sampleRate) * 0.5 * 32767),
+      44 + i * 2,
+    );
+  }
+  return buffer;
+}
+
 async function installProductionControlMirror(page) {
   await page.addInitScript(() => {
     window.__baryonEngineAcceptanceControls = null;
@@ -237,10 +316,26 @@ test("production WebGPU preserves authority, spectral output, 80-step fidelity, 
     ["bloomEnabled", true],
     ["traaEnabled", true],
     ["smaaEnabled", true],
-    ["injectTestTone", true],
-    ["testToneHz", 528],
-    ["testToneAmplitude", 0.5],
   ]);
+
+  // Exercise the production PCM/worker path. The retired audit-tone switch
+  // does not own source creation in the consecutive-audio engine.
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "engine-acceptance-tone.wav",
+    mimeType: "audio/wav",
+    buffer: createToneWav(),
+  });
+  await expect(page.getByTestId("file-track-title")).toHaveText(
+    "engine-acceptance-tone.wav",
+  );
+  const timeline = page.getByRole("slider", { name: "Playback position" });
+  await expect
+    .poll(async () => Number(await timeline.getAttribute("max")))
+    .toBeCloseTo(60, 1);
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Pause", exact: true }),
+  ).toBeVisible();
 
   await waitForRaymarchStepCount(page, REFERENCE_RAYMARCH_STEPS);
   await expect
@@ -252,10 +347,9 @@ test("production WebGPU preserves authority, spectral output, 80-step fidelity, 
           return {
             authority: probe?.state?.renderAuthority ?? false,
             activeCandidate: probe?.health?.activeCandidate ?? false,
-            spectral: probe?.state?.spectralPresentationEnabled ?? false,
+            spectral: metrics?.render?.spectralPresentationEnabled ?? false,
             visible: metrics?.render?.materialOutputVisible ?? false,
-            hasActiveModes:
-              (metrics?.modalFreshness?.activeModalFieldModeCount ?? 0) > 0,
+            hasActiveFamilies: (metrics?.modalFreshness?.familyCount ?? 0) > 0,
           };
         }),
       { timeout: 30_000 },
@@ -265,7 +359,7 @@ test("production WebGPU preserves authority, spectral output, 80-step fidelity, 
       activeCandidate: true,
       spectral: true,
       visible: true,
-      hasActiveModes: true,
+      hasActiveFamilies: true,
     });
 
   const referenceImagePath = testInfo.outputPath(
@@ -324,7 +418,76 @@ test("production WebGPU preserves authority, spectral output, 80-step fidelity, 
   expect(
     Math.abs(productionVisual.gradientMean - referenceVisual.gradientMean),
   ).toBeLessThanOrEqual(0.03);
-  await setProductionControls(page, [["injectTestTone", false]]);
+  // Change display density without a CSS resize. The production Canvas must
+  // update its backing store while retaining the same renderer and PCM epoch.
+  const canvasHandle = await page
+    .locator("#root > div canvas")
+    .first()
+    .elementHandle();
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    for (const ratio of [1.5, 1]) {
+      await cdp.send("Emulation.setDeviceMetricsOverride", {
+        width: PRODUCTION_WIDTH,
+        height: PRODUCTION_HEIGHT,
+        deviceScaleFactor: ratio,
+        mobile: false,
+      });
+      await expect
+        .poll(() =>
+          page.evaluate(() => ({
+            ratio: window.__baryonPerfMetrics?.renderSurface?.pixelRatio,
+            width: document.querySelector("#root > div canvas")?.width,
+            height: document.querySelector("#root > div canvas")?.height,
+            visible: window.__baryonPerfMetrics?.render?.materialOutputVisible,
+          })),
+        )
+        .toEqual({
+          ratio,
+          width: PRODUCTION_WIDTH * ratio,
+          height: PRODUCTION_HEIGHT * ratio,
+          visible: true,
+        });
+      expect(
+        await canvasHandle.evaluate(
+          (canvas) => canvas === document.querySelector("#root > div canvas"),
+        ),
+      ).toBe(true);
+      expect(
+        await page.evaluate(() => ({
+          source: window.__baryonPerfMetrics?.engine?.sourceGeneration,
+          worker: window.__baryonPerfMetrics?.engine?.workerGeneration,
+          gpuErrors: window.__baryonRendererInfo?.gpuErrors,
+        })),
+      ).toEqual({
+        source: activeState.engine.sourceGeneration,
+        worker: activeState.engine.workerGeneration,
+        gpuErrors: [],
+      });
+    }
+  } finally {
+    await cdp.send("Emulation.clearDeviceMetricsOverride");
+    await cdp.detach();
+    await canvasHandle.dispose();
+  }
+
+  // Selecting an unstarted source revokes the running file epoch. Status and
+  // frame acknowledgements must not restart it after the explicit switch.
+  await page.getByRole("button", { name: "System", exact: true }).click();
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => ({
+          reason: window.__baryonPerfMetrics?.engine?.reason,
+          sourceGeneration:
+            window.__baryonPerfMetrics?.engine?.sourceGeneration,
+        })),
+      { timeout: 30_000 },
+    )
+    .toEqual({
+      reason: "select",
+      sourceGeneration: activeState.engine.sourceGeneration + 1,
+    });
   await expect
     .poll(
       () =>
@@ -352,6 +515,10 @@ test("production WebGPU preserves authority, spectral output, 80-step fidelity, 
         const startedAt = performance.now();
         const initialFrameId =
           window.__baryonPerfMetrics?.engine?.latestAcceptedFrameId ?? 0;
+        const initialSourceGeneration =
+          window.__baryonPerfMetrics?.engine?.sourceGeneration;
+        const initialWorkerGeneration =
+          window.__baryonPerfMetrics?.engine?.workerGeneration;
         let sampleCount = 0;
         let authorityObserved = false;
         let materialOutputObserved = false;
@@ -370,6 +537,10 @@ test("production WebGPU preserves authority, spectral output, 80-step fidelity, 
               materialOutputObserved,
               acceptedFrameAdvanced:
                 (metrics?.engine?.latestAcceptedFrameId ?? 0) > initialFrameId,
+              sourceGenerationChanged:
+                metrics?.engine?.sourceGeneration !== initialSourceGeneration,
+              workerGenerationChanged:
+                metrics?.engine?.workerGeneration !== initialWorkerGeneration,
             });
             return;
           }
@@ -379,7 +550,9 @@ test("production WebGPU preserves authority, spectral output, 80-step fidelity, 
       }),
   );
   expect(stableRevocation.sampleCount).toBeGreaterThan(0);
-  expect(stableRevocation.acceptedFrameAdvanced).toBe(true);
+  expect(stableRevocation.acceptedFrameAdvanced).toBe(false);
+  expect(stableRevocation.sourceGenerationChanged).toBe(false);
+  expect(stableRevocation.workerGenerationChanged).toBe(false);
   expect(stableRevocation.authorityObserved).toBe(false);
   expect(stableRevocation.materialOutputObserved).toBe(false);
 

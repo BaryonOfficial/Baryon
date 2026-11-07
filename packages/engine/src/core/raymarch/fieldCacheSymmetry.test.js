@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildModalExcitationAtlas } from "../../utils/audio/modalExcitationAtlas.js";
-import { evaluateWaterRadiationPotentialSample } from "./radiationPotentialObservation.js";
+import { evaluateHarmonicRadiationReference } from "../../testing/harmonicRadiationReference.js";
 import {
   FIELD_CACHE_DOMAINS,
   canonicalizeFieldCacheVoxelIndex,
@@ -40,7 +40,7 @@ function buildModes(cavityGeometry) {
 }
 
 function evaluate(modes, [x, y, z], boundaryMode) {
-  const sample = evaluateWaterRadiationPotentialSample({
+  const sample = evaluateHarmonicRadiationReference({
     modes,
     x,
     y,

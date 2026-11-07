@@ -1,41 +1,24 @@
 {
   "name": "baryon-monorepo",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.4.1",
   "license": "LicenseRef-PolyForm-Strict-1.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/BaryonOfficial/Baryon.git"
   },
   "engines": {
-    "node": "24.x"
+    "node": "26.x"
   },
   "scripts": {
     "dev": "turbo dev --filter=@baryon/web",
-    "dev:docs": "cd docs && volta run --node 24.14.1 corepack pnpm dev",
+    "dev:docs": "pnpm --dir docs dev",
     "build": "turbo build",
     "build:web": "turbo build --filter=@baryon/web",
-    "preflight:public": "bash scripts/preflight-public.sh",
-    "preflight:web:vercel": "bash scripts/preflight-web-vercel.sh",
-    "repo:map": "node scripts/generate-repo-map.mjs",
-    "repo:map:check": "node scripts/generate-repo-map.mjs --check",
     "docs:check": "node scripts/check-docs.mjs",
-    "docs:mintlify:check": "cd docs && volta run --node 24.14.1 corepack pnpm mintlify:check",
+    "docs:mintlify:check": "pnpm --dir docs mintlify:check",
     "version:check": "node scripts/workspace-version.mjs --check",
     "version:set": "node scripts/workspace-version.mjs",
-    "release:patch": "node scripts/release-bump.mjs patch",
-    "release:minor": "node scripts/release-bump.mjs minor",
-    "release:major": "node scripts/release-bump.mjs major",
-    "release:build": "node scripts/release-build.mjs",
-    "nav": "node scripts/repo-nav.mjs",
-    "ast": "node scripts/ast-grep.mjs",
-    "xref": "node scripts/semantic-xref.mjs",
-    "rename": "node scripts/semantic-rename.mjs",
-    "dead-exports": "node scripts/dead-exports.mjs",
-    "shape": "node scripts/shape-trace.mjs",
-    "contract:desktop-bridge": "node scripts/contract-desktop-bridge.mjs",
-    "osc:structure:listen": "node scripts/osc/receive-structure-export.mjs",
-    "osc:structure:schema:check": "node scripts/osc/check-structure-schema.mjs",
     "deps:versions": "syncpack lint --dependency-types prod,dev,peer",
     "deps:versions:fix": "syncpack fix --dependency-types prod,dev,peer",
     "prepare": "husky",
@@ -43,9 +26,6 @@
     "format:check": "prettier --check .",
     "test:config": "pnpm --filter @baryon/config test",
     "test:app-shell": "pnpm --filter @baryon/app-shell test",
-    "test:licensing": "pnpm --filter @baryon/licensing test",
-    "test:site-footer": "pnpm --filter @baryon/site-footer test",
-    "test:convex": "pnpm exec vitest run -c convex/vitest.config.mts",
     "test:engine": "pnpm --filter @baryon/engine test",
     "test:web:unit": "pnpm --filter @baryon/web test:unit",
     "perf:web:baseline": "pnpm --filter @baryon/web perf:baseline",
@@ -56,18 +36,15 @@
     "lint:all": "pnpm -r --filter \"./apps/*\" --filter \"./packages/*\" --if-present lint",
     "lint:deps": "depcruise --config .dependency-cruiser.cjs apps packages",
     "lint:deps:graph": "depcruise --config .dependency-cruiser.cjs --output-type dot --output-to dependency-graph.dot apps packages",
-    "deps:graph:dot": "node scripts/render-dependency-graph.mjs",
-    "deps:graph:svg": "node scripts/render-dependency-graph.mjs --svg",
     "audit:deps": "knip --dependencies",
     "audit:dead": "knip",
+    "audit:dead:production": "knip --production --include files,exports --no-exit-code",
     "audit:dead:deps": "knip --dependencies",
-    "audit:dead:exports": "node scripts/audit-dead-exports.mjs",
     "typecheck": "pnpm --reporter append-only -r --filter \"./apps/*\" --filter \"./packages/*\" --if-present typecheck",
-    "verify:cache:check": "node scripts/check-verify-cache.mjs",
-    "verify:full": "pnpm verify:acceptance && turbo build",
     "test:deterministic": "pnpm test:engine && pnpm test:app-shell && pnpm test:web:unit",
-    "verify": "pnpm version:check && pnpm docs:check && pnpm deps:versions && pnpm lint:deps && pnpm lint:all && pnpm typecheck && pnpm test:deterministic",
-    "verify:acceptance": "pnpm verify && pnpm acceptance:web"
+    "verify": "pnpm version:check && pnpm docs:check && pnpm deps:versions && pnpm lint:deps && pnpm audit:dead && pnpm lint:all && pnpm typecheck && pnpm test:deterministic",
+    "verify:acceptance": "pnpm verify && pnpm acceptance:web",
+    "verify:full": "pnpm verify:acceptance && turbo build"
   },
   "lint-staged": {
     "*.{js,jsx}": [
@@ -77,12 +54,7 @@
     "*.{ts,tsx,cjs,mjs,json,md,css,scss,html,yml,yaml}": "prettier --write"
   },
   "devDependencies": {
-    "@ast-grep/cli": "^0.42.0",
-    "@edge-runtime/vm": "^5.0.0",
     "@eslint/js": "^9.39.4",
-    "convex": "^1.42.0",
-    "convex-test": "^0.0.53",
-    "cross-env": "^10.1.0",
     "dependency-cruiser": "^17.3.10",
     "eslint": "^9.39.4",
     "eslint-plugin-react": "^7.37.5",
@@ -92,17 +64,12 @@
     "husky": "^9.1.7",
     "knip": "^6.3.0",
     "lint-staged": "^16.4.0",
-    "osc": "^2.4.5",
     "prettier": "^3.8.1",
     "prettier-plugin-astro": "0.14.1",
     "syncpack": "^14.3.0",
     "turbo": "^2.9.3",
     "typescript": "^5.9.3",
-    "vite": "^8.2.1",
-    "vitest": "^4.1.9"
+    "vite": "^8.2.1"
   },
-  "packageManager": "pnpm@11.9.0+sha256.2b567aa66026238078ac2e0a33bec3febd60e962987aac697456f3180819b287",
-  "dependencies": {
-    "libphonenumber-js": "^1.13.6"
-  }
+  "packageManager": "pnpm@11.9.0+sha256.2b567aa66026238078ac2e0a33bec3febd60e962987aac697456f3180819b287"
 }

@@ -1,8 +1,89 @@
 ---
 title: "Release notes"
-description: "What changed in Baryon Desktop 1.2.0 and what to check before your next show."
-tag: "1.2.0"
+description: "Changes and compatibility notes for Baryon Desktop, including the upcoming 1.4.1 release."
+tag: "1.4.0"
 ---
+
+## Baryon Desktop 1.4.1 — Unreleased
+
+Version 1.4.1 adds in-app updates and improves desktop installation and app security. It is in
+preparation and has not been published.
+
+- Windows now uses a signed, per-user NSIS installer with guided migration
+  from older versions. If setup needs help removing the older app, it opens
+  Windows Installed Apps and lets you retry after uninstalling that version.
+  Your saved app data stays in place; no manual folder cleanup is required.
+- When you open Windows setup yourself, it asks you to quit Baryon before
+  installing or uninstalling.
+- Fixed Windows activation links so they are registered during installation,
+  before the first launch.
+- Windows uninstall preserves saved app data and accepted terms.
+- Improved macOS app security with a sandboxed main window while retaining
+  native output support.
+- In-app updates download when output is stopped. Choose Restart to update to
+  install and reopen Baryon automatically. Manual downloads remain available.
+- Retry downloads a fresh installer if an update download becomes unusable.
+- Improved update restart reliability on macOS, secure update storage and
+  shutdown handling.
+- Improved reliability when refreshing or changing a license.
+- Fixed an intermittent macOS issue where quitting closed the window but left
+  Baryon running.
+- Improved recognition of previously accepted terms during startup.
+- The idle logo now appears before audio preparation finishes on startup.
+- Start with your own audio or choose Play demo. Demo audio loads only when requested.
+- Your selected input is remembered between launches without starting capture.
+  If it is unavailable, reconnect it or choose another input.
+
+## Baryon Desktop 1.4.0
+
+Version 1.4.0 updates the cymatic response engine, improves audio-analysis and
+spectral-projection efficiency, and shares completed program images with the
+Performer preview. Performer mode prepares rendering resources ahead of output
+activation and retains them when external output is switched off.
+
+- Improved response to complex audio and consistency between file and live
+  inputs, including nonlinear response and spectral color transitions.
+- Improved rendering of thin cymatic structures.
+- Reduced CPU work in audio analysis and GPU work in spectral projection.
+- Prepared rendering resources before audio starts on web and desktop, reducing
+  the wait for the first visualization.
+- Faster Syphon and Spout activation through a prepared Performer renderer that
+  is reused across output switches. Activating immediately after entering
+  Performer mode can still wait for preparation to finish.
+- Updated the Performer preview to follow completed images from the same scene
+  that renders external output.
+- Kept live input and the visible in-app preview running when external output is
+  switched off, without rebuilding the renderer or reducing visual quality.
+- Improved camera synchronization, output lifecycle handling and Spout
+  publication ordering.
+- Improved overlapping file seeks, playback-intent preservation and visual
+  recovery after a file capture-clock interruption.
+- Improved playback volume-control responsiveness and cancellation of obsolete
+  playback starts.
+- Fixed Pro trial eligibility for different computers sharing a network, with
+  clearer activation errors and timely license expiry even when secure storage
+  is slow.
+
+<Warning>
+  The revised audio response and optical rendering can change the appearance of
+  existing presets. Recheck show-critical looks before performing.
+</Warning>
+
+### OSC Structure Export v5
+
+The full-basis engine now exports OSC Structure protocol v5. Replace older
+TouchDesigner components and update custom receivers together with the app;
+protocol v4 receivers are incompatible.
+
+See [OSC Structure Export](/public/desktop/osc-structure-export) for the current
+receiver download and protocol contract.
+
+## Baryon Desktop 1.3.0
+
+Version 1.3.0 added rent-to-own ownership progress, payment pause and resume,
+remaining-balance payoff, online license and device management, and device-bound
+credentials with protected local storage. It also improved license recovery,
+offline status and update-eligibility information.
 
 ## Baryon Desktop 1.2.0
 

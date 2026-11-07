@@ -63,7 +63,7 @@ function createConfiguration(createRenderer) {
   };
 }
 
-// Protects the scoped dependency patch for upstream R3F issue #3782 / PR #3783.
+// Upstream serialization must preserve Baryon's fractional viewport geometry.
 it("serializes concurrent configure calls during async renderer init", async () => {
   const canvas = document.createElement("canvas");
   document.body.append(canvas);
@@ -98,7 +98,7 @@ it("serializes concurrent configure calls during async renderer init", async () 
   }
 });
 
-it("releases configure serialization after async renderer init rejects", async () => {
+it("surfaces initialization failure to queued calls and retries only on an explicit new root", async () => {
   const canvas = document.createElement("canvas");
   document.body.append(canvas);
   const root = createRoot(canvas);
@@ -109,19 +109,24 @@ it("releases configure serialization after async renderer init rejects", async (
     .mockImplementationOnce(() => failedInitialization.promise)
     .mockResolvedValueOnce(renderer);
   const configuration = createConfiguration(createRenderer);
+  const replacementCanvas = document.createElement("canvas");
 
   try {
     const failedConfigure = root.configure(configuration);
     const queuedConfigure = root.configure(configuration);
-    const failureAssertion = expect(failedConfigure).rejects.toThrow(
-      "renderer init failed",
-    );
-
-    failedInitialization.reject(new Error("renderer init failed"));
-    await failureAssertion;
-    await expect(queuedConfigure).resolves.toBe(root);
-
-    const state = _roots.get(canvas)?.store.getState();
+    const results = Promise.allSettled([failedConfigure, queuedConfigure]);
+    const failure = new Error("renderer init failed");
+    failedInitialization.reject(failure);
+    expect(await results).toEqual([
+      { status: "rejected", reason: failure },
+      { status: "rejected", reason: failure },
+    ]);
+    expect(createRenderer).toHaveBeenCalledTimes(1);
+    // Production recovery replaces Canvas through its error boundary. A queued
+    // resize/configuration must not independently start another GPU lifetime.
+    const replacement = createRoot(replacementCanvas);
+    await replacement.configure(configuration);
+    const state = _roots.get(replacementCanvas)?.store.getState();
     expect(createRenderer).toHaveBeenCalledTimes(2);
     expect(state?.gl).toBe(renderer);
     expect(state?.camera.aspect).toBeCloseTo(
@@ -129,5 +134,6 @@ it("releases configure serialization after async renderer init rejects", async (
     );
   } finally {
     disposeConfigureOnlyRoot(canvas);
+    disposeConfigureOnlyRoot(replacementCanvas);
   }
 });

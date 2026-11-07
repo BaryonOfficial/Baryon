@@ -1,24 +1,9 @@
 import { vec3 } from "three/tsl";
+import { SPECTRAL_COLORIMETRY_COEFFICIENTS } from "./spectralColorimetryCoefficients.js";
 
 export const SPECTRAL_COLORIMETRY_REFERENCE = Object.freeze({
   referenceHueOffset: 0.92,
-  harmonicOrder: 2,
   referenceRelativeChroma: 0.82,
-  chromaticityBase: Object.freeze([
-    1.2084912873873068, 0.9199340128364738, 1.1791959324212258,
-  ]),
-  cosineAxis: Object.freeze([
-    0.9287534381828134, -0.3515448914639626, 0.7475335930382262,
-  ]),
-  sineAxis: Object.freeze([
-    0.931821448822781, -0.16994322376052778, -1.0604133848503292,
-  ]),
-  secondCosineAxis: Object.freeze([
-    0.04052905162636272, -0.01495270590886131, 0.028776992939790743,
-  ]),
-  secondSineAxis: Object.freeze([
-    0.17894853445334638, -0.03314023391328511, -0.198650458864265,
-  ]),
   targetOklabLightness: 0.7,
   targetLuminance: 0.7 ** 3,
   directionEpsilon: 2 ** -20,
@@ -52,66 +37,52 @@ export function deriveRec709Luminance(rgb) {
   );
 }
 
-/**
- * Map the persistent circular phase field to a seamless, unit-luminance
- * chromaticity. The two-harmonic opponent curve is the pinned
- * projection of the gamut-relative OKLab reference wheel. Every nonconstant
- * axis lies in the Rec.709 zero-luminance plane, so acoustic radiance remains
- * the sole brightness owner. Callers must interpolate circular phase before
- * invoking this mapping; interpolating its RGB result can still cross neutral.
- */
-export function resolveSpectralChromaticity(
-  direction,
-  { fallbackDirection = [1, 0] } = {},
-) {
-  const [sourceX, sourceY] = readUnitDirection(direction, fallbackDirection);
-  const {
-    chromaticityBase,
-    cosineAxis,
-    sineAxis,
-    secondCosineAxis,
-    secondSineAxis,
-  } = SPECTRAL_COLORIMETRY_REFERENCE;
-  const secondCosine = sourceX * sourceX - sourceY * sourceY;
-  const secondSine = 2 * sourceX * sourceY;
-  return chromaticityBase.map(
-    (base, channel) =>
-      base +
-      cosineAxis[channel] * sourceX +
-      sineAxis[channel] * sourceY +
-      secondCosineAxis[channel] * secondCosine +
-      secondSineAxis[channel] * secondSine,
-  );
-}
-
 export function resolveSpectralSourceRgb(direction) {
   return resolveSpectralChromaticity(direction).map(
     (component) => component * SPECTRAL_COLORIMETRY_REFERENCE.targetLuminance,
   );
 }
 
-/**
- * GPU projection used only when the observer advances. Its input is already a
- * resolved unit direction, so the raymarch never pays for normalization,
- * angle recovery, harmonic evaluation, or a palette lookup.
+/** Map resolved circular phase to unit-Rec.709-luminance chromaticity.
+ * The single production palette uses approximately uniform OKLab arc length.
+ * Its coefficients are fitted offline; scalar acoustic radiance owns brightness.
+ * Resolve/interpolate circular phase before mapping, never infer phase from RGB.
+ */
+export function resolveSpectralChromaticity(
+  direction,
+  { fallbackDirection = [1, 0] } = {},
+) {
+  const [x, y] = readUnitDirection(direction, fallbackDirection);
+  const { base, cosine, sine } = SPECTRAL_COLORIMETRY_COEFFICIENTS;
+  const rgb = [...base];
+  let hx = x,
+    hy = y;
+  for (let k = 0; k < cosine.length; k++) {
+    for (let c = 0; c < 3; c++) rgb[c] += cosine[k][c] * hx + sine[k][c] * hy;
+    [hx, hy] = [hx * x - hy * y, hx * y + hy * x];
+  }
+  return rgb;
+}
+
+/** Evaluated once per observer voxel, never per ray sample.
+ * The input is the resolved unit phase; the observer caches the RGB companion.
  */
 export function resolveSpectralChromaticityNode(direction) {
-  const {
-    chromaticityBase,
-    cosineAxis,
-    sineAxis,
-    secondCosineAxis,
-    secondSineAxis,
-  } = SPECTRAL_COLORIMETRY_REFERENCE;
-  const secondCosine = direction.x
-    .mul(direction.x)
-    .sub(direction.y.mul(direction.y));
-  const secondSine = direction.x.mul(direction.y).mul(2);
-  return vec3(...chromaticityBase)
-    .add(vec3(...cosineAxis).mul(direction.x))
-    .add(vec3(...sineAxis).mul(direction.y))
-    .add(vec3(...secondCosineAxis).mul(secondCosine))
-    .add(vec3(...secondSineAxis).mul(secondSine));
+  const { base, cosine, sine } = SPECTRAL_COLORIMETRY_COEFFICIENTS;
+  const rgb = vec3(...base).toVar();
+  let hx = direction.x,
+    hy = direction.y;
+  for (let k = 0; k < cosine.length; k++) {
+    rgb.addAssign(
+      vec3(...cosine[k])
+        .mul(hx)
+        .add(vec3(...sine[k]).mul(hy)),
+    );
+    const nextX = hx.mul(direction.x).sub(hy.mul(direction.y)).toVar();
+    hy = hx.mul(direction.y).add(hy.mul(direction.x)).toVar();
+    hx = nextX;
+  }
+  return rgb;
 }
 
 export function generateSpectralColorimetrySamples(size = 256) {

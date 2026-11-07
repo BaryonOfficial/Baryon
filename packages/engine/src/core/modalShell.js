@@ -1,6 +1,6 @@
 import { readModalTopologyMode } from "./modalTopology.js";
 
-export const MODAL_RESPONSE_WAVENUMBER_SQUARED_EPSILON = 1e-8;
+const MODAL_RESPONSE_WAVENUMBER_SQUARED_EPSILON = 1e-8;
 
 /**
  * Exact rectangular-cavity eigenvalue index.
@@ -28,7 +28,7 @@ export function getRectangularModeShellKey(source) {
  * CPU reference evaluation, and GPU shell closure from assigning different
  * coherence identities to the same physical response.
  */
-export function resolveModalResponseFrequencyHz(mode) {
+function resolveModalResponseFrequencyHz(mode) {
   for (const candidate of [
     mode?.responseFrequencyHz,
     mode?.modalResponseDriveFrequencyHz,
@@ -65,20 +65,6 @@ export function resolveModalResponseWavenumber({ mode, scale = Math.PI }) {
 }
 
 /**
- * Reciprocal response wavenumber serialized by modal packet upload so field
- * observation does not rebuild mode/frequency math for every voxel.
- */
-export function resolveModalResponseInverseWavenumber(options) {
-  return 1 / resolveModalResponseWavenumber(options);
-}
-
-export function getRectangularResponseShellKey(mode) {
-  return `${getRectangularModeShellKey(mode)}:${Math.fround(
-    resolveModalResponseFrequencyHz(mode),
-  )}`;
-}
-
-/**
  * Coherence identity of the physical harmonic response.
  *
  * Natural eigenvalue shells remain the oscillator/admission owner, but every
@@ -90,10 +76,4 @@ export function getModalResponseFrequencyKey(mode) {
   return responseFrequencyHz > 0
     ? `response:${Math.fround(responseFrequencyHz)}`
     : `response-unknown:${getRectangularModeShellKey(mode)}`;
-}
-
-export function getModalResponseModeKey(mode) {
-  return (
-    mode?.responseModeKey ?? mode?.modeKey ?? getRectangularModeShellKey(mode)
-  );
 }

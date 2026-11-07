@@ -109,23 +109,8 @@ export function createAudioSourceSession() {
 export function cloneAudioSourceSession(session) {
   return {
     ...session,
-    systemCapture: session.systemCapture
-      ? { ...session.systemCapture }
-      : null,
+    systemCapture: session.systemCapture ? { ...session.systemCapture } : null,
   };
-}
-
-export function isPreparedFileAwaitingPlayback(status) {
-  return (
-    status?.sourceSession?.kind === AUDIO_SOURCE_KINDS.file &&
-    status?.sourceSession?.phase === AUDIO_SOURCE_PHASES.ready &&
-    status?.isAudioLoaded === true &&
-    status?.hasPreparedFileAnalysisSource === true &&
-    status?.isPlaying !== true &&
-    status?.isPlaybackPaused !== true &&
-    status?.isLiveInputActive !== true &&
-    status?.naturalRingdownActive !== true
-  );
 }
 
 /**

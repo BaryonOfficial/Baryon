@@ -5,3 +5,9 @@
 /CLA.md @RektTillNoon
 /cla-signatures/* @RektTillNoon
 /scripts/sync-public.sh @RektTillNoon
+/scripts/lib/public-export* @RektTillNoon
+/scripts/lib/run-public-export.sh @RektTillNoon
+/scripts/config/public-export* @RektTillNoon
+/scripts/check-public-export-policy.mjs @RektTillNoon
+/scripts/scan-public-export.mjs @RektTillNoon
+/scripts/install-public-secret-scanner.mjs @RektTillNoon

@@ -9,12 +9,7 @@ Use this page when you want a fast, intentional setup before diving into the ful
 
 Baryon can visualize an audio file, a microphone, a line input, or loopback audio from another app. To send sound from another app into Baryon, see [Routing system audio](/public/guides/routing-system-audio).
 
-For live microphone input, choose the profile that matches the material:
-
-| Source                                          | Recommended profile | Why it helps                                                       |
-| ----------------------------------------------- | ------------------- | ------------------------------------------------------------------ |
-| A voice, singer, or lead instrument             | **Voice**           | Tracks a dominant pitch and treats harmonics as supporting detail. |
-| Music, a full mix, a live room, or system audio | **Ambient**         | Lets many simultaneous sources contribute instead of one driver.   |
+Solo instruments, voices, full DJ mixes, and room sound all drive the same broadband response. Use a direct line/loopback feed for clean music, or a microphone when you want the room to contribute. Voice/Vocal and Ambient intent labels do not impose a pitch or source-count limit.
 
 If you are routing a clean recording or line feed, leave browser mic processing such as echo cancellation, noise suppression, and auto gain off unless you need it. Those tools can make a noisy room easier to capture, but they also change the spectrum Baryon receives.
 
@@ -61,9 +56,9 @@ Start with these controls before fine-tuning color or diagnostics:
 | **Laser Bending**    | Placement and concentration of laser caustics within the acoustic field.                            |
 | **Caustic Strength** | Camera-visible gain applied only to focused laser energy.                                           |
 | **Laser Focus**      | Finite-source focus; higher values produce narrower caustic folds.                                  |
-| **Color Mode**       | `Static` for controlled color, `Spectral` when you want the audio spectrum to color promoted modes. |
+| **Color Mode**       | `Static` for controlled color, `Spectral` when you want the audio spectrum to color the response. |
 
-For quiet or sparse material, start lower on **Material Density** and **Caustic Strength**. Audio-to-field response is calibrated automatically; **Motion Scale** only changes audio-driven rotation.
+For quiet or sparse material, start lower on **Material Density** and **Caustic Strength**. Audio-to-field response uses a fixed virtual-instrument calibration; **Motion Scale** only changes audio-driven rotation.
 
 ## Save a repeatable setup
 

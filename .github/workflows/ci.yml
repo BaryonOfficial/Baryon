@@ -28,6 +28,18 @@ jobs:
       - name: Check dependency boundaries
         run: pnpm lint:deps
 
+      - name: Check unused code and dependencies
+        run: pnpm audit:dead
+
+      - name: Report code without production consumers
+        run: pnpm audit:dead:production --reporter markdown > dead-code-production.md
+
+      - name: Upload production usage review
+        uses: actions/upload-artifact@v4
+        with:
+          name: dead-code-production-review
+          path: dead-code-production.md
+
       - name: Check workspace version alignment
         run: pnpm version:check
 

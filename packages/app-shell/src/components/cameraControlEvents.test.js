@@ -21,6 +21,15 @@ test("camera control command normalizes preset and default distance", () => {
   });
 });
 
+test("reset remains an action instead of becoming an explicit default pose", () => {
+  expect(
+    createCameraControlCommand({
+      cameraReset: true,
+      cameraPose: resolvePresetCameraPose("side"),
+    }),
+  ).toEqual({ cameraReset: true });
+});
+
 test("camera control command rejects invalid presets", () => {
   expect(
     createCameraControlCommand({
@@ -65,4 +74,18 @@ test("dispatchCameraControlCommand emits the normalized camera detail", () => {
 
   expect(received).toHaveLength(1);
   expect(received[0]).toStrictEqual(expectedDetail);
+});
+
+test("canonical intent is translated only at the public automation boundary", () => {
+  const received = [];
+  const listener = (event) => received.push(event.detail);
+  window.addEventListener(CAMERA_CONTROL_COMMAND_EVENT, listener);
+  const pose = resolvePresetCameraPose("side");
+  try {
+    dispatchCameraControlCommand({ cameraIntent: { mode: "explicit", pose } });
+    dispatchCameraControlCommand({ cameraIntent: { mode: "automatic" } });
+    expect(received).toEqual([{ cameraPose: pose }, { cameraReset: true }]);
+  } finally {
+    window.removeEventListener(CAMERA_CONTROL_COMMAND_EVENT, listener);
+  }
 });

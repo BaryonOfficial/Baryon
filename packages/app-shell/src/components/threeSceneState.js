@@ -95,8 +95,8 @@ export function shouldUseAuthoritativePerformanceHud({
   );
 }
 
-export function resolveCameraControlFieldState({
-  frameFieldState = "idle",
+export function resolveCameraControlsAvailable({
+  frameHasRenderAuthority = false,
   previewState = null,
   authoritativeStageStatus = null,
 } = {}) {
@@ -105,10 +105,10 @@ export function resolveCameraControlFieldState({
     typeof authoritativeStageStatus?.lastRenderedFieldState === "string" &&
     authoritativeStageStatus.lastRenderedFieldState
   ) {
-    return authoritativeStageStatus.lastRenderedFieldState;
+    return authoritativeStageStatus.lastRenderedFieldState !== "idle";
   }
 
-  return frameFieldState;
+  return frameHasRenderAuthority;
 }
 
 export function composeAuthoritativePerformanceHudMetrics(

@@ -10,3 +10,8 @@ apps/web/test-results
 apps/web/playwright-report
 public/draco
 pnpm-lock.yaml
+# Signed qualification bundles preserve canonical JSON bytes and their digests.
+docs/internal/releases/qualification/*/bundle/
+docs/internal/releases/qualification/*/administration/*/bundle/
+docs/internal/releases/qualification/472250ed84ffab5a5767839cf9d0576f/windows-runtime-evidence.json
+docs/internal/releases/qualification/52e74b75444e8101197bf81c5a8b5c6a/windows-runtime-evidence.json

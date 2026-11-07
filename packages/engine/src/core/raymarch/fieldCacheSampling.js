@@ -7,6 +7,7 @@ import {
   max,
   min,
   mix,
+  screenUV,
   vec2,
   vec3,
   vec4,
@@ -23,7 +24,6 @@ import {
 import {
   fixedRenderTargetTexture,
   fixedRenderTargetTextureLoad,
-  fixedRenderTargetTextureLoadAtKnownHeight,
 } from "./fixedOrientationTextureNode.js";
 
 /** Samples the persistent cymatic observer atlases in normalized world space. */
@@ -34,6 +34,34 @@ const TILE_SPAN = float(FIELD_CACHE_RESOLUTION);
 const TILE_SPAN_INT = int(FIELD_CACHE_RESOLUTION);
 const TILE_SHIFT = int(Math.log2(FIELD_CACHE_TILES_X));
 const TILE_MASK = int(FIELD_CACHE_TILES_X - 1);
+
+/**
+ * Integer voxel index this fragment owns.
+ *
+ * The atlas lays the z slices out as a grid of tiles, so the tile a fragment
+ * falls in IS its slice index. A fragment centre sits at pixel + 0.5, so the
+ * floor of the in-tile pixel coordinate is the voxel index exactly.
+ */
+export function deriveFieldCacheFragmentVoxelIndexNode() {
+  const pixelX = screenUV.x.mul(float(FIELD_CACHE_ATLAS_WIDTH));
+  const pixelY = screenUV.y.mul(float(FIELD_CACHE_ATLAS_HEIGHT));
+  const tileSpan = float(FIELD_CACHE_RESOLUTION);
+  const tileX = pixelX.div(tileSpan).floor();
+  const tileY = pixelY.div(tileSpan).floor();
+  return vec3(
+    pixelX.sub(tileX.mul(tileSpan)).floor(),
+    pixelY.sub(tileY.mul(tileSpan)).floor(),
+    tileY.mul(float(FIELD_CACHE_TILES_X)).add(tileX),
+  );
+}
+
+/** Normalized cavity coordinate of a voxel centre. */
+export function toFieldCacheVoxelPositionNode(voxelIndex) {
+  return voxelIndex
+    .add(0.5)
+    .mul(float(FIELD_CACHE_CELL_SIZE))
+    .sub(float(FIELD_CACHE_DOMAIN_HALF_EXTENT));
+}
 
 /**
  * Normalized cavity coordinate to continuous voxel coordinate. Voxel centres
@@ -58,7 +86,7 @@ function atlasUvNode(slice, voxelX, voxelY) {
 }
 
 /** Exact integer atlas address for one cache voxel. */
-export function toFieldCacheAtlasTexelNode(voxelIndex) {
+function toFieldCacheAtlasTexelNode(voxelIndex) {
   const integerSlice = int(voxelIndex.z);
   const tileY = integerSlice.shiftRight(TILE_SHIFT);
   const tileX = integerSlice.bitAnd(TILE_MASK);
@@ -69,7 +97,7 @@ export function toFieldCacheAtlasTexelNode(voxelIndex) {
 }
 
 /** Canonical representative of one voxel for a sparse stored domain. */
-export function canonicalizeFieldCacheVoxelIndexNode(voxelIndex, domain) {
+function canonicalizeFieldCacheVoxelIndexNode(voxelIndex, domain) {
   switch (domain) {
     case FIELD_CACHE_DOMAINS.fundamentalXyz: {
       const low = min(voxelIndex.x, min(voxelIndex.y, voxelIndex.z));
@@ -101,10 +129,7 @@ export function canonicalizeFieldCacheVoxelIndexNode(voxelIndex, domain) {
 }
 
 /** Clamp first so permutation canonicalization cannot remap an invalid tap. */
-export function clampAndCanonicalizeFieldCacheVoxelIndexNode(
-  voxelIndex,
-  domain,
-) {
+function clampAndCanonicalizeFieldCacheVoxelIndexNode(voxelIndex, domain) {
   const maximumIndex = float(FIELD_CACHE_RESOLUTION - 1);
   const bounded = clamp(voxelIndex, vec3(0), vec3(maximumIndex)).toVar();
   return canonicalizeFieldCacheVoxelIndexNode(bounded, domain);
@@ -121,7 +146,7 @@ export function toSparseFieldCacheAtlasTexelNode(voxelIndex, domain) {
  * Rank of each full-domain coordinate in its sorted representative. Ties use
  * asymmetric comparisons so the result always remains a permutation.
  */
-export function deriveFieldCacheVoxelRankNode(voxelIndex) {
+function deriveFieldCacheVoxelRankNode(voxelIndex) {
   const rankOf = (self, first, second) =>
     self
       .greaterThan(first)
@@ -214,13 +239,6 @@ function createFieldCacheSamplingFootprintFromVoxelNode(voxelCoordinate) {
     lowerUv: atlasUvNode(lowerSlice, voxel.x, voxel.y).toVar(),
     upperUv: atlasUvNode(lowerSlice.add(int(1)), voxel.x, voxel.y).toVar(),
     zMix: voxel.z.sub(float(lowerSlice)).toVar(),
-    nearestTexel: toFieldCacheAtlasTexelNode(
-      vec3(
-        voxel.x.add(0.5).floor(),
-        voxel.y.add(0.5).floor(),
-        voxel.z.add(0.5).floor(),
-      ),
-    ).toVar(),
   };
 }
 
@@ -231,6 +249,30 @@ export function sampleFieldCacheAtlasAtFootprintNode(atlasTexture, footprint) {
     fixedRenderTargetTexture(atlasTexture, footprint.upperUv).level(float(0)),
     footprint.zMix,
   );
+}
+
+/**
+ * Geometry is zero in unavailable texels, so its filtered lane is already
+ * weighted by the binary availability mask. Divide by the co-filtered weight,
+ * not by normal magnitude: opposing valid normals may cancel. This same reader
+ * serves backtracing and ray sampling to avoid an invented zero surface at the
+ * edge of initialized history.
+ */
+export function sampleAvailableObserverGeometryNode(
+  geometryTexture,
+  availabilityTexture,
+  footprint,
+) {
+  const weight = sampleFieldCacheAtlasAtFootprintNode(
+    availabilityTexture,
+    footprint,
+  ).x.toVar();
+  const available = weight.greaterThan(0);
+  const geometry = sampleFieldCacheAtlasAtFootprintNode(
+    geometryTexture,
+    footprint,
+  ).div(available.select(weight, float(1)));
+  return { geometry, available };
 }
 
 /**
@@ -262,12 +304,19 @@ export function createFieldCacheSampler({
   observerGeometryTexture,
   observerOpticalPairTexture,
   observerOrganizationTexture,
+  observerGeometryAvailabilityTexture = null,
 }) {
   const sampleGeometryAtFootprint = (footprint) => {
-    const geometry = sampleFieldCacheAtlasAtFootprintNode(
-      observerGeometryTexture,
-      footprint,
-    );
+    const geometry = observerGeometryAvailabilityTexture
+      ? sampleAvailableObserverGeometryNode(
+          observerGeometryTexture,
+          observerGeometryAvailabilityTexture,
+          footprint,
+        ).geometry
+      : sampleFieldCacheAtlasAtFootprintNode(
+          observerGeometryTexture,
+          footprint,
+        );
     const surfaceNormalSquaredMagnitude = dot(geometry.yzw, geometry.yzw);
     return {
       footprint,
@@ -319,10 +368,10 @@ export function createFieldCacheSampler({
      * The optical-pair presentation cache carries local radiance and acoustic
      * surface support for the lower/upper z slices in XY/ZW. Organization
      * carries derived unit-luminance chromaticity RGB followed by bounded
-     * fine-detail authority. The material fetches organization from one
-     * nearest observer voxel so cache interpolation cannot pull saturated
-     * endpoints through grey. Geometry and the paired radiance/support lanes
-     * remain trilinear. Spectral phase remains canonical observer history but
+     * fine-detail authority. All four organization channels are continuous
+     * presentation quantities: convex interpolation preserves bounded detail
+     * and unit luminance without voxel-sized color or brightness jumps.
+     * Spectral phase remains canonical observer history but
      * is not part of this ray-visible presentation cache.
      * None can alter the canonical signed distance.
      */
@@ -338,10 +387,9 @@ export function createFieldCacheSampler({
         opticalPair.zw,
         footprint.zMix,
       ).toVar();
-      const organization = fixedRenderTargetTextureLoadAtKnownHeight(
+      const organization = sampleFieldCacheAtlasAtFootprintNode(
         observerOrganizationTexture,
-        footprint.nearestTexel,
-        FIELD_CACHE_ATLAS_HEIGHT,
+        footprint,
       ).toVar();
       return {
         localSpectralChromaticity: organization.rgb,

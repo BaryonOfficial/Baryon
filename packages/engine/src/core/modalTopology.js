@@ -17,7 +17,7 @@ const COORDINATE_NAMES = ["u", "v", "w"];
  * }} ModalSlotTopologyRangeOptions
  */
 
-export function normalizeModalTopologyCoordinate(value) {
+function normalizeModalTopologyCoordinate(value) {
   return Number.isFinite(value) ? Math.round(value) : 0;
 }
 

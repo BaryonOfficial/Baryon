@@ -7,19 +7,21 @@ import {
 export function syncLiveInputRuntimeStatus({
   status,
   featureFrame,
+  featureRuntimeStatus,
   liveInputUiState,
   liveInputErrorCode,
   setLiveInputRuntimeStatus,
   renderLoopRefs,
 }) {
   const nextLiveInputRuntimeStatus =
-    status.isLiveInputActive ||
+    status?.isLiveInputActive ||
     liveInputUiState === "starting" ||
     liveInputUiState === "stopping" ||
     liveInputUiState === "error"
       ? buildLiveInputRuntimeStatus({
           status,
           featureFrame,
+          featureRuntimeStatus,
           liveInputUiState,
           liveInputErrorCode,
         })

@@ -173,12 +173,13 @@ export default function MobileDemoControls() {
     isEngineReady,
     isPlaying,
     handlePlayPause,
+    loadDemoAudioFile,
     handleStop,
   } = useAudio();
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [playbackError, setPlaybackError] = useState("");
   const prefersReducedMotion = usePrefersReducedMotion();
-  const isReady = isAudioLoaded && isEngineReady;
+  const isReady = isEngineReady;
   const phase = !isReady
     ? DEMO_PHASES.preparing
     : isPlaying
@@ -200,8 +201,13 @@ export default function MobileDemoControls() {
     try {
       if (isPlaying) {
         handleStop();
-      } else {
+      } else if (isAudioLoaded) {
         await handlePlayPause();
+      } else {
+        const result = await loadDemoAudioFile({ autoPlay: true });
+        if (result?.ok === false && result.cancelled !== true) {
+          setPlaybackError("The demo couldn't start. Tap to try again.");
+        }
       }
     } catch (error) {
       console.error("Error toggling mobile demo playback:", error);

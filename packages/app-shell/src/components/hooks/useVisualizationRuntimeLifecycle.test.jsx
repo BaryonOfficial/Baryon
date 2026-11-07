@@ -11,28 +11,18 @@ const featureRuntimeSpies = vi.hoisted(() => ({
   configure: vi.fn(),
   setAuthorityRole: vi.fn(),
   dispose: vi.fn(),
+  subscribeObservations: vi.fn(),
+  unsubscribe: vi.fn(),
+  readLatestFeatureModel: vi.fn(),
 }));
 
 const visualizationSpies = vi.hoisted(() => ({
   create: vi.fn(),
   setup: vi.fn(() => ({ points: [] })),
   dispose: vi.fn(),
-}));
-
-vi.mock("@baryon/engine/audio-features", () => ({
-  AUDIO_FEATURE_AUTHORITY_ROLES: {
-    localProducer: "local-producer",
-    externalConsumer: "external-consumer",
-  },
-  createAudioFeatureRuntime: (...args) => {
-    featureRuntimeSpies.create(...args);
-    return {
-      start: featureRuntimeSpies.start,
-      configure: featureRuntimeSpies.configure,
-      setAuthorityRole: featureRuntimeSpies.setAuthorityRole,
-      dispose: featureRuntimeSpies.dispose,
-    };
-  },
+  enqueueObservation: vi.fn(),
+  revokeObservations: vi.fn(),
+  invalidatePresentation: vi.fn(),
 }));
 
 vi.mock("@baryon/engine/visualization/runtime", () => ({
@@ -42,6 +32,9 @@ vi.mock("@baryon/engine/visualization/runtime", () => ({
       method: "raymarch",
       setup: visualizationSpies.setup,
       dispose: visualizationSpies.dispose,
+      enqueueObservation: visualizationSpies.enqueueObservation,
+      revokeObservations: visualizationSpies.revokeObservations,
+      invalidatePresentation: visualizationSpies.invalidatePresentation,
     };
   },
 }));
@@ -79,6 +72,10 @@ let latestLifecycle;
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   vi.clearAllMocks();
+  featureRuntimeSpies.subscribeObservations.mockImplementation(
+    () => featureRuntimeSpies.unsubscribe,
+  );
+  featureRuntimeSpies.readLatestFeatureModel.mockReset().mockReturnValue(null);
   latestLifecycle = null;
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -95,103 +92,59 @@ afterEach(async () => {
   delete globalThis.IS_REACT_ACT_ENVIRONMENT;
 });
 
-test("feature runtime has stable session ownership and command-only role/config effects", async () => {
-  const audioSession = {
-    getStatus: () => ({ capacity: 16, fftSize: 8192, sampleRate: 48000 }),
+function ownedFeatureRuntime() {
+  return {
+    start: featureRuntimeSpies.start,
+    configure: featureRuntimeSpies.configure,
+    setAuthorityRole: featureRuntimeSpies.setAuthorityRole,
+    dispose: featureRuntimeSpies.dispose,
+    subscribeObservations: featureRuntimeSpies.subscribeObservations,
+    readLatestFeatureModel: featureRuntimeSpies.readLatestFeatureModel,
   };
-  const audioRef = { current: audioSession };
-  const controlsRef = {
-    current: {
-      boundaryMode: "neumann",
-      cavityGeometry: "rectangular",
-      colorMode: "spectral",
+}
+
+test("full Canvas replacement only resubscribes; it cannot construct, start, configure or dispose the audio owner", async () => {
+  const owner = ownedFeatureRuntime();
+  const props = {
+    audioRef: {
+      current: {
+        featureRuntime: owner,
+        getStatus: () => ({ sampleRate: 48000 }),
+      },
     },
-  };
-  const baryonGeometry = {};
-  const commonProps = {
-    audioRef,
-    baryonGeometry,
-    controlsRef,
+    controlsRef: { current: {} },
+    baryonGeometry: {},
     setIsEngineReady: vi.fn(),
     setLiveInputRuntimeStatus: vi.fn(),
   };
-
-  await act(async () => {
-    root.render(
-      React.createElement(Harness, {
-        ...commonProps,
-        visualizationMethod: "raymarch",
-        audioFeatureAuthorityRole:
-          AUDIO_FEATURE_AUTHORITY_ROLES.externalConsumer,
-        audioFeatureConfigurationVersion: 0,
-      }),
-    );
-  });
-
-  expect(featureRuntimeSpies.create).toHaveBeenCalledTimes(1);
-  expect(featureRuntimeSpies.create).toHaveBeenCalledWith({}, { audioSession });
-  expect(featureRuntimeSpies.setAuthorityRole).toHaveBeenCalledTimes(1);
-  expect(featureRuntimeSpies.setAuthorityRole).toHaveBeenLastCalledWith(
-    AUDIO_FEATURE_AUTHORITY_ROLES.externalConsumer,
-  );
-  expect(featureRuntimeSpies.start).toHaveBeenCalledTimes(1);
-  expect(featureRuntimeSpies.configure).toHaveBeenCalledTimes(1);
-  expect(
-    featureRuntimeSpies.setAuthorityRole.mock.invocationCallOrder[0],
-  ).toBeLessThan(featureRuntimeSpies.start.mock.invocationCallOrder[0]);
-  expect(
-    featureRuntimeSpies.configure.mock.invocationCallOrder[0],
-  ).toBeLessThan(featureRuntimeSpies.start.mock.invocationCallOrder[0]);
-  expect(featureRuntimeSpies.configure).toHaveBeenLastCalledWith(
-    expect.objectContaining({
-      boundaryMode: "neumann",
-      cavityGeometry: "rectangular",
-    }),
-  );
-
-  controlsRef.current = {
-    ...controlsRef.current,
-    boundaryMode: "dirichlet",
-  };
-  await act(async () => {
-    root.render(
-      React.createElement(Harness, {
-        ...commonProps,
-        visualizationMethod: "points",
-        audioFeatureAuthorityRole: AUDIO_FEATURE_AUTHORITY_ROLES.localProducer,
-        audioFeatureConfigurationVersion: 1,
-      }),
-    );
-  });
-
-  expect(featureRuntimeSpies.create).toHaveBeenCalledTimes(1);
-  expect(featureRuntimeSpies.start).toHaveBeenCalledTimes(1);
-  expect(featureRuntimeSpies.dispose).not.toHaveBeenCalled();
-  expect(featureRuntimeSpies.setAuthorityRole).toHaveBeenCalledTimes(2);
-  expect(featureRuntimeSpies.setAuthorityRole).toHaveBeenLastCalledWith(
-    AUDIO_FEATURE_AUTHORITY_ROLES.localProducer,
-  );
-  expect(featureRuntimeSpies.configure).toHaveBeenCalledTimes(2);
-  expect(featureRuntimeSpies.configure).toHaveBeenLastCalledWith(
-    expect.objectContaining({ boundaryMode: "dirichlet" }),
-  );
-  expect(visualizationSpies.create).toHaveBeenCalledTimes(1);
-  expect(visualizationSpies.setup).toHaveBeenCalledTimes(1);
-  expect(visualizationSpies.dispose).not.toHaveBeenCalled();
-
-  const lifecycle = latestLifecycle;
+  await act(async () => root.render(React.createElement(Harness, props)));
+  const previous = latestLifecycle;
+  expect(previous.featureSourceRef.current).toBe(owner);
   await act(async () => root.unmount());
   root = null;
-  expect(featureRuntimeSpies.dispose).toHaveBeenCalledTimes(1);
-  expect(lifecycle.runtimeRef.current).toBeNull();
-  expect(lifecycle.runtimeStateRef.current).toBeNull();
-  expect(lifecycle.audioFeatureRuntimeRef.current).toBeNull();
+  expect(previous.featureSourceRef.current).toBeNull();
+  root = createRoot(container);
+  await act(async () => root.render(React.createElement(Harness, props)));
+  expect(latestLifecycle.featureSourceRef.current).toBe(owner);
+  expect(featureRuntimeSpies.subscribeObservations).toHaveBeenCalledTimes(2);
+  expect(featureRuntimeSpies.unsubscribe).toHaveBeenCalledOnce();
+  for (const key of [
+    "create",
+    "start",
+    "configure",
+    "setAuthorityRole",
+    "dispose",
+  ])
+    expect(featureRuntimeSpies[key]).not.toHaveBeenCalled();
+  expect(visualizationSpies.setup).toHaveBeenCalledTimes(2);
+  expect(visualizationSpies.dispose).toHaveBeenCalledOnce();
 });
 
 test("visualization runtime is created once per structural stage session", async () => {
   const audioRef = {
     current: {
-      getStatus: () => ({ capacity: 16, fftSize: 8192, sampleRate: 48000 }),
+      featureRuntime: ownedFeatureRuntime(),
+      getStatus: () => ({ sampleRate: 48000 }),
     },
   };
   const controlsRef = {
@@ -240,4 +193,94 @@ test("visualization runtime is created once per structural stage session", async
   expect(visualizationSpies.create).toHaveBeenCalledTimes(1);
   expect(visualizationSpies.setup).toHaveBeenCalledTimes(1);
   expect(visualizationSpies.dispose).not.toHaveBeenCalled();
+});
+
+test("renderer subscriptions retain live observations and replay cache once without an audio bootstrap echo", async () => {
+  const cached = { cached: true },
+    live = { live: true };
+  featureRuntimeSpies.readLatestFeatureModel.mockReturnValue(cached);
+  const props = {
+    audioRef: {
+      current: {
+        featureRuntime: ownedFeatureRuntime(),
+        getStatus: () => ({ sampleRate: 48000 }),
+      },
+    },
+    baryonGeometry: {},
+    controlsRef: { current: {} },
+    setIsEngineReady: vi.fn(),
+    setLiveInputRuntimeStatus: vi.fn(),
+  };
+  await act(async () => root.render(React.createElement(Harness, props)));
+  expect(props.setIsEngineReady).toHaveBeenLastCalledWith(true);
+  expect(featureRuntimeSpies.subscribeObservations).toHaveBeenCalledOnce();
+  expect(visualizationSpies.enqueueObservation).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ model: cached }),
+  );
+  const [onModel, onError] =
+    featureRuntimeSpies.subscribeObservations.mock.calls[0];
+  onModel(live);
+  onError(new Error("observer overflow"));
+  expect(visualizationSpies.enqueueObservation).toHaveBeenLastCalledWith(
+    expect.objectContaining({ model: live }),
+  );
+  expect(visualizationSpies.invalidatePresentation).toHaveBeenCalledOnce();
+  expect(featureRuntimeSpies.create).not.toHaveBeenCalled();
+  expect(featureRuntimeSpies.start).not.toHaveBeenCalled();
+  await act(async () =>
+    root.render(React.createElement(Harness, { ...props, baryonGeometry: {} })),
+  );
+  expect(featureRuntimeSpies.unsubscribe).toHaveBeenCalledOnce();
+  expect(featureRuntimeSpies.subscribeObservations).toHaveBeenCalledTimes(2);
+  expect(visualizationSpies.enqueueObservation).toHaveBeenCalledTimes(3);
+  expect(featureRuntimeSpies.create).not.toHaveBeenCalled();
+  expect(featureRuntimeSpies.start).not.toHaveBeenCalled();
+  await act(async () => root.unmount());
+  root = null;
+  expect(featureRuntimeSpies.unsubscribe).toHaveBeenCalledTimes(2);
+});
+
+test("a mirrored source supplies ordered GPU history and revocation without subscribing to or commanding local audio", async () => {
+  const local = ownedFeatureRuntime(),
+    unsubscribe = vi.fn(),
+    requestRender = vi.fn();
+  const subscribe = vi.fn(() => unsubscribe),
+    current = { marker: "cached-mirror" };
+  const mirror = {
+    subscribeObservations: subscribe,
+    readLatestFeatureModel: () => current,
+  };
+  await act(async () =>
+    root.render(
+      React.createElement(Harness, {
+        audioRef: { current: { featureRuntime: local } },
+        externalFeatureSource: mirror,
+        requestRender,
+        baryonGeometry: {},
+        controlsRef: { current: {} },
+        setIsEngineReady: vi.fn(),
+        setLiveInputRuntimeStatus: vi.fn(),
+      }),
+    ),
+  );
+  expect(featureRuntimeSpies.subscribeObservations).not.toHaveBeenCalled();
+  expect(visualizationSpies.enqueueObservation).toHaveBeenLastCalledWith(
+    expect.objectContaining({ model: current }),
+  );
+  const [offer, , revoke] = subscribe.mock.calls[0];
+  const models = [{ marker: 1 }, { marker: 2 }, { marker: 3 }];
+  await act(async () => {
+    models.forEach(offer);
+    revoke({ reason: "transport-lost" });
+  });
+  expect(
+    visualizationSpies.enqueueObservation.mock.calls
+      .slice(1)
+      .map(([value]) => value.model),
+  ).toEqual(models);
+  expect(visualizationSpies.revokeObservations).toHaveBeenCalledOnce();
+  expect(requestRender).toHaveBeenCalledOnce();
+  expect(featureRuntimeSpies.start).not.toHaveBeenCalled();
+  expect(featureRuntimeSpies.configure).not.toHaveBeenCalled();
+  expect(featureRuntimeSpies.dispose).not.toHaveBeenCalled();
 });

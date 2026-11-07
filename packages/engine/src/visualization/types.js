@@ -13,17 +13,6 @@ export function isVisualizationMethod(method) {
 }
 
 /**
- * The raymarch volume pipeline (field analysis, adaptive steps, HUD
- * diagnostics) backs the single visualization method.
- *
- * @param {unknown} method
- * @returns {boolean}
- */
-export function usesRaymarchVolumePipeline(method) {
-  return isVisualizationMethod(method);
-}
-
-/**
  * Collapses any persisted/legacy value (including the removed fullscreen-volume
  * and cymatics-2d ids) onto the single supported method.
  *

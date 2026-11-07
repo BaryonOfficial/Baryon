@@ -313,7 +313,7 @@ export function integrateBoundaryAxisBasisPropagationKernel({
  *   boundaryMode?: string,
  * }} args
  */
-export function evaluateSinglePermutationAxisPathIntegratedHessian({
+function evaluateSinglePermutationAxisPathIntegratedHessian({
   u,
   v,
   w,

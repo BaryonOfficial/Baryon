@@ -24,6 +24,7 @@ import {
   AUDIO_FEATURE_AUTHORITY_ROLES,
   AudioProvider,
   BaryonScene,
+  useAudioFeatureOwner,
   CAMERA_CONTROL_MODES,
   ControlsProvider,
   ListenerControls,
@@ -118,13 +119,6 @@ function createXrCanvasGl(glDefaults) {
   return createBaryonRenderer(glDefaults, false, { xrMode: true });
 }
 
-function resolveCanvasDevicePixelRatio() {
-  if (typeof window === "undefined") {
-    return 1;
-  }
-  return Math.max(1, window.devicePixelRatio || 1);
-}
-
 function cameraApiAvailable() {
   return typeof globalThis.navigator?.mediaDevices?.getUserMedia === "function";
 }
@@ -202,7 +196,7 @@ function HostProofExperience({ xrStore, canEnterAr }) {
       />
       <Canvas
         style={{ position: "absolute", inset: 0, zIndex: 1 }}
-        dpr={resolveCanvasDevicePixelRatio()}
+        dpr={[1, Infinity]}
         camera={AR_LAB_PREVIEW_CAMERA}
         onCreated={aimCameraAtDefaultTarget}
         // @ts-ignore — WebGPURenderer is runtime-compatible; R3F types predate WebGPU
@@ -250,6 +244,7 @@ function ArOrbExperience({ xrStore, canEnterAr }) {
   const personCanvasRef = useRef(null);
   const backgroundFileInputRef = useRef(null);
   const controlsRef = useControlsStore().controlsRef;
+  useAudioFeatureOwner({ controlsRef });
   const { updateControl } = useControlsActions();
   const controlsState = useControlsSnapshot(
     (snapshot) => snapshot.controlsState,
@@ -260,8 +255,7 @@ function ArOrbExperience({ xrStore, canEnterAr }) {
     liveInputUiState,
     liveInputErrorCode,
   } = useAudioScene();
-  const { isLiveInputActive, selectedLiveDeviceId, sourceSession } =
-    useAudio();
+  const { isLiveInputActive, selectedLiveDeviceId, sourceSession } = useAudio();
   const anchorStateRef = useRef(createIdleHandAnchorState());
   const selectedLiveDeviceIdRef = useRef(selectedLiveDeviceId);
   selectedLiveDeviceIdRef.current = selectedLiveDeviceId;
@@ -507,7 +501,7 @@ function ArOrbExperience({ xrStore, canEnterAr }) {
           background: "transparent",
           mixBlendMode: mode === "camera" ? "screen" : "normal",
         }}
-        dpr={resolveCanvasDevicePixelRatio()}
+        dpr={[1, Infinity]}
         camera={AR_LAB_PREVIEW_CAMERA}
         onCreated={aimCameraAtDefaultTarget}
         // @ts-ignore — WebGPURenderer is runtime-compatible; R3F types predate WebGPU

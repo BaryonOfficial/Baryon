@@ -2,8 +2,8 @@ import { CAVITY_ACOUSTIC_DEFAULTS } from "../../defaults.js";
 
 const INTRINSIC_QUALITY_REFERENCE_HZ = 100;
 
-export const MIN_MODAL_QUALITY_FACTOR = 0.5;
-export const MAX_MODAL_QUALITY_FACTOR = 50000;
+const MIN_MODAL_QUALITY_FACTOR = 0.5;
+const MAX_MODAL_QUALITY_FACTOR = 50000;
 
 function readAcousticScale(value) {
   return value?.acousticScale && typeof value.acousticScale === "object"
@@ -76,17 +76,5 @@ export function computeLoadedModalQualityFactor({
       MIN_MODAL_QUALITY_FACTOR,
       1 / (1 / intrinsicQualityFactor + 1 / loadQualityFactor),
     ),
-  );
-}
-
-export function requireModalQualityFactor(value, subject) {
-  if (!(Number.isFinite(value) && value > 0)) {
-    throw new TypeError(
-      `${subject ?? "Modal mode"} must declare an apparatus-derived Q`,
-    );
-  }
-  return Math.min(
-    MAX_MODAL_QUALITY_FACTOR,
-    Math.max(MIN_MODAL_QUALITY_FACTOR, value),
   );
 }

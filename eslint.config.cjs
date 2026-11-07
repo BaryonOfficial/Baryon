@@ -18,9 +18,13 @@ module.exports = [
       "**/dist/**",
       "**/out/**",
       "**/.vite/**",
+      "**/.desktop/**",
       "**/public/**",
       "**/node_modules/**",
       "**/coverage/**",
+      // Generated QA evidence and reports, matching .gitignore.
+      "**/test-results/**",
+      "**/playwright-report/**",
       "**/.turbo/**",
       "**/.vercel/**",
     ],

@@ -49,7 +49,7 @@ module.exports = {
       "path": "^node_modules"
     },
     "exclude": {
-      "path": "(^|/)(\\.vite|dist|coverage|test-results|tmp|node_modules)/"
+      "path": "(^|/)(\\.vite|\\.desktop|dist|coverage|test-results|tmp|node_modules)/"
     },
     "reporterOptions": {
       "dot": {

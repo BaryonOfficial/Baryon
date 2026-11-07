@@ -6,6 +6,6 @@
     "mintlify:check": "npx --yes mint@latest broken-links && npx --yes mint@latest validate"
   },
   "volta": {
-    "node": "24.14.1"
+    "node": "26.13.0"
   }
 }

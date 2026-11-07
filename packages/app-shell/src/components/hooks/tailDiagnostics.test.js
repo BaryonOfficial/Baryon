@@ -1,8 +1,6 @@
 import { expect, test, vi } from "vitest";
-import {
-  RAYMARCH_OPTICAL_FIELD_REPRESENTATION,
-  RAYMARCH_QUANTITY_LEDGER_VERSION,
-} from "@baryon/engine/core/raymarch/quantityLedger";
+import { createAudioFeaturePacketFixture } from "../../../../engine/src/testing/audioFeaturePacketFixture.js";
+import { createRendererFeatureView } from "@baryon/engine/audio-features";
 import {
   classifyTailDiagnosticSample,
   createTailDiagnosticsRecorder,
@@ -10,579 +8,193 @@ import {
   recordTailDiagnosticsSample,
   summarizeTailDiagnosticWindow,
 } from "./tailDiagnostics.js";
-import { RENDER_PROBE_SCHEMA_VERSION } from "./renderProbeSnapshot.js";
+import {
+  buildRenderProbeSnapshot,
+  RENDER_PROBE_MATERIAL_FIELDS,
+} from "./renderProbeSnapshot.js";
+const frame = createRendererFeatureView(
+  createAudioFeaturePacketFixture().model(),
+);
+const state = {
+  volumeMesh: { visible: true },
+  idleOverlay: { visible: false },
+  debugSnapshot: {
+    renderAuthority: true,
+    observer: { hasHistory: true, stepIndex: 3 },
+    observationEndSample: 256,
+  },
+};
+const measurement = (overrides = {}) => ({
+  available: true,
+  ...Object.fromEntries(RENDER_PROBE_MATERIAL_FIELDS.map((key) => [key, 0])),
+  ...overrides,
+});
+const input = (nowMs = 0) => ({
+  featureFrame: frame,
+  runtimeState: state,
+  nowMs,
+});
 
-function createLiveSourceEvidence(overrides = {}) {
-  return {
-    sourceBoundaryState: "live",
-    currentSourceEvidence: true,
-    sourceEnergy: 0.4,
-    ...overrides,
-  };
-}
-
-function createRuntimeDiagnostics(overrides = {}) {
-  return {
-    modalFreshness: {
-      sourceMode: "system",
-      sourceEvidence: createLiveSourceEvidence(),
-      fieldState: "active",
-      avgAmplitude: 0.4,
-      analyserRms: 0.004,
-      periodicity: 0.9,
-      liveInputHardSilenceActive: false,
-      liveInputNoiseGateActive: false,
-      observationEnergy: 0.32,
-      resonantObservedModeCount: 8,
-      resonantObservedEnergy: 1,
-      resonantRingSupport: 1,
-      modeCoherence: 0.7,
-      modalPhaseAuthority: 1,
-      activeModeCount: 16,
-      activeModalFieldModeCount: 16,
-      ...overrides.modalFreshness,
-    },
-    render: {
-      observerGeometryExposureSeconds: 0.3,
-      observerRadianceExposureSeconds: 0.05,
-      observerSpectralExposureSeconds: 0.1,
-      renderQuantityLedgerVersion: RAYMARCH_QUANTITY_LEDGER_VERSION,
-      renderQuantityForbiddenConsumers: {
-        observedDensityFloor: ["highlightMask", "whiteEmissionFieldAuthority"],
-        cancellationSuppression: ["whiteEmissionFieldAuthority"],
-      },
-      totalSlotAmplitude: 0.9,
-      structuralProjectionDrive: 0.45,
-      structuralProjectionConcentration: 0.25,
-      plasmaProbeLocalRadiance: 0.42,
-      plasmaProbePersistence: 0.74,
-      plasmaProbeOrganizedDensity: 0.18,
-      plasmaProbeExtinction: 0.07,
-      plasmaProbePreBloomRadiance: 0.21,
-      plasmaProbePostBloomRisk: 0.34,
-      plasmaProbeBloomAmplification: 1.62,
-      opticalFieldRepresentation: RAYMARCH_OPTICAL_FIELD_REPRESENTATION,
-      radiationPotentialModeCapacity: 13,
-      radiationPotentialObservedCoefficientEnergy: 0.36,
-      radiationPotentialObservedCoefficientNorm: 0.6,
-      radiationPotentialNormalizedEnergyNorm: 1,
-      radiationPotentialBakeModeCount: 13,
-      radiationPotentialExposureDrive: 0.72,
-      bloomEnabled: false,
-      ...overrides.render,
-    },
-  };
-}
-
-test("tail diagnostics recorder is inert until explicitly started", () => {
+test("tail recorder is inert until started and enforces interval/bounded retention", () => {
+  const recorder = createTailDiagnosticsRecorder({
+    sampleIntervalMs: 10,
+    maxDurationMs: 20,
+  });
+  expect(recorder.record(input())).toBe(null);
+  recorder.start({ nowMs: 100 });
+  expect(recorder.record(input(100))).not.toBe(null);
+  expect(recorder.record(input(105))).toBe(null);
+  recorder.record(input(110));
+  recorder.record(input(120));
+  expect(recorder.dump().samples.map((s) => s.tMs)).toEqual([10, 20]);
+  const { stop, reset } = recorder;
+  expect(stop({ nowMs: 130 }).active).toBe(false);
+  expect(reset().samples).toEqual([]);
+});
+test("records raw response energy and distinct accepted/observer cursors without legacy phase state", () => {
   const recorder = createTailDiagnosticsRecorder();
-
-  recordTailDiagnosticsSample(recorder, {
-    runtimeDiagnostics: createRuntimeDiagnostics(),
-    runtimeState: { debugSnapshot: { volumeVisible: true } },
-    nowMs: 1000,
+  recorder.start();
+  const sample = recorder.record(input());
+  expect(sample.frame).toMatchObject({
+    familyCount: 85,
+    shellCount: 59,
+    normalizationEnergy: frame.observation.normalizationEnergy,
+    latestAcceptedEndSample: 512,
+    observerConsumedEndSample: 256,
   });
-
-  expect(recorder.dump()).toMatchObject({
-    active: false,
-    samples: [],
-  });
+  expect(sample.classification).toBe("active");
+  expect(sample.frame).not.toHaveProperty("modalResponseEnergy");
+  expect(sample.input).not.toHaveProperty("sourceEvidence");
+  expect(JSON.stringify(sample)).not.toContain("pressureMoments");
 });
-
-test("tail diagnostics recorder lifecycle methods own snapshots when detached", () => {
+test("valid model metadata cannot claim that material readback was measured", () => {
+  const probe = buildRenderProbeSnapshot({
+    featureFrame: frame,
+    runtimeState: state,
+  });
+  expect(probe.health).toMatchObject({
+    available: false,
+    activeCandidate: true,
+    unavailableReason: "material-readback-unavailable",
+  });
+  expect(Object.values(probe.material).every((v) => v === null)).toBe(true);
   const recorder = createTailDiagnosticsRecorder();
-  const { start, stop, reset } = recorder;
-
-  expect(start({ nowMs: 100 })).toMatchObject({
-    active: true,
-    startedAtMs: 100,
-    stoppedAtMs: null,
-  });
-  expect(stop({ nowMs: 150 })).toMatchObject({
-    active: false,
-    startedAtMs: 100,
-    stoppedAtMs: 150,
-  });
-  expect(reset()).toMatchObject({
-    active: false,
-    startedAtMs: null,
-    stoppedAtMs: null,
-    samples: [],
-  });
-});
-
-test("tail diagnostics records compact samples on the configured interval", () => {
-  const recorder = createTailDiagnosticsRecorder({
-    sampleIntervalMs: 250,
-    maxDurationMs: 1000,
-  });
-  recorder.start({ nowMs: 1000 });
-
-  recordTailDiagnosticsSample(recorder, {
-    runtimeDiagnostics: createRuntimeDiagnostics(),
-    runtimeState: {
-      debugSnapshot: {
-        volumeVisible: true,
-        idleOverlayVisible: false,
-        raymarchDebug: {
-          renderAuthority: true,
-          observerGeometryExposureSeconds: 0.3,
-          observerRadianceExposureSeconds: 0.05,
-          observerSpectralExposureSeconds: 0.1,
-        },
-      },
-    },
-    nowMs: 1000,
-  });
-  recordTailDiagnosticsSample(recorder, {
-    runtimeDiagnostics: createRuntimeDiagnostics({
-      modalFreshness: { avgAmplitude: 0.35 },
-    }),
-    runtimeState: { debugSnapshot: { volumeVisible: true } },
-    nowMs: 1100,
-  });
-  recordTailDiagnosticsSample(recorder, {
-    runtimeDiagnostics: createRuntimeDiagnostics({
-      modalFreshness: { avgAmplitude: 0.3 },
-    }),
-    runtimeState: { debugSnapshot: { volumeVisible: true } },
-    nowMs: 1250,
-  });
-
-  const dump = recorder.dump();
-  expect(dump.active).toBe(true);
-  expect(dump.samples).toHaveLength(2);
-  expect(dump.samples[0]).toMatchObject({
-    tMs: 0,
-    input: {
-      sourceEvidence: createLiveSourceEvidence(),
-      avgAmplitude: 0.4,
-      analyserRms: 0.004,
-      sourceMode: "system",
-    },
-    observer: {
-      resonantObservedModeCount: 8,
-      resonantObservedEnergy: 1,
-      resonantRingSupport: 1,
-    },
-    frame: {
-      fieldState: "active",
-      renderAuthority: true,
-      activeModeCount: 16,
-      observationEnergy: 0.32,
-    },
-    render: {
-      volumeVisible: true,
-      observerGeometryExposureSeconds: 0.3,
-      observerRadianceExposureSeconds: 0.05,
-      observerSpectralExposureSeconds: 0.1,
-      totalSlotAmplitude: 0.9,
-      structuralProjectionDrive: 0.45,
-      structuralProjectionConcentration: 0.25,
-      plasmaProbeLocalRadiance: 0.42,
-      plasmaProbePersistence: 0.74,
-      plasmaProbeOrganizedDensity: 0.18,
-      plasmaProbeExtinction: 0.07,
-      plasmaProbePreBloomRadiance: 0.21,
-      plasmaProbePostBloomRisk: 0.34,
-      plasmaProbeBloomAmplification: 1.62,
-      opticalFieldRepresentation: RAYMARCH_OPTICAL_FIELD_REPRESENTATION,
-      radiationPotentialModeCapacity: 13,
-      radiationPotentialObservedCoefficientEnergy: 0.36,
-      radiationPotentialObservedCoefficientNorm: 0.6,
-      radiationPotentialNormalizedEnergyNorm: 1,
-      radiationPotentialBakeModeCount: 13,
-      radiationPotentialExposureDrive: 0.72,
-      renderQuantityLedgerVersion: RAYMARCH_QUANTITY_LEDGER_VERSION,
-      renderQuantityForbiddenConsumers: {
-        observedDensityFloor: ["highlightMask", "whiteEmissionFieldAuthority"],
-        cancellationSuppression: ["whiteEmissionFieldAuthority"],
-      },
-    },
-    probe: {
-      health: {
-        available: true,
-      },
-    },
-    classification: "unknown",
-  });
-  expect(dump.samples[0].probe).toMatchObject({
-    schemaVersion: RENDER_PROBE_SCHEMA_VERSION,
-    health: {
-      available: true,
-      activeCandidate: true,
-      status: "available",
-      unavailableReason: null,
-    },
-    lanes: ["state", "material", "visual"],
-  });
-  expect(dump.samples[0]).not.toHaveProperty("modeSlots");
-});
-
-test("tail diagnostics records render-facing modal response energy", () => {
-  const recorder = createTailDiagnosticsRecorder({
-    sampleIntervalMs: 1,
-    maxDurationMs: 1000,
-  });
-  recorder.start({ nowMs: 1000 });
-
-  recordTailDiagnosticsSample(recorder, {
-    runtimeDiagnostics: createRuntimeDiagnostics({
-      modalFreshness: {
-        modalResponseEnergy: 0.03,
-      },
-    }),
-    featureFrame: {
-      modalResponseEnergy: 0.03,
-      modalResponseRenderEnergy: 0.31,
-      modalResponseRenderSourceCoupledEnergy: 0.24,
-      modalResponseRenderResonantEnergy: 0.19,
-      debug: {
-        modalResponseEnergy: 0.04,
-      },
-    },
-    runtimeState: {
-      debugSnapshot: {
-        volumeVisible: true,
-        raymarchDebug: { renderAuthority: true },
-      },
-    },
-    nowMs: 1000,
-  });
-
-  expect(recorder.dump().samples[0].frame.modalResponseEnergy).toBe(0.31);
-});
-
-test("tail diagnostics summarizes material probe windows", () => {
-  const recorder = createTailDiagnosticsRecorder({
-    sampleIntervalMs: 1,
-    maxDurationMs: 1000,
-  });
-  recorder.start({ nowMs: 1000 });
-
-  [
-    {
-      plasmaProbePreBloomRadiance: 0.2,
-      plasmaProbePostBloomRisk: 0.22,
-      plasmaProbeBloomAmplification: 1.1,
-    },
-    {
-      plasmaProbePreBloomRadiance: 0.21,
-      plasmaProbePostBloomRisk: 0.23,
-      plasmaProbeBloomAmplification: 1.1,
-    },
-    {
-      plasmaProbePreBloomRadiance: 0.2,
-      plasmaProbePostBloomRisk: 0.82,
-      plasmaProbeBloomAmplification: 4.1,
-    },
-  ].forEach((render, index) => {
-    recordTailDiagnosticsSample(recorder, {
-      runtimeDiagnostics: createRuntimeDiagnostics({ render }),
-      runtimeState: {
-        debugSnapshot: {
-          volumeVisible: true,
-          raymarchDebug: { renderAuthority: true },
-        },
-      },
-      nowMs: 1000 + index,
-    });
-  });
-
-  const { windowSummary } = recorder.dump();
-  expect(windowSummary).toMatchObject({
-    sampleCount: 3,
-    classification: "bloom-output",
-    metrics: {
-      plasmaProbePreBloomRadiance: {
-        max: 0.21,
-        p95: 0.21,
-        spikeCount: 0,
-      },
-      plasmaProbePostBloomRisk: {
-        max: 0.82,
-        p95: 0.82,
-        spikeCount: 1,
-      },
-      plasmaProbeBloomAmplification: {
-        max: 4.1,
-        spikeCount: 1,
-      },
-    },
-  });
-  expect(windowSummary.metrics.plasmaProbePreBloomRadiance.mean).toBeCloseTo(
-    0.20333333333333334,
-  );
-});
-
-test("tail diagnostics classifies plasma transfer spikes across a window", () => {
-  expect(
-    summarizeTailDiagnosticWindow([
-      { render: { plasmaProbePreBloomRadiance: 0.18 } },
-      { render: { plasmaProbePreBloomRadiance: 0.19 } },
-      { render: { plasmaProbePreBloomRadiance: 0.74 } },
-    ]),
-  ).toMatchObject({ classification: "plasma-transfer" });
-});
-
-test("tail diagnostics does not call an unavailable material probe stable", () => {
-  expect(
-    summarizeTailDiagnosticWindow([
-      {
-        classification: "plasma-transfer-drop",
-        frame: {
-          renderAuthority: true,
-          projectedRenderEnergy: 0.4,
-          observationEnergy: 1,
-        },
-        render: {
-          volumeVisible: true,
-          plasmaProbeLocalRadiance: 0,
-          plasmaProbePersistence: 0,
-          plasmaProbeOrganizedDensity: 0,
-          plasmaProbeExtinction: 0,
-          plasmaProbePreBloomRadiance: 0,
-          plasmaProbePostBloomRisk: 0,
-          plasmaProbeBloomAmplification: 1,
-        },
-      },
-      {
-        classification: "input-drop",
-        frame: {
-          renderAuthority: true,
-          projectedRenderEnergy: 0.2,
-          observationEnergy: 1,
-        },
-        render: {
-          volumeVisible: true,
-          plasmaProbeLocalRadiance: 0,
-          plasmaProbePersistence: 0,
-          plasmaProbeOrganizedDensity: 0,
-          plasmaProbeExtinction: 0,
-          plasmaProbePreBloomRadiance: 0,
-          plasmaProbePostBloomRisk: 0,
-          plasmaProbeBloomAmplification: 1,
-        },
-      },
-    ]),
-  ).toMatchObject({
+  recorder.start();
+  recorder.record(input());
+  expect(recorder.dump().windowSummary).toMatchObject({
     classification: "probe-unavailable",
     probeSampleCount: 0,
-    sampleClassifications: {
-      "input-drop": 1,
-      "plasma-transfer-drop": 1,
-    },
+    metrics: { plasmaProbePreBloomRadiance: { count: 0, mean: null } },
   });
 });
-
-test("tail diagnostics accepts a healthy zero-valued render probe", () => {
-  expect(
-    summarizeTailDiagnosticWindow([
-      {
-        frame: {
-          renderAuthority: true,
-          projectedRenderEnergy: 0.4,
-          observationEnergy: 1,
-        },
-        render: {
-          volumeVisible: true,
-          plasmaProbeLocalRadiance: 0,
-          plasmaProbePersistence: 0,
-          plasmaProbeOrganizedDensity: 0,
-          plasmaProbeExtinction: 0,
-          plasmaProbePreBloomRadiance: 0,
-          plasmaProbePostBloomRisk: 0,
-          plasmaProbeBloomAmplification: 1,
-        },
-        probe: {
-          health: {
-            available: true,
-            activeCandidate: true,
-          },
-        },
-      },
-    ]),
-  ).toMatchObject({
+test("an explicit complete zero-valued readback remains a real measurement", () => {
+  const recorder = createTailDiagnosticsRecorder();
+  recorder.start();
+  recorder.record({
+    ...input(),
+    runtimeDiagnostics: { render: { materialProbe: measurement() } },
+  });
+  expect(recorder.dump().windowSummary).toMatchObject({
     classification: "stable",
     probeSampleCount: 1,
-    activeProbeCandidateCount: 1,
+    metrics: { plasmaProbePreBloomRadiance: { count: 1, mean: 0 } },
   });
+  const incomplete = measurement();
+  delete incomplete.plasmaProbeExtinction;
+  expect(
+    buildRenderProbeSnapshot({
+      featureFrame: frame,
+      runtimeState: state,
+      renderDiagnostics: { materialProbe: incomplete },
+    }).health.available,
+  ).toBe(false);
 });
-
-test("tail diagnostics classifies black-tail failure seams", () => {
-  expect(
-    classifyTailDiagnosticSample({
-      input: {
-        sourceEvidence: createLiveSourceEvidence({
-          sourceBoundaryState: "muted",
-          currentSourceEvidence: false,
-          sourceEnergy: 0,
-        }),
-        avgAmplitude: 0,
-        analyserRms: 0,
-        hardSilence: true,
-        noiseGate: false,
-        sourceMode: "silent",
-      },
-      observer: { resonantObservedModeCount: 0, resonantObservedEnergy: 0 },
-      frame: { fieldState: "idle" },
-      render: { volumeVisible: false },
-    }),
-  ).toBe("input-drop");
-
-  expect(
-    classifyTailDiagnosticSample({
-      input: {
-        sourceEvidence: createLiveSourceEvidence(),
-        avgAmplitude: 0.3,
-        analyserRms: 0.004,
-        sourceMode: "system",
-      },
-      observer: { resonantObservedModeCount: 0, resonantObservedEnergy: 0 },
-      frame: { fieldState: "active", renderAuthority: true },
-      render: { volumeVisible: true },
-    }),
-  ).toBe("observer-drop");
-
-  expect(
-    classifyTailDiagnosticSample({
-      input: {
-        sourceEvidence: createLiveSourceEvidence(),
-        avgAmplitude: 0.3,
-        analyserRms: 0.004,
-        sourceMode: "system",
-      },
-      observer: { resonantObservedModeCount: 8, resonantObservedEnergy: 1 },
-      frame: {
-        fieldState: "active",
-        renderAuthority: true,
-        observationEnergy: 0,
-      },
-      render: { volumeVisible: true },
-    }),
-  ).toBe("frame-visibility-drop");
-
-  expect(
-    classifyTailDiagnosticSample({
-      input: {
-        sourceEvidence: createLiveSourceEvidence(),
-        avgAmplitude: 0.3,
-        analyserRms: 0.004,
-        sourceMode: "system",
-      },
-      observer: { resonantObservedModeCount: 8, resonantObservedEnergy: 1 },
-      frame: {
-        fieldState: "active",
-        renderAuthority: true,
-        observationEnergy: 0.3,
-      },
-      render: {
-        volumeVisible: true,
-        plasmaProbeOrganizedDensity: 0,
+test("material windows detect measured spikes without filling absent measurements with zero", () => {
+  const recorder = createTailDiagnosticsRecorder({ sampleIntervalMs: 1 });
+  recorder.start();
+  [0.2, 0.21, 0.8].forEach((radiance, n) =>
+    recorder.record({
+      ...input(n),
+      runtimeDiagnostics: {
+        render: {
+          materialProbe: measurement({ plasmaProbePreBloomRadiance: radiance }),
+        },
       },
     }),
-  ).toBe("plasma-transfer-drop");
-
+  );
+  expect(recorder.dump().windowSummary).toMatchObject({
+    classification: "plasma-transfer",
+    metrics: {
+      plasmaProbePreBloomRadiance: { count: 3, max: 0.8, spikeCount: 1 },
+    },
+  });
+  expect(summarizeTailDiagnosticWindow([]).classification).toBe("empty");
+});
+test("classification reports observable lifecycle seams without inferring input loss from raw energy", () => {
+  const base = {
+    frame: {
+      renderAuthority: true,
+      latestAcceptedEndSample: 512,
+      normalizationEnergy: 0,
+      sourcePhase: "running",
+    },
+    observer: { hasHistory: true },
+    render: { volumeVisible: true },
+  };
+  expect(classifyTailDiagnosticSample(base)).toBe("active");
   expect(
     classifyTailDiagnosticSample({
-      input: {
-        sourceEvidence: createLiveSourceEvidence(),
-        avgAmplitude: 0.3,
-        analyserRms: 0.004,
-        sourceMode: "system",
-      },
-      observer: { resonantObservedModeCount: 8, resonantObservedEnergy: 1 },
-      frame: {
-        fieldState: "active",
-        renderAuthority: true,
-        observationEnergy: 0.3,
-      },
-      render: {
-        volumeVisible: false,
-        plasmaProbeOrganizedDensity: 0.05,
-      },
+      ...base,
+      frame: { ...base.frame, sourcePhase: "paused" },
     }),
+  ).toBe("source-held");
+  expect(
+    classifyTailDiagnosticSample({
+      ...base,
+      frame: { ...base.frame, sourcePhase: "draining" },
+    }),
+  ).toBe("source-draining");
+  expect(
+    classifyTailDiagnosticSample({
+      ...base,
+      frame: { ...base.frame, presentationFailure: "queue-overflow" },
+    }),
+  ).toBe("presentation-failed");
+  expect(classifyTailDiagnosticSample({ ...base, frame: null })).toBe(
+    "model-unavailable",
+  );
+  expect(
+    classifyTailDiagnosticSample({ ...base, observer: { hasHistory: false } }),
+  ).toBe("observer-pending");
+  expect(
+    classifyTailDiagnosticSample({ ...base, render: { volumeVisible: false } }),
   ).toBe("render-hidden");
 });
-
-test("tail diagnostics window api dumps and copies pasteable JSON", async () => {
-  const writeText = vi.fn(async () => undefined);
-  const targetWindow = {
-    navigator: {
-      clipboard: {
-        writeText,
-      },
-    },
-  };
-  const recorder = createTailDiagnosticsRecorder();
-
-  installTailDiagnosticsWindowApi({
+test("window API copies a capture and returns evidence when clipboard access fails", async () => {
+  const writeText = vi.fn(async () => {}),
+    targetWindow = { navigator: { clipboard: { writeText } } },
+    recorder = createTailDiagnosticsRecorder();
+  const cleanup = installTailDiagnosticsWindowApi({
     targetWindow,
     recorder,
     getNowMs: () => 500,
   });
-
   targetWindow.__baryonTailDiagnostics.start();
-  recordTailDiagnosticsSample(recorder, {
-    runtimeDiagnostics: createRuntimeDiagnostics(),
-    runtimeState: {
-      debugSnapshot: {
-        volumeVisible: true,
-        raymarchDebug: { renderAuthority: true },
-      },
-    },
-    nowMs: 500,
-  });
-
-  const dump = targetWindow.__baryonTailDiagnostics.dump();
-  expect(dump.samples).toHaveLength(1);
+  recordTailDiagnosticsSample(recorder, input(500));
   await targetWindow.__baryonTailDiagnostics.copy();
-  expect(writeText).toHaveBeenCalledWith(JSON.stringify(dump, null, 2));
-});
-
-test("tail diagnostics copy returns the capture when clipboard permission fails", async () => {
-  const clipboardError = new DOMException(
-    "Document is not focused.",
-    "NotAllowedError",
+  expect(writeText).toHaveBeenCalledWith(
+    JSON.stringify(recorder.dump(), null, 2),
   );
-  const writeText = vi.fn(async () => {
-    throw clipboardError;
-  });
-  const targetWindow = {
-    navigator: {
-      clipboard: {
-        writeText,
-      },
-    },
-  };
-  const recorder = createTailDiagnosticsRecorder();
-
-  installTailDiagnosticsWindowApi({
-    targetWindow,
-    recorder,
-    getNowMs: () => 500,
-  });
-
-  targetWindow.__baryonTailDiagnostics.start();
-  recordTailDiagnosticsSample(recorder, {
-    runtimeDiagnostics: createRuntimeDiagnostics(),
-    runtimeState: {
-      debugSnapshot: {
-        volumeVisible: true,
-        raymarchDebug: { renderAuthority: true },
-      },
-    },
-    nowMs: 500,
-  });
-
+  writeText.mockRejectedValue(
+    new DOMException("Not focused", "NotAllowedError"),
+  );
   await expect(
     targetWindow.__baryonTailDiagnostics.copy(),
   ).resolves.toMatchObject({
     copied: false,
-    copyError: {
-      name: "NotAllowedError",
-      message: "Document is not focused.",
-    },
-    samples: [{ classification: "unknown" }],
+    copyError: { name: "NotAllowedError" },
+    samples: [{ classification: "active" }],
   });
+  cleanup();
+  expect(targetWindow.__baryonTailDiagnostics).toBeUndefined();
 });

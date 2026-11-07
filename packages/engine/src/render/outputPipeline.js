@@ -1,6 +1,5 @@
 import * as THREE from "three";
-import * as THREEWebGPU from "three/webgpu";
-import { RenderTarget, NearestFilter } from "three/webgpu";
+import { RenderPipeline, RenderTarget, NearestFilter } from "three/webgpu";
 import {
   convertToTexture,
   float,
@@ -36,8 +35,6 @@ import {
   raymarchBaseLightNode,
   raymarchTransmittanceNode,
 } from "../core/raymarch/SafeVolumetricLightingModel.js";
-
-const { RenderPipeline } = /** @type {any} */ (THREEWebGPU);
 
 export * from "./outputProfilePolicy.js";
 
@@ -344,24 +341,10 @@ function getRenderDisplayLinearTextureNode(
   return textureNode;
 }
 
-function disposeRenderTextureNode(textureNode) {
-  if (!textureNode) {
-    return;
-  }
-  if (typeof textureNode.dispose === "function") {
-    textureNode.dispose();
-    return;
-  }
-  // Three's RTTNode currently exposes no public dispose method even though
-  // it owns both resources. Release them at the Baryon owner boundary.
-  textureNode.renderTarget?.dispose?.();
-  textureNode._quadMesh?.material?.dispose?.();
-}
-
 function disposeRenderDisplayLinearTextureNodes(postNodes) {
   for (const textureNode of postNodes?.displayLinearTextureNodes?.values?.() ??
     []) {
-    disposeRenderTextureNode(textureNode);
+    textureNode.dispose();
   }
   postNodes?.displayLinearTextureNodes?.clear?.();
 }
@@ -372,7 +355,7 @@ export function disposeRenderOutputPostNodes(postNodes) {
   // The optics lane materializes the temporal blend into its own target when
   // TRAA is active; it is owned here, not by the display-linear cache.
   if (postNodes?.opticsSourceTextureNode) {
-    disposeRenderTextureNode(postNodes.opticsSourceTextureNode);
+    postNodes.opticsSourceTextureNode.dispose();
     postNodes.opticsSourceTextureNode = null;
   }
   for (const bloomPass of getRenderOutputBloomPasses(postNodes)) {

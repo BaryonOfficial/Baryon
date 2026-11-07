@@ -236,7 +236,7 @@ export function sampleCymaticPlasmaProfileLookupNode(
   { signedDistanceWorld, intervalWidthWorld },
 ) {
   const absoluteDistanceWorld = abs(signedDistanceWorld).toVar();
-  // The sole production owner supplies Gauss weight times a bounded absolute
+  // The ray marcher supplies centered interval width times a bounded absolute
   // normal cosine, so this coordinate is already in [0, maximum width].
   const distanceCoordinate = sqrt(
     min(

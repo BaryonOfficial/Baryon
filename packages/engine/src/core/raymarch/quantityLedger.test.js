@@ -18,6 +18,10 @@ import {
 } from "./quantityLedgerAudit.js";
 
 const SOURCE_URL_BY_FILE = Object.freeze({
+  "broadbandApertureBasis.js": new URL(
+    "./broadbandApertureBasis.js",
+    import.meta.url,
+  ),
   "fieldCacheBake.js": new URL("./fieldCacheBake.js", import.meta.url),
   "cymaticObserverNode.js": new URL(
     "./cymaticObserverNode.js",
@@ -44,24 +48,24 @@ const SOURCE_URL_BY_FILE = Object.freeze({
     "./SafeVolumetricLightingModel.js",
     import.meta.url,
   ),
-  "runtimeDiagnostics.js": new URL("./runtimeDiagnostics.js", import.meta.url),
 });
 
 describe("raymarch quantity ownership ledger", () => {
   it("declares one complete-field persistent-observer architecture", () => {
     expect(RAYMARCH_QUANTITY_LEDGER_VERSION).toBe(
-      "cymatic-observer-quantity-v11",
+      "broadband-observer-quantity-v13",
     );
     expect(RAYMARCH_OPTICAL_FIELD_REPRESENTATION).toBe(
-      "complete-modal-gorkov-field-fixed-scale-space-persistent-topology-u0-observer",
+      "complete-broadband-moment-gorkov-field-fixed-scale-space-persistent-topology-u0-observer",
     );
     expect(RAYMARCH_SPECTRAL_PHASE_REPRESENTATION).toBe(
-      "observer-phase-cache-nearest-rgb-companion",
+      "observer-phase-cache-filtered-rgb-companion",
     );
     expect(RAYMARCH_RENDER_QUANTITY_LANES).toMatchObject({
       "modal-field": expect.arrayContaining([
-        "admittedModalDescriptor",
-        "modalCoefficientPacket",
+        "modalTopology",
+        "modalState",
+        "modalResponseMoments",
       ]),
       "field-cache": expect.arrayContaining([
         "completeAcousticField",
@@ -79,7 +83,7 @@ describe("raymarch quantity ownership ledger", () => {
         "observerAudioClock",
       ]),
       "spectral-phase": expect.arrayContaining([
-        "modalSpectralPacket",
+        "responseSpectrum",
         "fieldSpectralMomentEvidence",
         "resolvedSpectralMomentEvidence",
         "observerLocalSpectralPhase",

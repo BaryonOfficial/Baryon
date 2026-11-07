@@ -28,8 +28,6 @@ function AudioLogicHarness({ onValue, renderVersion }) {
   const [isAudioLoaded, setIsAudioLoaded] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLiveInputActive, setIsLiveInputActive] = useState(false);
-  const [volume, setVolume] = useState(1);
-  const [isMuted, setIsMuted] = useState(false);
   const [audioDevices, setAudioDevices] = useState([]);
   const [selectedDevice, setSelectedDevice] = useState(null);
   const logic = useAudioLogic({
@@ -40,8 +38,6 @@ function AudioLogicHarness({ onValue, renderVersion }) {
     setIsPlaying,
     setIsLiveInputActive,
     setLiveInputDeviceKind: () => {},
-    setVolume,
-    setIsMuted,
     setAudioDevices,
     setSelectedDevice,
     isAudioLoaded,
@@ -55,21 +51,17 @@ function AudioLogicHarness({ onValue, renderVersion }) {
       audioDevices,
       fileName,
       isAudioLoaded,
-      isMuted,
       isPlaying,
       renderVersion,
-      volume,
     });
   }, [
     audioDevices,
     fileName,
     isAudioLoaded,
-    isMuted,
     isPlaying,
     logic,
     onValue,
     renderVersion,
-    volume,
   ]);
 
   return null;

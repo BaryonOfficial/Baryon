@@ -9,99 +9,23 @@ import {
 } from "./sceneMotion.js";
 
 describe("scene motion helpers", () => {
-  it("derives stable scene signals for a representative active frame", () => {
-    const signals = deriveSceneSignals(
-      {
-        structureSignal: 0.55,
-        energySignal: 0.72,
-        changeSignal: 0.64,
-        pulseSignal: 0.3,
-      },
-      0.5,
-      0.1,
-    );
-
-    expect(signals.structureSignal).toBeCloseTo(0.55);
-    expect(signals.energySignal).toBeCloseTo(0.72);
-    expect(signals.changeSignal).toBeCloseTo(0.64);
-    expect(signals.pulseSignal).toBeCloseTo(0.3);
-    expect(signals.responseEnvelope).toBeCloseTo(0.5);
-    expect(signals.motionSignal).toBeCloseTo(0.5652);
-    expect(signals.motionImpulse).toBeCloseTo(0.4952);
-    expect(signals.rotationDrive).toBeCloseTo(0.6562784);
-    expect(signals.shapedDrive).toBeCloseTo(0.5955535);
+  it("derives sustained motion and a one-time onset from the canonical response envelope", () => {
+    const onset = deriveSceneSignals(0.6, 0),
+      steady = deriveSceneSignals(0.6, 0.6);
+    expect(onset.energySignal).toBe(0.6);
+    expect(onset.motionImpulse).toBe(0.6);
+    expect(steady.energySignal).toBe(0.6);
+    expect(steady.motionImpulse).toBe(0);
+    expect(steady.shapedDrive).toBeGreaterThan(0);
+    expect(onset.shapedDrive).toBeGreaterThan(steady.shapedDrive);
   });
-
-  it("derives transient torque and lower-deadzone audio drive from current frame signals", () => {
-    const signals = deriveSceneSignals(
-      {
-        structureSignal: 0.05,
-        energySignal: 0.08,
-        changeSignal: 0.07,
-        pulseSignal: 0,
-        transientEnergy: 0.7,
-      },
-      0.03,
-      0,
-    );
-
-    expect(signals.transientSignal).toBeCloseTo(0.7);
-    expect(signals.torqueImpulse).toBeGreaterThan(signals.motionImpulse);
-    expect(signals.attitudeImpulse).toBeGreaterThan(0.45);
-    expect(signals.rotationDrive).toBeGreaterThan(0.055);
-    expect(signals.shapedDrive).toBeGreaterThan(0);
-  });
-
-  it("falls back to the hit change breakdown when transient energy is absent", () => {
-    const signals = deriveSceneSignals(
-      {
-        structureSignal: 0,
-        energySignal: 0,
-        changeSignal: 0.1,
-        changeBreakdown: { hit: 0.13 },
-        pulseSignal: 0,
-      },
-      0,
-      0,
-    );
-
-    expect(signals.transientSignal).toBeCloseTo(0.5);
-    expect(signals.attitudeImpulse).toBeGreaterThan(0.3);
-  });
-
-  it("consumes each beat pulse id only once in the audio step helper", () => {
-    const freshSceneMotion = createSceneMotionState(0);
-    const consumedSceneMotion = createSceneMotionState(0);
-    consumedSceneMotion.lastBeatPulseId = 17;
-
-    const args = {
-      motionAmount: 1.2,
-      shapedDrive: 0.51,
-      reactiveSignal: 0.48,
-      motionImpulse: 0.22,
-      torqueImpulse: 0.38,
-      attitudeImpulse: 0.42,
-      beatPulseId: 17,
-      beatStrength: 0.74,
-      beatConfidence: 0.69,
-      beatDetected: true,
-      deltaTime: 1 / 60,
-    };
-
-    stepAudioSceneMotion(freshSceneMotion, args);
-    stepAudioSceneMotion(consumedSceneMotion, args);
-
-    expect(freshSceneMotion.lastBeatPulseId).toBe(17);
-    expect(consumedSceneMotion.lastBeatPulseId).toBe(17);
-    expect(freshSceneMotion.angularVelocity).toBeLessThan(
-      consumedSceneMotion.angularVelocity,
-    );
-    expect(Math.abs(freshSceneMotion.pitch)).toBeGreaterThan(
-      Math.abs(consumedSceneMotion.pitch),
-    );
-    expect(Math.abs(freshSceneMotion.roll)).toBeGreaterThan(
-      Math.abs(consumedSceneMotion.roll),
-    );
+  it("silence and a falling envelope cannot invent onset torque", () => {
+    expect(deriveSceneSignals(0, 0.6)).toMatchObject({
+      motionSignal: 0,
+      motionImpulse: 0,
+      shapedDrive: 0,
+    });
+    expect(deriveSceneSignals(0.2, 0.6).torqueImpulse).toBe(0);
   });
 
   it("adds capped pitch and roll attitude from transient torque", () => {
@@ -113,10 +37,6 @@ describe("scene motion helpers", () => {
       motionImpulse: 0.22,
       torqueImpulse: 0.8,
       attitudeImpulse: 0.8,
-      beatPulseId: 0,
-      beatStrength: 0,
-      beatConfidence: 0,
-      beatDetected: false,
       deltaTime: 1 / 60,
     });
 
@@ -128,21 +48,16 @@ describe("scene motion helpers", () => {
 
   it("caps impulse-pushed velocity to 2× target angular velocity", () => {
     const motion = createSceneMotionState(0);
-    // Use a high motionAmount + max beat to produce a kick that would exceed 2× target
+    // A large onset kick must remain bounded by the sustained target.
     stepAudioSceneMotion(motion, {
       motionAmount: 3.0,
       shapedDrive: 0.05,
       reactiveSignal: 0.05,
       motionImpulse: 0,
-      torqueImpulse: 0,
+      torqueImpulse: 1,
       attitudeImpulse: 0,
-      beatPulseId: 42,
-      beatStrength: 1.0,
-      beatConfidence: 1.0,
-      beatDetected: true,
       deltaTime: 1 / 60,
     });
-    // targetAngularVelocity ≈ -0.878; uncapped impulse would push velocity to ~-3.6
     expect(motion.targetAngularVelocity).toBeLessThan(0);
     expect(motion.angularVelocity).toBeGreaterThanOrEqual(
       motion.targetAngularVelocity * 2.0,
@@ -184,10 +99,6 @@ describe("scene motion helpers", () => {
         motionImpulse: 0.42,
         torqueImpulse: 0.74,
         attitudeImpulse: 0.68,
-        beatPulseId: index + 1,
-        beatStrength: 0.82,
-        beatConfidence: 0.8,
-        beatDetected: true,
         deltaTime: 1 / 60,
       });
 

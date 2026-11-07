@@ -1,3 +1,4 @@
+import { resolveCoverSourceRect } from "./coverSourceRect.js";
 import { useEffect, useRef } from "react";
 import {
   HAND_ANCHOR_SOURCES,
@@ -11,7 +12,6 @@ import {
   PERSON_MASK_EDGE_BLUR_PX,
   PERSON_SEGMENTATION_MIN_INTERVAL_MS,
   mapVideoSourceRectToMaskSourceRect,
-  resolveCoverSourceRect,
   resolvePersonMaskAlpha,
   smoothPersonMaskAlpha,
 } from "./personSegmentationMask.js";
